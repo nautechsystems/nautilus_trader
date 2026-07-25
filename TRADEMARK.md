@@ -84,7 +84,7 @@ for third-party projects to signal NautilusTrader compatibility.
 **Naming examples:**
 
 | Compliant               | Not compliant            |
-|-------------------------|--------------------------|
+| ----------------------- | ------------------------ |
 | `mt5-nt-community`      | `nautilus-mt5`           |
 | `sinopac-nt-community`  | `nautilus-sinopac`       |
 | `mt5-connect`           | `nautilustrader-stocks`  |

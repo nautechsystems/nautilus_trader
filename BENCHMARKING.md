@@ -146,7 +146,7 @@ tracks the API surface users actually call.
 ## Tooling at a glance
 
 | Framework                                                     | Measures                                  | Use for                                              |
-|---------------------------------------------------------------|-------------------------------------------|------------------------------------------------------|
+| ------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
 | [**Criterion**](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence bands     | Anything ≥ 100 ns; absolute measurement; comparison. |
 | [**iai**](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions (via Cachegrind) | Sub‑100 ns functions; CI change detection.           |
 | [**flamegraph**](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                | Investigating where time goes inside a slow bench.   |

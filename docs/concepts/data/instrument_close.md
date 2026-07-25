@@ -6,7 +6,7 @@ It is used for end-of-session closes and contract-expiry close events.
 ## Fields
 
 | Field           | Rust type             | Python type           | Required/default | Notes                                    |
-|-----------------|-----------------------|-----------------------|------------------|------------------------------------------|
+| --------------- | --------------------- | --------------------- | ---------------- | ---------------------------------------- |
 | `instrument_id` | `InstrumentId`        | `InstrumentId`        | Required         | Instrument being closed.                 |
 | `close_price`   | `Price`               | `Price`               | Required         | Closing or settlement price.             |
 | `close_type`    | `InstrumentCloseType` | `InstrumentCloseType` | Required         | `END_OF_SESSION` or `CONTRACT_EXPIRED`.  |

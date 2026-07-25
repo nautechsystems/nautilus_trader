@@ -7,7 +7,7 @@ when the venue publishes them.
 ## Fields
 
 | Field             | Rust type             | Python type      | Required/default | Notes                                    |
-|-------------------|-----------------------|------------------|------------------|------------------------------------------|
+| ----------------- | --------------------- | ---------------- | ---------------- | ---------------------------------------- |
 | `instrument_id`   | `InstrumentId`        | `InstrumentId`   | Required         | Perpetual instrument for the rate.       |
 | `rate`            | `Decimal`             | `Decimal`        | Required         | Current funding rate.                    |
 | `interval`        | `Option<u16>`         | `int \| None`    | `None`           | Funding interval in minutes.             |

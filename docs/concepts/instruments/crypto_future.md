@@ -9,7 +9,7 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 ## Fields
 
 | Field                 | Rust type          | Python type        | Required/default | Notes                                    |
-|-----------------------|--------------------|--------------------|------------------|------------------------------------------|
+| --------------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`       | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`          | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
 | `underlying`          | `Currency`         | `Currency`         | Required         | Crypto asset the contract tracks.        |

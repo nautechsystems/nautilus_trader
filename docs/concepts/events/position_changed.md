@@ -10,7 +10,7 @@ when a subsequent fill changes an open position's quantity or side (see [From fi
 the three events. The fields that distinguish `PositionChanged`:
 
 | Field             | Python type | Description                                            |
-|-------------------|-------------|--------------------------------------------------------|
+| ----------------- | ----------- | ------------------------------------------------------ |
 | `peak_qty`        | `Quantity`  | The peak directional quantity reached by the position. |
 | `avg_px_close`    | `float`     | The average close price so far.                        |
 | `realized_return` | `float`     | The realized return for the position.                  |

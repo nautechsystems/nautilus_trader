@@ -169,7 +169,7 @@ nautilus_strategy!(MyStrategy, {
 The `Strategy` trait provides these facade methods:
 
 | Method                | Action                                          |
-|-----------------------|-------------------------------------------------|
+| --------------------- | ----------------------------------------------- |
 | `submit_order`        | Submit a new order to the venue.                |
 | `submit_order_list`   | Submit a list of contingent orders.             |
 | `modify_order`        | Modify price, quantity, or trigger price.       |

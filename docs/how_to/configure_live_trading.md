@@ -70,7 +70,7 @@ config = TradingNodeConfig(
 ### Core configuration parameters
 
 | Setting                  | Default      | Description                                 |
-|--------------------------|--------------|---------------------------------------------|
+| ------------------------ | ------------ | ------------------------------------------- |
 | `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
 | `instance_id`            | `None`       | Optional unique instance identifier.        |
 | `timeout_connection`     | 60.0         | Connection timeout in seconds.              |
@@ -212,7 +212,7 @@ venue reconciliation. For full details see the
 Recovers missed order and position events to keep system state consistent with the venue.
 
 | Setting                         | Default | Description                                                                     |
-|---------------------------------|---------|---------------------------------------------------------------------------------|
+| ------------------------------- | ------- | ------------------------------------------------------------------------------- |
 | `reconciliation`                | True    | Activate reconciliation at startup to align internal state with the venue.      |
 | `reconciliation_lookback_mins`  | None    | How far back (minutes) to request past events for reconciling uncached state.   |
 | `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                    |
@@ -226,7 +226,7 @@ Controls which order events and reports the system processes, preventing conflic
 across trading nodes.
 
 | Setting                            | Default | Description                                                                   |
-|------------------------------------|---------|-------------------------------------------------------------------------------|
+| ---------------------------------- | ------- | ----------------------------------------------------------------------------- |
 | `filter_unclaimed_external_orders` | False   | Drop unclaimed external orders so they do not affect the strategy.            |
 | `filter_position_reports`          | False   | Drop position status reports. Useful when multiple nodes trade one account.   |
 
@@ -247,23 +247,23 @@ in-flight orders, polling open orders, checking position status, and auditing ow
 Configure the loop with these settings. For runtime state-transition rules, retry coordination,
 and caveats, see [Runtime checks](../concepts/live.md#runtime-checks).
 
-| Setting                              | Default        | Description                                                                                      |
-|--------------------------------------|----------------|--------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`         | 2,000&nbsp;ms  | How often to check in‑flight order status. Set to 0 to disable.                                  |
-| `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Time before an in‑flight order triggers a venue status check. Lower if colocated.                |
-| `inflight_check_retries`             | 5&nbsp;retries | Retry attempts to verify an in‑flight order with the venue.                                      |
-| `open_check_interval_secs`           | None           | How often (seconds) to check open orders at the venue. None or 0.0 disables. Recommended: 5-10s. |
-| `open_check_open_only`               | True           | When true, query only open orders; when false, fetch full history (resource‑intensive).          |
-| `open_check_lookback_mins`           | 60&nbsp;min    | Lookback window (minutes) for order status polling. Only orders modified within this window.     |
-| `open_check_threshold_ms`            | 5,000&nbsp;ms  | Minimum time since last cached event before acting on venue discrepancies.                       |
-| `open_check_missing_retries`         | 5&nbsp;retries | Max retries before targeted not‑found resolution for eligible orders.                            |
-| `max_single_order_queries_per_cycle` | 10             | Cap on single‑order queries per cycle. Prevents rate‑limit exhaustion.                           |
-| `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single‑order queries to avoid rate limits.                                    |
-| `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Delay (seconds) *after* startup reconciliation before continuous checks begin.                   |
-| `own_books_audit_interval_secs`      | None           | Interval (seconds) between auditing own order books against public books.                        |
-| `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s. |
-| `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports on position discrepancy.                     |
-| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies.                  |
+| Setting                              | Default        | Description                                                                                                                                                                                    |
+| ------------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inflight_check_interval_ms`         | 2,000&nbsp;ms  | How often to check in‑flight order status. Set to 0 to disable.                                                                                                                                |
+| `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Time before an in‑flight order triggers a venue status check. Lower if colocated.                                                                                                              |
+| `inflight_check_retries`             | 5&nbsp;retries | Retry attempts to verify an in‑flight order with the venue.                                                                                                                                    |
+| `open_check_interval_secs`           | None           | How often (seconds) to check open orders at the venue. None or 0.0 disables. Recommended: 5-10s.                                                                                               |
+| `open_check_open_only`               | True           | When true, query only open orders; when false, fetch full history (resource‑intensive).                                                                                                        |
+| `open_check_lookback_mins`           | 60&nbsp;min    | Lookback window (minutes) for order status polling. Only orders modified within this window.                                                                                                   |
+| `open_check_threshold_ms`            | 5,000&nbsp;ms  | Minimum time since last cached event before acting on venue discrepancies.                                                                                                                     |
+| `open_check_missing_retries`         | 5&nbsp;retries | Max retries before targeted not‑found resolution for eligible orders.                                                                                                                          |
+| `max_single_order_queries_per_cycle` | 10             | Cap on single‑order queries per cycle. Prevents rate‑limit exhaustion.                                                                                                                         |
+| `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single‑order queries to avoid rate limits.                                                                                                                                  |
+| `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Delay (seconds) *after* startup reconciliation before continuous checks begin.                                                                                                                 |
+| `own_books_audit_interval_secs`      | None           | Interval (seconds) between auditing own order books against public books.                                                                                                                      |
+| `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s.                                                         |
+| `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports on position discrepancy.                                                                                                                   |
+| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies.                                                                                                                |
 | `position_check_retries`             | 3&nbsp;retries | Max attempts per instrument/account before the engine stops retrying that discrepancy. Once exceeded, an error is logged and the discrepancy is no longer actively reconciled until it clears. |
 
 :::warning
@@ -280,14 +280,14 @@ and caveats, see [Runtime checks](../concepts/live.md#runtime-checks).
 
 ### Additional options
 
-| Setting                            | Default | Description                                                                                     |
-|------------------------------------|---------|-------------------------------------------------------------------------------------------------|
-| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.    |
+| Setting                            | Default | Description                                                                                                              |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                             |
 | `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
-| `snapshot_orders`                  | False   | Take order snapshots on order events.                                                           |
-| `snapshot_positions`               | False   | Take position snapshots on position events.                                                     |
-| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                  |
-| `debug`                            | False   | Enable debug logging for execution.                                                             |
+| `snapshot_orders`                  | False   | Take order snapshots on order events.                                                                                    |
+| `snapshot_positions`               | False   | Take position snapshots on position events.                                                                              |
+| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                           |
+| `debug`                            | False   | Enable debug logging for execution.                                                                                      |
 
 ### Memory management
 
@@ -295,7 +295,7 @@ Periodically purges closed orders, closed positions, and account events from the
 in-memory cache, keeping memory bounded during long-running or HFT sessions.
 
 | Setting                                | Default | Description                                                                        |
-|----------------------------------------|---------|------------------------------------------------------------------------------------|
+| -------------------------------------- | ------- | ---------------------------------------------------------------------------------- |
 | `purge_closed_orders_interval_mins`    | None    | How often (minutes) to purge closed orders from memory. Recommended: 10-15 min.    |
 | `purge_closed_orders_buffer_mins`      | None    | How long (minutes) an order must be closed before purging. Recommended: 60 min.    |
 | `purge_closed_positions_interval_mins` | None    | How often (minutes) to purge closed positions from memory. Recommended: 10-15 min. |
@@ -312,7 +312,7 @@ loop delegates to the cache APIs described in
 ### Queue management
 
 | Setting                          | Default | Description                                                                     |
-|----------------------------------|---------|---------------------------------------------------------------------------------|
+| -------------------------------- | ------- | ------------------------------------------------------------------------------- |
 | `qsize`                          | 100,000 | Size of internal queue buffers.                                                 |
 | `graceful_shutdown_on_exception` | False   | Gracefully shut down on unexpected queue processing exceptions (not user code). |
 
@@ -324,14 +324,14 @@ For a complete parameter list see the `StrategyConfig`
 ### Identification
 
 | Setting        | Default | Description                                                   |
-|----------------|---------|---------------------------------------------------------------|
+| -------------- | ------- | ------------------------------------------------------------- |
 | `strategy_id`  | None    | Unique strategy identifier.                                   |
 | `order_id_tag` | None    | Unique tag appended to this strategy's order IDs.             |
 
 ### Order management
 
 | Setting                     | Default | Description                                                                               |
-|-----------------------------|---------|-------------------------------------------------------------------------------------------|
+| --------------------------- | ------- | ----------------------------------------------------------------------------------------- |
 | `oms_type`                  | None    | [OMS type](../concepts/execution#oms-configuration) for position ID and order processing. |
 | `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                    |
 | `external_order_claims`     | None    | Instrument IDs whose external orders and reconciliation activity this strategy claims.    |

@@ -16,7 +16,7 @@ should maintain the book state locally.
 ## Fields
 
 | Field           | Rust type      | Python type        | Required/default | Notes                                      |
-|-----------------|----------------|--------------------|------------------|--------------------------------------------|
+| --------------- | -------------- | ------------------ | ---------------- | ------------------------------------------ |
 | `instrument_id` | `InstrumentId` | `InstrumentId`     | Required         | Instrument whose book is changing.         |
 | `action`        | `BookAction`   | `BookAction`       | Required         | `ADD`, `UPDATE`, `DELETE`, or `CLEAR`.     |
 | `order`         | `BookOrder`    | `BookOrder`        | Required         | Price, size, side, and order ID payload.   |
@@ -30,7 +30,7 @@ should maintain the book state locally.
 The `order` field contains the `BookOrder` payload for the delta.
 
 | Field      | Rust type         | Python type | Notes                                |
-|------------|-------------------|-------------|--------------------------------------|
+| ---------- | ----------------- | ----------- | ------------------------------------ |
 | `side`     | `OrderSide`       | `OrderSide` | Order side.                          |
 | `price`    | `Price`           | `Price`     | Order price.                         |
 | `size`     | `Quantity`        | `Quantity`  | Order size.                          |
@@ -41,7 +41,7 @@ The null/default order uses `NO_ORDER_SIDE`, zero price, zero size, and `order_i
 ## BookAction variants
 
 | Rust variant         | Python variant | Value | Meaning                                |
-|----------------------|----------------|-------|----------------------------------------|
+| -------------------- | -------------- | ----- | -------------------------------------- |
 | `BookAction::Add`    | `ADD`          | `1`   | Adds an order to the book.             |
 | `BookAction::Update` | `UPDATE`       | `2`   | Updates an existing order in the book. |
 | `BookAction::Delete` | `DELETE`       | `3`   | Deletes an existing order in the book. |

@@ -12,7 +12,7 @@ Transition: `EMULATED` -> `RELEASED`. Handler: `on_order_released`.
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderReleased` carries:
 
 | Field            | Python type | Required/default | Description                                           |
-|------------------|-------------|------------------|-------------------------------------------------------|
+| ---------------- | ----------- | ---------------- | ----------------------------------------------------- |
 | `released_price` | `Price`     | Required         | The price which released the order from the emulator. |
 
 On this event, `venue_order_id` and `account_id` are both `None`, `reconciliation` is

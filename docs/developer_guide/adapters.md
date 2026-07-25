@@ -12,7 +12,7 @@ then expose configs, factories, and selected low-level APIs to Python through Py
 Use mature adapters according to the boundary you need:
 
 | Adapter | Reference pattern                                                                           |
-|---------|---------------------------------------------------------------------------------------------|
+| ------- | ------------------------------------------------------------------------------------------- |
 | Bybit   | Multi‑product JSON REST/WebSocket adapter with one client type reused per product.          |
 | OKX     | Multiple public/private/business WebSocket connections and broad product coverage.          |
 | Binance | Product‑specific clients and split market‑data/trading protocols, including SBE.            |
@@ -112,7 +112,7 @@ one. Complete the Rust client and factory contracts before exposing them through
 Build the low-level networking and parsing foundation.
 
 | Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
 | 1.1  | HTTP error types           | Define HTTP‑specific error enum with retryable/non‑retryable variants (`http/error.rs`).     |
 | 1.2  | HTTP client                | Implement credentials, request signing, rate limiting, and retry logic.                      |
 | 1.3  | HTTP API models            | Define request/response structs for REST endpoints (`http/models.rs`, `http/query.rs`).      |
@@ -130,7 +130,7 @@ Build the low-level networking and parsing foundation.
 Instruments are the foundation: both data and execution clients depend on them.
 
 | Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
 | 2.1  | Instrument parsing         | Parse venue instrument definitions into Nautilus types (spot, perpetual, future, option).    |
 | 2.2  | Instrument loading         | Load, filter, cache, and emit instruments through the Rust clients.                          |
 | 2.3  | Symbol mapping             | Handle venue‑specific symbol formats and Nautilus `InstrumentId` conversion.                 |
@@ -143,7 +143,7 @@ serves instrument requests through `DataClient`.
 Build data subscriptions and historical data requests.
 
 | Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
 | 3.1  | Public WebSocket streams   | Subscribe to order books, trades, tickers, and other public channels.                        |
 | 3.2  | Historical data requests   | Fetch historical bars, trades, and order book snapshots via HTTP.                            |
 | 3.3  | Data client (Rust)         | Implement `DataClient`, emitting `DataEvent` values to the data engine.                      |
@@ -155,7 +155,7 @@ Build data subscriptions and historical data requests.
 Build order management and account state.
 
 | Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
 | 4.1  | Private WebSocket streams  | Subscribe to order updates, fills, positions, and account balance changes.                   |
 | 4.2  | Basic order submission     | Implement market and limit orders via HTTP or WebSocket.                                     |
 | 4.3  | Order modification/cancel  | Implement order amendment and cancellation.                                                  |
@@ -169,7 +169,7 @@ Build order management and account state.
 Extend coverage based on venue capabilities.
 
 | Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
 | 5.1  | Advanced order types       | Conditional orders, stop‑loss, take‑profit, trailing stops, iceberg, etc.                    |
 | 5.2  | Batch operations           | Batch order submission, batch cancellation, mass cancel.                                     |
 | 5.3  | Venue‑specific features    | Options chains, funding rates, liquidations, or other venue‑specific data.                   |
@@ -178,19 +178,19 @@ Extend coverage based on venue capabilities.
 
 Wire everything together for production usage.
 
-| Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
-| 6.1  | Configuration structs      | Define Rust configs with `bon::Builder`, `Default`, serde, and `ClientConfig`.                |
-| 6.2  | Client factories           | Implement `DataClientFactory` and `ExecutionClientFactory`.                                  |
-| 6.3  | Python registration        | Register configs and factories with the PyO3 registry and generate stubs.                    |
-| 6.4  | Environment variables      | Support credential resolution from environment variables.                                    |
+| Step | Component             | Description                                                                    |
+| ---- | --------------------- | ------------------------------------------------------------------------------ |
+| 6.1  | Configuration structs | Define Rust configs with `bon::Builder`, `Default`, serde, and `ClientConfig`. |
+| 6.2  | Client factories      | Implement `DataClientFactory` and `ExecutionClientFactory`.                    |
+| 6.3  | Python registration   | Register configs and factories with the PyO3 registry and generate stubs.      |
+| 6.4  | Environment variables | Support credential resolution from environment variables.                      |
 
 ### Phase 7: Testing and documentation
 
 Validate the integration and document usage.
 
 | Step | Component                  | Description                                                                                  |
-|------|----------------------------|----------------------------------------------------------------------------------------------|
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
 | 7.1  | Rust unit tests            | Test parsers, signing helpers, and business logic in `#[cfg(test)]` blocks.                  |
 | 7.2  | Rust integration tests     | Test HTTP/WebSocket clients against mock Axum servers in `tests/`.                           |
 | 7.3  | Python boundary tests      | Test v2 factory/config extraction under `python/tests/unit/adapters/<adapter>/`.             |
@@ -573,7 +573,7 @@ let data_sender = get_data_event_sender();
 The `DataEvent` enum carries all data types the client produces:
 
 | Variant                       | Usage                                                 |
-|-------------------------------|-------------------------------------------------------|
+| ----------------------------- | ----------------------------------------------------- |
 | `DataEvent::Instrument`       | Instrument definitions during bootstrap and updates.  |
 | `DataEvent::InstrumentStatus` | Market status changes from polling or WS streams.     |
 | `DataEvent::Data`             | Market data (trades, quotes, book deltas, bars).      |
@@ -849,7 +849,7 @@ hardcoded secrets.
 **Naming conventions:**
 
 | Environment  | API Key Variable          | API Secret Variable          |
-|--------------|---------------------------|------------------------------|
+| ------------ | ------------------------- | ---------------------------- |
 | Mainnet/Live | `{VENUE}_API_KEY`         | `{VENUE}_API_SECRET`         |
 | Testnet      | `{VENUE}_TESTNET_API_KEY` | `{VENUE}_TESTNET_API_SECRET` |
 | Demo         | `{VENUE}_DEMO_API_KEY`    | `{VENUE}_DEMO_API_SECRET`    |
@@ -885,7 +885,7 @@ Configure rate limiting through `HttpClient` using `LazyLock<Quota>` static vari
 **Standard rate limit keys for WebSocket:**
 
 | Key                             | Operations                       |
-|---------------------------------|----------------------------------|
+| ------------------------------- | -------------------------------- |
 | `*_RATE_LIMIT_KEY_SUBSCRIPTION` | Subscribe, unsubscribe, login.   |
 | `*_RATE_LIMIT_KEY_ORDER`        | Place orders (regular and algo). |
 | `*_RATE_LIMIT_KEY_CANCEL`       | Cancel orders, mass cancel.      |
@@ -1210,20 +1210,20 @@ The `SubscriptionState` struct from `nautilus_network::websocket` is shared betw
 
 A **subscription** represents any topic in one of two states:
 
-| State         | Description |
-|---------------|-------------|
-| **Pending**   | Subscription request sent to venue, awaiting acknowledgment. |
+| State         | Description                                                     |
+| ------------- | --------------------------------------------------------------- |
+| **Pending**   | Subscription request sent to venue, awaiting acknowledgment.    |
 | **Confirmed** | Venue acknowledged subscription and is actively streaming data. |
 
 State transitions follow this lifecycle:
 
-| Trigger           | Method Called        | From State | To State  | Notes |
-|-------------------|----------------------|------------|-----------|-------|
-| User subscribes   | `mark_subscribe()`   |            | Pending   | Topic added to pending set. |
-| Venue confirms    | `confirm()`          | Pending    | Confirmed | Moved from pending to confirmed. |
+| Trigger           | Method Called        | From State | To State  | Notes                                 |
+| ----------------- | -------------------- | ---------- | --------- | ------------------------------------- |
+| User subscribes   | `mark_subscribe()`   |            | Pending   | Topic added to pending set.           |
+| Venue confirms    | `confirm()`          | Pending    | Confirmed | Moved from pending to confirmed.      |
 | Venue rejects     | `mark_failure()`     | Pending    | Pending   | Stays pending for retry on reconnect. |
-| User unsubscribes | `mark_unsubscribe()` | Confirmed  | Pending   | Temporarily pending until ack. |
-| Unsubscribe ack   | `clear_pending()`    | Pending    | Removed   | Topic fully removed. |
+| User unsubscribes | `mark_unsubscribe()` | Confirmed  | Pending   | Temporarily pending until ack.        |
+| Unsubscribe ack   | `clear_pending()`    | Pending    | Removed   | Topic fully removed.                  |
 
 **Key principles**:
 
@@ -1279,7 +1279,7 @@ replay restores it.
 Adapters use venue-specific delimiters to structure subscription topics:
 
 | Adapter      | Delimiter | Example                | Pattern                      |
-|--------------|-----------|------------------------|------------------------------|
+| ------------ | --------- | ---------------------- | ---------------------------- |
 | **BitMEX**   | `:`       | `trade:XBTUSD`         | `{channel}:{symbol}`         |
 | **OKX**      | `:`       | `trades:BTC-USDT-SWAP` | `{channel}:{symbol}`         |
 | **Bybit**    | `.`       | `orderbook.50.BTCUSDT` | `{channel}.{depth}.{symbol}` |
@@ -1468,7 +1468,7 @@ sufficient and a separate module is not needed.
 Define handler-specific tuning constants for consistent behavior:
 
 | Constant                   | Purpose                                          | Typical value |
-|----------------------------|--------------------------------------------------|---------------|
+| -------------------------- | ------------------------------------------------ | ------------- |
 | `DEFAULT_HEARTBEAT_SECS`   | Interval for sending keep‑alive messages.        | 15-30         |
 | `WEBSOCKET_AUTH_WINDOW_MS` | Maximum age for authentication timestamps.       | 5000-30000    |
 | `BATCH_PROCESSING_LIMIT`   | Maximum messages processed per event loop cycle. | 100-1000      |
@@ -1586,7 +1586,7 @@ pub struct WsDispatchState {
 ```
 
 | Field               | Purpose                                                         |
-|---------------------|-----------------------------------------------------------------|
+| ------------------- | --------------------------------------------------------------- |
 | `order_identities`  | Maps client order ID to identity metadata set at submission.    |
 | `emitted_accepted`  | Prevents duplicate `OrderAccepted` events.                      |
 | `triggered_orders`  | Tracks conditional orders that have triggered.                  |
@@ -1781,10 +1781,10 @@ Adapters follow standardized naming conventions for consistency across all venue
 
 WebSocket message channels follow a two-stage transformation pipeline within the handler:
 
-| Stage | Type | Description | Example |
-|-------|------|-------------|---------|
-| `raw` | Raw WebSocket frames | Bytes/text from the network layer. | `raw_rx: UnboundedReceiver<Message>` |
-| `out` | Venue‑specific messages | Parsed venue message types. | `out_tx: UnboundedSender<MyWsMessage>` |
+| Stage | Type                    | Description                        | Example                                |
+| ----- | ----------------------- | ---------------------------------- | -------------------------------------- |
+| `raw` | Raw WebSocket frames    | Bytes/text from the network layer. | `raw_rx: UnboundedReceiver<Message>`   |
+| `out` | Venue‑specific messages | Parsed venue message types.        | `out_tx: UnboundedSender<MyWsMessage>` |
 
 The handler deserializes raw frames into venue-specific types and emits them on `out_tx`.
 The data and execution client layers then convert venue types into Nautilus domain types.
@@ -1820,14 +1820,14 @@ Do not add bounded channels, buffering limits, or backpressure unless the latenc
 
 Structs holding references to lower-level components follow these conventions:
 
-| Field         | Type                                                | Description |
-|---------------|-----------------------------------------------------|-------------|
-| `inner`       | `Option<WebSocketClient>`                           | Network‑level WebSocket client (handler only, exclusively owned). |
-| `cmd_tx`      | `Arc<tokio::sync::RwLock<UnboundedSender<...>>>`   | Command channel to handler (client side). |
-| `cmd_rx`      | `UnboundedReceiver<HandlerCommand>`                 | Command channel from client (handler side). |
-| `out_tx`      | `UnboundedSender<{Venue}WsMessage>`                 | Output channel to client (handler side). |
-| `out_rx`      | `Option<Arc<UnboundedReceiver<{Venue}WsMessage>>>`  | Output channel from handler (client side). |
-| `task_handle` | `Option<Arc<JoinHandle<()>>>`                       | Handler task handle. |
+| Field         | Type                                               | Description                                                       |
+| ------------- | -------------------------------------------------- | ----------------------------------------------------------------- |
+| `inner`       | `Option<WebSocketClient>`                          | Network‑level WebSocket client (handler only, exclusively owned). |
+| `cmd_tx`      | `Arc<tokio::sync::RwLock<UnboundedSender<...>>>`   | Command channel to handler (client side).                         |
+| `cmd_rx`      | `UnboundedReceiver<HandlerCommand>`                | Command channel from client (handler side).                       |
+| `out_tx`      | `UnboundedSender<{Venue}WsMessage>`                | Output channel to client (handler side).                          |
+| `out_rx`      | `Option<Arc<UnboundedReceiver<{Venue}WsMessage>>>` | Output channel from handler (client side).                        |
+| `task_handle` | `Option<Arc<JoinHandle<()>>>`                      | Handler task handle.                                              |
 
 **Example:**
 
@@ -1941,7 +1941,7 @@ handler dispatches both market data and user data events from the combined conne
 Type names include the submodule qualifier to avoid ambiguity:
 
 | Submodule    | Command type                         | Message type                        |
-|--------------|--------------------------------------|-------------------------------------|
+| ------------ | ------------------------------------ | ----------------------------------- |
 | `streams/`   | `{Venue}WsStreamsCommand`            | `{Venue}WsMessage` (venue types)    |
 | `trading/`   | `{Venue}WsTradingCommand`            | `{Venue}WsTradingMessage`           |
 
@@ -2069,12 +2069,12 @@ fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
 `block_on` is valid in contexts that run outside a tokio runtime:
 
 | Context                      | Why safe                                       |
-|------------------------------|------------------------------------------------|
-| PyO3 `#[pymethods]`         | Called from Python, no ambient runtime          |
-| Binary `main()` functions   | Top‑level entry point, runtime not yet started  |
+| ---------------------------- | ---------------------------------------------- |
+| PyO3 `#[pymethods]`          | Called from Python, no ambient runtime         |
+| Binary `main()` functions    | Top‑level entry point, runtime not yet started |
 | Dedicated background threads | Thread created outside tokio's worker pool     |
-| `block_in_place` wrapper    | Moves the thread out of the worker pool first   |
-| Test code with own runtime  | `Runtime::new()` creates an isolated runtime    |
+| `block_in_place` wrapper     | Moves the thread out of the worker pool first  |
+| Test code with own runtime   | `Runtime::new()` creates an isolated runtime   |
 
 ### Graceful shutdown with `CancellationToken`
 
@@ -2133,12 +2133,12 @@ crates/adapters/your_adapter/
 
 #### Test file organization
 
-| File                 | Purpose                                                                                                                   |
-|----------------------|---------------------------------------------------------------------------------------------------------------------------|
+| File                   | Purpose                                                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `tests/data_client.rs` | Integration tests for the data client. Validates data subscriptions, historical data requests, and market data parsing.    |
 | `tests/exec_client.rs` | Integration tests for the execution client. Validates order submission, modification, cancellation, and execution reports. |
-| `tests/http.rs`      | Low‑level HTTP client tests. Validates request signing, error handling, and response parsing against mock Axum servers.    |
-| `tests/websocket.rs` | WebSocket client tests. Validates connection lifecycle, authentication, subscriptions, and message routing.                |
+| `tests/http.rs`        | Low‑level HTTP client tests. Validates request signing, error handling, and response parsing against mock Axum servers.    |
+| `tests/websocket.rs`   | WebSocket client tests. Validates connection lifecycle, authentication, subscriptions, and message routing.                |
 
 **Guidelines:**
 
@@ -2253,7 +2253,7 @@ Data (`tests/data_client.rs`) and execution (`tests/exec_client.rs`) client inte
 **Test infrastructure:**
 
 | Component                    | Purpose                                                                             |
-|------------------------------|-------------------------------------------------------------------------------------|
+| ---------------------------- | ----------------------------------------------------------------------------------- |
 | Mock Axum server             | Serves HTTP endpoints (instruments, fee rates, positions) and WebSocket channels.   |
 | `TestServerState`            | Tracks connections, subscriptions, and authentication state for assertions.         |
 | Thread‑local event channels  | `set_data_event_sender()` / `set_exec_event_sender()` for capturing emitted events. |
@@ -2262,7 +2262,7 @@ Data (`tests/data_client.rs`) and execution (`tests/exec_client.rs`) client inte
 **Data client coverage:**
 
 | Test scenario                | Validates                                                      |
-|------------------------------|----------------------------------------------------------------|
+| ---------------------------- | -------------------------------------------------------------- |
 | Connect/disconnect           | Connection lifecycle, WebSocket establishment, clean shutdown. |
 | Subscribe trades             | Trade tick events emitted to data channel.                     |
 | Subscribe quotes             | Quote events from ticker (LINEAR) or orderbook (SPOT).         |
@@ -2274,7 +2274,7 @@ Data (`tests/data_client.rs`) and execution (`tests/exec_client.rs`) client inte
 **Execution client coverage:**
 
 | Test scenario                | Validates                                                      |
-|------------------------------|----------------------------------------------------------------|
+| ---------------------------- | -------------------------------------------------------------- |
 | Connect/disconnect           | Auth handshake, private + trade WS connections, subscriptions. |
 | Demo mode                    | Only private WS connects (trade WS skipped for HTTP fallback). |
 | Order submission             | Order accepted/rejected events, venue ID correlation.          |

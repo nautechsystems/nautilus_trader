@@ -207,7 +207,7 @@ fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
 The `OptionGreeks` fields:
 
 | Field              | Type           | Description                                        |
-|--------------------|----------------|----------------------------------------------------|
+| ------------------ | -------------- | -------------------------------------------------- |
 | `instrument_id`    | `InstrumentId` | The option contract.                               |
 | `delta`            | `f64`          | Price sensitivity to underlying.                   |
 | `gamma`            | `f64`          | Delta sensitivity to underlying.                   |
@@ -277,7 +277,7 @@ let series_id = OptionSeriesId::new(
 **`StrikeRange`** controls which strikes are active:
 
 | Variant       | Description                                            |
-|---------------|--------------------------------------------------------|
+| ------------- | ------------------------------------------------------ |
 | `Fixed`       | A fixed set of strike prices.                          |
 | `AtmRelative` | `strikes_above` above and `strikes_below` below ATM.   |
 | `AtmPercent`  | All strikes within `pct` of the ATM price.             |
@@ -361,7 +361,7 @@ fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
 The `OptionChainSlice` fields and methods:
 
 | Name             | Type / Returns              | Description                          |
-|------------------|-----------------------------|--------------------------------------|
+| ---------------- | --------------------------- | ------------------------------------ |
 | `series_id`      | `OptionSeriesId`            | The series this snapshot covers.     |
 | `atm_strike`     | `Option<Price>`             | ATM strike from the forward price.   |
 | `call_count()`   | `usize`                     | Number of call strikes with data.    |

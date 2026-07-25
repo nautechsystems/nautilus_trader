@@ -6,16 +6,16 @@ trade ticks, or aggregated from smaller bars.
 
 ## Fields
 
-| Field      | Rust type   | Python type | Required/default | Notes                                    |
-|------------|-------------|-------------|------------------|------------------------------------------|
+| Field      | Rust type   | Python type | Required/default | Notes                                            |
+| ---------- | ----------- | ----------- | ---------------- | ------------------------------------------------ |
 | `bar_type` | `BarType`   | `BarType`   | Required         | Instrument, aggregation, price type, and source. |
-| `open`     | `Price`     | `Price`     | Required         | First price in the bar interval.         |
-| `high`     | `Price`     | `Price`     | Required         | Highest price in the bar interval.       |
-| `low`      | `Price`     | `Price`     | Required         | Lowest price in the bar interval.        |
-| `close`    | `Price`     | `Price`     | Required         | Last price in the bar interval.          |
-| `volume`   | `Quantity`  | `Quantity`  | Required         | Traded volume or tick‑volume proxy.      |
-| `ts_event` | `UnixNanos` | `int`       | Required         | Bar event timestamp in nanoseconds.      |
-| `ts_init`  | `UnixNanos` | `int`       | Required         | Initialization timestamp in nanoseconds. |
+| `open`     | `Price`     | `Price`     | Required         | First price in the bar interval.                 |
+| `high`     | `Price`     | `Price`     | Required         | Highest price in the bar interval.               |
+| `low`      | `Price`     | `Price`     | Required         | Lowest price in the bar interval.                |
+| `close`    | `Price`     | `Price`     | Required         | Last price in the bar interval.                  |
+| `volume`   | `Quantity`  | `Quantity`  | Required         | Traded volume or tick‑volume proxy.              |
+| `ts_event` | `UnixNanos` | `int`       | Required         | Bar event timestamp in nanoseconds.              |
+| `ts_init`  | `UnixNanos` | `int`       | Required         | Initialization timestamp in nanoseconds.         |
 
 ## Behavior
 

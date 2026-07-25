@@ -148,7 +148,7 @@ let strategy = DeltaNeutralVol::new(strategy_config);
 Parameters:
 
 | Parameter                    | Default    | Derive runner | Description                                   |
-|------------------------------|------------|---------------|-----------------------------------------------|
+| ---------------------------- | ---------- | ------------- | --------------------------------------------- |
 | `option_family`              | required   | `"ETH"`       | Underlying filter for instrument discovery.   |
 | `hedge_instrument_id`        | required   | `ETH-PERP`    | Perpetual used for delta hedging.             |
 | `client_id`                  | required   | `"DERIVE"`    | Data and execution client identifier.         |
@@ -166,7 +166,7 @@ Parameters:
 The Derive runner reads these environment variables:
 
 | Variable                                          | Default                | Description                        |
-|---------------------------------------------------|------------------------|------------------------------------|
+| ------------------------------------------------- | ---------------------- | ---------------------------------- |
 | `DERIVE_DELTA_NEUTRAL_OPTION_FAMILY`              | `ETH`                  | Option family / Derive currency.   |
 | `DERIVE_DELTA_NEUTRAL_HEDGE_INSTRUMENT`           | `<family>-PERP.DERIVE` | Perpetual hedge instrument.        |
 | `DERIVE_DELTA_NEUTRAL_ENTER_STRANGLE`             | `false`                | Enable option entry orders.        |

@@ -5,7 +5,7 @@
   // MD003/heading-style : Heading style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md003.md
   "MD003": {
     // Heading style
-    "style": "consistent"
+    "style": "atx"
   },
   // MD004/ul-style : Unordered list style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md004.md
   "MD004": {
@@ -146,5 +146,12 @@
   // MD056/table-column-count : Table rows should contain the same number of columns : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md056.md
   "MD056": true,
   // MD058/blanks-around-tables : Tables should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md058.md
-  "MD058": true
+  "MD058": true,
+  // MD059/descriptive-link-text : Link text should be descriptive : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md059.md
+  "MD059": true,
+  // MD060/table-column-alignment : Table column alignment : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md060.md
+  "MD060": {
+    // Column alignment style
+    "style": "aligned"
+  }
 }

@@ -6,18 +6,18 @@ replayed, and queried through the catalog.
 
 ## Fields
 
-| Field              | Rust type             | Python type      | Required/default | Notes                                      |
-|--------------------|-----------------------|------------------|------------------|--------------------------------------------|
-| `instrument_id`    | `InstrumentId`        | `InstrumentId`   | Required         | Option instrument for the Greeks.          |
-| `convention`       | `GreeksConvention`    | `GreeksConvention` | Default        | Numeraire convention for the values.       |
-| `greeks`           | `OptionGreekValues`   | Separate floats  | Required         | Delta, gamma, vega, theta, and rho.        |
-| `mark_iv`          | `Option<f64>`         | `float \| None`  | `None`           | Mark implied volatility.                   |
-| `bid_iv`           | `Option<f64>`         | `float \| None`  | `None`           | Bid implied volatility.                    |
-| `ask_iv`           | `Option<f64>`         | `float \| None`  | `None`           | Ask implied volatility.                    |
-| `underlying_price` | `Option<f64>`         | `float \| None`  | `None`           | Underlying price used for the calculation. |
-| `open_interest`    | `Option<f64>`         | `float \| None`  | `None`           | Open interest when published.              |
-| `ts_event`         | `UnixNanos`           | `int`            | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`          | `UnixNanos`           | `int`            | Required         | Initialization timestamp in nanoseconds.   |
+| Field              | Rust type           | Python type        | Required/default | Notes                                      |
+| ------------------ | ------------------- | ------------------ | ---------------- | ------------------------------------------ |
+| `instrument_id`    | `InstrumentId`      | `InstrumentId`     | Required         | Option instrument for the Greeks.          |
+| `convention`       | `GreeksConvention`  | `GreeksConvention` | Default          | Numeraire convention for the values.       |
+| `greeks`           | `OptionGreekValues` | Separate floats    | Required         | Delta, gamma, vega, theta, and rho.        |
+| `mark_iv`          | `Option<f64>`       | `float \| None`    | `None`           | Mark implied volatility.                   |
+| `bid_iv`           | `Option<f64>`       | `float \| None`    | `None`           | Bid implied volatility.                    |
+| `ask_iv`           | `Option<f64>`       | `float \| None`    | `None`           | Ask implied volatility.                    |
+| `underlying_price` | `Option<f64>`       | `float \| None`    | `None`           | Underlying price used for the calculation. |
+| `open_interest`    | `Option<f64>`       | `float \| None`    | `None`           | Open interest when published.              |
+| `ts_event`         | `UnixNanos`         | `int`              | Required         | Event timestamp in nanoseconds.            |
+| `ts_init`          | `UnixNanos`         | `int`              | Required         | Initialization timestamp in nanoseconds.   |
 
 ## Behavior
 

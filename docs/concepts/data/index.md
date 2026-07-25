@@ -12,7 +12,7 @@ events. Each type has a dedicated guide with its fields, behavior, and construct
 examples.
 
 | Data type                                      | Category             | Description                                          |
-|------------------------------------------------|----------------------|------------------------------------------------------|
+| ---------------------------------------------- | -------------------- | ---------------------------------------------------- |
 | [`OrderBookDelta`](order_book_delta.md)        | Order book           | Single incremental order book change.                |
 | [`OrderBookDeltas`](order_book_deltas.md)      | Order book           | Batch of related order book deltas.                  |
 | [`OrderBookDepth10`](order_book_depth10.md)    | Order book           | Fixed top 10 bid and ask levels.                     |
@@ -105,7 +105,7 @@ Data aggregation in NautilusTrader transforms granular market data into structur
 The platform implements various aggregation methods:
 
 | Name               | Description                                                                | Category     |
-|:-------------------|:---------------------------------------------------------------------------|:-------------|
+| :----------------- | :------------------------------------------------------------------------- | :----------- |
 | `TICK`             | Aggregation of a number of ticks.                                          | Threshold    |
 | `TICK_IMBALANCE`   | Aggregation of the buy/sell imbalance of ticks.                            | Threshold    |
 | `TICK_RUNS`        | Aggregation of sequential buy/sell runs of ticks.                          | Information  |
@@ -143,7 +143,7 @@ This makes them sensitive to sustained one-sided pressure rather than net imbala
 Both families have three variants based on what is measured:
 
 | Variant | Imbalance          | Runs          | What is measured                          |
-|:--------|:-------------------|:--------------|:------------------------------------------|
+| :------ | :----------------- | :------------ | :---------------------------------------- |
 | Tick    | `TICK_IMBALANCE`   | `TICK_RUNS`   | Number of trades (each trade counts as 1) |
 | Volume  | `VOLUME_IMBALANCE` | `VOLUME_RUNS` | Traded volume (quantity)                  |
 | Value   | `VALUE_IMBALANCE`  | `VALUE_RUNS`  | Notional value (price x quantity)         |
@@ -466,7 +466,7 @@ Time bar behavior is controlled through `DataEngineConfig`. The following option
 apply to all time-based aggregation (millisecond through year):
 
 | Option                              | Type   | Default       | Description                                                                                                                                     |
-|:------------------------------------|:-------|:--------------|:------------------------------------------------------------------------------------------------------------------------------------------------|
+| :---------------------------------- | :----- | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `time_bars_interval_type`           | `str`  | `"left-open"` | `"left-open"`: start excluded, end included. `"right-open"`: start included, end excluded.                                                      |
 | `time_bars_timestamp_on_close`      | `bool` | `True`        | When `True`, `ts_event` is the bar close time. When `False`, `ts_event` is the bar open time.                                                   |
 | `time_bars_skip_first_non_full_bar` | `bool` | `False`       | Skip emitting a bar when aggregation starts mid‑interval, avoiding partial bars on startup.                                                     |
@@ -494,15 +494,15 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 
 ### Examples
 
-| **Event Type**   | **`ts_event`**                                        | **`ts_init`** |
-| -----------------| ------------------------------------------------------| --------------|
-| `TradeTick`      | Time when trade occurred at the exchange.             | Time when Nautilus received the trade data. |
-| `QuoteTick`      | Time when quote occurred at the exchange.             | Time when Nautilus received the quote data. |
-| `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update. |
-| `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
-| `DefiData`       | Time the block or pool event occurred.                | Time when Nautilus created the object from the chain data. |
-| `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation. |
-| `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation. |
+| **Event Type**   | **`ts_event`**                                        | **`ts_init`**                                                                                           |
+| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `TradeTick`      | Time when trade occurred at the exchange.             | Time when Nautilus received the trade data.                                                             |
+| `QuoteTick`      | Time when quote occurred at the exchange.             | Time when Nautilus received the quote data.                                                             |
+| `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update.                                                      |
+| `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars).          |
+| `DefiData`       | Time the block or pool event occurred.                | Time when Nautilus created the object from the chain data.                                              |
+| `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation.                                        |
+| `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation.                                |
 | `NewsEvent`      | Time when the news was published.                     | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
 | Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
 

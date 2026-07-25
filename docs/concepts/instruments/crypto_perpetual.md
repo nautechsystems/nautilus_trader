@@ -9,7 +9,7 @@ Examples include `ETHUSDT-PERP.BINANCE`, `XBTUSD.BITMEX`, and `BTC-USD-SWAP.OKX`
 ## Fields
 
 | Field                 | Rust type          | Python type        | Required/default | Notes                                    |
-|-----------------------|--------------------|--------------------|------------------|------------------------------------------|
+| --------------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`       | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`          | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
 | `base_currency`       | `Currency`         | `Currency`         | Required         | Base crypto asset.                       |

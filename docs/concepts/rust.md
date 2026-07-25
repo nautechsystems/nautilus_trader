@@ -25,7 +25,7 @@ you choose the right one for your use case.
 ### Capability matrix
 
 | Component             | v1 legacy (Cython) | v2 Rust        | v2 PyO3 (Python on Rust) |
-|-----------------------|--------------------|----------------|--------------------------|
+| --------------------- | ------------------ | -------------- | ------------------------ |
 | Strategy              | ✓                  | ✓              | ✓                        |
 | Actor                 | ✓                  | ✓              | ✓                        |
 | DataEngine            | ✓                  | ✓              | ✓                        |
@@ -50,7 +50,7 @@ you choose the right one for your use case.
 ### Adapters
 
 | Adapter             | v1 legacy (Cython) | v2 Rust | v2 PyO3 |
-|---------------------|--------------------|---------|---------|
+| ------------------- | ------------------ | ------- | ------- |
 | Architect AX        | ✓                  | ✓       | ✓       |
 | Betfair             | ✓                  | ✓       | ✓       |
 | Binance             | ✓                  | ✓       | ✓       |
@@ -125,7 +125,7 @@ The minimum supported Rust version (MSRV) is **1.97.1**.
 ### Feature flags
 
 | Flag             | Crate               | Effect                                                        |
-|------------------|---------------------|---------------------------------------------------------------|
+| ---------------- | ------------------- | ------------------------------------------------------------- |
 | `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
 | `stubs`          | `nautilus-model`    | Test instrument stubs (`audusd_sim`, etc.).                   |
 | `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
@@ -176,7 +176,7 @@ data or event. All handlers have default no-op implementations, so you only
 override what you need.
 
 | Handler                | Receives                  |
-|------------------------|---------------------------|
+| ---------------------- | ------------------------- |
 | `on_start`             | Actor started.            |
 | `on_stop`              | Actor stopped.            |
 | `on_quote`             | `QuoteTick`               |
@@ -214,7 +214,7 @@ normal strategy logic uses `Strategy` methods and the facade methods on `self`.
 The `Strategy` trait provides order methods through the facade:
 
 | Method                | Action                                    |
-|-----------------------|-------------------------------------------|
+| --------------------- | ----------------------------------------- |
 | `submit_order`        | Submit a new order to the venue.          |
 | `submit_order_list`   | Submit a list of contingent orders.       |
 | `modify_order`        | Modify price, quantity, or trigger price. |
@@ -246,7 +246,7 @@ Rust actors, strategies, and execution algorithms keep their runtime core as a
 struct field. The macros tell the traits where that field lives.
 
 | Macro                                          | Core field               | Generates                       |
-|------------------------------------------------|--------------------------|---------------------------------|
+| ---------------------------------------------- | ------------------------ | ------------------------------- |
 | `nautilus_actor!(Type)`                        | `DataActorCore`          | Runtime wiring.                 |
 | `nautilus_strategy!(Type)`                     | `StrategyCore`           | Runtime wiring and `Strategy`.  |
 | `nautilus_execution_algorithm!(Type, { ... })` | `ExecutionAlgorithmCore` | Runtime wiring and algorithm.   |
@@ -287,7 +287,7 @@ native-only access below that facade. This section documents engine, runtime, an
 latency-sensitive native Rust code, not the portable authoring path.
 
 | Authoring path            | Native traits?   | Normal API                          |
-|---------------------------|------------------|-------------------------------------|
+| ------------------------- | ---------------- | ----------------------------------- |
 | Native Rust binary        | Only when needed | `Strategy` and `DataActor` facades. |
 | Rust launched from Python | Only when needed | Same as native Rust.                |
 | Python‑authored component | No               | Facades only.                       |
@@ -313,7 +313,7 @@ for normal strategy order construction. Reach for
 #### `DataActorNative` methods
 
 | Native method | Return shape             | Use when                        |
-|---------------|--------------------------|---------------------------------|
+| ------------- | ------------------------ | ------------------------------- |
 | `core()`      | `&DataActorCore`         | Read actor internals.           |
 | `core_mut()`  | `&mut DataActorCore`     | Mutate actor internals.         |
 | `clock_mut()` | `RefMut<'_, dyn Clock>`  | Need a mutable clock borrow.    |
@@ -324,7 +324,7 @@ for normal strategy order construction. Reach for
 #### `StrategyNative` methods
 
 | Native method         | Return shape                 | Use when                          |
-|-----------------------|------------------------------|-----------------------------------|
+| --------------------- | ---------------------------- | --------------------------------- |
 | `strategy_core()`     | `&StrategyCore`              | Read strategy internals.          |
 | `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.        |
 | `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need raw mutable factory borrow.  |
@@ -334,7 +334,7 @@ for normal strategy order construction. Reach for
 #### `ExecutionAlgorithmNative` methods
 
 | Native method               | Return shape                   | Use when                              |
-|-----------------------------|--------------------------------|---------------------------------------|
+| --------------------------- | ------------------------------ | ------------------------------------- |
 | `exec_algorithm_core()`     | `&ExecutionAlgorithmCore`      | Read execution algorithm internals.   |
 | `exec_algorithm_core_mut()` | `&mut ExecutionAlgorithmCore`  | Mutate execution algorithm internals. |
 
@@ -390,7 +390,7 @@ node.add_builtin_strategy("GridMarketMaker", config)
 Built-in strategy configs:
 
 | Config                         | Strategy                 |
-|--------------------------------|--------------------------|
+| ------------------------------ | ------------------------ |
 | `CompositeMarketMakerConfig`   | `CompositeMarketMaker`   |
 | `DeltaNeutralVolConfig`        | `DeltaNeutralVol`        |
 | `EmaCrossConfig`               | `EmaCross`               |
@@ -404,7 +404,7 @@ examples and tests.
 Built-in actor configs (via `add_builtin_actor`):
 
 | Config                     | Actor                 |
-|----------------------------|-----------------------|
+| -------------------------- | --------------------- |
 | `BookImbalanceActorConfig` | `BookImbalanceActor`  |
 | `DataTesterConfig`         | `DataTester`          |
 
@@ -448,7 +448,7 @@ pattern configures data and execution clients, then `run()` starts the async
 event loop. Each adapter provides its own factory and config types.
 
 | Adapter             | Example                                                |
-|---------------------|--------------------------------------------------------|
+| ------------------- | ------------------------------------------------------ |
 | Architect AX        | `crates/adapters/architect_ax/examples/`               |
 | Betfair             | `crates/adapters/betfair/examples/`                    |
 | Binance             | `crates/adapters/binance/examples/`                    |

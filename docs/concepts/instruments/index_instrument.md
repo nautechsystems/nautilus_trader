@@ -9,7 +9,7 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 ## Fields
 
 | Field             | Rust type        | Python type    | Required/default | Notes                                    |
-|-------------------|------------------|----------------|------------------|------------------------------------------|
+| ----------------- | ---------------- | -------------- | ---------------- | ---------------------------------------- |
 | `instrument_id`   | `InstrumentId`   | `InstrumentId` | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`      | `Symbol`         | `Symbol`       | Required         | Native venue symbol.                     |
 | `currency`        | `Currency`       | `Currency`     | Required         | Reference currency for quoted values.    |

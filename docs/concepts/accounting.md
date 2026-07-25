@@ -85,7 +85,7 @@ Accounting values retain their source currency until an explicit conversion succ
 number from being labeled with the wrong currency or an unavailable value from being treated as zero.
 
 | Value                        | Currency contract                                              |
-|------------------------------|----------------------------------------------------------------|
+| ---------------------------- | -------------------------------------------------------------- |
 | Instrument cost currency     | Base for inverse, settlement for quanto, and quote otherwise.  |
 | Position PnL                 | Instrument cost currency captured when the position opens.     |
 | Calculated locks and margins | Each calculated amount's currency, converted independently.    |

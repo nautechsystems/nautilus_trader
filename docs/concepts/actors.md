@@ -87,7 +87,7 @@ stateDiagram-v2
 Override these methods to hook into lifecycle events:
 
 | Method          | When called                                                         |
-|-----------------|---------------------------------------------------------------------|
+| --------------- | ------------------------------------------------------------------- |
 | `on_start()`    | Actor is starting (subscribe to data here).                         |
 | `on_stop()`     | Actor is stopping (cancel timers, clean up resources).              |
 | `on_resume()`   | Actor is resuming from a stopped state.                             |
@@ -135,7 +135,7 @@ omit the callback, the event is delivered to `on_event` instead.
 Actors have access to core system components:
 
 | Property          | Description                                              |
-|-------------------|----------------------------------------------------------|
+| ----------------- | -------------------------------------------------------- |
 | `self.cache`      | Shared state for instruments, orders, positions, etc.    |
 | `self.portfolio`  | Portfolio state and calculations.                        |
 | `self.clock`      | Current time and timer/alert scheduling.                 |
@@ -168,7 +168,7 @@ The system distinguishes between two data flows:
 Different data operations map to these handlers:
 
 | Operation                            | Category   | Handler                  | Purpose                                           |
-|--------------------------------------|------------|--------------------------|---------------------------------------------------|
+| ------------------------------------ | ---------- | ------------------------ | ------------------------------------------------- |
 | `subscribe_data()`                   | Real‑time  | `on_data()`              | Live data updates.                                |
 | `subscribe_instrument()`             | Real‑time  | `on_instrument()`        | Live instrument definition updates.               |
 | `subscribe_instruments()`            | Real‑time  | `on_instrument()`        | Live instrument definition updates (for venue).   |
@@ -279,7 +279,7 @@ keeps direct message bus subscriptions aligned with the actor lifecycle.
 Common order event topics:
 
 | Topic pattern                           | Receives                                 |
-|-----------------------------------------|------------------------------------------|
+| --------------------------------------- | ---------------------------------------- |
 | `events.order_filled.{instrument_id}`   | Fill events for one instrument.          |
 | `events.order_canceled.{instrument_id}` | Cancel events for one instrument.        |
 | `events.order.{strategy_id}`            | All order events routed to one strategy. |

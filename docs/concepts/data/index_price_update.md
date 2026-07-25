@@ -7,7 +7,7 @@ an index price.
 ## Fields
 
 | Field           | Rust type      | Python type    | Required/default | Notes                                    |
-|-----------------|----------------|----------------|------------------|------------------------------------------|
+| --------------- | -------------- | -------------- | ---------------- | ---------------------------------------- |
 | `instrument_id` | `InstrumentId` | `InstrumentId` | Required         | Instrument for the index price.          |
 | `value`         | `Price`        | `Price`        | Required         | Current index price.                     |
 | `ts_event`      | `UnixNanos`    | `int`          | Required         | Event timestamp in nanoseconds.          |

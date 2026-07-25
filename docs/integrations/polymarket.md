@@ -93,12 +93,12 @@ To interact with Polymarket via NautilusTrader, you'll need a **Polygon**-compat
 
 Polymarket supports multiple signature types for order signing and verification:
 
-| Signature Type | Wallet Type                    | Description                                                              | Use Case                                                                                                   |
-|----------------|--------------------------------|--------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.).                                 |
-| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link).             | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address.                          |
-| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets.              | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address.      |
-| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | Requires deposit wallet `funder`; API credentials stay bound to the signer.                               |
+| Signature Type | Wallet Type                    | Description                                                              | Use Case                                                                                              |
+| -------------- | ------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.).                            |
+| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link).             | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address.                     |
+| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets.              | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address. |
+| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | Requires deposit wallet `funder`; API credentials stay bound to the signer.                           |
 
 :::note
 See also: [Proxy wallet](https://docs.polymarket.com/developers/proxy-wallet) in the Polymarket documentation for more details about signature types and proxy wallet infrastructure.
@@ -252,7 +252,7 @@ published by bootstrap, configured refreshes, new-market discovery, and tick-siz
 ### Generic subscription commands
 
 | Test ID | Command                    | Disposition | Matrix |
-|---------|----------------------------|-------------|--------|
+| ------- | -------------------------- | ----------- | ------ |
 | TC-D02  | Singular instrument        | Supported   | Run    |
 | TC-D12  | `OrderBookDepth10`         | Unsupported | Skip   |
 | TC-D60  | Instrument status          | Unsupported | Skip   |
@@ -289,7 +289,7 @@ Polymarket operates as a prediction market with a more limited set of order type
 ### Order types
 
 | Order Type             | Binary Options | Notes                                                                     |
-|------------------------|----------------|---------------------------------------------------------------------------|
+| ---------------------- | -------------- | ------------------------------------------------------------------------- |
 | `MARKET`               | ✓              | **BUY orders require quote quantity**, SELL orders require base quantity. |
 | `LIMIT`                | ✓              |                                                                           |
 | `STOP_MARKET`          | -              | *Not supported by Polymarket*.                                            |
@@ -329,7 +329,7 @@ strategy.submit_order(order)
 ### Execution instructions
 
 | Instruction   | Binary Options | Notes                                                |
-|---------------|----------------|------------------------------------------------------|
+| ------------- | -------------- | ---------------------------------------------------- |
 | `post_only`   | ✓              | Supported for limit orders with `GTC` or `GTD` only. |
 | `reduce_only` | -              | *Not supported by Polymarket*.                       |
 
@@ -338,10 +338,10 @@ strategy.submit_order(order)
 Polymarket calls the `POST /order` field `orderType`. In NautilusTrader, this maps to
 `TimeInForce`. The valid combinations depend on the Nautilus order type:
 
-| Nautilus TIF | Polymarket `orderType` | Nautilus order scope | Notes |
-|--------------|------------------------|----------------------|-------|
-| `GTC`        | `GTC`                  | `LIMIT` only         | Good‑Til‑Cancelled; rests on the book. |
-| `GTD`        | `GTD`                  | `LIMIT` only         | Good‑Til‑Date; rests until expiration, fill, or cancel. |
+| Nautilus TIF | Polymarket `orderType` | Nautilus order scope | Notes                                                     |
+| ------------ | ---------------------- | -------------------- | --------------------------------------------------------- |
+| `GTC`        | `GTC`                  | `LIMIT` only         | Good‑Til‑Cancelled; rests on the book.                    |
+| `GTD`        | `GTD`                  | `LIMIT` only         | Good‑Til‑Date; rests until expiration, fill, or cancel.   |
 | `FOK`        | `FOK`                  | `LIMIT` or `MARKET`  | Fill the full size immediately or cancel the whole order. |
 | `IOC`        | `FAK`                  | `LIMIT` or `MARKET`  | Fill available size immediately and cancel the remainder. |
 
@@ -369,18 +369,18 @@ reports expiry as an `OrderCanceled` event, not `OrderExpired`.
 ### Advanced order features
 
 | Feature            | Binary Options | Notes                              |
-|--------------------|----------------|------------------------------------|
+| ------------------ | -------------- | ---------------------------------- |
 | Order modification | -              | Cancellation functionality only.   |
 | Bracket/OCO orders | -              | *Not supported by Polymarket.*     |
 | Iceberg orders     | -              | *Not supported by Polymarket.*     |
 
 ### Batch operations
 
-| Operation    | Binary Options | Notes                                                                                                                           |
-|--------------|----------------|---------------------------------------------------------------------------------------------------------------------------------|
+| Operation    | Binary Options | Notes                                                                                                                               |
+| ------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Batch Submit | ✓              | The adapter uses `POST /orders` for independent limit‑order batches (max 15 orders per request). See [Batch submit](#batch-submit). |
-| Batch Modify | -              | *Not supported by Polymarket*.                                                                                                  |
-| Batch Cancel | ✓              | The adapter uses `DELETE /orders`.                                                                                             |
+| Batch Modify | -              | *Not supported by Polymarket*.                                                                                                      |
+| Batch Cancel | ✓              | The adapter uses `DELETE /orders`.                                                                                                  |
 
 #### Batch submit
 
@@ -438,17 +438,17 @@ venue order ID is known, and fill tracking is registered under that ID.
 
 ### Position management
 
-| Feature          | Binary Options | Notes                             |
-|------------------|----------------|-----------------------------------|
+| Feature          | Binary Options | Notes                                                |
+| ---------------- | -------------- | ---------------------------------------------------- |
 | Query positions  | ✓              | Current user positions from the Polymarket Data API. |
-| Position mode    | -              | Binary outcome positions only.    |
-| Leverage control | -              | No leverage available.            |
-| Margin mode      | -              | No margin trading.                |
+| Position mode    | -              | Binary outcome positions only.                       |
+| Leverage control | -              | No leverage available.                               |
+| Margin mode      | -              | No margin trading.                                   |
 
 ### Order querying
 
 | Feature              | Binary Options | Notes                          |
-|----------------------|----------------|--------------------------------|
+| -------------------- | -------------- | ------------------------------ |
 | Query open orders    | ✓              | Active orders only.            |
 | Query order history  | ✓              | Limited historical data.       |
 | Order status updates | ✓              | Real‑time order state changes. |
@@ -456,12 +456,12 @@ venue order ID is known, and fill tracking is registered under that ID.
 
 ### Contingent orders
 
-| Feature            | Binary Options | Notes                               |
-|--------------------|----------------|-------------------------------------|
+| Feature            | Binary Options | Notes                                                                     |
+| ------------------ | -------------- | ------------------------------------------------------------------------- |
 | Order lists        | -              | Independent order batches exist, but linked contingency semantics do not. |
-| OCO orders         | -              | *Not supported by Polymarket*.      |
-| Bracket orders     | -              | *Not supported by Polymarket*.      |
-| Conditional orders | -              | *Not supported by Polymarket*.      |
+| OCO orders         | -              | *Not supported by Polymarket*.                                            |
+| Bracket orders     | -              | *Not supported by Polymarket*.                                            |
+| Conditional orders | -              | *Not supported by Polymarket*.                                            |
 
 ### Precision limits
 
@@ -490,7 +490,7 @@ precision requirements**:
 ### Tick size precision hierarchy
 
 | Tick Size | Price Decimals | Size Decimals | Amount Decimals |
-|-----------|----------------|---------------|-----------------|
+| --------- | -------------- | ------------- | --------------- |
 | 0.1       | 1              | 2             | 3               |
 | 0.01      | 2              | 2             | 4               |
 | 0.001     | 3              | 2             | 5               |
@@ -570,7 +570,7 @@ traded and p is the share price. Fees peak at p = 0.50 and decrease symmetricall
 toward the extremes. Only takers pay fees; makers pay zero.
 
 | Category        | Taker `feeRate` | Maker `feeRate` | Maker rebate |
-|-----------------|-----------------|-----------------|--------------|
+| --------------- | --------------- | --------------- | ------------ |
 | Crypto          | 0.072           | 0               | 20%          |
 | Sports          | 0.03            | 0               | 25%          |
 | Finance         | 0.04            | 0               | 25%          |
@@ -681,10 +681,10 @@ a few microshares of drift between the registered and filled quantities. Both ef
 absolute share terms, so the adapter uses `DUST_SNAP_THRESHOLD = 0.01` shares. Anything at or above
 that threshold remains a real partial fill or overfill.
 
-| Direction | Source                                         | Adapter behavior                              |
-|-----------|------------------------------------------------|-----------------------------------------------|
-| Overfill  | Market BUY quote conversion (microshares)      | Snap fill down to `submitted_qty`              |
-| Underfill | Signed or venue quantity truncation (`< 0.01`)  | Normalize atomic FOK; cancel a FAK remainder  |
+| Direction | Source                                         | Adapter behavior                             |
+| --------- | ---------------------------------------------- | -------------------------------------------- |
+| Overfill  | Market BUY quote conversion (microshares)      | Snap fill down to `submitted_qty`            |
+| Underfill | Signed or venue quantity truncation (`< 0.01`) | Normalize atomic FOK; cancel a FAK remainder |
 
 Terminal quantity normalization triggers from the `MATCHED` order update for resting maker
 orders, or directly on the confirming taker trade for atomic FOK orders. It emits a reconciliation
@@ -785,10 +785,10 @@ logs it for manual recovery. Manual requests can still retry the condition later
 Use `request_data()` with data type `PolymarketResolveRequest` to force a resolution check. The
 request accepts any of these params:
 
-| Param            | Type                 | Description |
-|------------------|----------------------|-------------|
-| `condition_id`   | `str`                | Resolve one Polymarket condition. |
-| `condition_ids`  | `str` or `list[str]` | Resolve one or more Polymarket conditions. |
+| Param            | Type                 | Description                                                  |
+| ---------------- | -------------------- | ------------------------------------------------------------ |
+| `condition_id`   | `str`                | Resolve one Polymarket condition.                            |
+| `condition_ids`  | `str` or `list[str]` | Resolve one or more Polymarket conditions.                   |
 | `instrument_ids` | `str` or `list[str]` | Resolve Polymarket instrument IDs; other venues are ignored. |
 
 If a request omits all selectors, the client uses the watchlist. With automatic polling enabled,
@@ -797,18 +797,18 @@ expired eligible entries, so operators can run the recovery flow manually.
 
 The response payload is custom data with this dictionary shape:
 
-| Key                          | Meaning |
-|------------------------------|---------|
-| `requested_condition_ids`    | Deduplicated condition IDs checked by the request. |
-| `fetched_markets`            | Gamma markets returned across the batched lookup. |
+| Key                          | Meaning                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| `requested_condition_ids`    | Deduplicated condition IDs checked by the request.                        |
+| `fetched_markets`            | Gamma markets returned across the batched lookup.                         |
 | `resolved_markets`           | Conditions with a strict Gamma result or successful CLOB fallback result. |
-| `skipped_non_binary_markets` | Gamma markets skipped for non‑binary or ambiguous resolution shape. |
-| `clob_fallback_successes`    | Conditions resolved through the CLOB fallback path. |
-| `emitted_condition_ids`      | Conditions that emitted at least one `InstrumentClose`. |
-| `failed_condition_ids`       | Conditions where both Gamma and CLOB lookup failed. |
-| `used_watchlist_fallback`    | Whether the request selected conditions from the watchlist. |
-| `timed_out_watchlist`        | Timed‑out watchlist entries seen during fallback selection. |
-| `error`                      | First summary error, if one occurred. |
+| `skipped_non_binary_markets` | Gamma markets skipped for non‑binary or ambiguous resolution shape.       |
+| `clob_fallback_successes`    | Conditions resolved through the CLOB fallback path.                       |
+| `emitted_condition_ids`      | Conditions that emitted at least one `InstrumentClose`.                   |
+| `failed_condition_ids`       | Conditions where both Gamma and CLOB lookup failed.                       |
+| `used_watchlist_fallback`    | Whether the request selected conditions from the watchlist.               |
+| `timed_out_watchlist`        | Timed‑out watchlist entries seen during fallback selection.               |
+| `error`                      | First summary error, if one occurred.                                     |
 
 Redemption is a separate account or execution workflow. Do not extend the data client resolution
 path to claim funds; it only publishes market-outcome close events into Nautilus.
@@ -889,25 +889,25 @@ overshoot can still surface as HTTP 429 responses or temporary blocking.
 
 Polymarket changes these quotas over time. As of 2026-07-10, the official limits are:
 
-| Endpoint                            | Burst (10s) | Sustained (10 min) | Notes                                      |
-|-------------------------------------|-------------|--------------------|--------------------------------------------|
-| General rate limiting               | 15,000      | -                  | Global documented rate limit.              |
-| Health check (`/ok`)                | 100         | -                  | Health endpoint.                           |
-| CLOB general                        | 9,000       | -                  | Aggregate across CLOB endpoints.           |
-| CLOB `POST /order`                  | 5,000       | 120,000            | Single‑order submit.                       |
+| Endpoint                            | Burst (10s) | Sustained (10 min) | Notes                                       |
+| ----------------------------------- | ----------- | ------------------ | ------------------------------------------- |
+| General rate limiting               | 15,000      | -                  | Global documented rate limit.               |
+| Health check (`/ok`)                | 100         | -                  | Health endpoint.                            |
+| CLOB general                        | 9,000       | -                  | Aggregate across CLOB endpoints.            |
+| CLOB `POST /order`                  | 5,000       | 120,000            | Single‑order submit.                        |
 | CLOB `POST /orders`                 | 2,000       | 21,000             | Batch submit (up to 15 orders per request). |
-| CLOB `DELETE /order`                | 5,000       | 120,000            | Single‑order cancel.                       |
-| CLOB `DELETE /orders`               | 2,000       | 15,000             | Batch cancel.                              |
-| CLOB `DELETE /cancel-all`           | 250         | 6,000              | Cancel all orders.                         |
-| CLOB `DELETE /cancel-market-orders` | 1,500       | 21,000             | Cancel orders for one market.              |
-| CLOB `GET /balance-allowance`       | 200         | -                  | Balance and allowance queries.             |
-| CLOB API key endpoints              | 100         | -                  | Key management.                            |
-| Gamma general                       | 4,000       | -                  | Aggregate across Gamma endpoints.          |
-| Gamma `/markets`                    | 300         | -                  | Market metadata.                           |
-| Gamma `/events`                     | 500         | -                  | Event metadata.                            |
-| Data general                        | 1,000       | -                  | Aggregate across Data API endpoints.       |
-| Data `/trades`                      | 200         | -                  | Trade history.                             |
-| Data `/positions`                   | 150         | -                  | Current positions.                         |
+| CLOB `DELETE /order`                | 5,000       | 120,000            | Single‑order cancel.                        |
+| CLOB `DELETE /orders`               | 2,000       | 15,000             | Batch cancel.                               |
+| CLOB `DELETE /cancel-all`           | 250         | 6,000              | Cancel all orders.                          |
+| CLOB `DELETE /cancel-market-orders` | 1,500       | 21,000             | Cancel orders for one market.               |
+| CLOB `GET /balance-allowance`       | 200         | -                  | Balance and allowance queries.              |
+| CLOB API key endpoints              | 100         | -                  | Key management.                             |
+| Gamma general                       | 4,000       | -                  | Aggregate across Gamma endpoints.           |
+| Gamma `/markets`                    | 300         | -                  | Market metadata.                            |
+| Gamma `/events`                     | 500         | -                  | Event metadata.                             |
+| Data general                        | 1,000       | -                  | Aggregate across Data API endpoints.        |
+| Data `/trades`                      | 200         | -                  | Trade history.                              |
+| Data `/positions`                   | 150         | -                  | Current positions.                          |
 
 ### WebSocket limits
 
@@ -947,50 +947,50 @@ are the programmatic `filters` and `new_market_filter` trait objects on
 
 Class/struct: `PolymarketDataClientConfig`.
 
-| Option                                        | Default   | Description |
-|-----------------------------------------------|-----------|-------------|
-| `instrument_config`                           | `None`    | Bootstrap scope, passed as `PolymarketInstrumentProviderConfig`. |
-| `base_url_http`, `base_url_ws`                | `None`    | Override the CLOB HTTP or WebSocket endpoint. |
-| `base_url_gamma`, `base_url_data_api`         | `None`    | Override the Gamma or Data API endpoint. |
-| `base_url_rtds`                               | `None`    | Override the RTDS endpoint. |
-| `proxy_url`                                   | `None`    | HTTP or HTTPS proxy for every data transport. |
-| `http_timeout_secs`, `ws_timeout_secs`        | `60`, `30` | HTTP and WebSocket timeout in seconds. |
-| `ws_max_subscriptions`                        | `200`     | Per‑connection subscription cap; the market pool shards across connections at this bound. |
-| `update_instruments_interval_mins`            | `60`      | Instrument catalogue refresh interval; pass `None` to disable it. |
-| `subscribe_new_markets`                       | `false`   | Subscribe to new‑market discovery events. |
-| `drop_quotes_missing_side`                    | `true`    | Drop quotes that do not contain both a bid and an ask. |
-| `new_market_fetch_max_concurrency`            | `8`       | Bound concurrent market fetches from discovery events. |
-| `auto_load_missing_instruments`               | `true`    | Load unknown instruments for supported requests and subscriptions. |
-| `auto_load_debounce_ms`                       | `100`     | Coalesce concurrent auto‑load requests. |
-| `auto_load_max_retries`                       | `12`      | Retry transient CLOB hydration misses; `0` disables retry. |
-| `auto_load_retry_delay_initial_secs`          | `5.0`     | Initial auto‑load retry delay. |
-| `auto_load_retry_delay_max_secs`              | `15.0`    | Maximum auto‑load retry delay. |
-| `resolve_poll_enabled`                        | `true`    | Poll expired watched conditions for resolution. |
-| `resolve_poll_interval_secs`                  | `30`      | Resolution polling interval. |
-| `resolve_poll_grace_secs`                     | `10`      | Delay after expiry before polling begins. |
-| `resolve_poll_max_wait_secs`                  | `1800`    | Pause automatic polling after this wait. |
-| `transport_backend`                           | `Sockudo` | WebSocket transport implementation. |
+| Option                                 | Default    | Description                                                                               |
+| -------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| `instrument_config`                    | `None`     | Bootstrap scope, passed as `PolymarketInstrumentProviderConfig`.                          |
+| `base_url_http`, `base_url_ws`         | `None`     | Override the CLOB HTTP or WebSocket endpoint.                                             |
+| `base_url_gamma`, `base_url_data_api`  | `None`     | Override the Gamma or Data API endpoint.                                                  |
+| `base_url_rtds`                        | `None`     | Override the RTDS endpoint.                                                               |
+| `proxy_url`                            | `None`     | HTTP or HTTPS proxy for every data transport.                                             |
+| `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                    |
+| `ws_max_subscriptions`                 | `200`      | Per‑connection subscription cap; the market pool shards across connections at this bound. |
+| `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
+| `subscribe_new_markets`                | `false`    | Subscribe to new‑market discovery events.                                                 |
+| `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                    |
+| `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
+| `auto_load_missing_instruments`        | `true`     | Load unknown instruments for supported requests and subscriptions.                        |
+| `auto_load_debounce_ms`                | `100`      | Coalesce concurrent auto‑load requests.                                                   |
+| `auto_load_max_retries`                | `12`       | Retry transient CLOB hydration misses; `0` disables retry.                                |
+| `auto_load_retry_delay_initial_secs`   | `5.0`      | Initial auto‑load retry delay.                                                            |
+| `auto_load_retry_delay_max_secs`       | `15.0`     | Maximum auto‑load retry delay.                                                            |
+| `resolve_poll_enabled`                 | `true`     | Poll expired watched conditions for resolution.                                           |
+| `resolve_poll_interval_secs`           | `30`       | Resolution polling interval.                                                              |
+| `resolve_poll_grace_secs`              | `10`       | Delay after expiry before polling begins.                                                 |
+| `resolve_poll_max_wait_secs`           | `1800`     | Pause automatic polling after this wait.                                                  |
+| `transport_backend`                    | `Sockudo`  | WebSocket transport implementation.                                                       |
 
 ### Execution client options
 
 Class/struct: `PolymarketExecClientConfig`.
 
-| Option                                           | Default                 | Description |
-|--------------------------------------------------|-------------------------|-------------|
-| `trader_id`                                      | default `TraderId`      | Trader identifier registered by the client. |
-| `account_id`                                     | `POLYMARKET-001`        | Account identifier for this execution client. |
-| `private_key`                                    | `POLYMARKET_PK`         | EIP-712 signing key. |
-| `api_key`, `api_secret`, `passphrase`            | environment variables   | CLOB L2 authentication credentials. |
-| `funder`                                         | `POLYMARKET_FUNDER`     | Funding wallet; proxy and deposit‑wallet signatures require it to differ from the signing address. |
-| `signature_type`                                 | `Eoa`                   | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`. |
-| `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint. |
-| `proxy_url`                                      | `None`                  | HTTP or HTTPS proxy for every execution transport. |
-| `http_timeout_secs`                              | `60`                    | HTTP timeout in seconds. |
-| `max_retries`                                    | `3`                     | Retries for single‑order submit and cancel requests. |
-| `retry_delay_initial_ms`                         | `1000`                  | Initial retry delay. |
-| `retry_delay_max_ms`                             | `10000`                 | Maximum retry delay. |
-| `heartbeat_enabled`                              | `false`                 | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |
-| `transport_backend`                              | `Sockudo`               | WebSocket transport implementation. |
+| Option                                              | Default               | Description                                                                                                           |
+| --------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `trader_id`                                         | default `TraderId`    | Trader identifier registered by the client.                                                                           |
+| `account_id`                                        | `POLYMARKET-001`      | Account identifier for this execution client.                                                                         |
+| `private_key`                                       | `POLYMARKET_PK`       | EIP-712 signing key.                                                                                                  |
+| `api_key`, `api_secret`, `passphrase`               | environment variables | CLOB L2 authentication credentials.                                                                                   |
+| `funder`                                            | `POLYMARKET_FUNDER`   | Funding wallet; proxy and deposit‑wallet signatures require it to differ from the signing address.                    |
+| `signature_type`                                    | `Eoa`                 | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`.                                                                  |
+| `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
+| `proxy_url`                                         | `None`                | HTTP or HTTPS proxy for every execution transport.                                                                    |
+| `http_timeout_secs`                                 | `60`                  | HTTP timeout in seconds.                                                                                              |
+| `max_retries`                                       | `3`                   | Retries for single‑order submit and cancel requests.                                                                  |
+| `retry_delay_initial_ms`                            | `1000`                | Initial retry delay.                                                                                                  |
+| `retry_delay_max_ms`                                | `10000`               | Maximum retry delay.                                                                                                  |
+| `heartbeat_enabled`                                 | `false`               | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |
+| `transport_backend`                                 | `Sockudo`             | WebSocket transport implementation.                                                                                   |
 
 :::warning
 Enabling `heartbeat_enabled` opts the account into Polymarket's order-safety heartbeat contract.
@@ -1023,16 +1023,16 @@ signing address.
 
 Pass `PolymarketInstrumentProviderConfig` as `instrument_config` on the data client config.
 
-| Option               | Default | Description |
-|----------------------|---------|-------------|
-| `load_all`           | `false` | Load the full venue catalogue at startup. |
-| `load_ids`           | `None`  | Load exact Nautilus instrument IDs. |
-| `filters`            | `None`  | Validated Gamma market keyset filters. |
+| Option               | Default | Description                                             |
+| -------------------- | ------- | ------------------------------------------------------- |
+| `load_all`           | `false` | Load the full venue catalogue at startup.               |
+| `load_ids`           | `None`  | Load exact Nautilus instrument IDs.                     |
+| `filters`            | `None`  | Validated Gamma market keyset filters.                  |
 | `event_slugs`        | `None`  | Resolve all markets for the listed events at bootstrap. |
-| `market_slugs`       | `None`  | Load the listed Gamma market slugs at bootstrap. |
-| `event_slug_builder` | `None`  | Rust‑backed Up/Down event‑slug generator. |
-| `log_warnings`       | `true`  | Emit provider warnings. |
-| `use_gamma_markets`  | `false` | Compatibility field with no additional V2 behavior. |
+| `market_slugs`       | `None`  | Load the listed Gamma market slugs at bootstrap.        |
+| `event_slug_builder` | `None`  | Rust‑backed Up/Down event‑slug generator.               |
+| `log_warnings`       | `true`  | Emit provider warnings.                                 |
+| `use_gamma_markets`  | `false` | Compatibility field with no additional V2 behavior.     |
 
 #### Gamma query filters
 
@@ -1042,13 +1042,13 @@ and 500 events.
 
 Market keyset fields:
 
-| Class         | Fields |
-|---------------|--------|
+| Class         | Fields                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Scalar        | `limit`, `order`, `ascending`, `closed`, `decimalized`, `liquidity_num_min`, `liquidity_num_max`, `volume_num_min`, `volume_num_max`, `start_date_min`, `start_date_max`, `end_date_min`, `end_date_max`, `related_tags`, `tag_match`, `cyom`, `rfq_enabled`, `uma_resolution_status`, `game_id`, `include_tag`, `locale` |
-| Repeated      | `id`, `slug`, `clob_token_ids`, `condition_ids`, `question_ids`, `market_maker_address`, `tag_id`, `sports_market_types` |
-| Compatibility | `active`, `archived` |
-| Alias         | `is_active` |
-| Client only   | `offset`, `max_markets` |
+| Repeated      | `id`, `slug`, `clob_token_ids`, `condition_ids`, `question_ids`, `market_maker_address`, `tag_id`, `sports_market_types`                                                                                                                                                                                                  |
+| Compatibility | `active`, `archived`                                                                                                                                                                                                                                                                                                      |
+| Alias         | `is_active`                                                                                                                                                                                                                                                                                                               |
+| Client only   | `offset`, `max_markets`                                                                                                                                                                                                                                                                                                   |
 
 The provider `filters` dictionary accepts only market fields. Rust callers configure event
 discovery with `EventParamsFilter` and `GetGammaEventsParams`; event-only fields such as `live` or
@@ -1056,12 +1056,12 @@ discovery with `EventParamsFilter` and `GetGammaEventsParams`; event-only fields
 
 Event keyset fields:
 
-| Class         | Fields |
-|---------------|--------|
+| Class         | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Scalar        | `limit`, `order`, `ascending`, `closed`, `live`, `featured`, `cyom`, `title_search`, `liquidity_min`, `liquidity_max`, `volume_min`, `volume_max`, `start_date_min`, `start_date_max`, `end_date_min`, `end_date_max`, `start_time_min`, `start_time_max`, `tag_slug`, `related_tags`, `tag_match`, `event_date`, `event_week`, `featured_order`, `recurrence`, `parent_event_id`, `include_children`, `partner_slug`, `include_chat`, `include_template`, `include_best_lines`, `locale` |
-| Repeated      | `id`, `slug`, `tag_id`, `exclude_tag_id`, `series_id`, `game_id`, `created_by` |
-| Compatibility | `active`, `archived` |
-| Client only   | `offset`, `max_events` |
+| Repeated      | `id`, `slug`, `tag_id`, `exclude_tag_id`, `series_id`, `game_id`, `created_by`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Compatibility | `active`, `archived`                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Client only   | `offset`, `max_events`                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Repeated fields are sent as repeated query keys. `offset` is applied across returned keyset pages
 and is never sent to Gamma. `max_markets` caps markets locally, with each binary market normally

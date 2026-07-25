@@ -93,7 +93,7 @@ All three produce identical results for unspecified fields.
 Most adapter configs share a common set of fields:
 
 | Field                              | Type   | Default | Purpose                       |
-|------------------------------------|--------|---------|-------------------------------|
+| ---------------------------------- | ------ | ------- | ----------------------------- |
 | `http_timeout_secs`                | `u64`  | 60      | REST request timeout.         |
 | `max_retries`                      | `u32`  | 3       | Maximum retry attempts.       |
 | `retry_delay_initial_ms`           | `u64`  | 1,000   | Initial backoff delay.        |

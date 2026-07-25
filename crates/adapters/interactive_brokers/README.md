@@ -37,7 +37,7 @@ PyO3 bindings expose the same implementation through `nautilus_trader`.
 Use `127.0.0.1` unless you are connecting to a remote host.
 
 | Endpoint              | Trading mode | Default port  |
-|-----------------------|--------------|--------------:|
+| --------------------- | ------------ | ------------: |
 | IB Gateway            | Paper        |        `4002` |
 | IB Gateway            | Live         |        `4001` |
 | TWS                   | Paper        |        `7497` |

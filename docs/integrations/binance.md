@@ -46,19 +46,19 @@ standalone instrument loader, instead of depending on those internals.
 The following table maps the migration-critical Python v1 surface to v2. It records accepted
 renames and removals instead of exposing private Rust structure for one-for-one parity.
 
-| Python v1 surface                                                                                  | Python v2 path or decision                                                                                                      |
-|----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
-| `BINANCE`, `BINANCE_CLIENT_ID`, `BINANCE_VENUE`                                                    | Preserved at the adapter package top level.                                                                                     |
-| `BinanceDataClientConfig`, `BinanceExecClientConfig`, `BinanceInstrumentProviderConfig`            | Preserved. Both client configs expose their immutable `instrument_provider` configuration.                                      |
-| `BinanceLiveDataClientFactory`, `BinanceLiveExecClientFactory`                                     | Renamed to `BinanceDataClientFactory` and `BinanceExecutionClientFactory`.                                                      |
-| `BinanceSpotInstrumentProvider`, `BinanceFuturesInstrumentProvider`, `get_cached_binance_http_client` | Replaced by `await load_binance_instruments(config)`. Low‑level clients and provider caches are not public.                    |
-| `BinanceOrderBookDeltaDataLoader`                                                                  | Replaced by the stateless `load_binance_order_book_deltas(...)` function.                                                       |
-| `decode_binance_spot_client_order_id`, `decode_binance_futures_client_order_id`                    | Preserved at runtime and in generated type stubs.                                                                               |
-| `BinanceAccountType`                                                                               | Replaced by `BinanceProductType`: `SPOT`, `USD_M`, and `COIN_M` cover the supported products.                                   |
-| `BinanceKeyType`                                                                                   | Removed. Configure the supported credential form directly; v2 validates the selected product and transport.                    |
-| `BinanceTicker`                                                                                    | Replaced by explicit `BinanceSpotTicker` and `BinanceFuturesTicker` types.                                                      |
-| Futures liquidation, mark‑price, open‑interest, history, and ticker types                          | Preserved as Rust‑backed top‑level types.                                                                                       |
-| V1 URL builders, credential selectors, symbol converters, endpoint enums, retry controls, and raw response models | Removed from the public Python surface. Live configs and domain‑level types own these behaviors.                  |
+| Python v1 surface                                                                                                 | Python v2 path or decision                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `BINANCE`, `BINANCE_CLIENT_ID`, `BINANCE_VENUE`                                                                   | Preserved at the adapter package top level.                                                                 |
+| `BinanceDataClientConfig`, `BinanceExecClientConfig`, `BinanceInstrumentProviderConfig`                           | Preserved. Both client configs expose their immutable `instrument_provider` configuration.                  |
+| `BinanceLiveDataClientFactory`, `BinanceLiveExecClientFactory`                                                    | Renamed to `BinanceDataClientFactory` and `BinanceExecutionClientFactory`.                                  |
+| `BinanceSpotInstrumentProvider`, `BinanceFuturesInstrumentProvider`, `get_cached_binance_http_client`             | Replaced by `await load_binance_instruments(config)`. Low‑level clients and provider caches are not public. |
+| `BinanceOrderBookDeltaDataLoader`                                                                                 | Replaced by the stateless `load_binance_order_book_deltas(...)` function.                                   |
+| `decode_binance_spot_client_order_id`, `decode_binance_futures_client_order_id`                                   | Preserved at runtime and in generated type stubs.                                                           |
+| `BinanceAccountType`                                                                                              | Replaced by `BinanceProductType`: `SPOT`, `USD_M`, and `COIN_M` cover the supported products.               |
+| `BinanceKeyType`                                                                                                  | Removed. Configure the supported credential form directly; v2 validates the selected product and transport. |
+| `BinanceTicker`                                                                                                   | Replaced by explicit `BinanceSpotTicker` and `BinanceFuturesTicker` types.                                  |
+| Futures liquidation, mark‑price, open‑interest, history, and ticker types                                         | Preserved as Rust‑backed top‑level types.                                                                   |
+| V1 URL builders, credential selectors, symbol converters, endpoint enums, retry controls, and raw response models | Removed from the public Python surface. Live configs and domain‑level types own these behaviors.            |
 
 For standalone discovery, pass the same data-client and provider configuration used by a live
 client:
@@ -101,7 +101,7 @@ Accepted rows preserve the v1 DataFrame values and column order. File-open failu
 ### Product support
 
 | Product Type                            | Supported | Notes                                      |
-|-----------------------------------------|-----------|--------------------------------------------|
+| --------------------------------------- | --------- | ------------------------------------------ |
 | Spot Markets (incl. Binance US)         | ✓         |                                            |
 | Margin Accounts (Cross & Isolated)      | -         | *Not implemented.* Planned for v2.         |
 | USDT-Margined Futures (PERP & Delivery) | ✓         | Monthly and quarterly delivery contracts.  |
@@ -175,19 +175,19 @@ time-in-force options across Binance account types.
 ### Order types
 
 | Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                              |
-|------------------------|------|--------|--------------|--------------|------------------------------------|
+| ---------------------- | ---- | ------ | ------------ | ------------ | ---------------------------------- |
 | `MARKET`               | ✓    | -      | ✓            | ✓            | Quote quantity support: Spot only. |
-| `LIMIT`                | ✓    | -      | ✓            | ✓            |                         |
-| `STOP_MARKET`          | -    | -      | ✓            | ✓            | Futures only.           |
-| `STOP_LIMIT`           | ✓    | -      | ✓            | ✓            |                         |
-| `MARKET_IF_TOUCHED`    | -    | -      | ✓            | ✓            | Futures only.           |
-| `LIMIT_IF_TOUCHED`     | ✓    | -      | ✓            | ✓            |                         |
-| `TRAILING_STOP_MARKET` | -    | -      | ✓            | ✓            | Futures only.           |
+| `LIMIT`                | ✓    | -      | ✓            | ✓            |                                    |
+| `STOP_MARKET`          | -    | -      | ✓            | ✓            | Futures only.                      |
+| `STOP_LIMIT`           | ✓    | -      | ✓            | ✓            |                                    |
+| `MARKET_IF_TOUCHED`    | -    | -      | ✓            | ✓            | Futures only.                      |
+| `LIMIT_IF_TOUCHED`     | ✓    | -      | ✓            | ✓            |                                    |
+| `TRAILING_STOP_MARKET` | -    | -      | ✓            | ✓            | Futures only.                      |
 
 ### Execution instructions
 
 | Instruction   | Spot | Margin | USDT Futures | Coin Futures | Notes                                 |
-|---------------|------|--------|--------------|--------------|---------------------------------------|
+| ------------- | ---- | ------ | ------------ | ------------ | ------------------------------------- |
 | `post_only`   | ✓    | -      | ✓            | ✓            | See restrictions below.               |
 | `reduce_only` | -    | -      | ✓            | ✓            | Futures only; disabled in Hedge Mode. |
 
@@ -196,14 +196,14 @@ time-in-force options across Binance account types.
 Only *limit* order types support `post_only`.
 
 | Order Type               | Spot | Margin | USDT Futures | Coin Futures | Notes                                               |
-|--------------------------|------|--------|--------------|--------------|-----------------------------------------------------|
+| ------------------------ | ---- | ------ | ------------ | ------------ | --------------------------------------------------- |
 | `LIMIT`                  | ✓    | -      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot, `GTX` TIF for Futures. |
 | `STOP_LIMIT`             | -    | -      | ✓            | ✓            | Futures only.                                       |
 
 ### Time in force
 
 | Time in force | Spot | Margin | USDT Futures | Coin Futures | Notes                                          |
-|---------------|------|--------|--------------|--------------|------------------------------------------------|
+| ------------- | ---- | ------ | ------------ | ------------ | ---------------------------------------------- |
 | `GTC`         | ✓    | -      | ✓            | ✓            | Good Till Canceled.                            |
 | `GTD`         | ✓*   | -      | ✓            | ✓*           | *Non‑default local mapping through `GTC`.      |
 | `FOK`         | ✓    | -      | ✓            | ✓            | Fill or Kill.                                  |
@@ -236,7 +236,7 @@ the v1 locally managed Spot policy without claiming venue-native GTD support.
 ### Advanced order features
 
 | Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|--------------------|------|--------|--------------|--------------|----------------------------------------------|
+| ------------------ | ---- | ------ | ------------ | ------------ | -------------------------------------------- |
 | Order Modification | ✓    | -      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
 | OCO Orders         | ✓    | -      | -            | -            | Spot OCO submitted via `orderList/oco`.      |
 | Bracket Orders     | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
@@ -244,11 +244,11 @@ the v1 locally managed Spot policy without claiming venue-native GTD support.
 
 ### Batch operations
 
-| Operation          | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|--------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Batch Submit       | ✓    | -      | ✓            | ✓            | Spot OCO or Futures `batchOrders`.             |
-| Batch Modify       | -    | -      | -            | -            | Not implemented.                             |
-| Batch Cancel       | -*   | -      | ✓            | ✓            | *Spot falls back to individual cancels.      |
+| Operation    | Spot | Margin | USDT Futures | Coin Futures | Notes                                   |
+| ------------ | ---- | ------ | ------------ | ------------ | --------------------------------------- |
+| Batch Submit | ✓    | -      | ✓            | ✓            | Spot OCO or Futures `batchOrders`.      |
+| Batch Modify | -    | -      | -            | -            | Not implemented.                        |
+| Batch Cancel | -*   | -      | ✓            | ✓            | *Spot falls back to individual cancels. |
 
 #### Cancel all orders behavior
 
@@ -271,7 +271,7 @@ order, it uses the standard cancel endpoint.
 **Endpoints used**:
 
 | Account Type | Regular Orders                  | Algo Orders (batch)              | Algo Orders (individual)    |
-|--------------|---------------------------------|----------------------------------|-----------------------------|
+| ------------ | ------------------------------- | -------------------------------- | --------------------------- |
 | Spot/Margin  | `DELETE /api/v3/openOrders`     | N/A                              | N/A                         |
 | USDT Futures | `DELETE /fapi/v1/allOpenOrders` | `DELETE /fapi/v1/algoOpenOrders` | `DELETE /fapi/v1/algoOrder` |
 | Coin Futures | `DELETE /dapi/v1/allOpenOrders` | `DELETE /dapi/v1/algoOpenOrders` | `DELETE /dapi/v1/algoOrder` |
@@ -299,7 +299,7 @@ behavior.
 ### Position management
 
 | Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
-|---------------------|------|--------|--------------|--------------|---------------------------------------------|
+| ------------------- | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
 | Query positions     | -    | -      | ✓            | ✓            | Real‑time position updates.                 |
 | Position mode       | -    | -      | ✓            | ✓            | One‑Way vs Hedge mode (position IDs).       |
 | Leverage control    | -    | -      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
@@ -308,7 +308,7 @@ behavior.
 ### Risk events
 
 | Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
-|----------------------|------|--------|--------------|--------------|---------------------------------------------|
+| -------------------- | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
 | Liquidation handling | -    | -      | ✓            | ✓            | Exchange‑forced position closures.          |
 | ADL handling         | -    | -      | ✓            | ✓            | Auto‑Deleveraging events.                   |
 
@@ -372,7 +372,7 @@ the bundled fills is closed with an inferred fill from the status report's
 ### Order querying
 
 | Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
-|---------------------|------|--------|--------------|--------------|---------------------------------------------|
+| ------------------- | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
 | Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                     |
 | Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                      |
 | Order status updates| ✓    | ✓      | ✓            | ✓            | Real‑time order state changes.              |
@@ -381,7 +381,7 @@ the bundled fills is closed with an inferred fill from the status report's
 ### Contingent orders
 
 | Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-|---------------------|------|--------|--------------|--------------|----------------------------------------------|
+| ------------------- | ---- | ------ | ------------ | ------------ | -------------------------------------------- |
 | Order lists         | ✓    | -      | ✓            | ✓            | Spot OCO lists; Futures independent batches. |
 | OCO orders          | ✓    | -      | -            | -            | Spot only, via `orderList/oco`.              |
 | Bracket orders      | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
@@ -393,10 +393,10 @@ Customize individual orders by supplying a `params` dictionary when calling
 `Strategy.submit_order` (Python) or setting `Params` on a `SubmitOrder`
 command (Rust). The Binance execution clients recognize:
 
-| Parameter        | Type   | Account types     | Description |
-|------------------|--------|-------------------|-------------|
+| Parameter        | Type   | Account types     | Description                                                                                                                                                                                       |
+| ---------------- | ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `price_match`    | `str`  | USDT/COIN Futures | Set one of Binance's `priceMatch` modes (see Price match section below) to delegate price selection to the exchange. Cannot be combined with `post_only` or iceberg (`display_qty`) instructions. |
-| `close_position` | `bool` | USDT/COIN Futures | Close the entire position when the trigger fires (see Close position section below). Only valid for `StopMarket` and `MarketIfTouched` orders. Cannot be combined with `reduce_only`. |
+| `close_position` | `bool` | USDT/COIN Futures | Close the entire position when the trigger fires (see Close position section below). Only valid for `StopMarket` and `MarketIfTouched` orders. Cannot be combined with `reduce_only`.             |
 
 ### Price match
 
@@ -412,7 +412,7 @@ the current market state and price match mode.
 #### Valid price match values
 
 | Value         | Behavior                                                       |
-|---------------|----------------------------------------------------------------|
+| ------------- | -------------------------------------------------------------- |
 | `OPPONENT`    | Join the best price on the opposing side of the book.          |
 | `OPPONENT_5`  | Join the opposing side price but allow up to a 5-tick offset.  |
 | `OPPONENT_10` | Join the opposing side price but allow up to a 10-tick offset. |
@@ -815,7 +815,7 @@ the task, and reconnect starts one replacement task with a new cancellation toke
 #### Spot
 
 | Binance status     | MarketStatusAction         |
-|--------------------|----------------------------|
+| ------------------ | -------------------------- |
 | Trading            | Trading                    |
 | EndOfDay           | Close                      |
 | Halt               | Halt                       |
@@ -825,7 +825,7 @@ the task, and reconnect starts one replacement task with a new cancellation toke
 #### Futures (USD-M)
 
 | Binance status     | MarketStatusAction         |
-|--------------------|----------------------------|
+| ------------------ | -------------------------- |
 | Trading            | Trading                    |
 | PendingTrading     | PreOpen                    |
 | PreTrading         | PreOpen                    |
@@ -846,7 +846,7 @@ the task, and reconnect starts one replacement task with a new cancellation toke
 #### Futures (COIN-M)
 
 | Binance status     | MarketStatusAction         |
-|--------------------|----------------------------|
+| ------------------ | -------------------------- |
 | Trading            | Trading                    |
 | PendingTrading     | PreOpen                    |
 | PreDelivering      | PreClose                   |
@@ -880,7 +880,7 @@ per IP address.
 These are the primary limits shared across all endpoints:
 
 | Account Type | Weight Limit | Interval |
-|--------------|--------------|----------|
+| ------------ | ------------ | -------- |
 | Spot/Margin  | 6,000        | 1 minute |
 | Futures      | 2,400        | 1 minute |
 
@@ -889,7 +889,7 @@ These are the primary limits shared across all endpoints:
 Some endpoints have higher weight costs per request:
 
 | Endpoint                  | Weight | Notes                                  |
-|---------------------------|--------|----------------------------------------|
+| ------------------------- | ------ | -------------------------------------- |
 | `/api/v3/order`           | 1      | Spot order placement.                  |
 | `/api/v3/allOrders`       | 20     | Spot historical orders (expensive).    |
 | `/api/v3/klines`          | 2+     | Scales with `limit` parameter.         |
@@ -909,7 +909,7 @@ global bucket as part of its local pacing model.
 The WebSocket API (used for user data streams) shares the same weight quota as the REST API:
 
 | Limit Type       | Value  | Notes                                 |
-|------------------|--------|---------------------------------------|
+| ---------------- | ------ | ------------------------------------- |
 | Request weight   | Shared | Counts against REST API weight quota. |
 | Handshake        | 5      | Weight cost per connection attempt.   |
 | Ping/pong frames | 5/sec  | Maximum ping/pong rate.               |
@@ -948,49 +948,49 @@ tables remain below for users who have not migrated. Do not apply a legacy-only 
 
 ### Rust-backed v2 data client
 
-| Option                             | Default       | Description |
-|------------------------------------|---------------|-------------|
-| `product_type`                     | `Spot`        | One of `Spot`, `UsdM`, or `CoinM`. |
-| `environment`                      | `Live`        | One of `Live`, `Testnet`, or `Demo`. |
-| `base_url_http`                    | `None`        | Optional HTTP endpoint override. |
-| `base_url_ws`                      | `None`        | Optional market WebSocket endpoint override. |
-| `api_key` / `api_secret`           | `None`        | Required for Spot SBE; optional for public JSON and Futures data. |
+| Option                             | Default       | Description                                                                    |
+| ---------------------------------- | ------------- | ------------------------------------------------------------------------------ |
+| `product_type`                     | `Spot`        | One of `Spot`, `UsdM`, or `CoinM`.                                             |
+| `environment`                      | `Live`        | One of `Live`, `Testnet`, or `Demo`.                                           |
+| `base_url_http`                    | `None`        | Optional HTTP endpoint override.                                               |
+| `base_url_ws`                      | `None`        | Optional market WebSocket endpoint override.                                   |
+| `api_key` / `api_secret`           | `None`        | Required for Spot SBE; optional for public JSON and Futures data.              |
 | `spot_market_data_mode`            | `Sbe`         | `Json` keeps the credential‑free Global Spot path. Binance US requires `Json`. |
-| `instrument_provider`              | default       | Loading, filters, parser‑warning, and commission policy. |
-| `instrument_refresh_interval_secs` | `3600`        | Full catalogue refresh interval; `0` disables it. |
-| `instrument_status_poll_secs`      | `3600`        | Status‑only exchange‑info poll interval; `0` disables it. |
-| `proxy_url`                        | `None`        | Proxy applied to HTTP and every market WebSocket connection. |
-| `recv_window_ms`                   | `5000`        | Signed HTTP receive window, inclusive range `1..=60000`. |
-| `us`                               | `False`       | Route a live Spot JSON client to Binance US. |
-| `transport_backend`                | `Tungstenite` | WebSocket transport backend. |
+| `instrument_provider`              | default       | Loading, filters, parser‑warning, and commission policy.                       |
+| `instrument_refresh_interval_secs` | `3600`        | Full catalogue refresh interval; `0` disables it.                              |
+| `instrument_status_poll_secs`      | `3600`        | Status‑only exchange‑info poll interval; `0` disables it.                      |
+| `proxy_url`                        | `None`        | Proxy applied to HTTP and every market WebSocket connection.                   |
+| `recv_window_ms`                   | `5000`        | Signed HTTP receive window, inclusive range `1..=60000`.                       |
+| `us`                               | `False`       | Route a live Spot JSON client to Binance US.                                   |
+| `transport_backend`                | `Tungstenite` | WebSocket transport backend.                                                   |
 
 ### Rust-backed v2 execution client
 
-| Option                             | Default       | Description |
-|------------------------------------|---------------|-------------|
-| `trader_id` / `account_id`         | generated IDs | Nautilus execution identity. |
-| `product_type`                     | `Spot`        | One of `Spot`, `UsdM`, or `CoinM`. |
-| `environment`                      | `Live`        | One of `Live`, `Testnet`, or `Demo`. |
-| `base_url_http`                    | `None`        | Optional HTTP endpoint override. |
-| `base_url_ws`                      | `None`        | Optional private stream override. |
-| `base_url_ws_trading`              | `None`        | Optional Global Spot or USD-M WebSocket trading override. |
+| Option                             | Default       | Description                                                             |
+| ---------------------------------- | ------------- | ----------------------------------------------------------------------- |
+| `trader_id` / `account_id`         | generated IDs | Nautilus execution identity.                                            |
+| `product_type`                     | `Spot`        | One of `Spot`, `UsdM`, or `CoinM`.                                      |
+| `environment`                      | `Live`        | One of `Live`, `Testnet`, or `Demo`.                                    |
+| `base_url_http`                    | `None`        | Optional HTTP endpoint override.                                        |
+| `base_url_ws`                      | `None`        | Optional private stream override.                                       |
+| `base_url_ws_trading`              | `None`        | Optional Global Spot or USD-M WebSocket trading override.               |
 | `use_ws_trading`                   | `True`        | Use Global WebSocket order entry where supported; Binance US uses HTTP. |
-| `instrument_provider`              | default       | Loading, filters, parser‑warning, and commission policy. |
-| `instrument_refresh_interval_secs` | `3600`        | Execution precision‑cache refresh interval; `0` disables it. |
-| `proxy_url`                        | `None`        | Proxy applied to HTTP, private streams, and WebSocket trading. |
-| `recv_window_ms`                   | `5000`        | Signed HTTP and WebSocket receive window, inclusive range `1..=60000`. |
-| `us`                               | `False`       | Route a live Spot execution client to Binance US. |
-| `api_key` / `api_secret`           | `None`        | Global uses Ed25519 WebSocket auth; Binance US uses HMAC HTTP signing. |
-| `use_gtd`                          | `True`        | Native USD-M GTD policy described above. |
-| `use_position_ids`                 | `True`        | Expose Futures hedge‑side position IDs. |
-| `oms_type`                         | `None`        | `None` selects Futures netting; use `Hedging` for dual‑side mode. |
-| `default_taker_fee`                | `0.0004`      | Fallback for exchange‑generated Futures fills. |
-| `futures_leverages`                | `None`        | Initial leverage by Futures symbol. |
-| `futures_margin_types`             | `None`        | Initial margin type by Futures symbol. |
-| `treat_expired_as_canceled`        | `False`       | Map `EXPIRED` execution events to canceled events. |
-| `use_trade_lite`                   | `False`       | Use the lower‑latency USD‑M trade‑lite fill stream. |
-| `bnfcr_currency`                   | `USDT`        | Currency used to resolve `BNFCR` balances and fees. |
-| `transport_backend`                | `Tungstenite` | WebSocket transport backend. |
+| `instrument_provider`              | default       | Loading, filters, parser‑warning, and commission policy.                |
+| `instrument_refresh_interval_secs` | `3600`        | Execution precision‑cache refresh interval; `0` disables it.            |
+| `proxy_url`                        | `None`        | Proxy applied to HTTP, private streams, and WebSocket trading.          |
+| `recv_window_ms`                   | `5000`        | Signed HTTP and WebSocket receive window, inclusive range `1..=60000`.  |
+| `us`                               | `False`       | Route a live Spot execution client to Binance US.                       |
+| `api_key` / `api_secret`           | `None`        | Global uses Ed25519 WebSocket auth; Binance US uses HMAC HTTP signing.  |
+| `use_gtd`                          | `True`        | Native USD-M GTD policy described above.                                |
+| `use_position_ids`                 | `True`        | Expose Futures hedge‑side position IDs.                                 |
+| `oms_type`                         | `None`        | `None` selects Futures netting; use `Hedging` for dual‑side mode.       |
+| `default_taker_fee`                | `0.0004`      | Fallback for exchange‑generated Futures fills.                          |
+| `futures_leverages`                | `None`        | Initial leverage by Futures symbol.                                     |
+| `futures_margin_types`             | `None`        | Initial margin type by Futures symbol.                                  |
+| `treat_expired_as_canceled`        | `False`       | Map `EXPIRED` execution events to canceled events.                      |
+| `use_trade_lite`                   | `False`       | Use the lower‑latency USD‑M trade‑lite fill stream.                     |
+| `bnfcr_currency`                   | `USDT`        | Currency used to resolve `BNFCR` balances and fees.                     |
+| `transport_backend`                | `Tungstenite` | WebSocket transport backend.                                            |
 
 ### Legacy Python configuration
 
@@ -999,56 +999,56 @@ tables predate the v2 tables above; use the v2 field names and defaults above fo
 
 #### Data client configuration options
 
-| Option                             | Default   | Description |
-|------------------------------------|-----------|-------------|
-| `venue`                            | `BINANCE` | Venue identifier used when registering the client. |
-| `api_key`                          | `None`    | Binance API key; loaded from environment variables when omitted. |
-| `api_secret`                       | `None`    | Binance API secret; loaded from environment variables when omitted. |
-| `key_type`                         | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA`. |
-| `account_type`                     | `SPOT`    | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
-| `base_url_http`                    | `None`    | Override for the HTTP REST base URL. |
-| `base_url_ws`                      | `None`    | Override for the WebSocket base URL. |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `us`                               | `False`   | Route requests to Binance US endpoints when `True`. |
-| `environment`                      | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
-| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes. |
+| Option                             | Default   | Description                                                                                                                                             |
+| ---------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `venue`                            | `BINANCE` | Venue identifier used when registering the client.                                                                                                      |
+| `api_key`                          | `None`    | Binance API key; loaded from environment variables when omitted.                                                                                        |
+| `api_secret`                       | `None`    | Binance API secret; loaded from environment variables when omitted.                                                                                     |
+| `key_type`                         | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA`.                                                   |
+| `account_type`                     | `SPOT`    | Account type for data endpoints (spot, margin, USDT futures, coin futures).                                                                             |
+| `base_url_http`                    | `None`    | Override for the HTTP REST base URL.                                                                                                                    |
+| `base_url_ws`                      | `None`    | Override for the WebSocket base URL.                                                                                                                    |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                                   |
+| `us`                               | `False`   | Route requests to Binance US endpoints when `True`.                                                                                                     |
+| `environment`                      | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`.                                                                      |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes.                                                                                              |
 | `use_agg_trade_ticks`              | `False`   | When `True`, subscribe to aggregated trade ticks instead of raw trades. Futures WebSocket subscriptions always use `@aggTrade` regardless of this flag. |
-| `spot_market_data_mode`            | `Sbe`     | *Rust only.* Spot market data transport (`Sbe` or `Json`). See [Spot market data mode](#spot-market-data-mode). |
-| `instrument_status_poll_secs`      | `3600`    | *Rust only.* Interval (seconds) between exchange info polls to detect instrument status changes. Set to `0` to disable. |
-| `transport_backend`                | `Sockudo` | *Rust only.* WebSocket transport backend. |
+| `spot_market_data_mode`            | `Sbe`     | *Rust only.* Spot market data transport (`Sbe` or `Json`). See [Spot market data mode](#spot-market-data-mode).                                         |
+| `instrument_status_poll_secs`      | `3600`    | *Rust only.* Interval (seconds) between exchange info polls to detect instrument status changes. Set to `0` to disable.                                 |
+| `transport_backend`                | `Sockudo` | *Rust only.* WebSocket transport backend.                                                                                                               |
 
 #### Execution client configuration options
 
-| Option                                  | Default   | Description |
-|-----------------------------------------|-----------|-------------|
-| `venue`                                 | `BINANCE` | Venue identifier used when registering the client. |
-| `api_key`                               | `None`    | Binance API key; loaded from environment variables when omitted. |
-| `api_secret`                            | `None`    | Binance API secret; loaded from environment variables when omitted. |
-| `key_type`                              | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution). |
-| `account_type`                          | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures). |
-| `base_url_http`                         | `None`    | Override for the HTTP REST base URL. |
-| `base_url_ws`                           | `None`    | Override for the WebSocket API base URL. |
-| `base_url_ws_stream`                    | `None`    | Override for the WebSocket stream URL (futures user data event delivery). |
-| `proxy_url`                             | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `us`                                    | `False`   | Route requests to Binance US endpoints when `True`. |
-| `environment`                           | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
-| `use_gtd`                               | `True`    | Use native USD-M GTD. Set `False` only with strategy `manage_gtd_expiry=True`; GTD then maps to GTC with a warning. |
-| `use_reduce_only`                       | `True`    | When `True`, passes through `reduce_only` instructions to Binance. |
-| `use_position_ids`                      | `True`    | Enable Binance hedging position IDs; set `False` for virtual hedging. |
-| `use_trade_lite`                        | `False`   | Use TRADE_LITE execution events that include derived fees. |
-| `treat_expired_as_canceled`             | `False`   | Treat `EXPIRED` execution types as `CANCELED` when `True`. |
-| `recv_window_ms`                        | `5,000`   | Receive window (milliseconds) for signed REST requests. |
-| `max_retries`                           | `None`    | Maximum retry attempts for order submission/cancel/modify calls. |
-| `retry_delay_initial_ms`                | `None`    | Initial delay (milliseconds) between retry attempts. |
-| `retry_delay_max_ms`                    | `None`    | Maximum delay (milliseconds) between retry attempts. |
-| `futures_leverages`                     | `None`    | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
-| `futures_margin_types`                  | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
-| `use_ws_trading`                        | `True`    | Use the WebSocket trading API for order operations (Spot and USD-M Futures). When `False`, HTTP is used. |
-| `oms_type`                              | `None`    | *Rust only.* Set to `Hedging` for Futures accounts in dual‑side position mode; `None` uses `Netting`. |
-| `default_taker_fee`                     | `0.0004`  | Default taker fee rate for commission estimation on exchange‑generated fills (liquidation, ADL, settlement). |
+| Option                                  | Default   | Description                                                                                                                                                              |
+| --------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `venue`                                 | `BINANCE` | Venue identifier used when registering the client.                                                                                                                       |
+| `api_key`                               | `None`    | Binance API key; loaded from environment variables when omitted.                                                                                                         |
+| `api_secret`                            | `None`    | Binance API secret; loaded from environment variables when omitted.                                                                                                      |
+| `key_type`                              | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution).            |
+| `account_type`                          | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures).                                                                                             |
+| `base_url_http`                         | `None`    | Override for the HTTP REST base URL.                                                                                                                                     |
+| `base_url_ws`                           | `None`    | Override for the WebSocket API base URL.                                                                                                                                 |
+| `base_url_ws_stream`                    | `None`    | Override for the WebSocket stream URL (futures user data event delivery).                                                                                                |
+| `proxy_url`                             | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                                                    |
+| `us`                                    | `False`   | Route requests to Binance US endpoints when `True`.                                                                                                                      |
+| `environment`                           | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`.                                                                                       |
+| `use_gtd`                               | `True`    | Use native USD-M GTD. Set `False` only with strategy `manage_gtd_expiry=True`; GTD then maps to GTC with a warning.                                                      |
+| `use_reduce_only`                       | `True`    | When `True`, passes through `reduce_only` instructions to Binance.                                                                                                       |
+| `use_position_ids`                      | `True`    | Enable Binance hedging position IDs; set `False` for virtual hedging.                                                                                                    |
+| `use_trade_lite`                        | `False`   | Use TRADE_LITE execution events that include derived fees.                                                                                                               |
+| `treat_expired_as_canceled`             | `False`   | Treat `EXPIRED` execution types as `CANCELED` when `True`.                                                                                                               |
+| `recv_window_ms`                        | `5,000`   | Receive window (milliseconds) for signed REST requests.                                                                                                                  |
+| `max_retries`                           | `None`    | Maximum retry attempts for order submission/cancel/modify calls.                                                                                                         |
+| `retry_delay_initial_ms`                | `None`    | Initial delay (milliseconds) between retry attempts.                                                                                                                     |
+| `retry_delay_max_ms`                    | `None`    | Maximum delay (milliseconds) between retry attempts.                                                                                                                     |
+| `futures_leverages`                     | `None`    | Mapping of `BinanceSymbol` to initial leverage for futures accounts.                                                                                                     |
+| `futures_margin_types`                  | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross).                                                                                                      |
+| `use_ws_trading`                        | `True`    | Use the WebSocket trading API for order operations (Spot and USD-M Futures). When `False`, HTTP is used.                                                                 |
+| `oms_type`                              | `None`    | *Rust only.* Set to `Hedging` for Futures accounts in dual‑side position mode; `None` uses `Netting`.                                                                    |
+| `default_taker_fee`                     | `0.0004`  | Default taker fee rate for commission estimation on exchange‑generated fills (liquidation, ADL, settlement).                                                             |
 | `bnfcr_currency`                        | `USDT`    | USD-M Futures Credits Trading Mode: currency that `BNFCR` balances and fees resolve to. See [Futures Credits Trading Mode (BNFCR)](#futures-credits-trading-mode-bnfcr). |
-| `log_rejected_due_post_only_as_warning` | `True`    | Log post‑only rejections as warnings when `True`; otherwise as errors. |
-| `transport_backend`                     | `Sockudo` | *Rust only.* WebSocket transport backend. |
+| `log_rejected_due_post_only_as_warning` | `True`    | Log post‑only rejections as warnings when `True`; otherwise as errors.                                                                                                   |
+| `transport_backend`                     | `Sockudo` | *Rust only.* WebSocket transport backend.                                                                                                                                |
 
 #### Legacy Python TradingNode setup
 
@@ -1126,7 +1126,7 @@ generic crypto currency rather than failing.
 transport. It affects Spot only; Futures is unchanged.
 
 | Mode   | Credentials        | Quotes       |
-|--------|--------------------|--------------|
+| ------ | ------------------ | ------------ |
 | `Sbe`  | Ed25519 (required) | `bestBidAsk` |
 | `Json` | None (public)      | `bookTicker` |
 
@@ -1152,11 +1152,11 @@ no configuration is needed.
 superior performance and security. A future version of NautilusTrader will
 require Ed25519 exclusively.
 
-| Key Type | Data Clients | Execution Clients | Status |
-|----------|--------------|-------------------|--------|
-| Ed25519  | ✓            | ✓                 | **Recommended** |
+| Key Type | Data Clients | Execution Clients | Status                                           |
+| -------- | ------------ | ----------------- | ------------------------------------------------ |
+| Ed25519  | ✓            | ✓                 | **Recommended**                                  |
 | HMAC     | ✓            | ✓                 | Deprecated, will be removed in a future version. |
-| RSA      | ✓            | -                 | Deprecated, not supported for execution. |
+| RSA      | ✓            | -                 | Deprecated, not supported for execution.         |
 
 :::tip
 Switch to Ed25519 keys now. Generate an Ed25519 keypair and register it with
@@ -1280,7 +1280,7 @@ credentials and endpoints. The `environment` config option selects which to
 use.
 
 | Environment | Config                  | Description                                                            |
-|-------------|-------------------------|------------------------------------------------------------------------|
+| ----------- | ----------------------- | ---------------------------------------------------------------------- |
 | **Live**    | `environment="LIVE"`    | Production trading with real funds (default).                          |
 | **Demo**    | `environment="DEMO"`    | Demo Trading with simulated Spot and Futures funds.                    |
 | **Testnet** | `environment="TESTNET"` | Legacy Spot and Futures test network.                                  |
@@ -1302,7 +1302,7 @@ config = BinanceExecClientConfig(
 ```
 
 | Variable             | Description         |
-|----------------------|---------------------|
+| -------------------- | ------------------- |
 | `BINANCE_API_KEY`    | Live API key.       |
 | `BINANCE_API_SECRET` | Live API secret.    |
 
@@ -1319,7 +1319,7 @@ virtual balances.
 3. Demo keys work for Spot and Futures demo endpoints.
 
 | Endpoint       | URL                           |
-|----------------|-------------------------------|
+| -------------- | ----------------------------- |
 | Spot HTTP      | `demo-api.binance.com`        |
 | Spot WS        | `demo-stream.binance.com`     |
 | USD-M HTTP     | `demo-fapi.binance.com`       |
@@ -1339,7 +1339,7 @@ config = BinanceExecClientConfig(
 ```
 
 | Variable                  | Description      |
-|---------------------------|------------------|
+| ------------------------- | ---------------- |
 | `BINANCE_DEMO_API_KEY`    | Demo API key.    |
 | `BINANCE_DEMO_API_SECRET` | Demo API secret. |
 
@@ -1371,7 +1371,7 @@ config = BinanceExecClientConfig(
 ```
 
 | Variable                             | Description                                        |
-|--------------------------------------|----------------------------------------------------|
+| ------------------------------------ | -------------------------------------------------- |
 | `BINANCE_TESTNET_API_KEY`            | Spot testnet API key.                              |
 | `BINANCE_TESTNET_API_SECRET`         | Spot testnet API secret.                           |
 | `BINANCE_FUTURES_TESTNET_API_KEY`    | Futures testnet API key.                           |

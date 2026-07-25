@@ -12,7 +12,7 @@ Transition: `PENDING_UPDATE` -> previous status (for example `ACCEPTED`). Handle
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderModifyRejected` carries:
 
 | Field    | Python type | Required/default | Description                       |
-|----------|-------------|------------------|-----------------------------------|
+| -------- | ----------- | ---------------- | --------------------------------- |
 | `reason` | `str`       | Required         | The order update rejected reason. |
 
 On this event, `venue_order_id` and `account_id` are usually populated but may be `None`,

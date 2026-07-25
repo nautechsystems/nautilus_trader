@@ -62,7 +62,7 @@ A product is an umbrella term for a group of related instrument types.
 The following product types are supported:
 
 | Product Type        | Supported | Notes                                                    |
-|---------------------|-----------|----------------------------------------------------------|
+| ------------------- | --------- | -------------------------------------------------------- |
 | Spot                | ✓         | USD, USDC, and USDT-quoted spot pairs.                   |
 | Perpetual contracts | ✓         | USD-margined perpetual swaps on the FCM venue.           |
 | Futures contracts   | ✓         | Dated delivery futures (nano BTC, nano ETH, etc).        |
@@ -73,7 +73,7 @@ Coinbase uses the venue's native `product_id` field directly as the Nautilus
 symbol. The instrument ID is `{product_id}.COINBASE`.
 
 | Product          | Format                             | Examples                           |
-|------------------|------------------------------------|------------------------------------|
+| ---------------- | ---------------------------------- | ---------------------------------- |
 | Spot             | `{base}-{quote}`                   | `BTC-USD`, `ETH-USDC`, `SOL-USDT`. |
 | Perpetual        | `{contract_code}-{ddMMMyy}-CDE`    | `BIP-20DEC30-CDE` (BTC PERP).      |
 | Dated future     | `{contract_code}-{ddMMMyy}-CDE`    | `BIT-24APR26-CDE` (BTC Apr 2026).  |
@@ -125,7 +125,7 @@ Coinbase provides two trading environments. Configure the appropriate
 environment using the `environment` field in your client configuration.
 
 | Environment | `environment` value             | REST base URL                      |
-|-------------|---------------------------------|------------------------------------|
+| ----------- | ------------------------------- | ---------------------------------- |
 | Live        | `CoinbaseEnvironment.LIVE`      | `https://api.coinbase.com`         |
 | Sandbox     | `CoinbaseEnvironment.SANDBOX`   | `https://api-sandbox.coinbase.com` |
 
@@ -229,7 +229,7 @@ For full details see the Coinbase
 ### Environment variables
 
 | Variable              | Description                                               |
-|-----------------------|-----------------------------------------------------------|
+| --------------------- | --------------------------------------------------------- |
 | `COINBASE_API_KEY`    | Key name (`organizations/{org_id}/apiKeys/{key_id}`).     |
 | `COINBASE_API_SECRET` | PEM‑encoded EC private key (full multi‑line string).      |
 
@@ -325,12 +325,12 @@ returns `account is not available` for the quote currency.
 The venue returns this error for several distinct reasons; diagnose by
 running the probe binary above and inspecting the portfolio wallet list.
 
-| Symptom                                                              | Likely cause                                                                                          | Fix                                                                                       |
-|----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| Symptom                                                              | Likely cause                                                                                                                                                                                  | Fix                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rejected only for a specific product (e.g. `BTC-USD` with only USDC) | Portfolio is missing a wallet for the product's quote currency. USD and USDC are separate on Coinbase, and the venue routes orders by the submitted `product_id`, not by the canonical alias. | Submit against the product whose quote currency you hold (e.g. `BTC-USDC` for USDC wallets). The adapter resolves the data‑side alias internally; no config change needed. Funding the missing wallet via coinbase.com is also an option but unnecessary when only one currency is held. |
-| Every order rejected across all products                             | Key is bound to a non‑default portfolio and `retail_portfolio_id` is unset.                           | Set `retail_portfolio_id` on `CoinbaseExecClientConfig` to the target portfolio UUID.     |
-| Rejected for `*-USD` products on a non‑US account                    | Jurisdictional restriction (e.g. AU accounts cannot trade USD‑quoted pairs).                          | Use locally‑available quotes (USDC, AUD, EUR, etc.) instead of USD.                       |
-| Rejected right after key rotation                                    | New key was created in a different portfolio than the previous one.                                   | Update `retail_portfolio_id` to match the new key's portfolio, or move funds.             |
+| Every order rejected across all products                             | Key is bound to a non‑default portfolio and `retail_portfolio_id` is unset.                                                                                                                   | Set `retail_portfolio_id` on `CoinbaseExecClientConfig` to the target portfolio UUID.                                                                                                                                                                                                    |
+| Rejected for `*-USD` products on a non‑US account                    | Jurisdictional restriction (e.g. AU accounts cannot trade USD‑quoted pairs).                                                                                                                  | Use locally‑available quotes (USDC, AUD, EUR, etc.) instead of USD.                                                                                                                                                                                                                      |
+| Rejected right after key rotation                                    | New key was created in a different portfolio than the previous one.                                                                                                                           | Update `retail_portfolio_id` to match the new key's portfolio, or move funds.                                                                                                                                                                                                            |
 
 ## Orders capability
 
@@ -346,9 +346,9 @@ FCM order surface).
 type. The product family is selected by the `account_type` field on
 `CoinbaseExecClientConfig`:
 
-| `account_type`        | Bootstrap instruments                         | Account state source                                      |
-|-----------------------|-----------------------------------------------|-----------------------------------------------------------|
-| `AccountType::Cash`   | `CoinbaseProductType::Spot` only.             | `/accounts` REST endpoint.                                |
+| `account_type`        | Bootstrap instruments                         | Account state source                                                                                   |
+| --------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `AccountType::Cash`   | `CoinbaseProductType::Spot` only.             | `/accounts` REST endpoint.                                                                             |
 | `AccountType::Margin` | `CoinbaseProductType::Future` (perp + dated). | CFM `balance_summary` REST + `futures_balance_summary` WS, plus position reports from `cfm/positions`. |
 
 Other account types are rejected at factory creation. OMS is always
@@ -376,20 +376,20 @@ emits. Coinbase order types not in this table (TWAP, Bracket, Scaled, SOR
 LIMIT IOC) are documented under [Advanced order features](#advanced-order-features)
 and noted there as *Not yet supported* by the adapter.
 
-| Order Type             | Spot | Perpetual | Future | Wire shape                                                  |
-|------------------------|------|-----------|--------|-------------------------------------------------------------|
+| Order Type             | Spot | Perpetual | Future | Wire shape                                                       |
+| ---------------------- | ---- | --------- | ------ | ---------------------------------------------------------------- |
 | `MARKET`               | ✓    | ✓         | ✓      | `market_market_ioc` (spot + CFM); `market_market_fok` (CFM only) |
-| `LIMIT`                | ✓    | ✓         | ✓      | `limit_limit_gtc` / `limit_limit_gtd` / `limit_limit_fok`   |
-| `STOP_LIMIT`           | -    | ✓         | ✓      | `stop_limit_stop_limit_gtc` / `stop_limit_stop_limit_gtd`   |
-| `STOP_MARKET`          | -    | -         | -      | *Not exposed by the venue.*                                 |
-| `MARKET_IF_TOUCHED`    | -    | -         | -      | *Not exposed by the venue.*                                 |
-| `LIMIT_IF_TOUCHED`     | -    | -         | -      | *Not exposed by the venue.*                                 |
-| `TRAILING_STOP_MARKET` | -    | -         | -      | *Not exposed by the venue.*                                 |
+| `LIMIT`                | ✓    | ✓         | ✓      | `limit_limit_gtc` / `limit_limit_gtd` / `limit_limit_fok`        |
+| `STOP_LIMIT`           | -    | ✓         | ✓      | `stop_limit_stop_limit_gtc` / `stop_limit_stop_limit_gtd`        |
+| `STOP_MARKET`          | -    | -         | -      | *Not exposed by the venue.*                                      |
+| `MARKET_IF_TOUCHED`    | -    | -         | -      | *Not exposed by the venue.*                                      |
+| `LIMIT_IF_TOUCHED`     | -    | -         | -      | *Not exposed by the venue.*                                      |
+| `TRAILING_STOP_MARKET` | -    | -         | -      | *Not exposed by the venue.*                                      |
 
 ### Execution instructions
 
 | Instruction   | Spot | Perpetual | Future | Notes                                                              |
-|---------------|------|-----------|--------|--------------------------------------------------------------------|
+| ------------- | ---- | --------- | ------ | ------------------------------------------------------------------ |
 | `post_only`   | ✓    | ✓         | ✓      | LIMIT GTC and LIMIT GTD only.                                      |
 | `reduce_only` | -    | ✓         | ✓      | Derivatives only.                                                  |
 
@@ -398,22 +398,22 @@ and noted there as *Not yet supported* by the adapter.
 The adapter accepts the values in this matrix; combinations not listed are
 rejected at submit time with `"Unsupported TIF {tif} for {order_type}"`.
 
-| Order type   | GTC | GTD | IOC | FOK | Notes                                                          |
-|--------------|-----|-----|-----|-----|----------------------------------------------------------------|
+| Order type   | GTC | GTD | IOC | FOK | Notes                                                                                                                                                                                                                          |
+| ------------ | --- | --- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `MARKET`     | ✓   | -   | ✓   | (✓) | GTC is mapped to IOC; explicit IOC is honoured. FOK builds the venue's `market_market_fok` shape, but the matching engine currently rejects it on spot with `UNSUPPORTED_ORDER_CONFIGURATION`; usable on CFM derivatives only. |
-| `LIMIT`      | ✓   | ✓   | -   | ✓   | GTD requires `expire_time`. LIMIT IOC *not yet supported* (see [SOR LIMIT IOC](#advanced-order-features)). |
-| `STOP_LIMIT` | ✓   | ✓   | -   | -   | Requires `trigger_price`. Derivatives only.                    |
+| `LIMIT`      | ✓   | ✓   | -   | ✓   | GTD requires `expire_time`. LIMIT IOC *not yet supported* (see [SOR LIMIT IOC](#advanced-order-features)).                                                                                                                     |
+| `STOP_LIMIT` | ✓   | ✓   | -   | -   | Requires `trigger_price`. Derivatives only.                                                                                                                                                                                    |
 
 ### Advanced order features
 
-| Feature            | Spot | Perpetual | Future | Notes                                                                              |
-|--------------------|------|-----------|--------|------------------------------------------------------------------------------------|
-| Order Modification | ✓    | ✓         | ✓      | GTC variants only (LIMIT, STOP_LIMIT, Bracket); other types use cancel‑replace.    |
-| Bracket Orders     | -    | -         | -      | *Not yet supported.* Venue exposes `trigger_bracket_gtc` / `trigger_bracket_gtd`.  |
-| OCO Orders         | -    | -         | -      | *Not exposed by the venue* as a distinct order type.                               |
-| Iceberg Orders     | -    | -         | -      | *Not exposed by the venue.*                                                        |
-| TWAP Orders        | -    | -         | -      | *Not yet supported.* Venue exposes `twap_limit_gtd`.                               |
-| Scaled Orders      | -    | -         | -      | *Not yet supported.* Venue exposes `scaled_limit_gtc`.                             |
+| Feature            | Spot | Perpetual | Future | Notes                                                                                |
+| ------------------ | ---- | --------- | ------ | ------------------------------------------------------------------------------------ |
+| Order Modification | ✓    | ✓         | ✓      | GTC variants only (LIMIT, STOP_LIMIT, Bracket); other types use cancel‑replace.      |
+| Bracket Orders     | -    | -         | -      | *Not yet supported.* Venue exposes `trigger_bracket_gtc` / `trigger_bracket_gtd`.    |
+| OCO Orders         | -    | -         | -      | *Not exposed by the venue* as a distinct order type.                                 |
+| Iceberg Orders     | -    | -         | -      | *Not exposed by the venue.*                                                          |
+| TWAP Orders        | -    | -         | -      | *Not yet supported.* Venue exposes `twap_limit_gtd`.                                 |
+| Scaled Orders      | -    | -         | -      | *Not yet supported.* Venue exposes `scaled_limit_gtc`.                               |
 | SOR LIMIT IOC      | -    | -         | -      | *Not yet supported.* Venue exposes `sor_limit_ioc` for smart‑order‑routed LIMIT IOC. |
 
 See the [Create Order reference](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order)
@@ -423,23 +423,23 @@ for the underlying venue specification.
 ### Position controls (derivatives)
 
 | Control       | Notes                                                                |
-|---------------|----------------------------------------------------------------------|
+| ------------- | -------------------------------------------------------------------- |
 | Leverage      | Set per order; default `1.0`.                                        |
 | Margin type   | Set per order: cross (default) or isolated.                          |
 | Position mode | One‑way only; hedge mode is not exposed.                             |
 
 ### Batch operations
 
-| Operation     | Notes                                                                                              |
-|---------------|----------------------------------------------------------------------------------------------------|
-| Batch Submit  | Not supported. Each order is one `Create Order` request.                                           |
-| Batch Modify  | Not supported. Each edit is one `Edit Order` request.                                              |
-| Batch Cancel  | `POST /api/v3/brokerage/orders/batch_cancel` accepts an `order_ids` array. No documented max size; per‑order success/failure in the response. |
+| Operation    | Notes                                                                                                                                         |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Batch Submit | Not supported. Each order is one `Create Order` request.                                                                                      |
+| Batch Modify | Not supported. Each edit is one `Edit Order` request.                                                                                         |
+| Batch Cancel | `POST /api/v3/brokerage/orders/batch_cancel` accepts an `order_ids` array. No documented max size; per‑order success/failure in the response. |
 
 ### Order querying
 
 | Feature              | Spot | Perpetual | Future | Notes                                       |
-|----------------------|------|-----------|--------|---------------------------------------------|
+| -------------------- | ---- | --------- | ------ | ------------------------------------------- |
 | Query open orders    | ✓    | ✓         | ✓      | List all active orders.                     |
 | Query order history  | ✓    | ✓         | ✓      | Historical order data with cursor paging.   |
 | Order status updates | ✓    | ✓         | ✓      | Real‑time state changes via `user` channel. |
@@ -632,13 +632,13 @@ across reconnects so synthesized fill deltas remain correct.
 
 Coinbase publishes the following limits for the Advanced Trade APIs:
 
-| Surface                           | Limit                                                | Source                                                |
-|-----------------------------------|------------------------------------------------------|-------------------------------------------------------|
-| WebSocket connections             | 8 per second per IP address                          | Advanced Trade WebSocket Rate Limits                  |
-| WebSocket unauthenticated msgs    | 8 per second per IP address                          | Advanced Trade WebSocket Rate Limits                  |
-| WebSocket subscribe deadline      | First subscribe message must arrive within 5 s of connect or the server disconnects | Advanced Trade WebSocket Overview |
-| Authenticated WebSocket JWT       | 120 s; a fresh JWT must be generated for every authenticated subscribe message | Advanced Trade WebSocket Overview |
-| REST per‑key quota                | 10,000 requests per hour per API key (Coinbase App general policy) | Coinbase App Rate Limiting       |
+| Surface                        | Limit                                                                               | Source                               |
+| ------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------ |
+| WebSocket connections          | 8 per second per IP address                                                         | Advanced Trade WebSocket Rate Limits |
+| WebSocket unauthenticated msgs | 8 per second per IP address                                                         | Advanced Trade WebSocket Rate Limits |
+| WebSocket subscribe deadline   | First subscribe message must arrive within 5 s of connect or the server disconnects | Advanced Trade WebSocket Overview    |
+| Authenticated WebSocket JWT    | 120 s; a fresh JWT must be generated for every authenticated subscribe message      | Advanced Trade WebSocket Overview    |
+| REST per‑key quota             | 10,000 requests per hour per API key (Coinbase App general policy)                  | Coinbase App Rate Limiting           |
 
 When the REST limit is exceeded, Coinbase returns HTTP `429` with this body:
 
@@ -690,7 +690,7 @@ fill deltas remain correct.
 ### Data client configuration options
 
 | Option                             | Default     | Description                                                                       |
-|------------------------------------|-------------|-----------------------------------------------------------------------------------|
+| ---------------------------------- | ----------- | --------------------------------------------------------------------------------- |
 | `api_key`                          | `None`      | Falls back to `COINBASE_API_KEY` env var.                                         |
 | `api_secret`                       | `None`      | Falls back to `COINBASE_API_SECRET` env var.                                      |
 | `base_url_rest`                    | `None`      | Override for the REST base URL.                                                   |
@@ -705,23 +705,23 @@ fill deltas remain correct.
 
 ### Execution client configuration options
 
-| Option                   | Default   | Description                                                                                              |
-|--------------------------|-----------|----------------------------------------------------------------------------------------------------------|
-| `api_key`                | `None`    | Falls back to `COINBASE_API_KEY` env var.                                                                |
-| `api_secret`             | `None`    | Falls back to `COINBASE_API_SECRET` env var.                                                             |
-| `base_url_rest`          | `None`    | Override for the REST base URL.                                                                          |
-| `base_url_ws`            | `None`    | Override for the user data WebSocket URL.                                                                |
-| `proxy_url`              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                    |
-| `environment`            | `Live`    | `Live` or `Sandbox`.                                                                                     |
-| `http_timeout_secs`      | `10`      | HTTP request timeout (seconds).                                                                          |
-| `max_retries`            | `3`       | Maximum retry attempts for HTTP requests.                                                                |
-| `retry_delay_initial_ms` | `100`     | Initial retry delay (milliseconds).                                                                      |
-| `retry_delay_max_ms`     | `5000`    | Maximum retry delay (milliseconds).                                                                      |
-| `account_type`           | `Cash`    | `Cash` for spot or `Margin` for CFM derivatives. See [Execution scope](#execution-scope).                |
-| `default_margin_type`    | `None`    | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.     |
-| `default_leverage`       | `None`    | Default leverage applied to derivatives orders. Ignored on Cash.                                         |
+| Option                   | Default   | Description                                                                                                                                                                                   |
+| ------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_key`                | `None`    | Falls back to `COINBASE_API_KEY` env var.                                                                                                                                                     |
+| `api_secret`             | `None`    | Falls back to `COINBASE_API_SECRET` env var.                                                                                                                                                  |
+| `base_url_rest`          | `None`    | Override for the REST base URL.                                                                                                                                                               |
+| `base_url_ws`            | `None`    | Override for the user data WebSocket URL.                                                                                                                                                     |
+| `proxy_url`              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                                                                         |
+| `environment`            | `Live`    | `Live` or `Sandbox`.                                                                                                                                                                          |
+| `http_timeout_secs`      | `10`      | HTTP request timeout (seconds).                                                                                                                                                               |
+| `max_retries`            | `3`       | Maximum retry attempts for HTTP requests.                                                                                                                                                     |
+| `retry_delay_initial_ms` | `100`     | Initial retry delay (milliseconds).                                                                                                                                                           |
+| `retry_delay_max_ms`     | `5000`    | Maximum retry delay (milliseconds).                                                                                                                                                           |
+| `account_type`           | `Cash`    | `Cash` for spot or `Margin` for CFM derivatives. See [Execution scope](#execution-scope).                                                                                                     |
+| `default_margin_type`    | `None`    | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.                                                                                          |
+| `default_leverage`       | `None`    | Default leverage applied to derivatives orders. Ignored on Cash.                                                                                                                              |
 | `retail_portfolio_id`    | `None`    | CDP retail portfolio UUID. Required when the API key is bound to a non‑default portfolio (the venue rejects orders with `account is not available` otherwise). See [Portfolios](#portfolios). |
-| `transport_backend`      | `Sockudo` | WebSocket transport backend.                                                                             |
+| `transport_backend`      | `Sockudo` | WebSocket transport backend.                                                                                                                                                                  |
 
 Configurations are constructed from Python via the PyO3-exported types:
 

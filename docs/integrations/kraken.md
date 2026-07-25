@@ -54,7 +54,7 @@ integration guide.
 Kraken supports two primary product categories:
 
 | Product Type             | Supported | Notes                                                     |
-|--------------------------|-----------|-----------------------------------------------------------|
+| ------------------------ | --------- | --------------------------------------------------------- |
 | Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
 | Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
 | Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
@@ -73,7 +73,7 @@ The Kraken adapter supports real-time bar (OHLC) streaming for Spot markets via
 WebSocket. The following intervals are available:
 
 | Interval   | BarType specification |
-|------------|-----------------------|
+| ---------- | --------------------- |
 | 1 minute   | `1-MINUTE-LAST`       |
 | 5 minutes  | `5-MINUTE-LAST`       |
 | 15 minutes | `15-MINUTE-LAST`      |
@@ -130,7 +130,7 @@ trades and aggregating bars locally) rather than `EXTERNAL` exchange-provided ba
 Kraken uses different Bitcoin symbol conventions across their APIs:
 
 | Market  | Symbol Format | Example            | Notes                                       |
-|---------|---------------|--------------------|---------------------------------------------|
+| ------- | ------------- | ------------------ | ------------------------------------------- |
 | Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time. |
 | Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
 
@@ -179,22 +179,22 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Subscriptions (real-time)
 
-| Data type              | Spot | Futures | Notes                                  |
-|------------------------|------|---------|----------------------------------------|
-| `QuoteTick`            | ✓    | ✓       | Derived from ticker channel.           |
-| `TradeTick`            | ✓    | ✓       |                                        |
-| `OrderBookDeltas`      | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.     |
-| `OrderBookDepth10`     | -    | -       | Use `OrderBookDeltas` with depth `10`. |
-| `Bar`                  | ✓    | -       | Spot WS OHLC channel. See bar section. |
-| `MarkPriceUpdate`      | -    | ✓       | From futures ticker feed.              |
-| `IndexPriceUpdate`     | -    | ✓       | From futures ticker feed.              |
-| `FundingRateUpdate`    | -    | ✓       | Perpetuals only.                       |
-| `InstrumentStatus`     | ✓    | ✓       | Python adapter polls instrument refreshes. |
+| Data type           | Spot | Futures | Notes                                      |
+| ------------------- | ---- | ------- | ------------------------------------------ |
+| `QuoteTick`         | ✓    | ✓       | Derived from ticker channel.               |
+| `TradeTick`         | ✓    | ✓       |                                            |
+| `OrderBookDeltas`   | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.         |
+| `OrderBookDepth10`  | -    | -       | Use `OrderBookDeltas` with depth `10`.     |
+| `Bar`               | ✓    | -       | Spot WS OHLC channel. See bar section.     |
+| `MarkPriceUpdate`   | -    | ✓       | From futures ticker feed.                  |
+| `IndexPriceUpdate`  | -    | ✓       | From futures ticker feed.                  |
+| `FundingRateUpdate` | -    | ✓       | Perpetuals only.                           |
+| `InstrumentStatus`  | ✓    | ✓       | Python adapter polls instrument refreshes. |
 
 ### Requests (historical)
 
 | Data type              | Spot | Futures | Notes                                  |
-|------------------------|------|---------|----------------------------------------|
+| ---------------------- | ---- | ------- | -------------------------------------- |
 | `TradeTick`            | ✓    | ✓       |                                        |
 | `Bar`                  | ✓    | ✓       |                                        |
 | `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
@@ -266,7 +266,7 @@ more events per instrument than L2. Recommended settings:
 ### Order types
 
 | Order type             | Spot | Futures | Notes                                         |
-|------------------------|------|---------|-----------------------------------------------|
+| ---------------------- | ---- | ------- | --------------------------------------------- |
 | `MARKET`               | ✓    | ✓       | Immediate execution at market price.          |
 | `LIMIT`                | ✓    | ✓       | Execution at specified price or better.       |
 | `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop‑loss).         |
@@ -279,7 +279,7 @@ more events per instrument than L2. Recommended settings:
 ### Time in force
 
 | Time in Force | Spot | Futures | Notes                                               |
-|---------------|------|---------|-----------------------------------------------------|
+| ------------- | ---- | ------- | --------------------------------------------------- |
 | `GTC`         | ✓    | ✓       | Good Till Canceled.                                 |
 | `GTD`         | ✓    | -       | Good Till Date (Spot only, requires `expire_time`). |
 | `IOC`         | ✓    | ✓       | Immediate or Cancel.                                |
@@ -293,7 +293,7 @@ more events per instrument than L2. Recommended settings:
 ### Execution instructions
 
 | Instruction      | Spot | Futures | Notes                                                                |
-|------------------|------|---------|----------------------------------------------------------------------|
+| ---------------- | ---- | ------- | -------------------------------------------------------------------- |
 | `post_only`      | ✓    | ✓       | Available for limit orders.                                          |
 | `reduce_only`    | ✓    | ✓       | Spot requires `spot_account_type=Margin` (margin orders only).       |
 | `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`).                        |
@@ -305,7 +305,7 @@ Conditional orders (stop, take-profit, trailing stop) support a trigger price
 reference on Spot:
 
 | Trigger Type  | Spot | Futures | Notes                                      |
-|---------------|------|---------|--------------------------------------------|
+| ------------- | ---- | ------- | ------------------------------------------ |
 | `LAST_PRICE`  | ✓    | ✓       | Default. Last traded price.                |
 | `INDEX_PRICE` | ✓    | ✓       | Broader market index price.                |
 | `MARK_PRICE`  | -    | ✓       | Futures only.                              |
@@ -318,7 +318,7 @@ time rather than silently coercing them.
 ### Batch operations
 
 | Operation    | Spot | Futures | Notes                                                   |
-|--------------|------|---------|---------------------------------------------------------|
+| ------------ | ---- | ------- | ------------------------------------------------------- |
 | Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.         |
 | Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command.  |
 | Batch Cancel | ✓    | ✓       | Auto‑chunks into batches of 50.                         |
@@ -335,7 +335,7 @@ time rather than silently coercing them.
 ### Position management
 
 | Feature          | Spot | Futures | Notes                                                   |
-|------------------|------|---------|---------------------------------------------------------|
+| ---------------- | ---- | ------- | ------------------------------------------------------- |
 | Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt‑in.      |
 | Position mode    | -    | -       | Single position per instrument.                         |
 | Leverage control | ✓    | ✓       | Spot tiers; per‑order `params={"leverage": N}`.         |
@@ -344,7 +344,7 @@ time rather than silently coercing them.
 ### Order querying
 
 | Feature              | Spot | Futures | Notes                                        |
-|----------------------|------|---------|----------------------------------------------|
+| -------------------- | ---- | ------- | -------------------------------------------- |
 | Query open orders    | ✓    | ✓       | List all active orders.                      |
 | Query order history  | ✓    | ✓       | Historical order data with pagination.       |
 | Order status updates | ✓    | ✓       | Real‑time order state changes via WebSocket. |
@@ -353,7 +353,7 @@ time rather than silently coercing them.
 ### Contingent orders
 
 | Feature             | Spot | Futures | Notes                                    |
-|---------------------|------|---------|------------------------------------------|
+| ------------------- | ---- | ------- | ---------------------------------------- |
 | Order lists         | -    | -       | *Not supported*.                         |
 | OCO orders          | -    | -       | *Not supported*.                         |
 | Bracket orders      | -    | -       | *Not supported*.                         |
@@ -376,14 +376,14 @@ the WS API supports but this adapter does not yet encode.
 **Kraken WS v2 limitation:**
 
 | Shape                     | Reason                                                       |
-|---------------------------|--------------------------------------------------------------|
+| ------------------------- | ------------------------------------------------------------ |
 | Unsupported trigger types | `triggers.reference` accepts only `last` and `index`.        |
 | Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.                 |
 
 **Not yet encoded by this adapter (follow-up work, currently REST):**
 
 | Shape                       | Notes                                                                                |
-|-----------------------------|--------------------------------------------------------------------------------------|
+| --------------------------- | ------------------------------------------------------------------------------------ |
 | `FOK` time in force         | Encodable as the `FOK` time in force, but the builder routes REST.                   |
 | Trailing stop / stop‑limit  | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
 | Iceberg (`display_qty`)     | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
@@ -421,7 +421,7 @@ under genuine network failure.
 `KrakenExecClientConfig` exposes:
 
 | Option                    | Default | Description                                                   |
-|---------------------------|---------|---------------------------------------------------------------|
+| ------------------------- | ------- | ------------------------------------------------------------- |
 | `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.         |
 | `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before marking command outcome unknown. |
 
@@ -619,7 +619,7 @@ specify a fixed funding period.
 The adapter implements automatic rate limiting to comply with Kraken's API requirements.
 
 | Endpoint Type         | Limit (requests/sec) | Notes                                |
-|-----------------------|----------------------|--------------------------------------|
+| --------------------- | -------------------- | ------------------------------------ |
 | Spot REST (global)    | 5                    | Global rate limit for Spot API.      |
 | Futures REST (global) | 5                    | Global rate limit for Futures API.   |
 
@@ -668,7 +668,7 @@ The product type for each client is specified via the `product_type` option.
 ### Data client configuration options
 
 | Option                    | Default   | Description                                                    |
-|---------------------------|-----------|----------------------------------------------------------------|
+| ------------------------- | --------- | -------------------------------------------------------------- |
 | `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
 | `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
 | `api_key`                 | `None`    | API key; loaded from environment variables when omitted.       |
@@ -688,7 +688,7 @@ The product type for each client is specified via the `product_type` option.
 ### Execution client configuration options
 
 | Option                          | Default   | Description                                                           |
-|---------------------------------|-----------|-----------------------------------------------------------------------|
+| ------------------------------- | --------- | --------------------------------------------------------------------- |
 | `api_key`                       | required  | Kraken API key.                                                       |
 | `api_secret`                    | required  | Kraken API secret.                                                    |
 | `product_type`                  | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).                   |
@@ -799,7 +799,7 @@ Either pass the corresponding `api_key` and `api_secret` values to the
 configuration objects, or set the following environment variables:
 
 | Environment Variable             | Description                              |
-|----------------------------------|------------------------------------------|
+| -------------------------------- | ---------------------------------------- |
 | `KRAKEN_SPOT_API_KEY`            | API key for Kraken Spot live trading.    |
 | `KRAKEN_SPOT_API_SECRET`         | API secret for Kraken Spot live trading. |
 | `KRAKEN_FUTURES_API_KEY`         | Kraken Futures live API key.             |

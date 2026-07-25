@@ -12,7 +12,7 @@ Transition: `ACCEPTED` -> `FILLED` / `PARTIALLY_FILLED`. Handler: `on_order_fill
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderFilled` carries:
 
 | Field            | Python type            | Required/default | Description                                                              |
-|------------------|------------------------|------------------|--------------------------------------------------------------------------|
+| ---------------- | ---------------------- | ---------------- | ------------------------------------------------------------------------ |
 | `trade_id`       | `TradeId`              | Required         | The trade match ID (assigned by the venue).                              |
 | `position_id`    | `PositionId` or `None` | Required         | The position ID associated with the fill (assigned by the venue).        |
 | `order_side`     | `OrderSide`            | Required         | The execution order side.                                                |

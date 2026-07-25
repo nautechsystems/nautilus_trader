@@ -25,7 +25,7 @@ Whether the referenced `OrderFilled` is already in the local order history deter
 interprets the correction:
 
 | Fill is local | `is_reopened` | Outcome                                                               |
-|---------------|---------------|-----------------------------------------------------------------------|
+| ------------- | ------------- | --------------------------------------------------------------------- |
 | Yes           | `false`       | Apply; corrected quantity does not become working.                    |
 | Yes           | `true`        | Apply; corrected quantity becomes working, subject to terminal rules. |
 | No            | `false`       | Apply; whole order becomes terminal with zero leaves.                 |
@@ -73,7 +73,7 @@ Beyond the [common order event fields](index.md#common-order-event-fields), `Ord
 carries:
 
 | Field               | Python type                | Required/default | Description                                             |
-|---------------------|----------------------------|------------------|---------------------------------------------------------|
+| ------------------- | -------------------------- | ---------------- | ------------------------------------------------------- |
 | `correction_id`     | `str`                      | Required         | Identity for this correction revision.                  |
 | `trade_id`          | `TradeId`                  | Required         | Original venue trade ID.                                |
 | `voided_qty`        | `Quantity`                 | Required         | Cumulative ineffective quantity for the trade.          |

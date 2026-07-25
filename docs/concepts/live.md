@@ -46,7 +46,7 @@ HTTP 400, 401, 403, and 429 status responses. A status code is definitive
 only when venue‑specific semantics prove non‑acceptance.
 
 | Command type                         | Rejection event       | When it appears                                                   |
-|--------------------------------------|-----------------------|-------------------------------------------------------------------|
+| ------------------------------------ | --------------------- | ----------------------------------------------------------------- |
 | Submit and submit order list         | `OrderRejected`       | A venue or API response proves an order was not accepted.         |
 | Modify                               | `OrderModifyRejected` | The venue returns a command‑specific modify reject.               |
 | Cancel, cancel‑all, and batch‑cancel | `OrderCancelRejected` | The venue returns a command‑specific or per‑order cancel reject.  |
@@ -211,7 +211,7 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 #### Startup reconciliation
 
 | Scenario                               | Description                                                                     | System behavior                                                                 |
-|----------------------------------------|---------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| -------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).     | Updates local order to match venue state, emits missing events.                 |
 | **Missed fills**                       | Venue filled an order but the engine missed the event.                          | Generates missing `OrderFilled` events.                                         |
 | **Multiple fills**                     | Order has partial fills, some missed by the engine.                             | Reconstructs complete fill history from venue reports.                          |
@@ -240,7 +240,7 @@ The `reconciliation_startup_delay_secs` parameter adds a further delay *after* s
 reconciliation completes, giving the system time to stabilize.
 
 | Scenario                            | Description                                                | System behavior                                      |
-|-------------------------------------|------------------------------------------------------------|------------------------------------------------------|
+| ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
 | **Explicit submit API refusal**     | API refuses create‑order before acceptance.                | Emits `OrderRejected`.                               |
 | **Ambiguous submit failure**        | Submit fails without confirmed venue refusal.              | Logs failure and waits for reconciliation.           |
 | **In‑flight submit timeout**        | `SUBMITTED` remains unconfirmed beyond retry exhaustion.   | Resolves to `REJECTED`.                              |
@@ -252,7 +252,7 @@ reconciliation completes, giving the system time to stabilize.
 **In‑flight order timeout resolution** (venue does not respond after max retries):
 
 | Current status   | Resolved to  | Rationale                             |
-|------------------|--------------|---------------------------------------|
+| ---------------- | ------------ | ------------------------------------- |
 | `SUBMITTED`      | `REJECTED`   | No acceptance received from venue.    |
 | `PENDING_UPDATE` | *Unresolved* | Modification outcome remains unknown. |
 | `PENDING_CANCEL` | *Unresolved* | Cancellation outcome remains unknown. |
@@ -263,7 +263,7 @@ The *Not found* rows apply only in full‑history mode (`open_check_open_only=Fa
 open‑only mode is the default.
 
 | Cache status       | Venue status | Resolution   | Rationale                                                           |
-|--------------------|--------------|--------------|---------------------------------------------------------------------|
+| ------------------ | ------------ | ------------ | ------------------------------------------------------------------- |
 | `SUBMITTED`        | *Not found*  | `REJECTED`   | Order never confirmed by venue (e.g., lost during network error).   |
 | `ACCEPTED`         | *Not found*  | `REJECTED`   | Order doesn't exist at venue, likely was never successfully placed. |
 | `ACCEPTED`         | `CANCELED`   | `CANCELED`   | Venue canceled the order (user action or venue‑initiated).          |
@@ -355,7 +355,7 @@ When `reconciliation_lookback_mins` limits the window, the system analyzes posit
 from fills and adjusts to reconstruct positions accurately.
 
 | Scenario                                   | Description                                                                  | System behavior                                                             |
-|--------------------------------------------|------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| ------------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | **Complete lifecycle**                     | All fills from opening to current state are captured.                        | No adjustment.                                                              |
 | **Incomplete single lifecycle**            | Window misses opening fills, no zero‑crossings.                              | Adds synthetic opening fill with calculated price.                          |
 | **Multiple lifecycles, current matches**   | Zero‑crossings detected, current lifecycle matches venue.                    | Filters out old lifecycles, returns current only.                           |

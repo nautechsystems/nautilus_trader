@@ -9,8 +9,8 @@ A `BacktestEngine` processes a stream of historical data. When the stream is exh
 produces results and performance metrics for analysis. NautilusTrader offers two API levels for
 backtesting:
 
-| API level  | Use when                                                               |
-|------------|------------------------------------------------------------------------|
+| API level  | Use when                                                                |
+| ---------- | ----------------------------------------------------------------------- |
 | High‑level | You want `BacktestNode`, config objects, data catalogs, and batch runs. |
 | Low‑level  | You want direct `BacktestEngine` control and manual component setup.    |
 
@@ -19,16 +19,16 @@ backtesting:
 The generated sidebar may sort these pages alphabetically. Use this order when reading the section
 end to end:
 
-| Step | Page                                                   | Use it for                                      |
-|------|--------------------------------------------------------|-------------------------------------------------|
-| 1    | [APIs and repeated runs](apis-and-runs.md)             | Choose API level, load data, and run batches.   |
-| 2    | [Data and venues](data-and-venues.md)                  | Match data granularity with venue `book_type`.  |
-| 3    | [Execution flow](execution-flow.md)                    | Understand sequencing, timers, and trade IDs.   |
+| Step | Page                                                    | Use it for                                      |
+| ---- | ------------------------------------------------------- | ----------------------------------------------- |
+| 1    | [APIs and repeated runs](apis-and-runs.md)              | Choose API level, load data, and run batches.   |
+| 2    | [Data and venues](data-and-venues.md)                   | Match data granularity with venue `book_type`.  |
+| 3    | [Execution flow](execution-flow.md)                     | Understand sequencing, timers, and trade IDs.   |
 | 4    | [Fill prices and matching](fill-prices-and-matching.md) | Understand deterministic matching behavior.     |
-| 5    | [Trade execution](trade-execution.md)                  | Use trade ticks, aggressor sides, and queues.   |
-| 6    | [Bar execution](bar-execution.md)                      | Use bars, OHLC sequencing, and bar timing.      |
-| 7    | [Fill models](fill-models.md)                          | Configure slippage and probabilistic fills.     |
-| 8    | [Accounts and margin](accounts-and-margin.md)          | Configure funding, balances, and margin models. |
+| 5    | [Trade execution](trade-execution.md)                   | Use trade ticks, aggressor sides, and queues.   |
+| 6    | [Bar execution](bar-execution.md)                       | Use bars, OHLC sequencing, and bar timing.      |
+| 7    | [Fill models](fill-models.md)                           | Configure slippage and probabilistic fills.     |
+| 8    | [Accounts and margin](accounts-and-margin.md)           | Configure funding, balances, and margin models. |
 
 ## Related guides
 

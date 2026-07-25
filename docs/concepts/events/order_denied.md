@@ -12,7 +12,7 @@ Transition: `INITIALIZED` -> `DENIED`. Handler: `on_order_denied`.
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderDenied` carries:
 
 | Field    | Python type | Required/default | Description              |
-|----------|-------------|------------------|--------------------------|
+| -------- | ----------- | ---------------- | ------------------------ |
 | `reason` | `str`       | Required         | The order denied reason. |
 
 On this event, `venue_order_id` and `account_id` are both `None`, `reconciliation` is

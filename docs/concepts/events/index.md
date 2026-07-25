@@ -8,7 +8,7 @@ order fills produce position events.
 ## Event categories
 
 | Category | Examples                                        | Origin                          |
-|----------|-------------------------------------------------|---------------------------------|
+| -------- | ----------------------------------------------- | ------------------------------- |
 | Order    | `OrderAccepted`, `OrderFilled`, `OrderCanceled` | `ExecutionEngine` (from venue)  |
 | Position | `PositionOpened`, `PositionChanged`             | `ExecutionEngine` (from fills)  |
 | Account  | `AccountState`                                  | `ExecutionClient` / `Portfolio` |
@@ -48,7 +48,7 @@ and triggered orders support additional transitions documented in the full
 [order state flow](../orders/index.md#order-state-flow).
 
 | Event                                             | Primary transition                                | Handler                    |
-|---------------------------------------------------|---------------------------------------------------|----------------------------|
+| ------------------------------------------------- | ------------------------------------------------- | -------------------------- |
 | [`OrderInitialized`](order_initialized.md)        | (created locally)                                 | `on_order_initialized`     |
 | [`OrderDenied`](order_denied.md)                  | Initialized -> Denied                             | `on_order_denied`          |
 | [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated                           | `on_order_emulated`        |
@@ -72,7 +72,7 @@ and triggered orders support additional transitions documented in the full
 All order events share these fields:
 
 | Field              | Description                              |
-|--------------------|------------------------------------------|
+| ------------------ | ---------------------------------------- |
 | `trader_id`        | Trader instance identifier.              |
 | `strategy_id`      | Strategy that submitted the order.       |
 | `instrument_id`    | Instrument for the order.                |
@@ -105,7 +105,7 @@ An `OrderFillVoided` rebuilds the cached position from its effective fill histor
 an opposite fill or synthesize a position event.
 
 | Event                                    | When it fires                             | Handler               |
-|------------------------------------------|-------------------------------------------|-----------------------|
+| ---------------------------------------- | ----------------------------------------- | --------------------- |
 | [`PositionOpened`](position_opened.md)   | First fill creates a new position.        | `on_position_opened`  |
 | [`PositionChanged`](position_changed.md) | Subsequent fill changes quantity or side. | `on_position_changed` |
 | [`PositionClosed`](position_closed.md)   | Fill reduces quantity to zero.            | `on_position_closed`  |
@@ -169,7 +169,7 @@ it is left at its zero or default (for example `avg_px_close` and `duration_ns` 
 position closes).
 
 | Field                | Opened | Changed | Closed | Description                       |
-|----------------------|--------|---------|--------|-----------------------------------|
+| -------------------- | ------ | ------- | ------ | --------------------------------- |
 | `trader_id`          | ✓      | ✓       | ✓      | Trader instance identifier.       |
 | `strategy_id`        | ✓      | ✓       | ✓      | Strategy that owns the position.  |
 | `instrument_id`      | ✓      | ✓       | ✓      | Instrument for the position.      |
@@ -232,7 +232,7 @@ instruments they do not trade. These subscriptions use the `MessageBus`
 directly and do not involve the `DataEngine`.
 
 | Topic pattern                           | Receives                                 |
-|-----------------------------------------|------------------------------------------|
+| --------------------------------------- | ---------------------------------------- |
 | `events.order_filled.{instrument_id}`   | Fill events for one instrument.          |
 | `events.order_canceled.{instrument_id}` | Cancel events for one instrument.        |
 | `events.order.{strategy_id}`            | All order events routed to one strategy. |

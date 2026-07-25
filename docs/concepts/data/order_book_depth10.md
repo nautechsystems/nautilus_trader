@@ -7,7 +7,7 @@ snapshot rather than incremental deltas.
 ## Fields
 
 | Field           | Rust type          | Python type       | Required/default | Notes                                      |
-|-----------------|--------------------|-------------------|------------------|--------------------------------------------|
+| --------------- | ------------------ | ----------------- | ---------------- | ------------------------------------------ |
 | `instrument_id` | `InstrumentId`     | `InstrumentId`    | Required         | Instrument whose book is represented.      |
 | `bids`          | `[BookOrder; 10]`  | `list[BookOrder]` | Required         | Exactly 10 bid levels.                     |
 | `asks`          | `[BookOrder; 10]`  | `list[BookOrder]` | Required         | Exactly 10 ask levels.                     |

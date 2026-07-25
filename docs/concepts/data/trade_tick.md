@@ -6,7 +6,7 @@ the traded price, traded size, aggressor side, and venue trade identifier.
 ## Fields
 
 | Field            | Rust type       | Python type     | Required/default | Notes                                    |
-|------------------|-----------------|-----------------|------------------|------------------------------------------|
+| ---------------- | --------------- | --------------- | ---------------- | ---------------------------------------- |
 | `instrument_id`  | `InstrumentId`  | `InstrumentId`  | Required         | Instrument for the trade.                |
 | `price`          | `Price`         | `Price`         | Required         | Executed price.                          |
 | `size`           | `Quantity`      | `Quantity`      | Required         | Executed quantity.                       |

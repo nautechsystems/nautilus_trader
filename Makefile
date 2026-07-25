@@ -563,6 +563,25 @@ docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs co
 		--features tracing-bridge,transport-sockudo,turmoil \
 		doc --no-deps
 
+# markdownlint-cli2 version comes from the pre-commit hook rev so both agree.
+MARKDOWNLINT_VERSION := $(shell awk '\
+	/markdownlint-cli2/ { found=1 } \
+	found && /^[[:space:]]*rev:[[:space:]]*/ { sub(/^v/, "", $$2); print $$2; exit } \
+' .pre-commit-config.yaml)
+MARKDOWNLINT ?= npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION)
+# File sets mirror the pre-commit scopes: the global patches exclusion for both,
+# plus the markdownlint hook's own exclusions for the linter.
+MARKDOWN_FILES = $(shell git ls-files '*.md' | grep -v '^patches/pyo3-stub-gen/')
+MARKDOWNLINT_FILES = $(shell git ls-files '*.md' | \
+	grep -vE '^(patches/pyo3-stub-gen/|CLA\.md$$|CONTRIBUTING\.md$$|RELEASES\.md$$)')
+
+.PHONY: check-markdown
+check-markdown:  #-- Lint Markdown with markdownlint-cli2 and check table delimiter padding
+	$(info $(M) Checking Markdown...)
+	@$(MARKDOWNLINT) --config .markdownlint.jsonc $(MARKDOWNLINT_FILES)
+	@python3 -B scripts/check-markdown-tables.py $(MARKDOWN_FILES)
+	@printf "$(GREEN)Markdown check passed$(RESET)\n"
+
 .PHONY: docs-check-links
 docs-check-links:  #-- Check for broken links in documentation (periodic audit)
 	$(info $(M) Checking documentation links...)

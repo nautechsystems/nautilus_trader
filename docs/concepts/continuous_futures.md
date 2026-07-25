@@ -16,7 +16,7 @@ normal bar aggregation path.
 (spread or ratio):
 
 | Mode              | Operation       | Anchor segment       |
-|-------------------|-----------------|----------------------|
+| ----------------- | --------------- | -------------------- |
 | `BACKWARD_SPREAD` | Additive        | Most recent contract |
 | `FORWARD_SPREAD`  | Additive        | First contract       |
 | `BACKWARD_RATIO`  | Multiplicative  | Most recent contract |

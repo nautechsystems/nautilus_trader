@@ -37,7 +37,7 @@ matters; climb only when the layer below stops detecting regressions or when the
 space grows beyond hand-picked cases.
 
 | Layer                    | Trigger condition                                                               |
-|--------------------------|---------------------------------------------------------------------------------|
+| ------------------------ | ------------------------------------------------------------------------------- |
 | Unit test                | A single function or transition has a small, enumerable set of cases.           |
 | Parametrized test        | The same shape repeats across discrete inputs (order side, status, instrument). |
 | Property‑based test      | An invariant must hold for a whole class of inputs the mind cannot enumerate.   |
@@ -58,7 +58,7 @@ Apply the rule at module granularity, not crate granularity: an adapter crate co
 pure parsers and I/O-bound client loops, and each row applies to a different part.
 
 | Module shape                        | Layers that apply                             | Example                                |
-|-------------------------------------|-----------------------------------------------|----------------------------------------|
+| ----------------------------------- | --------------------------------------------- | -------------------------------------- |
 | Pure function, crisp invariants     | Unit, parametrized, property, fuzz            | Reconciliation kernels, portfolio math |
 | Pure function, no stated invariants | Unit, parametrized, property, fuzz            | Codecs, adapter parsers, formatters    |
 | Stateful, synchronous               | Unit, parametrized, property over transitions | Cache, order book                      |
@@ -298,7 +298,7 @@ Use the default test configuration to debug Rust tests.
 To run the full suite with debug symbols for later, run `make cargo-test-debug` instead of `make cargo-test`.
 
 In IntelliJ IDEA, adjust the run configuration for parametrised `#[rstest]` cases so it reads `test --package nautilus-model --lib data::bar::tests::test_get_time_bar_start::case_1`
-(remove `-- --exact` and append `::case_n` where `n` starts at 1). This workaround matches the behaviour explained [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851).
+(remove `-- --exact` and append `::case_n` where `n` starts at 1). This workaround matches the behaviour explained in [rust-analyzer issue 8964](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851).
 
 In VS Code you can pick the specific test case to debug directly.
 
@@ -368,7 +368,7 @@ existing types are tested, so new types can follow the same pattern.
 ### Test layer matrix
 
 | Layer                  | Location                                    | What it covers                                             |
-|------------------------|---------------------------------------------|------------------------------------------------------------|
+| ---------------------- | ------------------------------------------- | ---------------------------------------------------------- |
 | DataEngine subscribe   | `crates/data/tests/engine.rs`               | Engine processes subscribe/unsubscribe commands correctly. |
 | DataEngine publish     | `crates/data/tests/engine.rs`               | Engine routes published data to the message bus.           |
 | DataActor subscribe    | `crates/common/src/actor/tests.rs`          | Actor subscribes and receives data via typed publish.      |
@@ -385,7 +385,7 @@ The following table shows which layers have test coverage for each data type.
 Use this as a checklist when adding a new type.
 
 | Data type           | Engine | Actor (Rust) | PyO3 dispatch | Actor (Python) | Backtest client | Adapter spec |
-|---------------------|--------|--------------|---------------|----------------|-----------------|--------------|
+| ------------------- | ------ | ------------ | ------------- | -------------- | --------------- | ------------ |
 | `InstrumentAny`     | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
 | `OrderBookDeltas`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
 | `OrderBook`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |

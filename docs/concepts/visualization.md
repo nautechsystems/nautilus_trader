@@ -105,7 +105,7 @@ backtests so return charts use the selected currency.
 The tearsheet can include any combination of the following built-in charts:
 
 | Chart Name         | Type         | Description                                              |
-|--------------------|--------------|----------------------------------------------------------|
+| ------------------ | ------------ | -------------------------------------------------------- |
 | `run_info`         | Table        | Run metadata and account balances.                       |
 | `stats_table`      | Table        | Performance statistics (PnL, returns, general metrics).  |
 | `equity`           | Line         | Cumulative returns over time with optional benchmark.    |
@@ -197,7 +197,7 @@ Themes control the visual styling of charts including colors, fonts, and backgro
 NautilusTrader provides four built-in themes:
 
 | Theme Name      | Description                                    | Use Case                       |
-|-----------------|------------------------------------------------|--------------------------------|
+| --------------- | ---------------------------------------------- | ------------------------------ |
 | `plotly_white`  | Clean light theme with dark gray headers.      | Default, professional reports. |
 | `plotly_dark`   | Dark background with standard Plotly colors.   | Low‑light environments.        |
 | `nautilus`      | Light theme with NautilusTrader brand colors.  | Official light mode.           |
@@ -280,7 +280,7 @@ config = TearsheetConfig(
 ### Configuration parameters
 
 | Parameter           | Type                   | Default          | Description                         |
-|---------------------|------------------------|------------------|-------------------------------------|
+| ------------------- | ---------------------- | ---------------- | ----------------------------------- |
 | `charts`            | `list[TearsheetChart]` | Built‑ins        | Charts to include, in order.        |
 | `theme`             | `str`                  | `"plotly_white"` | Theme name for styling.             |
 | `layout`            | `GridLayout`           | `None`           | Custom subplot grid layout.         |

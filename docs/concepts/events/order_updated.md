@@ -13,7 +13,7 @@ Transition: `PENDING_UPDATE` -> previous status (for example `ACCEPTED`). Handle
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderUpdated` carries:
 
 | Field               | Python type       | Required/default | Description                                                 |
-|---------------------|-------------------|------------------|-------------------------------------------------------------|
+| ------------------- | ----------------- | ---------------- | ----------------------------------------------------------- |
 | `quantity`          | `Quantity`        | Required         | The order's current quantity.                               |
 | `price`             | `Price` or `None` | Required         | The order's current price.                                  |
 | `trigger_price`     | `Price` or `None` | Required         | The order's current trigger price.                          |

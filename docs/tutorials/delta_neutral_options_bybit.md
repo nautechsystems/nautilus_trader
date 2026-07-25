@@ -131,7 +131,7 @@ overrides `enter_strangle` to `false` and `iv_param_key` to
 `"order_iv"`):
 
 | Parameter                 | Default    | Example          | Description                                  |
-|---------------------------|------------|------------------|----------------------------------------------|
+| ------------------------- | ---------- | ---------------- | -------------------------------------------- |
 | `option_family`           | required   | `"BTC"`          | Underlying filter for instrument discovery.  |
 | `hedge_instrument_id`     | required   | `BTCUSDT-LINEAR` | Perpetual used for delta hedging.            |
 | `client_id`               | required   | `"BYBIT"`        | Data and execution client identifier.        |

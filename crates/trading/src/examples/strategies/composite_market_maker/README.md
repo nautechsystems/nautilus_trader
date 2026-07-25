@@ -76,7 +76,7 @@ position back down is the only exit path.
 ## Configuration
 
 | Parameter               | Type                 | Default    | Description                                                                          |
-|-------------------------|----------------------|------------|--------------------------------------------------------------------------------------|
+| ----------------------- | -------------------- | ---------- | ------------------------------------------------------------------------------------ |
 | `instrument_id`         | `InstrumentId`       | *required* | Target instrument the strategy quotes on.                                            |
 | `signal_instrument_id`  | `InstrumentId`       | *required* | Signal instrument (typically a synthetic) whose mid drives the signal residual.      |
 | `max_position`          | `Quantity`           | *required* | Hard cap on net exposure (long or short).                                            |

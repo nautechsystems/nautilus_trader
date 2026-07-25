@@ -486,7 +486,7 @@ rather than the read-only factories.
 DST complements existing testing; it does not replace any of it.
 
 | Layer                   | Covers                                               | DST relationship                                |
-|-------------------------|------------------------------------------------------|-------------------------------------------------|
+| ----------------------- | ---------------------------------------------------- | ----------------------------------------------- |
 | Unit tests              | Pure logic, calculations, parsers, transformers.     | Unchanged.                                      |
 | Integration tests       | Component interaction, I/O boundaries.               | Unchanged. DST runs alongside, not in place of. |
 | Property‑based tests    | Invariants over input domains (parsers, roundtrips). | Unchanged.                                      |

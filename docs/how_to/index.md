@@ -9,21 +9,21 @@ path and [tutorials](../tutorials/) first.
 ## Data workflows
 
 | Guide                                                 | Description                                    |
-|:------------------------------------------------------|:-----------------------------------------------|
+| :---------------------------------------------------- | :--------------------------------------------- |
 | [Loading external data][loading_external_data]        | Load CSV data into the Parquet data catalog.   |
 | [Data catalog with Databento][data_catalog_databento] | Set up a catalog with Databento market data.   |
 
 ## Live trading
 
 | Guide                                                         | Description                                             |
-|:--------------------------------------------------------------|:--------------------------------------------------------|
+| :------------------------------------------------------------ | :------------------------------------------------------ |
 | [Configure a live trading node](configure_live_trading)       | Set up TradingNodeConfig, execution engine, and venues. |
 | [Get started with Lighter](get_started_lighter)               | Start Lighter from Rust or Python v2.                   |
 
 ## Rust
 
 | Guide                                                     | Description                                            |
-|:----------------------------------------------------------|:-------------------------------------------------------|
+| :-------------------------------------------------------- | :----------------------------------------------------- |
 | [Write an Actor (Rust)](write_rust_actor)                 | Build a data actor with subscriptions and handlers.    |
 | [Write a Strategy (Rust)](write_rust_strategy)            | Build a strategy with order management.                |
 | [Run a Backtest (Rust)](run_rust_backtest)                | Use BacktestEngine or BacktestNode with a catalog.     |

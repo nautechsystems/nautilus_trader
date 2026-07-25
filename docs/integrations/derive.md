@@ -39,7 +39,7 @@ alongside this guide for additional details.
 ## Products
 
 | Product type           | Supported | Notes                                                                |
-|------------------------|-----------|----------------------------------------------------------------------|
+| ---------------------- | --------- | -------------------------------------------------------------------- |
 | ERC-20 spot            | ✓         | USDC‑quoted pairs such as `ETH-USDC`; parsed as `CurrencyPair`.      |
 | Perpetual swaps        | ✓         | Cash‑settled in USDC, with per‑currency listings such as `ETH-PERP`. |
 | Options (calls / puts) | ✓         | European‑style options using `{CURRENCY}-{EXPIRY}-{STRIKE}-{C\|P}`.  |
@@ -74,7 +74,7 @@ successfully but can be low-volume, so expect sparse trade frames.
 Configure the environment with the `DeriveEnvironment` enum on either client config.
 
 | Environment | Config                       | REST                            | WebSocket                        |
-|-------------|------------------------------|---------------------------------|----------------------------------|
+| ----------- | ---------------------------- | ------------------------------- | -------------------------------- |
 | Mainnet     | `DeriveEnvironment::Mainnet` | `https://api.lyra.finance`      | `wss://api.lyra.finance/ws`      |
 | Testnet     | `DeriveEnvironment::Testnet` | `https://api-demo.lyra.finance` | `wss://api-demo.lyra.finance/ws` |
 
@@ -185,7 +185,7 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 ### Market data
 
 | Capability                     | Supported | Notes                                                                   |
-|--------------------------------|-----------|-------------------------------------------------------------------------|
+| ------------------------------ | --------- | ----------------------------------------------------------------------- |
 | Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.     |
 | Request all instruments (REST) | ✓         | `public/get_instruments`; salvages valid rows for each currency.        |
 | Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
@@ -268,14 +268,14 @@ adapter signs trigger orders with a fixed 31-day expiry; `signature_expiry_secs`
 ordinary `private/order` and `private/replace` writes, and must be greater than the 300s venue
 minimum.
 
-| Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                         |
-|---------------------|-----------|---------------------|-----------------------|-------------------------------|
-| `StopMarket`        | ✓         | `market`            | `stoploss`            | Uses trigger price as bound.  |
+| Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                          |
+| ------------------- | --------- | ------------------- | --------------------- | ------------------------------ |
+| `StopMarket`        | ✓         | `market`            | `stoploss`            | Uses trigger price as bound.   |
 | `StopLimit`         | ✓         | `limit`             | `stoploss`            | Sends limit and trigger price. |
-| `MarketIfTouched`   | ✓         | `market`            | `takeprofit`          | Uses trigger price as bound.  |
+| `MarketIfTouched`   | ✓         | `market`            | `takeprofit`          | Uses trigger price as bound.   |
 | `LimitIfTouched`    | ✓         | `limit`             | `takeprofit`          | Sends limit and trigger price. |
-| `MarketToLimit`     | -         | -                   | -                     | *Not supported by Derive*.    |
-| Trailing stops      | -         | -                   | -                     | *Not supported by Derive*.    |
+| `MarketToLimit`     | -         | -                   | -                     | *Not supported by Derive*.     |
+| Trailing stops      | -         | -                   | -                     | *Not supported by Derive*.     |
 | TWAP / algo / RFQ   | -         | -                   | -                     | *Not exposed by this adapter*. |
 
 The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to Derive
@@ -297,7 +297,7 @@ cents); a too-tight offset produces spurious `11051` rejections.
 #### Execution instructions
 
 | Instruction   | Supported | Derive value  | Notes                                                         |
-|---------------|-----------|---------------|---------------------------------------------------------------|
+| ------------- | --------- | ------------- | ------------------------------------------------------------- |
 | `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.    |
 | `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied.   |
 
@@ -308,7 +308,7 @@ adapter rejects Nautilus values with no Derive equivalent before signing. Derive
 post-only as a `time_in_force` value, so `post_only` cannot combine with `IOC` or `FOK`.
 
 | Time in force  | Supported | Derive value | Notes                      |
-|----------------|-----------|--------------|----------------------------|
+| -------------- | --------- | ------------ | -------------------------- |
 | `GTC`          | ✓         | `gtc`        | Good Till Canceled.        |
 | `IOC`          | ✓         | `ioc`        | Immediate or Cancel.       |
 | `FOK`          | ✓         | `fok`        | Fill or Kill.              |
@@ -373,15 +373,15 @@ unplaced order hanging in `Submitted` forever because no WebSocket frame will ar
 
 `subscribe_book_deltas` and `subscribe_book_depth10` accept these `subscribe_params` keys:
 
-| Key      | Type   | Default | Allowed              |
-|----------|--------|---------|----------------------|
-| `group`  | string | `"1"`   | `"1"`, `"10"`, `"100"` |
-| `depth`  | string | `"10"`  | `"1"`, `"10"`, `"20"`, `"100"` |
+| Key     | Type   | Default | Allowed                        |
+| ------- | ------ | ------- | ------------------------------ |
+| `group` | string | `"1"`   | `"1"`, `"10"`, `"100"`         |
+| `depth` | string | `"10"`  | `"1"`, `"10"`, `"20"`, `"100"` |
 
 `subscribe_quotes` accepts:
 
 | Key        | Type   | Default  | Allowed           |
-|------------|--------|----------|-------------------|
+| ---------- | ------ | -------- | ----------------- |
 | `interval` | string | `"1000"` | `"100"`, `"1000"` |
 
 Unknown values are rejected at subscribe time.
@@ -414,45 +414,45 @@ specific feeds.
 
 Class/struct: `DeriveDataClientConfig`.
 
-| Option                             | Default   | Description |
-|------------------------------------|-----------|-------------|
-| `base_url_rest`                    | `None`    | Override for the REST base URL. |
-| `base_url_ws`                      | `None`    | Override for the WebSocket base URL. |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python). |
-| `http_timeout_secs`                | `10`      | REST request timeout in seconds. |
-| `ws_timeout_secs`                  | `30`      | WebSocket connect and idle timeout in seconds. |
-| `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes. |
+| Option                             | Default   | Description                                                          |
+| ---------------------------------- | --------- | -------------------------------------------------------------------- |
+| `base_url_rest`                    | `None`    | Override for the REST base URL.                                      |
+| `base_url_ws`                      | `None`    | Override for the WebSocket base URL.                                 |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                |
+| `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                 |
+| `http_timeout_secs`                | `10`      | REST request timeout in seconds.                                     |
+| `ws_timeout_secs`                  | `30`      | WebSocket connect and idle timeout in seconds.                       |
+| `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes.                    |
 | `currencies`                       | `[]`      | Currencies to bulk‑load on connect. Empty means lazy‑load on demand. |
-| `include_expired`                  | `false`   | Include expired option rows from `public/get_instruments`. |
-| `auto_load_missing_instruments`    | `true`    | Lazy‑load unknown instruments before subscribe or request commands. |
-| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
+| `include_expired`                  | `false`   | Include expired option rows from `public/get_instruments`.           |
+| `auto_load_missing_instruments`    | `true`    | Lazy‑load unknown instruments before subscribe or request commands.  |
+| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.             |
 
 ### Execution client configuration options
 
 Class/struct: `DeriveExecClientConfig`.
 
-| Option                             | Default   | Description |
-|------------------------------------|-----------|-------------|
-| `wallet_address`                   | `None`    | Derive Chain smart‑contract wallet address. Falls back to env vars below. |
-| `session_key`                      | `None`    | secp256k1 session‑key private key. Falls back to env vars below. |
-| `subaccount_id`                    | `None`    | Derive subaccount id. Falls back to env vars below. |
-| `base_url_rest`                    | `None`    | Override for the REST base URL. |
-| `base_url_ws`                      | `None`    | Override for the WebSocket base URL. |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python). |
-| `http_timeout_secs`                | `10`      | REST request timeout in seconds. |
-| `max_retries`                      | `3`       | Retry attempts for recoverable reads and definitive non‑write paths. |
-| `retry_delay_initial_ms`           | `100`     | Initial retry delay in milliseconds. |
-| `retry_delay_max_ms`               | `5000`    | Maximum retry delay in milliseconds. |
-| `max_fee_per_contract`             | Required  | Positive per‑contract USDC fee cap signed into each order. |
-| `domain_separator`                 | `None`    | Optional EIP-712 domain separator override. |
-| `action_typehash`                  | `None`    | Optional EIP-712 action typehash override. |
-| `trade_module_address`             | `None`    | Optional Trade module contract address override. |
-| `signature_expiry_secs`            | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL. |
-| `market_order_slippage_bps`        | `50`      | Slippage bound for market‑order limit prices. |
+| Option                             | Default   | Description                                                                                                                                         |
+| ---------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wallet_address`                   | `None`    | Derive Chain smart‑contract wallet address. Falls back to env vars below.                                                                           |
+| `session_key`                      | `None`    | secp256k1 session‑key private key. Falls back to env vars below.                                                                                    |
+| `subaccount_id`                    | `None`    | Derive subaccount id. Falls back to env vars below.                                                                                                 |
+| `base_url_rest`                    | `None`    | Override for the REST base URL.                                                                                                                     |
+| `base_url_ws`                      | `None`    | Override for the WebSocket base URL.                                                                                                                |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                               |
+| `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                                                                                |
+| `http_timeout_secs`                | `10`      | REST request timeout in seconds.                                                                                                                    |
+| `max_retries`                      | `3`       | Retry attempts for recoverable reads and definitive non‑write paths.                                                                                |
+| `retry_delay_initial_ms`           | `100`     | Initial retry delay in milliseconds.                                                                                                                |
+| `retry_delay_max_ms`               | `5000`    | Maximum retry delay in milliseconds.                                                                                                                |
+| `max_fee_per_contract`             | Required  | Positive per‑contract USDC fee cap signed into each order.                                                                                          |
+| `domain_separator`                 | `None`    | Optional EIP-712 domain separator override.                                                                                                         |
+| `action_typehash`                  | `None`    | Optional EIP-712 action typehash override.                                                                                                          |
+| `trade_module_address`             | `None`    | Optional Trade module contract address override.                                                                                                    |
+| `signature_expiry_secs`            | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL.                                                                              |
+| `market_order_slippage_bps`        | `50`      | Slippage bound for market‑order limit prices.                                                                                                       |
 | `max_matching_requests_per_second` | `None`    | Max matching‑engine write requests/sec (create/cancel/replace). Defaults to the Trader‑tier limit of 1 when unset; raise for Market Maker accounts. |
-| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
+| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                                                                            |
 
 The default transport falls back to `Tungstenite` when the build disables the
 `transport-sockudo` feature.
@@ -461,7 +461,7 @@ The `wallet_address`, `session_key`, and `subaccount_id` fall back to environmen
 unset:
 
 | Field            | Mainnet variable             | Testnet variable                     |
-|------------------|------------------------------|--------------------------------------|
+| ---------------- | ---------------------------- | ------------------------------------ |
 | `wallet_address` | `DERIVE_WALLET_ADDRESS`      | `DERIVE_TESTNET_WALLET_ADDRESS`      |
 | `session_key`    | `DERIVE_SESSION_PRIVATE_KEY` | `DERIVE_TESTNET_SESSION_PRIVATE_KEY` |
 | `subaccount_id`  | `DERIVE_SUBACCOUNT_ID`       | `DERIVE_TESTNET_SUBACCOUNT_ID`       |

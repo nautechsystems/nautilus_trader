@@ -10,7 +10,7 @@ credentials and then add a strategy that can submit orders.
 ## Choose a setup path
 
 | Path        | Use when                                            | First step                                 |
-|:------------|:----------------------------------------------------|:-------------------------------------------|
+| :---------- | :-------------------------------------------------- | :----------------------------------------- |
 | Pure Rust   | You want a compiled app with no Python runtime.     | Copy the Rust quickstart.                  |
 | Python v2   | You want Python scripts on the Rust engine.         | Run the Python v2 data tester.             |
 | RWA example | You want Databento signal data and Lighter trading. | Read the composite market making tutorial. |

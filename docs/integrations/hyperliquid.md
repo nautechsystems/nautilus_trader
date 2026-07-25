@@ -27,7 +27,7 @@ and won't need to work directly with these lower-level components.
 
 ## Examples
 
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
+You can find live example scripts in the [examples/live/hyperliquid](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/) directory.
 
 ## Builder code attribution
 
@@ -180,7 +180,7 @@ Hyperliquid offers linear perpetual futures, HIP-3 builder-deployed perpetuals, 
 spot markets, and HIP-4 binary outcome markets.
 
 | Product Type      | Data Feed | Trading | Notes                                                   |
-|-------------------|-----------|---------|---------------------------------------------------------|
+| ----------------- | --------- | ------- | ------------------------------------------------------- |
 | Spot              | ✓         | ✓       | Native spot markets.                                    |
 | Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated).         |
 | HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps with per‑dex collateral. Opt‑in. |
@@ -429,7 +429,7 @@ in Rust). Derived identifiers are always populated; description-derived
 fields appear when the venue includes them.
 
 | Field              | Source                         | Notes                                             |
-|--------------------|--------------------------------|---------------------------------------------------|
+| ------------------ | ------------------------------ | ------------------------------------------------- |
 | `outcome_index`    | derived                        | `outcome` from `outcomeMeta`                      |
 | `outcome_side`     | derived                        | `0` = Yes, `1` = No                               |
 | `side_name`        | derived                        | `"Yes"` or `"No"`                                 |
@@ -499,11 +499,11 @@ await client.submit_merge_question(9, None)
 await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 ```
 
-| Action                  | Use case |
-|-------------------------|----------|
-| `submit_split_outcome`  | Mint paired Yes + No tokens from quote (initial market making, dual‑side hedges) |
-| `submit_merge_outcome`  | Burn a matched Yes + No pair back to quote without crossing the spread |
-| `submit_merge_question` | Close a full multi‑outcome basket back to quote atomically |
+| Action                  | Use case                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `submit_split_outcome`  | Mint paired Yes + No tokens from quote (initial market making, dual‑side hedges)     |
+| `submit_merge_outcome`  | Burn a matched Yes + No pair back to quote without crossing the spread               |
+| `submit_merge_question` | Close a full multi‑outcome basket back to quote atomically                           |
 | `submit_negate_outcome` | Convert No shares of one outcome into Yes shares of every other in the same question |
 
 For directional bets the ordinary `SubmitOrder` path is sufficient; the
@@ -567,7 +567,7 @@ The instrument provider supports filtering when loading instruments via
 `InstrumentProviderConfig(filters=...)`:
 
 | Filter key                  | Type        | Description                                 |
-|-----------------------------|-------------|---------------------------------------------|
+| --------------------------- | ----------- | ------------------------------------------- |
 | `market_types` (or `kinds`) | `list[str]` | `"perp"`, `"perp_hip3"`, or `"spot"`.       |
 | `bases`                     | `list[str]` | Base currency codes, e.g. `["BTC", "ETH"]`. |
 | `quotes`                    | `list[str]` | Quote currency codes, e.g. `["USDC"]`.      |
@@ -587,20 +587,20 @@ instrument_provider=InstrumentProviderConfig(
 The adapter supports the following data subscriptions. All perpetual data types
 (mark prices, index prices, funding rates) apply to both standard and HIP-3 perps.
 
-| Data type         | Sub. | Snapshot | Hist. | Nautilus type                 | Notes                                 |
-|-------------------|------|----------|-------|-------------------------------|---------------------------------------|
-| Trade ticks       | ✓    | -        | ✓     | `TradeTick`                   | WebSocket trades; `recentTrades`.     |
+| Data type         | Sub. | Snapshot | Hist. | Nautilus type                 | Notes                                            |
+| ----------------- | ---- | -------- | ----- | ----------------------------- | ------------------------------------------------ |
+| Trade ticks       | ✓    | -        | ✓     | `TradeTick`                   | WebSocket trades; `recentTrades`.                |
 | Public trades     | ✓    | -        | ✓     | `HyperliquidPublicTrade`      | Opt‑in custom data with counterparties and hash. |
-| Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                       |
-| Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                         |
-| Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                  |
-| Bars              | ✓    | -        | ✓     | `Bar`                         | Supported intervals below.            |
-| Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`             | Perpetual mark price ticks.           |
-| Index prices      | ✓    | -        | -     | `IndexPriceUpdate`            | Underlying reference prices.          |
-| Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`           | `fundingHistory` endpoint.            |
-| Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.    |
-| All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.           |
-| All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.  |
+| Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                                  |
+| Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                                    |
+| Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                             |
+| Bars              | ✓    | -        | ✓     | `Bar`                         | Supported intervals below.                       |
+| Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`             | Perpetual mark price ticks.                      |
+| Index prices      | ✓    | -        | -     | `IndexPriceUpdate`            | Underlying reference prices.                     |
+| Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`           | `fundingHistory` endpoint.                       |
+| Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.               |
+| All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.                      |
+| All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.             |
 
 :::note
 Historical quote requests are not supported. Historical trade requests use the
@@ -659,7 +659,7 @@ The adapter emits Hyperliquid-specific custom data types:
   self-contained and includes the buyer, seller, and venue hash.
 
 | Field      | Type             | Description                                              |
-|------------|------------------|----------------------------------------------------------|
+| ---------- | ---------------- | -------------------------------------------------------- |
 | `mids`     | `dict[str, str]` | Instrument ID to mid price mapping.                      |
 | `ts_event` | `int`            | UNIX timestamp in nanoseconds when the update occurred.  |
 | `ts_init`  | `int`            | UNIX timestamp in nanoseconds when the object was built. |
@@ -683,7 +683,7 @@ perpetual instrument. Subscribe with the canonical Nautilus `instrument_id`
 in `metadata["instrument_id"]`:
 
 | Field           | Type           | Description                                                                 |
-|-----------------|----------------|-----------------------------------------------------------------------------|
+| --------------- | -------------- | --------------------------------------------------------------------------- |
 | `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.                                           |
 | `open_interest` | `Decimal`      | Open interest parsed for direct arithmetic use.                             |
 | `ts_event`      | `int`          | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`.  |
@@ -752,7 +752,7 @@ topic per instrument, so strategies subscribe once and filter the normalized
 entries they need:
 
 | Field             | Type                              | Description                                                                |
-|-------------------|-----------------------------------|----------------------------------------------------------------------------|
+| ----------------- | --------------------------------- | -------------------------------------------------------------------------- |
 | `dex`             | `str`                             | Perp dex identifier from Hyperliquid `perpDexs`. `""` is the default dex.  |
 | `instrument_id`   | `InstrumentId`                    | Canonical Nautilus instrument ID for the entry.                            |
 | `mark_price`      | `Price`                           | Current mark price.                                                        |
@@ -804,7 +804,7 @@ def on_data(self, data) -> None:
 ### Supported bar intervals
 
 | Resolution | Hyperliquid candle |
-|------------|--------------------|
+| ---------- | ------------------ |
 | 1-MINUTE   | `1m`               |
 | 3-MINUTE   | `3m`               |
 | 5-MINUTE   | `5m`               |
@@ -833,7 +833,7 @@ instructions apply to both.
 ### Order types
 
 | Order Type          | Perpetuals | Spot | Notes                                               |
-|---------------------|------------|------|-----------------------------------------------------|
+| ------------------- | ---------- | ---- | --------------------------------------------------- |
 | `MARKET`            | ✓          | ✓    | IOC limit with configurable slippage from best BBO. |
 | `LIMIT`             | ✓          | ✓    |                                                     |
 | `STOP_MARKET`       | ✓          | ✓    | Stop loss orders.                                   |
@@ -899,7 +899,7 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
 ### Time in force
 
 | Time in force | Perpetuals | Spot | Notes                |
-|---------------|------------|------|----------------------|
+| ------------- | ---------- | ---- | -------------------- |
 | `GTC`         | ✓          | ✓    | Good Till Canceled.  |
 | `IOC`         | ✓          | ✓    | Immediate or Cancel. |
 | `FOK`         | -          | -    | *Not supported*.     |
@@ -916,7 +916,7 @@ cancels only the unfilled remainder.
 ### Execution instructions
 
 | Instruction   | Perpetuals | Spot | Notes                            |
-|---------------|------------|------|----------------------------------|
+| ------------- | ---------- | ---- | -------------------------------- |
 | `post_only`   | ✓          | ✓    | Equivalent to ALO time in force. |
 | `reduce_only` | ✓          | ✓    | Close‑only orders.               |
 
@@ -929,7 +929,7 @@ ALO (Add-Liquidity-Only) lane.
 ### Order operations
 
 | Operation         | Perpetuals | Spot | Notes                                                 |
-|-------------------|------------|------|-------------------------------------------------------|
+| ----------------- | ---------- | ---- | ----------------------------------------------------- |
 | Submit order      | ✓          | ✓    | Single order submission.                              |
 | Submit order list | ✓          | ✓    | Batch order submission (single API call).             |
 | Modify order      | ✓          | ✓    | Requires venue order ID.                              |
@@ -1231,46 +1231,46 @@ match the venue limit.
 
 ### Data client configuration options
 
-| Option                                   | Default   | Description |
-|------------------------------------------|-----------|-------------|
-| `private_key`                            | `None`    | Optional EVM private key for authenticated endpoints. |
-| `base_url_ws`                            | `None`    | Override for the WebSocket base URL. |
-| `base_url_http`                          | `None`    | Override for the HTTP info URL. |
-| `proxy_url`                              | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `environment`                            | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset. |
-| `http_timeout_secs`                      | `60`      | Timeout (seconds) applied to REST calls. |
-| `ws_timeout_secs`                        | `30`      | Timeout (seconds) applied to WebSocket connections. |
+| Option                                   | Default   | Description                                                                                                             |
+| ---------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `private_key`                            | `None`    | Optional EVM private key for authenticated endpoints.                                                                   |
+| `base_url_ws`                            | `None`    | Override for the WebSocket base URL.                                                                                    |
+| `base_url_http`                          | `None`    | Override for the HTTP info URL.                                                                                         |
+| `proxy_url`                              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                   |
+| `environment`                            | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset.                                            |
+| `http_timeout_secs`                      | `60`      | Timeout (seconds) applied to REST calls.                                                                                |
+| `ws_timeout_secs`                        | `30`      | Timeout (seconds) applied to WebSocket connections.                                                                     |
 | `stale_stream_receive_timeout_secs`      | `120`     | Receive age threshold (seconds) for stale market data stream warnings. Set to `0` to disable the stream health monitor. |
-| `stream_health_check_interval_secs`      | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor. |
-| `stale_stream_warning_cooldown_secs`     | `60`      | Cooldown (seconds) between stale warnings for the same market data stream. |
-| `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect). |
-| `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run. |
-| `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect. |
-| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalogue refreshes. |
-| `transport_backend`                      | `Sockudo` | WebSocket transport backend. |
+| `stream_health_check_interval_secs`      | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor.           |
+| `stale_stream_warning_cooldown_secs`     | `60`      | Cooldown (seconds) between stale warnings for the same market data stream.                                              |
+| `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect).                          |
+| `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run.      |
+| `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect.                       |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalogue refreshes.                                                              |
+| `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                                            |
 
 ### Execution client configuration options
 
-| Option                         | Default   | Description |
-|--------------------------------|-----------|-------------------------------------------------------------------------------------------|
-| `private_key`                  | `None`    | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted. |
-| `vault_address`                | `None`    | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
-| `account_address`              | `None`    | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
-| `environment`                  | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset. |
-| `base_url_ws`                  | `None`    | Override for the WebSocket base URL. |
-| `base_url_http`                | `None`    | Override for the HTTP info base URL. |
-| `base_url_exchange`            | `None`    | Override for the exchange API base URL. |
-| `max_retries`                  | `3`       | Maximum retry attempts for submit, cancel, or modify order requests. |
-| `retry_delay_initial_ms`       | `100`     | Initial delay (milliseconds) between retries. |
-| `retry_delay_max_ms`           | `5000`    | Maximum delay (milliseconds) between retries. |
-| `http_timeout_secs`            | `60`      | Timeout (seconds) applied to REST calls. |
-| `ws_post_timeout_secs`         | `10`      | Timeout (seconds) applied to WebSocket post trading requests. |
-| `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission. |
-| `include_builder_attribution`  | `True`    | Include zero‑fee Nautilus builder attribution on eligible mainnet orders. |
-| `market_order_slippage_bps`    | `50`      | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Overridable per‑order via `SubmitOrder.params`. |
+| Option                         | Default   | Description                                                                                                                                      |
+| ------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `private_key`                  | `None`    | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.                                                          |
+| `vault_address`                | `None`    | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted.                                                        |
+| `account_address`              | `None`    | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`.                                                        |
+| `environment`                  | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset.                                                                     |
+| `base_url_ws`                  | `None`    | Override for the WebSocket base URL.                                                                                                             |
+| `base_url_http`                | `None`    | Override for the HTTP info base URL.                                                                                                             |
+| `base_url_exchange`            | `None`    | Override for the exchange API base URL.                                                                                                          |
+| `max_retries`                  | `3`       | Maximum retry attempts for submit, cancel, or modify order requests.                                                                             |
+| `retry_delay_initial_ms`       | `100`     | Initial delay (milliseconds) between retries.                                                                                                    |
+| `retry_delay_max_ms`           | `5000`    | Maximum delay (milliseconds) between retries.                                                                                                    |
+| `http_timeout_secs`            | `60`      | Timeout (seconds) applied to REST calls.                                                                                                         |
+| `ws_post_timeout_secs`         | `10`      | Timeout (seconds) applied to WebSocket post trading requests.                                                                                    |
+| `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission.                                                                               |
+| `include_builder_attribution`  | `True`    | Include zero‑fee Nautilus builder attribution on eligible mainnet orders.                                                                        |
+| `market_order_slippage_bps`    | `50`      | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Overridable per‑order via `SubmitOrder.params`.                            |
 | `outcome_settlement_poll_secs` | `0`       | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; venue `Settlement` fills cover settlement, so polling is disabled by default. |
-| `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `transport_backend`            | `Sockudo` | WebSocket transport backend. |
+| `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                            |
+| `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                                                                     |
 
 :::note
 `outcome_settlement_poll_secs` is the only Rust-only option: it is not exposed on the

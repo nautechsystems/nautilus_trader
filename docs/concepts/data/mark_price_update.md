@@ -7,7 +7,7 @@ PnL calculations.
 ## Fields
 
 | Field           | Rust type      | Python type    | Required/default | Notes                                    |
-|-----------------|----------------|----------------|------------------|------------------------------------------|
+| --------------- | -------------- | -------------- | ---------------- | ---------------------------------------- |
 | `instrument_id` | `InstrumentId` | `InstrumentId` | Required         | Instrument for the mark price.           |
 | `value`         | `Price`        | `Price`        | Required         | Current mark price.                      |
 | `ts_event`      | `UnixNanos`    | `int`          | Required         | Event timestamp in nanoseconds.          |

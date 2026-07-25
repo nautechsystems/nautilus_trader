@@ -483,6 +483,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: check-markdown-tables
+        name: check markdown table padding
+        description: Requires spaces inside GFM table delimiter cells
+        entry: python3 -B scripts/check-markdown-tables.py
+        language: system
+        types: [markdown]
+
       - id: mermaid-lint
         name: mermaid lint
         description: Validates Mermaid diagrams embedded in Markdown files

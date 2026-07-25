@@ -47,17 +47,17 @@ would breach `max_position` are skipped.
 
 ## Configuration
 
-| Parameter               | Type           | Default     | Description                                                                          |
-|-------------------------|----------------|-------------|--------------------------------------------------------------------------------------|
-| `instrument_id`         | `InstrumentId` | *required*  | Instrument to trade.                                                                 |
-| `max_position`          | `Quantity`     | *required*  | Hard cap on net exposure (long or short).                                            |
-| `trade_size`            | `Option<Qty>`  | `None`      | Size per grid level. When `None`, resolves from the instrument's `min_quantity`.      |
-| `num_levels`            | `usize`        | `3`         | Number of price levels on each side (buy and sell).                                   |
-| `grid_step_bps`         | `u32`          | `10`        | Grid spacing in basis points of mid-price. 10 bps = 0.1%.                            |
-| `skew_factor`           | `f64`          | `0.0`       | Inventory skew multiplier. Higher values skew more aggressively against position.     |
-| `requote_threshold_bps` | `u32`          | `5`         | Minimum mid-price move in bps before re-quoting. Reduces cancel/replace frequency.   |
-| `expire_time_secs`      | `Option<u64>`  | `None`      | Order expiry in seconds. When set, orders use GTD time-in-force.                      |
-| `on_cancel_resubmit`    | `bool`         | `false`     | Resubmit the grid on the next quote after an order cancel event.                      |
+| Parameter               | Type           | Default    | Description                                                                        |
+| ----------------------- | -------------- | ---------- | ---------------------------------------------------------------------------------- |
+| `instrument_id`         | `InstrumentId` | *required* | Instrument to trade.                                                               |
+| `max_position`          | `Quantity`     | *required* | Hard cap on net exposure (long or short).                                          |
+| `trade_size`            | `Option<Qty>`  | `None`     | Size per grid level. When `None`, resolves from the instrument's `min_quantity`.   |
+| `num_levels`            | `usize`        | `3`        | Number of price levels on each side (buy and sell).                                |
+| `grid_step_bps`         | `u32`          | `10`       | Grid spacing in basis points of mid-price. 10 bps = 0.1%.                          |
+| `skew_factor`           | `f64`          | `0.0`      | Inventory skew multiplier. Higher values skew more aggressively against position.  |
+| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid-price move in bps before re-quoting. Reduces cancel/replace frequency. |
+| `expire_time_secs`      | `Option<u64>`  | `None`     | Order expiry in seconds. When set, orders use GTD time-in-force.                   |
+| `on_cancel_resubmit`    | `bool`         | `false`    | Resubmit the grid on the next quote after an order cancel event.                   |
 
 ### Tuning guidelines
 

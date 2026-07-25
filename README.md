@@ -104,7 +104,7 @@ and data providers by translating their raw APIs into a unified interface and no
 The following integrations are currently supported; see [docs/integrations/](https://nautilustrader.io/docs/latest/integrations/) for details:
 
 | Name                                                                         | ID                    | Type                    | Status                                                  | Docs                                       |
-| :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :-------------------------------------------------------| :----------------------------------------- |
+| :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :----------------------------------------- |
 | [AX Exchange](https://architect.exchange)                                    | `AX`                  | Perpetuals Exchange     | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/architect_ax.md) |
 | [Betfair](https://betfair.com)                                               | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/betfair.md)      |
 | [Binance](https://binance.com)                                               | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)      |

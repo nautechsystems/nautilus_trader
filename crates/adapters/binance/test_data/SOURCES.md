@@ -7,34 +7,34 @@ for cases where a docs example is missing or stale.
 
 ## Spot HTTP
 
-| Surface          | Parser functions                                                                            | Primary source                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Surface          | Parser functions                                                                                              | Primary source                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Market data REST | `decode_ping`, `decode_server_time`, `decode_depth`, `decode_trades`, `decode_klines`, `decode_exchange_info` | [Spot REST market data docs](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints) |
-| Account REST     | `decode_account`, `decode_account_trades`, `decode_orders`                                 | [Spot REST account docs](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints)         |
-| Trading REST     | `decode_new_order_full`, `decode_cancel_order`, `decode_order`, `decode_cancel_open_orders` | [Spot REST trading docs](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/trading-endpoints)       |
+| Account REST     | `decode_account`, `decode_account_trades`, `decode_orders`                                                    | [Spot REST account docs](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints)         |
+| Trading REST     | `decode_new_order_full`, `decode_cancel_order`, `decode_order`, `decode_cancel_open_orders`                   | [Spot REST trading docs](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/trading-endpoints)         |
 
 ## Spot WebSocket
 
-| Surface          | Parser functions                                                                  | Primary source                                                                                                      |
-| ---------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| User data stream | `parse_spot_exec_report_to_order_status`, `parse_spot_exec_report_to_fill`, `parse_spot_account_position` | [Spot user data stream docs](https://developers.binance.com/docs/binance-spot-api-docs/user-data-stream)              |
-| WS API trading   | Spot WebSocket API request and response parsing around trading flows.            | [Spot WebSocket API trading docs](https://developers.binance.com/docs/binance-spot-api-docs/websocket-api/trading-requests) |
+| Surface          | Parser functions                                                                                          | Primary source                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| User data stream | `parse_spot_exec_report_to_order_status`, `parse_spot_exec_report_to_fill`, `parse_spot_account_position` | [Spot user data stream docs](https://developers.binance.com/docs/binance-spot-api-docs/user-data-stream)                    |
+| WS API trading   | Spot WebSocket API request and response parsing around trading flows.                                     | [Spot WebSocket API trading docs](https://developers.binance.com/docs/binance-spot-api-docs/websocket-api/trading-requests) |
 
 ## Spot SBE
 
-| Surface                               | Parser functions                                                                     | Primary source                                                                                          |
-| ------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| HTTP SBE responses                    | Spot `decode_*` functions in `src/spot/http/parse.rs`.                              | Spot REST docs above for semantic examples, then live SBE capture for raw payloads.                     |
+| Surface                               | Parser functions                                                                                          | Primary source                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| HTTP SBE responses                    | Spot `decode_*` functions in `src/spot/http/parse.rs`.                                                    | Spot REST docs above for semantic examples, then live SBE capture for raw payloads.                    |
 | Market data stream SBE                | `decode_market_data`, `parse_trades_event`, `parse_bbo_event`, `parse_depth_snapshot`, `parse_depth_diff` | [Spot SBE market data docs](https://developers.binance.com/docs/binance-spot-api-docs/sbe-market-data) |
-| SBE schema and payload interpretation | Shared SBE decoding and fixture derivation work.                                     | [Spot SBE FAQ](https://developers.binance.com/docs/binance-spot-api-docs/faqs/sbe_faq)                 |
+| SBE schema and payload interpretation | Shared SBE decoding and fixture derivation work.                                                          | [Spot SBE FAQ](https://developers.binance.com/docs/binance-spot-api-docs/faqs/sbe_faq)                 |
 
 ## Futures
 
-| Surface             | Parser functions                                                                                         | Primary source                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Futures HTTP        | HTTP model and response fixtures under `src/futures/http`.                                               | Official Binance Futures REST docs for each endpoint we cover.                                           |
-| Market data streams | `parse_agg_trade`, `parse_trade`, `parse_book_ticker`, `parse_depth_update`, `parse_mark_price`, `parse_kline`, `extract_symbol`, `extract_event_type` | USD-M Futures market stream docs for aggregate trade, book ticker, diff depth, mark price, and klines. |
-| User data streams   | `parse_futures_order_update_to_order_status`, `parse_futures_order_update_to_fill`, `parse_futures_algo_update_to_order_status`, `parse_futures_account_update`, `decode_order_client_id`, `decode_algo_client_id` | USD-M Futures user-data docs for balance and position updates, order updates, and algo order updates.   |
+| Surface             | Parser functions                                                                                                                                                                                                   | Primary source                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Futures HTTP        | HTTP model and response fixtures under `src/futures/http`.                                                                                                                                                         | Official Binance Futures REST docs for each endpoint we cover.                                         |
+| Market data streams | `parse_agg_trade`, `parse_trade`, `parse_book_ticker`, `parse_depth_update`, `parse_mark_price`, `parse_kline`, `extract_symbol`, `extract_event_type`                                                             | USD-M Futures market stream docs for aggregate trade, book ticker, diff depth, mark price, and klines. |
+| User data streams   | `parse_futures_order_update_to_order_status`, `parse_futures_order_update_to_fill`, `parse_futures_algo_update_to_order_status`, `parse_futures_account_update`, `decode_order_client_id`, `decode_algo_client_id` | USD-M Futures user-data docs for balance and position updates, order updates, and algo order updates.  |
 
 ## Notes
 

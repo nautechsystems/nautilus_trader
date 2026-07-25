@@ -12,7 +12,7 @@ Created locally as the seed event for a new order. Handler: `on_order_initialize
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderInitialized` carries:
 
 | Field                   | Python type                     | Required/default | Description                                                        |
-|-------------------------|---------------------------------|------------------|--------------------------------------------------------------------|
+| ----------------------- | ------------------------------- | ---------------- | ------------------------------------------------------------------ |
 | `side`                  | `OrderSide`                     | Required         | The order side (exposed as `event.side`).                          |
 | `order_type`            | `OrderType`                     | Required         | The order type.                                                    |
 | `quantity`              | `Quantity`                      | Required         | The order quantity.                                                |

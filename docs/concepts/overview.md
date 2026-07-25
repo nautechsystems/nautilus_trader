@@ -225,7 +225,7 @@ The following value types are backed by either 128-bit or 64-bit raw integer val
 When the `high-precision` feature flag is **enabled** (default), values use the specification:
 
 | Type         | Raw backing | Max precision | Min value           | Max value          |
-|:-------------|:------------|:--------------|:--------------------|:-------------------|
+| :----------- | :---------- | :------------ | :------------------ | :----------------- |
 | `Price`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
 | `Money`      | `i128`      | 16            | -17,014,118,346,046 | 17,014,118,346,046 |
 | `Quantity`   | `u128`      | 16            | 0                   | 34,028,236,692,093 |
@@ -235,7 +235,7 @@ When the `high-precision` feature flag is **enabled** (default), values use the 
 When the `high-precision` feature flag is **disabled**, values use the specification:
 
 | Type         | Raw backing | Max precision | Min value           | Max value          |
-|:-------------|:------------|:--------------|:--------------------|:-------------------|
+| :----------- | :---------- | :------------ | :------------------ | :----------------- |
 | `Price`      | `i64`       | 9             | -9,223,372,036      | 9,223,372,036      |
 | `Money`      | `i64`       | 9             | -9,223,372,036      | 9,223,372,036      |
 | `Quantity`   | `u64`       | 9             | 0                   | 18,446,744,073     |

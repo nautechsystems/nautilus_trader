@@ -155,7 +155,7 @@ Most adapters include runnable examples with data testers and execution
 testers:
 
 | Adapter             | Example directory                                  |
-|---------------------|----------------------------------------------------|
+| ------------------- | -------------------------------------------------- |
 | Architect AX        | `crates/adapters/architect_ax/examples/`           |
 | Betfair             | `crates/adapters/betfair/examples/`                |
 | Binance             | `crates/adapters/binance/examples/`                |

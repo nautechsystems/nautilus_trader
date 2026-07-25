@@ -8,7 +8,7 @@ and environments.
 ## Overview
 
 | Type       | Purpose                                  | Signed | Currency |
-|------------|------------------------------------------|--------|----------|
+| ---------- | ---------------------------------------- | ------ | -------- |
 | `Quantity` | Trade sizes, order amounts, positions.   | No     | -        |
 | `Price`    | Market prices, quotes, price levels.     | Yes    | -        |
 | `Money`    | Monetary amounts, P&L, account balances. | Yes    | Yes      |
@@ -50,7 +50,7 @@ Addition and subtraction of the same value type return that type, preserving
 domain meaning (a price plus a price is still a price):
 
 | Operation             | Result     |
-|-----------------------|------------|
+| --------------------- | ---------- |
 | `Quantity + Quantity` | `Quantity` |
 | `Quantity - Quantity` | `Quantity` |
 | `Price + Price`       | `Price`    |
@@ -72,7 +72,7 @@ Multiplication, division, floor division, and modulo between two values of the
 same type return `Decimal`:
 
 | Operation             | Result    |
-|-----------------------|-----------|
+| --------------------- | --------- |
 | `Price * Price`       | `Decimal` |
 | `Price / Price`       | `Decimal` |
 | `Price // Price`      | `Decimal` |
@@ -91,7 +91,7 @@ misinterpretation of the result as a value with the original unit.
 Unary operators preserve the value type where the result is valid for that type:
 
 | Operation    | `Price`   | `Quantity` | `Money`   |
-|--------------|-----------|------------|-----------|
+| ------------ | --------- | ---------- | --------- |
 | `-x` (neg)   | `Price`   | `Decimal`  | `Money`   |
 | `+x` (pos)   | `Price`   | `Quantity` | `Money`   |
 | `abs(x)`     | `Price`   | `Quantity` | `Money`   |
@@ -130,7 +130,7 @@ This applies to all six binary operators (`+`, `-`, `*`, `/`, `//`, `%`) and wor
 in both directions (`value op scalar` and `scalar op value`):
 
 | Left operand | Right operand | Result type |
-|--------------|---------------|-------------|
+| ------------ | ------------- | ----------- |
 | Value type   | `int`         | `Decimal`   |
 | Value type   | `float`       | `float`     |
 | Value type   | `Decimal`     | `Decimal`   |

@@ -39,7 +39,7 @@ The choice of trigger type determines how the order emulation will behave:
 Here are all the available values you can set into `emulation_trigger` parameter and their purposes:
 
 | Trigger Type      | Description                                                                                          | Common use cases                                                                                             |
-|:------------------|:-----------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------|
+| :---------------- | :--------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
 | `NO_TRIGGER`      | Disables emulation completely. The order is sent directly to the venue without any local processing. | When you want to use the venue's native order handling, or for simple order types that don't need emulation. |
 | `DEFAULT`         | Same as `BID_ASK`. This is the standard choice for most emulated orders.                             | General‑purpose emulation when you want to work with the "default" type of market prices.                    |
 | `BID_ASK`         | Uses the best bid and ask prices (quotes) to guide emulation.                                        | Stop orders, trailing stops, and other orders that should react to the current market spread.                |
@@ -109,7 +109,7 @@ which order type they transform to when being released for submission to the
 trading venue.
 
 | Order type for emulation | Can emulate | Released type |
-|:-------------------------|:------------|:--------------|
+| :----------------------- | :---------- | :------------ |
 | `MARKET`                 |             | n/a           |
 | `MARKET_TO_LIMIT`        |             | n/a           |
 | `LIMIT`                  | ✓           | `MARKET`      |

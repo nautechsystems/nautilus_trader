@@ -11,7 +11,7 @@ Transition: `SUBMITTED` -> `REJECTED`. Handler: `on_order_rejected`.
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderRejected` carries:
 
 | Field           | Python type | Required/default | Description                                                                    |
-|-----------------|-------------|------------------|--------------------------------------------------------------------------------|
+| --------------- | ----------- | ---------------- | ------------------------------------------------------------------------------ |
 | `reason`        | `str`       | Required         | The order rejected reason.                                                     |
 | `due_post_only` | `bool`      | `False`          | If rejected because it was post‑only and would execute immediately as a taker. |
 

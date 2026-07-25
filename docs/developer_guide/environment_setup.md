@@ -140,7 +140,7 @@ current version numbers into docs, runner images, or scripts unless there is no 
 to read them.
 
 | Source file or section                       | Defines                                               |
-|----------------------------------------------|-------------------------------------------------------|
+| -------------------------------------------- | ----------------------------------------------------- |
 | `rust-toolchain.toml`                        | Rust toolchain.                                       |
 | `Cargo.toml` and `Cargo.lock`                | Rust workspace dependencies and exact resolution.     |
 | `Cargo.toml` `[workspace.metadata.tools]`    | Cargo‑installable development tools.                  |

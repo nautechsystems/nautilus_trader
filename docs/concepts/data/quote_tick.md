@@ -7,7 +7,7 @@ at a specific event time.
 ## Fields
 
 | Field           | Rust type      | Python type    | Required/default | Notes                                    |
-|-----------------|----------------|----------------|------------------|------------------------------------------|
+| --------------- | -------------- | -------------- | ---------------- | ---------------------------------------- |
 | `instrument_id` | `InstrumentId` | `InstrumentId` | Required         | Instrument for the quote.                |
 | `bid_price`     | `Price`        | `Price`        | Required         | Best bid price.                          |
 | `ask_price`     | `Price`        | `Price`        | Required         | Best ask price.                          |

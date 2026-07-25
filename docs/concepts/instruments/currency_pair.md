@@ -9,7 +9,7 @@ Examples include `EUR/USD.SIM`, `BTCUSDT.BINANCE`, and `ETH/USD.KRAKEN`.
 ## Fields
 
 | Field             | Rust type          | Python type        | Required/default | Notes                                    |
-|-------------------|--------------------|--------------------|------------------|------------------------------------------|
+| ----------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`   | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`      | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
 | `base_currency`   | `Currency`         | `Currency`         | Required         | Asset bought or sold.                    |

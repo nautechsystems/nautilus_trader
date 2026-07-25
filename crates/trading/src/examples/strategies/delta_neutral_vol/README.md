@@ -77,7 +77,7 @@ data feeds. It leaves live positions unchanged.
 ## Configuration
 
 | Parameter                    | Type             | Default    | Description                                     |
-|------------------------------|------------------|------------|-------------------------------------------------|
+| ---------------------------- | ---------------- | ---------- | ----------------------------------------------- |
 | `option_family`              | `String`         | *required* | Option family filter, e.g. `BTC-USD`.           |
 | `hedge_instrument_id`        | `InstrumentId`   | *required* | Underlying hedge instrument.                    |
 | `client_id`                  | `ClientId`       | *required* | Data and execution client identifier.           |

@@ -18,7 +18,7 @@ compiled into the core `nautilus_trader` package automatically during the build.
 
 ## Examples
 
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
+You can find live example scripts in the [examples/live/dydx](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/) directory.
 
 ## Overview
 
@@ -28,11 +28,11 @@ submission, without requiring external client libraries.
 
 ### Product support
 
-| Product Type      | Data Feed | Trading | Notes                                  |
-|-------------------|-----------|---------|----------------------------------------|
-| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC‑settled.       |
+| Product Type      | Data Feed | Trading | Notes                                                      |
+| ----------------- | --------- | ------- | ---------------------------------------------------------- |
+| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC‑settled.                           |
 | Spot              | -         | -       | dYdX offers spot on Solana; not supported by this adapter. |
-| Options           | -         | -       | *Not available on dYdX*.               |
+| Options           | -         | -       | *Not available on dYdX*.                                   |
 
 :::note
 This adapter supports perpetual futures only. All markets are quoted in USD and settled in USDC.
@@ -67,7 +67,7 @@ The adapter communicates through three independent transport layers:
 ```
 
 | Layer     | Target    | Direction  | Purpose                                              |
-|-----------|-----------|------------|------------------------------------------------------|
+| --------- | --------- | ---------- | ---------------------------------------------------- |
 | HTTP      | Indexer   | Read‑only  | Instrument metadata, historical data, account state. |
 | WebSocket | Indexer   | Read‑only  | Real‑time market data, order/fill/position updates.  |
 | gRPC      | Validator | Write      | Order placement, cancellation, and batch operations. |
@@ -165,7 +165,7 @@ time-in-force and expiry, so no manual tagging is needed.
 ### Order types
 
 | Order Type             | Perpetuals | Notes                                              |
-|------------------------|------------|----------------------------------------------------|
+| ---------------------- | ---------- | -------------------------------------------------- |
 | `MARKET`               | ✓          | Immediate execution at best available price.       |
 | `LIMIT`                | ✓          |                                                    |
 | `STOP_MARKET`          | ✓          | Stop‑loss conditional order, always long‑term.     |
@@ -176,41 +176,41 @@ time-in-force and expiry, so no manual tagging is needed.
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Notes                                                                                |
-|---------------|------------|--------------------------------------------------------------------------------------|
+| Instruction   | Perpetuals | Notes                                                                                                                                                                                          |
+| ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. A post‑only order priced to cross the spread is **accepted then immediately canceled** by the venue (not rejected with a reason). |
-| `reduce_only` | ✓          | Passed for all order types. dYdX enforces this as a **fill‑time clamp**, not a placement‑time precondition: a reduce‑only order placed against no position will still fill normally. |
+| `reduce_only` | ✓          | Passed for all order types. dYdX enforces this as a **fill‑time clamp**, not a placement‑time precondition: a reduce‑only order placed against no position will still fill normally.           |
 
 ### Time in force options
 
-| Time in force | Perpetuals | Notes                                                                      |
-|---------------|------------|----------------------------------------------------------------------------|
-| `GTC`         | ✓          | Good Till Canceled.                                                        |
+| Time in force | Perpetuals | Notes                                                                                                                                                                |
+| ------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GTC`         | ✓          | Good Till Canceled.                                                                                                                                                  |
 | `GTD`         | ✓          | Good Till Date. The venue reports expiry as a cancel event; the adapter maps this to `OrderExpired` (not `OrderCanceled`) when the order's `expire_time` has passed. |
-| `IOC`         | ✓          | Immediate or Cancel.                                                       |
-| `FOK`         | -          | *Deprecated by dYdX v4*. The chain rejects FOK orders with `code=48`; the adapter generates `OrderDenied` locally and does not broadcast. |
-| `DAY`         | -          | *Not supported*. The adapter generates `OrderDenied` locally and does not broadcast. |
+| `IOC`         | ✓          | Immediate or Cancel.                                                                                                                                                 |
+| `FOK`         | -          | *Deprecated by dYdX v4*. The chain rejects FOK orders with `code=48`; the adapter generates `OrderDenied` locally and does not broadcast.                            |
+| `DAY`         | -          | *Not supported*. The adapter generates `OrderDenied` locally and does not broadcast.                                                                                 |
 
 ### Advanced order features
 
-| Feature            | Perpetuals | Notes            |
-|--------------------|------------|------------------|
+| Feature            | Perpetuals | Notes                                                                                                                                                                                     |
+| ------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Order modification | -          | Not supported. dYdX supports short‑term order [replacement](https://docs.dydx.xyz/concepts/trading/limit-orderbook#replacements) (same ID, higher GTB); not yet exposed as `ModifyOrder`. |
-| Bracket/OCO orders | -          | *Not supported*. |
-| Iceberg orders     | -          | *Not supported*. |
+| Bracket/OCO orders | -          | *Not supported*.                                                                                                                                                                          |
+| Iceberg orders     | -          | *Not supported*.                                                                                                                                                                          |
 
 ### Batch operations
 
 | Operation    | Perpetuals | Notes                                                                                                                  |
-|--------------|------------|------------------------------------------------------------------------------------------------------------------------|
-| Batch submit | ✓          | Supported for long‑term `LIMIT` orders. Short‑term orders are submitted individually.                                   |
+| ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Batch submit | ✓          | Supported for long‑term `LIMIT` orders. Short‑term orders are submitted individually.                                  |
 | Batch modify | -          | *Not supported*.                                                                                                       |
 | Batch cancel | ✓          | Partitioned: short‑term orders use `MsgBatchCancel` (single gRPC call), long‑term orders use batched `MsgCancelOrder`. |
 
 ### Position management
 
 | Feature          | Perpetuals | Notes                         |
-|------------------|------------|-------------------------------|
+| ---------------- | ---------- | ----------------------------- |
 | Query positions  | ✓          | Real‑time position updates.   |
 | Position mode    | -          | Netting only (see below).     |
 | Leverage control | ✓          | Per‑market leverage settings. |
@@ -224,7 +224,7 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 ### Order querying
 
 | Feature              | Perpetuals | Notes                          |
-|----------------------|------------|--------------------------------|
+| -------------------- | ---------- | ------------------------------ |
 | Query open orders    | ✓          | List all active orders.        |
 | Query order history  | ✓          | Historical order data.         |
 | Order status updates | ✓          | Real‑time order state changes. |
@@ -233,7 +233,7 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 ### Contingent orders
 
 | Feature            | Perpetuals | Notes                                            |
-|--------------------|------------|--------------------------------------------------|
+| ------------------ | ---------- | ------------------------------------------------ |
 | Order lists        | -          | *Not supported*.                                 |
 | OCO orders         | -          | *Not supported*.                                 |
 | Bracket orders     | -          | *Not supported*.                                 |
@@ -274,7 +274,7 @@ The indexer exposes the classification via the `type` field on each `Fill`
 record (`DydxFillType`):
 
 | `type`         | Meaning                                               |
-|----------------|-------------------------------------------------------|
+| -------------- | ----------------------------------------------------- |
 | `LIMIT`        | Normal fill.                                          |
 | `LIQUIDATED`   | Taker side of a liquidation (undercollateralised).    |
 | `LIQUIDATION`  | Maker side of a liquidation (insurance fund).         |
@@ -297,11 +297,11 @@ dYdX classifies every order into one of three on-chain categories. The Rust adap
 automatically determines the category based on time-in-force and expiry, so no manual
 configuration is required.
 
-| Category        | Placement   | Expiry            | Typical use                                   |
-|-----------------|-------------|-------------------|-----------------------------------------------|
-| Short‑term      | In‑memory   | Block height      | IOC/FOK, or orders expiring within 40 blocks. |
-| Long‑term       | On‑chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short‑term window (~20s at ~0.5s/block). |
-| Conditional     | On‑chain    | Timestamp (UTC)   | Stop‑loss and take‑profit triggers.           |
+| Category    | Placement | Expiry          | Typical use                                                             |
+| ----------- | --------- | --------------- | ----------------------------------------------------------------------- |
+| Short‑term  | In‑memory | Block height    | IOC/FOK, or orders expiring within 40 blocks.                           |
+| Long‑term   | On‑chain  | Timestamp (UTC) | GTC/GTD with expiry beyond the short‑term window (~20s at ~0.5s/block). |
+| Conditional | On‑chain  | Timestamp (UTC) | Stop‑loss and take‑profit triggers.                                     |
 
 At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type
 is a Nautilus convenience that the adapter implements as an aggressive IOC limit order
@@ -384,7 +384,7 @@ can be reconciled across restarts without persisted state.
 For the standard O-format (`O-YYYYMMDD-HHMMSS-TTT-SSS-CCC`), the encoding is deterministic:
 
 | dYdX field        | Bits | Contents                                           |
-|-------------------|------|----------------------------------------------------|
+| ----------------- | ---- | -------------------------------------------------- |
 | `client_id`       | 32   | `[trader:10][strategy:10][count:12]` (unique key). |
 | `client_metadata` | 32   | Seconds since 2020-01-01 UTC (timestamp).          |
 
@@ -435,7 +435,7 @@ Long-term and conditional orders require proper Cosmos SDK sequence management:
 ### Sequence mismatch detection
 
 | Error code | Source               | Meaning                                          |
-|------------|----------------------|--------------------------------------------------|
+| ---------- | -------------------- | ------------------------------------------------ |
 | `code=32`  | Cosmos SDK           | Account sequence mismatch                        |
 | `code=104` | dYdX authenticator   | Signature verification failed (sequence‑related) |
 
@@ -445,10 +445,10 @@ Both trigger automatic resync + retry via the `RetryManager`.
 
 These errors during short-term cancel operations are treated as **success**:
 
-| Error code  | Meaning                                                        |
-|-------------|----------------------------------------------------------------|
-| `code=19`   | Transaction already in mempool cache (duplicate tx)            |
-| `code=9`    | Cancel already exists in memclob with >= GoodTilBlock          |
+| Error code  | Meaning                                                           |
+| ----------- | ----------------------------------------------------------------- |
+| `code=19`   | Transaction already in mempool cache (duplicate tx)               |
+| `code=9`    | Cancel already exists in memclob with >= GoodTilBlock             |
 | `code=3006` | Order to cancel does not exist (already filled/expired/cancelled) |
 
 ### Batch cancel partitioning
@@ -473,19 +473,19 @@ funding data.
 The adapter rate-limits gRPC `broadcast_tx` calls to prevent `ResourceExhausted` (429) errors
 from validator nodes.
 
-| Setting                       | Default | Description                               |
-|-------------------------------|---------|-------------------------------------------|
-| `grpc_rate_limit_per_second`  | `4`     | Maximum gRPC broadcast requests per second. Set to `None` to disable. |
+| Setting                      | Default | Description                                                           |
+| ---------------------------- | ------- | --------------------------------------------------------------------- |
+| `grpc_rate_limit_per_second` | `4`     | Maximum gRPC broadcast requests per second. Set to `None` to disable. |
 
 ### Provider limits
 
 Known rate limits for public gRPC providers:
 
-| Provider   | Limit              | Notes           |
-|------------|--------------------|-----------------|
-| Polkachu   | 300 req/min (~5/s) |                 |
-| KingNodes  | 250 req/min (~4.2/s) |               |
-| AutoStake  | 4 req/s            |                 |
+| Provider  | Limit                | Notes |
+| --------- | -------------------- | ----- |
+| Polkachu  | 300 req/min (~5/s)   |       |
+| KingNodes | 250 req/min (~4.2/s) |       |
+| AutoStake | 4 req/s              |       |
 
 The default of 4 req/s is conservative and works across all public providers.
 
@@ -507,7 +507,7 @@ automatically via `OrderMessageBuilder`, but understanding the parameters helps 
 ### Market parameters
 
 | Parameter                      | Description                                              |
-|--------------------------------|----------------------------------------------------------|
+| ------------------------------ | -------------------------------------------------------- |
 | `atomic_resolution`            | Exponent for converting human‑readable size to quantums  |
 | `quantum_conversion_exponent`  | Exponent for converting quantums to tokens               |
 | `step_base_quantums`           | Minimum order size step in quantums                      |
@@ -531,22 +531,22 @@ No manual conversion is needed when submitting orders through Nautilus.
 
 The v4 adapter supports the following data subscriptions:
 
-| Data type            | Subscription | Historical request | Notes                                           |
-|----------------------|--------------|--------------------|-------------------------------------------------|
-| Trade ticks          | ✓            | ✓                  |                                                 |
-| Quote ticks          | ✓            | -                  | Synthesized from order book top‑of‑book.        |
-| Order book deltas    | ✓            | -                  | L2 depth only.                                  |
-| Order book snapshots | -            | ✓                  | One‑time snapshot via HTTP request.             |
-| Bars                 | ✓            | ✓                  | See supported resolutions below.                |
-| Mark prices          | ✓            | -                  | Via markets channel.                            |
-| Index prices         | ✓            | -                  | Via markets channel.                            |
+| Data type            | Subscription | Historical request | Notes                                            |
+| -------------------- | ------------ | ------------------ | ------------------------------------------------ |
+| Trade ticks          | ✓            | ✓                  |                                                  |
+| Quote ticks          | ✓            | -                  | Synthesized from order book top‑of‑book.         |
+| Order book deltas    | ✓            | -                  | L2 depth only.                                   |
+| Order book snapshots | -            | ✓                  | One‑time snapshot via HTTP request.              |
+| Bars                 | ✓            | ✓                  | See supported resolutions below.                 |
+| Mark prices          | ✓            | -                  | Via markets channel.                             |
+| Index prices         | ✓            | -                  | Via markets channel.                             |
 | Funding rates        | ✓            | ✓                  | Real‑time via markets channel, history via HTTP. |
-| Instrument status    | ✓            | -                  | Via markets channel.                            |
+| Instrument status    | ✓            | -                  | Via markets channel.                             |
 
 ### Supported bar resolutions
 
 | Resolution | dYdX candle |
-|------------|-------------|
+| ---------- | ----------- |
 | 1-MINUTE   | `1MIN`      |
 | 5-MINUTE   | `5MINS`     |
 | 15-MINUTE  | `15MINS`    |
@@ -674,7 +674,7 @@ Default testnet endpoints are used automatically. Override via the `http_endpoin
 (these are not Python constructor parameters).
 
 | Service   | Default URL                                          |
-|-----------|------------------------------------------------------|
+| --------- | ---------------------------------------------------- |
 | HTTP      | `https://indexer.v4testnet.dydx.exchange`            |
 | WebSocket | `wss://indexer.v4testnet.dydx.exchange/v4/ws`        |
 | gRPC      | `https://test-dydx-grpc.kingnodes.com:443` (primary) |
@@ -688,7 +688,7 @@ Default mainnet endpoints are used automatically. Override via the `http_endpoin
 (these are not Python constructor parameters).
 
 | Service   | Default URL                                         |
-|-----------|-----------------------------------------------------|
+| --------- | --------------------------------------------------- |
 | HTTP      | `https://indexer.dydx.trade`                        |
 | WebSocket | `wss://indexer.dydx.trade/v4/ws`                    |
 | gRPC      | `https://dydx-ops-grpc.kingnodes.com:443` (primary) |
@@ -702,7 +702,7 @@ wallet credentials.
 ### Data client configuration options
 
 | Option                    | Default   | Description                                                                                 |
-|---------------------------|-----------|---------------------------------------------------------------------------------------------|
+| ------------------------- | --------- | ------------------------------------------------------------------------------------------- |
 | `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.         |
 | `network`                 | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                             |
 | `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.  |
@@ -720,7 +720,7 @@ Python `DydxDataClientConfig` constructor.
 ### Execution client configuration options
 
 | Option                         | Default   | Description                                                                                        |
-|--------------------------------|-----------|----------------------------------------------------------------------------------------------------|
+| ------------------------------ | --------- | -------------------------------------------------------------------------------------------------- |
 | `wallet_address`               | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.  |
 | `subaccount_number`            | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
 | `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`.|
@@ -796,7 +796,7 @@ resolved automatically from environment variables based on the configured `netwo
 #### Environment variables
 
 | Variable                        | Network  | Description                                    |
-|---------------------------------|----------|------------------------------------------------|
+| ------------------------------- | -------- | ---------------------------------------------- |
 | `DYDX_WALLET_ADDRESS`           | Mainnet  | Bech32-encoded wallet address (`dydx1...`).    |
 | `DYDX_PRIVATE_KEY`              | Mainnet  | Hex‑encoded secp256k1 private key for signing. |
 | `DYDX_TESTNET_WALLET_ADDRESS`   | Testnet  | Testnet wallet address (`dydx1...`).           |

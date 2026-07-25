@@ -9,7 +9,7 @@ when a fill creates a new position (see [From fill to position](index.md#from-fi
 the three events. The fields that distinguish `PositionOpened`:
 
 | Field          | Python type    | Description                                    |
-|----------------|----------------|------------------------------------------------|
+| -------------- | -------------- | ---------------------------------------------- |
 | `entry`        | `OrderSide`    | The entry order side that opened the position. |
 | `side`         | `PositionSide` | The current position side (`LONG` or `SHORT`). |
 | `quantity`     | `Quantity`     | The current open quantity.                     |

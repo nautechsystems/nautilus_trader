@@ -50,7 +50,7 @@ coincide with the bar boundaries.
 ## Parameters
 
 | Parameter          | Type             | Default          | Description                                             |
-|--------------------|------------------|------------------|---------------------------------------------------------|
+| ------------------ | ---------------- | ---------------- | ------------------------------------------------------- |
 | `instrument_id`    | `InstrumentId`   | required         | Instrument to subscribe to and trade.                   |
 | `bar_type`         | `BarType`        | required         | Dollar bar type (`VALUE` aggregation, `LAST` prices).   |
 | `trade_size`       | `Quantity`       | required         | Order quantity for each entry.                          |

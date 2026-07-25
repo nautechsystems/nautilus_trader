@@ -30,7 +30,7 @@ through derived streams (mark/index/funding/bars), then the private user
 streams (fills, order updates) at the end.
 
 | Bench                           | Median  | Throughput |
-|---------------------------------|---------|------------|
+| ------------------------------- | ------- | ---------- |
 | `inbound_pipeline/book_deltas`  | 3.95 µs | 253 k/s    |
 | `inbound_pipeline/book_depth10` | 3.98 µs | 251 k/s    |
 | `inbound_pipeline/quotes`       | 557 ns  | 1.79 M/s   |
@@ -48,7 +48,7 @@ Strategy command (`OrderAny` / cancel / modify) -> fully signed wire bytes
 ready to POST. Covers normalize + serialize (msgpack) + EIP-712 sign.
 
 | Bench                              | Median  | Throughput |
-|------------------------------------|---------|------------|
+| ---------------------------------- | ------- | ---------- |
 | `exec_pipeline/submit_market`      | 42.2 µs | 23.7 k/s   |
 | `exec_pipeline/submit_limit`       | 42.1 µs | 23.7 k/s   |
 | `exec_pipeline/submit_stop_market` | 42.5 µs | 23.5 k/s   |
@@ -62,7 +62,7 @@ serialization benches isolate L1 signing from order normalization and POST body
 construction.
 
 | Bench                       | Median  |
-|-----------------------------|---------|
+| --------------------------- | ------- |
 | `sign_l1_action`            | 41.8 µs |
 | `sign_l1_action_with_vault` | 42.2 µs |
 | `signer_construction`       | 31.3 µs |
@@ -80,7 +80,7 @@ the dispatch-only cost is much smaller (see `atom/dispatch_fill_reused` in
 the component breakdown below).
 
 | Bench                      | Median  | Throughput |
-|----------------------------|---------|------------|
+| -------------------------- | ------- | ---------- |
 | `dispatch/fill`            | 15.6 µs | 64.2 k/s   |
 | `dispatch/status_accepted` | 11.1 µs | 90.5 k/s   |
 | `dispatch/status_canceled` | 15.4 µs | 64.8 k/s   |
@@ -92,7 +92,7 @@ Diagnostic benches that decompose the pipeline numbers above. Use these to
 localise where time goes when a pipeline bench regresses.
 
 | Bench                           | Median  |
-|---------------------------------|---------|
+| ------------------------------- | ------- |
 | `decode_only/trade`             | 549 ns  |
 | `decode_only/book`              | 3.25 µs |
 | `parse_only/trade`              | 59.0 ns |

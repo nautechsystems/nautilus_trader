@@ -457,8 +457,8 @@ Press **Ctrl+C** to stop the node. The shutdown sequence:
 
 ### Deadman's switch parameter
 
-| Parameter                      | Type          | Description                                                                                       |
-| ------------------------------ | ------------- | ------------------------------------------------------------------------------------------------- |
+| Parameter                      | Type          | Description                                                                                                      |
+| ------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `deadmans_switch_timeout_secs` | `Option<u64>` | Server‑side cancel timer in seconds. Refresh interval = `timeout / 4` (minimum 1s). `None` disables the feature. |
 
 A 60-second timeout gives a 15-second refresh interval and a 60-second

@@ -81,7 +81,7 @@ The adapter decodes DBN data to Nautilus objects. The same Rust decoder handles:
 The following Databento schemas are supported by NautilusTrader:
 
 | Databento schema                                                              | Nautilus data type                | Description                     |
-|:------------------------------------------------------------------------------|:----------------------------------|:--------------------------------|
+| :---------------------------------------------------------------------------- | :-------------------------------- | :------------------------------ |
 | [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)                | `OrderBookDelta`                  | Market by order (L3).           |
 | [MBP_1](https://databento.com/docs/schemas-and-data-formats/mbp-1)            | `(QuoteTick, TradeTick \| None)`  | Market by price (L1).           |
 | [MBP_10](https://databento.com/docs/schemas-and-data-formats/mbp-10)          | `OrderBookDepth10`                | Market depth (L2).              |
@@ -221,7 +221,7 @@ already carries the data needed by the strategy.
 Nautilus subscription methods map to Databento schemas as follows:
 
 | Nautilus subscription method    | Default schema | Available Databento schemas                                                  | Nautilus data type |
-|:--------------------------------|:---------------|:-----------------------------------------------------------------------------|:-------------------|
+| :------------------------------ | :------------- | :--------------------------------------------------------------------------- | :----------------- |
 | `subscribe_quote_ticks()`       | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`        |
 | `subscribe_trade_ticks()`       | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`        |
 | `subscribe_order_book_depth()`  | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
@@ -480,7 +480,7 @@ Databento uses a single schema for all instrument classes. The decoder maps each
 to the appropriate Nautilus `Instrument` type.
 
 | Databento instrument class | Code | Nautilus instrument type |
-|----------------------------|------|--------------------------|
+| -------------------------- | ---- | ------------------------ |
 | Stock                      | `K`  | `Equity`                 |
 | Future                     | `F`  | `FuturesContract`        |
 | Call                       | `C`  | `OptionContract`         |
@@ -1004,7 +1004,7 @@ node.build()
 ### Configuration parameters
 
 | Option                    | Default | Description                                                           |
-|---------------------------|---------|-----------------------------------------------------------------------|
+| ------------------------- | ------- | --------------------------------------------------------------------- |
 | `api_key`                 | `None`  | Databento API secret; falls back to `DATABENTO_API_KEY`.              |
 | `http_gateway`            | `None`  | Historical HTTP endpoint override, mainly for tests.                  |
 | `live_gateway`            | `None`  | Live TCP endpoint override, mainly for tests.                         |
@@ -1080,7 +1080,7 @@ persistent configuration or authentication issues.
 Databento restarts live gateways on this schedule (all clients disconnect):
 
 | Dataset            | Restart time      |
-|--------------------|-------------------|
+| ------------------ | ----------------- |
 | CME Globex         | Saturday 02:15 CT |
 | All ICE venues     | Sunday 09:45 UTC  |
 | All other datasets | Sunday 10:30 UTC  |

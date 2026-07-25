@@ -83,7 +83,7 @@ Understanding the different messaging styles helps when building trading systems
 This guide explains the three primary messaging patterns available in NautilusTrader:
 
 | **Messaging Style**                          | **Purpose**                                 | **Best For**                                          |
-|:---------------------------------------------|:--------------------------------------------|:------------------------------------------------------|
+| :------------------------------------------- | :------------------------------------------ | :---------------------------------------------------- |
 | **MessageBus - Publish/Subscribe to topics** | Low‑level, direct access to the message bus | Custom events, system‑level communication             |
 | **Actor‑Based - Publish/Subscribe Data**     | Structured trading data exchange            | Trading metrics, indicators, data needing persistence |
 | **Actor‑Based - Publish/Subscribe Signal**   | Lightweight notifications                   | Simple alerts, flags, status updates                  |
@@ -278,11 +278,11 @@ Here's a quick reference to help you decide which messaging style to use:
 
 #### Decision guide: Which style to choose?
 
-| **Use Case**                                | **Recommended Approach**                                                        | **Setup required** |
-|:--------------------------------------------|:--------------------------------------------------------------------------------|:-------------------|
-| Custom events or system‑level communication | `MessageBus` + Pub/Sub to topic                                                 | Topic + Handler management |
+| **Use Case**                                | **Recommended Approach**                                                        | **Setup required**                                                            |
+| :------------------------------------------ | :------------------------------------------------------------------------------ | :---------------------------------------------------------------------------- |
+| Custom events or system‑level communication | `MessageBus` + Pub/Sub to topic                                                 | Topic + Handler management                                                    |
 | Structured trading data                     | `Actor` + Pub/Sub Data + optional `@customdataclass` if serialization is needed | New class definition inheriting from `Data` (handler `on_data` is predefined) |
-| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only |
+| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only                                                              |
 
 ## External egress and ingress
 

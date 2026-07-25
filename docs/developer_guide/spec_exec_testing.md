@@ -135,7 +135,7 @@ Test IDs use spaced numbering to allow insertion without renumbering.
 Test market order submission and fills. Market orders should execute immediately.
 
 | TC     | Name                          | Description                                         | Skip when           |
-|--------|-------------------------------|-----------------------------------------------------|---------------------|
+| ------ | ----------------------------- | --------------------------------------------------- | ------------------- |
 | TC-E01 | Market BUY - submit and fill  | Open long position via market buy.                  | No market orders.   |
 | TC-E02 | Market SELL - submit and fill | Open short position via market sell.                | No market orders.   |
 | TC-E03 | Market order with IOC TIF     | Market order explicitly using IOC time in force.    | No IOC.             |
@@ -145,13 +145,13 @@ Test market order submission and fills. Market orders should execute immediately
 
 ### TC-E01: Market BUY - submit and fill
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
-| **Action**         | ExecTester opens a long position via `open_position_on_start_qty`.     |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
+| Field              | Value                                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position.                                     |
+| **Action**         | ExecTester opens a long position via `open_position_on_start_qty`.                                               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.                                      |
 | **Pass criteria**  | Position opened with side=LONG, quantity matches config, fill price within market range, `AccountState` updated. |
-| **Skip when**      | Adapter does not support market orders.                                |
+| **Skip when**      | Adapter does not support market orders.                                                                          |
 
 **Considerations:**
 
@@ -191,13 +191,13 @@ ExecTesterConfig::builder()
 
 ### TC-E02: Market SELL - submit and fill
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
-| **Action**         | ExecTester opens a short position via negative `open_position_on_start_qty`. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
+| Field              | Value                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position.              |
+| **Action**         | ExecTester opens a short position via negative `open_position_on_start_qty`.              |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.               |
 | **Pass criteria**  | Position opened with side=SHORT, quantity matches config, fill price within market range. |
-| **Skip when**      | Adapter does not support market orders or short selling.               |
+| **Skip when**      | Adapter does not support market orders or short selling.                                  |
 
 **Python config:**
 
@@ -230,13 +230,13 @@ ExecTesterConfig::builder()
 
 ### TC-E03: Market order with IOC TIF
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
-| **Action**         | Open position with `open_position_time_in_force=IOC`.                  |
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.                  |
+| **Action**         | Open position with `open_position_time_in_force=IOC`.                       |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Same as TC-E01; the IOC TIF is explicitly set on the order.            |
-| **Skip when**      | No IOC support.                                                        |
+| **Pass criteria**  | Same as TC-E01; the IOC TIF is explicitly set on the order.                 |
+| **Skip when**      | No IOC support.                                                             |
 
 **Python config:**
 
@@ -271,13 +271,13 @@ ExecTesterConfig::builder()
 
 ### TC-E04: Market order with FOK TIF
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
-| **Action**         | Open position with `open_position_time_in_force=FOK`.                  |
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.                  |
+| **Action**         | Open position with `open_position_time_in_force=FOK`.                       |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Same as TC-E01; the FOK TIF is explicitly set on the order.            |
-| **Skip when**      | No FOK support.                                                        |
+| **Pass criteria**  | Same as TC-E01; the FOK TIF is explicitly set on the order.                 |
+| **Skip when**      | No FOK support.                                                             |
 
 **Considerations:**
 
@@ -317,13 +317,13 @@ ExecTesterConfig::builder()
 
 ### TC-E05: Market order with quote quantity
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, adapter supports quote quantity. |
-| **Action**         | Open position with `use_quote_quantity=True`, quantity in quote currency. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
+| Field              | Value                                                                            |
+| ------------------ | -------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, adapter supports quote quantity.           |
+| **Action**         | Open position with `use_quote_quantity=True`, quantity in quote currency.        |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.      |
 | **Pass criteria**  | Order submitted with quote currency quantity; fill quantity is in base currency. |
-| **Skip when**      | Adapter does not support quote quantity orders.                        |
+| **Skip when**      | Adapter does not support quote quantity orders.                                  |
 
 **Python config:**
 
@@ -358,13 +358,13 @@ ExecTesterConfig::builder()
 
 ### TC-E06: Close position via market order on stop
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open position from TC-E01 or TC-E02.                                   |
-| **Action**         | Stop the strategy; ExecTester closes position via market order.        |
+| Field              | Value                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open position from TC-E01 or TC-E02.                                                        |
+| **Action**         | Stop the strategy; ExecTester closes position via market order.                             |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (closing order). |
-| **Pass criteria**  | Position closed (net quantity = 0), no open orders remaining.          |
-| **Skip when**      | Adapter does not support market orders.                                |
+| **Pass criteria**  | Position closed (net quantity = 0), no open orders remaining.                               |
+| **Skip when**      | Adapter does not support market orders.                                                     |
 
 **Considerations:**
 
@@ -410,7 +410,7 @@ ExecTesterConfig::builder()
 Test limit order submission, acceptance, and behavior across time-in-force options.
 
 | TC     | Name                       | Description                                      | Skip when          |
-|--------|----------------------------|--------------------------------------------------|--------------------|
+| ------ | -------------------------- | ------------------------------------------------ | ------------------ |
 | TC-E10 | Limit BUY GTC              | Place GTC limit buy below TOB, verify accepted.  | Never.             |
 | TC-E11 | Limit SELL GTC             | Place GTC limit sell above TOB, verify accepted. | Never.             |
 | TC-E12 | Limit BUY and SELL pair    | Both sides simultaneously, verify both accepted. | Never.             |
@@ -424,13 +424,13 @@ Test limit order submission, acceptance, and behavior across time-in-force optio
 
 ### TC-E10: Limit BUY GTC - submit and accept
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a limit buy at `best_bid - tob_offset_ticks`.        |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                       |
+| **Action**         | ExecTester places a limit buy at `best_bid - tob_offset_ticks`.             |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                  |
 | **Pass criteria**  | Order is open on the venue with correct price, quantity, side=BUY, TIF=GTC. |
-| **Skip when**      | Never.                                                                 |
+| **Skip when**      | Never.                                                                      |
 
 **Considerations:**
 
@@ -467,13 +467,13 @@ ExecTesterConfig::builder()
 
 ### TC-E11: Limit SELL GTC - submit and accept
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a limit sell at `best_ask + tob_offset_ticks`.       |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
+| Field              | Value                                                                        |
+| ------------------ | ---------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                        |
+| **Action**         | ExecTester places a limit sell at `best_ask + tob_offset_ticks`.             |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                   |
 | **Pass criteria**  | Order is open on the venue with correct price, quantity, side=SELL, TIF=GTC. |
-| **Skip when**      | Never.                                                                 |
+| **Skip when**      | Never.                                                                       |
 
 **Python config:**
 
@@ -504,13 +504,13 @@ ExecTesterConfig::builder()
 
 ### TC-E12: Limit BUY and SELL pair
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places both a limit buy and limit sell.                     |
+| Field              | Value                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                      |
+| **Action**         | ExecTester places both a limit buy and limit sell.                                         |
 | **Event sequence** | Two independent sequences: each `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
-| **Pass criteria**  | Both orders open on venue, buy below bid, sell above ask.              |
-| **Skip when**      | Never.                                                                 |
+| **Pass criteria**  | Both orders open on venue, buy below bid, sell above ask.                                  |
+| **Skip when**      | Never.                                                                                     |
 
 **Python config:**
 
@@ -541,13 +541,13 @@ ExecTesterConfig::builder()
 
 ### TC-E13: Limit IOC aggressive fill
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Submit a limit buy IOC at or above the best ask (aggressive price).    |
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                       |
+| **Action**         | Submit a limit buy IOC at or above the best ask (aggressive price).         |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Order fills immediately; position opened.                              |
-| **Skip when**      | Adapter does not support IOC TIF.                                      |
+| **Pass criteria**  | Order fills immediately; position opened.                                   |
+| **Skip when**      | Adapter does not support IOC TIF.                                           |
 
 **Considerations:**
 
@@ -557,13 +557,13 @@ ExecTesterConfig::builder()
 
 ### TC-E14: Limit IOC passive - no fill
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Submit a limit buy IOC well below the market (passive price).          |
+| Field              | Value                                                                         |
+| ------------------ | ----------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                         |
+| **Action**         | Submit a limit buy IOC well below the market (passive price).                 |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
-| **Skip when**      | Adapter does not support IOC TIF.                                      |
+| **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
+| **Skip when**      | Adapter does not support IOC TIF.                                             |
 
 **Considerations:**
 
@@ -571,13 +571,13 @@ ExecTesterConfig::builder()
 
 ### TC-E15: Limit FOK fill
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing, sufficient book depth. |
+| Field              | Value                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing, sufficient book depth.       |
 | **Action**         | Submit a limit buy FOK at aggressive price with quantity within top‑of‑book depth. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Order fills completely in a single fill event.                         |
-| **Skip when**      | Adapter does not support FOK TIF.                                      |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.        |
+| **Pass criteria**  | Order fills completely in a single fill event.                                     |
+| **Skip when**      | Adapter does not support FOK TIF.                                                  |
 
 **Considerations:**
 
@@ -585,23 +585,23 @@ ExecTesterConfig::builder()
 
 ### TC-E16: Limit FOK no fill
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Submit a limit buy FOK at passive price (well below market).           |
+| Field              | Value                                                                         |
+| ------------------ | ----------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                         |
+| **Action**         | Submit a limit buy FOK at passive price (well below market).                  |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
-| **Skip when**      | Adapter does not support FOK TIF.                                      |
+| **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
+| **Skip when**      | Adapter does not support FOK TIF.                                             |
 
 ### TC-E17: Limit GTD - submit and accept
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                       |
 | **Action**         | Place limit buy with `order_expire_time_delta_mins` set (e.g., 60 minutes). |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted with GTD TIF and correct expiry timestamp.              |
-| **Skip when**      | Adapter does not support GTD TIF.                                      |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                  |
+| **Pass criteria**  | Order accepted with GTD TIF and correct expiry timestamp.                   |
+| **Skip when**      | Adapter does not support GTD TIF.                                           |
 
 **Python config:**
 
@@ -634,13 +634,13 @@ ExecTesterConfig::builder()
 
 ### TC-E18: Limit GTD expiry
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
 | **Prerequisite**   | Open GTD limit order from TC-E17 using the shortest venue‑supported expiry. |
-| **Action**         | Wait for the GTD expiry time to elapse.                                |
+| **Action**         | Wait for the GTD expiry time to elapse.                                     |
 | **Event sequence** | `OrderExpired` by default, or the terminal event documented by the adapter. |
-| **Pass criteria**  | Order reaches the adapter‑documented terminal status at venue expiry.  |
-| **Skip when**      | Adapter does not support GTD TIF.                                      |
+| **Pass criteria**  | Order reaches the adapter‑documented terminal status at venue expiry.       |
+| **Skip when**      | Adapter does not support GTD TIF.                                           |
 
 **Considerations:**
 
@@ -650,13 +650,13 @@ ExecTesterConfig::builder()
 
 ### TC-E19: Limit DAY - submit and accept
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market is in trading hours.      |
-| **Action**         | Submit limit buy with DAY TIF.                                         |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
+| Field              | Value                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, market is in trading hours.                  |
+| **Action**         | Submit limit buy with DAY TIF.                                                     |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                         |
 | **Pass criteria**  | Order accepted with DAY TIF; will be automatically canceled at end of trading day. |
-| **Skip when**      | Adapter does not support DAY TIF.                                      |
+| **Skip when**      | Adapter does not support DAY TIF.                                                  |
 
 **Considerations:**
 
@@ -672,7 +672,7 @@ Adapters that support venue-native conditional orders should also verify that op
 orders appear in restart reconciliation, not only in the normal open-order endpoint.
 
 | TC     | Name                   | Description                                           | Skip when           |
-|--------|------------------------|-------------------------------------------------------|---------------------|
+| ------ | ---------------------- | ----------------------------------------------------- | ------------------- |
 | TC-E20 | StopMarket BUY         | Stop buy above ask, verify accepted.                  | No `STOP_MARKET`.   |
 | TC-E21 | StopMarket SELL        | Stop sell below bid, verify accepted.                 | No `STOP_MARKET`.   |
 | TC-E22 | StopLimit BUY          | Stop‑limit buy with trigger + limit price.            | No `STOP_LIMIT`.    |
@@ -684,13 +684,13 @@ orders appear in restart reconciliation, not only in the normal open-order endpo
 
 ### TC-E20: StopMarket BUY
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a stop‑market buy above the current ask.             |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=BUY.  |
-| **Skip when**      | Adapter does not support `StopMarket` orders.                          |
+| Field              | Value                                                                 |
+| ------------------ | --------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                 |
+| **Action**         | ExecTester places a stop‑market buy above the current ask.            |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.            |
+| **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=BUY. |
+| **Skip when**      | Adapter does not support `StopMarket` orders.                         |
 
 **Considerations:**
 
@@ -738,10 +738,10 @@ ExecTesterConfig::builder()
 ### TC-E21: StopMarket SELL
 
 | Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a stop‑market sell below the current bid.            |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.             |
 | **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=SELL. |
 | **Skip when**      | Adapter does not support `StopMarket` orders.                          |
 
@@ -780,13 +780,13 @@ ExecTesterConfig::builder()
 
 ### TC-E22: StopLimit BUY
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| Field              | Value                                                                             |
+| ------------------ | --------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                             |
 | **Action**         | ExecTester places a stop‑limit buy with trigger price above ask and limit offset. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | Stop‑limit order accepted with correct trigger price, limit price, and side=BUY. |
-| **Skip when**      | Adapter does not support `StopLimit` orders.                           |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                        |
+| **Pass criteria**  | Stop‑limit order accepted with correct trigger price, limit price, and side=BUY.  |
+| **Skip when**      | Adapter does not support `StopLimit` orders.                                      |
 
 **Considerations:**
 
@@ -829,13 +829,13 @@ ExecTesterConfig::builder()
 
 ### TC-E23: StopLimit SELL
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a stop‑limit sell with trigger price below bid.      |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
+| Field              | Value                                                                             |
+| ------------------ | --------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                             |
+| **Action**         | ExecTester places a stop‑limit sell with trigger price below bid.                 |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                        |
 | **Pass criteria**  | Stop‑limit order accepted with correct trigger price, limit price, and side=SELL. |
-| **Skip when**      | Adapter does not support `StopLimit` orders.                           |
+| **Skip when**      | Adapter does not support `StopLimit` orders.                                      |
 
 **Python config:**
 
@@ -874,43 +874,43 @@ ExecTesterConfig::builder()
 
 ### TC-E24: MarketIfTouched BUY
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place MIT buy with trigger below current bid (buy on dip).             |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
-| **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
+| Field              | Value                                                      |
+| ------------------ | ---------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.      |
+| **Action**         | Place MIT buy with trigger below current bid (buy on dip). |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
+| **Pass criteria**  | MIT order accepted on venue with correct trigger price.    |
+| **Skip when**      | Adapter does not support `MarketIfTouched` orders.         |
 
 ### TC-E25: MarketIfTouched SELL
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place MIT sell with trigger above current ask (sell on rally).         |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
-| **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.          |
+| **Action**         | Place MIT sell with trigger above current ask (sell on rally). |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.     |
+| **Pass criteria**  | MIT order accepted on venue with correct trigger price.        |
+| **Skip when**      | Adapter does not support `MarketIfTouched` orders.             |
 
 ### TC-E26: LimitIfTouched BUY
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place LIT buy with trigger below bid and limit price offset.           |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
-| **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.          |
+| **Action**         | Place LIT buy with trigger below bid and limit price offset.   |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.     |
+| **Pass criteria**  | LIT order accepted with correct trigger price and limit price. |
+| **Skip when**      | Adapter does not support `LimitIfTouched` orders.              |
 
 ### TC-E27: LimitIfTouched SELL
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place LIT sell with trigger above ask and limit price offset.          |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
-| **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.          |
+| **Action**         | Place LIT sell with trigger above ask and limit price offset.  |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.     |
+| **Pass criteria**  | LIT order accepted with correct trigger price and limit price. |
+| **Skip when**      | Adapter does not support `LimitIfTouched` orders.              |
 
 ---
 
@@ -918,25 +918,25 @@ ExecTesterConfig::builder()
 
 Test order modification (amend) and cancel-replace workflows.
 
-| TC    | Name                         | Description                                         | Skip when                   |
-|-------|------------------------------|-----------------------------------------------------|-----------------------------|
-| TC-E30 | Modify limit BUY price       | Amend open limit buy to new price.                  | No modify support.          |
-| TC-E31 | Modify limit SELL price      | Amend open limit sell to new price.                 | No modify support.          |
-| TC-E32 | Cancel‑replace limit BUY     | Cancel and resubmit limit buy at new price.         | Never.                      |
-| TC-E33 | Cancel‑replace limit SELL    | Cancel and resubmit limit sell at new price.        | Never.                      |
-| TC-E34 | Modify stop trigger price    | Amend stop order trigger price.                     | No modify or no stop.       |
-| TC-E35 | Cancel‑replace stop order    | Cancel and resubmit stop at new trigger price.      | No stop orders.             |
-| TC-E36 | Modify rejected              | Modify on unsupported adapter.                      | Adapter supports modify.    |
+| TC     | Name                      | Description                                    | Skip when                |
+| ------ | ------------------------- | ---------------------------------------------- | ------------------------ |
+| TC-E30 | Modify limit BUY price    | Amend open limit buy to new price.             | No modify support.       |
+| TC-E31 | Modify limit SELL price   | Amend open limit sell to new price.            | No modify support.       |
+| TC-E32 | Cancel‑replace limit BUY  | Cancel and resubmit limit buy at new price.    | Never.                   |
+| TC-E33 | Cancel‑replace limit SELL | Cancel and resubmit limit sell at new price.   | Never.                   |
+| TC-E34 | Modify stop trigger price | Amend stop order trigger price.                | No modify or no stop.    |
+| TC-E35 | Cancel‑replace stop order | Cancel and resubmit stop at new trigger price. | No stop orders.          |
+| TC-E36 | Modify rejected           | Modify on unsupported adapter.                 | Adapter supports modify. |
 
 ### TC-E30: Modify limit BUY price
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit buy from TC-E10.                                        |
+| Field              | Value                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open GTC limit buy from TC-E10.                                                                             |
 | **Action**         | ExecTester modifies limit buy to a new price as market moves (`modify_orders_to_maintain_tob_offset=True`). |
-| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
-| **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`. |
-| **Skip when**      | Adapter does not support order modification.                           |
+| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                                                     |
+| **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`.                                |
+| **Skip when**      | Adapter does not support order modification.                                                                |
 
 **Considerations:**
 
@@ -976,13 +976,13 @@ ExecTesterConfig::builder()
 
 ### TC-E31: Modify limit SELL price
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit sell from TC-E11.                                       |
-| **Action**         | ExecTester modifies limit sell to new price as market moves.           |
-| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
+| Field              | Value                                                                        |
+| ------------------ | ---------------------------------------------------------------------------- |
+| **Prerequisite**   | Open GTC limit sell from TC-E11.                                             |
+| **Action**         | ExecTester modifies limit sell to new price as market moves.                 |
+| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                      |
 | **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`. |
-| **Skip when**      | Adapter does not support order modification.                           |
+| **Skip when**      | Adapter does not support order modification.                                 |
 
 **Python config:**
 
@@ -1015,13 +1015,13 @@ ExecTesterConfig::builder()
 
 ### TC-E32: Cancel-replace limit BUY
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit buy.                                                    |
-| **Action**         | ExecTester cancels and resubmits limit buy at new price as market moves. |
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open GTC limit buy.                                                                                   |
+| **Action**         | ExecTester cancels and resubmits limit buy at new price as market moves.                              |
 | **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
-| **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
-| **Skip when**      | Never (cancel‑replace is always available).                            |
+| **Pass criteria**  | Original order canceled, new order accepted at updated price.                                         |
+| **Skip when**      | Never (cancel‑replace is always available).                                                           |
 
 **Considerations:**
 
@@ -1059,13 +1059,13 @@ ExecTesterConfig::builder()
 
 ### TC-E33: Cancel-replace limit SELL
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit sell.                                                   |
-| **Action**         | ExecTester cancels and resubmits limit sell at new price.              |
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open GTC limit sell.                                                                                  |
+| **Action**         | ExecTester cancels and resubmits limit sell at new price.                                             |
 | **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
-| **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
-| **Skip when**      | Never.                                                                 |
+| **Pass criteria**  | Original order canceled, new order accepted at updated price.                                         |
+| **Skip when**      | Never.                                                                                                |
 
 **Python config:**
 
@@ -1098,13 +1098,13 @@ ExecTesterConfig::builder()
 
 ### TC-E34: Modify stop trigger price
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open stop order from TC-E20 or TC-E22.                                 |
+| Field              | Value                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| **Prerequisite**   | Open stop order from TC-E20 or TC-E22.                                                                 |
 | **Action**         | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
-| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
-| **Pass criteria**  | `OrderUpdated` event logged with the new trigger price; order exits `PendingUpdate`. |
-| **Skip when**      | Adapter does not support native stop modify, or no stop order support. |
+| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                                                |
+| **Pass criteria**  | `OrderUpdated` event logged with the new trigger price; order exits `PendingUpdate`.                   |
+| **Skip when**      | Adapter does not support native stop modify, or no stop order support.                                 |
 
 **Considerations:**
 
@@ -1140,13 +1140,13 @@ ExecTesterConfig::builder()
 
 ### TC-E35: Cancel-replace stop order
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open stop order.                                                       |
-| **Action**         | ExecTester cancels and resubmits stop at new trigger price.            |
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open stop order.                                                                                      |
+| **Action**         | ExecTester cancels and resubmits stop at new trigger price.                                           |
 | **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
-| **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.    |
-| **Skip when**      | No stop order support.                                                 |
+| **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.                                   |
+| **Skip when**      | No stop order support.                                                                                |
 
 **Considerations:**
 
@@ -1183,13 +1183,13 @@ ExecTesterConfig::builder()
 
 ### TC-E36: Modify rejected
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open limit order, adapter does NOT support modify.                     |
-| **Action**         | Attempt to modify the order (programmatically, not via ExecTester auto‑maintain). |
-| **Event sequence** | `OrderModifyRejected`.                                                 |
+| Field              | Value                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open limit order, adapter does NOT support modify.                                                   |
+| **Action**         | Attempt to modify the order (programmatically, not via ExecTester auto‑maintain).                    |
+| **Event sequence** | `OrderModifyRejected`.                                                                               |
 | **Pass criteria**  | Modify attempt results in `OrderModifyRejected` event with reason; original order remains unchanged. |
-| **Skip when**      | Adapter supports order modification.                                   |
+| **Skip when**      | Adapter supports order modification.                                                                 |
 
 **Considerations:**
 
@@ -1202,23 +1202,23 @@ ExecTesterConfig::builder()
 
 Test order cancellation workflows.
 
-| TC    | Name                       | Description                                          | Skip when            |
-|-------|----------------------------|------------------------------------------------------|----------------------|
-| TC-E40 | Cancel single limit order  | Cancel an open limit order.                          | Never.               |
-| TC-E41 | Cancel all on stop         | Strategy stop cancels all open orders (default).     | Never.               |
-| TC-E42 | Individual cancels on stop | Cancel orders one‑by‑one on stop.                    | Never.               |
-| TC-E43 | Batch cancel on stop       | Cancel orders via batch API on stop.                 | No batch cancel.     |
-| TC-E44 | Cancel already‑canceled    | Verify documented rejection or idempotent result.    | Never.               |
+| TC     | Name                       | Description                                       | Skip when        |
+| ------ | -------------------------- | ------------------------------------------------- | ---------------- |
+| TC-E40 | Cancel single limit order  | Cancel an open limit order.                       | Never.           |
+| TC-E41 | Cancel all on stop         | Strategy stop cancels all open orders (default).  | Never.           |
+| TC-E42 | Individual cancels on stop | Cancel orders one‑by‑one on stop.                 | Never.           |
+| TC-E43 | Batch cancel on stop       | Cancel orders via batch API on stop.              | No batch cancel. |
+| TC-E44 | Cancel already‑canceled    | Verify documented rejection or idempotent result. | Never.           |
 
 ### TC-E40: Cancel single limit order
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit order from TC-E10 or TC-E11.                            |
-| **Action**         | Stop the strategy; ExecTester cancels the open limit order.            |
-| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                                |
-| **Pass criteria**  | Order status transitions to CANCELED; no open orders remaining.        |
-| **Skip when**      | Never.                                                                 |
+| Field              | Value                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| **Prerequisite**   | Open GTC limit order from TC-E10 or TC-E11.                     |
+| **Action**         | Stop the strategy; ExecTester cancels the open limit order.     |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                        |
+| **Pass criteria**  | Order status transitions to CANCELED; no open orders remaining. |
+| **Skip when**      | Never.                                                          |
 
 **Considerations:**
 
@@ -1256,13 +1256,13 @@ ExecTesterConfig::builder()
 
 ### TC-E41: Cancel all on stop
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Multiple open orders (limit buy + limit sell from TC-E12).             |
-| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence** | For each order: `OrderPendingCancel` -> `OrderCanceled`.                |
-| **Pass criteria**  | All open orders canceled; no open orders remaining.                    |
-| **Skip when**      | Never.                                                                 |
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **Prerequisite**   | Multiple open orders (limit buy + limit sell from TC-E12).     |
+| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default). |
+| **Event sequence** | For each order: `OrderPendingCancel` -> `OrderCanceled`.       |
+| **Pass criteria**  | All open orders canceled; no open orders remaining.            |
+| **Skip when**      | Never.                                                         |
 
 **Python config:**
 
@@ -1295,13 +1295,13 @@ ExecTesterConfig::builder()
 
 ### TC-E42: Individual cancels on stop
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Multiple open orders.                                                  |
-| **Action**         | Stop with `use_individual_cancels_on_stop=True`.                       |
-| **Event sequence** | Individual `OrderPendingCancel` -> `OrderCanceled` for each order.      |
-| **Pass criteria**  | Each order canceled individually; all orders reach CANCELED status.    |
-| **Skip when**      | Never.                                                                 |
+| Field              | Value                                                               |
+| ------------------ | ------------------------------------------------------------------- |
+| **Prerequisite**   | Multiple open orders.                                               |
+| **Action**         | Stop with `use_individual_cancels_on_stop=True`.                    |
+| **Event sequence** | Individual `OrderPendingCancel` -> `OrderCanceled` for each order.  |
+| **Pass criteria**  | Each order canceled individually; all orders reach CANCELED status. |
+| **Skip when**      | Never.                                                              |
 
 **Python config:**
 
@@ -1334,13 +1334,13 @@ ExecTesterConfig::builder()
 
 ### TC-E43: Batch cancel on stop
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Multiple open orders, adapter supports batch cancel.                   |
-| **Action**         | Stop with `use_batch_cancel_on_stop=True`.                             |
-| **Event sequence** | Batch `OrderPendingCancel` -> `OrderCanceled` for all orders.           |
+| Field              | Value                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| **Prerequisite**   | Multiple open orders, adapter supports batch cancel.                     |
+| **Action**         | Stop with `use_batch_cancel_on_stop=True`.                               |
+| **Event sequence** | Batch `OrderPendingCancel` -> `OrderCanceled` for all orders.            |
 | **Pass criteria**  | All orders canceled via single batch request; all reach CANCELED status. |
-| **Skip when**      | Adapter does not support batch cancel.                                 |
+| **Skip when**      | Adapter does not support batch cancel.                                   |
 
 **Python config:**
 
@@ -1373,13 +1373,13 @@ ExecTesterConfig::builder()
 
 ### TC-E44: Cancel already-canceled order
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | A previously canceled order (from TC-E40).                             |
-| **Action**         | Attempt to cancel the same order again.                                |
+| Field              | Value                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A previously canceled order (from TC-E40).                                            |
+| **Action**         | Attempt to cancel the same order again.                                               |
 | **Event sequence** | `OrderCancelRejected` by default, or no new event for a documented idempotent result. |
-| **Pass criteria**  | Result matches the adapter contract without a duplicate terminal event. |
-| **Skip when**      | Never.                                                                 |
+| **Pass criteria**  | Result matches the adapter contract without a duplicate terminal event.               |
+| **Skip when**      | Never.                                                                                |
 
 **Considerations:**
 
@@ -1394,22 +1394,22 @@ ExecTesterConfig::builder()
 
 Test bracket order submission (entry + take-profit + stop-loss).
 
-| TC    | Name                          | Description                                       | Skip when            |
-|-------|-------------------------------|---------------------------------------------------|----------------------|
-| TC-E50 | Bracket BUY                   | Entry limit buy + TP limit sell + SL stop sell.   | No bracket support.  |
-| TC-E51 | Bracket SELL                  | Entry limit sell + TP limit buy + SL stop buy.    | No bracket support.  |
-| TC-E52 | Bracket entry fill activates  | Verify TP/SL become active after entry fill.      | No bracket support.  |
-| TC-E53 | Bracket with post‑only entry  | Entry order uses post‑only flag.                  | No bracket or PO.    |
+| TC     | Name                         | Description                                     | Skip when           |
+| ------ | ---------------------------- | ----------------------------------------------- | ------------------- |
+| TC-E50 | Bracket BUY                  | Entry limit buy + TP limit sell + SL stop sell. | No bracket support. |
+| TC-E51 | Bracket SELL                 | Entry limit sell + TP limit buy + SL stop buy.  | No bracket support. |
+| TC-E52 | Bracket entry fill activates | Verify TP/SL become active after entry fill.    | No bracket support. |
+| TC-E53 | Bracket with post‑only entry | Entry order uses post‑only flag.                | No bracket or PO.   |
 
 ### TC-E50: Bracket BUY
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester submits a bracket order: limit buy entry + take‑profit sell + stop‑loss sell. |
+| Field              | Value                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                                                                   |
+| **Action**         | ExecTester submits a bracket order: limit buy entry + take‑profit sell + stop‑loss sell.                                                |
 | **Event sequence** | Entry: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`; TP and SL: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
-| **Pass criteria**  | Three orders created and accepted: entry below bid, TP above ask, SL below entry. |
-| **Skip when**      | Adapter does not support bracket orders.                               |
+| **Pass criteria**  | Three orders created and accepted: entry below bid, TP above ask, SL below entry.                                                       |
+| **Skip when**      | Adapter does not support bracket orders.                                                                                                |
 
 **Python config:**
 
@@ -1447,7 +1447,7 @@ ExecTesterConfig::builder()
 ### TC-E51: Bracket SELL
 
 | Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester submits bracket: limit sell entry + TP buy + SL buy.        |
 | **Event sequence** | Same pattern as TC-E50 but for sell side.                              |
@@ -1457,7 +1457,7 @@ ExecTesterConfig::builder()
 ### TC-E52: Bracket entry fill activates TP/SL
 
 | Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Bracket order from TC-E50 where entry order fills.                     |
 | **Action**         | Entry order fills; verify contingent TP and SL orders activate.        |
 | **Event sequence** | Entry: `OrderFilled`; TP and SL transition from contingent to active.  |
@@ -1471,13 +1471,13 @@ ExecTesterConfig::builder()
 
 ### TC-E53: Bracket with post-only entry
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter supports brackets and post‑only.                               |
-| **Action**         | Submit bracket with `use_post_only=True` (applied to entry and TP).    |
-| **Event sequence** | Same as TC-E50 with post‑only flag on entry.                           |
+| Field              | Value                                                                   |
+| ------------------ | ----------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter supports brackets and post‑only.                                |
+| **Action**         | Submit bracket with `use_post_only=True` (applied to entry and TP).     |
+| **Event sequence** | Same as TC-E50 with post‑only flag on entry.                            |
 | **Pass criteria**  | Entry and TP orders accepted as post‑only (maker); SL is not post‑only. |
-| **Skip when**      | No bracket support or no post‑only support.                            |
+| **Skip when**      | No bracket support or no post‑only support.                             |
 
 ---
 
@@ -1485,22 +1485,22 @@ ExecTesterConfig::builder()
 
 Test order-level flags and special parameters.
 
-| TC    | Name                 | Description                                            | Skip when            |
-|-------|----------------------|--------------------------------------------------------|----------------------|
-| TC-E60 | PostOnly accepted    | Limit with post‑only, placed away from TOB.            | No post‑only.        |
-| TC-E61 | ReduceOnly on close  | Close position with reduce‑only flag.                  | No reduce‑only.      |
-| TC-E62 | Display quantity     | Iceberg order with visible quantity < total.           | No display quantity.  |
-| TC-E63 | Custom order params  | Adapter‑specific params via `order_params`.            | N/A.                 |
+| TC     | Name                | Description                                  | Skip when            |
+| ------ | ------------------- | -------------------------------------------- | -------------------- |
+| TC-E60 | PostOnly accepted   | Limit with post‑only, placed away from TOB.  | No post‑only.        |
+| TC-E61 | ReduceOnly on close | Close position with reduce‑only flag.        | No reduce‑only.      |
+| TC-E62 | Display quantity    | Iceberg order with visible quantity < total. | No display quantity. |
+| TC-E63 | Custom order params | Adapter‑specific params via `order_params`.  | N/A.                 |
 
 ### TC-E60: PostOnly accepted
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| Field              | Value                                                                   |
+| ------------------ | ----------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                   |
 | **Action**         | ExecTester places limit buy with `use_post_only=True` at passive price. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted as a maker order; post‑only flag acknowledged by venue. |
-| **Skip when**      | Adapter does not support post‑only flag.                               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.              |
+| **Pass criteria**  | Order accepted as a maker order; post‑only flag acknowledged by venue.  |
+| **Skip when**      | Adapter does not support post‑only flag.                                |
 
 **Python config:**
 
@@ -1533,13 +1533,13 @@ ExecTesterConfig::builder()
 
 ### TC-E61: ReduceOnly on close
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open position (from TC-E01).                                           |
-| **Action**         | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce‑only flag. |
+| Field              | Value                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Open position (from TC-E01).                                                                   |
+| **Action**         | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce‑only flag.            |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (with reduce‑only). |
-| **Pass criteria**  | Closing order has reduce‑only flag; position fully closed.             |
-| **Skip when**      | Adapter does not support reduce‑only flag.                             |
+| **Pass criteria**  | Closing order has reduce‑only flag; position fully closed.                                     |
+| **Skip when**      | Adapter does not support reduce‑only flag.                                                     |
 
 **Python config:**
 
@@ -1576,13 +1576,13 @@ ExecTesterConfig::builder()
 
 ### TC-E62: Display quantity (iceberg)
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, adapter supports display quantity.                  |
-| **Action**         | Place limit order with `order_display_qty` < `order_qty`.              |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
+| Field              | Value                                                                           |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, adapter supports display quantity.                           |
+| **Action**         | Place limit order with `order_display_qty` < `order_qty`.                       |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                      |
 | **Pass criteria**  | Order accepted with display quantity set; only display qty visible on the book. |
-| **Skip when**      | Adapter does not support display quantity / iceberg orders.            |
+| **Skip when**      | Adapter does not support display quantity / iceberg orders.                     |
 
 **Python config:**
 
@@ -1615,13 +1615,13 @@ ExecTesterConfig::builder()
 
 ### TC-E63: Custom order params
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, adapter accepts additional parameters.              |
+| Field              | Value                                                                        |
+| ------------------ | ---------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, adapter accepts additional parameters.                    |
 | **Action**         | Place order with `order_params` dict containing adapter‑specific parameters. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted; adapter‑specific parameters passed through to venue.   |
-| **Skip when**      | N/A (adapter‑specific).                                                |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                   |
+| **Pass criteria**  | Order accepted; adapter‑specific parameters passed through to venue.         |
+| **Skip when**      | N/A (adapter‑specific).                                                      |
 
 **Considerations:**
 
@@ -1635,7 +1635,7 @@ ExecTesterConfig::builder()
 Test that the adapter correctly handles and reports order rejections.
 
 | TC     | Name                    | Description                                      | Skip when        |
-|--------|-------------------------|--------------------------------------------------|------------------|
+| ------ | ----------------------- | ------------------------------------------------ | ---------------- |
 | TC-E70 | PostOnly rejection      | Post‑only order that would cross the spread.     | No post‑only.    |
 | TC-E71 | ReduceOnly rejection    | Reduce‑only order with no position to reduce.    | No reduce‑only.  |
 | TC-E72 | Unsupported order type  | Submit order type not supported by adapter.      | Never.           |
@@ -1678,13 +1678,13 @@ reconciliation pass resolves it.
 
 ### TC-E70: PostOnly rejection
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| Field              | Value                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                                                           |
 | **Action**         | ExecTester places post‑only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.               |
-| **Pass criteria**  | Venue rejects order; `OrderRejected.due_post_only=true`; reason names post‑only violation. |
-| **Skip when**      | Adapter does not support post‑only flag.                               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.                                                                      |
+| **Pass criteria**  | Venue rejects order; `OrderRejected.due_post_only=true`; reason names post‑only violation.                                      |
+| **Skip when**      | Adapter does not support post‑only flag.                                                                                        |
 
 **Considerations:**
 
@@ -1726,13 +1726,13 @@ ExecTesterConfig::builder()
 
 ### TC-E71: ReduceOnly rejection
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, no open position for the instrument.                |
+| Field              | Value                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Prerequisite**   | Adapter connected, no open position for the instrument.                                                                                                            |
 | **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.               |
-| **Pass criteria**  | Order rejected; `OrderRejected` event with reason indicating reduce‑only violation. |
-| **Skip when**      | Adapter does not support reduce‑only flag.                             |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.                                                                                                         |
+| **Pass criteria**  | Order rejected; `OrderRejected` event with reason indicating reduce‑only violation.                                                                                |
+| **Skip when**      | Adapter does not support reduce‑only flag.                                                                                                                         |
 
 **Considerations:**
 
@@ -1774,7 +1774,7 @@ ExecTesterConfig::builder()
 ### TC-E72: Unsupported order type
 
 | Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, order type not in adapter's supported set.          |
 | **Action**         | Submit an order type the adapter does not support.                     |
 | **Event sequence** | `OrderDenied` (pre‑submission rejection by adapter).                   |
@@ -1790,7 +1790,7 @@ ExecTesterConfig::builder()
 ### TC-E73: Unsupported TIF
 
 | Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, TIF not in adapter's supported set.                 |
 | **Action**         | Submit an order with a TIF the adapter does not support.               |
 | **Event sequence** | `OrderDenied` (pre‑submission rejection by adapter).                   |
@@ -1808,26 +1808,26 @@ ExecTesterConfig::builder()
 
 Test strategy lifecycle behavior and state management on start and stop.
 
-| TC     | Name                        | Description                                            | Skip when            |
-|--------|-----------------------------|--------------------------------------------------------|----------------------|
-| TC-E80 | Open position on start      | Open a position immediately when strategy starts.      | No market orders.    |
-| TC-E81 | Cancel orders on stop       | Cancel all open orders when strategy stops.             | Never.               |
-| TC-E82 | Close positions on stop     | Close open positions when strategy stops.               | No market orders.    |
-| TC-E83 | Unsubscribe on stop         | Unsubscribe from data feeds on strategy stop.           | No unsub support.    |
-| TC-E84 | Reconcile open orders       | Reconcile existing open orders from a prior session.    | Never.               |
-| TC-E85 | Reconcile filled orders     | Reconcile previously filled orders from a prior session.| Never.               |
-| TC-E86 | Reconcile open long         | Reconcile existing open long position.                  | Never.               |
-| TC-E87 | Reconcile open short        | Reconcile existing open short position.                 | Never.               |
+| TC     | Name                    | Description                                              | Skip when         |
+| ------ | ----------------------- | -------------------------------------------------------- | ----------------- |
+| TC-E80 | Open position on start  | Open a position immediately when strategy starts.        | No market orders. |
+| TC-E81 | Cancel orders on stop   | Cancel all open orders when strategy stops.              | Never.            |
+| TC-E82 | Close positions on stop | Close open positions when strategy stops.                | No market orders. |
+| TC-E83 | Unsubscribe on stop     | Unsubscribe from data feeds on strategy stop.            | No unsub support. |
+| TC-E84 | Reconcile open orders   | Reconcile existing open orders from a prior session.     | Never.            |
+| TC-E85 | Reconcile filled orders | Reconcile previously filled orders from a prior session. | Never.            |
+| TC-E86 | Reconcile open long     | Reconcile existing open long position.                   | Never.            |
+| TC-E87 | Reconcile open short    | Reconcile existing open short position.                  | Never.            |
 
 ### TC-E80: Open position on start
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, no existing position.            |
-| **Action**         | Strategy starts with `open_position_on_start_qty` set.                 |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
+| Field              | Value                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, no existing position.                                        |
+| **Action**         | Strategy starts with `open_position_on_start_qty` set.                                             |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.                        |
 | **Pass criteria**  | Position opened on start; market order submitted and filled before limit order maintenance begins. |
-| **Skip when**      | Adapter does not support market orders.                                |
+| **Skip when**      | Adapter does not support market orders.                                                            |
 
 **Python config:**
 
@@ -1856,28 +1856,28 @@ ExecTesterConfig::builder()
 
 ### TC-E81: Cancel orders on stop
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open limit orders from the strategy session.                           |
-| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence** | For each open order: `OrderPendingCancel` -> `OrderCanceled`.           |
-| **Pass criteria**  | All strategy‑owned open orders canceled on stop.                       |
-| **Skip when**      | Never.                                                                 |
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **Prerequisite**   | Open limit orders from the strategy session.                   |
+| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default). |
+| **Event sequence** | For each open order: `OrderPendingCancel` -> `OrderCanceled`.  |
+| **Pass criteria**  | All strategy‑owned open orders canceled on stop.               |
+| **Skip when**      | Never.                                                         |
 
 ### TC-E82: Close positions on stop
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open position from the strategy session.                               |
-| **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).       |
+| Field              | Value                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| **Prerequisite**   | Open position from the strategy session.                                                   |
+| **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).                           |
 | **Event sequence** | Closing order: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | All strategy‑owned positions closed; net position = 0.                 |
-| **Skip when**      | Adapter does not support market orders.                                |
+| **Pass criteria**  | All strategy‑owned positions closed; net position = 0.                                     |
+| **Skip when**      | Adapter does not support market orders.                                                    |
 
 ### TC-E83: Unsubscribe on stop
 
 | Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
+| ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
 | **Action**         | Stop the strategy with `can_unsubscribe=True` (default).               |
 | **Event sequence** | Data subscriptions removed.                                            |
@@ -1911,13 +1911,13 @@ ExecTesterConfig::builder()
 
 ### TC-E84: Reconcile open orders
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | One or more open limit orders on the venue from a prior session.       |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `OrderStatusReport` generated for each open order.                     |
+| Field              | Value                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | One or more open limit orders on the venue from a prior session.                                                                |
+| **Action**         | Start the node with `reconciliation=True`.                                                                                      |
+| **Event sequence** | `OrderStatusReport` generated for each open order.                                                                              |
 | **Pass criteria**  | Each open order is loaded into the cache with correct `venue_order_id`, status=ACCEPTED, price, quantity, side, and order type. |
-| **Skip when**      | Never.                                                                 |
+| **Skip when**      | Never.                                                                                                                          |
 
 **Considerations:**
 
@@ -1927,13 +1927,13 @@ ExecTesterConfig::builder()
 
 ### TC-E85: Reconcile filled orders
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | One or more filled orders on the venue from a prior session.           |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `FillReport` generated for each historical fill.                       |
+| Field              | Value                                                                                                                               |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | One or more filled orders on the venue from a prior session.                                                                        |
+| **Action**         | Start the node with `reconciliation=True`.                                                                                          |
+| **Event sequence** | `FillReport` generated for each historical fill.                                                                                    |
 | **Pass criteria**  | Each filled order is loaded into the cache with correct `venue_order_id`, status=FILLED, fill price, fill quantity, and commission. |
-| **Skip when**      | Never.                                                                 |
+| **Skip when**      | Never.                                                                                                                              |
 
 **Considerations:**
 
@@ -1943,13 +1943,13 @@ ExecTesterConfig::builder()
 
 ### TC-E86: Reconcile open long position
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | An open long position on the venue from a prior session.               |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `PositionStatusReport` generated for the long position.                |
+| Field              | Value                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **Prerequisite**   | An open long position on the venue from a prior session.                                                     |
+| **Action**         | Start the node with `reconciliation=True`.                                                                   |
+| **Event sequence** | `PositionStatusReport` generated for the long position.                                                      |
 | **Pass criteria**  | Position loaded into cache with correct instrument, side=LONG, quantity, and entry price matching the venue. |
-| **Skip when**      | Never.                                                                 |
+| **Skip when**      | Never.                                                                                                       |
 
 **Considerations:**
 
@@ -1960,13 +1960,13 @@ ExecTesterConfig::builder()
 
 ### TC-E87: Reconcile open short position
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | An open short position on the venue from a prior session.              |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `PositionStatusReport` generated for the short position.               |
+| Field              | Value                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | An open short position on the venue from a prior session.                                                     |
+| **Action**         | Start the node with `reconciliation=True`.                                                                    |
+| **Event sequence** | `PositionStatusReport` generated for the short position.                                                      |
 | **Pass criteria**  | Position loaded into cache with correct instrument, side=SHORT, quantity, and entry price matching the venue. |
-| **Skip when**      | Never.                                                                 |
+| **Skip when**      | Never.                                                                                                        |
 
 **Considerations:**
 
@@ -1987,24 +1987,24 @@ orders. Exact restrictions vary by venue; consult the adapter guide.
 These tests require a `CryptoOption` instrument. Use an OTM option with
 reasonable liquidity for fills.
 
-| TC      | Name                          | Description                                                      | Skip when              |
-|---------|-------------------------------|------------------------------------------------------------------|------------------------|
-| TC-E90  | Limit BUY option              | Place a limit buy on an option instrument.                       | No options support.    |
-| TC-E91  | Limit SELL option             | Place a limit sell on an option instrument.                      | No options support.    |
-| TC-E92  | Limit with alt pricing        | Place a limit order with adapter‑specific pricing via `order_params`. | No alt pricing.    |
-| TC-E94  | Unsupported order type denied | Submit an order type the adapter rejects for options.            | No options support.    |
-| TC-E96  | Conditional order rejected    | Submit a stop/conditional order on an option; expect rejection.  | No options support.    |
-| TC-E99  | FOK limit option              | Place a FOK limit order on an option instrument.                 | No FOK options.        |
-| TC-E100 | Cancel option order           | Cancel an open limit order on an option instrument.              | No options support.    |
-| TC-E101 | Reconcile option position     | Reconcile an open option position from a prior session.          | No options support.    |
+| TC      | Name                          | Description                                                           | Skip when           |
+| ------- | ----------------------------- | --------------------------------------------------------------------- | ------------------- |
+| TC-E90  | Limit BUY option              | Place a limit buy on an option instrument.                            | No options support. |
+| TC-E91  | Limit SELL option             | Place a limit sell on an option instrument.                           | No options support. |
+| TC-E92  | Limit with alt pricing        | Place a limit order with adapter‑specific pricing via `order_params`. | No alt pricing.     |
+| TC-E94  | Unsupported order type denied | Submit an order type the adapter rejects for options.                 | No options support. |
+| TC-E96  | Conditional order rejected    | Submit a stop/conditional order on an option; expect rejection.       | No options support. |
+| TC-E99  | FOK limit option              | Place a FOK limit order on an option instrument.                      | No FOK options.     |
+| TC-E100 | Cancel option order           | Cancel an open limit order on an option instrument.                   | No options support. |
+| TC-E101 | Reconcile option position     | Reconcile an open option position from a prior session.               | No options support. |
 
 ### TC-E90: Limit BUY option
 
 | Field              | Value                                                                       |
-|--------------------|-----------------------------------------------------------------------------|
+| ------------------ | --------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, option instrument loaded, quotes flowing.                |
 | **Action**         | ExecTester places a limit buy on the option at a passive price.             |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                    |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                  |
 | **Pass criteria**  | Order accepted by venue with correct instrument, side, price, and quantity. |
 | **Skip when**      | Adapter does not support options trading.                                   |
 
@@ -2023,10 +2023,10 @@ ExecTesterConfig(
 ### TC-E91: Limit SELL option
 
 | Field              | Value                                                                       |
-|--------------------|-----------------------------------------------------------------------------|
+| ------------------ | --------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, option instrument loaded, quotes flowing.                |
 | **Action**         | ExecTester places a limit sell on the option at a passive price.            |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                    |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                  |
 | **Pass criteria**  | Order accepted by venue with correct instrument, side, price, and quantity. |
 | **Skip when**      | Adapter does not support options trading.                                   |
 
@@ -2045,10 +2045,10 @@ ExecTesterConfig(
 ### TC-E92: Limit with alternative pricing
 
 | Field              | Value                                                               |
-|--------------------|---------------------------------------------------------------------|
+| ------------------ | ------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, option instrument loaded.                        |
 | **Action**         | Place limit order with adapter‑specific pricing via `order_params`. |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.            |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.          |
 | **Pass criteria**  | Order accepted; venue acknowledges the alternative pricing mode.    |
 | **Skip when**      | Adapter does not support alternative pricing modes for options.     |
 
@@ -2073,13 +2073,13 @@ ExecTesterConfig(
 
 ### TC-E94: Unsupported order type denied for options
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, option instrument loaded.                           |
-| **Action**         | Submit an order type the venue does not support for options (e.g. market order). |
+| Field              | Value                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, option instrument loaded.                                                                |
+| **Action**         | Submit an order type the venue does not support for options (e.g. market order).                            |
 | **Event sequence** | Adapter‑dependent: `OrderDenied` (pre‑submission) or `OrderSubmitted` -> `OrderRejected` (post‑submission). |
-| **Pass criteria**  | Order does not fill. Denial or rejection reason references the unsupported order type. |
-| **Skip when**      | Adapter does not support options.                                      |
+| **Pass criteria**  | Order does not fill. Denial or rejection reason references the unsupported order type.                      |
+| **Skip when**      | Adapter does not support options.                                                                           |
 
 **Considerations:**
 
@@ -2092,13 +2092,13 @@ ExecTesterConfig(
 
 ### TC-E96: Conditional order rejected for options
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, option instrument loaded.                           |
-| **Action**         | Submit a conditional order on an option instrument.                    |
+| Field              | Value                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, option instrument loaded.                                                                |
+| **Action**         | Submit a conditional order on an option instrument.                                                         |
 | **Event sequence** | Adapter‑dependent: `OrderDenied` (pre‑submission) or `OrderSubmitted` -> `OrderRejected` (post‑submission). |
-| **Pass criteria**  | Order does not fill. Reason references unsupported conditional order type. |
-| **Skip when**      | Adapter does not support options, or adapter supports conditionals for options. |
+| **Pass criteria**  | Order does not fill. Reason references unsupported conditional order type.                                  |
+| **Skip when**      | Adapter does not support options, or adapter supports conditionals for options.                             |
 
 **Considerations:**
 
@@ -2110,13 +2110,13 @@ ExecTesterConfig(
 
 ### TC-E99: FOK limit option
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, option instrument loaded, sufficient book depth.    |
-| **Action**         | Place a limit order with `TimeInForce::Fok` on an option instrument.   |
+| Field              | Value                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, option instrument loaded, sufficient book depth.                            |
+| **Action**         | Place a limit order with `TimeInForce::Fok` on an option instrument.                           |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` or `OrderCanceled`. |
-| **Pass criteria**  | Order fills completely or is canceled. No partial fills.               |
-| **Skip when**      | Adapter does not support FOK for options.                              |
+| **Pass criteria**  | Order fills completely or is canceled. No partial fills.                                       |
+| **Skip when**      | Adapter does not support FOK for options.                                                      |
 
 **Considerations:**
 
@@ -2126,23 +2126,23 @@ ExecTesterConfig(
 
 ### TC-E100: Cancel option order
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open limit order from TC-E90 or TC-E91.                                |
-| **Action**         | Cancel the open limit order.                                           |
-| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                                 |
-| **Pass criteria**  | Order canceled; no longer appears in open orders on the venue.         |
-| **Skip when**      | Adapter does not support options.                                      |
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **Prerequisite**   | Open limit order from TC-E90 or TC-E91.                        |
+| **Action**         | Cancel the open limit order.                                   |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                       |
+| **Pass criteria**  | Order canceled; no longer appears in open orders on the venue. |
+| **Skip when**      | Adapter does not support options.                              |
 
 ### TC-E101: Reconcile option position
 
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open option position from a prior session.                             |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `PositionStatusReport` generated for the option position.              |
+| Field              | Value                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| **Prerequisite**   | Open option position from a prior session.                                           |
+| **Action**         | Start the node with `reconciliation=True`.                                           |
+| **Event sequence** | `PositionStatusReport` generated for the option position.                            |
 | **Pass criteria**  | Position loaded into cache with correct instrument, side, quantity, and entry price. |
-| **Skip when**      | Adapter does not support options.                                      |
+| **Skip when**      | Adapter does not support options.                                                    |
 
 **Considerations:**
 
@@ -2158,7 +2158,7 @@ Quick reference for all `ExecTesterConfig` parameters. Defaults shown are for th
 the Rust builder uses equivalent defaults.
 
 | Parameter                                       | Type              | Default         | Affects groups |
-|-------------------------------------------------|-------------------|-----------------|----------------|
+| ----------------------------------------------- | ----------------- | --------------- | -------------- |
 | `instrument_id`                                 | InstrumentId      | *required*      | All            |
 | `order_qty`                                     | Decimal           | *required*      | All            |
 | `order_display_qty`                             | Decimal?          | None            | 2, 7           |

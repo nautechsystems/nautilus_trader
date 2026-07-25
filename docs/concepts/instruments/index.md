@@ -10,7 +10,7 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model.instru
 ## Instrument types
 
 | Instrument type                                          | Class              | Description                                          | Typical adapters                |
-|----------------------------------------------------------|--------------------|------------------------------------------------------|---------------------------------|
+| -------------------------------------------------------- | ------------------ | ---------------------------------------------------- | ------------------------------- |
 | [`Equity`](equity.md)                                    | Spot               | Listed share or ETF traded on a cash market.         | Databento, Interactive Brokers. |
 | [`CurrencyPair`](currency_pair.md)                       | Spot               | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
 | [`Commodity`](commodity.md)                              | Spot               | Spot commodity such as gold or oil.                  | Interactive Brokers.            |
@@ -77,7 +77,7 @@ Most concrete instruments share the same core shape. Individual type pages list 
 complete constructor and struct fields for that type.
 
 | Field               | Meaning                                                                 |
-|---------------------|-------------------------------------------------------------------------|
+| ------------------- | ----------------------------------------------------------------------- |
 | `id`                | Nautilus `InstrumentId`, formed from a symbol and venue.                |
 | `raw_symbol`        | Native venue symbol before Nautilus normalization.                      |
 | `price_precision`   | Number of decimal places allowed for prices.                            |
@@ -188,7 +188,7 @@ trading venues validate the same constraints, and backtests should not fill orde
 prices or sizes that cannot exist in production.
 
 | Field             | Constrains                           | Example           |
-|-------------------|--------------------------------------|-------------------|
+| ----------------- | ------------------------------------ | ----------------- |
 | `price_precision` | Order prices, trigger prices, fills. | `2` -> `50000.01` |
 | `size_precision`  | Order quantities and fill sizes.     | `5` -> `1.00001`  |
 

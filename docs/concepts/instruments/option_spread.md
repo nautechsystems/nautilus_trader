@@ -9,7 +9,7 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 ## Fields
 
 | Field             | Rust type          | Python type        | Required/default | Notes                                    |
-|-------------------|--------------------|--------------------|------------------|------------------------------------------|
+| ----------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`   | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`      | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
 | `asset_class`     | `AssetClass`       | `AssetClass`       | Required         | Asset class of the underlying strategy.  |

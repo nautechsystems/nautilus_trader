@@ -3,7 +3,7 @@
 NautilusTrader is officially supported for Python 3.12-3.14 on the following 64-bit platforms:
 
 | Operating System       | Supported Versions | CPU Architecture  |
-|------------------------|--------------------|-------------------|
+| ---------------------- | ------------------ | ----------------- |
 | Linux (Ubuntu)         | 22.04 and later    | x86_64            |
 | Linux (Ubuntu)         | 22.04 and later    | ARM64             |
 | macOS                  | 15.0 and later     | ARM64             |

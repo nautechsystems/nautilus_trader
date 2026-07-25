@@ -311,16 +311,16 @@ when aggressor side was not directly observable.
 
 ### Configuration
 
-| Parameter          | Value            | Description                                          |
-| ------------------ | ---------------- | ---------------------------------------------------- |
-| `bar_type`         | `2M-VALUE-LAST`  | Dollar bars closing every USD 2,000,000 of notional. |
-| `trade_size`       | `0.0100`         | 0.0100 XBT per trade (matches instrument precision). |
-| `hurst_window`     | `128`            | Rolling window of dollar bar log returns.            |
-| `hurst_lags`       | `[4, 8, 16, 32]` | Lag set used in the R/S regression.                  |
-| `hurst_enter`      | `0.55`           | Above this, the regime is treated as trending.       |
-| `hurst_exit`       | `0.50`           | Below this, open positions are flattened.            |
-| `vpin_window`      | `50`             | Completed volume buckets averaged for VPIN.          |
-| `vpin_threshold`   | `0.30`           | Minimum VPIN for flow to be considered informed.     |
+| Parameter          | Value            | Description                                                       |
+| ------------------ | ---------------- | ----------------------------------------------------------------- |
+| `bar_type`         | `2M-VALUE-LAST`  | Dollar bars closing every USD 2,000,000 of notional.              |
+| `trade_size`       | `0.0100`         | 0.0100 XBT per trade (matches instrument precision).              |
+| `hurst_window`     | `128`            | Rolling window of dollar bar log returns.                         |
+| `hurst_lags`       | `[4, 8, 16, 32]` | Lag set used in the R/S regression.                               |
+| `hurst_enter`      | `0.55`           | Above this, the regime is treated as trending.                    |
+| `hurst_exit`       | `0.50`           | Below this, open positions are flattened.                         |
+| `vpin_window`      | `50`             | Completed volume buckets averaged for VPIN.                       |
+| `vpin_threshold`   | `0.30`           | Minimum VPIN for flow to be considered informed.                  |
 | `max_holding_secs` | `1800`           | Seconds a position may be held (default `3600`; overridden here). |
 
 :::tip

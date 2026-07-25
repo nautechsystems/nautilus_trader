@@ -9,7 +9,7 @@ This integration supports live market data ingest and order execution with AX Ex
 
 ## Examples
 
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/).
+You can find live example scripts in the [examples/live/architect_ax](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/) directory.
 
 ## Overview
 
@@ -43,7 +43,7 @@ NautilusTrader integration guide.
 The production catalog currently contains perpetual contracts across these venue categories:
 
 | Venue category   | Examples                         | Nautilus asset class |
-|------------------|----------------------------------|----------------------|
+| ---------------- | -------------------------------- | -------------------- |
 | Foreign exchange | `EURUSD-PERP`, `JPYUSD-PERP`     | FX                   |
 | Equities         | `AAPL-PERP`, `NVDA-PERP`         | Equity               |
 | Energy ETFs      | `USO-PERP`, `UNG-PERP`           | Equity               |
@@ -81,7 +81,7 @@ The adapter preserves each AX symbol and appends the Nautilus venue identifier `
 symbols use the `-PERP` suffix. Dated symbols include their year and contract month.
 
 | Contract     | AX Symbol        | Nautilus InstrumentId |
-|--------------|------------------|-----------------------|
+| ------------ | ---------------- | --------------------- |
 | EUR/USD perp | `EURUSD-PERP`    | `EURUSD-PERP.AX`      |
 | Gold perp    | `XAU-PERP`       | `XAU-PERP.AX`         |
 | Dated gold   | `XAU-2026-SEP`   | `XAU-2026-SEP.AX`     |
@@ -100,7 +100,7 @@ AX Exchange provides two trading environments. Configure the appropriate environ
 `environment` parameter in your client configuration.
 
 | Environment    | Config                                 | Description                            |
-|----------------|----------------------------------------|----------------------------------------|
+| -------------- | -------------------------------------- | -------------------------------------- |
 | **Sandbox**    | `environment=AxEnvironment.SANDBOX`    | Test environment with simulated funds. |
 | **Production** | `environment=AxEnvironment.PRODUCTION` | Live trading with real funds.          |
 
@@ -169,7 +169,7 @@ for historical data backfill.
 ### Data types
 
 | AX Data           | Nautilus Data Type   | Notes                                                              |
-|-------------------|----------------------|--------------------------------------------------------------------|
+| ----------------- | -------------------- | ------------------------------------------------------------------ |
 | Order book (L1)   | `QuoteTick`          | Best bid/ask top‑of‑book from L1 book subscription.                |
 | Order book (L2)   | `OrderBookDelta`     | Aggregated price levels.                                           |
 | Order book (L3)   | `OrderBookDelta`     | Per‑snapshot order quantities with synthetic IDs.                  |
@@ -228,7 +228,7 @@ Nautilus data type.
 ### Bar intervals
 
 | Interval | Description |
-|----------|-------------|
+| -------- | ----------- |
 | `1s`     | 1-second    |
 | `5s`     | 5-second    |
 | `1m`     | 1-minute    |
@@ -256,7 +256,7 @@ configured trigger, then sends a plain limit order to this adapter.
 ### Nautilus order types
 
 | Order Type             | Supported | Notes                                             |
-|------------------------|-----------|---------------------------------------------------|
+| ---------------------- | --------- | ------------------------------------------------- |
 | `MARKET`               | ✓         | Adapter‑simulated with an aggressive IOC price.   |
 | `LIMIT`                | ✓         | Maps to the native AX priced order shape.         |
 | `STOP_LIMIT`           | -         | *Not supported by AX Exchange*.                   |
@@ -267,11 +267,11 @@ configured trigger, then sends a plain limit order to this adapter.
 
 ### Execution instructions
 
-| Instruction      | Supported | Notes                                                        |
-|------------------|-----------|--------------------------------------------------------------|
-| `post_only`      | ✓         | Maker‑only; rejected if the order would take.                |
-| `reduce_only`    | -         | Rejected locally; AX exposes no reduce‑only field.           |
-| `quote_quantity` | -         | Rejected locally; the adapter wire path encodes base only.   |
+| Instruction      | Supported | Notes                                                         |
+| ---------------- | --------- | ------------------------------------------------------------- |
+| `post_only`      | ✓         | Maker‑only; rejected if the order would take.                 |
+| `reduce_only`    | -         | Rejected locally; AX exposes no reduce‑only field.            |
+| `quote_quantity` | -         | Rejected locally; the adapter wire path encodes base only.    |
 | `display_qty`    | -         | Rejected locally; the adapter wire path has no display field. |
 
 A sandbox test on 2026-07-18 confirmed why this boundary is required. AX accepted and filled a
@@ -286,7 +286,7 @@ rejects equivalent venue-native features.
 ### Time in force
 
 | Time in Force  | Supported | Notes                            |
-|----------------|-----------|----------------------------------|
+| -------------- | --------- | -------------------------------- |
 | `GTC`          | ✓         | Good Till Canceled.              |
 | `GTD`          | -         | Rejected locally by the adapter. |
 | `DAY`          | ✓         | Valid until end of trading day.  |
@@ -300,7 +300,7 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 ### Advanced order features
 
 | Feature            | Supported | Notes                                                               |
-|--------------------|-----------|---------------------------------------------------------------------|
+| ------------------ | --------- | ------------------------------------------------------------------- |
 | Order modification | ✓         | Rust client only; the Python client rejects modification requests.  |
 | Cancel order       | ✓         | Single order cancellation.                                          |
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument.                           |
@@ -310,7 +310,7 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 ### Position management
 
 | Feature          | Supported | Notes                                |
-|------------------|-----------|--------------------------------------|
+| ---------------- | --------- | ------------------------------------ |
 | Query positions  | ✓         | Real‑time position updates.          |
 | Position mode    | -         | Netting mode only.                   |
 | Cross margin     | ✓         | Cross‑margin across all instruments. |
@@ -318,7 +318,7 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 ### Order querying
 
 | Feature              | Supported | Notes                                                   |
-|----------------------|-----------|---------------------------------------------------------|
+| -------------------- | --------- | ------------------------------------------------------- |
 | Query open orders    | ✓         | List all active orders.                                 |
 | Query single order   | ✓         | By venue order ID or client order ID (any order state). |
 | Order status reports | ✓         | Reconciliation from open orders; see note below.        |
@@ -350,7 +350,7 @@ AX Exchange uses bearer token authentication:
 ### Environments and endpoints
 
 | Environment | HTTP API (market data)                           | HTTP API (orders)                                   | Market Data WS                                   | Orders WS                                            |
-|-------------|--------------------------------------------------|-----------------------------------------------------|--------------------------------------------------|------------------------------------------------------|
+| ----------- | ------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
 | Sandbox     | `https://gateway.sandbox.architect.exchange/api` | `https://gateway.sandbox.architect.exchange/orders` | `wss://gateway.sandbox.architect.exchange/md/ws` | `wss://gateway.sandbox.architect.exchange/orders/ws` |
 | Production  | `https://gateway.architect.exchange/api`         | `https://gateway.architect.exchange/orders`         | `wss://gateway.architect.exchange/md/ws`         | `wss://gateway.architect.exchange/orders/ws`         |
 
@@ -362,7 +362,7 @@ from market data endpoints. This is handled automatically by the adapter configu
 ### Data client configuration options
 
 | Option                             | Default   | Description                                                         |
-|------------------------------------|-----------|---------------------------------------------------------------------|
+| ---------------------------------- | --------- | ------------------------------------------------------------------- |
 | `api_key`                          | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
 | `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
 | `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
@@ -381,7 +381,7 @@ from market data endpoints. This is handled automatically by the adapter configu
 ### Execution client configuration options
 
 | Option                    | Default   | Description                                                         |
-|---------------------------|-----------|---------------------------------------------------------------------|
+| ------------------------- | --------- | ------------------------------------------------------------------- |
 | `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
 | `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
 | `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |

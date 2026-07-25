@@ -98,19 +98,19 @@ let items = loader.load(&filepath)?;
 
 The loader returns a `Vec<BetfairDataItem>`:
 
-| Variant             | Description                                     | Maps to `Data` enum?       |
-|:--------------------|:------------------------------------------------|:---------------------------|
-| `Instrument`        | Runner definition from market definition.       | No (added separately)      |
-| `Status`            | Market status transition (PreOpen, Trading...). | No (`Data` has no variant) |
-| `Deltas`            | Order book snapshot or delta update.            | Yes, `Data::Deltas`        |
-| `Trade`             | Incremental trade tick from cumulative volumes. | Yes, `Data::Trade`         |
-| `Ticker`            | Last traded price, volume, BSP near/far.        | -                          |
-| `StartingPrice`     | Betfair Starting Price for a runner.            | -                          |
-| `BspBookDelta`      | BSP-specific book delta.                        | -                          |
+| Variant             | Description                                     | Maps to `Data` enum?         |
+| :------------------ | :---------------------------------------------- | :--------------------------- |
+| `Instrument`        | Runner definition from market definition.       | No (added separately)        |
+| `Status`            | Market status transition (PreOpen, Trading...). | No (`Data` has no variant)   |
+| `Deltas`            | Order book snapshot or delta update.            | Yes, `Data::Deltas`          |
+| `Trade`             | Incremental trade tick from cumulative volumes. | Yes, `Data::Trade`           |
+| `Ticker`            | Last traded price, volume, BSP near/far.        | -                            |
+| `StartingPrice`     | Betfair Starting Price for a runner.            | -                            |
+| `BspBookDelta`      | BSP-specific book delta.                        | -                            |
 | `InstrumentClose`   | Settlement event.                               | Yes, `Data::InstrumentClose` |
-| `SequenceCompleted` | Batch completion marker.                        | -                          |
-| `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                          |
-| `RaceProgress`      | Race‑level progress data.                       | -                          |
+| `SequenceCompleted` | Batch completion marker.                        | -                            |
+| `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                            |
+| `RaceProgress`      | Race‑level progress data.                       | -                            |
 
 The backtest engine accepts the `Data` enum, so we map the variants we need
 and skip the Betfair-specific types:

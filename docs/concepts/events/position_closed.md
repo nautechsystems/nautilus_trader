@@ -9,7 +9,7 @@ when a fill flattens the position (see [From fill to position](index.md#from-fil
 the three events. The fields that distinguish `PositionClosed`:
 
 | Field              | Python type     | Description                                            |
-|--------------------|-----------------|--------------------------------------------------------|
+| ------------------ | --------------- | ------------------------------------------------------ |
 | `closing_order_id` | `ClientOrderId` | The client order ID that closed the position.          |
 | `avg_px_close`     | `float`         | The average close price.                               |
 | `realized_return`  | `float`         | The realized return for the position.                  |

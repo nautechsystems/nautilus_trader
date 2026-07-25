@@ -569,13 +569,13 @@ DYDX_LOG=/tmp/dydx_main.log \
 
 ### Key log messages
 
-| Log message                                         | Meaning                                            |
-| --------------------------------------------------- | -------------------------------------------------- |
-| `Requoting grid: mid=X, last_mid=Y`                 | Mid moved beyond threshold, refreshing grid.       |
-| `Submit short‑term order N`                         | Order submitted via short‑term broadcast path.    |
-| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.   |
+| Log message                                         | Meaning                                                 |
+| --------------------------------------------------- | ------------------------------------------------------- |
+| `Requoting grid: mid=X, last_mid=Y`                 | Mid moved beyond threshold, refreshing grid.            |
+| `Submit short‑term order N`                         | Order submitted via short‑term broadcast path.          |
+| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.         |
 | `benign cancel error, treating as success`          | Cancel for an already‑filled or expired order (normal). |
-| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto‑recovering.        |
+| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto‑recovering.             |
 
 ### Expected behaviour patterns
 

@@ -41,7 +41,7 @@ Core strategy, data, order, risk, portfolio, backtest, and live workflows remain
 imports and configuration to the new module paths:
 
 | v1 path                                                        | v2 path                                                   |
-|----------------------------------------------------------------|-----------------------------------------------------------|
+| -------------------------------------------------------------- | --------------------------------------------------------- |
 | `nautilus_trader.backtest.engine.BacktestEngine`               | `nautilus_trader.backtest.BacktestEngine`                 |
 | `nautilus_trader.backtest.node.BacktestNode`                   | `nautilus_trader.backtest.BacktestNode`                   |
 | `nautilus_trader.live.node.TradingNode`                        | `nautilus_trader.live.LiveNode`                           |
@@ -54,7 +54,7 @@ V2 shortens common strategy and cache names. The `QuoteTick`, `TradeTick`, and
 `register_indicator_for_*_ticks` names do not change.
 
 | v1 name                              | v2 name                        |
-|--------------------------------------|--------------------------------|
+| ------------------------------------ | ------------------------------ |
 | `on_quote_tick`                      | `on_quote`                     |
 | `on_trade_tick`                      | `on_trade`                     |
 | `on_order_book`                      | `on_book`                      |
@@ -87,7 +87,7 @@ V2 shortens common strategy and cache names. The `QuoteTick`, `TradeTick`, and
 V2 uses specific names for component and model identities:
 
 | v1 member          | v2 member                              |
-|--------------------|----------------------------------------|
+| ------------------ | -------------------------------------- |
 | `Actor.id`         | `DataActor.actor_id`                   |
 | `Strategy.id`      | `Strategy.strategy_id`                 |
 | `ExecAlgorithm.id` | `ExecutionAlgorithm.exec_algorithm_id` |
@@ -98,7 +98,7 @@ V2 uses specific names for component and model identities:
 Collection and lifecycle inspection also changes shape:
 
 | v1 member                      | v2 member                                                     |
-|--------------------------------|---------------------------------------------------------------|
+| ------------------------------ | ------------------------------------------------------------- |
 | `Order.events`                 | `Order.events()`                                              |
 | `Position.adjustments`         | `Position.adjustments()`                                      |
 | `Position.client_order_ids`    | `Position.client_order_ids()`                                 |
@@ -131,7 +131,7 @@ standalone factory has no equivalent flag readback.
 Historical requests use type-specific batch callbacks in v2:
 
 | v1 data through `on_historical_data` | v2 callback                   | v2 argument                   |
-|--------------------------------------|-------------------------------|-------------------------------|
+| ------------------------------------ | ----------------------------- | ----------------------------- |
 | Custom data                          | `on_historical_data`          | One `CustomData`              |
 | Book snapshot                        | `on_book`                     | One `OrderBook`               |
 | Book deltas                          | `on_historical_book_deltas`   | `Sequence[OrderBookDelta]`    |
@@ -158,7 +158,7 @@ stateful component to `DataActor` or `Strategy`. Change `on_order_list(self, ord
 V2 strategy order changes take client order IDs rather than order objects:
 
 | v1 method                    | v2 method                                  |
-|------------------------------|--------------------------------------------|
+| ---------------------------- | ------------------------------------------ |
 | `modify_order(order, ...)`   | `modify_order(order.client_order_id, ...)` |
 | `cancel_order(order, ...)`   | `cancel_order(order.client_order_id, ...)` |
 | `cancel_orders(orders, ...)` | `cancel_orders(client_order_ids, ...)`     |
@@ -174,7 +174,7 @@ precision and increment, and timestamps instead.
 Several v1 inspection names have direct v2 replacements:
 
 | v1 name                                              | v2 name                               |
-|------------------------------------------------------|---------------------------------------|
+| ---------------------------------------------------- | ------------------------------------- |
 | `instrument.symbol`                                  | `instrument.id.symbol`                |
 | `instrument.venue`                                   | `instrument.id.venue`                 |
 | `instrument.activation_utc`                          | `instrument.activation_ns`            |
@@ -207,7 +207,7 @@ Potential credentials and consumed callbacks use bounded inspection properties i
 readback:
 
 | Constructor field                                    | Inspection property                   |
-|------------------------------------------------------|---------------------------------------|
+| ---------------------------------------------------- | ------------------------------------- |
 | `BacktestDataConfig.catalog_fs_storage_options`      | `catalog_fs_storage_option_keys`      |
 | `BacktestDataConfig.catalog_fs_rust_storage_options` | `catalog_fs_rust_storage_option_keys` |
 | `SocketConfig.handler`                               | `has_handler`                         |
@@ -302,7 +302,7 @@ shared wrappers provide normal inspection without exposing runtime internals.
 Choose the lifecycle method based on who owns the loop:
 
 | Method    | Contract                                                                                    |
-|-----------|---------------------------------------------------------------------------------------------|
+| --------- | ------------------------------------------------------------------------------------------- |
 | `run()`   | Owns the full lifecycle and blocks until shutdown.                                          |
 | `start()` | Completes startup and returns, but does not service post-start channel traffic.             |
 | `poll()`  | Processes traffic queued at call entry, returns its count, and does not wait for more.      |
@@ -353,7 +353,7 @@ algorithm entrypoint.
 The supported authoring surface has these v1 dispositions:
 
 | V1 `ExecAlgorithm` / `Actor` capability | Python v2 contract                                                            |
-|-----------------------------------------|-------------------------------------------------------------------------------|
+| --------------------------------------- | ----------------------------------------------------------------------------- |
 | `cache`                                 | Available as a read-only property after node or engine registration.          |
 | `portfolio`                             | Available as a read-only property after node or engine registration.          |
 | `greeks`                                | Construct `GreeksCalculator(self.cache, self.clock)` after registration.      |

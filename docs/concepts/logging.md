@@ -212,7 +212,7 @@ export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 **Supported keys:**
 
 | Key                   | Type      | Description                                      |
-|-----------------------|-----------|--------------------------------------------------|
+| --------------------- | --------- | ------------------------------------------------ |
 | `stdout`              | Log level | Maximum level for stdout output.                 |
 | `fileout`             | Log level | Maximum level for file output.                   |
 | `is_colored`          | Flag      | Enable ANSI colors (default: true).              |

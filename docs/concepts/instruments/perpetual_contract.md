@@ -9,7 +9,7 @@ Examples include non-crypto perpetual contracts and venue-specific synthetic swa
 ## Fields
 
 | Field                 | Rust type          | Python type        | Required/default | Notes                                    |
-|-----------------------|--------------------|--------------------|------------------|------------------------------------------|
+| --------------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`       | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`          | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
 | `underlying`          | `Ustr`             | `str`              | Required         | Underlying asset or reference market.    |

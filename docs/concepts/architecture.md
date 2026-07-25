@@ -638,7 +638,7 @@ flowchart BT
 **Crate categories:**
 
 | Category       | Crates                                                    | Purpose                                                  |
-|----------------|-----------------------------------------------------------|----------------------------------------------------------|
+| -------------- | --------------------------------------------------------- | -------------------------------------------------------- |
 | Foundation     | `core`, `model`, `common`, `system`, `trading`            | Primitives, domain model, kernel, actor & strategy base. |
 | Engines        | `data`, `execution`, `portfolio`, `risk`                  | Core trading engine components.                          |
 | Infrastructure | `serialization`, `network`, `cryptography`, `persistence` | Encoding, networking, signing, storage.                  |
@@ -649,7 +649,7 @@ flowchart BT
 **Feature flags:**
 
 | Feature     | Crates                     | Effect                                                     |
-|-------------|----------------------------|------------------------------------------------------------|
+| ----------- | -------------------------- | ---------------------------------------------------------- |
 | `streaming` | `data`, `system`, `live`   | Enables `persistence` dependency for catalog streaming.    |
 | `cloud`     | `persistence`              | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
 | `python`    | most crates                | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |

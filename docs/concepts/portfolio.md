@@ -99,7 +99,7 @@ recorded snapshots. Per-currency results use the relevant account base currency
 or native cost currency.
 
 | Method                             | Returns                                                |
-|------------------------------------|--------------------------------------------------------|
+| ---------------------------------- | ------------------------------------------------------ |
 | `mark_values(venue, account_id)`   | Signed MTM totals for open positions.                  |
 | `equity(venue, account_id)`        | Total equity combining balance and position valuation. |
 | `build_snapshot(account_id)`       | Account‑wide MTM totals and valuation metadata.        |

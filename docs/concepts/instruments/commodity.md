@@ -9,7 +9,7 @@ Examples include `XAUUSD.IDEALPRO` and venue-specific commodity cash symbols.
 ## Fields
 
 | Field             | Rust type          | Python type        | Required/default | Notes                                    |
-|-------------------|--------------------|--------------------|------------------|------------------------------------------|
+| ----------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`   | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`      | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
 | `asset_class`     | `AssetClass`       | `AssetClass`       | Required         | Commodity asset classification.          |

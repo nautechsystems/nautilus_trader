@@ -18,7 +18,7 @@ Live example scripts are available in
 ### Product support
 
 | Product         | Instrument source            | Data | Exec | Notes                                     |
-|-----------------|------------------------------|------|------|-------------------------------------------|
+| --------------- | ---------------------------- | ---- | ---- | ----------------------------------------- |
 | Spot            | `public/instruments`         | Yes  | Yes  | Spot trading pairs.                       |
 | Margin          | `public/instruments`         | Yes  | Yes  | Spot instruments with margin or leverage. |
 | Perpetual swaps | `public/instruments`         | Yes  | Yes  | Linear and inverse contracts.             |
@@ -237,7 +237,7 @@ use_hyphens_in_client_order_ids=False
 ### Order types
 
 | Order type             | Linear perpetual swap | Notes                                                         |
-|------------------------|-----------------------|---------------------------------------------------------------|
+| ---------------------- | --------------------- | ------------------------------------------------------------- |
 | `MARKET`               | ✓                     | Immediate execution at market price. Supports quote quantity. |
 | `MARKET_TO_LIMIT`      | ✓                     | Market order converted to IOC limit.                          |
 | `LIMIT`                | ✓                     | Execution at specified price or better.                       |
@@ -318,14 +318,14 @@ strategy.submit_order(order)
 ### Execution instructions
 
 | Instruction   | Linear perpetual swap | Notes                  |
-|---------------|-----------------------|------------------------|
+| ------------- | --------------------- | ---------------------- |
 | `post_only`   | ✓                     | Only for limit orders. |
 | `reduce_only` | ✓                     | Only for derivatives.  |
 
 ### Time in force
 
 | Time in force | Linear perpetual swap | Notes                                             |
-|---------------|-----------------------|---------------------------------------------------|
+| ------------- | --------------------- | ------------------------------------------------- |
 | `GTC`         | ✓                     | Good Till Canceled.                               |
 | `FOK`         | ✓                     | Fill or Kill.                                     |
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
@@ -342,7 +342,7 @@ order expiration by canceling the order at the specified expiry time.
 ### Batch operations
 
 | Operation          | Linear perpetual swap | Notes                                     |
-|--------------------|-----------------------|-------------------------------------------|
+| ------------------ | --------------------- | ----------------------------------------- |
 | Batch Submit       | ✓                     | Submit multiple orders in single request. |
 | Batch Modify       | ✓                     | Modify multiple orders in single request. |
 | Batch Cancel       | ✓                     | Cancel multiple orders in single request. |
@@ -350,7 +350,7 @@ order expiration by canceling the order at the specified expiry time.
 ### Position management
 
 | Feature           | Linear perpetual swap | Notes                                                |
-|-------------------|-----------------------|------------------------------------------------------|
+| ----------------- | --------------------- | ---------------------------------------------------- |
 | Query positions   | ✓                     | Real‑time position updates.                          |
 | Position mode     | ✓                     | Net vs Long/Short mode (see below).                  |
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
@@ -391,7 +391,7 @@ OKX supports multiple account modes. For orders, the adapter selects one of the 
 `isolated`, or `cross` trade modes from your configuration:
 
 | Mode           | Used for                       | Leverage | Borrowing | Configuration                         |
-|----------------|--------------------------------|----------|-----------|---------------------------------------|
+| -------------- | ------------------------------ | -------- | --------- | ------------------------------------- |
 | **`cash`**     | Spot trading without leverage. | -        | -         | Default when `use_spot_margin=False`. |
 | **`isolated`** | Spot margin or derivatives.    | ✓        | ✓         | `margin_mode=ISOLATED`.               |
 | **`cross`**    | Spot margin or derivatives.    | ✓        | ✓         | `margin_mode=CROSS`.                  |
@@ -500,7 +500,7 @@ Only use manual override for requirements that cannot be met through configurati
 ### Order querying
 
 | Feature              | Linear perpetual swap | Notes                                     |
-|----------------------|-----------------------|-------------------------------------------|
+| -------------------- | --------------------- | ----------------------------------------- |
 | Query open orders    | ✓                     | List all active orders.                   |
 | Query order history  | ✓                     | Historical order data.                    |
 | Order status updates | ✓                     | Real‑time order state changes.            |
@@ -509,7 +509,7 @@ Only use manual override for requirements that cannot be met through configurati
 ### Contingent orders
 
 | Feature            | Linear perpetual swap | Notes                                 |
-|--------------------|-----------------------|---------------------------------------|
+| ------------------ | --------------------- | ------------------------------------- |
 | Order lists        | ✓                     | Batch via WS; regular orders only.    |
 | OCO orders         | ✓                     | One‑Cancels‑Other orders.             |
 | Bracket orders     | ✓                     | Stop loss + take profit combinations. |
@@ -533,7 +533,7 @@ This design ensures:
 #### Supported conditional order types
 
 | Order type             | Trigger types     | Notes                                     |
-|------------------------|-------------------|-------------------------------------------|
+| ---------------------- | ----------------- | ----------------------------------------- |
 | `STOP_MARKET`          | Last, Mark, Index | Market execution when triggered.          |
 | `STOP_LIMIT`           | Last, Mark, Index | Limit order placement when triggered.     |
 | `MARKET_IF_TOUCHED`    | Last, Mark, Index | Market execution when price touched.      |
@@ -576,7 +576,7 @@ Detection is driven by the `category` field on the order record. The
 recognized values are:
 
 | `category`              | Meaning                                              |
-|-------------------------|------------------------------------------------------|
+| ----------------------- | ---------------------------------------------------- |
 | `full_liquidation`      | Full position liquidation.                           |
 | `partial_liquidation`   | Partial position liquidation.                        |
 | `adl`                   | Auto‑deleveraging close.                             |
@@ -616,7 +616,7 @@ For full API details see the
 Only limit-style orders are supported. OKX does not allow market orders for options.
 
 | Order type | Supported | Notes                                             |
-|------------|-----------|---------------------------------------------------|
+| ---------- | --------- | ------------------------------------------------- |
 | `LIMIT`    | ✓         | Standard limit order.                             |
 | `MARKET`   | -         | Rejected by the adapter before reaching the API.  |
 
@@ -632,7 +632,7 @@ Options orders can be priced in three mutually exclusive ways. Pass the pricing 
 order `params`:
 
 | Mode  | Parameter | Description                                             |
-|-------|-----------|---------------------------------------------------------|
+| ----- | --------- | ------------------------------------------------------- |
 | Price | (default) | Standard limit price in the contract's currency.        |
 | USD   | `px_usd`  | Price in USD terms.                                     |
 | IV    | `px_vol`  | Price in implied volatility (1.0 = 100%).               |
@@ -909,7 +909,7 @@ where it was registered (using a key against another region's endpoints returns
 `API key doesn't exist`). Set `region` to select the correct endpoint set:
 
 | Region   | Registered on | REST            | WebSocket host       |
-|----------|---------------|-----------------|----------------------|
+| -------- | ------------- | --------------- | -------------------- |
 | `GLOBAL` | `www.okx.com` | `www.okx.com`   | `ws.okx.com`         |
 | `EEA`    | `my.okx.com`  | `eea.okx.com`   | `wseea.okx.com`      |
 | `US`     | `app.okx.com` | `us.okx.com`    | `wsus.okx.com`       |
@@ -969,16 +969,16 @@ and WebSocket calls.
 - Order operation buckets appear in the table below and mirror OKX's published limits
   where available.
 
-| Operation key  | Limit (req/sec) | Notes                                                     |
-|----------------|-----------------|-----------------------------------------------------------|
-| `order`        | 30              | OKX 60 requests / 2 seconds.                              |
-| `cancel`       | 30              | OKX 60 requests / 2 seconds.                              |
-| `amend`        | 30              | OKX 60 requests / 2 seconds.                              |
+| Operation key  | Limit (req/sec) | Notes                                                      |
+| -------------- | --------------- | ---------------------------------------------------------- |
+| `order`        | 30              | OKX 60 requests / 2 seconds.                               |
+| `cancel`       | 30              | OKX 60 requests / 2 seconds.                               |
+| `amend`        | 30              | OKX 60 requests / 2 seconds.                               |
 | `batch-order`  | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
 | `batch-cancel` | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
 | `batch-amend`  | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
-| `mass-cancel`  | 2               | OKX 5 requests / 2 seconds, rounded down.                 |
-| `algo-order`   | 10              | OKX 20 requests / 2 seconds.                              |
+| `mass-cancel`  | 2               | OKX 5 requests / 2 seconds, rounded down.                  |
+| `algo-order`   | 10              | OKX 20 requests / 2 seconds.                               |
 | `algo-cancel`  | 1               | OKX 20 orders / 2 seconds, rounded down for full batches.  |
 
 :::warning
@@ -987,7 +987,7 @@ responses and temporary throttling on that key.
 :::
 
 | Key / endpoint                          | Limit (req/sec) | Notes                                             |
-|-----------------------------------------|-----------------|---------------------------------------------------|
+| --------------------------------------- | --------------- | ------------------------------------------------- |
 | `okx:global`                            | 250             | Adapter‑level shared bucket.                      |
 | `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down.         |
 | `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                      |
@@ -1052,7 +1052,7 @@ monitor fields below.
 #### Data client
 
 | Option                             | Default                     | Description                                  |
-|------------------------------------|-----------------------------|----------------------------------------------|
+| ---------------------------------- | --------------------------- | -------------------------------------------- |
 | `instrument_types`                 | `(OKXInstrumentType.SPOT,)` | OKX instrument types to load.                |
 | `contract_types`                   | `None`                      | Contract styles to load.                     |
 | `load_spreads`                     | `False`                     | Loads live spread instruments.               |
@@ -1094,7 +1094,7 @@ The OKX execution client provides the following configuration options:
 #### Execution client
 
 | Option                            | Default                     | Description                                 |
-|-----------------------------------|-----------------------------|---------------------------------------------|
+| --------------------------------- | --------------------------- | ------------------------------------------- |
 | `instrument_types`                | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
 | `contract_types`                  | `None`                      | Tradable contract styles to load.           |
 | `load_spreads`                    | `False`                     | Loads live spread instruments.              |
@@ -1135,7 +1135,7 @@ overrides below remain available for proxies, custom routing, or endpoints not c
 region; they take precedence over the `region` default. The EEA bases are shown as an example.
 
 | Config field           | Live base                  | Demo base                     | WebSocket path    |
-|------------------------|----------------------------|-------------------------------|-------------------|
+| ---------------------- | -------------------------- | ----------------------------- | ----------------- |
 | `base_url_http`        | `https://eea.okx.com`      | `https://eea.okx.com`         |                   |
 | `base_url_ws_public`   | `wss://wseea.okx.com:8443` | `wss://wseeapap.okx.com:8443` | `/ws/v5/public`   |
 | `base_url_ws_private`  | `wss://wseea.okx.com:8443` | `wss://wseeapap.okx.com:8443` | `/ws/v5/private`  |

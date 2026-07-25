@@ -70,7 +70,7 @@ There are two primary ways to connect to Interactive Brokers:
 Interactive Brokers uses different default ports depending on the application and trading mode:
 
 | Application | Paper Trading | Live Trading |
-|-------------|---------------|--------------|
+| ----------- | ------------- | ------------ |
 | TWS         | 7497          | 7496         |
 | IB Gateway  | 4002          | 4001         |
 
@@ -1074,19 +1074,19 @@ production_data_config = InteractiveBrokersDataClientConfig(
 
 ### Data client configuration options
 
-| Option                          | Default                                         | Description |
-|---------------------------------|-------------------------------------------------|-------------|
-| `instrument_provider`           | `InteractiveBrokersInstrumentProviderConfig()`  | Instrument provider settings controlling which contracts load at startup. |
-| `ibg_host`                      | `127.0.0.1`                                     | Hostname or IP for TWS/IB Gateway. |
-| `ibg_port`                      | `None`                                          | Port for TWS/IB Gateway (`7497`/`7496` for TWS, `4002`/`4001` for IBG). |
-| `ibg_client_id`                 | `1`                                             | Unique client identifier used when connecting to TWS/IB Gateway. |
-| `use_regular_trading_hours`     | `True`                                          | Request bars limited to regular trading hours when `True`. |
-| `market_data_type`              | `REALTIME`                                      | Market data feed type (`REALTIME`, `DELAYED`, `DELAYED_FROZEN`, etc.). |
-| `ignore_quote_tick_size_updates`| `False`                                         | Suppress quote ticks where only size changes when `True`. |
-| `handle_revised_bars`           | `False`                                         | When `True`, processes bar revisions from IB (bars can be updated after initial publication). |
-| `dockerized_gateway`            | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
-| `connection_timeout`            | `300`                                           | Seconds to wait for the initial API connection. |
-| `request_timeout_secs`          | `60`                                            | Seconds to wait for historical data requests before timing out. |
+| Option                           | Default                                        | Description                                                                                   |
+| -------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `instrument_provider`            | `InteractiveBrokersInstrumentProviderConfig()` | Instrument provider settings controlling which contracts load at startup.                     |
+| `ibg_host`                       | `127.0.0.1`                                    | Hostname or IP for TWS/IB Gateway.                                                            |
+| `ibg_port`                       | `None`                                         | Port for TWS/IB Gateway (`7497`/`7496` for TWS, `4002`/`4001` for IBG).                       |
+| `ibg_client_id`                  | `1`                                            | Unique client identifier used when connecting to TWS/IB Gateway.                              |
+| `use_regular_trading_hours`      | `True`                                         | Request bars limited to regular trading hours when `True`.                                    |
+| `market_data_type`               | `REALTIME`                                     | Market data feed type (`REALTIME`, `DELAYED`, `DELAYED_FROZEN`, etc.).                        |
+| `ignore_quote_tick_size_updates` | `False`                                        | Suppress quote ticks where only size changes when `True`.                                     |
+| `handle_revised_bars`            | `False`                                        | When `True`, processes bar revisions from IB (bars can be updated after initial publication). |
+| `dockerized_gateway`             | `None`                                         | Optional `DockerizedIBGatewayConfig` for containerized setups.                                |
+| `connection_timeout`             | `300`                                          | Seconds to wait for the initial API connection.                                               |
+| `request_timeout_secs`           | `60`                                           | Seconds to wait for historical data requests before timing out.                               |
 
 #### Notes
 
@@ -1098,18 +1098,18 @@ production_data_config = InteractiveBrokersDataClientConfig(
 
 ### Execution client configuration options
 
-| Option                                  | Default                                         | Description |
-|-----------------------------------------|-------------------------------------------------|-------------|
-| `instrument_provider`                   | `InteractiveBrokersInstrumentProviderConfig()`  | Instrument provider settings controlling which contracts load at startup. |
-| `ibg_host`                              | `127.0.0.1`                                     | Hostname or IP for TWS/IB Gateway. |
-| `ibg_port`                              | `None`                                          | Port for TWS/IB Gateway (`7497`/`7496` for TWS, `4002`/`4001` for IBG). |
-| `ibg_client_id`                         | `1`                                             | Unique client identifier used when connecting to TWS/IB Gateway. |
-| `account_id`                            | `None`                                          | Interactive Brokers account identifier (falls back to `TWS_ACCOUNT` env var). |
-| `dockerized_gateway`                    | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
-| `connection_timeout`                    | `300`                                           | Seconds to wait for the initial API connection. |
-| `request_timeout_secs`                  | `60`                                            | Seconds to wait for request responses (contract details, etc.). |
-| `fetch_all_open_orders`                 | `False`                                         | When `True`, pulls open orders for every API client ID (not just this session). |
-| `track_option_exercise_from_position_update` | `False`                                    | Subscribe to real‑time position updates to detect option exercises when `True`. |
+| Option                                       | Default                                        | Description                                                                     |
+| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| `instrument_provider`                        | `InteractiveBrokersInstrumentProviderConfig()` | Instrument provider settings controlling which contracts load at startup.       |
+| `ibg_host`                                   | `127.0.0.1`                                    | Hostname or IP for TWS/IB Gateway.                                              |
+| `ibg_port`                                   | `None`                                         | Port for TWS/IB Gateway (`7497`/`7496` for TWS, `4002`/`4001` for IBG).         |
+| `ibg_client_id`                              | `1`                                            | Unique client identifier used when connecting to TWS/IB Gateway.                |
+| `account_id`                                 | `None`                                         | Interactive Brokers account identifier (falls back to `TWS_ACCOUNT` env var).   |
+| `dockerized_gateway`                         | `None`                                         | Optional `DockerizedIBGatewayConfig` for containerized setups.                  |
+| `connection_timeout`                         | `300`                                          | Seconds to wait for the initial API connection.                                 |
+| `request_timeout_secs`                       | `60`                                           | Seconds to wait for request responses (contract details, etc.).                 |
+| `fetch_all_open_orders`                      | `False`                                        | When `True`, pulls open orders for every API client ID (not just this session). |
+| `track_option_exercise_from_position_update` | `False`                                        | Subscribe to real‑time position updates to detect option exercises when `True`. |
 
 ### Execution client configuration
 
@@ -1152,37 +1152,37 @@ The adapter supports most Interactive Brokers order types:
 #### Batch operations
 
 | Operation          | Supported | Notes                                        |
-|--------------------|-----------|----------------------------------------------|
+| ------------------ | --------- | -------------------------------------------- |
 | Batch Submit       | ✓         | Submit multiple orders in single request.    |
 | Batch Modify       | ✓         | Modify multiple orders in single request.    |
 | Batch Cancel       | ✓         | Cancel multiple orders in single request.    |
 
 #### Position management
 
-| Feature              | Supported | Notes                                        |
-|--------------------|-----------|----------------------------------------------|
-| Query positions     | ✓         | Real‑time position updates.                  |
-| Position mode       | ✓         | Net vs separate long/short positions.       |
-| Leverage control    | ✓         | Account‑level margin requirements.          |
-| Margin mode         | ✓         | Portfolio vs individual margin.             |
+| Feature          | Supported | Notes                                 |
+| ---------------- | --------- | ------------------------------------- |
+| Query positions  | ✓         | Real‑time position updates.           |
+| Position mode    | ✓         | Net vs separate long/short positions. |
+| Leverage control | ✓         | Account‑level margin requirements.    |
+| Margin mode      | ✓         | Portfolio vs individual margin.       |
 
 #### Order querying
 
-| Feature              | Supported | Notes                                        |
-|--------------------|-----------|----------------------------------------------|
-| Query open orders   | ✓         | List all active orders.                      |
-| Query order history | ✓         | Historical order data.                       |
-| Order status updates| ✓         | Real‑time order state changes.              |
-| Trade history       | ✓         | Execution and fill reports.                 |
+| Feature              | Supported | Notes                          |
+| -------------------- | --------- | ------------------------------ |
+| Query open orders    | ✓         | List all active orders.        |
+| Query order history  | ✓         | Historical order data.         |
+| Order status updates | ✓         | Real‑time order state changes. |
+| Trade history        | ✓         | Execution and fill reports.    |
 
 #### Contingent orders
 
-| Feature              | Supported | Notes                                        |
-|--------------------|-----------|----------------------------------------------|
-| Order lists         | ✓         | Atomic multi‑order submission.               |
-| OCO orders          | ✓         | One‑Cancels‑Other with customizable OCA types (1, 2, 3). |
-| Bracket orders      | ✓         | Parent‑child order relationships. |
-| Conditional orders  | ✓         | Advanced order conditions and triggers.     |
+| Feature            | Supported | Notes                                                    |
+| ------------------ | --------- | -------------------------------------------------------- |
+| Order lists        | ✓         | Atomic multi‑order submission.                           |
+| OCO orders         | ✓         | One‑Cancels‑Other with customizable OCA types (1, 2, 3). |
+| Bracket orders     | ✓         | Parent‑child order relationships.                        |
+| Conditional orders | ✓         | Advanced order conditions and triggers.                  |
 
 #### Basic execution client configuration
 
@@ -1332,11 +1332,11 @@ order = order_factory.limit(
 
 Interactive Brokers supports three OCA types:
 
-| Type | Name | Behavior | Use Case |
-|------|------|----------|----------|
-| **1** | Cancel All with Block | Cancel all remaining orders with block protection | **Default** - Safest option, prevents overfills |
-| **2** | Reduce with Block | Proportionally reduce remaining orders with block protection | Partial fills with overfill protection |
-| **3** | Reduce without Block | Proportionally reduce remaining orders without block protection | Fastest execution, higher overfill risk |
+| Type  | Name                  | Behavior                                                        | Use Case                                        |
+| ----- | --------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| **1** | Cancel All with Block | Cancel all remaining orders with block protection               | **Default** - Safest option, prevents overfills |
+| **2** | Reduce with Block     | Proportionally reduce remaining orders with block protection    | Partial fills with overfill protection          |
+| **3** | Reduce without Block  | Proportionally reduce remaining orders without block protection | Fastest execution, higher overfill risk         |
 
 #### Multiple orders in same OCA group
 

@@ -9,11 +9,11 @@ labels:
 
 Use this template only for issues that fit the **Bug** definition.
 
-| Term                          | Definition |
-|-------------------------------|------------|
-| **Bug**                       | Behavior that contradicts the platform's documented or intended design as per code, docs, or specs. (i.e., the implementation is incorrect.) |
+| Term                          | Definition                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bug**                       | Behavior that contradicts the platform's documented or intended design as per code, docs, or specs. (i.e., the implementation is incorrect.)         |
 | **Expectation&nbsp;mismatch** | Behavior that follows the platform's documented or intended design but differs from what you expected. (i.e., the design/spec might be the problem.) |
-| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., *"It would be great if the platform could…"*) |
+| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., *"It would be great if the platform could…"*)             |
 
 **Note:**
 

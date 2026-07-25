@@ -37,7 +37,7 @@ flowchart LR
 ```
 
 | Component            | Purpose                                                    |
-|----------------------|------------------------------------------------------------|
+| -------------------- | ---------------------------------------------------------- |
 | `HttpClient`         | REST API communication.                                    |
 | `WebSocketClient`    | Real‑time streaming connection.                            |
 | `InstrumentProvider` | Loads and parses instrument definitions from the venue.    |

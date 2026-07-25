@@ -76,7 +76,7 @@ and positions first because it is account-wide, not strategy-scoped.
 ## Product support
 
 | Product type      | Data feed | Trading | Notes                                                        |
-|-------------------|-----------|---------|--------------------------------------------------------------|
+| ----------------- | --------- | ------- | ------------------------------------------------------------ |
 | Spot              | ✓         | ✓       | Spot markets using Lighter market indexes 2048-4094.         |
 | Perpetual futures | ✓         | ✓       | Linear perpetual markets using Lighter market indexes 0-254. |
 | Dated futures     | -         | -       | *Not supported*.                                             |
@@ -108,7 +108,7 @@ Lighter identifies markets by numeric `market_index` values. The adapter bootstr
 `GET /api/v1/orderBookDetails`, then converts the raw venue symbol into a Nautilus `InstrumentId`.
 
 | Venue product      | Nautilus symbol format        | Example                 | Notes                        |
-|--------------------|-------------------------------|-------------------------|------------------------------|
+| ------------------ | ----------------------------- | ----------------------- | ---------------------------- |
 | Perpetual futures  | `{BASE}-PERP.LIGHTER`         | `BTC-PERP.LIGHTER`      | Raw venue symbol `BTC`.      |
 | Spot               | `{BASE}/{QUOTE}-SPOT.LIGHTER` | `ETH/USDC-SPOT.LIGHTER` | Raw venue symbol `ETH/USDC`. |
 
@@ -118,7 +118,7 @@ outbound requests strip the suffix and use the cached `market_index`.
 ## Environments
 
 | Environment | REST URL                              | WebSocket URL                              | Chain ID |
-|-------------|---------------------------------------|--------------------------------------------|----------|
+| ----------- | ------------------------------------- | ------------------------------------------ | -------- |
 | Mainnet     | `https://mainnet.zklighter.elliot.ai` | `wss://mainnet.zklighter.elliot.ai/stream` | 304      |
 | Testnet     | `https://testnet.zklighter.elliot.ai` | `wss://testnet.zklighter.elliot.ai/stream` | 300      |
 
@@ -169,7 +169,7 @@ binding does not prompt: review the active env vars yourself before calling.
 ## Data subscriptions
 
 | Data type            | Sub.         | Snapshot | Hist. | Nautilus type       | Notes                                                    |
-|----------------------|--------------|----------|-------|---------------------|----------------------------------------------------------|
+| -------------------- | ------------ | -------- | ----- | ------------------- | -------------------------------------------------------- |
 | Instrument metadata  | Cache replay | ✓        | -     | `InstrumentAny`     | Loaded from `orderBookDetails`.                          |
 | Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; public `recentTrades` REST history.    |
 | Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Best bid and ask ticker stream.                          |
@@ -245,7 +245,7 @@ queries do not search terminal history, and duplicate active matches fail as amb
 ### Order types
 
 | Order type             | Perpetuals | Spot | Notes                                                   |
-|------------------------|------------|------|---------------------------------------------------------|
+| ---------------------- | ---------- | ---- | ------------------------------------------------------- |
 | `MARKET`               | ✓          | ✓    | Cap derived from cached far‑side quote + slippage.      |
 | `LIMIT`                | ✓          | ✓    | Requires a limit price.                                 |
 | `STOP_MARKET`          | ✓          | -    | Perp only; cap derived from `trigger_price` + slippage. |
@@ -274,7 +274,7 @@ the strategy has subscribed to quotes is denied with a clear error. Override per
 ### Contingent orders
 
 | Feature                         | Perpetuals | Spot | Notes                                                  |
-|---------------------------------|------------|------|--------------------------------------------------------|
+| ------------------------------- | ---------- | ---- | ------------------------------------------------------ |
 | Stop‑loss market                | ✓          | -    | `STOP_MARKET` maps to Lighter `STOP_LOSS`.             |
 | Stop‑loss limit                 | ✓          | -    | `STOP_LIMIT` maps to Lighter `STOP_LOSS_LIMIT`.        |
 | Take‑profit market              | ✓          | -    | `MARKET_IF_TOUCHED` maps to Lighter `TAKE_PROFIT`.     |
@@ -289,7 +289,7 @@ the strategy has subscribed to quotes is denied with a clear error. Override per
 ### Order options
 
 | Option           | Perpetuals | Spot | Notes                                                                      |
-|------------------|------------|------|----------------------------------------------------------------------------|
+| ---------------- | ---------- | ---- | -------------------------------------------------------------------------- |
 | `post_only`      | ✓          | ✓    | Maps to Lighter's post‑only time‑in‑force.                                 |
 | `reduce_only`    | ✓          | -    | Passed through to `CreateOrder`; use only to reduce an existing position.  |
 | `quote_quantity` | -          | -    | *Not supported*; submit base quantity instead.                             |
@@ -298,22 +298,22 @@ the strategy has subscribed to quotes is denied with a clear error. Override per
 ### Adapter order params
 
 | Param                                      | Perpetuals | Spot | Notes                                               |
-|--------------------------------------------|------------|------|-----------------------------------------------------|
+| ------------------------------------------ | ---------- | ---- | --------------------------------------------------- |
 | `market_order_slippage_bps`                | ✓          | ✓    | Overrides the config default for market‑style caps. |
 | `post_only` through `SubmitOrder.params`   | -          | -    | *Not supported*; use the Nautilus order flag.       |
 | `reduce_only` through `SubmitOrder.params` | -          | -    | *Not supported*; use the Nautilus order flag.       |
 
 ### Time in force
 
-| Time in force  | Perpetuals | Spot | Notes                                                                        |
-|----------------|------------|------|------------------------------------------------------------------------------|
-| `GTC`          | ✓          | ✓    | Limit‑style uses `GoodTillTime`; market‑style uses `IOC`.                    |
-| `DAY`          | ✓          | ✓    | Limit‑style and conditional orders use a positive order expiry.              |
-| `GTD`          | ✓          | ✓    | Supplied expiry must be 5 minutes to 30 days from submission.                |
+| Time in force  | Perpetuals | Spot | Notes                                                                         |
+| -------------- | ---------- | ---- | ----------------------------------------------------------------------------- |
+| `GTC`          | ✓          | ✓    | Limit‑style uses `GoodTillTime`; market‑style uses `IOC`.                     |
+| `DAY`          | ✓          | ✓    | Limit‑style and conditional orders use a positive order expiry.               |
+| `GTD`          | ✓          | ✓    | Supplied expiry must be 5 minutes to 30 days from submission.                 |
 | `IOC`          | ✓          | ✓    | Plain `MARKET`/`LIMIT` use expiry `0`; conditional limit uses trigger expiry. |
-| `FOK`          | -          | -    | *Not supported*.                                                            |
-| `AT_THE_OPEN`  | -          | -    | *Not supported*.                                                            |
-| `AT_THE_CLOSE` | -          | -    | *Not supported*.                                                            |
+| `FOK`          | -          | -    | *Not supported*.                                                              |
+| `AT_THE_OPEN`  | -          | -    | *Not supported*.                                                              |
+| `AT_THE_CLOSE` | -          | -    | *Not supported*.                                                              |
 
 For `MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED`, the adapter maps the wire
 time-in-force to Lighter `ImmediateOrCancel` because the venue rejects market-style orders sent as
@@ -335,7 +335,7 @@ for signing and transport.
 ### Execution instructions
 
 | Instruction   | Perpetuals | Spot | Notes                                                        |
-|---------------|------------|------|--------------------------------------------------------------|
+| ------------- | ---------- | ---- | ------------------------------------------------------------ |
 | `post_only`   | ✓          | ✓    | Overrides the TIF and sends Lighter `PostOnly`.              |
 | `reduce_only` | ✓          | -    | Position‑reducing flag for existing derivative positions.    |
 
@@ -347,7 +347,7 @@ them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 ### Advanced order features
 
 | Feature              | Perpetuals | Spot | Notes                                                       |
-|----------------------|------------|------|-------------------------------------------------------------|
+| -------------------- | ---------- | ---- | ----------------------------------------------------------- |
 | Order modification   | ✓          | ✓    | Modify quantity, price, and trigger price on a live order.  |
 | Bracket orders       | -          | -    | *Not supported*.                                            |
 | Iceberg orders       | -          | -    | *Not supported*.                                            |
@@ -361,7 +361,7 @@ them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 ### Order operations
 
 | Operation           | Perpetuals | Spot | Notes                                                           |
-|---------------------|------------|------|-----------------------------------------------------------------|
+| ------------------- | ---------- | ---- | --------------------------------------------------------------- |
 | Submit order        | ✓          | ✓    | Sends a signed `L2CreateOrder` transaction over WebSocket.      |
 | Submit order list   | ✓          | ✓    | Sequential fanout of up to 15 independent create transactions.  |
 | Modify order        | ✓          | ✓    | Sends a signed `ModifyOrder`; reports may restate accepts.      |
@@ -392,7 +392,7 @@ create orders are byte-pinned against the official Lighter v1.1.2 signer.
 ### Order querying and reconciliation
 
 | Feature              | Perpetuals | Spot | Notes                                                        |
-|----------------------|------------|------|--------------------------------------------------------------|
+| -------------------- | ---------- | ---- | ------------------------------------------------------------ |
 | Query open orders    | ✓          | ✓    | REST `accountActiveOrders` scoped by market.                 |
 | Query order history  | ✓          | ✓    | REST `accountInactiveOrders` with cursor pagination.         |
 | Order status updates | ✓          | ✓    | Private WebSocket order streams plus status reports.         |
@@ -434,7 +434,7 @@ retained by market ID instead: parsed rows still update the cache, and cached ma
 both the parsed rows and skipped market IDs still flatten.
 
 | Feature                 | Perpetuals | Spot | Notes                                                        |
-|-------------------------|------------|------|--------------------------------------------------------------|
+| ----------------------- | ---------- | ---- | ------------------------------------------------------------ |
 | Account balances        | ✓          | ✓    | Merged assets + `user_stats`, replayed from cache on query.  |
 | Position snapshots      | ✓          | -    | Perp only; `account_all_positions` stream.                   |
 | Netting positions       | ✓          | -    | One Nautilus position per perpetual market.                  |
@@ -447,7 +447,7 @@ both the parsed rows and skipped market IDs still flatten.
 ## Liquidation and ADL handling
 
 | Event or field              | Support | Notes                                                             |
-|-----------------------------|---------|-------------------------------------------------------------------|
+| --------------------------- | ------- | ----------------------------------------------------------------- |
 | Liquidation trades          | ✓       | Account trade rows can parse as fills, with no special event.     |
 | Deleverage trades           | ✓       | Account trade rows can parse as fills, with no special event.     |
 | Liquidation price reporting | -       | *Not supported*; reports omit this field.                         |
@@ -474,7 +474,7 @@ because the higher venue limits require registering the caller IP with Lighter, 
 does not by itself guarantee the higher limit is active for your connection.
 
 | Tier     | Latency (maker / taker) | REST weighted limit | `sendTx` limit       | Fees (maker / taker)      | Notes                                   |
-|----------|-------------------------|---------------------|----------------------|---------------------------|-----------------------------------------|
+| -------- | ----------------------- | ------------------- | -------------------- | ------------------------- | --------------------------------------- |
 | Standard | 200 ms / 300 ms         | 60 req/min          | 60 req/min           | 0 / 0                     | Zero‑fee default tier.                  |
 | Premium  | 0 ms / 140-200 ms       | 24,000 req/min      | 4,000-40,000 req/min | 0.28-0.40 / 1.96-2.80 bps | Lowest latency; scales with staked LIT. |
 | Plus     | 200 ms / 300 ms         | 120,000 req/min     | 8,000 req/min        | 0.5 / 0.5 bps             | Raised limits, standard latency.        |
@@ -520,7 +520,7 @@ this, because the unacknowledged count tracks venue acknowledgement latency rath
 rate. `sendTx` is not counted against the WebSocket client-message bucket.
 
 | Scope                                  | Venue limit                 | Adapter behavior                                     |
-|----------------------------------------|-----------------------------|------------------------------------------------------|
+| -------------------------------------- | --------------------------- | ---------------------------------------------------- |
 | REST, standard account                 | 60 req/min                  | Default; set `rest_quota_per_min` to override.       |
 | REST, premium account                  | 24,000 weighted req/min     | Logged; set `rest_quota_per_min` to use it.          |
 | REST, plus account                     | 120,000 weighted req/min    | Logged; set `rest_quota_per_min` to use it.          |
@@ -536,28 +536,28 @@ rate. `sendTx` is not counted against the WebSocket client-message bucket.
 Common REST endpoint weights from the official docs:
 
 | Endpoint group                         | Weight | Adapter behavior                                |
-|----------------------------------------|--------|-------------------------------------------------|
+| -------------------------------------- | ------ | ----------------------------------------------- |
 | `sendTx`, `sendTxBatch`, `nextNonce`   | 6      | Tx calls use tx limiter; `nextNonce` uses REST. |
 | `accountInactiveOrders`                | 100    | Adapter counts one REST token per HTTP call.    |
 | `trades`, `recentTrades`               | 600    | Adapter counts one REST token per HTTP call.    |
 | Other endpoints                        | 300    | Adapter counts one REST token per HTTP call.    |
 
-| Endpoint or transport                  | Limit      | Notes                                              |
-|----------------------------------------|------------|----------------------------------------------------|
-| `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.      |
-| `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.         |
-| `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.        |
-| `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum. |
-| `/api/v1/fundings`                     | 100 rows   | Adapter paginates funding pages at this venue cap. |
-| WebSocket connections                  | 255 / IP   | Venue limit.                                       |
-| WebSocket subscriptions / connection   | 500        | Venue limit.                                       |
-| WebSocket unique accounts / connection | 500        | Venue limit.                                       |
-| WebSocket connections / minute         | 255        | Venue limit.                                       |
-| WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.   |
+| Endpoint or transport                  | Limit      | Notes                                                |
+| -------------------------------------- | ---------- | ---------------------------------------------------- |
+| `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.        |
+| `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.           |
+| `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.          |
+| `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum.   |
+| `/api/v1/fundings`                     | 100 rows   | Adapter paginates funding pages at this venue cap.   |
+| WebSocket connections                  | 255 / IP   | Venue limit.                                         |
+| WebSocket subscriptions / connection   | 500        | Venue limit.                                         |
+| WebSocket unique accounts / connection | 500        | Venue limit.                                         |
+| WebSocket connections / minute         | 255        | Venue limit.                                         |
+| WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.     |
 | WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop. |
-| `sendTxBatch` batch size               | 15 txs     | Low‑level API limit; fanout cap is also 15.        |
-| WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.         |
-| WebSocket outbound command queue       | Not capped | Paced before writes; no queue‑depth cap.           |
+| `sendTxBatch` batch size               | 15 txs     | Low‑level API limit; fanout cap is also 15.          |
+| WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.           |
+| WebSocket outbound command queue       | Not capped | Paced before writes; no queue‑depth cap.             |
 
 Premium volume quota is a separate venue constraint for `L2CreateOrder`, `L2CancelAllOrders`,
 `L2ModifyOrder`, and `L2CreateGroupedOrders`. The adapter does not inspect remaining quota; use
@@ -619,7 +619,7 @@ whitespace only), falls back to the corresponding environment variable for the s
 environment.
 
 | Environment | API key index                   | API private key              | Account index                   |
-|-------------|---------------------------------|------------------------------|---------------------------------|
+| ----------- | ------------------------------- | ---------------------------- | ------------------------------- |
 | Mainnet     | `LIGHTER_API_KEY_INDEX`         | `LIGHTER_API_SECRET`         | `LIGHTER_ACCOUNT_INDEX`         |
 | Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX` | `LIGHTER_TESTNET_API_SECRET` | `LIGHTER_TESTNET_ACCOUNT_INDEX` |
 
@@ -631,25 +631,25 @@ endpoints.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                         |
-|------------------------------------|-----------|-----------------------------------------------------|
-| `base_url_http`                    | `None`    | Optional REST URL override.                         |
-| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                    |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.          |
-| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.         |
+| Option                             | Default   | Description                                              |
+| ---------------------------------- | --------- | -------------------------------------------------------- |
+| `base_url_http`                    | `None`    | Optional REST URL override.                              |
+| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                         |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.               |
+| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.              |
 | `account_index`                    | `None`    | Optional factory field; public data calls do not use it. |
 | `api_key_index`                    | `None`    | Optional factory field; public data calls do not use it. |
 | `private_key`                      | `None`    | Optional factory field; public data calls do not use it. |
-| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                    |
-| `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.      |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.    |
-| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.        |
-| `transport_backend`                | Default   | WebSocket transport backend.                        |
+| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                         |
+| `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.           |
+| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.         |
+| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.             |
+| `transport_backend`                | Default   | WebSocket transport backend.                             |
 
 ### Execution client configuration options
 
 | Option                      | Default       | Description                                                |
-|-----------------------------|---------------|------------------------------------------------------------|
+| --------------------------- | ------------- | ---------------------------------------------------------- |
 | `trader_id`                 | `TRADER-001`  | Nautilus trader identifier.                                |
 | `account_id`                | `LIGHTER-001` | Nautilus account identifier for the venue.                 |
 | `account_index`             | `None`        | Lighter account index.                                     |

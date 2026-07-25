@@ -22,7 +22,7 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 **Common pitfalls**: GNU and BSD utilities differ between Linux and macOS:
 
 | Command              | Linux (GNU)       | macOS (BSD)       | Portable solution                        |
-|----------------------|-------------------|-------------------|------------------------------------------|
+| -------------------- | ----------------- | ----------------- | ---------------------------------------- |
 | `sed -i`             | `sed -i 's/…'`    | `sed -i '' 's/…'` | Use backup extension: `sed -i.bak 's/…'` |
 | `stat` (file size)   | `stat -c%s file`  | `stat -f%z file`  | Detect with `stat --version`             |
 | `sha256sum`          | `sha256sum file`  | N/A               | Use `shasum -a 256` or detect            |
@@ -33,7 +33,7 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 **Bash version**: macOS ships with bash 3.2; avoid bash 4+ features in user-facing scripts:
 
 | Feature                           | Bash version | Alternative                      |
-|-----------------------------------|--------------|----------------------------------|
+| --------------------------------- | ------------ | -------------------------------- |
 | Associative arrays (`declare -A`) | 4.0+         | Use files or simple arrays       |
 | `readarray` / `mapfile`           | 4.0+         | Use `while read` loops           |
 | `${var,,}` / `${var^^}` (case)    | 4.0+         | Use `tr '[:upper:]' '[:lower:]'` |

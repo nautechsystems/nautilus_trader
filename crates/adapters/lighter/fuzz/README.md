@@ -25,7 +25,7 @@ rustup toolchain install nightly
 ## Adapter targets
 
 | Target                    | What it stresses                                                             |
-|---------------------------|------------------------------------------------------------------------------|
+| ------------------------- | ---------------------------------------------------------------------------- |
 | `fuzz_verify`             | `PublicKey::verify` against arbitrary `(pk, msg, sig)` byte triples.         |
 | `fuzz_point_decode`       | `Point::decode` panic-freedom and decode/encode/decode round trip.           |
 | `fuzz_signature_codec`    | `Signature::from_le_bytes_reduce` canonicality and codec idempotence.        |
@@ -70,7 +70,7 @@ Corpora accumulate under `crates/adapters/lighter/corpus/<target>/`. Crash artif
 ## Pornin differential targets
 
 | Target                        | What it stresses                                                       |
-|-------------------------------|------------------------------------------------------------------------|
+| ----------------------------- | ---------------------------------------------------------------------- |
 | `fuzz_pornin_diff_decode`     | `Point::decode` vs Pornin's reference on every `Fp5`.                  |
 | `fuzz_pornin_diff_scalar_mul` | `Point::scalar_mul` vs Pornin's reference on every `(s, base)` pair.   |
 | `fuzz_pornin_diff_algebra`    | Field, scalar, and curve algebra vs Pornin's reference implementation. |

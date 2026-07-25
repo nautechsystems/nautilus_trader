@@ -27,10 +27,10 @@ The custom-data architecture satisfies the following requirements:
 
 There are two supported authoring modes:
 
-| Mode              | Example                                            | Registration path                                       | Encode/decode path              | Wrapper backend           |
-|-------------------|----------------------------------------------------|---------------------------------------------------------|---------------------------------|---------------------------|
-| Pure Python       | `@customdataclass_pyo3` class                      | `register_custom_data_class(...)`                       | Python callback + Arrow C FFI   | `PythonCustomDataWrapper` |
-| Same‑binary Rust  | `#[custom_data]` or `#[custom_data(pyo3)]` type    | `ensure_custom_data_registered::<T>()` and native extractor | Native Rust                 | Native Rust payload       |
+| Mode             | Example                                         | Registration path                                           | Encode/decode path            | Wrapper backend           |
+| ---------------- | ----------------------------------------------- | ----------------------------------------------------------- | ----------------------------- | ------------------------- |
+| Pure Python      | `@customdataclass_pyo3` class                   | `register_custom_data_class(...)`                           | Python callback + Arrow C FFI | `PythonCustomDataWrapper` |
+| Same‑binary Rust | `#[custom_data]` or `#[custom_data(pyo3)]` type | `ensure_custom_data_registered::<T>()` and native extractor | Native Rust                   | Native Rust payload       |
 
 Both modes converge on the same outer PyO3 `CustomData` wrapper and the same
 `DataType` identity model.

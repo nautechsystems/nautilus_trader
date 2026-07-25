@@ -7,7 +7,7 @@ or produce multiple book changes at once.
 ## Fields
 
 | Field           | Rust type             | Python type            | Required/default | Notes                                     |
-|-----------------|-----------------------|------------------------|------------------|-------------------------------------------|
+| --------------- | --------------------- | ---------------------- | ---------------- | ----------------------------------------- |
 | `instrument_id` | `InstrumentId`        | `InstrumentId`         | Required         | Instrument whose book is changing.        |
 | `deltas`        | `Vec<OrderBookDelta>` | `list[OrderBookDelta]` | Required         | Non‑empty batch of deltas.                |
 | `flags`         | `u8`                  | `int`                  | From last delta  | Last delta flags.                         |

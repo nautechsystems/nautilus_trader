@@ -165,7 +165,7 @@ A "virtual position" refers to a position ID that exists within the Nautilus sys
 reality.
 
 | Strategy OMS | Venue OMS | Description                                                                                                                                                 |
-|:-------------|:----------|:------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| :----------- | :-------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NETTING`    | `NETTING` | The strategy uses the venue's native OMS type, with a single position ID per instrument ID.                                                                 |
 | `HEDGING`    | `HEDGING` | The strategy uses the venue's native OMS type, with multiple position IDs per instrument ID (both `LONG` and `SHORT`).                                      |
 | `NETTING`    | `HEDGING` | The strategy **overrides** the venue's native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
@@ -559,9 +559,9 @@ the order's current `filled_qty` plus the incoming `last_qty` against the origin
 
 The `allow_overfills` configuration option (default: `False`) controls how overfills are handled:
 
-| `allow_overfills` | Behavior                                                                 |
-|-------------------|--------------------------------------------------------------------------|
-| `False`           | Logs and rejects the fill, preserving the order's current state.         |
+| `allow_overfills` | Behavior                                                                   |
+| ----------------- | -------------------------------------------------------------------------- |
+| `False`           | Logs and rejects the fill, preserving the order's current state.           |
 | `True`            | Logs a warning, applies the fill, and tracks the excess in `overfill_qty`. |
 
 When overfills are allowed, the order's `overfill_qty` field tracks the excess quantity.
@@ -636,12 +636,12 @@ The execution engine consumes four reconciliation report variants emitted by
 adapters in live trading. Each variant has a different role and a different
 fallback when the matching order is not yet in the local cache.
 
-| Variant                | Use case                                                     | Order missing from cache              |
-|------------------------|--------------------------------------------------------------|---------------------------------------|
-| `OrderStatusReport`    | Standalone order state update.                               | External order created from the report; if status is `PartiallyFilled`/`Filled`, an inferred fill is synthesised from `avg_px`/`filled_qty`. |
-| `FillReport`           | Standalone execution.                                        | External order is created from the fill (`OrderType::Market`, quantity `last_qty`); the real fill is then applied so its `trade_id` and `commission` are preserved. |
+| Variant                | Use case                                                     | Order missing from cache                                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OrderStatusReport`    | Standalone order state update.                               | External order created from the report; if status is `PartiallyFilled`/`Filled`, an inferred fill is synthesised from `avg_px`/`filled_qty`.                                                             |
+| `FillReport`           | Standalone execution.                                        | External order is created from the fill (`OrderType::Market`, quantity `last_qty`); the real fill is then applied so its `trade_id` and `commission` are preserved.                                      |
 | `OrderWithFills`       | Order status update bundled with the fills that produced it. | External order created without an inferred fill; the supplied fills are applied first; any residual gap between `report.filled_qty` and the sum of supplied `last_qty`s is closed with an inferred fill. |
-| `PositionStatusReport` | Position snapshot from the venue.                            | Logged; positions are derived from fills, not bootstrapped here. |
+| `PositionStatusReport` | Position snapshot from the venue.                            | Logged; positions are derived from fills, not bootstrapped here.                                                                                                                                         |
 
 ### When to use each variant
 

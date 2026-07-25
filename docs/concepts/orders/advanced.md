@@ -58,7 +58,7 @@ An OTO order involves two parts:
 #### Trigger models
 
 | Trigger model       | When are child orders released?                                                                                                                  |
-|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Full trigger**    | When the parent order's cumulative quantity equals its original quantity (i.e., it is *fully* filled).                                           |
 | **Partial trigger** | Immediately upon each partial execution of the parent; the child's quantity matches the executed amount and is increased as further fills occur. |
 
@@ -83,7 +83,7 @@ If your strategy requires full-trigger semantics but the venue or backtest engin
 An OTO order can use any supported asset type on the venue (e.g. stock entry with option hedge, futures entry with OCO bracket, crypto spot entry with TP/SL).
 
 | Venue / Adapter ID                           | Asset classes             | Trigger rule for child                      | Practical notes                                                   |
-|----------------------------------------------|---------------------------|---------------------------------------------|-------------------------------------------------------------------|
+| -------------------------------------------- | ------------------------- | ------------------------------------------- | ----------------------------------------------------------------- |
 | Binance / Binance Futures (`BINANCE`)        | Spot, perpetual futures   | **Partial or full** - fires on first fill.  | OTOCO/TP-SL children appear instantly; monitor margin usage.      |
 | Bybit Spot (`BYBIT`)                         | Spot                      | **Full** - child placed after completion.   | TP-SL preset activates only once the limit order is fully filled. |
 | Bybit Perps (`BYBIT`)                        | Perpetual futures         | **Partial and full** - configurable.        | "Partial‑position" mode sizes TP-SL as fills arrive.              |
@@ -122,12 +122,12 @@ When working with contingent orders (OTO, OCO, OUO), be aware of the following v
 
 **Common error scenarios:**
 
-| Scenario | System behavior |
-|----------|-----------------|
-| Child references non‑existent parent | Order denied with `INVALID_ORDER` error |
-| Parent canceled before children trigger | Children automatically canceled |
+| Scenario                                    | System behavior                                   |
+| ------------------------------------------- | ------------------------------------------------- |
+| Child references non‑existent parent        | Order denied with `INVALID_ORDER` error           |
+| Parent canceled before children trigger     | Children automatically canceled                   |
 | OCO sibling filled before cancel propagates | Partial fill honored, remaining quantity canceled |
-| Insufficient margin for bracket | Entry may execute, children rejected separately |
+| Insufficient margin for bracket             | Entry may execute, children rejected separately   |
 
 :::warning
 Always handle `OrderDenied` and `OrderRejected` events in your strategy, especially for contingent orders where

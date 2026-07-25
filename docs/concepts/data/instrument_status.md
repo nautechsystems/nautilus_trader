@@ -6,17 +6,17 @@ short-selling restriction changes.
 
 ## Fields
 
-| Field                       | Rust type              | Python type   | Required/default | Notes                                      |
-|-----------------------------|------------------------|---------------|------------------|--------------------------------------------|
-| `instrument_id`             | `InstrumentId`         | `InstrumentId` | Required        | Instrument whose status changed.           |
-| `action`                    | `MarketStatusAction`   | `MarketStatusAction` | Required | Venue status action.                       |
-| `ts_event`                  | `UnixNanos`            | `int`         | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`                   | `UnixNanos`            | `int`         | Required         | Initialization timestamp in nanoseconds.   |
-| `reason`                    | `Option<Ustr>`         | `str \| None`  | `None`           | Cause of the status change when provided.  |
-| `trading_event`             | `Option<Ustr>`         | `str \| None`  | `None`           | Venue event label when provided.           |
-| `is_trading`                | `Option<bool>`         | `bool \| None` | `None`           | Whether trading is enabled when known.     |
-| `is_quoting`                | `Option<bool>`         | `bool \| None` | `None`           | Whether quoting is enabled when known.     |
-| `is_short_sell_restricted`  | `Option<bool>`         | `bool \| None` | `None`           | Short‑sell restriction state when known.   |
+| Field                      | Rust type            | Python type          | Required/default | Notes                                     |
+| -------------------------- | -------------------- | -------------------- | ---------------- | ----------------------------------------- |
+| `instrument_id`            | `InstrumentId`       | `InstrumentId`       | Required         | Instrument whose status changed.          |
+| `action`                   | `MarketStatusAction` | `MarketStatusAction` | Required         | Venue status action.                      |
+| `ts_event`                 | `UnixNanos`          | `int`                | Required         | Event timestamp in nanoseconds.           |
+| `ts_init`                  | `UnixNanos`          | `int`                | Required         | Initialization timestamp in nanoseconds.  |
+| `reason`                   | `Option<Ustr>`       | `str \| None`        | `None`           | Cause of the status change when provided. |
+| `trading_event`            | `Option<Ustr>`       | `str \| None`        | `None`           | Venue event label when provided.          |
+| `is_trading`               | `Option<bool>`       | `bool \| None`       | `None`           | Whether trading is enabled when known.    |
+| `is_quoting`               | `Option<bool>`       | `bool \| None`       | `None`           | Whether quoting is enabled when known.    |
+| `is_short_sell_restricted` | `Option<bool>`       | `bool \| None`       | `None`           | Short‑sell restriction state when known.  |
 
 ## Behavior
 

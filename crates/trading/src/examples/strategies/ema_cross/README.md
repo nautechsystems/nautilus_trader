@@ -31,7 +31,7 @@ faster to price changes; a longer `slow_period` smooths out noise.
 Common period pairs:
 
 | Style        | Fast | Slow | Crossover frequency |
-|--------------|------|------|---------------------|
+| ------------ | ---- | ---- | ------------------- |
 | Scalping     | 5    | 20   | High                |
 | Intraday     | 10   | 50   | Medium              |
 | Swing        | 20   | 100  | Low                 |
@@ -41,12 +41,12 @@ Common period pairs:
 The `EmaCross` strategy takes constructor parameters directly (no separate
 config struct):
 
-| Parameter        | Type           | Description                                         |
-|------------------|----------------|-----------------------------------------------------|
-| `instrument_id`  | `InstrumentId` | Instrument to subscribe to and trade.               |
-| `trade_size`     | `Quantity`     | Order quantity for each crossover signal.            |
-| `fast_period`    | `usize`        | Fast EMA period. Shorter periods react faster.       |
-| `slow_period`    | `usize`        | Slow EMA period. Longer periods filter noise.        |
+| Parameter       | Type           | Description                                    |
+| --------------- | -------------- | ---------------------------------------------- |
+| `instrument_id` | `InstrumentId` | Instrument to subscribe to and trade.          |
+| `trade_size`    | `Quantity`     | Order quantity for each crossover signal.      |
+| `fast_period`   | `usize`        | Fast EMA period. Shorter periods react faster. |
+| `slow_period`   | `usize`        | Slow EMA period. Longer periods filter noise.  |
 
 ## Rust usage
 

@@ -9,7 +9,7 @@ Examples include Betfair match-odds selections and handicap market selections.
 ## Fields
 
 | Field                | Rust type          | Python type        | Required/default | Notes                                    |
-|----------------------|--------------------|--------------------|------------------|------------------------------------------|
+| -------------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
 | `instrument_id`      | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
 | `raw_symbol`         | `Symbol`           | `Symbol`           | Required         | Native or generated venue symbol.        |
 | `event_type_id`      | `u64`              | `int`              | Required         | Event type identifier.                   |

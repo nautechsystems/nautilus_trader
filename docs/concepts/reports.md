@@ -41,7 +41,7 @@ orders_report = ReportProvider.generate_orders_report(orders)
 **Returns `pd.DataFrame`. Key columns include:**
 
 | Column             | Description                                             |
-|--------------------|---------------------------------------------------------|
+| ------------------ | ------------------------------------------------------- |
 | `client_order_id`  | Index - unique order identifier.                        |
 | `instrument_id`    | Trading instrument.                                     |
 | `strategy_id`      | Strategy that created the order.                        |
@@ -95,7 +95,7 @@ fills_report = ReportProvider.generate_fills_report(orders)
 **Returns `pd.DataFrame`. Key columns include:**
 
 | Column             | Description                              |
-|--------------------|------------------------------------------|
+| ------------------ | ---------------------------------------- |
 | `client_order_id`  | Index - order identifier.                |
 | `trade_id`         | Unique trade/fill identifier.            |
 | `venue_order_id`   | Venue‑assigned order ID.                 |
@@ -136,7 +136,7 @@ positions_report = ReportProvider.generate_positions_report(
 **Returns `pd.DataFrame`. Key columns include:**
 
 | Column             | Description                              |
-|--------------------|------------------------------------------|
+| ------------------ | ---------------------------------------- |
 | `position_id`      | Index - unique position identifier.      |
 | `instrument_id`    | Trading instrument.                      |
 | `strategy_id`      | Strategy that managed the position.      |
@@ -179,7 +179,7 @@ account_report = ReportProvider.generate_account_report(account)
 **Returns `pd.DataFrame`. Columns include:**
 
 | Column          | Description                                |
-|-----------------|--------------------------------------------|
+| --------------- | ------------------------------------------ |
 | `ts_event`      | Index - timestamp of account state change. |
 | `account_id`    | Account identifier.                        |
 | `account_type`  | Type of account (e.g., SPOT, MARGIN).      |

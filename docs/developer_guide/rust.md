@@ -55,7 +55,7 @@ The Makefile and changed-crate scripts are the source of truth for target scope 
 copy their feature lists into new documentation.
 
 | Target                   | Scope                              | Feature source                    |
-|--------------------------|------------------------------------|-----------------------------------|
+| ------------------------ | ---------------------------------- | --------------------------------- |
 | `make cargo-test`        | Workspace libraries and tests.     | `CARGO_FEATURES` in the Makefile. |
 | Pre‑commit Clippy        | Changed crate libraries and tests. | `scripts/clippy-changed.sh`.      |
 | `make check-all-targets` | Workspace, including examples.     | `CARGO_FEATURES` plus `examples`. |
@@ -77,7 +77,7 @@ test and lint targets.
 ### Separate target (Python extension building)
 
 | Target        | Profile   | Feature source          |
-|---------------|-----------|-------------------------|
+| ------------- | --------- | ----------------------- |
 | `build`       | `release` | `_set_feature_flags()`. |
 | `build-debug` | `dev`     | `_set_feature_flags()`. |
 
@@ -249,7 +249,7 @@ output, and process exits.
 Choose the error type at the API boundary:
 
 | Boundary                              | Return type                         |
-|---------------------------------------|-------------------------------------|
+| ------------------------------------- | ----------------------------------- |
 | Reusable library or domain API.       | A typed `Result<T, E>`.             |
 | Application or adapter orchestration. | `anyhow::Result<T>`.                |
 | Public input validation.              | `CorrectnessResult<T>` when suited. |
@@ -412,7 +412,7 @@ with the bindings.
 **Annotation types:**
 
 | PyO3 construct    | Stub annotation                                  |
-|-------------------|--------------------------------------------------|
+| ----------------- | ------------------------------------------------ |
 | `#[pyclass]`      | `pyo3_stub_gen::derive::gen_stub_pyclass`        |
 | enum `#[pyclass]` | `pyo3_stub_gen::derive::gen_stub_pyclass_enum`   |
 | `#[pymethods]`    | `pyo3_stub_gen::derive::gen_stub_pymethods`      |
@@ -598,7 +598,7 @@ input. Treat these as compatibility surfaces and do not copy the pattern into ne
 Use decimal values for discrete financial quantities:
 
 | Value                                    | Type and construction                                      |
-|------------------------------------------|------------------------------------------------------------|
+| ---------------------------------------- | ---------------------------------------------------------- |
 | Price or quantity.                       | `Price::from_decimal_dp` or `Quantity::from_decimal_dp`.   |
 | Money, fee, margin, or balance.          | `Decimal`, then `Money::from_decimal` or `Money::zero`.    |
 | Continuous signal ratio or timing curve. | `f64` when decimal precision has no domain meaning.        |
@@ -627,7 +627,7 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 Choose a hash collection by determinism, trust boundary, performance, and access pattern:
 
 | Requirement                                      | Collection                     |
-|--------------------------------------------------|--------------------------------|
+| ------------------------------------------------ | ------------------------------ |
 | Observable insertion‑order iteration.            | `IndexMap` or `IndexSet`.      |
 | Hot lookup with no observable iteration order.   | `AHashMap` or `AHashSet`.      |
 | Untrusted keys or a network‑facing boundary.     | `HashMap` or `HashSet`.        |
@@ -678,7 +678,7 @@ For removal from `IndexMap`:
 `Arc` unless the value provides interior mutability.
 
 | Access pattern                               | Collection                                                     |
-|----------------------------------------------|----------------------------------------------------------------|
+| -------------------------------------------- | -------------------------------------------------------------- |
 | Single‑threaded reads and writes.            | `AHashMap<K, V>`.                                              |
 | Shared, immutable after construction.        | `Arc<AHashMap<K, V>>`.                                         |
 | Shared reads and writes to independent keys. | `Arc<DashMap<K, V>>`.                                          |
@@ -1121,7 +1121,7 @@ the Rust owner.
 Use the ownership shape that matches the relationship:
 
 | Relationship                                      | Pattern                                          |
-|---------------------------------------------------|--------------------------------------------------|
+| ------------------------------------------------- | ------------------------------------------------ |
 | Rust owns a Python object with no back‑reference. | Store `Py<T>` and clone with `clone_py_object`.  |
 | A pyclass owns other Python objects.              | Implement `__traverse__` and `__clear__`.        |
 | The reference must not keep its target alive.     | Use a Python weak reference.                     |
@@ -1167,7 +1167,7 @@ upheld by design.
 Choosing a mechanism:
 
 | Situation                                      | Use                                               |
-|------------------------------------------------|---------------------------------------------------|
+| ---------------------------------------------- | ------------------------------------------------- |
 | Public API precondition.                       | `check_*` from `nautilus_core::correctness`.      |
 | Validated constructor.                         | `new_checked()` and `new()`.                      |
 | Recoverable parse, I/O, or network error.      | `Result<T, DomainError>`.                         |
@@ -1229,7 +1229,7 @@ The codebase uses unsafe Rust for these purposes:
 `Send` and `Sync` have different obligations:
 
 | Trait  | Safe code may                                              |
-|--------|------------------------------------------------------------|
+| ------ | ---------------------------------------------------------- |
 | `Send` | Move ownership of the value to another thread.             |
 | `Sync` | Share `&T` between threads.                                |
 
@@ -1275,7 +1275,7 @@ Both registries store `Rc<UnsafeCell<dyn Trait>>` in thread-local maps but
 differ in how they handle aliased access:
 
 | Property          | Actor registry                     | Component registry                 |
-|-------------------|------------------------------------|------------------------------------|
+| ----------------- | ---------------------------------- | ---------------------------------- |
 | Aliasing          | Allowed (multiple guards).         | Prevented (`BorrowGuard` + set).   |
 | Re‑entrant access | Yes, required for callbacks.       | No, lifecycle ops are sequential.  |
 | Error handling    | Panic or `None` on lookup failure. | Returns `anyhow::Result` on error. |
@@ -1312,7 +1312,7 @@ let handler = TypedHandler::from(move |quote: &QuoteTick| {
 The repository combines standard Rust tools with project-specific pre-commit checks:
 
 | Area                       | Source of truth                                                 |
-|----------------------------|-----------------------------------------------------------------|
+| -------------------------- | --------------------------------------------------------------- |
 | Formatting and imports.    | `rustfmt.toml`.                                                 |
 | Workspace lints.           | `Cargo.toml` and `clippy.toml`.                                 |
 | Rust layout conventions.   | `.pre-commit-hooks/check_formatting_rs.sh`.                     |
