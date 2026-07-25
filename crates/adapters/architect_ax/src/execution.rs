@@ -452,7 +452,20 @@ impl ExecutionClient for AxExecutionClient {
             handle.abort();
         }
 
+        let credential =
+            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
+                .context("API credentials not configured")?;
+        let token = self.authenticate(&credential).await?;
+
+        // Instruments load after authenticating because their fee rates come from the
+        // authenticated `/whoami`. A zero-fee fallback would outlive the failure that caused it,
+        // since `set_instruments_initialized` stops a reconnect from retrying the load.
         if !self.core.instruments_initialized() {
+            self.http_client
+                .request_account_fees()
+                .await
+                .context("failed to resolve AX account fee rates")?;
+
             let instruments = self
                 .http_client
                 .request_instruments(None, None)
@@ -469,10 +482,6 @@ impl ExecutionClient for AxExecutionClient {
             self.core.set_instruments_initialized();
         }
 
-        let credential =
-            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
-                .context("API credentials not configured")?;
-        let token = self.authenticate(&credential).await?;
         self.ws_orders.connect(&token).await?;
         log::debug!("Connected to orders WebSocket");
 

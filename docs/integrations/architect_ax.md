@@ -189,6 +189,13 @@ AX L3 snapshots contain per-order quantities but no venue order IDs. The adapter
 IDs within each snapshot. It cannot track the same individual order across snapshots.
 :::
 
+:::note
+AX publishes no trade identifier for market data, so the adapter derives `TradeTick.trade_id` from the
+trade's own timestamp and content. REST and WebSocket agree on the same trade whenever both report its
+aggressor side. Prints that AX reports identically share an ID; only consumers that deduplicate market
+data on `trade_id` are affected, since fills carry the venue's own trade IDs.
+:::
+
 ### WebSocket subscription behavior
 
 AX market data WebSocket subscriptions use one active stream per symbol. The adapter selects the
@@ -483,6 +490,10 @@ credentials are valid and have trading permissions.
   modification requests; cancel and resubmit instead.
 - **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config
   to have the exchange cancel all open orders if the orders WebSocket disconnects.
+- **Instrument fee rates**: AX reports maker and taker rates per account on `GET /whoami`, so the
+  adapter resolves them after authenticating and applies them to every instrument. The execution
+  client fails to connect if that lookup fails, rather than reporting zero fees for the process
+  lifetime. A data client configured without credentials cannot read the rates and reports zero fees.
 - **Fill commissions**: Real-time fill events from the WebSocket do not include fee data.
   Commission is reported as zero for streaming fills. During reconciliation, the REST
   `/fills` endpoint provides accurate fee information.

@@ -1,12 +1,25 @@
 {
-  "id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
-  "username": "test_user",
-  "created_at": "2023-11-07T05:31:56Z",
-  "enabled_2fa": true,
+  "id": "01JBXR-7QK2-0000",
+  "username": "trader@example.com",
+  "pseudonym": "quiet-amber-heron",
+  "created_at": "2025-12-18T02:20:42.675817Z",
   "is_onboarded": true,
   "is_frozen": false,
   "is_admin": false,
-  "is_close_only": false,
-  "maker_fee": "0.0002",
-  "taker_fee": "0.0005"
+  "require_2fa": false,
+  "fiat_deposit_code": "01JBXR7QK20000Y",
+  "accounts": [
+    {
+      "id": "01JBXR-7QK2-0000",
+      "name": "trader@example.com",
+      "is_close_only": false,
+      "maker_fee": "0.0002",
+      "taker_fee": "0.0025",
+      "can_list": true,
+      "can_read": true,
+      "can_set_limits": true,
+      "can_reduce_or_close": true,
+      "can_trade": true
+    }
+  ]
 }

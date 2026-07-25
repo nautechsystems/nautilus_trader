@@ -179,6 +179,48 @@ async fn test_exec_client_connect_disconnect() {
 
 #[rstest]
 #[tokio::test]
+async fn test_exec_client_connect_aborts_when_fee_lookup_fails() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    state
+        .whoami_fail
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let error = client.connect().await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "failed to resolve AX account fee rates",
+        "connect must fail rather than cache zero-fee instruments"
+    );
+    assert!(!client.is_connected());
+
+    // The aborted load must leave the client retryable, so a later connect resolves real rates
+    // instead of keeping instruments that were never built.
+    let attempts_before = state
+        .whoami_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+    state
+        .whoami_fail
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+
+    client.connect().await.expect("Failed to reconnect");
+
+    assert!(client.is_connected());
+    assert_eq!(
+        state
+            .whoami_count
+            .load(std::sync::atomic::Ordering::Relaxed),
+        attempts_before + 1,
+        "the retry must re-resolve fees rather than skip an already-initialized load"
+    );
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_emits_account_state_on_connect() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);

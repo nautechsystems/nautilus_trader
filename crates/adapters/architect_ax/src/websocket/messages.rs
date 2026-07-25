@@ -272,7 +272,7 @@ pub struct AxMdTicker {
 pub struct AxMdTrade {
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
-    /// Transaction number.
+    /// Nanosecond component of the timestamp.
     pub tn: i64,
     /// Instrument symbol.
     pub s: Ustr,

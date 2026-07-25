@@ -39,6 +39,39 @@ fn default_instrument_state() -> AxInstrumentState {
     AxInstrumentState::Open
 }
 
+/// An account entry within a [`AxWhoAmI`] response.
+///
+/// Fee rates and close-only state are per account rather than per user.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AxWhoAmIAccount {
+    /// Account identifier.
+    pub id: String,
+    /// Account display name.
+    pub name: String,
+    /// Whether the account is in close-only mode.
+    pub is_close_only: bool,
+    /// Maker fee rate; absent when the venue supplies no rate, which is distinct from zero.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub maker_fee: Option<Decimal>,
+    /// Taker fee rate; absent when the venue supplies no rate, which is distinct from zero.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub taker_fee: Option<Decimal>,
+    /// Whether the account may list its own state.
+    pub can_list: bool,
+    /// Whether the account may read venue state.
+    pub can_read: bool,
+    /// Whether the account may set risk limits.
+    pub can_set_limits: bool,
+    /// Whether the account may reduce or close existing positions.
+    pub can_reduce_or_close: bool,
+    /// Whether the account may open new positions.
+    pub can_trade: bool,
+}
+
 /// Response payload returned by `GET /whoami`.
 ///
 /// # References
@@ -46,28 +79,28 @@ fn default_instrument_state() -> AxInstrumentState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmI {
-    /// User account UUID.
+    /// User identifier.
     pub id: String,
     /// Username for the account.
     pub username: String,
     /// Account creation timestamp.
     pub created_at: DateTime<Utc>,
-    /// Whether two-factor authentication is enabled.
-    pub enabled_2fa: bool,
+    /// Whether two-factor authentication is required.
+    pub require_2fa: bool,
     /// Whether the user has completed onboarding.
     pub is_onboarded: bool,
     /// Whether the account is frozen.
     pub is_frozen: bool,
     /// Whether the user has admin privileges.
     pub is_admin: bool,
-    /// Whether the account is in close-only mode.
-    pub is_close_only: bool,
-    /// Maker fee rate.
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
-    pub maker_fee: Decimal,
-    /// Taker fee rate.
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
-    pub taker_fee: Decimal,
+    /// Accounts the credentials can act on.
+    pub accounts: Vec<AxWhoAmIAccount>,
+    /// Human-readable alias for the user (optional).
+    #[serde(default)]
+    pub pseudonym: Option<String>,
+    /// Reference code for fiat deposits (optional).
+    #[serde(default)]
+    pub fiat_deposit_code: Option<String>,
 }
 
 /// Individual instrument definition.
@@ -1280,6 +1313,8 @@ pub struct AxCancelAllOrdersResponse {}
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use serde_json::json;
 
     use super::*;
 
@@ -1306,9 +1341,116 @@ mod tests {
     #[rstest]
     fn test_deserialize_whoami_response() {
         let json = include_str!("../../test_data/http_get_whoami.json");
+
         let response: AxWhoAmI = serde_json::from_str(json).unwrap();
-        assert_eq!(response.username, "test_user");
-        assert!(response.enabled_2fa);
+
+        assert_eq!(response.id, "01JBXR-7QK2-0000");
+        assert_eq!(response.username, "trader@example.com");
+        assert_eq!(response.pseudonym.as_deref(), Some("quiet-amber-heron"));
+        assert_eq!(
+            response.created_at,
+            "2025-12-18T02:20:42.675817Z"
+                .parse::<DateTime<Utc>>()
+                .unwrap()
+        );
+        assert!(!response.require_2fa);
+        assert!(response.is_onboarded);
+        assert!(!response.is_frozen);
+        assert!(!response.is_admin);
+        assert_eq!(
+            response.fiat_deposit_code.as_deref(),
+            Some("01JBXR7QK20000Y")
+        );
+        assert_eq!(response.accounts.len(), 1);
+
+        let account = &response.accounts[0];
+
+        assert_eq!(account.id, "01JBXR-7QK2-0000");
+        assert_eq!(account.name, "trader@example.com");
+        assert!(!account.is_close_only);
+        assert_eq!(account.maker_fee, Some(dec!(0.0002)));
+        assert_eq!(account.taker_fee, Some(dec!(0.0025)));
+        assert!(account.can_list);
+        assert!(account.can_read);
+        assert!(account.can_set_limits);
+        assert!(account.can_reduce_or_close);
+        assert!(account.can_trade);
+    }
+
+    #[rstest]
+    #[case(json!(""), None)]
+    #[case(json!(null), None)]
+    #[case(json!("0"), Some(Decimal::ZERO))]
+    #[case(json!("0.0002"), Some(dec!(0.0002)))]
+    fn test_deserialize_whoami_account_fee_distinguishes_absent_from_zero(
+        #[case] wire_value: serde_json::Value,
+        #[case] expected: Option<Decimal>,
+    ) {
+        // A zero rate is valid, so an absent rate must not deserialize to zero
+        let json = json!({
+            "id": "01JBXR-7QK2-0000",
+            "name": "trader@example.com",
+            "is_close_only": false,
+            "maker_fee": wire_value,
+            "taker_fee": wire_value,
+            "can_list": true,
+            "can_read": true,
+            "can_set_limits": true,
+            "can_reduce_or_close": true,
+            "can_trade": true,
+        })
+        .to_string();
+
+        let account: AxWhoAmIAccount = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(account.maker_fee, expected);
+        assert_eq!(account.taker_fee, expected);
+    }
+
+    #[rstest]
+    fn test_deserialize_whoami_account_rejects_malformed_fee() {
+        let json = json!({
+            "id": "01JBXR-7QK2-0000",
+            "name": "trader@example.com",
+            "is_close_only": false,
+            "maker_fee": "not-a-decimal",
+            "taker_fee": "0.0025",
+            "can_list": true,
+            "can_read": true,
+            "can_set_limits": true,
+            "can_reduce_or_close": true,
+            "can_trade": true,
+        })
+        .to_string();
+
+        let error = serde_json::from_str::<AxWhoAmIAccount>(&json).unwrap_err();
+
+        assert!(
+            error.to_string().contains("Invalid decimal"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_whoami_response_without_optional_profile_fields() {
+        let json = json!({
+            "id": "01JBXR-7QK2-0001",
+            "username": "sub@example.com",
+            "created_at": "2025-12-18T02:20:42.675817Z",
+            "is_onboarded": true,
+            "is_frozen": false,
+            "is_admin": false,
+            "require_2fa": true,
+            "accounts": [],
+        })
+        .to_string();
+
+        let response: AxWhoAmI = serde_json::from_str(&json).unwrap();
+
+        assert!(response.require_2fa);
+        assert_eq!(response.pseudonym, None);
+        assert_eq!(response.fiat_deposit_code, None);
+        assert!(response.accounts.is_empty());
     }
 
     #[rstest]

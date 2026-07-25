@@ -30,7 +30,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -411,6 +411,228 @@ async fn test_domain_http_request_instruments_returns_nautilus_types() {
         .unwrap();
 
     assert_eq!(instruments.len(), 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_fees_reaches_instruments() {
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+
+    let (maker_fee, taker_fee) = client.request_account_fees().await.unwrap();
+    let instruments = client.request_instruments(None, None).await.unwrap();
+
+    assert_eq!(maker_fee, dec!(0.0002));
+    assert_eq!(taker_fee, dec!(0.0025));
+    assert!(!instruments.is_empty());
+    for instrument in &instruments {
+        assert_eq!(instrument.maker_fee(), dec!(0.0002));
+        assert_eq!(instrument.taker_fee(), dec!(0.0025));
+    }
+}
+
+#[rstest]
+#[case(Some(dec!(0.0001)), None, dec!(0.0001), dec!(0.0025))]
+#[case(None, Some(dec!(0.0009)), dec!(0.0002), dec!(0.0009))]
+#[tokio::test]
+async fn test_domain_http_partial_fee_arguments_keep_resolved_rate_for_the_other_side(
+    #[case] maker_arg: Option<Decimal>,
+    #[case] taker_arg: Option<Decimal>,
+    #[case] expected_maker: Decimal,
+    #[case] expected_taker: Decimal,
+) {
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+    client.request_account_fees().await.unwrap();
+
+    let instruments = client
+        .request_instruments(maker_arg, taker_arg)
+        .await
+        .unwrap();
+
+    assert!(!instruments.is_empty());
+    for instrument in &instruments {
+        assert_eq!(instrument.maker_fee(), expected_maker);
+        assert_eq!(instrument.taker_fee(), expected_taker);
+    }
+}
+
+#[rstest]
+#[case(Some(dec!(0.0001)), None, dec!(0.0001), Decimal::ZERO)]
+#[case(None, Some(dec!(0.0009)), Decimal::ZERO, dec!(0.0009))]
+#[tokio::test]
+async fn test_domain_http_partial_fee_arguments_zero_the_other_side_when_unresolved(
+    #[case] maker_arg: Option<Decimal>,
+    #[case] taker_arg: Option<Decimal>,
+    #[case] expected_maker: Decimal,
+    #[case] expected_taker: Decimal,
+) {
+    // The session token routes this through the authenticated branch of `resolve_fees`, which
+    // warns; the warning text is not asserted, since the crate has no log-capture harness.
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+
+    let instruments = client
+        .request_instruments(maker_arg, taker_arg)
+        .await
+        .unwrap();
+
+    assert!(!instruments.is_empty());
+    for instrument in &instruments {
+        assert_eq!(instrument.maker_fee(), expected_maker);
+        assert_eq!(instrument.taker_fee(), expected_taker);
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_resolved_fees_are_shared_across_clones() {
+    // The instrument refresh task and the request handlers all run on clones of the client, so
+    // resolved rates have to be shared state rather than per-clone state.
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+    let cloned = client.clone();
+
+    client.request_account_fees().await.unwrap();
+    let instruments = cloned.request_instruments(None, None).await.unwrap();
+
+    assert!(!instruments.is_empty());
+    for instrument in &instruments {
+        assert_eq!(instrument.maker_fee(), dec!(0.0002));
+        assert_eq!(instrument.taker_fee(), dec!(0.0025));
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_fees_uses_first_of_several_accounts() {
+    // AX resolves the first account when a request carries no explicit selector
+    let client = start_whoami_server(json!([
+        whoami_account("01JBXR-7QK2-0000", "0.0002", "0.0025"),
+        whoami_account("01JBXR-7QK2-0001", "0.0009", "0.0009"),
+    ]))
+    .await;
+
+    let (maker_fee, taker_fee) = client.request_account_fees().await.unwrap();
+
+    assert_eq!(maker_fee, dec!(0.0002));
+    assert_eq!(taker_fee, dec!(0.0025));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_fees_rejects_empty_accounts() {
+    let client = start_whoami_server(json!([])).await;
+
+    let error = client.request_account_fees().await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "AX whoami returned no accounts to resolve fees from"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_fees_rejects_absent_rates() {
+    // An absent rate must abort rather than resolve to zero, which is a valid rate
+    let mut account = whoami_account("01JBXR-7QK2-0000", "0.0002", "0.0025");
+    account["taker_fee"] = json!("");
+    let client = start_whoami_server(json!([account])).await;
+
+    let error = client.request_account_fees().await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "AX whoami account 01JBXR-7QK2-0000 supplied no fee rates"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_account_fees_accepts_zero_rates() {
+    // A promotional account can legitimately carry a zero maker rate
+    let client =
+        start_whoami_server(json!([whoami_account("01JBXR-7QK2-0000", "0", "0.0025")])).await;
+
+    let (maker_fee, taker_fee) = client.request_account_fees().await.unwrap();
+
+    assert_eq!(maker_fee, Decimal::ZERO);
+    assert_eq!(taker_fee, dec!(0.0025));
+}
+
+async fn start_whoami_server(accounts: Value) -> AxHttpClient {
+    let response = json!({
+        "id": "01JBXR-7QK2-0000",
+        "username": "trader@example.com",
+        "created_at": "2025-12-18T02:20:42.675817Z",
+        "is_onboarded": true,
+        "is_frozen": false,
+        "is_admin": false,
+        "require_2fa": false,
+        "accounts": accounts,
+    });
+    let router = Router::new().route("/whoami", get(|| async move { Json(response) }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/whoami").await;
+
+    let base_url = format!("http://{addr}");
+    let client = AxHttpClient::new(Some(base_url), None, 60, 0, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+    client
+}
+
+fn whoami_account(id: &str, maker_fee: &str, taker_fee: &str) -> Value {
+    json!({
+        "id": id,
+        "name": "trader@example.com",
+        "is_close_only": false,
+        "maker_fee": maker_fee,
+        "taker_fee": taker_fee,
+        "can_list": true,
+        "can_read": true,
+        "can_set_limits": true,
+        "can_reduce_or_close": true,
+        "can_trade": true,
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_instruments_reports_zero_fees_until_resolved() {
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+
+    let instruments = client.request_instruments(None, None).await.unwrap();
+
+    assert!(!instruments.is_empty());
+    for instrument in &instruments {
+        assert_eq!(instrument.maker_fee(), Decimal::ZERO);
+        assert_eq!(instrument.taker_fee(), Decimal::ZERO);
+    }
 }
 
 #[rstest]

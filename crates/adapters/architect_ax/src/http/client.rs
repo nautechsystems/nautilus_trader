@@ -26,6 +26,7 @@ use std::{
 };
 
 use anyhow::Context;
+use arc_swap::ArcSwapOption;
 use chrono::{DateTime, NaiveDate, Utc};
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
@@ -277,6 +278,10 @@ impl AxRawHttpClient {
     pub fn set_session_token(&self, token: String) {
         // Lock poisoning indicates a panic in another thread, which is fatal
         *self.session_token.write().expect("Lock poisoned") = Some(token);
+    }
+
+    pub(crate) fn has_session_token(&self) -> bool {
+        self.session_token.read().is_ok_and(|guard| guard.is_some())
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -1156,6 +1161,7 @@ pub struct AxHttpClient {
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
+    account_fees: Arc<ArcSwapOption<(Decimal, Decimal)>>,
 }
 
 impl Clone for AxHttpClient {
@@ -1165,6 +1171,7 @@ impl Clone for AxHttpClient {
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
             clock: self.clock,
+            account_fees: self.account_fees.clone(),
         }
     }
 }
@@ -1204,6 +1211,7 @@ impl AxHttpClient {
             instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
+            account_fees: Arc::new(ArcSwapOption::empty()),
         })
     }
 
@@ -1239,6 +1247,7 @@ impl AxHttpClient {
             instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
+            account_fees: Arc::new(ArcSwapOption::empty()),
         })
     }
 
@@ -1363,7 +1372,54 @@ impl AxHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
+    /// Resolves the maker and taker fee rates for the account behind the current credentials.
+    ///
+    /// AX reports fee rates per account rather than per user, and returns the accounts the
+    /// credentials can act on. The first entry is used, which is the account AX resolves when a
+    /// request carries no explicit selector. The rates are retained so later instrument requests,
+    /// including the periodic refresh, keep reporting them.
+    ///
+    /// Requires an authenticated client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the response carries no accounts, or the selected
+    /// account supplies no fee rates. An absent rate is not treated as zero, because a zero rate
+    /// is itself valid and a silent zero would outlive the response that caused it.
+    pub async fn request_account_fees(&self) -> anyhow::Result<(Decimal, Decimal)> {
+        let whoami = self
+            .inner
+            .get_whoami()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
+            .context("failed to request AX whoami")?;
+
+        let Some(account) = whoami.accounts.first() else {
+            anyhow::bail!("AX whoami returned no accounts to resolve fees from");
+        };
+
+        if whoami.accounts.len() > 1 {
+            log::warn!(
+                "AX credentials cover {} accounts, using fee rates from {}",
+                whoami.accounts.len(),
+                account.id,
+            );
+        }
+
+        let (Some(maker_fee), Some(taker_fee)) = (account.maker_fee, account.taker_fee) else {
+            anyhow::bail!("AX whoami account {} supplied no fee rates", account.id);
+        };
+
+        let fees = (maker_fee, taker_fee);
+        self.account_fees.store(Some(Arc::new(fees)));
+
+        Ok(fees)
+    }
+
     /// Requests all instruments from Ax.
+    ///
+    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
+    /// rates have been resolved.
     ///
     /// # Errors
     ///
@@ -1379,8 +1435,7 @@ impl AxHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let maker_fee = maker_fee.unwrap_or(Decimal::ZERO);
-        let taker_fee = taker_fee.unwrap_or(Decimal::ZERO);
+        let (maker_fee, taker_fee) = self.resolve_fees(maker_fee, taker_fee);
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
@@ -1409,6 +1464,9 @@ impl AxHttpClient {
 
     /// Requests a single instrument from Ax by symbol.
     ///
+    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
+    /// rates have been resolved.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
@@ -1424,11 +1482,38 @@ impl AxHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let maker_fee = maker_fee.unwrap_or(Decimal::ZERO);
-        let taker_fee = taker_fee.unwrap_or(Decimal::ZERO);
+        let (maker_fee, taker_fee) = self.resolve_fees(maker_fee, taker_fee);
         let ts_init = self.generate_ts_init();
 
         parse_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
+    }
+
+    fn resolve_fees(
+        &self,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+    ) -> (Decimal, Decimal) {
+        let resolved = self.account_fees.load();
+
+        let Some(&(resolved_maker, resolved_taker)) = resolved.as_deref() else {
+            // Either rate missing becomes zero, so warn on a partial argument too
+            if (maker_fee.is_none() || taker_fee.is_none()) && self.inner.has_session_token() {
+                log::warn!(
+                    "Building instruments with zero fees: authenticated but account fee rates \
+                     were never resolved"
+                );
+            }
+
+            return (
+                maker_fee.unwrap_or(Decimal::ZERO),
+                taker_fee.unwrap_or(Decimal::ZERO),
+            );
+        };
+
+        (
+            maker_fee.unwrap_or(resolved_maker),
+            taker_fee.unwrap_or(resolved_taker),
+        )
     }
 
     /// Requests an order book snapshot from Ax and builds a Nautilus [`OrderBook`].

@@ -230,6 +230,9 @@ impl AxHttpClient {
 
     /// Requests all instruments from Ax.
     ///
+    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
+    /// rates have been resolved.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.

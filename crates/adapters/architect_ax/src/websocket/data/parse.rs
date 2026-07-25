@@ -20,14 +20,13 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{AggregationSource, AggressorSide, BookAction, OrderSide, RecordFlag},
-    identifiers::TradeId,
     instruments::{Instrument, any::InstrumentAny},
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 
 use crate::{
-    common::parse::ax_timestamp_stn_to_unix_nanos,
+    common::parse::{ax_timestamp_stn_to_unix_nanos, create_architect_trade_id},
     http::parse::candle_width_to_bar_spec,
     websocket::messages::{
         AxBookLevel, AxBookLevelL3, AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade,
@@ -399,12 +398,8 @@ pub fn parse_trade_tick(
     let size = Quantity::new(trade.q as f64, size_precision);
     let aggressor_side: AggressorSide = trade.d.map_or(AggressorSide::NoAggressor, |d| d.into());
 
-    // Use transaction number as trade ID (stack-formatted to avoid heap alloc)
-    let mut buf = itoa::Buffer::new();
-    let trade_id = TradeId::new_checked(buf.format(trade.tn))
-        .context("Failed to create TradeId from transaction number")?;
-
     let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
+    let trade_id = create_architect_trade_id(ts_event, price, size, aggressor_side)?;
 
     TradeTick::new_checked(
         instrument.id(),
@@ -462,6 +457,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{consts::AX_VENUE, enums::AxOrderSide},
+        http::{models::AxRestTrade, parse::parse_trade_tick as parse_rest_trade_tick},
         websocket::messages::{AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade},
     };
 
@@ -845,7 +841,37 @@ mod tests {
         assert_eq!(tick.price.as_f64(), 1.1719);
         assert_eq!(tick.size.as_f64(), 400.0);
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
-        assert_eq!(tick.trade_id.to_string(), "334589144");
+        assert_eq!(
+            tick.trade_id.to_string(),
+            "1766193240334589144-38b4fe5a94a253d0"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_matches_rest_trade_id_for_the_same_trade() {
+        // The same trade fetched from `GET /trades` and received on the market-data WebSocket must
+        // carry one identity, otherwise a request and subscribe overlap double-counts it.
+        let json = include_str!("../../../test_data/ws_md_trade_captured.json");
+        let ws_trade: AxMdTrade = serde_json::from_str(json).unwrap();
+        let rest_trade = AxRestTrade {
+            ts: ws_trade.ts,
+            tn: ws_trade.tn,
+            p: ws_trade.p,
+            q: ws_trade.q as i64,
+            s: ws_trade.s,
+            d: ws_trade.d.unwrap(),
+        };
+        let instrument = create_eurusd_instrument();
+        let ts_init = UnixNanos::default();
+
+        let ws_tick = parse_trade_tick(&ws_trade, &instrument, ts_init).unwrap();
+        let rest_tick = parse_rest_trade_tick(&rest_trade, &instrument, ts_init).unwrap();
+
+        assert_eq!(ws_tick.trade_id, rest_tick.trade_id);
+        assert_eq!(ws_tick.ts_event, rest_tick.ts_event);
+        assert_eq!(ws_tick.price, rest_tick.price);
+        assert_eq!(ws_tick.size, rest_tick.size);
+        assert_eq!(ws_tick.aggressor_side, rest_tick.aggressor_side);
     }
 
     #[rstest]

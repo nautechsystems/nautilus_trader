@@ -64,6 +64,8 @@ pub(crate) struct TestServerState {
     pub messages_received: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub cancel_all_count: Arc<AtomicUsize>,
     pub cancel_all_fail: Arc<AtomicBool>,
+    pub whoami_count: Arc<AtomicUsize>,
+    pub whoami_fail: Arc<AtomicBool>,
     pub preview_count: Arc<AtomicUsize>,
     pub preview_empty: Arc<AtomicBool>,
     pub preview_fail: Arc<AtomicBool>,
@@ -92,6 +94,8 @@ impl Default for TestServerState {
             messages_received: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             cancel_all_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_fail: Arc::new(AtomicBool::new(false)),
+            whoami_count: Arc::new(AtomicUsize::new(0)),
+            whoami_fail: Arc::new(AtomicBool::new(false)),
             preview_count: Arc::new(AtomicUsize::new(0)),
             preview_empty: Arc::new(AtomicBool::new(false)),
             preview_fail: Arc::new(AtomicBool::new(false)),
@@ -460,6 +464,19 @@ async fn handle_get_balances() -> Json<serde_json::Value> {
     Json(load_test_data("http_get_balances.json"))
 }
 
+async fn handle_get_whoami(State(state): State<TestServerState>) -> axum::response::Response {
+    state.whoami_count.fetch_add(1, Ordering::Relaxed);
+    if state.whoami_fail.load(Ordering::Relaxed) {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"server error"})),
+        )
+            .into_response()
+    } else {
+        Json(load_test_data("http_get_whoami.json")).into_response()
+    }
+}
+
 async fn handle_authenticate() -> Json<serde_json::Value> {
     Json(json!({
         "token": "mock_session_token_for_testing"
@@ -639,6 +656,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/authenticate", post(handle_authenticate))
         .route("/instruments", get(handle_get_instruments))
         .route("/balances", get(handle_get_balances))
+        .route("/whoami", get(handle_get_whoami))
         .route("/positions", get(handle_positions))
         .route("/cancel-all-orders", post(handle_cancel_all_orders))
         .route(

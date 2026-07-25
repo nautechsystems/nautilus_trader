@@ -42,7 +42,7 @@ use crate::common::{
     enums::AxCandleWidth,
     parse::{
         ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos,
-        ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id,
+        ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, create_architect_trade_id,
     },
 };
 
@@ -711,13 +711,7 @@ pub fn parse_trade_tick(
     let aggressor_side: AggressorSide = trade.d.into();
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
-
-    // AX publishes no trade identifier, and `tn` is the nanosecond component of the timestamp
-    // rather than a sequence number, so the composed timestamp is the only identity available.
-    // It is not unique: a sweep across several levels reports multiple prints at one timestamp.
-    let mut buf = itoa::Buffer::new();
-    let trade_id =
-        TradeId::new_checked(buf.format(ts_event.as_u64())).context("Failed to create TradeId")?;
+    let trade_id = create_architect_trade_id(ts_event, price, size, aggressor_side)?;
 
     TradeTick::new_checked(
         instrument.id(),
@@ -1515,9 +1509,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_tick_derives_trade_id_from_composed_timestamp() {
-        // AX publishes no trade identifier, and `tn` is the nanosecond component rather than a
-        // sequence number, so the identity must come from the full composed timestamp
+    fn test_parse_trade_tick_derives_trade_id_from_timestamp_and_content() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
             Decimal::ZERO,
@@ -1531,7 +1523,10 @@ mod tests {
         let tick = parse_trade_tick(&trade, &instrument, UnixNanos::from(7u64)).unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
-        assert_eq!(tick.trade_id.to_string(), "1766193240334589144");
+        assert_eq!(
+            tick.trade_id.to_string(),
+            "1766193240334589144-38b4fe5a94a253d0"
+        );
         assert_eq!(tick.price, Price::from("1.1719"));
         assert_eq!(tick.size, Quantity::from(400));
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
@@ -1540,12 +1535,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_tick_trade_id_collides_within_one_timestamp() {
-        // Documents a venue limitation, not a desired property. AX publishes no trade identifier,
-        // so a sweep across several levels produces prints sharing `ts` and `tn` that the composed
-        // identity cannot separate. Sampling 100 sandbox trades for GBPUSD-PERP yielded 62 distinct
-        // IDs. Replacing the derivation must update this test, the comment above
-        // `parse_trade_tick`, and the adapter guide together.
+    fn test_parse_trade_tick_separates_prints_within_one_timestamp() {
+        // Two prints from one sweep share `ts` and `tn`, so only the content digest separates them
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
             Decimal::ZERO,
@@ -1562,9 +1553,10 @@ mod tests {
         let first_tick = parse_trade_tick(&first, &instrument, UnixNanos::default()).unwrap();
         let second_tick = parse_trade_tick(&second, &instrument, UnixNanos::default()).unwrap();
 
+        assert_eq!(first_tick.ts_event, second_tick.ts_event);
         assert_ne!(first_tick.price, second_tick.price);
         assert_ne!(first_tick.size, second_tick.size);
-        assert_eq!(first_tick.trade_id, second_tick.trade_id);
+        assert_ne!(first_tick.trade_id, second_tick.trade_id);
     }
 
     #[rstest]

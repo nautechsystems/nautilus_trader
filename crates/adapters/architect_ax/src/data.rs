@@ -427,8 +427,17 @@ impl DataClient for AxDataClient {
                 .context("Failed to authenticate with Ax")?;
             log::debug!("Authenticated with Ax");
             self.ws_client.set_auth_token(token);
+
+            // Only an authenticated client can read fee rates, and a data client may
+            // legitimately run without credentials.
+            self.http_client
+                .request_account_fees()
+                .await
+                .context("Failed to resolve Ax account fee rates")?;
+
             Some(credential)
         } else {
+            log::debug!("No Ax credentials configured, instruments will report zero fees");
             None
         };
 

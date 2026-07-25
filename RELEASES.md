@@ -270,6 +270,10 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX order book snapshots omitting the snapshot record flag
 - Fixed Architect AX order book snapshots falling back to venue-precision prices when conversion failed
 - Fixed Architect AX REST trade and book-snapshot timestamps wrapping instead of rejecting negative seconds
+- Fixed Architect AX `GET /whoami` model not matching the venue schema, which made the response undeserializable
+- Fixed Architect AX instruments always reporting zero maker and taker fees
+- Fixed Architect AX REST and WebSocket assigning different trade IDs to the same market data trade
+- Fixed Architect AX market data trade IDs colliding when one aggressor swept several book levels
 - Fixed Betfair v2 voids without reversing unapplied exposure from reconnect snapshots
 - Fixed Betfair matched sizes and v2 mass-status fill IDs, commissions, and gaps
 - Fixed Binance Futures hedge-mode tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu
