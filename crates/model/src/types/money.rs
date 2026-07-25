@@ -72,7 +72,7 @@ use crate::types::{
     Currency,
     fixed::{
         FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
-        raw_scale, raw_scales_match,
+        raw_scale, raw_scales_match, scaled_raw_to_decimal,
     },
 };
 
@@ -435,15 +435,10 @@ impl Money {
             clippy::useless_conversion,
             reason = "i128::from is real when MoneyRaw is i64"
         )]
-        Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
+        scaled_raw_to_decimal(i128::from(rescaled_raw), precision)
     }
 
     /// Returns a formatted string representation of this instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics in high-precision builds for precision-16 amounts whose scaled value exceeds
-    /// `Decimal`'s 96-bit mantissa, matching the existing [`Display`] behavior via `as_decimal`.
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
         let amount_str = if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
@@ -788,6 +783,19 @@ mod tests {
         assert_eq!(min.raw, MONEY_RAW_MIN);
         assert!(Money::from_raw_checked(max.raw, Currency::USD()).is_ok());
         assert!(Money::from_raw_checked(min.raw, Currency::USD()).is_ok());
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_as_decimal_above_decimal_mantissa() {
+        // Regression: a precision-16 currency amount above roughly 7.92e12 rescales to a raw
+        // value beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion and
+        // took `Display` and `to_formatted_string` down with it.
+        let currency = Currency::new("XYZ", 16, 0, "XYZ", crate::enums::CurrencyType::Crypto);
+        let money = Money::from_raw(MONEY_RAW_MAX, currency);
+
+        assert_eq!(money.as_decimal(), dec!(17014118346046));
+        assert_eq!(money.to_formatted_string(), "17_014_118_346_046 XYZ");
     }
 
     #[rstest]

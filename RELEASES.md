@@ -194,6 +194,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 order-book raw exposure and crossed level sizes losing precision through floating-point conversion
 - Fixed v2 option-chain strike selection and rebalance thresholds losing precision
 - Fixed v2 value imbalance and value runs bars emitting early and distorting volume from floating-point notional splitting
+- Fixed v2 `Price`, `Quantity`, and `Money` conversions to `Decimal` panicking for large high-precision values
 - Fixed v2 `Quantity` multiplication falsely overflowing before fixed-point scaling
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor

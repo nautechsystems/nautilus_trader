@@ -62,7 +62,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, check_fixed_precision,
     checked_mul_div_fixed, mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked,
-    raw_scales_match,
+    raw_scales_match, scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
@@ -423,7 +423,7 @@ impl Quantity {
             clippy::cast_lossless,
             reason = "cast is real when QuantityRaw is u64, no-op when u128"
         )]
-        Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
+        scaled_raw_to_decimal(rescaled_raw as i128, self.precision)
     }
 
     /// Returns a raw fixed-point quantity as a `Decimal`.
@@ -1784,6 +1784,18 @@ mod tests {
     fn test_from_mantissa_exponent_zero() {
         let qty = Quantity::from_mantissa_exponent(0, 2, 2);
         assert_eq!(qty.as_f64(), 0.0);
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(QUANTITY_RAW_MAX, dec!(34028236692093))]
+    #[case(80_000_000_000_000_000_000_000_000_000, dec!(8000000000000))]
+    fn test_as_decimal_above_decimal_mantissa(#[case] raw: QuantityRaw, #[case] expected: Decimal) {
+        // Regression: a precision-16 quantity above roughly 7.92e12 rescales to a raw value
+        // beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let qty = Quantity::from_raw(raw, 16);
+
+        assert_eq!(qty.as_decimal(), expected);
     }
 
     #[rstest]
