@@ -854,6 +854,23 @@ pub fn check_positive_decimal(value: Decimal, param: &str) -> Result<()> {
     Ok(())
 }
 
+/// Checks the `Decimal` value is non-negative (>= 0).
+///
+/// # Errors
+///
+/// Returns an error if the validation check fails.
+#[inline(always)]
+pub fn check_non_negative_decimal(value: Decimal, param: &str) -> Result<()> {
+    if value < Decimal::ZERO {
+        return Err(CorrectnessError::NegativeValue {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "Decimal",
+        });
+    }
+    Ok(())
+}
+
 fn slice_type_repr<T>() -> String {
     format!("&[{}]", std::any::type_name::<T>())
 }
@@ -1522,6 +1539,37 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "invalid Decimal for 'param' not positive, was 0"
+        );
+    }
+
+    #[rstest]
+    #[case("1", true)]
+    #[case("0.0000000000000000000000000001", true)]
+    #[case("0", true)]
+    #[case("-0.0000000000000000000000000001", false)]
+    #[case("-1", false)]
+    fn test_check_non_negative_decimal(#[case] raw: &str, #[case] expected: bool) {
+        let value = Decimal::from_str(raw).expect("valid decimal literal");
+        let result = super::check_non_negative_decimal(value, "param").is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_check_non_negative_decimal_returns_negative_value_error_with_stable_display() {
+        let error =
+            check_non_negative_decimal(Decimal::from_str("-1").unwrap(), "param").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NegativeValue {
+                param: "param".to_string(),
+                value: "-1".to_string(),
+                type_name: "Decimal",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid Decimal for 'param' negative, was -1"
         );
     }
 }

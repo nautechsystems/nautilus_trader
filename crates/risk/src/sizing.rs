@@ -14,19 +14,21 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Position sizing calculation functions.
+use nautilus_core::correctness::{CorrectnessError, Result};
 use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 
+const OVERFLOW_MESSAGE: &str = "arithmetic overflow calculating fixed-risk position size";
+
 /// Calculates the position size based on fixed risk parameters.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if converting `units` to a decimal fails,
-/// or if converting the final size to a [`Quantity`] fails.
-#[must_use]
+/// Returns an error if `Decimal` arithmetic overflows or the final size cannot
+/// be represented as a [`Quantity`].
 #[expect(
     clippy::too_many_arguments,
     reason = "position sizing API mirrors fixed-risk inputs used by callers"
@@ -42,31 +44,52 @@ pub fn calculate_fixed_risk_position_size(
     hard_limit: Option<Decimal>,
     unit_batch_size: Decimal,
     units: usize,
-) -> Quantity {
+) -> Result<Quantity> {
     if exchange_rate.is_zero() {
-        return Quantity::zero(instrument.size_precision());
+        return Ok(Quantity::zero(instrument.size_precision()));
     }
 
-    let risk_points = calculate_risk_ticks(entry, stop_loss, instrument);
-    let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate);
+    let risk_points = calculate_risk_ticks(entry, stop_loss, instrument)?;
+    let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate)?;
 
     if risk_points <= Decimal::ZERO {
-        return Quantity::zero(instrument.size_precision());
+        return Ok(Quantity::zero(instrument.size_precision()));
     }
 
-    let mut position_size =
-        ((risk_money / exchange_rate) / risk_points) / instrument.price_increment().as_decimal();
+    let price_increment = instrument.price_increment().as_decimal();
+
+    let mut position_size = risk_money
+        .checked_div(exchange_rate)
+        .and_then(|v| v.checked_div(risk_points))
+        .and_then(|v| v.checked_div(price_increment))
+        .ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: OVERFLOW_MESSAGE.into(),
+        })?;
 
     if let Some(hard_limit) = hard_limit {
         position_size = position_size.min(hard_limit);
     }
 
-    let mut position_size_batched = (position_size
-        / Decimal::from_usize(units).expect("Error: Failed to convert units to decimal"))
-    .max(Decimal::ZERO);
+    let units_decimal =
+        Decimal::from_usize(units).ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: OVERFLOW_MESSAGE.into(),
+        })?;
+
+    let mut position_size_batched = position_size
+        .checked_div(units_decimal)
+        .map(|v| v.max(Decimal::ZERO))
+        .ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: OVERFLOW_MESSAGE.into(),
+        })?;
 
     if unit_batch_size > Decimal::ZERO {
-        position_size_batched = (position_size_batched / unit_batch_size).floor() * unit_batch_size;
+        position_size_batched = position_size_batched
+            .checked_div(unit_batch_size)
+            .map(|v| v.floor())
+            .and_then(|v| v.checked_mul(unit_batch_size))
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: OVERFLOW_MESSAGE.into(),
+            })?;
     }
 
     let final_size = instrument
@@ -76,23 +99,58 @@ pub fn calculate_fixed_risk_position_size(
         });
 
     Quantity::from_decimal_dp(final_size, instrument.size_precision())
-        .expect("Error: Failed to convert final size to Quantity")
 }
 
 // Helper functions
-fn calculate_risk_ticks(entry: Price, stop_loss: Price, instrument: &InstrumentAny) -> Decimal {
-    (entry - stop_loss).as_decimal().abs() / instrument.price_increment().as_decimal()
+fn calculate_risk_ticks(
+    entry: Price,
+    stop_loss: Price,
+    instrument: &InstrumentAny,
+) -> Result<Decimal> {
+    let diff = entry
+        .as_decimal()
+        .checked_sub(stop_loss.as_decimal())
+        .ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: OVERFLOW_MESSAGE.into(),
+        })?;
+    let ticks = diff
+        .abs()
+        .checked_div(instrument.price_increment().as_decimal())
+        .ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: OVERFLOW_MESSAGE.into(),
+        })?;
+    Ok(ticks)
 }
 
-fn calculate_riskable_money(equity: Decimal, risk: Decimal, commission_rate: Decimal) -> Decimal {
+fn calculate_riskable_money(
+    equity: Decimal,
+    risk: Decimal,
+    commission_rate: Decimal,
+) -> Result<Decimal> {
     if equity <= Decimal::ZERO {
-        return Decimal::ZERO;
+        return Ok(Decimal::ZERO);
     }
 
-    let risk_money = equity * risk;
-    let commission = risk_money * commission_rate * Decimal::TWO; // (round turn)
+    let risk_money =
+        equity
+            .checked_mul(risk)
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: OVERFLOW_MESSAGE.into(),
+            })?;
+    let commission = risk_money
+        .checked_mul(commission_rate)
+        .and_then(|v| v.checked_mul(Decimal::TWO)) // round turn
+        .ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: OVERFLOW_MESSAGE.into(),
+        })?;
+    let net =
+        risk_money
+            .checked_sub(commission)
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: OVERFLOW_MESSAGE.into(),
+            })?;
 
-    risk_money - commission
+    Ok(net)
 }
 
 #[cfg(test)]
@@ -136,7 +194,8 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("0.0"));
     }
@@ -158,7 +217,8 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("0.0"));
     }
@@ -179,7 +239,8 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("0.0"));
     }
@@ -201,7 +262,8 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("1000000.0"));
     }
@@ -223,7 +285,8 @@ mod tests {
             None,
             Decimal::from(1),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("1000000.0"));
     }
@@ -245,7 +308,8 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("0.0"));
     }
@@ -267,7 +331,8 @@ mod tests {
             Some(Decimal::from(500_000)),
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("500000.0"));
     }
@@ -291,7 +356,8 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result.as_decimal(), dec!(100000000));
     }
@@ -313,7 +379,8 @@ mod tests {
             None,
             Decimal::from(1000),
             3, // 3 units
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("1000000.0"));
     }
@@ -335,7 +402,8 @@ mod tests {
             None,
             Decimal::from(25000),
             4, // 4 units
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("275000.0"));
     }
@@ -357,8 +425,40 @@ mod tests {
             None,
             Decimal::from(1000),
             1,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, Quantity::from("1000000.0"));
+    }
+
+    #[rstest]
+    #[case::large_risk(dec!(1e23), Decimal::ZERO, EXCHANGE_RATE)]
+    #[case::large_commission_rate(Decimal::new(1, 3), dec!(1e26), EXCHANGE_RATE)]
+    #[case::tiny_exchange_rate(Decimal::new(1, 3), Decimal::ZERO, dec!(1e-28))]
+    fn test_calculate_returns_error_on_arithmetic_overflow(
+        #[case] risk: Decimal,
+        #[case] commission_rate: Decimal,
+        #[case] exchange_rate: Decimal,
+        instrument_gbpusd: InstrumentAny,
+    ) {
+        let equity = Money::new(1_000_000.0, instrument_gbpusd.quote_currency());
+        let entry = Price::new(1.00100, instrument_gbpusd.price_precision());
+        let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
+
+        let result = calculate_fixed_risk_position_size(
+            &instrument_gbpusd,
+            entry,
+            stop_loss,
+            equity,
+            risk,
+            commission_rate,
+            exchange_rate,
+            None,
+            Decimal::from(1000),
+            1,
+        );
+
+        assert!(result.is_err());
+        assert!(format!("{result:?}").contains("overflow"));
     }
 }

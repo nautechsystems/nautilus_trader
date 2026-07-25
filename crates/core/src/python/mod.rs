@@ -63,7 +63,7 @@ pub mod string;
 pub mod uuid;
 pub mod version;
 
-use std::{convert::Infallible, fmt::Display};
+use std::{convert::Infallible, fmt::Display, str::FromStr};
 
 use pyo3::{
     BoundObject, Py,
@@ -72,10 +72,11 @@ use pyo3::{
         PyException, PyKeyError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
     },
     prelude::*,
-    types::PyString,
+    types::{PyModule, PyString},
     wrap_pyfunction,
 };
 use pyo3_stub_gen::derive::gen_stub_pyfunction;
+use rust_decimal::Decimal;
 
 use crate::{
     UUID4,
@@ -153,6 +154,54 @@ impl<'py, T> IntoPyObjectNautilusExt<'py> for T where T: IntoPyObjectExt<'py> {}
 /// Returns a error if accessing the type name fails.
 pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyString>> {
     obj.get_type().name()
+}
+
+/// Parses a Python `decimal.Decimal` into a [`Decimal`], rejecting all other types.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if `value` is not a `decimal.Decimal`, or its string form is
+/// not a valid decimal.
+pub fn py_to_decimal(value: &Bound<'_, PyAny>) -> PyResult<Decimal> {
+    let py = value.py();
+    let decimal_type = PyModule::import(py, "decimal")?.getattr("Decimal")?;
+    if !value.is_instance(&decimal_type)? {
+        return Err(to_pytype_err(format!(
+            "expected decimal.Decimal, was {}",
+            value.get_type().name()?
+        )));
+    }
+    let repr: String = value.str()?.extract()?;
+    Decimal::from_str(&repr).map_err(|e| to_pyvalue_err(format!("invalid decimal `{repr}`: {e}")))
+}
+
+/// Namespace shim so a pyo3 `signature` default can be written `decimal.Decimal("…")`.
+///
+/// `pyo3-stub-gen` stringifies each default token verbatim, so writing the default
+/// this way renders a concrete `decimal.Decimal(...)` in the generated stub while a
+/// real `decimal.Decimal` is constructed at runtime. Import it as `decimal`:
+/// `use nautilus_core::python::decimal;`.
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Debug)]
+pub struct decimal;
+
+impl decimal {
+    /// Builds a Python `decimal.Decimal` from `value`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is not a valid decimal literal.
+    #[allow(non_snake_case, clippy::unused_self)]
+    #[must_use]
+    pub fn Decimal(self, value: &str) -> Py<PyAny> {
+        Python::attach(|py| {
+            PyModule::import(py, "decimal")
+                .and_then(|module| module.getattr("Decimal"))
+                .and_then(|decimal_type| decimal_type.call1((value,)))
+                .expect("failed to construct `decimal.Decimal` default")
+                .unbind()
+        })
+    }
 }
 
 /// Converts any type that implements `Display` to a Python `ValueError`.
