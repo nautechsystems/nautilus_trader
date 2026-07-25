@@ -2296,6 +2296,11 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "snapshot_position_encoded",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "snapshot_position_state",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],
@@ -2392,13 +2397,20 @@ mod tests {
         collect_cache_public_methods(true)
     }
 
+    /// Every file carrying an `impl Cache` block, since `include_str!` cannot glob a directory.
+    /// Add a file here when the cache module is split further, or its methods drop out of this
+    /// classification guard.
+    const CACHE_IMPL_SOURCES: &[&str] = &[
+        include_str!("../../common/src/cache/mod.rs"),
+        include_str!("../../common/src/cache/position.rs"),
+    ];
+
     fn collect_cache_public_methods(require_mut_self: bool) -> AHashSet<&'static str> {
-        let source = include_str!("../../common/src/cache/mod.rs");
         let mut methods = AHashSet::new();
         let mut pending_name: Option<&'static str> = None;
         let mut pending_signature = String::new();
 
-        for line in source.lines() {
+        for line in CACHE_IMPL_SOURCES.iter().flat_map(|source| source.lines()) {
             let trimmed = line.trim_start();
 
             if pending_name.is_none() {
@@ -3834,7 +3846,7 @@ mod tests {
         let position = Position::new(&instrument, fill);
         let mut snapshot_cache = Cache::default();
         let snapshot_ref = snapshot_cache
-            .snapshot_position(&position)
+            .snapshot_position_encoded(&position)
             .expect("snapshot position");
         let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
         let replayed_state = cash_account_state_million_usd("200 USD", "0 USD", "200 USD");
@@ -3901,7 +3913,7 @@ mod tests {
         let position = Position::new(&instrument, fill);
         let mut snapshot_cache = Cache::default();
         let snapshot_ref = snapshot_cache
-            .snapshot_position(&position)
+            .snapshot_position_encoded(&position)
             .expect("snapshot position");
 
         {

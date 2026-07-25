@@ -3688,8 +3688,7 @@ impl ExecutionEngine {
                 );
             }
             // Snapshot closed position if reopening (NETTING mode)
-            let snapshot_ref = self.cache.borrow_mut().snapshot_position(position)?;
-            self.anchor_snapshot(snapshot_ref);
+            self.snapshot_position(position)?;
         } else {
             // HEDGING mode
             log::warn!(
@@ -3700,14 +3699,25 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    fn anchor_snapshot(&self, snapshot_ref: CacheSnapshotRef) {
+    /// Archives the closed `position` and anchors the frame when an anchorer is installed.
+    ///
+    /// An installed anchorer needs the encoded frame, so this takes the eager path. Without one
+    /// the cache defers the encode unless a backing database has to persist the frame.
+    fn snapshot_position(&self, position: &Position) -> anyhow::Result<()> {
+        let mut cache = self.cache.borrow_mut();
+
         let Some(anchorer) = &self.snapshot_anchorer else {
-            return;
+            return cache.snapshot_position(position);
         };
+
+        let snapshot_ref = cache.snapshot_position_encoded(position)?;
+        drop(cache);
 
         if let Err(e) = anchorer(snapshot_ref) {
             log::warn!("Failed to record cache snapshot anchor: {e}");
         }
+
+        Ok(())
     }
 
     fn update_position(
@@ -3846,11 +3856,10 @@ impl ExecutionEngine {
             }
 
             // Snapshot closed position before reusing ID (NETTING mode)
-            if oms_type == OmsType::Netting {
-                match self.cache.borrow_mut().snapshot_position(position) {
-                    Ok(snapshot_ref) => self.anchor_snapshot(snapshot_ref),
-                    Err(e) => log::warn!("Failed to snapshot position during flip: {e:?}"),
-                }
+            if oms_type == OmsType::Netting
+                && let Err(e) = self.snapshot_position(position)
+            {
+                log::warn!("Failed to snapshot position during flip: {e:?}");
             }
         }
 

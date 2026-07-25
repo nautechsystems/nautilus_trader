@@ -120,6 +120,7 @@ adapter set. The following limits remain deferred:
 
 ### Breaking Changes
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
+- Changed Rust `Cache::snapshot_position` to return `()`; use `snapshot_position_encoded` when the encoded frame is needed
 - Changed Rust time-event channels to `TimeEventMessage`; callbacks are no longer `Send + Sync` (#4496), thanks @folknor
 - Changed Rust `DataQueryResult.chunk` to private; use the borrow returned by `set_chunk` (#4499), thanks @folknor
 - Changed Rust FFI functions accessing `CVec` data to `unsafe`; wrap calls in `unsafe` blocks (#4499), thanks @folknor
@@ -373,6 +374,7 @@ adapter set. The following limits remain deferred:
 - Improved Clippy compatibility for nightly and all-feature Rust builds (#4505), thanks @folknor
 - Improved pre-commit checks for DST, Python errors, and Cargo dependency groups (#4506), thanks @folknor
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
+- Improved v2 NETTING backtest throughput by ~17% by encoding position snapshot frames only when a consumer reads them
 - Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor
 - Improved portfolio statistics test coverage with canonical worked examples
 - Improved Lighter signing latency through faster quintic field multiplication and squaring

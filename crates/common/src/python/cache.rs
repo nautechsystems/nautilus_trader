@@ -1154,7 +1154,6 @@ impl PyCache {
         self.0
             .borrow_mut()
             .snapshot_position(&position_obj)
-            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
@@ -1690,11 +1689,13 @@ impl Cache {
             .map_err(to_pyvalue_err)
     }
 
-    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
-    /// serializing it, and storing it in the position snapshots.
+    /// Creates a snapshot of the `position` by cloning it, assigning a new ID, and storing it
+    /// in the position snapshots.
     ///
     /// The copy excludes `replay_events` and `fill_voids`, which no snapshot consumer reads,
-    /// so blob size stays independent of the fills applied to the position ID.
+    /// so snapshot size stays independent of the fills applied to the position ID. The copy
+    /// encodes only when a consumer asks for the bytes, so this call stays off the encode path
+    /// unless a backing database has to persist the frame.
     ///
     /// # Errors
     ///
@@ -1704,7 +1705,6 @@ impl Cache {
     fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
         self.snapshot_position(&position_obj)
-            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
@@ -2563,7 +2563,7 @@ impl Cache {
     /// Gets the serialized position snapshot frames for the `position_id`.
     ///
     /// Each element in the returned vector is one JSON-encoded `Position` snapshot,
-    /// in the order they were taken.
+    /// in the order they were taken. Frames that fail to serialize are skipped with a warning.
     #[pyo3(name = "position_snapshot_bytes")]
     fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<Vec<u8>>> {
         self.position_snapshot_bytes(&position_id)
@@ -2573,7 +2573,6 @@ impl Cache {
     ///
     /// When `position_id` is `Some`, only snapshots for that position are returned.
     /// When `account_id` is `Some`, snapshots are filtered to that account.
-    /// Frames that fail to deserialize are skipped with a warning.
     #[pyo3(name = "position_snapshots", signature = (position_id=None, account_id=None))]
     fn py_position_snapshots(
         &self,

@@ -5696,7 +5696,7 @@ fn test_position_snapshots_round_trip(mut cache: Cache) {
     let position_id = position.id;
     let account_id = position.account_id;
 
-    let first_ref = cache.snapshot_position(&position).unwrap();
+    let first_ref = cache.snapshot_position_encoded(&position).unwrap();
     cache.snapshot_position(&position).unwrap();
     cache.snapshot_position(&position).unwrap();
 
@@ -5705,7 +5705,7 @@ fn test_position_snapshots_round_trip(mut cache: Cache) {
     assert_eq!(frames.len(), 3);
     assert_eq!(
         first_ref.blob_ref,
-        format!("cache://position-snapshots/{}/0", position_id.as_str()),
+        position_snapshot_blob_ref(&position_id, 0),
     );
     assert_eq!(first_ref.blob.as_ref(), frames[0].as_slice());
     assert_eq!(
@@ -6118,7 +6118,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 #[rstest]
 fn test_restore_position_snapshot_blob(mut cache: Cache) {
     let position = snapshot_test_position();
-    let snapshot_ref = cache.snapshot_position(&position).unwrap();
+    let snapshot_ref = cache.snapshot_position_encoded(&position).unwrap();
     let mut restored = Cache::default();
 
     restored
@@ -6138,6 +6138,38 @@ fn test_restore_position_snapshot_blob(mut cache: Cache) {
             .unwrap()
             .unwrap(),
         snapshot_ref.blob,
+    );
+    assert_eq!(
+        restored.position_snapshots(Some(&position.id), None),
+        cache.position_snapshots(Some(&position.id), None),
+    );
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob_keeps_the_restored_bytes_verbatim() {
+    let mut source_cache = Cache::default();
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let snapshot_ref = source_cache.snapshot_position_encoded(&position).unwrap();
+    let snapshot = source_cache
+        .position_snapshots(Some(&position_id), None)
+        .remove(0);
+    // Same value, different bytes: anchors hash the frame, so re-encoding it would break them
+    let pretty = Bytes::from(serde_json::to_vec_pretty(&snapshot).unwrap());
+    let mut cache = Cache::default();
+
+    cache
+        .restore_snapshot_blob(&snapshot_ref.blob_ref, pretty.clone())
+        .unwrap();
+
+    assert_ne!(pretty, snapshot_ref.blob);
+    assert_eq!(
+        cache.position_snapshot_bytes(&position_id).unwrap(),
+        vec![pretty.to_vec()],
+    );
+    assert_eq!(
+        cache.position_snapshots(Some(&position_id), None),
+        vec![snapshot],
     );
 }
 
@@ -6162,7 +6194,7 @@ fn test_restore_position_snapshot_blob_rejects_position_id_prefix_collision(mut 
     let mut source_cache = Cache::default();
     let mut position = snapshot_test_position();
     position.id = PositionId::new("P-1-EXTRA");
-    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let snapshot_ref = source_cache.snapshot_position_encoded(&position).unwrap();
 
     let err = cache
         .restore_snapshot_blob("cache://position-snapshots/P-1/0", snapshot_ref.blob)
@@ -6192,7 +6224,7 @@ fn test_snapshot_position_failed_persist_does_not_advance_frame_count() {
 fn test_load_snapshot_blob_loads_from_database_when_not_in_memory() {
     let mut source_cache = Cache::default();
     let position = snapshot_test_position();
-    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let snapshot_ref = source_cache.snapshot_position_encoded(&position).unwrap();
     let mut cache = Cache::new(
         None,
         Some(Box::new(SnapshotBlobTestDatabase::with_general(
@@ -6228,7 +6260,7 @@ fn test_restore_position_snapshot_blob_rejects_malformed_refs(
 ) {
     let mut source_cache = Cache::default();
     let position = snapshot_test_position();
-    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let snapshot_ref = source_cache.snapshot_position_encoded(&position).unwrap();
     let mut cache = Cache::default();
 
     let err = cache
@@ -6242,7 +6274,7 @@ fn test_restore_position_snapshot_blob_rejects_malformed_refs(
 fn test_restore_position_snapshot_blob_rejects_skipped_frame() {
     let mut source_cache = Cache::default();
     let position = snapshot_test_position();
-    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let snapshot_ref = source_cache.snapshot_position_encoded(&position).unwrap();
     let mut cache = Cache::default();
 
     let err = cache
@@ -6259,8 +6291,8 @@ fn test_restore_position_snapshot_blob_rejects_skipped_frame() {
 fn test_restore_position_snapshot_blob_rejects_conflicting_frame_bytes() {
     let mut source_cache = Cache::default();
     let position = snapshot_test_position();
-    let first_ref = source_cache.snapshot_position(&position).unwrap();
-    let second_ref = source_cache.snapshot_position(&position).unwrap();
+    let first_ref = source_cache.snapshot_position_encoded(&position).unwrap();
+    let second_ref = source_cache.snapshot_position_encoded(&position).unwrap();
     let mut cache = Cache::default();
 
     cache
@@ -6346,27 +6378,128 @@ fn test_position_snapshots_from_preserves_order_and_skip(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_position_snapshots_skip_malformed_frames(mut cache: Cache) {
+fn test_position_snapshot_encodes_on_demand(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    // With no database configured nothing forces the encode at snapshot time
+    cache.snapshot_position(&position).unwrap();
+    let blob_ref = position_snapshot_blob_ref(&position_id, 0);
+
+    let unencoded = cache.get(&blob_ref).unwrap().cloned();
+    let first = cache.position_snapshot_bytes(&position_id).unwrap();
+    let second = cache.position_snapshot_bytes(&position_id).unwrap();
+    let loaded = cache.load_snapshot_blob(&blob_ref).unwrap().unwrap();
+    let snapshots = cache.position_snapshots(Some(&position_id), None);
+    let from_zero = cache.position_snapshots_from(&position_id, 0);
+
+    // No generic entry until a consumer asks, and repeat reads encode once
+    assert_eq!(unencoded, None);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first, second);
+    assert_eq!(loaded.as_ref(), first[0].as_slice());
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(from_zero, snapshots);
+    assert_eq!(
+        serde_json::from_slice::<Position>(&first[0]).unwrap(),
+        snapshots[0],
+    );
+}
+
+#[rstest]
+fn test_position_snapshot_persists_eagerly_with_database() {
+    let mut cache = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::default())));
     let position = snapshot_test_position();
     let position_id = position.id;
 
     cache.snapshot_position(&position).unwrap();
-    // Inject a corrupt frame between two valid ones
-    cache
-        .position_snapshots
-        .get_mut(&position_id)
-        .unwrap()
-        .push(Bytes::from_static(b"not json"));
-    cache.snapshot_position(&position).unwrap();
+    let blob_ref = position_snapshot_blob_ref(&position_id, 0);
 
-    // Raw frame count stays authoritative; decoded view drops the bad frame
-    assert_eq!(cache.position_snapshot_count(&position_id), 3);
+    let persisted = cache.get(&blob_ref).unwrap().cloned().unwrap();
+    let frames = cache.position_snapshot_bytes(&position_id).unwrap();
+
+    // A backing database has to receive the frame now, so the encode cannot be deferred
+    assert_eq!(persisted.as_ref(), frames[0].as_slice());
     assert_eq!(
-        cache.position_snapshot_bytes(&position_id).unwrap().len(),
-        3
+        serde_json::from_slice::<Position>(&persisted).unwrap(),
+        cache.position_snapshots(Some(&position_id), None)[0],
     );
-    assert_eq!(cache.position_snapshots(Some(&position_id), None).len(), 2);
-    assert_eq!(cache.position_snapshots_from(&position_id, 0).len(), 2);
+}
+
+#[rstest]
+fn test_snapshot_position_encoded_returns_the_stored_frame_bytes(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    let snapshot_ref = cache.snapshot_position_encoded(&position).unwrap();
+    let frames = cache.position_snapshot_bytes(&position_id).unwrap();
+
+    assert_eq!(
+        snapshot_ref.blob_ref,
+        position_snapshot_blob_ref(&position_id, 0),
+    );
+    assert_eq!(frames.len(), 1);
+    assert_eq!(snapshot_ref.blob.as_ref(), frames[0].as_slice());
+    assert_eq!(
+        cache.get(&snapshot_ref.blob_ref).unwrap().cloned(),
+        Some(snapshot_ref.blob),
+    );
+}
+
+#[rstest]
+fn test_restore_snapshot_blob_is_idempotent_for_own_frame_bytes(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    cache.snapshot_position(&position).unwrap();
+    let blob_ref = position_snapshot_blob_ref(&position_id, 0);
+    let blob = cache.load_snapshot_blob(&blob_ref).unwrap().unwrap();
+
+    cache
+        .restore_snapshot_blob(&blob_ref, blob.clone())
+        .unwrap();
+
+    assert_eq!(cache.position_snapshot_count(&position_id), 1);
+    assert_eq!(
+        cache.position_snapshot_bytes(&position_id).unwrap(),
+        vec![blob.to_vec()],
+    );
+}
+
+#[rstest]
+fn test_restore_snapshot_blob_rejects_conflicting_bytes_for_unencoded_frame(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let mut source_cache = Cache::default();
+    let other_ref = source_cache.snapshot_position_encoded(&position).unwrap();
+
+    // Frame stored without encoding, so the conflicting-bytes check has to encode it before
+    // it can reject the other cache's frame, whose snapshot ID carries a different UUID.
+    cache.snapshot_position(&position).unwrap();
+    let blob_ref = position_snapshot_blob_ref(&position_id, 0);
+
+    let err = cache
+        .restore_snapshot_blob(&blob_ref, other_ref.blob.clone())
+        .expect_err("conflicting frame");
+    let stored = cache.load_snapshot_blob(&blob_ref).unwrap().unwrap();
+
+    assert_ne!(other_ref.blob, stored);
+    assert!(
+        err.to_string()
+            .contains("already exists with different bytes"),
+        "err was: {err}",
+    );
+    assert_eq!(
+        cache.position_snapshot_bytes(&position_id).unwrap(),
+        vec![stored.to_vec()],
+    );
+}
+
+fn position_snapshot_blob_ref(position_id: &PositionId, index: usize) -> String {
+    format!(
+        "cache://position-snapshots/{}/{index}",
+        position_id.as_str()
+    )
 }
 
 #[rstest]

@@ -16113,3 +16113,192 @@ fn test_netting_flip_carries_replay_events_when_enabled() {
     assert_eq!(replay_len, 3);
     assert_eq!(snapshot_count, 1);
 }
+
+const REOPEN_ENTRY_ORDER_ID: &str = "O-REPLAY-REOPEN-1";
+const REOPEN_ENTRY_TRADE_ID: &str = "T-REPLAY-REOPEN-1";
+
+/// Runs a NETTING open -> close -> reopen (buy 100k, sell 100k, buy 100k on the same
+/// position ID) and returns the reused position ID.
+fn run_netting_reopen(execution_engine: &mut ExecutionEngine) -> PositionId {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    setup_netting_snapshot_engine(execution_engine, &instrument);
+
+    for (client_order_id, venue_order_id, trade_id, side) in [
+        (
+            REOPEN_ENTRY_ORDER_ID,
+            "V-REPLAY-REOPEN-1",
+            REOPEN_ENTRY_TRADE_ID,
+            OrderSide::Buy,
+        ),
+        (
+            "O-REPLAY-REOPEN-2",
+            "V-REPLAY-REOPEN-2",
+            "T-REPLAY-REOPEN-2",
+            OrderSide::Sell,
+        ),
+        (
+            "O-REPLAY-REOPEN-3",
+            "V-REPLAY-REOPEN-3",
+            "T-REPLAY-REOPEN-3",
+            OrderSide::Buy,
+        ),
+    ] {
+        process_filled_order(
+            execution_engine,
+            trader_id,
+            strategy_id,
+            &instrument,
+            client_order_id,
+            venue_order_id,
+            trade_id,
+            side,
+            100_000,
+            position_id,
+        );
+    }
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&position_id)
+        .expect("reopened position should exist under the reused ID");
+    assert!(
+        cache.is_position_open(&position_id),
+        "reopened position should be open"
+    );
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(cache.position_snapshot_count(&position_id), 1);
+
+    position_id
+}
+
+/// Builds an `OrderFillVoided` from the cached `OrderFilled` for `trade_id`.
+///
+/// `Order::validate_fill_void` rejects a void whose venue order ID, account ID, side, type,
+/// last price, currency, liquidity side, or position ID differs from the original fill, so
+/// copying them from the fill is the only way to reach the position correction path.
+fn build_fill_void_from_cached_fill(
+    execution_engine: &ExecutionEngine,
+    client_order_id: &str,
+    trade_id: &str,
+    voided_qty: Quantity,
+) -> OrderEventAny {
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&ClientOrderId::from(client_order_id))
+        .expect("filled order should be cached");
+    let trade_id = TradeId::new(trade_id);
+    let fill = order
+        .events()
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.trade_id == trade_id => Some(fill.clone()),
+            _ => None,
+        })
+        .expect("order should hold the fill being voided");
+
+    OrderEventAny::FillVoided(
+        OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .maybe_position_id(fill.position_id)
+            .build(),
+    )
+}
+
+#[rstest]
+fn test_netting_reopen_leaves_snapshot_unencoded_without_anchorer(
+    mut execution_engine: ExecutionEngine,
+) {
+    let position_id = run_netting_reopen(&mut execution_engine);
+    let blob_ref = format!("cache://position-snapshots/{}/0", position_id.as_str());
+
+    let cache = execution_engine.cache().borrow();
+
+    // With no anchorer installed nothing needs the encoded frame, and
+    // `snapshot_position_encoded` is the only path that stores a generic entry.
+    assert_eq!(cache.get(&blob_ref).unwrap(), None);
+    assert_eq!(cache.position_snapshot_count(&position_id), 1);
+    assert_eq!(cache.position_snapshots(Some(&position_id), None).len(), 1);
+}
+
+#[rstest]
+fn test_prior_cycle_fill_void_rejected_without_carried_replay(
+    mut execution_engine: ExecutionEngine,
+) {
+    let position_id = run_netting_reopen(&mut execution_engine);
+    let voided = build_fill_void_from_cached_fill(
+        &execution_engine,
+        REOPEN_ENTRY_ORDER_ID,
+        REOPEN_ENTRY_TRADE_ID,
+        Quantity::from(40_000),
+    );
+
+    execution_engine.process(&voided);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&ClientOrderId::from(REOPEN_ENTRY_ORDER_ID))
+        .unwrap();
+    let position = cache.position(&position_id).unwrap();
+
+    // The prior cycle's fill is no longer in the replay log, so the correction cannot be
+    // allocated and the engine leaves both the order and the position untouched.
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(order.voided_qty(), Quantity::from(0));
+    assert!(position.fill_voids.is_empty());
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(position.replay_events.len(), 1);
+}
+
+#[rstest]
+fn test_prior_cycle_fill_void_applied_with_carried_replay() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        carry_replay_events_on_reopen: true,
+        ..Default::default()
+    };
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    let position_id = run_netting_reopen(&mut execution_engine);
+    let voided = build_fill_void_from_cached_fill(
+        &execution_engine,
+        REOPEN_ENTRY_ORDER_ID,
+        REOPEN_ENTRY_TRADE_ID,
+        Quantity::from(40_000),
+    );
+
+    execution_engine.process(&voided);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&ClientOrderId::from(REOPEN_ENTRY_ORDER_ID))
+        .unwrap();
+    let position = cache.position(&position_id).unwrap();
+
+    // The carried replay log still holds the prior cycle's fill, so the correction applies
+    // and the whole log replays: buy 60k, sell 100k, buy 100k leaves 60k long.
+    assert_eq!(order.status(), OrderStatus::Voided);
+    assert_eq!(order.filled_qty(), Quantity::from(60_000));
+    assert_eq!(order.voided_qty(), Quantity::from(40_000));
+    assert_eq!(position.fill_voids.len(), 1);
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, Quantity::from(60_000));
+    assert_eq!(position.replay_events.len(), 3);
+}

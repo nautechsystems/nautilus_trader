@@ -26,6 +26,7 @@ pub mod refs;
 mod bounded;
 mod error;
 mod index;
+mod position;
 
 #[cfg(test)]
 mod tests;
@@ -35,7 +36,6 @@ use std::{
     cell::{Ref, RefCell},
     fmt::{Debug, Display},
     rc::Rc,
-    str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -53,7 +53,7 @@ pub use error::{
 };
 use index::CacheIndex;
 use nautilus_core::{
-    SharedCell, UUID4, UnixNanos,
+    SharedCell, UnixNanos,
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
         check_valid_string_ascii,
@@ -86,34 +86,13 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
+pub use position::CacheSnapshotRef;
+use position::PositionSnapshotFrame;
 pub use refs::{AccountRef, AccountRefMut, OrderRef, OrderRefMut, PositionRef, PositionRefMut};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
-
-/// Cache-owned reference to a snapshot blob.
-///
-/// The cache writes and later fetches the blob; external systems persist this opaque reference
-/// and may hash the bytes before recording a durable anchor.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CacheSnapshotRef {
-    /// Opaque cache-owned snapshot location.
-    pub blob_ref: String,
-    /// Snapshot bytes stored under [`Self::blob_ref`].
-    pub blob: Bytes,
-}
-
-impl CacheSnapshotRef {
-    /// Creates a new [`CacheSnapshotRef`].
-    #[must_use]
-    pub fn new(blob_ref: impl Into<String>, blob: impl Into<Bytes>) -> Self {
-        Self {
-            blob_ref: blob_ref.into(),
-            blob: blob.into(),
-        }
-    }
-}
 
 // TODO: Reassess whether CacheView should consolidate with CacheApi once adapter and client
 // construction no longer need a cache-handle facade.
@@ -2137,7 +2116,7 @@ pub struct Cache {
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
     positions: AHashMap<PositionId, SharedCell<Position>>,
-    position_snapshots: AHashMap<PositionId, Vec<Bytes>>,
+    position_snapshots: AHashMap<PositionId, Vec<PositionSnapshotFrame>>,
     #[cfg(feature = "defi")]
     pub(crate) defi: crate::defi::cache::DefiCache,
 }
@@ -4745,249 +4724,10 @@ impl Cache {
         Ok(())
     }
 
-    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
-    /// serializing it, and storing it in the position snapshots.
-    ///
-    /// The copy excludes `replay_events` and `fill_voids`, which no snapshot consumer reads,
-    /// so blob size stays independent of the fills applied to the position ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serializing or storing the position snapshot fails.
-    pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<CacheSnapshotRef> {
-        let position_id = position.id;
-
-        let mut copied_position = position.clone();
-        let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
-        copied_position.id = PositionId::new(new_id);
-        copied_position.replay_events.clear();
-        copied_position.fill_voids.clear();
-
-        // Serialize the position (TODO: temporarily just to JSON to remove a dependency)
-        let position_serialized = serde_json::to_vec(&copied_position)?;
-        let snapshot_index = self.position_snapshot_count(&position_id);
-        let blob_ref = format!(
-            "cache://position-snapshots/{}/{}",
-            position_id.as_str(),
-            snapshot_index,
-        );
-        let snapshot_blob = Bytes::from(position_serialized);
-
-        self.add(&blob_ref, snapshot_blob.clone())?;
-        self.position_snapshots
-            .entry(position_id)
-            .or_default()
-            .push(snapshot_blob.clone());
-
-        log::debug!("Snapshot {copied_position}");
-        Ok(CacheSnapshotRef::new(blob_ref, snapshot_blob))
-    }
-
-    /// Loads the cache-owned snapshot blob stored under `blob_ref`.
-    ///
-    /// The cache first checks in-memory snapshot state. When the blob is not present and a
-    /// database adapter exists, the generic cache entries are loaded and checked for the same
-    /// opaque reference.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if loading generic cache entries from the backing database fails.
-    pub fn load_snapshot_blob(&mut self, blob_ref: &str) -> anyhow::Result<Option<Bytes>> {
-        if let Some(blob) = self.snapshot_blob(blob_ref) {
-            return Ok(Some(blob));
-        }
-
-        if self.database.is_some() {
-            self.cache_general()?;
-        }
-
-        Ok(self.snapshot_blob(blob_ref))
-    }
-
-    /// Restores the cache-owned snapshot blob stored under `blob_ref`.
-    ///
-    /// Only cache-owned `cache://position-snapshots/...` blobs are currently supported.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the blob reference is unsupported, malformed, skips earlier
-    /// snapshot frames, conflicts with an existing frame, or does not decode to the expected
-    /// position snapshot.
-    pub fn restore_snapshot_blob(&mut self, blob_ref: &str, blob: Bytes) -> anyhow::Result<()> {
-        let (position_id, snapshot_index) = parse_position_snapshot_blob_ref(blob_ref)?;
-        validate_position_snapshot_blob(&position_id, blob.as_ref())?;
-
-        let frames = self.position_snapshots.entry(position_id).or_default();
-        match frames.get(snapshot_index) {
-            Some(existing) if existing == &blob => {}
-            Some(_) => {
-                anyhow::bail!(
-                    "position snapshot frame {snapshot_index} for {position_id} already exists with different bytes"
-                );
-            }
-            None if frames.len() == snapshot_index => frames.push(blob.clone()),
-            None => {
-                anyhow::bail!(
-                    "position snapshot blob_ref {blob_ref} skips missing frame {}",
-                    frames.len()
-                );
-            }
-        }
-
-        self.general.insert(blob_ref.to_string(), blob);
-        Ok(())
-    }
-
-    fn snapshot_blob(&self, blob_ref: &str) -> Option<Bytes> {
-        if let Some(blob) = self.general.get(blob_ref) {
-            return Some(blob.clone());
-        }
-
-        let (position_id, snapshot_index) = parse_position_snapshot_blob_ref(blob_ref).ok()?;
-        self.position_snapshots
-            .get(&position_id)
-            .and_then(|frames| frames.get(snapshot_index))
-            .cloned()
-    }
-
-    /// Creates a snapshot of the `position` state in the database.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if snapshotting the position state fails.
-    pub fn snapshot_position_state(
-        &mut self,
-        position: &Position,
-        ts_snapshot: UnixNanos,
-        unrealized_pnl: Option<Money>,
-        open_only: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let open_only = open_only.unwrap_or(true);
-
-        if open_only && !position.is_open() {
-            return Ok(());
-        }
-
-        if let Some(database) = &mut self.database {
-            database
-                .snapshot_position_state(position, ts_snapshot, unrealized_pnl)
-                .map_err(|e| {
-                    log::error!(
-                        "Failed to snapshot position state for {}: {e:?}",
-                        position.id
-                    );
-                    e
-                })?;
-        } else {
-            log::warn!(
-                "Cannot snapshot position state for {} (no database configured)",
-                position.id
-            );
-        }
-
-        Ok(())
-    }
-
     /// Gets the OMS type for the `position_id`.
     #[must_use]
     pub fn oms_type(&self, position_id: &PositionId) -> Option<OmsType> {
         self.index.position_oms.get(position_id).copied()
-    }
-
-    /// Gets the serialized position snapshot frames for the `position_id`.
-    ///
-    /// Each element in the returned vector is one JSON-encoded [`Position`] snapshot,
-    /// in the order they were taken.
-    #[must_use]
-    pub fn position_snapshot_bytes(&self, position_id: &PositionId) -> Option<Vec<Vec<u8>>> {
-        self.position_snapshots
-            .get(position_id)
-            .map(|frames| frames.iter().map(|b| b.to_vec()).collect())
-    }
-
-    /// Returns the number of stored snapshot frames for the `position_id`.
-    ///
-    /// Returns `0` when no frames are stored. Does not allocate or copy frame bytes.
-    #[must_use]
-    pub fn position_snapshot_count(&self, position_id: &PositionId) -> usize {
-        self.position_snapshots.get(position_id).map_or(0, Vec::len)
-    }
-
-    /// Returns all position snapshots with the given optional filters.
-    ///
-    /// When `position_id` is `Some`, only snapshots for that position are returned.
-    /// When `account_id` is `Some`, snapshots are filtered to that account.
-    /// Frames that fail to deserialize are skipped with a warning.
-    #[must_use]
-    pub fn position_snapshots(
-        &self,
-        position_id: Option<&PositionId>,
-        account_id: Option<&AccountId>,
-    ) -> Vec<Position> {
-        let frames: Box<dyn Iterator<Item = &Bytes> + '_> = match position_id {
-            Some(pid) => match self.position_snapshots.get(pid) {
-                Some(v) => Box::new(v.iter()),
-                None => Box::new(std::iter::empty()),
-            },
-            None => Box::new(self.position_snapshots.values().flat_map(|v| v.iter())),
-        };
-
-        let mut results: Vec<Position> = frames
-            .filter_map(|bytes| match serde_json::from_slice::<Position>(bytes) {
-                Ok(position) => Some(position),
-                Err(e) => {
-                    log::warn!("Failed to decode position snapshot: {e}");
-                    None
-                }
-            })
-            .collect();
-
-        if let Some(aid) = account_id {
-            results.retain(|p| p.account_id == *aid);
-        }
-
-        results
-    }
-
-    /// Returns position snapshots for `position_id` starting from the `skip`th frame.
-    ///
-    /// Use this to deserialize only newly appended snapshots when the caller already
-    /// processed earlier frames. Returns an empty vector when no frames or fewer than
-    /// `skip` frames are stored. Frames that fail to deserialize are skipped with a warning.
-    #[must_use]
-    pub fn position_snapshots_from(&self, position_id: &PositionId, skip: usize) -> Vec<Position> {
-        let Some(frames) = self.position_snapshots.get(position_id) else {
-            return Vec::new();
-        };
-
-        frames
-            .iter()
-            .skip(skip)
-            .filter_map(|bytes| match serde_json::from_slice::<Position>(bytes) {
-                Ok(position) => Some(position),
-                Err(e) => {
-                    log::warn!("Failed to decode position snapshot: {e}");
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Gets position snapshot IDs for the `instrument_id`.
-    #[must_use]
-    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> AHashSet<PositionId> {
-        // Get snapshot position IDs that match the instrument
-        let mut result = AHashSet::new();
-
-        for (position_id, _) in &self.position_snapshots {
-            // Check if this position is for the requested instrument
-            if let Some(position_cell) = self.positions.get(position_id)
-                && position_cell.borrow().instrument_id == *instrument_id
-            {
-                result.insert(*position_id);
-            }
-        }
-        result
     }
 
     /// Snapshots the `order` state in the database.
@@ -7917,45 +7657,4 @@ const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 fn position_oms_key(position_id: PositionId) -> String {
     format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
-}
-
-fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {
-    let Some(rest) = blob_ref.strip_prefix("cache://position-snapshots/") else {
-        anyhow::bail!("unsupported cache snapshot blob_ref {blob_ref}");
-    };
-
-    let Some((position_id, snapshot_index)) = rest.rsplit_once('/') else {
-        anyhow::bail!("malformed position snapshot blob_ref {blob_ref}");
-    };
-
-    if position_id.is_empty() {
-        anyhow::bail!("position snapshot blob_ref {blob_ref} has empty position id");
-    }
-
-    let snapshot_index = snapshot_index.parse::<usize>().map_err(|e| {
-        anyhow::anyhow!("position snapshot blob_ref {blob_ref} has invalid frame index: {e}")
-    })?;
-
-    Ok((PositionId::new(position_id), snapshot_index))
-}
-
-fn validate_position_snapshot_blob(position_id: &PositionId, blob: &[u8]) -> anyhow::Result<()> {
-    let snapshot = serde_json::from_slice::<Position>(blob)?;
-    let expected_prefix = format!("{}-", position_id.as_str());
-
-    let Some(snapshot_uuid) = snapshot.id.as_str().strip_prefix(&expected_prefix) else {
-        anyhow::bail!(
-            "position snapshot id {} does not match blob_ref position {position_id}",
-            snapshot.id
-        );
-    };
-
-    if UUID4::from_str(snapshot_uuid).is_err() {
-        anyhow::bail!(
-            "position snapshot id {} does not match blob_ref position {position_id}",
-            snapshot.id
-        );
-    }
-
-    Ok(())
 }
