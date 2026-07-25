@@ -19,6 +19,8 @@
 ///
 /// # Usage
 /// ```rust
+/// use nautilus_common::{enums::LogColor, log_trace};
+///
 /// // Automatic color (normal)
 /// log_trace!("Processing tick data");
 ///
@@ -34,36 +36,51 @@
 /// ```
 #[macro_export]
 macro_rules! log_trace {
-    // Component only
-    ($msg:literal, component = $component:expr) => {
-        log::trace!(component = $component; $msg);
-    };
-    ($fmt:literal, $($args:expr),+, component = $component:expr) => {
-        log::trace!(component = $component; $fmt, $($args),+);
-    };
-
-    // Color only
-    ($msg:literal, color = $color:expr) => {
-        log::trace!(color = $color as u8; $msg);
-    };
-    ($fmt:literal, $($args:expr),+, color = $color:expr) => {
-        log::trace!(color = $color as u8; $fmt, $($args),+);
-    };
-
     // Both color and component (color first)
     ($msg:literal, color = $color:expr, component = $component:expr) => {
         log::trace!(component = $component, color = $color as u8; $msg);
     };
-    ($fmt:literal, $($args:expr),+, color = $color:expr, component = $component:expr) => {
-        log::trace!(component = $component, color = $color as u8; $fmt, $($args),+);
+    ($fmt:literal, $arg1:expr, color = $color:expr, component = $component:expr) => {
+        log::trace!(component = $component, color = $color as u8; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, color = $color:expr, component = $component:expr) => {
+        log::trace!(component = $component, color = $color as u8; $fmt, $arg1, $arg2);
     };
 
     // Both color and component (component first)
     ($msg:literal, component = $component:expr, color = $color:expr) => {
         log::trace!(component = $component, color = $color as u8; $msg);
     };
-    ($fmt:literal, $($args:expr),+, component = $component:expr, color = $color:expr) => {
-        log::trace!(component = $component, color = $color as u8; $fmt, $($args),+);
+    ($fmt:literal, $arg1:expr, component = $component:expr, color = $color:expr) => {
+        log::trace!(component = $component, color = $color as u8; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, component = $component:expr, color = $color:expr) => {
+        log::trace!(component = $component, color = $color as u8; $fmt, $arg1, $arg2);
+    };
+
+    // Component only
+    ($msg:literal, component = $component:expr) => {
+        log::trace!(component = $component; $msg);
+    };
+    ($fmt:literal, $arg1:expr, component = $component:expr) => {
+        log::trace!(component = $component; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, component = $component:expr) => {
+        log::trace!(component = $component; $fmt, $arg1, $arg2);
+    };
+
+    // Color only
+    ($msg:literal, color = $color:expr) => {
+        log::trace!(color = $color as u8; $msg);
+    };
+    ($fmt:literal, $arg1:expr, color = $color:expr) => {
+        log::trace!(color = $color as u8; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, color = $color:expr) => {
+        log::trace!(color = $color as u8; $fmt, $arg1, $arg2);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, $arg3:expr, color = $color:expr) => {
+        log::trace!(color = $color as u8; $fmt, $arg1, $arg2, $arg3);
     };
 
     // Default (no color or component - auto-capture module path)
@@ -79,6 +96,10 @@ macro_rules! log_trace {
 ///
 /// # Usage
 /// ```rust
+/// use nautilus_common::{enums::LogColor, log_debug};
+///
+/// let order_id = "O-19700101-000000-001-001-1";
+///
 /// // Automatic color (normal)
 /// log_debug!("Validating order: {}", order_id);
 ///
@@ -154,6 +175,10 @@ macro_rules! log_debug {
 ///
 /// # Usage
 /// ```rust
+/// use nautilus_common::{enums::LogColor, log_info};
+///
+/// let order_id = "O-19700101-000000-001-001-1";
+///
 /// // Automatic color (normal)
 /// log_info!("Order {} filled successfully", order_id);
 ///
@@ -229,6 +254,8 @@ macro_rules! log_info {
 ///
 /// # Usage
 /// ```rust
+/// use nautilus_common::{enums::LogColor, log_warn};
+///
 /// // Automatic color (yellow)
 /// log_warn!("Position size approaching limit");
 ///
@@ -304,6 +331,10 @@ macro_rules! log_warn {
 ///
 /// # Usage
 /// ```rust
+/// use nautilus_common::{enums::LogColor, log_error};
+///
+/// let error = "connection refused";
+///
 /// // Automatic color (red)
 /// log_error!("Failed to connect to exchange: {}", error);
 ///
@@ -460,6 +491,16 @@ mod tests {
             color = LogColor::Cyan,
             component = "TestComponent"
         );
+        log_trace!(
+            "Trace color then component",
+            color = LogColor::Cyan,
+            component = "TestComponent"
+        );
+        log_trace!(
+            "Trace component then color",
+            component = "TestComponent",
+            color = LogColor::Cyan
+        );
 
         // Allow time for logs to be written
         sleep(Duration::from_millis(200));
@@ -505,6 +546,8 @@ mod tests {
         assert!(log_contents.contains("Component test"));
         assert!(log_contents.contains("Component warning"));
         assert!(log_contents.contains("Color then component"));
+        assert!(log_contents.contains("Trace color then component"));
+        assert!(log_contents.contains("Trace component then color"));
     }
 
     #[rstest]
