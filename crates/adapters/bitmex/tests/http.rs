@@ -1099,8 +1099,7 @@ async fn test_http_network_error() {
     let base_url = "http://127.0.0.1:1".to_string();
 
     let client =
-        BitmexRawHttpClient::new(Some(base_url), 1, 3, 1_000, 10_000, 10_000, 10, 30, None)
-            .unwrap();
+        BitmexRawHttpClient::new(Some(base_url), 1, 0, 1, 1, 10_000, 10, 30, None).unwrap();
 
     let result = client.get_instruments(false).await;
 
@@ -1142,8 +1141,7 @@ async fn test_http_500_internal_server_error() {
 
     let base_url = format!("http://{addr}");
     let client =
-        BitmexRawHttpClient::new(Some(base_url), 60, 3, 1_000, 10_000, 10_000, 10, 30, None)
-            .unwrap();
+        BitmexRawHttpClient::new(Some(base_url), 60, 0, 1, 1, 10_000, 10, 30, None).unwrap();
 
     let result = client.get_instruments(false).await;
 
