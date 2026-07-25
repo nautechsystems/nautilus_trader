@@ -198,6 +198,12 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         uses: ./.github/actions/common-test-data
 
+      # Doctests run before nextest so their transient linker artifacts are
+      # released before the full test-binary set accumulates on disk.
+      - name: Run Rust doctests
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-doc HYPERSYNC=true
+
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-core-selected HYPERSYNC=true NEXTEST_PROFILE=ci
@@ -205,12 +211,6 @@ jobs:
       - name: Run Rust tests (adapters)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters HYPERSYNC=true NEXTEST_PROFILE=ci
-
-      # Doctests run here rather than in their own job so they reuse the
-      # artifacts the nextest steps just built. `cargo nextest` cannot run them.
-      - name: Run Rust doctests
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-doc HYPERSYNC=true
 
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'

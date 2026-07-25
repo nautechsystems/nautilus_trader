@@ -311,6 +311,12 @@ jobs:
             echo "::warning::Only ${avail_gb}G free, the Rust build may run out of space, re-run if it fails."
           fi
 
+      # Doctests run before nextest so their transient linker artifacts are
+      # released before the full test-binary set accumulates on disk.
+      - name: Run Rust doctests
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-doc EXTRA_FEATURES="capnp,hypersync"
+
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
@@ -318,12 +324,6 @@ jobs:
       - name: Run Rust tests (adapters)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
-
-      # Doctests run here rather than in their own job so they reuse the
-      # artifacts the nextest steps just built. `cargo nextest` cannot run them.
-      - name: Run Rust doctests
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-doc EXTRA_FEATURES="capnp,hypersync"
 
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'
