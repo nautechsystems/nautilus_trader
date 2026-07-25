@@ -206,6 +206,12 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters HYPERSYNC=true NEXTEST_PROFILE=ci
 
+      # Doctests run here rather than in their own job so they reuse the
+      # artifacts the nextest steps just built. `cargo nextest` cannot run them.
+      - name: Run Rust doctests
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-doc HYPERSYNC=true
+
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: |

@@ -878,6 +878,29 @@ pub fn calculate_unrealized_pnl(&self, market_price: Price) -> anyhow::Result<Mo
 }
 ```
 
+#### Doc examples
+
+`make cargo-test-doc` compiles and runs doc examples, and CI gates on it, so examples stay in step
+with the API as it evolves. Annotate every fence so rustdoc knows what to do with it:
+
+| Fence          | Behavior                 | Use for                                               |
+| -------------- | ------------------------ | ----------------------------------------------------- |
+| `rust`         | Compiled and run         | Self‑contained examples with no external dependencies |
+| `rust,no_run`  | Compiled, not run        | Examples needing a catalog, network, or venue         |
+| `ignore`       | Neither compiled nor run | Pseudo‑code; state why in a comment above the fence   |
+| `compile_fail` | Must fail to compile     | Demonstrating a rejected usage                        |
+| `text`         | Not code                 | Directory trees, output samples, diagrams             |
+| `bash`, `json` | Not Rust                 | Shell commands and payloads                           |
+
+An unannotated fence is treated as Rust and compiled, so tag non-Rust blocks explicitly. Prefer
+`no_run` over `ignore` when the example only needs external resources at runtime, since compilation
+alone still catches API drift. Keep setup lines visible unless they obscure the point being made, in
+which case prefix them with `#` to hide them from the rendered docs while still compiling them.
+
+Examples belong on public items. Rustdoc collects fences from private items into the doctest run,
+where the example cannot import the item it documents, so a unit test is the better home for those
+checks.
+
 #### Safety documentation format
 
 Use a `# Safety` section to state the caller's obligations for an unsafe function. Put a `SAFETY:`

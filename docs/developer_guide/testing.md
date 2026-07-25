@@ -194,6 +194,20 @@ make cargo-test
 cargo nextest run --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --cargo-profile nextest --lib --tests
 ```
 
+#### Rust doctests
+
+`cargo nextest` cannot execute doctests, so they run through a separate target:
+
+```bash
+make cargo-test-doc
+# or
+cargo test --doc --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --profile nextest
+```
+
+Doc examples are a maintained test surface: CI runs this target on pull requests that touch Rust
+code, and both pre-flight targets include it. See the [Rust guide](rust.md#doc-examples) for how to
+annotate a fence so it compiles.
+
 #### Testing with optional features
 
 Use `EXTRA_FEATURES` to include optional features like `capnp` or `hypersync`:

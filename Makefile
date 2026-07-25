@@ -123,6 +123,14 @@ else
 NEXTEST_TEST_THREADS_FOR_RUST := $(NEXTEST_TEST_THREADS)
 endif
 
+# Doctests run under the libtest harness rather than nextest, so the same local
+# concurrency cap is passed through as a harness argument.
+ifneq ($(strip $(NEXTEST_TEST_THREADS_FOR_RUST)),)
+DOCTEST_HARNESS_ARGS := -- --test-threads=$(NEXTEST_TEST_THREADS_FOR_RUST)
+else
+DOCTEST_HARNESS_ARGS :=
+endif
+
 # CARGO_CI_PROFILE selects the Cargo compile profile used by nextest.
 CARGO_CI_PROFILE ?= nextest
 
@@ -180,7 +188,7 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
 	build-debug-pyo3 build-wheel build-wheel-debug build-dry-run check-code \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	docs docs-rust docsrs-check cargo-build cargo-check check-features hawk cargo-test \
-	cargo-test-extras cargo-test-core-local cargo-test-core-selected \
+	cargo-test-extras cargo-test-doc cargo-test-core-local cargo-test-core-selected \
 	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
 	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
 	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
@@ -419,6 +427,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 		&& $(MAKE) --no-print-directory format \
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory build-debug \
 		&& $(MAKE) --no-print-directory pytest \
 		&& $(MAKE) --no-print-directory security-audit \
@@ -765,6 +774,15 @@ endif
 .PHONY: cargo-test-extras
 cargo-test-extras:  #-- Run all Rust tests with capnp and hypersync features (convenience shortcut)
 	$(MAKE) cargo-test EXTRA_FEATURES="capnp,hypersync"
+
+# Doctests need their own target because `cargo nextest` cannot run them.
+# Sharing --features and --profile with the nextest targets lets both reuse the
+# same compiled artifacts.
+.PHONY: cargo-test-doc
+cargo-test-doc: export RUST_BACKTRACE=1
+cargo-test-doc:  #-- Run Rust doctests (examples in `///` and `//!` comments)
+	$(info $(M) Running Rust doctests...)
+	cargo test --doc --workspace --features "$(CARGO_FEATURES)" --profile $(CARGO_CI_PROFILE) $(FAIL_FAST_FLAG) $(DOCTEST_HARNESS_ARGS)
 
 # Both core and adapter targets use identical --workspace --features flags so
 # cargo sees the same feature union and does not recompile between runs.
@@ -1191,6 +1209,7 @@ pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, build, generated dr
 		&& $(MAKE) --no-print-directory format \
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory build-debug-v2 \
 		&& $(MAKE) --no-print-directory check-v2-generated-drift \
 		&& $(MAKE) --no-print-directory pytest-v2 \
