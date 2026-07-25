@@ -110,6 +110,23 @@ fn test_book_order_roundtrip() {
 }
 
 #[rstest]
+fn test_sbe_resolved_raw_width_roundtrip() {
+    // Price and Quantity raws exceed 64 bits only under high precision, so this pins decode to
+    // the model's resolved alias rather than this crate's own feature.
+    let value = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("50000.00"),
+        Quantity::from("20000.00"),
+        123_456,
+    );
+
+    let bytes = value.to_sbe().unwrap();
+    let decoded = BookOrder::from_sbe(&bytes).unwrap();
+
+    assert_book_order_fields(&value, &decoded);
+}
+
+#[rstest]
 fn test_order_book_delta_roundtrip() {
     let value = stub_delta();
 
