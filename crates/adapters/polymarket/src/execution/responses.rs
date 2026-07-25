@@ -1069,13 +1069,14 @@ mod tests {
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
-        let (reports, _) = crate::execution::reconciliation::build_fill_reports_from_trades(
+        let reports = crate::execution::reconciliation::build_fill_reports_from_trades(
             &[trade],
             &ctx,
             &instruments,
-            None,
+            &crate::execution::reconciliation::FillReconciliationScope::All,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("non-confirmed trades should be ignored without reconciliation failure");
 
         assert!(reports.is_empty());
     }

@@ -424,12 +424,16 @@ fn parse_trade_ticks(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::collections::AtomicMap;
     use nautilus_model::{
-        enums::AggressorSide,
-        identifiers::{AccountId, InstrumentId},
+        enums::{AggressorSide, AssetClass},
+        identifiers::{AccountId, InstrumentId, Symbol},
+        instruments::{BinaryOption, InstrumentAny},
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -442,6 +446,49 @@ mod tests {
         let path = "test_data/data_api_positions_response.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    fn position_instruments(positions: &[DataApiPosition]) -> AtomicMap<Ustr, InstrumentAny> {
+        let instruments = AtomicMap::new();
+
+        for position in positions {
+            let instrument_id = InstrumentId::from(
+                format!("{}-{}.POLYMARKET", position.condition_id, position.asset).as_str(),
+            );
+            let instrument = BinaryOption::new(
+                instrument_id,
+                Symbol::from(position.asset.as_str()),
+                AssetClass::Alternative,
+                Currency::pUSD(),
+                nautilus_core::UnixNanos::default(),
+                nautilus_core::UnixNanos::from(u64::MAX),
+                4,
+                USDC_DECIMALS as u8,
+                Price::from("0.0001"),
+                Quantity::from("0.000001"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                nautilus_core::UnixNanos::default(),
+                nautilus_core::UnixNanos::default(),
+            );
+            instruments.insert(
+                Ustr::from(position.asset.as_str()),
+                InstrumentAny::BinaryOption(instrument),
+            );
+        }
+        instruments
     }
 
     fn load_trades() -> Vec<DataApiTrade> {
@@ -468,8 +515,10 @@ mod tests {
         let positions = load_positions();
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
+        let instruments = position_instruments(&positions);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_position_reports(&positions, &instruments, account_id, None, ts_now)
+            .expect("valid position reports");
 
         // 4 positions: 150.5, 0.0, 42.0, 0.005 (dust)
         // Only 150.5 and 42.0 pass the DUST_POSITION_THRESHOLD (0.01)
@@ -483,8 +532,10 @@ mod tests {
         let positions = load_positions();
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
+        let instruments = position_instruments(&positions);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_position_reports(&positions, &instruments, account_id, None, ts_now)
+            .expect("valid position reports");
 
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].avg_px_open, Some(dec!(0.55)));
@@ -496,8 +547,10 @@ mod tests {
         let positions = load_positions();
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
+        let instruments = position_instruments(&positions);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_position_reports(&positions, &instruments, account_id, None, ts_now)
+            .expect("valid position reports");
 
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].quantity.precision, USDC_DECIMALS as u8);
@@ -514,8 +567,10 @@ mod tests {
         }];
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
+        let instruments = position_instruments(&positions);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_position_reports(&positions, &instruments, account_id, None, ts_now)
+            .expect("valid position reports");
 
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].avg_px_open, None);
