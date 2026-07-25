@@ -14,6 +14,18 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Order types for the trading domain model.
+//!
+//! Each order type wraps an [`OrderCore`] carrying the state common to all of them and adds its
+//! own type-specific fields. [`OrderAny`] dispatches over the concrete types.
+//!
+//! Orders are event sourced. [`OrderCore::apply`] validates the status transition, runs the
+//! handler for that event, then appends it, so [`OrderAny::from_events`] replays a stream to
+//! reconstruct its event-derived state.
+//!
+//! A fill-void correction rebuilds the derived fill state from the fills that survive it.
+//! `avg_px` folds those fills in `Decimal` and converts once at its public `f64` boundary, so the
+//! float never re-enters the next average and a rebuild agrees with the incremental update over
+//! the same fills.
 
 pub mod any;
 pub mod limit;
@@ -1124,22 +1136,11 @@ impl OrderCore {
     }
 
     fn recompute_fill_state(&mut self, additional: Option<&OrderFillVoided>) -> Quantity {
-        let mut corrections: IndexMap<TradeId, &OrderFillVoided> = IndexMap::new();
-
-        for candidate in &self.events {
-            if let OrderEventAny::FillVoided(event) = candidate {
-                corrections.insert(event.trade_id, event);
-            }
-        }
-
-        if let Some(event) = additional {
-            corrections.insert(event.trade_id, event);
-        }
+        let corrections = self.fill_corrections(additional);
 
         let mut filled_raw = Quantity::zero(self.quantity.precision).raw;
         let mut voided_raw = Quantity::zero(self.quantity.precision).raw;
         let mut non_reopened_voided_raw = Quantity::zero(self.quantity.precision).raw;
-        let mut notional = 0.0;
         let mut commissions = IndexMap::<Currency, Money>::new();
         let mut trade_ids = Vec::new();
         let mut last_trade_id = None;
@@ -1155,10 +1156,7 @@ impl OrderCore {
             if correction.is_some() {
                 matched_corrections.insert(fill.trade_id);
             }
-            let removed = correction.map_or_else(
-                || Quantity::zero(fill.last_qty.precision),
-                |event| event.voided_qty.min(fill.last_qty),
-            );
+            let removed = Self::removed_fill_qty(fill, correction);
             let effective = fill.last_qty - removed;
             voided_raw = voided_raw.saturating_add(removed.raw);
             if correction.is_some_and(|event| !event.is_reopened) {
@@ -1167,7 +1165,6 @@ impl OrderCore {
 
             if !effective.is_zero() {
                 filled_raw = filled_raw.saturating_add(effective.raw);
-                notional += effective.as_f64() * fill.last_px.as_f64();
                 trade_ids.push(fill.trade_id);
                 last_trade_id = Some(fill.trade_id);
                 position_id = fill.position_id;
@@ -1198,7 +1195,7 @@ impl OrderCore {
         self.filled_qty = Quantity::from_raw(filled_raw, self.quantity.precision);
         self.voided_qty = Quantity::from_raw(voided_raw, self.quantity.precision);
         self.overfill_qty = self.filled_qty.saturating_sub(self.quantity);
-        self.avg_px = (!self.filled_qty.is_zero()).then(|| notional / self.filled_qty.as_f64());
+        self.avg_px = self.avg_px_from_fills(additional, None);
         self.commissions = commissions;
         self.trade_ids = trade_ids;
         self.last_trade_id = last_trade_id;
@@ -1284,7 +1281,7 @@ impl OrderCore {
             self.ts_accepted = Some(event.ts_event);
         }
 
-        self.set_avg_px(event.last_qty, event.last_px);
+        self.avg_px = self.avg_px_from_fills(None, Some(event));
 
         debug_assert!(
             matches!(
@@ -1314,28 +1311,64 @@ impl OrderCore {
         );
     }
 
-    fn set_avg_px(&mut self, last_qty: Quantity, last_px: Price) {
-        if self.avg_px.is_none() {
-            self.avg_px = Some(last_px.as_f64());
-            return;
+    // `Order::apply` appends the event after its handler runs, so a correction or fill still in
+    // flight arrives as `additional` / `pending` rather than through `self.events`.
+    fn avg_px_from_fills(
+        &self,
+        additional: Option<&OrderFillVoided>,
+        pending: Option<&OrderFilled>,
+    ) -> Option<f64> {
+        let corrections = self.fill_corrections(additional);
+        let mut notional = Decimal::ZERO;
+        let mut quantity = Decimal::ZERO;
+
+        for candidate in &self.events {
+            let OrderEventAny::Filled(fill) = candidate else {
+                continue;
+            };
+            let removed = Self::removed_fill_qty(fill, corrections.get(&fill.trade_id).copied());
+            let effective = (fill.last_qty - removed).as_decimal();
+            if effective.is_zero() {
+                continue;
+            }
+
+            notional = notional.saturating_add(effective.saturating_mul(fill.last_px.as_decimal()));
+            quantity = quantity.saturating_add(effective);
         }
 
-        // Use previous filled quantity (before current fill) to avoid double-counting
-        let prev_filled_qty = (self.filled_qty - last_qty).as_f64();
-        let last_qty_f64 = last_qty.as_f64();
-        let total_qty = prev_filled_qty + last_qty_f64;
+        if let Some(fill) = pending {
+            let last_qty = fill.last_qty.as_decimal();
+            notional = notional.saturating_add(last_qty.saturating_mul(fill.last_px.as_decimal()));
+            quantity = quantity.saturating_add(last_qty);
+        }
 
-        debug_assert!(
-            total_qty > 0.0,
-            "Invariant: avg_px calc requires positive total_qty (prev={prev_filled_qty}, last={last_qty_f64})"
-        );
+        (!quantity.is_zero()).then(|| (notional / quantity).as_f64())
+    }
 
-        let avg_px = self
-            .avg_px
-            .unwrap()
-            .mul_add(prev_filled_qty, last_px.as_f64() * last_qty_f64)
-            / total_qty;
-        self.avg_px = Some(avg_px);
+    fn fill_corrections<'a>(
+        &'a self,
+        additional: Option<&'a OrderFillVoided>,
+    ) -> IndexMap<TradeId, &'a OrderFillVoided> {
+        let mut corrections = IndexMap::new();
+
+        for candidate in &self.events {
+            if let OrderEventAny::FillVoided(event) = candidate {
+                corrections.insert(event.trade_id, event);
+            }
+        }
+
+        if let Some(event) = additional {
+            corrections.insert(event.trade_id, event);
+        }
+
+        corrections
+    }
+
+    fn removed_fill_qty(fill: &OrderFilled, correction: Option<&OrderFillVoided>) -> Quantity {
+        correction.map_or_else(
+            || Quantity::zero(fill.last_qty.precision),
+            |event| event.voided_qty.min(fill.last_qty),
+        )
     }
 
     pub fn set_slippage(&mut self, price: Price) {
@@ -1581,6 +1614,257 @@ mod tests {
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         // Weighted avg: (50_000 * -5.0 + 50_000 * -7.0) / 100_000 = -6.0
         assert_eq!(order.avg_px(), Some(-6.0));
+    }
+
+    fn fill(trade_id: &str, last_qty: &str, last_px: &str) -> (TradeId, Quantity, Price) {
+        (
+            TradeId::from(trade_id),
+            Quantity::from(last_qty),
+            Price::from(last_px),
+        )
+    }
+
+    fn market_order_with_fills(
+        order_side: OrderSide,
+        quantity: Quantity,
+        fills: &[(TradeId, Quantity, Price)],
+    ) -> MarketOrder {
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .order_side(order_side)
+            .quantity(quantity)
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+
+        for (trade_id, last_qty, last_px) in fills {
+            order
+                .apply(OrderEventAny::Filled(
+                    OrderFilledSpec::builder()
+                        .order_side(order_side)
+                        .trade_id(*trade_id)
+                        .last_qty(*last_qty)
+                        .last_px(*last_px)
+                        .build(),
+                ))
+                .unwrap();
+        }
+
+        order
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_avg_px_weighted_average_is_exact(#[case] order_side: OrderSide) {
+        // (1 * 0.07) + (2 * 0.13) + (3 * 0.29) = 1.20 over 6 filled, so the exact average is
+        // 0.20. Accumulating the notional in f64 returns 0.19999999999999998 instead.
+        let order = market_order_with_fills(
+            order_side,
+            Quantity::from(6),
+            &[
+                fill("TRADE-1", "1", "0.07"),
+                fill("TRADE-2", "2", "0.13"),
+                fill("TRADE-3", "3", "0.29"),
+            ],
+        );
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from(6));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.voided_qty(), Quantity::from(0));
+        assert_eq!(order.avg_px(), Some(0.2));
+    }
+
+    #[rstest]
+    fn test_avg_px_invariant_to_fill_arrival_order() {
+        // (50_000 * 1.00001) + (30_000 * 1.00002) + (20_000 * 1.00003) = 100_001.7 over
+        // 100_000 filled, so the exact average is 1.000017 whichever order the fills arrive
+        // in. The f64 fold returns 1.0000170000000002 for the ascending sequence only.
+        let mut fills = [
+            fill("TRADE-1", "50000", "1.00001"),
+            fill("TRADE-2", "30000", "1.00002"),
+            fill("TRADE-3", "20000", "1.00003"),
+        ];
+
+        let ascending = market_order_with_fills(OrderSide::Buy, Quantity::from(100_000), &fills);
+        fills.reverse();
+        let descending = market_order_with_fills(OrderSide::Buy, Quantity::from(100_000), &fills);
+
+        assert_eq!(ascending.avg_px(), Some(1.000_017));
+        assert_eq!(descending.avg_px(), ascending.avg_px());
+        assert_eq!(descending.filled_qty(), ascending.filled_qty());
+    }
+
+    #[rstest]
+    fn test_avg_px_after_fill_void_matches_order_without_voided_fill() {
+        let surviving = [fill("TRADE-1", "1", "0.05"), fill("TRADE-2", "3", "0.15")];
+        let voided = fill("TRADE-VOIDED", "2", "0.13");
+
+        let expected = market_order_with_fills(OrderSide::Buy, Quantity::from(6), &surviving);
+        let mut corrected = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from(6),
+            &[surviving[0], surviving[1], voided],
+        );
+        corrected
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(voided.0)
+                    .voided_qty(voided.1)
+                    .last_px(voided.2)
+                    .build(),
+            ))
+            .unwrap();
+
+        let replayed =
+            OrderAny::from_events(corrected.events().into_iter().cloned().collect()).unwrap();
+
+        // (1 * 0.05) + (3 * 0.15) = 0.50 over 4 filled: 0.125 exactly, whether the fold runs
+        // incrementally over the fills, as the rebuild after the void drops the third fill, or
+        // over the whole event stream on replay. The f64 rebuild returns 0.12499999999999999.
+        assert_eq!(expected.avg_px(), Some(0.125));
+        assert_eq!(corrected.avg_px(), expected.avg_px());
+        assert_eq!(replayed.avg_px(), expected.avg_px());
+        assert_eq!(corrected.status(), OrderStatus::Voided);
+        assert_eq!(corrected.filled_qty(), Quantity::from(4));
+        assert_eq!(corrected.voided_qty(), Quantity::from(2));
+        assert_eq!(corrected.leaves_qty(), Quantity::from(0));
+        assert_eq!(replayed.filled_qty(), corrected.filled_qty());
+        assert_eq!(replayed.voided_qty(), corrected.voided_qty());
+    }
+
+    #[rstest]
+    fn test_avg_px_recomputed_from_partially_voided_fill() {
+        let mut order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from(6),
+            &[fill("TRADE-1", "4", "1.00"), fill("TRADE-2", "2", "1.14")],
+        );
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(TradeId::from("TRADE-1"))
+                    .voided_qty(Quantity::from(2))
+                    .last_px(Price::from("1.00"))
+                    .build(),
+            ))
+            .unwrap();
+
+        // Surviving (2 * 1.00) + (2 * 1.14) = 4.28 over 4 filled: 1.07 exactly, where the f64
+        // rebuild returns 1.0699999999999998.
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.filled_qty(), Quantity::from(4));
+        assert_eq!(order.voided_qty(), Quantity::from(2));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.avg_px(), Some(1.07));
+    }
+
+    #[rstest]
+    fn test_avg_px_over_reopened_fill_void_and_replacement_fill() {
+        let mut order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from(6),
+            &[fill("TRADE-1", "4", "1.00")],
+        );
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(TradeId::from("TRADE-1"))
+                    .voided_qty(Quantity::from(2))
+                    .last_px(Price::from("1.00"))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("TRADE-2"))
+                    .last_qty(Quantity::from(2))
+                    .last_px(Price::from("1.14"))
+                    .build(),
+            ))
+            .unwrap();
+        order.set_slippage(Price::from("1.00"));
+
+        // The reopened void leaves 2 of the first fill, so the replacement fill folds against
+        // the surviving quantity: (2 * 1.00) + (2 * 1.14) = 4.28 over 4 filled, or 1.07
+        // exactly. The f64 update returns 1.0699999999999998, which slippage then inherits.
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(4));
+        assert_eq!(order.voided_qty(), Quantity::from(2));
+        assert_eq!(order.leaves_qty(), Quantity::from(2));
+        assert_eq!(order.avg_px(), Some(1.07));
+        assert_eq!(order.slippage(), Some(1.07 - 1.0));
+    }
+
+    #[rstest]
+    fn test_avg_px_cleared_when_every_fill_is_voided() {
+        let mut order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from(6),
+            &[fill("TRADE-1", "4", "1.50")],
+        );
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(TradeId::from("TRADE-1"))
+                    .voided_qty(Quantity::from(4))
+                    .last_px(Price::from("1.50"))
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.voided_qty(), Quantity::from(4));
+        assert_eq!(order.leaves_qty(), Quantity::from(2));
+        assert_eq!(order.avg_px(), None);
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_avg_px_exact_over_high_precision_quantities() {
+        // Same weighting as `test_avg_px_invariant_to_fill_arrival_order`, at a quantity
+        // precision only the wider raw backing can hold.
+        let order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from("0.000000000010"),
+            &[
+                fill("TRADE-1", "0.000000000005", "1.00001"),
+                fill("TRADE-2", "0.000000000003", "1.00002"),
+                fill("TRADE-3", "0.000000000002", "1.00003"),
+            ],
+        );
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("0.000000000010"));
+        assert_eq!(order.avg_px(), Some(1.000_017));
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_avg_px_exact_at_the_widest_representable_fill_scale() {
+        // Pins the exactness bound: a 16-decimal quantity against a 12-decimal price needs the
+        // 28 fractional digits Decimal carries, so no product rounds.
+        let order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from("0.0000000000000008"),
+            &[
+                fill("TRADE-1", "0.0000000000000002", "0.000000000001"),
+                fill("TRADE-2", "0.0000000000000006", "0.000000000003"),
+            ],
+        );
+
+        // (2e-16 * 1e-12) + (6e-16 * 3e-12) = 2e-27 over 8e-16 filled: 2.5e-12 exactly.
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("0.0000000000000008"));
+        assert_eq!(order.avg_px(), Some(2.5e-12));
     }
 
     #[rstest]

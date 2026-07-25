@@ -133,3 +133,8 @@ harness = false
 name = "expressions_criterion"
 path = "benches/expressions_criterion.rs"
 harness = false
+
+[[bench]]
+name = "order_fills_criterion"
+path = "benches/order_fills_criterion.rs"
+harness = false
