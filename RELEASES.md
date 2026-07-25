@@ -360,6 +360,7 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket SELL sizing, IOC remainders, and sub-cent reconciliation synthetic fills
 - Fixed Tardis replay bars directory to `bars/` (#4378), thanks @AdvancedUno
 - Fixed Tardis replay trades directory to `trades/` (#4373), thanks @AdvancedUno
+- Fixed v2 sandbox execution retaining matching engines and cache state for expired quote-only instruments
 
 ### Internal Improvements
 - Added Binance SAPI base URL and path constants for upcoming margin support (#4447), thanks @akashchakrabortymsc-cmd

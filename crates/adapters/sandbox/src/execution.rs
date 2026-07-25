@@ -38,8 +38,9 @@ use nautilus_common::{
         self, MStr, MessagingSwitchboard, Pattern, TypedHandler,
         typed_handler::ShareableMessageHandler,
     },
+    timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UnixNanos, WeakCell};
+use nautilus_core::{UnixNanos, WeakCell, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     matching_engine::adapter::OrderEngineAdapter,
@@ -58,6 +59,12 @@ use nautilus_model::{
 };
 
 use crate::config::SandboxExecutionClientConfig;
+
+/// Interval between periodic sweeps that retire expired matching engines with no open position.
+///
+/// This bounds retained matching-engine and cache state for quote-only instruments that expire
+/// without an `InstrumentClose`, expired-order, or `PositionClosed` event to trigger cleanup.
+const EXPIRED_ENGINE_SWEEP_INTERVAL_NS: u64 = 60 * NANOSECONDS_IN_SECOND;
 
 /// Inner state for the sandbox execution client.
 ///
@@ -330,6 +337,16 @@ impl SandboxInner {
             .is_some_and(|ns| now_ns >= ns)
     }
 
+    fn has_open_orders(&self, instrument_id: InstrumentId) -> bool {
+        self.cache.borrow().has_orders_open(
+            Some(&self.config.venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        )
+    }
+
     fn sync_expired_cleanup(&mut self, instrument_id: InstrumentId) {
         if !self.is_expired_now(instrument_id) {
             return;
@@ -357,6 +374,30 @@ impl SandboxInner {
         for &instrument_id in instrument_ids {
             self.sync_expired_cleanup(instrument_id);
         }
+    }
+
+    /// Retires matching engines whose instrument has expired with no open position or order.
+    ///
+    /// This is the periodic trigger for quote-only instruments that create a matching engine from
+    /// market data but never reach an `InstrumentClose`, expired-order, or `PositionClosed` event.
+    /// It performs no settlement: `sync_expired_cleanup` retains any expired engine that still has
+    /// an open position.
+    ///
+    /// Instruments with open orders are retained too. The event-driven callers of
+    /// `sync_expired_cleanup` each terminalize order state through the matching engine first, which
+    /// is what `Cache::purge_instrument_skip_order_guard` requires of its callers; this sweep has
+    /// no such event, so purging here would orphan a resting order behind a removed engine.
+    fn sweep_expired_engines(&mut self) {
+        let expired_ids: Vec<InstrumentId> = self
+            .matching_engines
+            .keys()
+            .copied()
+            .filter(|instrument_id| {
+                self.is_expired_now(*instrument_id) && !self.has_open_orders(*instrument_id)
+            })
+            .collect();
+
+        self.sync_expired_cleanup_many(&expired_ids);
     }
 }
 
@@ -647,6 +688,49 @@ impl SandboxExecutionClient {
         }
     }
 
+    fn expiry_sweep_timer_name(&self) -> String {
+        format!("{}-sandbox-expiry-sweep", self.core.borrow().client_id)
+    }
+
+    /// Registers the periodic sweep that retires expired matching engines with no open position.
+    fn register_expiry_sweep_timer(&self) {
+        let inner_weak = WeakCell::from(Rc::downgrade(&self.inner));
+        let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event: TimeEvent| {
+            let Some(inner_rc) = inner_weak.upgrade() else {
+                return;
+            };
+
+            // The timer fires on the runner task, but a nested msgbus dispatch may already hold the
+            // borrow; skipping is safe because the next interval retries.
+            if let Ok(mut inner) = inner_rc.try_borrow_mut() {
+                inner.sweep_expired_engines();
+            } else {
+                log::debug!("Skipping sandbox expiry sweep due to active borrow");
+            }
+        });
+
+        let name = self.expiry_sweep_timer_name();
+
+        if let Err(e) = self.clock.borrow_mut().set_timer_ns(
+            &name,
+            EXPIRED_ENGINE_SWEEP_INTERVAL_NS,
+            None,
+            None,
+            Some(TimeEventCallback::from(callback)),
+            None,
+            None,
+        ) {
+            log::error!("Failed to register sandbox expiry sweep timer: {e}");
+        }
+    }
+
+    /// Cancels the periodic expired-engine sweep timer.
+    fn cancel_expiry_sweep_timer(&self) {
+        self.clock
+            .borrow_mut()
+            .cancel_timer(&self.expiry_sweep_timer_name());
+    }
+
     /// Returns current account balances, preferring cache state over starting balances.
     fn get_current_account_balances(&self) -> Vec<AccountBalance> {
         let account_id = self.core.borrow().account_id;
@@ -875,6 +959,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         // Register message handlers to receive market data
         self.register_message_handlers();
+        self.register_expiry_sweep_timer();
 
         self.core.borrow().set_started();
         let core = self.core.borrow();
@@ -895,6 +980,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         // Deregister message handlers to stop receiving data
         self.deregister_message_handlers();
+        self.cancel_expiry_sweep_timer();
 
         self.core.borrow().set_stopped();
         self.core.borrow().set_disconnected();
