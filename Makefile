@@ -542,8 +542,12 @@ docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
 	uv run --active --no-sync sphinx-build -M html ./docs/api_reference ./api_reference
 
+# Path to extra HTML injected into every rustdoc <head>. Left empty here so the
+# markup stays with whichever build supplies it, rather than living in this repo.
+RUSTDOC_EXTRA_HEAD ?=
+
 .PHONY: docs-rust
-docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options
+docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options $(if $(RUSTDOC_EXTRA_HEAD),--html-in-header $(RUSTDOC_EXTRA_HEAD))
 docs-rust:  #-- Build Rust documentation with cargo doc
 	cargo +nightly doc --all-features --no-deps --workspace
 
