@@ -699,6 +699,54 @@ async fn handle_no_convert_repay(
 }
 
 #[allow(dead_code)]
+async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -> Response {
+    // Check for authentication headers
+    if !headers.contains_key("X-BAPI-API-KEY")
+        || !headers.contains_key("X-BAPI-SIGN")
+        || !headers.contains_key("X-BAPI-TIMESTAMP")
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    // Parse JSON body
+    let Ok(_): Result<Value, _> = serde_json::from_slice(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Invalid JSON body",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    };
+
+    // Return successful repay response
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "resultStatus": "SU"
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+#[allow(dead_code)]
 async fn handle_get_orders_realtime(
     query: Query<HashMap<String, String>>,
     State(state): State<TestServerState>,
@@ -923,6 +971,7 @@ fn create_test_router(state: TestServerState) -> Router {
             "/v5/account/no-convert-repay",
             post(handle_no_convert_repay),
         )
+        .route("/v5/account/repay", post(handle_repay))
         .with_state(state)
 }
 
@@ -2175,6 +2224,81 @@ async fn test_repay_spot_borrow_requires_credentials() {
 
     let amount = Quantity::new_checked(0.5, 8).unwrap();
     let result = client.repay_spot_borrow("ETH", Some(amount)).await;
+    assert!(result.is_err(), "Should fail without credentials");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_conversion_with_amount() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let amount = Quantity::new_checked(0.5, 8).unwrap();
+    let response = client
+        .repay_spot_borrow_with_conversion("ETH", Some(amount))
+        .await
+        .unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.result_status, "SU");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_conversion_without_amount() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    // Test repaying all outstanding borrows by passing None for amount
+    let response = client
+        .repay_spot_borrow_with_conversion("ETH", None)
+        .await
+        .unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.result_status, "SU");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_conversion_requires_credentials() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
+
+    let amount = Quantity::new_checked(0.5, 8).unwrap();
+    let result = client
+        .repay_spot_borrow_with_conversion("ETH", Some(amount))
+        .await;
     assert!(result.is_err(), "Should fail without credentials");
 }
 

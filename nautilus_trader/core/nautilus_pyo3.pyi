@@ -7387,6 +7387,11 @@ class BybitHttpClient:
         coin: str,
         amount: Quantity | None = None,
     ) -> Any: ...
+    async def repay_spot_borrow_with_conversion(
+        self,
+        coin: str,
+        amount: Quantity | None = None,
+    ) -> Any: ...
     async def request_instruments(
         self,
         product_type: BybitProductType,

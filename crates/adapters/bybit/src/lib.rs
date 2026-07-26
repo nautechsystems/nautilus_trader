@@ -58,6 +58,7 @@ pub mod data;
 pub mod execution;
 pub mod factories;
 pub mod http;
+pub(crate) mod repay;
 pub mod websocket;
 
 #[cfg(feature = "python")]

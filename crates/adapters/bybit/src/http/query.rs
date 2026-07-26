@@ -370,6 +370,25 @@ pub struct BybitNoConvertRepayParams {
     pub amount: Option<String>,
 }
 
+/// Body parameters for `POST /v5/account/repay`.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/repay>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitRepayParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub coin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub amount: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub repayment_type: Option<String>,
+}
+
 /// Order entry payload for `POST /v5/order/create-batch`.
 ///
 /// # References
