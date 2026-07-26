@@ -1962,7 +1962,7 @@ impl AxHttpClient {
 
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].
     ///
-    /// Requires instruments to be cached for parsing order details.
+    /// Missing instruments are requested from Ax and cached before parsing order details.
     ///
     /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
     /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
@@ -1971,8 +1971,11 @@ impl AxHttpClient {
     ///
     /// Returns an error if:
     /// - The HTTP request fails.
-    /// - An order's instrument is not found in the cache.
-    /// - Order parsing fails.
+    /// - An order's instrument cannot be fetched or parsed.
+    ///
+    /// # Notes
+    ///
+    /// Order parsing failures are skipped with a warning.
     pub async fn request_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2080,9 +2083,7 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(orders.len());
 
         for order in &orders {
-            let instrument = self
-                .get_instrument(&order.s)
-                .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
+            let instrument = self.resolve_report_instrument(order.s).await?;
 
             match parse_order_status_report(
                 order,
@@ -2104,7 +2105,7 @@ impl AxHttpClient {
     /// Requests historical orders from Ax and parses them to Nautilus
     /// [`OrderStatusReport`].
     ///
-    /// Requires instruments to be cached for parsing order details.
+    /// Missing instruments are requested from Ax and cached before parsing order details.
     ///
     /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
     /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
@@ -2113,8 +2114,11 @@ impl AxHttpClient {
     ///
     /// Returns an error if:
     /// - The HTTP request or pagination contract fails.
-    /// - An order's instrument is not found in the cache.
-    /// - Order parsing fails.
+    /// - An order's instrument cannot be fetched or parsed.
+    ///
+    /// # Notes
+    ///
+    /// Order parsing failures are skipped with a warning.
     pub async fn request_historical_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2169,9 +2173,7 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(orders.len());
 
         for order in &orders {
-            let instrument = self
-                .get_instrument(&order.s)
-                .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
+            let instrument = self.resolve_report_instrument(order.s).await?;
 
             match parse_order_detail_status_report(
                 order,
@@ -2192,7 +2194,7 @@ impl AxHttpClient {
 
     /// Requests fills from Ax and parses them to Nautilus [`FillReport`].
     ///
-    /// Requires instruments to be cached for parsing fill details.
+    /// Missing instruments are requested from Ax and cached before parsing fill details.
     /// Traverses the provider's cursor chain. This is a best-effort historical
     /// read, not an atomic snapshot if AX corrects rows during the traversal.
     ///
@@ -2200,7 +2202,7 @@ impl AxHttpClient {
     ///
     /// Returns an error if:
     /// - The HTTP request fails.
-    /// - A fill's instrument is not found in the cache.
+    /// - A fill's instrument cannot be fetched or parsed.
     /// - Fill parsing fails.
     pub async fn request_fill_reports(
         &self,
@@ -2313,9 +2315,7 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(fills.len());
 
         for fill in &fills {
-            let instrument = self
-                .get_instrument(&fill.symbol)
-                .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", fill.symbol))?;
+            let instrument = self.resolve_report_instrument(fill.symbol).await?;
             let report = parse_fill_report(fill, account_id, &instrument, ts_init)
                 .with_context(|| format!("Failed to parse AX fill {}", fill.trade_id))?;
             reports.push(report);
@@ -2326,14 +2326,17 @@ impl AxHttpClient {
 
     /// Requests positions from Ax and parses them to Nautilus [`PositionStatusReport`].
     ///
-    /// Requires instruments to be cached for parsing position details.
+    /// Missing instruments are requested from Ax and cached before parsing position details.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The HTTP request fails.
-    /// - A position's instrument is not found in the cache.
-    /// - Position parsing fails.
+    /// - A position's instrument cannot be fetched or parsed.
+    ///
+    /// # Notes
+    ///
+    /// Position parsing failures are skipped with a warning.
     pub async fn request_position_reports(
         &self,
         account_id: AccountId,
@@ -2353,9 +2356,7 @@ impl AxHttpClient {
                 continue;
             }
 
-            let instrument = self.get_instrument(&position.symbol).ok_or_else(|| {
-                anyhow::anyhow!("Instrument {} not found in cache", position.symbol)
-            })?;
+            let instrument = self.resolve_report_instrument(position.symbol).await?;
 
             match parse_position_status_report(position, account_id, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
@@ -2366,6 +2367,21 @@ impl AxHttpClient {
         }
 
         Ok(reports)
+    }
+
+    async fn resolve_report_instrument(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
+        if let Some(instrument) = self.get_instrument(&symbol) {
+            return Ok(instrument);
+        }
+
+        let instrument = self
+            .request_instrument(symbol, None, None)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to resolve AX instrument {symbol} via GET /instrument: {e}")
+            })?;
+        self.cache_instrument(instrument.clone());
+        Ok(instrument)
     }
 
     /// Cancels all open orders for an instrument.

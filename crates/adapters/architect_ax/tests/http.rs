@@ -15,6 +15,8 @@
 
 //! Integration tests for the Ax HTTP client using a mock Axum server.
 
+mod common;
+
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{Router, extract::Query, http::StatusCode, response::Json, routing::get};
@@ -39,11 +41,160 @@ use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
+use crate::common::server::start_test_server as start_common_test_server;
+
 #[derive(Debug, Clone, Copy)]
 enum RequiredInstrumentCachePath {
     BookSnapshot,
     Trades,
     Bars,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ReportFamily {
+    OpenOrders,
+    HistoricalOrders,
+    Fills,
+    Positions,
+}
+
+async fn set_report_payload(
+    state: &common::server::TestServerState,
+    family: ReportFamily,
+    symbol: &str,
+) {
+    match family {
+        ReportFamily::OpenOrders => {
+            let first = json!({
+                "tn": 500_000_000,
+                "ts": 1_704_067_200,
+                "d": "B",
+                "o": "ACCEPTED",
+                "oid": "OID-UNCACHED-1",
+                "p": "1.08400",
+                "q": 100,
+                "rq": 100,
+                "s": symbol,
+                "tif": "GTC",
+                "u": "u",
+                "xq": 0,
+                "cid": null,
+                "tag": null,
+                "po": true
+            });
+            let mut second = first.clone();
+            second["oid"] = json!("OID-UNCACHED-2");
+            second["tn"] = json!(600_000_000);
+            *state.open_orders_payload.lock().await = Some(json!({
+                "orders": [first, second]
+            }));
+        }
+        ReportFamily::HistoricalOrders => {
+            let first = json!({
+                "ts": 1_704_067_200,
+                "tn": 500_000_000,
+                "oid": "OID-UNCACHED-1",
+                "aid": "account-1",
+                "u": "u",
+                "s": symbol,
+                "p": "1.08400",
+                "q": 100,
+                "xq": 100,
+                "rq": 0,
+                "o": "FILLED",
+                "d": "B",
+                "tif": "IOC",
+                "cid": null,
+                "r": null,
+                "tag": null,
+                "txt": null,
+                "po": false
+            });
+            let mut second = first.clone();
+            second["oid"] = json!("OID-UNCACHED-2");
+            second["tn"] = json!(600_000_000);
+            *state.orders_payload.lock().await = Some(json!({
+                "orders": [first, second]
+            }));
+        }
+        ReportFamily::Fills => {
+            let first = json!({
+                "trade_id": "T-UNCACHED-1",
+                "order_id": "OID-UNCACHED-1",
+                "fee": "0.10",
+                "is_taker": true,
+                "is_block_trade": false,
+                "is_final_settlement": false,
+                "price": "1.08410",
+                "quantity": 100,
+                "side": "B",
+                "symbol": symbol,
+                "timestamp": "2024-01-01T00:00:00Z",
+                "account_id": "account-1"
+            });
+            let mut second = first.clone();
+            second["trade_id"] = json!("T-UNCACHED-2");
+            second["order_id"] = json!("OID-UNCACHED-2");
+            *state.fills_payload.lock().await = Some(json!({
+                "fills": [first, second]
+            }));
+        }
+        ReportFamily::Positions => {
+            let first = json!({
+                "account_id": "account-1",
+                "symbol": symbol,
+                "signed_quantity": 100,
+                "signed_notional": "108.40",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "realized_pnl": "1.25"
+            });
+            let mut second = first.clone();
+            second["signed_quantity"] = json!(-50);
+            second["signed_notional"] = json!("-54.20");
+            *state.positions_payload.lock().await = Some(json!({
+                "positions": [first, second]
+            }));
+        }
+    }
+}
+
+async fn request_report_instrument_ids(
+    client: &AxHttpClient,
+    family: ReportFamily,
+) -> anyhow::Result<Vec<InstrumentId>> {
+    let account_id = AccountId::from("AX-001");
+    let instrument_ids = match family {
+        ReportFamily::OpenOrders => client
+            .request_order_status_reports(account_id, None::<fn(u64) -> Option<ClientOrderId>>)
+            .await?
+            .into_iter()
+            .map(|report| report.instrument_id)
+            .collect(),
+        ReportFamily::HistoricalOrders => client
+            .request_historical_order_status_reports(
+                account_id,
+                None,
+                None,
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await?
+            .into_iter()
+            .map(|report| report.instrument_id)
+            .collect(),
+        ReportFamily::Fills => client
+            .request_fill_reports(account_id, None, None)
+            .await?
+            .into_iter()
+            .map(|report| report.instrument_id)
+            .collect(),
+        ReportFamily::Positions => client
+            .request_position_reports(account_id)
+            .await?
+            .into_iter()
+            .map(|report| report.instrument_id)
+            .collect(),
+    };
+    Ok(instrument_ids)
 }
 
 /// Wait for the test server to be ready by polling a health endpoint.
@@ -861,6 +1012,77 @@ async fn test_domain_http_request_open_orders_rejects_empty_page_before_total() 
         error.to_string(),
         "AX open-orders returned an empty page before offset 0 reached total 1"
     );
+}
+
+#[rstest]
+#[case::open_orders(ReportFamily::OpenOrders)]
+#[case::historical_orders(ReportFamily::HistoricalOrders)]
+#[case::fills(ReportFamily::Fills)]
+#[case::positions(ReportFamily::Positions)]
+#[tokio::test]
+async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
+    #[case] family: ReportFamily,
+) {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    set_report_payload(&state, family, "GBPUSD-PERP").await;
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+    client.request_account_fees().await.unwrap();
+
+    let instrument_ids = request_report_instrument_ids(&client, family)
+        .await
+        .unwrap();
+    let symbol = Ustr::from("GBPUSD-PERP");
+    let instrument = client.get_instrument(&symbol).expect("cached instrument");
+
+    assert_eq!(
+        instrument_ids,
+        vec![
+            InstrumentId::from("GBPUSD-PERP.AX"),
+            InstrumentId::from("GBPUSD-PERP.AX")
+        ]
+    );
+    assert_eq!(instrument.id(), InstrumentId::from("GBPUSD-PERP.AX"));
+    assert_eq!(instrument.maker_fee(), dec!(0.0002));
+    assert_eq!(instrument.taker_fee(), dec!(0.0025));
+    assert_eq!(
+        request_report_instrument_ids(&client, family)
+            .await
+            .unwrap(),
+        instrument_ids
+    );
+    let queries = state.instrument_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].symbol, symbol);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_report_reuses_pre_cached_instrument() {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    set_report_payload(&state, ReportFamily::OpenOrders, "EURUSD-PERP").await;
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+    client.request_account_fees().await.unwrap();
+    let instruments = client.request_instruments(None, None).await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_ids = request_report_instrument_ids(&client, ReportFamily::OpenOrders)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        instrument_ids,
+        vec![
+            InstrumentId::from("EURUSD-PERP.AX"),
+            InstrumentId::from("EURUSD-PERP.AX")
+        ]
+    );
+    assert!(state.instrument_queries.lock().await.is_empty());
 }
 
 // Error handling tests

@@ -228,6 +228,9 @@ Nautilus data type.
 - `GET /orders` exposes cursor metadata and supports `order_id`, `order_ids`, `account_id`, and
   optional timestamp filters. Startup mass-status reconciliation traverses its cursor chain,
   accepts partial pages, and rejects repeated cursors or duplicate order IDs.
+- Open-order, historical-order, fill, and position report requests resolve an uncached symbol
+  through `GET /instrument` and cache the result. An instrument request or parse failure fails that
+  entire report request instead of dropping venue state.
 - `GET /transactions` requires `start_timestamp_ns` and `end_timestamp_ns` with a range no wider
   than 7 days. The low-level client exposes its cursor and account selectors.
 - `GET /order-status` can include `reject_reason` and `reject_message` for rejected orders.

@@ -289,6 +289,7 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX market data trade IDs colliding when one aggressor swept several book levels
 - Fixed Architect AX market data subscription tracking, unsubscribes, book-level changes, and failed-subscription replay
 - Fixed Architect AX startup reconciliation omitting filled and canceled orders from mass status
+- Fixed Architect AX startup reconciliation failing when venue reports referenced an uncached instrument
 - Fixed Betfair v2 voids without reversing unapplied exposure from reconnect snapshots
 - Fixed Betfair matched sizes and v2 mass-status fill IDs, commissions, and gaps
 - Fixed Binance Futures hedge-mode tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu

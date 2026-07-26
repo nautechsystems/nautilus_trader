@@ -57,8 +57,9 @@ use nautilus_model::{
     types::{AccountBalance, Money, Price, Quantity},
 };
 use rstest::rstest;
+use rust_decimal_macros::dec;
 
-use crate::common::server::start_test_server;
+use crate::common::server::{load_test_data, start_test_server};
 
 fn setup_exec_channel() -> tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
@@ -578,6 +579,175 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(state.open_orders_queries.lock().await.len(), 0);
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fetches_uncached_report_instrument() {
+    let (addr, state) = start_test_server().await.unwrap();
+    set_uncached_mass_status_payload(&state).await;
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+    assert!(state.instrument_queries.lock().await.is_empty());
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status");
+    let order = mass_status
+        .order_reports()
+        .get(&VenueOrderId::from("OID-UNCACHED"))
+        .cloned()
+        .expect("historical order");
+    let fill = mass_status
+        .fill_reports()
+        .get(&VenueOrderId::from("OID-UNCACHED"))
+        .and_then(|reports| reports.first())
+        .cloned()
+        .expect("fill");
+    let position = mass_status
+        .position_reports()
+        .get(&InstrumentId::from("GBPUSD-PERP.AX"))
+        .and_then(|reports| reports.first())
+        .cloned()
+        .expect("position");
+    let instrument_queries = state.instrument_queries.lock().await;
+
+    assert_eq!(order.instrument_id, InstrumentId::from("GBPUSD-PERP.AX"));
+    assert_eq!(order.order_status, OrderStatus::Filled);
+    assert_eq!(order.filled_qty, Quantity::from("100"));
+    assert_eq!(fill.instrument_id, InstrumentId::from("GBPUSD-PERP.AX"));
+    assert_eq!(fill.trade_id, TradeId::from("T-UNCACHED"));
+    assert_eq!(fill.last_qty, Quantity::from("100"));
+    assert_eq!(fill.last_px, Price::from("1.08410"));
+    assert_eq!(position.instrument_id, InstrumentId::from("GBPUSD-PERP.AX"));
+    assert!(position.is_long());
+    assert_eq!(position.quantity, Quantity::from("100"));
+    assert_eq!(position.avg_px_open, Some(dec!(1.084)));
+    assert!(!instrument_queries.is_empty());
+    assert!(
+        instrument_queries
+            .iter()
+            .all(|query| query.symbol.as_str() == "GBPUSD-PERP")
+    );
+    drop(instrument_queries);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InstrumentResolutionFailure {
+    Request,
+    Parse,
+}
+
+#[rstest]
+#[case::request(
+    InstrumentResolutionFailure::Request,
+    "Failed to resolve AX instrument GBPUSD-PERP via GET /instrument: Unexpected HTTP status code 400: {\"error\":\"instrument unavailable\"}"
+)]
+#[case::parse(
+    InstrumentResolutionFailure::Parse,
+    "Failed to resolve AX instrument GBPUSD-PERP via GET /instrument: AX minimum_order_size must be a positive whole number, was 0"
+)]
+#[tokio::test]
+async fn test_generate_mass_status_aborts_on_uncached_instrument_failure(
+    #[case] failure: InstrumentResolutionFailure,
+    #[case] expected: &str,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    set_uncached_mass_status_payload(&state).await;
+
+    match failure {
+        InstrumentResolutionFailure::Request => {
+            state
+                .instrument_fail
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        InstrumentResolutionFailure::Parse => {
+            let mut instrument =
+                load_test_data("http_get_instruments.json")["instruments"][0].clone();
+            instrument["minimum_order_size"] = serde_json::json!("0");
+            *state.instrument_payload.lock().await = Some(instrument);
+        }
+    }
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+    assert!(state.instrument_queries.lock().await.is_empty());
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert_eq!(error.to_string(), expected);
+    assert!(
+        state
+            .instrument_queries
+            .lock()
+            .await
+            .iter()
+            .all(|query| query.symbol.as_str() == "GBPUSD-PERP")
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+async fn set_uncached_mass_status_payload(state: &common::server::TestServerState) {
+    *state.orders_payload.lock().await = Some(serde_json::json!({
+        "orders": [{
+            "ts": 1_704_067_200,
+            "tn": 500_000_000,
+            "oid": "OID-UNCACHED",
+            "aid": "account-1",
+            "u": "u",
+            "s": "GBPUSD-PERP",
+            "p": "1.08400",
+            "q": 100,
+            "xq": 100,
+            "rq": 0,
+            "o": "FILLED",
+            "d": "B",
+            "tif": "IOC",
+            "cid": null,
+            "r": null,
+            "tag": null,
+            "txt": null,
+            "po": false
+        }]
+    }));
+    *state.fills_payload.lock().await = Some(serde_json::json!({
+        "fills": [{
+            "trade_id": "T-UNCACHED",
+            "order_id": "OID-UNCACHED",
+            "fee": "0.10",
+            "is_taker": true,
+            "is_block_trade": false,
+            "is_final_settlement": false,
+            "price": "1.08410",
+            "quantity": 100,
+            "side": "B",
+            "symbol": "GBPUSD-PERP",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "account_id": "account-1"
+        }]
+    }));
+    *state.positions_payload.lock().await = Some(serde_json::json!({
+        "positions": [{
+            "account_id": "account-1",
+            "symbol": "GBPUSD-PERP",
+            "signed_quantity": 100,
+            "signed_notional": "108.40",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "realized_pnl": "1.25"
+        }]
+    }));
 }
 
 #[rstest]
