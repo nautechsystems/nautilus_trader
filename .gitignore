@@ -92,6 +92,7 @@ env/
 !.pre-commit-hooks/*.sh
 !scripts/cargo-tool-version.sh
 !scripts/check-cargo-cooldown.sh
+!scripts/check-outdated.sh
 !scripts/fuzz-adapter.sh
 !scripts/check-no-build-packages.sh
 !scripts/ci/check-crates-io-trusted-publishing.sh
