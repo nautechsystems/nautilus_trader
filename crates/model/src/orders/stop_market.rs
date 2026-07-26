@@ -494,7 +494,9 @@ impl Order for StopMarketOrder {
             self.trigger_price = trigger_price;
         }
 
-        self.protection_price = event.protection_price;
+        if let Some(protection_price) = event.protection_price {
+            self.protection_price = Some(protection_price);
+        }
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
@@ -870,6 +872,62 @@ mod tests {
 
         // Verify updates were applied correctly
         assert_eq!(accepted_order.price(), Some(calculated_protection_price));
+        assert!(accepted_order.has_price());
+    }
+
+    #[rstest]
+    fn test_stop_market_order_update_preserves_protection_price_when_omitted() {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .trigger_price(Price::new(100.0, 2))
+            .build();
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+        let protection_price = Price::new(95.0, 2);
+
+        let set_protection_event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            quantity: accepted_order.quantity(),
+            protection_price: Some(protection_price),
+            ..Default::default()
+        };
+        accepted_order
+            .apply(OrderEventAny::Updated(set_protection_event))
+            .unwrap();
+
+        let updated_quantity = Quantity::from(5);
+        let updated_trigger_price = Price::new(105.0, 2);
+        let omitted_protection_event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            quantity: updated_quantity,
+            trigger_price: Some(updated_trigger_price),
+            protection_price: None,
+            ..Default::default()
+        };
+        accepted_order
+            .apply(OrderEventAny::Updated(omitted_protection_event))
+            .unwrap();
+
+        assert_eq!(accepted_order.quantity(), updated_quantity);
+        assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
+        assert_eq!(accepted_order.price(), Some(protection_price));
+        assert!(accepted_order.has_price());
+
+        let updated_protection_price = Price::new(90.0, 2);
+        let overwrite_protection_event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            quantity: accepted_order.quantity(),
+            protection_price: Some(updated_protection_price),
+            ..Default::default()
+        };
+        accepted_order
+            .apply(OrderEventAny::Updated(overwrite_protection_event))
+            .unwrap();
+
+        assert_eq!(accepted_order.price(), Some(updated_protection_price));
         assert!(accepted_order.has_price());
     }
 }
