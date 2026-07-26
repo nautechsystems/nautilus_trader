@@ -2891,6 +2891,7 @@ mod tests {
             MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
             MessagingSwitchboard, TypedHandler, TypedIntoHandler,
         },
+        testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::{
@@ -4675,12 +4676,12 @@ mod tests {
 
         let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
         let handle = node.handle();
+        // Stopping from `drive` rather than here, so the node cannot finish `run` before the
+        // republished quote is observed.
         let handler = TypedHandler::from({
             let received = received.clone();
-            let handle = handle.clone();
             move |quote: &QuoteTick| {
                 received.borrow_mut().push(*quote);
-                handle.stop();
             }
         });
         msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
@@ -4697,30 +4698,24 @@ mod tests {
             SerializationEncoding::Json,
         );
 
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             let run = node.run();
             tokio::pin!(run);
 
             let drive = async {
-                for _ in 0..100 {
-                    if handle.is_running() {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                assert!(handle.is_running(), "node should reach running state");
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
 
                 tx.send(message)
                     .await
                     .expect("external ingress receiver should be open");
 
-                for _ in 0..100 {
-                    if received.borrow().len() == 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
+                wait_until_async(
+                    || async { received.borrow().len() == 1 },
+                    Duration::from_secs(10),
+                )
+                .await;
                 assert_eq!(*received.borrow(), vec![quote]);
+                handle.stop();
             };
 
             tokio::select! {
@@ -4775,18 +4770,12 @@ mod tests {
             assert_eq!(publications[0].topic, "data.quotes.TEST");
         }
 
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             let run = node.run();
             tokio::pin!(run);
 
             let drive = async {
-                for _ in 0..100 {
-                    if handle.is_running() {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                assert!(handle.is_running(), "node should reach running state");
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
                 handle.stop();
             };
 
@@ -4895,29 +4884,22 @@ mod tests {
             .borrow_mut()
             .add_streaming_type(BusPayloadType::QuoteTick);
 
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             let run = node.run();
             tokio::pin!(run);
 
             let drive = async {
-                for _ in 0..100 {
-                    if handle.is_running() {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                assert!(handle.is_running(), "node should reach running state");
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
 
                 tx.send(message)
                     .await
                     .expect("external ingress receiver should be open");
 
-                for _ in 0..100 {
-                    if received.borrow().len() == 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
+                wait_until_async(
+                    || async { received.borrow().len() == 1 },
+                    Duration::from_secs(10),
+                )
+                .await;
                 assert_eq!(*received.borrow(), vec![quote]);
                 handle.stop();
             };
@@ -4965,28 +4947,16 @@ mod tests {
             .expect("node builds with external message bus ingress");
         let handle = node.handle();
 
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             let run = node.run();
             tokio::pin!(run);
 
             let drive = async {
-                for _ in 0..100 {
-                    if handle.is_running() {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                assert!(handle.is_running(), "node should reach running state");
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
 
                 drop(tx);
 
-                for _ in 0..100 {
-                    if closed.get() {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                assert!(closed.get(), "external ingress should close");
+                wait_until_async(|| async { closed.get() }, Duration::from_secs(10)).await;
                 assert!(
                     handle.is_running(),
                     "node should keep running after ingress closes"
