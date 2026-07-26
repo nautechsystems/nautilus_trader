@@ -158,6 +158,7 @@ adapter set. The following limits remain deferred:
 ### Fixes
 - Fixed v2 PyO3 API coverage and Python exception handling
 - Fixed `nautilus database init` panicking instead of skipping existing schema objects on re-run
+- Fixed `nautilus database init` leaving schema objects owned by the bootstrap administrator
 - Fixed the v2 SQL schema loader splitting dollar-quoted (`$$`) statement bodies on their inner semicolons
 - Fixed v2 `BettingInstrument` catalog round trips corrupting raw symbols, increments, and precisions
 - Fixed v2 instrument catalog round trips dropping constraints, margins, and fees

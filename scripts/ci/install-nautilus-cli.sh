@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Install Nautilus CLI from prebuilt tarball with retries.
 # Falls back to building from source if needed.
-# Set NAUTILUS_CLI_FORCE_SOURCE=1 to always build from source (e.g., on nightly branch).
+# Set NAUTILUS_CLI_FORCE_SOURCE=1 when CLI behavior must match the current checkout
 
 BIN_DIR="${BIN_DIR:-"$HOME/.local/bin"}"
 export PATH="$BIN_DIR:$PATH"
@@ -21,7 +21,13 @@ fi
 
 cargo_install_cli() {
   for attempt in $(seq 1 "$INSTALL_ATTEMPTS"); do
-    if cargo install -q --path crates/cli --bin nautilus --locked --force --root "$HOME/.local"; then
+    if cargo install -q \
+      --path crates/cli \
+      --bin nautilus \
+      --locked \
+      --force \
+      --profile "${NAUTILUS_CLI_PROFILE:-${CARGO_CI_PROFILE:-release}}" \
+      --root "$HOME/.local"; then
       return 0
     fi
 

@@ -1311,6 +1311,64 @@ mod serial_tests {
         );
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_application_role_owns_schema_objects() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let expected_owner = options.database.clone();
+        let pg = connect_pg(options.clone().into()).await.unwrap();
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+
+        init_postgres(&pg, options.database, options.password, Some(schema_dir))
+            .await
+            .unwrap();
+
+        let owners: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'database', pg_get_userbyid(datdba)
+             FROM pg_database
+             WHERE datname = current_database()
+             UNION ALL
+             SELECT 'domain', pg_get_userbyid(t.typowner)
+             FROM pg_type t
+             JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typname = 'i256'
+             UNION ALL
+             SELECT 'function', pg_get_userbyid(p.proowner)
+             FROM pg_proc p
+             JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'public' AND p.proname = 'get_all_tables'
+             UNION ALL
+             SELECT 'schema', pg_get_userbyid(nspowner)
+             FROM pg_namespace
+             WHERE nspname = 'public'
+             UNION ALL
+             SELECT 'table', pg_get_userbyid(c.relowner)
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relname = 'order'
+             UNION ALL
+             SELECT 'type', pg_get_userbyid(t.typowner)
+             FROM pg_type t
+             JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typname = 'account_type'
+             ORDER BY 1",
+        )
+        .fetch_all(&pg)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            owners,
+            vec![
+                (String::from("database"), expected_owner.clone()),
+                (String::from("domain"), expected_owner.clone()),
+                (String::from("function"), expected_owner.clone()),
+                (String::from("schema"), expected_owner.clone()),
+                (String::from("table"), expected_owner.clone()),
+                (String::from("type"), expected_owner),
+            ]
+        );
+    }
+
     // Extracts the guarded order-column migration from the real schema file, so the test runs the
     // shipped SQL rather than a copy of it.
     fn order_numeric_migration_sql() -> String {

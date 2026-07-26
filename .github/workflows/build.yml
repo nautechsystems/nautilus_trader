@@ -281,7 +281,7 @@ jobs:
 
       - name: Install Nautilus CLI
         env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -462,7 +462,7 @@ jobs:
 
       - name: Install Nautilus CLI
         env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -523,6 +523,7 @@ jobs:
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_CI_PROFILE: nextest
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
       RUST_BACKTRACE: 1
     # yamllint disable rule:line-length
@@ -577,7 +578,7 @@ jobs:
 
       - name: Install Nautilus CLI
         env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema

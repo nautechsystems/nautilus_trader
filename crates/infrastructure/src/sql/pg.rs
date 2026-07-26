@@ -16,7 +16,10 @@
 use derive_builder::Builder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::{AssertSqlSafe, ConnectOptions, PgPool, postgres::PgConnectOptions};
+use sqlx::{
+    AssertSqlSafe, ConnectOptions, PgPool,
+    postgres::{PgConnectOptions, PgConnection},
+};
 
 fn validate_sql_identifier(value: &str, label: &str) -> anyhow::Result<()> {
     if value.is_empty() {
@@ -220,10 +223,6 @@ fn get_schema_dir() -> anyhow::Result<String> {
 /// # Panics
 ///
 /// Panics if `schema_dir` is missing and cannot be determined or if other unwraps fail.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Postgres initialization follows the ordered schema and role setup steps"
-)]
 pub async fn init_postgres(
     pg: &PgPool,
     database: String,
@@ -233,10 +232,11 @@ pub async fn init_postgres(
     log::info!("Initializing Postgres database with target permissions and schema");
 
     validate_sql_identifier(&database, "database")?;
+    let mut connection = pg.acquire().await?;
 
     // Create public schema
     match sqlx::query("CREATE SCHEMA IF NOT EXISTS public;")
-        .execute(pg)
+        .execute(&mut *connection)
         .await
     {
         Ok(_) => log::info!("Schema public created successfully"),
@@ -248,7 +248,7 @@ pub async fn init_postgres(
     match sqlx::query(AssertSqlSafe(format!(
         "CREATE ROLE {database} PASSWORD '{escaped_password}' LOGIN;"
     )))
-    .execute(pg)
+    .execute(&mut *connection)
     .await
     {
         Ok(_) => log::info!("Role {database} created successfully"),
@@ -261,52 +261,25 @@ pub async fn init_postgres(
         }
     }
 
-    // Execute all the sql files in schema dir
     let schema_dir = schema_dir.unwrap_or_else(|| get_schema_dir().unwrap());
-    let sql_files = vec!["types.sql", "functions.sql", "partitions.sql", "tables.sql"];
-    let plpgsql_regex =
-        Regex::new(r"\$\$ LANGUAGE plpgsql(?:[ \t\r\n]+SECURITY[ \t\r\n]+DEFINER)?;")?;
-
-    for file_name in &sql_files {
-        log::info!("Executing schema file: {file_name:?}");
-        let file_path = format!("{schema_dir}/{file_name}");
-        let sql_content = std::fs::read_to_string(&file_path)?;
-        let sql_statements: Vec<String> = match *file_name {
-            "functions.sql" | "partitions.sql" => {
-                let mut statements = Vec::new();
-                let mut last_end = 0;
-
-                for mat in plpgsql_regex.find_iter(&sql_content) {
-                    let statement = sql_content[last_end..mat.end()].to_string();
-                    if !statement.trim().is_empty() {
-                        statements.push(statement);
-                    }
-                    last_end = mat.end();
-                }
-                statements
-            }
-            _ => split_sql_statements(&sql_content),
-        };
-
-        for sql_statement in sql_statements {
-            if let Err(e) = sqlx::query(AssertSqlSafe(sql_statement.as_str()))
-                .execute(pg)
-                .await
-            {
-                if e.to_string().contains("already exists") {
-                    log::info!("Already exists error on statement, skipping");
-                } else {
-                    anyhow::bail!("Error executing statement {sql_statement} with error: {e:?}");
-                }
-            }
-        }
-    }
+    assign_schema_ownership(&mut connection, &database).await?;
+    sqlx::query(AssertSqlSafe(format!(
+        "ALTER DATABASE {database} OWNER TO {database};"
+    )))
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(AssertSqlSafe(format!(
+        "ALTER SCHEMA public OWNER TO {database};"
+    )))
+    .execute(&mut *connection)
+    .await?;
+    execute_schema_as_role(&mut connection, &database, &schema_dir).await?;
 
     // Grant connect
     match sqlx::query(AssertSqlSafe(format!(
         "GRANT CONNECT ON DATABASE {database} TO {database};"
     )))
-    .execute(pg)
+    .execute(&mut *connection)
     .await
     {
         Ok(_) => log::info!("Connect privileges granted to role {database}"),
@@ -317,7 +290,7 @@ pub async fn init_postgres(
     match sqlx::query(AssertSqlSafe(format!(
         "GRANT ALL PRIVILEGES ON SCHEMA public TO {database};"
     )))
-    .execute(pg)
+    .execute(&mut *connection)
     .await
     {
         Ok(_) => log::info!("All schema privileges granted to role {database}"),
@@ -328,7 +301,7 @@ pub async fn init_postgres(
     match sqlx::query(AssertSqlSafe(format!(
         "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {database};"
     )))
-    .execute(pg)
+    .execute(&mut *connection)
     .await
     {
         Ok(_) => log::info!("All tables privileges granted to role {database}"),
@@ -339,7 +312,7 @@ pub async fn init_postgres(
     match sqlx::query(AssertSqlSafe(format!(
         "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {database};"
     )))
-    .execute(pg)
+    .execute(&mut *connection)
     .await
     {
         Ok(_) => log::info!("All sequences privileges granted to role {database}"),
@@ -350,7 +323,7 @@ pub async fn init_postgres(
     match sqlx::query(AssertSqlSafe(format!(
         "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {database};"
     )))
-    .execute(pg)
+    .execute(&mut *connection)
     .await
     {
         Ok(_) => log::info!("All functions privileges granted to role {database}"),
@@ -358,6 +331,191 @@ pub async fn init_postgres(
     }
 
     Ok(())
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "The catalog query stays intact as one ownership migration boundary"
+)]
+async fn assign_schema_ownership(
+    connection: &mut PgConnection,
+    database: &str,
+) -> anyhow::Result<()> {
+    let statements: Vec<String> = sqlx::query_scalar(
+        "
+        SELECT statement
+        FROM (
+            SELECT
+                1 AS object_order,
+                CASE c.relkind
+                    WHEN 'S' THEN format(
+                        'ALTER SEQUENCE %I.%I OWNER TO %I',
+                        n.nspname,
+                        c.relname,
+                        $1
+                    )
+                    WHEN 'v' THEN format(
+                        'ALTER VIEW %I.%I OWNER TO %I',
+                        n.nspname,
+                        c.relname,
+                        $1
+                    )
+                    WHEN 'm' THEN format(
+                        'ALTER MATERIALIZED VIEW %I.%I OWNER TO %I',
+                        n.nspname,
+                        c.relname,
+                        $1
+                    )
+                    WHEN 'f' THEN format(
+                        'ALTER FOREIGN TABLE %I.%I OWNER TO %I',
+                        n.nspname,
+                        c.relname,
+                        $1
+                    )
+                    ELSE format(
+                        'ALTER TABLE %I.%I OWNER TO %I',
+                        n.nspname,
+                        c.relname,
+                        $1
+                    )
+                END AS statement
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+              AND (
+                  c.relkind <> 'S'
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM pg_depend d
+                      WHERE d.classid = 'pg_class'::regclass
+                        AND d.objid = c.oid
+                        AND d.refclassid = 'pg_class'::regclass
+                        AND d.deptype IN ('a', 'i')
+                  )
+              )
+
+            UNION ALL
+
+            SELECT
+                2 AS object_order,
+                format(
+                    'ALTER %s %I.%I(%s) OWNER TO %I',
+                    CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
+                    n.nspname,
+                    p.proname,
+                    pg_get_function_identity_arguments(p.oid),
+                    $1
+                ) AS statement
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.prokind IN ('f', 'p', 'w')
+
+            UNION ALL
+
+            SELECT
+                3 AS object_order,
+                CASE t.typtype
+                    WHEN 'd' THEN format(
+                        'ALTER DOMAIN %I.%I OWNER TO %I',
+                        n.nspname,
+                        t.typname,
+                        $1
+                    )
+                    ELSE format(
+                        'ALTER TYPE %I.%I OWNER TO %I',
+                        n.nspname,
+                        t.typname,
+                        $1
+                    )
+                END AS statement
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = 'public'
+              AND t.typtype IN ('d', 'e')
+        ) objects
+        ORDER BY object_order, statement
+        ",
+    )
+    .bind(database)
+    .fetch_all(&mut *connection)
+    .await?;
+
+    for statement in statements {
+        sqlx::query(AssertSqlSafe(statement))
+            .execute(&mut *connection)
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn execute_schema_as_role(
+    connection: &mut PgConnection,
+    database: &str,
+    schema_dir: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(AssertSqlSafe(format!("SET ROLE {database};")))
+        .execute(&mut *connection)
+        .await?;
+
+    let result = async {
+        let sql_files = ["types.sql", "functions.sql", "partitions.sql", "tables.sql"];
+        let plpgsql_regex =
+            Regex::new(r"\$\$ LANGUAGE plpgsql(?:[ \t\r\n]+SECURITY[ \t\r\n]+DEFINER)?;")?;
+
+        for file_name in sql_files {
+            log::info!("Executing schema file: {file_name:?}");
+            let file_path = format!("{schema_dir}/{file_name}");
+            let sql_content = std::fs::read_to_string(&file_path)?;
+            let sql_statements = match file_name {
+                "functions.sql" | "partitions.sql" => {
+                    let mut statements = Vec::new();
+                    let mut last_end = 0;
+
+                    for mat in plpgsql_regex.find_iter(&sql_content) {
+                        let statement = sql_content[last_end..mat.end()].to_string();
+                        if !statement.trim().is_empty() {
+                            statements.push(statement);
+                        }
+                        last_end = mat.end();
+                    }
+                    statements
+                }
+                _ => split_sql_statements(&sql_content),
+            };
+
+            for sql_statement in sql_statements {
+                if let Err(e) = sqlx::query(AssertSqlSafe(sql_statement.as_str()))
+                    .execute(&mut *connection)
+                    .await
+                {
+                    if e.to_string().contains("already exists") {
+                        log::info!("Already exists error on statement, skipping");
+                    } else {
+                        anyhow::bail!(
+                            "Error executing statement {sql_statement} with error: {e:?}"
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+    .await;
+
+    let reset_result = sqlx::query("RESET ROLE;").execute(connection).await;
+    match (result, reset_result) {
+        (Err(e), Err(reset_error)) => {
+            log::error!("Error resetting Postgres role after schema failure: {reset_error:?}");
+            Err(e)
+        }
+        (Err(e), Ok(_)) => Err(e),
+        (Ok(()), Err(e)) => Err(e.into()),
+        (Ok(()), Ok(_)) => Ok(()),
+    }
 }
 
 // Splits semicolon-delimited SQL into individual statements.
@@ -424,6 +582,12 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
 pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> {
     validate_sql_identifier(&database, "database")?;
 
+    sqlx::query(AssertSqlSafe(format!(
+        "ALTER DATABASE {database} OWNER TO SESSION_USER"
+    )))
+    .execute(pg)
+    .await?;
+
     // Execute drop owned
     match sqlx::query(AssertSqlSafe(format!("DROP OWNED BY {database}")))
         .execute(pg)
@@ -482,7 +646,7 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
             if err_msg.contains("55006") || err_msg.contains("current user cannot be dropped") {
                 log::warn!("Cannot drop currently connected role {database}");
             } else {
-                log::error!("Error dropping role {database}: {e:?}");
+                anyhow::bail!("Error dropping role {database}: {e:?}");
             }
         }
     }
