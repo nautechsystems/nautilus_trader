@@ -21,12 +21,15 @@
 )]
 
 pub mod config;
+pub mod factories;
 pub mod http;
 pub mod websocket;
 
 use std::str::FromStr;
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyType};
 
 use crate::{
@@ -34,9 +37,57 @@ use crate::{
         consts::{AX, AX_CLIENT_ID, AX_VENUE},
         enums::{AxEnvironment, AxMarketDataLevel},
     },
+    config::{AxDataClientConfig, AxExecClientConfig},
+    factories::{AxDataClientFactory, AxExecutionClientFactory},
     http::client::AxHttpClient,
     python::websocket::{PyAxMdWebSocketClient, PyAxOrdersWebSocketClient},
 };
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_ax_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<AxDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract AxDataClientFactory: {e}"
+        ))),
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_ax_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<AxExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract AxExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_ax_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<AxDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract AxDataClientConfig: {e}"
+        ))),
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_ax_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<AxExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract AxExecClientConfig: {e}"
+        ))),
+    }
+}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -124,11 +175,45 @@ pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(AX_VENUE), *AX_VENUE)?;
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
-    m.add_class::<crate::config::AxDataClientConfig>()?;
-    m.add_class::<crate::config::AxExecClientConfig>()?;
+    m.add_class::<AxDataClientConfig>()?;
+    m.add_class::<AxExecClientConfig>()?;
+    m.add_class::<AxDataClientFactory>()?;
+    m.add_class::<AxExecutionClientFactory>()?;
     m.add_class::<AxHttpClient>()?;
     m.add_class::<PyAxMdWebSocketClient>()?;
     m.add_class::<PyAxOrdersWebSocketClient>()?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) = registry.register_factory_extractor(AX.to_string(), extract_ax_data_factory) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Ax data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_exec_factory_extractor(AX.to_string(), extract_ax_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Ax exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_config_extractor("AxDataClientConfig".to_string(), extract_ax_data_config)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Ax data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_config_extractor("AxExecClientConfig".to_string(), extract_ax_exec_config)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Ax exec config extractor: {e}"
+        )));
+    }
 
     Ok(())
 }

@@ -104,6 +104,7 @@ adapter set. The following limits remain deferred:
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
 - Added Architect AX dated futures parsing and configurable WebSocket heartbeat and disconnect cancellation
 - Added Architect AX funding-slot schedule requests via `GET /funding-slots`
+- Added Architect AX Python v2 data and execution client factory bindings
 - Added Hyperliquid fast-cancel payloads for non-trigger order cancels (#4414), thanks for reporting @magnified103
 - Added Hyperliquid market data stream health warnings for stalled Deltas, Depth10, and Quote subscriptions (#4298)
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
@@ -274,6 +275,7 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX instruments always reporting zero maker and taker fees
 - Fixed Architect AX REST and WebSocket assigning different trade IDs to the same market data trade
 - Fixed Architect AX market data trade IDs colliding when one aggressor swept several book levels
+- Fixed Architect AX market data subscription tracking, unsubscribes, book-level changes, and failed-subscription replay
 - Fixed Betfair v2 voids without reversing unapplied exposure from reconnect snapshots
 - Fixed Betfair matched sizes and v2 mass-status fill IDs, commissions, and gaps
 - Fixed Binance Futures hedge-mode tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu

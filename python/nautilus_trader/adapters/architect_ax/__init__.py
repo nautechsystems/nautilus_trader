@@ -24,8 +24,10 @@ __all__ = [
     "AX_CLIENT_ID",
     "AX_VENUE",
     "AxDataClientConfig",
+    "AxDataClientFactory",
     "AxEnvironment",
     "AxExecClientConfig",
+    "AxExecutionClientFactory",
     "AxMarketDataLevel",
 ]
 

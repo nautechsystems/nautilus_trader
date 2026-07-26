@@ -513,9 +513,8 @@ impl AxMdWebSocketClient {
             .cloned()
             .unwrap_or_default();
 
-        // AX allows only one subscription per symbol, skip if book already subscribed
-        if current.book_level.is_some() {
-            log::debug!("Book deltas already subscribed for {symbol}, skipping");
+        if current.book_level == Some(level) {
+            log::debug!("Book deltas already subscribed for {symbol} at {level:?}, skipping");
             return Ok(());
         }
 
@@ -904,23 +903,24 @@ impl AxMdWebSocketClient {
 
     async fn send_unsubscribe(&self, symbol: &str, spec: AxMdSubscriptionSpec) -> AxWsResult<()> {
         let request_id = self.next_request_id();
+        let topic = spec.topic(symbol);
+        let was_pending = self
+            .subscriptions
+            .pending_subscribe_topics()
+            .contains(&topic);
 
-        self.send_cmd(HandlerCommand::Unsubscribe {
-            request_id,
-            symbol: Ustr::from(symbol),
-        })
-        .await?;
+        self.subscriptions.mark_unsubscribe(&topic);
 
-        self.subscriptions.mark_unsubscribe(&spec.topic(symbol));
-
-        for level in [
-            AxMarketDataLevel::Level1,
-            AxMarketDataLevel::Level2,
-            AxMarketDataLevel::Level3,
-            AxMarketDataLevel::Trades,
-        ] {
-            let topic = format!("{symbol}:{level:?}");
-            self.subscriptions.mark_unsubscribe(&topic);
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::Unsubscribe {
+                request_id,
+                symbol: Ustr::from(symbol),
+                topic: topic.clone(),
+            })
+            .await
+        {
+            self.restore_unsubscribe_state(&topic, was_pending);
+            return Err(e);
         }
 
         Ok(())
@@ -973,15 +973,41 @@ impl AxMdWebSocketClient {
         let _guard = self.subscribe_lock.lock().await;
         let request_id = self.next_request_id();
         let topic = format!("candles:{symbol}:{width:?}");
+        let was_pending = self
+            .subscriptions
+            .pending_subscribe_topics()
+            .contains(&topic);
+
+        if !self.is_subscribed_topic(&topic) {
+            log::debug!("Not subscribed to {topic}, skipping unsubscribe");
+            return Ok(());
+        }
 
         self.subscriptions.mark_unsubscribe(&topic);
 
-        self.send_cmd(HandlerCommand::UnsubscribeCandles {
-            request_id,
-            symbol: Ustr::from(symbol),
-            width,
-        })
-        .await
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::UnsubscribeCandles {
+                request_id,
+                symbol: Ustr::from(symbol),
+                width,
+                topic: topic.clone(),
+            })
+            .await
+        {
+            self.restore_unsubscribe_state(&topic, was_pending);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn restore_unsubscribe_state(&self, topic: &str, was_pending: bool) {
+        self.subscriptions.confirm_unsubscribe(topic);
+        if was_pending {
+            self.subscriptions.mark_subscribe(topic);
+        } else {
+            self.subscriptions.confirm_subscribe(topic);
+        }
     }
 
     /// Returns a stream of WebSocket messages.
@@ -1132,5 +1158,93 @@ mod tests {
             ))
         );
         assert!(!sdt.is_empty());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_unsubscribe_send_failure_restores_subscription(#[case] was_pending: bool) {
+        let client = AxMdWebSocketClient::new(
+            "ws://localhost:9999/md/ws".to_string(),
+            "test_token".to_string(),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let symbol = "EURUSD-PERP";
+        let spec = AxMdSubscriptionSpec::new(AxMarketDataLevel::Level2, Some(false), Some(false));
+        let topic = spec.topic(symbol);
+        client.subscriptions.mark_subscribe(&topic);
+        if !was_pending {
+            client.subscriptions.confirm_subscribe(&topic);
+        }
+
+        let error = client.send_unsubscribe(symbol, spec).await.unwrap_err();
+
+        assert_eq!(error.to_string(), "Channel error: channel closed");
+        assert_eq!(client.subscription_count(), usize::from(!was_pending));
+        assert_eq!(client.subscriptions.all_topics(), vec![topic]);
+        assert_eq!(
+            client.subscriptions.pending_subscribe_topics().len(),
+            usize::from(was_pending)
+        );
+        assert!(client.subscriptions.pending_unsubscribe_topics().is_empty());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_unsubscribe_candles_send_failure_restores_subscription(
+        #[case] was_pending: bool,
+    ) {
+        let client = AxMdWebSocketClient::new(
+            "ws://localhost:9999/md/ws".to_string(),
+            "test_token".to_string(),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let symbol = "EURUSD-PERP";
+        let width = AxCandleWidth::Minutes1;
+        let topic = format!("candles:{symbol}:{width:?}");
+        client.subscriptions.mark_subscribe(&topic);
+        if !was_pending {
+            client.subscriptions.confirm_subscribe(&topic);
+        }
+
+        let error = client.unsubscribe_candles(symbol, width).await.unwrap_err();
+
+        assert_eq!(error.to_string(), "Channel error: channel closed");
+        assert_eq!(client.subscription_count(), usize::from(!was_pending));
+        assert_eq!(client.subscriptions.all_topics(), vec![topic]);
+        assert_eq!(
+            client.subscriptions.pending_subscribe_topics().len(),
+            usize::from(was_pending)
+        );
+        assert!(client.subscriptions.pending_unsubscribe_topics().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_unsubscribe_candles_skips_untracked_topic() {
+        let client = AxMdWebSocketClient::new(
+            "ws://localhost:9999/md/ws".to_string(),
+            "test_token".to_string(),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+
+        client
+            .unsubscribe_candles("EURUSD-PERP", AxCandleWidth::Minutes1)
+            .await
+            .unwrap();
+
+        assert_eq!(client.subscription_count(), 0);
+        assert!(client.subscriptions.all_topics().is_empty());
+        assert!(client.subscriptions.pending_subscribe_topics().is_empty());
+        assert!(client.subscriptions.pending_unsubscribe_topics().is_empty());
     }
 }

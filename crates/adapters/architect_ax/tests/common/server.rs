@@ -198,6 +198,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
                 match msg_type {
                     Some("subscribe") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                         let level = value
                             .get("level")
@@ -218,11 +219,45 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                             .await
                             .push((key.clone(), !should_fail));
 
-                        if !should_fail {
+                        if should_fail {
+                            let error = json!({
+                                "rid": rid,
+                                "error": {
+                                    "code": 400,
+                                    "message": "subscription failed",
+                                },
+                            });
+
+                            if socket
+                                .send(Message::Text(error.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        {
                             let mut subs = state.subscriptions.lock().await;
                             if !subs.contains(&key) {
                                 subs.push(key);
                             }
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "subscribed": symbol,
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
 
                         if level != "TRADES" {
@@ -255,15 +290,36 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         }
                     }
                     Some("unsubscribe") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
 
-                        let mut subs = state.subscriptions.lock().await;
-                        subs.retain(|s| !s.starts_with(symbol));
+                        {
+                            let mut subs = state.subscriptions.lock().await;
+                            subs.retain(|s| !s.starts_with(symbol));
+                        }
 
-                        let mut events = state.subscription_events.lock().await;
-                        events.retain(|(t, _)| !t.starts_with(symbol));
+                        {
+                            let mut events = state.subscription_events.lock().await;
+                            events.retain(|(t, _)| !t.starts_with(symbol));
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "unsubscribed": symbol,
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                     Some("subscribe_candles") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                         let width = value.get("width").and_then(|v| v.as_str()).unwrap_or("1m");
 
@@ -276,7 +332,22 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
                         let mut subs = state.subscriptions.lock().await;
                         if !subs.contains(&key) {
-                            subs.push(key);
+                            subs.push(key.clone());
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "subscribed_candle": key,
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
 
                         // Send two candles with different timestamps to trigger bar emission
@@ -292,10 +363,29 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         }
                     }
                     Some("unsubscribe_candles") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                        let width = value.get("width").and_then(|v| v.as_str()).unwrap_or("1m");
 
-                        let mut subs = state.subscriptions.lock().await;
-                        subs.retain(|s| !s.starts_with(&format!("{symbol}:candle")));
+                        {
+                            let mut subs = state.subscriptions.lock().await;
+                            subs.retain(|s| !s.starts_with(&format!("{symbol}:candle")));
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "unsubscribed_candle": format!("{symbol}:candle:{width}"),
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                     _ => {}
                 }

@@ -471,12 +471,15 @@ async fn test_md_subscribe_candles() {
         .unwrap();
 
     wait_until_async(
-        || async { !state.subscriptions.lock().await.is_empty() },
+        || async {
+            !state.subscriptions.lock().await.is_empty() && client.subscription_count() == 1
+        },
         Duration::from_secs(5),
     )
     .await;
 
     let subs = state.subscriptions.lock().await.clone();
+    assert_eq!(client.subscription_count(), 1);
     assert!(
         subs.iter()
             .any(|s| s.contains("EURUSD-PERP") && s.contains("candle"))
@@ -508,10 +511,13 @@ async fn test_md_unsubscribe_candles() {
         .unwrap();
 
     wait_until_async(
-        || async { !state.subscriptions.lock().await.is_empty() },
+        || async {
+            !state.subscriptions.lock().await.is_empty() && client.subscription_count() == 1
+        },
         Duration::from_secs(5),
     )
     .await;
+    assert_eq!(client.subscription_count(), 1);
 
     client
         .unsubscribe_candles("EURUSD-PERP", AxCandleWidth::Minutes1)
@@ -519,28 +525,60 @@ async fn test_md_unsubscribe_candles() {
         .unwrap();
 
     wait_until_async(
-        || async { state.subscriptions.lock().await.is_empty() },
+        || async {
+            state.subscriptions.lock().await.is_empty() && client.subscription_count() == 0
+        },
         Duration::from_secs(5),
     )
     .await;
 
     assert!(state.subscriptions.lock().await.is_empty());
+    assert_eq!(client.subscription_count(), 0);
 
     client.close().await;
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_md_subscription_count_starts_at_zero() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
+async fn test_md_subscription_count_tracks_confirmed_subscriptions() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
         "test_token".to_string(),
         30,
         TransportBackend::default(),
         None,
     );
 
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async { client.subscription_count() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(client.subscription_count(), 1);
+
+    client.unsubscribe_book_deltas("EURUSD-PERP").await.unwrap();
+
+    wait_until_async(
+        || async { client.subscription_count() == 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+
     assert_eq!(client.subscription_count(), 0);
+
+    client.close().await;
 }
 
 #[rstest]
@@ -612,12 +650,12 @@ async fn test_md_server_disconnect_handling() {
 
 #[rstest]
 #[tokio::test]
-async fn test_md_reconnection_after_disconnect() {
+async fn test_md_reconnect_replays_failed_subscription() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
     let mut client = AxMdWebSocketClient::new(
-        ws_url.clone(),
+        ws_url,
         "test_token".to_string(),
         30,
         TransportBackend::default(),
@@ -627,8 +665,23 @@ async fn test_md_reconnection_after_disconnect() {
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
 
-    let initial_count = *state.connection_count.lock().await;
-    assert_eq!(initial_count, 1);
+    state
+        .set_subscription_failures(vec!["EURUSD-PERP:LEVEL_2".to_string()])
+        .await;
+    client
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async {
+            state.subscription_events().await == vec![("EURUSD-PERP:LEVEL_2".to_string(), false)]
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(client.subscription_count(), 0);
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
@@ -640,21 +693,25 @@ async fn test_md_reconnection_after_disconnect() {
 
     state.reset().await;
 
-    let mut client2 = AxMdWebSocketClient::new(
-        ws_url,
-        "test_token".to_string(),
-        30,
-        TransportBackend::default(),
-        None,
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 1 },
+        Duration::from_secs(10),
+    )
+    .await;
+    wait_until_async(
+        || async { client.subscription_count() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(client.is_active());
+    assert_eq!(client.subscription_count(), 1);
+    assert_eq!(
+        *state.subscriptions.lock().await,
+        vec!["EURUSD-PERP:LEVEL_2".to_string()]
     );
 
-    client2.connect().await.unwrap();
-    wait_for_connection(&state).await;
-
-    assert!(client2.is_active());
-
     client.close().await;
-    client2.close().await;
 }
 
 #[rstest]
@@ -945,9 +1002,7 @@ async fn test_md_unsubscribe_last_data_type_removes_server_subscription() {
 
 #[rstest]
 #[tokio::test]
-async fn test_md_subscribe_same_symbol_different_levels() {
-    // Architect allows only one subscription per symbol - the second subscription
-    // at a different level should be skipped (deduplication)
+async fn test_md_book_level_change_resubscribes() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
@@ -963,29 +1018,42 @@ async fn test_md_subscribe_same_symbol_different_levels() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
-        .await
-        .unwrap();
-    client
         .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .unwrap();
+    client
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level3)
+        .await
+        .unwrap();
 
-    // Only one subscription should be sent (L1), L2 should be skipped
     wait_until_async(
-        || async { state.subscriptions.lock().await.len() == 1 },
+        || async {
+            let subscriptions = state.subscriptions.lock().await;
+            subscriptions.len() == 1 && subscriptions[0].contains("LEVEL_3")
+        },
         Duration::from_secs(5),
     )
     .await;
 
     let subs = state.subscriptions.lock().await.clone();
+    assert_eq!(subs, vec!["EURUSD-PERP:LEVEL_3"]);
+
+    let messages = state.get_messages().await;
+    let levels = messages
+        .iter()
+        .filter(|message| message.get("type").and_then(|value| value.as_str()) == Some("subscribe"))
+        .filter_map(|message| message.get("level").and_then(|value| value.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(levels, vec!["LEVEL_2", "LEVEL_3"]);
     assert_eq!(
-        subs.len(),
-        1,
-        "Expected 1 subscription, found {}",
-        subs.len()
+        messages
+            .iter()
+            .filter(|message| {
+                message.get("type").and_then(|value| value.as_str()) == Some("unsubscribe")
+            })
+            .count(),
+        1
     );
-    assert!(subs.iter().any(|s| s.contains("LEVEL_1")));
 
     client.close().await;
 }
