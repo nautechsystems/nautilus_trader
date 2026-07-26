@@ -6495,6 +6495,65 @@ fn test_restore_snapshot_blob_rejects_conflicting_bytes_for_unencoded_frame(mut 
     );
 }
 
+#[rstest]
+fn test_settle_position_snapshots_replaces_frames_and_keeps_durable_blobs(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let mut other_position = snapshot_test_position();
+    other_position.id = PositionId::new("P-2");
+    let first_ref = cache.snapshot_position_encoded(&position).unwrap();
+    let second_ref = cache.snapshot_position_encoded(&position).unwrap();
+    cache.snapshot_position_encoded(&other_position).unwrap();
+
+    cache.settle_position_snapshots(&position, Some(Money::from("7.00 USD")));
+
+    let settled = cache.position_snapshots(Some(&position_id), None);
+
+    // The two stale frames become one worth the settled total
+    assert_eq!(cache.position_snapshot_count(&position_id), 1);
+    assert_eq!(settled.len(), 1);
+    assert_eq!(settled[0].realized_pnl, Some(Money::from("7.00 USD")));
+    assert_eq!(cache.position_snapshot_count(&other_position.id), 1);
+    // Durable blobs are untouched, matching `purge_position`, so an anchor still resolves
+    assert_eq!(
+        cache.load_snapshot_blob(&first_ref.blob_ref).unwrap(),
+        Some(first_ref.blob),
+    );
+    assert_eq!(
+        cache.load_snapshot_blob(&second_ref.blob_ref).unwrap(),
+        Some(second_ref.blob),
+    );
+}
+
+#[rstest]
+fn test_restore_snapshot_blob_after_settling_to_nothing_requires_the_first_frame(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let first_ref = cache.snapshot_position_encoded(&position).unwrap();
+    let second_ref = cache.snapshot_position_encoded(&position).unwrap();
+
+    cache.settle_position_snapshots(&position, None);
+
+    // Settling to nothing empties the frame vector, so the contiguous-index rule rejects a
+    // later frame instead of leaving a hole, and accepts frame 0.
+    let err = cache
+        .restore_snapshot_blob(&second_ref.blob_ref, second_ref.blob.clone())
+        .expect_err("skipped frame");
+    cache
+        .restore_snapshot_blob(&first_ref.blob_ref, first_ref.blob.clone())
+        .unwrap();
+
+    assert!(
+        err.to_string().contains("skips missing frame 0"),
+        "err was: {err}",
+    );
+    assert_eq!(cache.position_snapshot_count(&position_id), 1);
+    assert_eq!(
+        cache.position_snapshot_bytes(&position_id).unwrap(),
+        vec![first_ref.blob.to_vec()],
+    );
+}
+
 fn position_snapshot_blob_ref(position_id: &PositionId, index: usize) -> String {
     format!(
         "cache://position-snapshots/{}/{index}",

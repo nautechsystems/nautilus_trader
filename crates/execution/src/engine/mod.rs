@@ -21,6 +21,7 @@
 //! endpoints via its registered execution clients.
 
 pub mod config;
+pub mod position;
 pub mod stubs;
 
 use std::{
@@ -36,7 +37,7 @@ use config::ExecutionEngineConfig;
 use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
-    cache::{Cache, CacheSnapshotRef, PositionRef},
+    cache::{Cache, PositionRef},
     clients::ExecutionClient,
     clock::Clock,
     enums::LogColor,
@@ -83,6 +84,8 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
 };
+use position::CorrectedPosition;
+pub use position::{PositionStateSnapshot, SnapshotAnchorer};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -98,20 +101,6 @@ const TIMER_SNAPSHOT_POSITIONS: &str = "ExecEngine_SNAPSHOT_POSITIONS";
 const TIMER_PURGE_CLOSED_ORDERS: &str = "ExecEngine_PURGE_CLOSED_ORDERS";
 const TIMER_PURGE_CLOSED_POSITIONS: &str = "ExecEngine_PURGE_CLOSED_POSITIONS";
 const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
-
-/// Position state snapshot published to the `snapshots.position.{position_id}` topic.
-#[derive(Debug, Clone)]
-pub struct PositionStateSnapshot {
-    /// The position state at the time of the snapshot.
-    pub position: Position,
-    /// The unrealized PnL for the position, when a current quote is available.
-    pub unrealized_pnl: Option<Money>,
-    /// UNIX timestamp (nanoseconds) when the snapshot was taken.
-    pub ts_snapshot: UnixNanos,
-}
-
-/// Callback that anchors cache snapshot metadata in an external store.
-pub type SnapshotAnchorer = Rc<dyn Fn(CacheSnapshotRef) -> anyhow::Result<()>>;
 
 /// Central execution engine responsible for orchestrating order routing and execution.
 ///
@@ -2603,10 +2592,28 @@ impl ExecutionEngine {
 
                 let mut position_events = Vec::new();
 
-                for (position, corrected_qty) in corrected_positions {
+                for CorrectedPosition {
+                    position,
+                    corrected_qty,
+                    absorbed_prior_cycles,
+                    closed_cycles_pnl,
+                } in corrected_positions
+                {
                     if let Err(e) = self.cache.borrow_mut().update_position(&position) {
                         log::error!("Cannot apply fill void to position {}: {e}", position.id);
                         return;
+                    }
+
+                    if absorbed_prior_cycles {
+                        log::info!(
+                            "Settling archived NETTING cycles rebuilt by fill void {} for position {}: realized={closed_cycles_pnl:?}",
+                            voided.trade_id,
+                            position.id,
+                        );
+
+                        self.cache
+                            .borrow_mut()
+                            .settle_position_snapshots(&position, closed_cycles_pnl);
                     }
 
                     if self.config.snapshot_positions {
@@ -3316,7 +3323,7 @@ impl ExecutionEngine {
         &self,
         order: &OrderAny,
         event: &OrderFillVoided,
-    ) -> anyhow::Result<Vec<(Position, Quantity)>> {
+    ) -> anyhow::Result<Vec<CorrectedPosition>> {
         let source_event_id = order
             .events()
             .into_iter()
@@ -3456,8 +3463,35 @@ impl ExecutionEngine {
             let corrected_qty = previous.map_or(voided_qty, |(prior_qty, _)| {
                 voided_qty.saturating_sub(prior_qty)
             });
-            position.apply_fill_void(event.clone(), voided_qty, commission_voided)?;
-            corrected_positions.push((position, corrected_qty));
+
+            // `events` holds the fills since the position was last flat, because `apply_fill`
+            // clears it when reopening from flat. A NETTING flip splits one fill across the
+            // closing and reopening cycles under the same trade, so compare quantities rather
+            // than presence: the correction reaches an earlier cycle once it exceeds what the
+            // current cycle originally held. Earlier corrections have already shrunk the
+            // fragments in `events` while `voided_qty` stays cumulative, so add back what this
+            // position already voided. Read this before `apply_fill_void`, whose rebuild
+            // re-derives `events` and can move that boundary.
+            let previously_voided = previous
+                .map_or(Quantity::zero(position.size_precision), |(prior_qty, _)| {
+                    prior_qty
+                });
+            let current_cycle_qty = position
+                .events
+                .iter()
+                .filter(|fill| {
+                    fill.client_order_id == event.client_order_id && fill.trade_id == event.trade_id
+                })
+                .fold(previously_voided, |total, fill| total + fill.last_qty);
+            let absorbed_prior_cycles = voided_qty > current_cycle_qty;
+            let closed_cycles_pnl =
+                position.apply_fill_void(event.clone(), voided_qty, commission_voided)?;
+            corrected_positions.push(CorrectedPosition {
+                position,
+                corrected_qty,
+                absorbed_prior_cycles,
+                closed_cycles_pnl,
+            });
         }
         Ok(corrected_positions)
     }

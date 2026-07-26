@@ -4707,26 +4707,19 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
     );
     position1.apply(&fill2);
 
-    // Take two snapshots of the same closed state so the rebuild pass processes
-    // more than one frame for the same position id.
-    for _ in 0..2 {
-        portfolio
-            .cache()
-            .borrow_mut()
-            .snapshot_position(&position1)
-            .unwrap();
-    }
+    // Archive cycle 1, worth 20.00 less 4.00 commission
     portfolio
         .cache()
         .borrow_mut()
-        .update_position(&position1)
+        .snapshot_position(&position1)
         .unwrap();
 
-    // Reopen the position in NETTING so the LAST snapshot rule applies
+    // Cycle 2 on the same position id, worth a different 10.00 less 4.00 commission, so a rule
+    // that keeps only one frame cannot be mistaken for one that sums them.
     let order3 = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_audusd.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("50000.00"))
+        .quantity(Quantity::from("100000.00"))
         .build();
     let fill3 = build_order_filled(
         order3.trader_id(),
@@ -4739,28 +4732,86 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         order3.order_side(),
         order3.order_type(),
         order3.quantity(),
+        Price::from("0.80000"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        Some(PositionId::new("AUDUSD-MULTI")),
+        Some(Money::from("2.0 USD")),
+    );
+    let mut position2 = Position::new(&instrument_audusd, fill3);
+
+    let order4 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000.00"))
+        .build();
+    let fill4 = build_order_filled(
+        order4.trader_id(),
+        order4.strategy_id(),
+        order4.instrument_id(),
+        order4.client_order_id(),
+        VenueOrderId::new("4"),
+        AccountId::new("SIM-001"),
+        TradeId::new("4"),
+        order4.order_side(),
+        order4.order_type(),
+        order4.quantity(),
+        Price::from("0.80010"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        Some(PositionId::new("AUDUSD-MULTI")),
+        Some(Money::from("2.0 USD")),
+    );
+    position2.apply(&fill4);
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position2)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position2)
+        .unwrap();
+
+    // Reopen the position in NETTING, so both archived cycles are prior cycles
+    let order5 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("50000.00"))
+        .build();
+    let fill5 = build_order_filled(
+        order5.trader_id(),
+        order5.strategy_id(),
+        order5.instrument_id(),
+        order5.client_order_id(),
+        VenueOrderId::new("5"),
+        AccountId::new("SIM-001"),
+        TradeId::new("5"),
+        order5.order_side(),
+        order5.order_type(),
+        order5.quantity(),
         Price::from("0.80050"),
         Currency::USD(),
         LiquiditySide::Taker,
         Some(PositionId::new("AUDUSD-MULTI")),
         Some(Money::from("1.0 USD")),
     );
-    let position2 = Position::new(&instrument_audusd, fill3);
+    let position3 = Position::new(&instrument_audusd, fill5);
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(&position2, OmsType::Netting)
+        .add_position(&position3, OmsType::Netting)
         .unwrap();
 
-    // Both stored frames carry the same realized PnL, so the LAST-rule result
-    // matches the single-snapshot baseline (15.00 USD). A broken
-    // position_snapshot_count or position_snapshots_from would drop all
-    // snapshot contribution and return 0 USD here.
+    // Every prior cycle contributes, matching v1: 16.00 + 6.00 less the reopening commission.
+    // Keeping only the newest frame would report 5.00, and dropping the frames entirely -1.00.
     let pnl = portfolio
         .realized_pnl(&instrument_audusd.id())
         .expect("realized_pnl should be Some");
     assert_eq!(pnl.currency, Currency::USD());
-    assert_eq!(pnl, Money::from("15.00 USD"));
+    assert_eq!(pnl, Money::from("21.00 USD"));
 }
 
 #[rstest]
@@ -4803,6 +4854,208 @@ fn test_realized_pnl_rejects_mixed_currency_snapshots(
 
     assert_eq!(initial_realized_pnl, Some(Money::from("10.00 USD")));
     assert_eq!(mixed_realized_pnl, None);
+}
+
+/// Builds a cached NETTING position that is closed, with `prior_pnl` archived as an earlier
+/// cycle and `closed_pnl` archived as its own final cycle, so the last frame repeats the
+/// position's realized PnL.
+fn add_closed_netting_position_with_snapshots(
+    portfolio: &Portfolio,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    position_id: PositionId,
+    archived_pnls: &[Money],
+    closed_pnl: Money,
+) {
+    let fill = make_fill_for_account(
+        instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("1.00"),
+        position_id,
+    );
+    let mut position = Position::new(instrument, fill);
+    position.side = PositionSide::Flat;
+    position.ts_closed = Some(UnixNanos::from(1));
+
+    for archived_pnl in archived_pnls {
+        position.realized_pnl = Some(*archived_pnl);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .snapshot_position(&position)
+            .unwrap();
+    }
+
+    // Matching the final archived entry models a cycle that was snapshotted; a different value
+    // models one that closed without being snapshotted.
+    position.realized_pnl = Some(closed_pnl);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+}
+
+#[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_counts_final_cycle_once(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+
+    add_closed_netting_position_with_snapshots(
+        &portfolio,
+        &instrument_audusd,
+        AccountId::new("SIM-001"),
+        PositionId::new("P-CLOSED-CACHED-NETTING"),
+        &[Money::from("16.00 USD"), Money::from("6.00 USD")],
+        Money::from("6.00 USD"),
+    );
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should be Some");
+
+    // The final cycle is both the last frame and the position's own realized PnL. Counting it
+    // once gives 16.00 + 6.00; counting it twice would give 28.00.
+    assert_eq!(pnl, Money::from("22.00 USD"));
+}
+
+#[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_adds_unsnapshotted_final_cycle(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+
+    add_closed_netting_position_with_snapshots(
+        &portfolio,
+        &instrument_audusd,
+        AccountId::new("SIM-001"),
+        PositionId::new("P-CLOSED-UNSNAPSHOTTED"),
+        &[Money::from("16.00 USD"), Money::from("6.00 USD")],
+        Money::from("7.00 USD"),
+    );
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should be Some");
+
+    // The final cycle closed without being snapshotted, so no frame repeats it and every frame
+    // contributes alongside it: 16.00 + 6.00 + 7.00.
+    assert_eq!(pnl, Money::from("29.00 USD"));
+}
+
+#[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_uses_mark_xrate(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    // Only a mark rate is available, so a MID-only lookup cannot convert
+    simple_cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.5);
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100000.00 EUR"),
+            Money::zero(Currency::EUR()),
+            Money::from("100000.00 EUR"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::EUR()),
+    ));
+
+    add_closed_netting_position_with_snapshots(
+        &portfolio,
+        &instrument_audusd,
+        account_id,
+        PositionId::new("P-CLOSED-CACHED-MARK-XRATE"),
+        &[Money::from("16.00 USD"), Money::from("6.00 USD")],
+        Money::from("6.00 USD"),
+    );
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should convert through the mark rate");
+
+    assert_eq!(pnl, Money::from("11.00 EUR"));
+}
+
+#[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_without_base_conversion(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.5);
+    let config = PortfolioConfig::builder()
+        .convert_to_account_base_currency(false)
+        .build()
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100000.00 EUR"),
+            Money::zero(Currency::EUR()),
+            Money::from("100000.00 EUR"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::EUR()),
+    ));
+
+    add_closed_netting_position_with_snapshots(
+        &portfolio,
+        &instrument_audusd,
+        account_id,
+        PositionId::new("P-CLOSED-CACHED-NO-CONVERT"),
+        &[Money::from("16.00 USD"), Money::from("6.00 USD")],
+        Money::from("6.00 USD"),
+    );
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should be Some");
+
+    // Conversion is disabled, so the amounts stay at face value rather than halving
+    assert_eq!(pnl, Money::from("22.00 EUR"));
 }
 
 fn make_fill_for_account(

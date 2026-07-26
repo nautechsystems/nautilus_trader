@@ -2061,6 +2061,11 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "settle_position_snapshots",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "purge_instrument",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

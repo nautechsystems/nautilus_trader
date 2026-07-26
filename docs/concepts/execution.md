@@ -235,7 +235,10 @@ simulated venue never emits fill voids, so backtests take the bounded default. E
 for a custom or external execution client that can correct a fill from a prior cycle; without the
 carried log the engine finds no matching position fragment and rejects the correction.
 
-Realized-PnL snapshots are unaffected either way. See
+Realized-PnL snapshots follow the correction. A fill void that reaches an earlier cycle rebuilds the
+position across the cycle boundary, moving the boundaries its archived snapshots describe, so the
+engine settles those snapshots into the corrected history's own closed cycles and realized PnL counts
+each cycle once. A void confined to the current cycle leaves the archive intact. See
 [Position snapshotting](positions.md#position-snapshotting).
 
 ## Risk engine

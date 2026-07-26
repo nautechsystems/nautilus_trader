@@ -68,6 +68,7 @@ struct PortfolioState {
     snapshot_last_per_position: AHashMap<PositionId, Money>,
     snapshot_currency_mismatches: AHashSet<PositionId>,
     snapshot_processed_counts: AHashMap<PositionId, usize>,
+    snapshot_processed_revisions: AHashMap<PositionId, u64>,
     snapshot_account_ids: AHashMap<PositionId, AccountId>,
     net_positions: IndexMap<InstrumentId, Decimal>,
     pending_calcs: AHashSet<InstrumentId>,
@@ -119,6 +120,7 @@ impl PortfolioState {
             snapshot_last_per_position: AHashMap::new(),
             snapshot_currency_mismatches: AHashSet::new(),
             snapshot_processed_counts: AHashMap::new(),
+            snapshot_processed_revisions: AHashMap::new(),
             snapshot_account_ids: AHashMap::new(),
             net_positions: IndexMap::new(),
             pending_calcs: AHashSet::new(),
@@ -149,6 +151,7 @@ impl PortfolioState {
         self.snapshot_last_per_position.clear();
         self.snapshot_currency_mismatches.clear();
         self.snapshot_processed_counts.clear();
+        self.snapshot_processed_revisions.clear();
         self.snapshot_account_ids.clear();
         self.pending_calcs.clear();
         self.bar_close_prices.clear();
@@ -2031,9 +2034,11 @@ impl Portfolio {
 
         let mut rebuild = false;
 
-        // Detect purge/reset (count regression) to trigger full rebuild
+        // Detect purge/reset (count regression) or a settle that replaced frames without moving
+        // the count, both of which invalidate the cached per-position aggregates
         for position_id in &snapshot_position_ids {
             let curr_count = self.cache.borrow().position_snapshot_count(position_id);
+            let curr_revision = self.cache.borrow().position_snapshot_revision(position_id);
             let prev_count = self
                 .inner
                 .borrow()
@@ -2041,8 +2046,15 @@ impl Portfolio {
                 .get(position_id)
                 .copied()
                 .unwrap_or(0);
+            let prev_revision = self
+                .inner
+                .borrow()
+                .snapshot_processed_revisions
+                .get(position_id)
+                .copied()
+                .unwrap_or(0);
 
-            if prev_count > curr_count {
+            if prev_count > curr_count || prev_revision != curr_revision {
                 rebuild = true;
                 break;
             }
@@ -2055,6 +2067,7 @@ impl Portfolio {
                 // to deserialize are skipped and would otherwise make the incremental
                 // path reprocess trailing valid frames next time.
                 let snapshot_count = self.cache.borrow().position_snapshot_count(position_id);
+                let snapshot_revision = self.cache.borrow().position_snapshot_revision(position_id);
                 let snapshots = self
                     .cache
                     .borrow()
@@ -2109,6 +2122,9 @@ impl Portfolio {
                 inner
                     .snapshot_processed_counts
                     .insert(*position_id, snapshot_count);
+                inner
+                    .snapshot_processed_revisions
+                    .insert(*position_id, snapshot_revision);
             }
             self.inner
                 .borrow_mut()
@@ -2121,6 +2137,7 @@ impl Portfolio {
                 // Compare raw frame counts first so untouched positions skip any
                 // allocation/serde cost on repeated PnL refreshes.
                 let curr_count = self.cache.borrow().position_snapshot_count(position_id);
+                let curr_revision = self.cache.borrow().position_snapshot_revision(position_id);
                 let prev_count = self
                     .inner
                     .borrow()
@@ -2197,6 +2214,9 @@ impl Portfolio {
                 inner
                     .snapshot_processed_counts
                     .insert(*position_id, curr_count);
+                inner
+                    .snapshot_processed_revisions
+                    .insert(*position_id, curr_revision);
             }
 
             if cache_changed {
@@ -2302,10 +2322,21 @@ impl Portfolio {
             // NETTING OMS: Apply 3-case rule for position cycles
 
             for position_id in &snapshot_position_ids {
-                let is_active = positions.iter().any(|p| p.id == *position_id);
+                let position = positions.iter().find(|p| p.id == *position_id);
+                let sum_pnl = self
+                    .inner
+                    .borrow()
+                    .snapshot_sum_per_position
+                    .get(position_id)
+                    .copied();
 
-                if is_active {
-                    // Case 1 & 2: Active position - use only the last snapshot PnL
+                // A closed position whose final cycle was snapshotted carries that cycle both in
+                // its last frame and in its own realized PnL, which the loop below adds; drop
+                // the frame here so the cycle lands once.
+                let sum_pnl = sum_pnl.map(|sum_pnl| {
+                    let closed_position_pnl = position
+                        .filter(|position| !position.is_open())
+                        .and_then(|position| position.realized_pnl);
                     let last_pnl = self
                         .inner
                         .borrow()
@@ -2313,87 +2344,44 @@ impl Portfolio {
                         .get(position_id)
                         .copied();
 
-                    if let Some(last_pnl) = last_pnl {
-                        if !pnl_currency_is_compatible(&account, currency, last_pnl.currency) {
-                            return None;
+                    match (closed_position_pnl, last_pnl) {
+                        (Some(realized_pnl), Some(last_pnl)) if last_pnl == realized_pnl => {
+                            sum_pnl - last_pnl
                         }
-                        let mut pnl = last_pnl.as_decimal();
+                        _ => sum_pnl,
+                    }
+                });
 
-                        if let Some(base_currency) = account.base_currency()
-                            && positions.iter().any(|p| p.id == *position_id)
+                if let Some(sum_pnl) = sum_pnl {
+                    if !pnl_currency_is_compatible(&account, currency, sum_pnl.currency) {
+                        return None;
+                    }
+                    let mut pnl = sum_pnl.as_decimal();
+
+                    if let Some(base_currency) = account.base_currency() {
+                        let xrate = if let Some(xrate) =
+                            self.calculate_xrate_to_base(instrument, &account, sum_pnl.currency)
                         {
-                            let xrate = if let Some(xrate) = self.calculate_xrate_to_base(
-                                instrument,
-                                &account,
-                                last_pnl.currency,
-                            ) {
-                                xrate
-                            } else {
-                                log::warn!(
-                                    "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                                    last_pnl.currency,
-                                    base_currency
-                                );
-                                self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                                return None;
-                            };
-
-                            pnl = self.checked_convert_realized_pnl(
-                                pnl,
-                                xrate,
-                                currency,
-                                *instrument_id,
-                            )?;
-                        }
-
-                        total_pnl =
-                            self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
-                    }
-                } else {
-                    // Case 3: Closed position - use sum of all snapshot PnLs
-                    let sum_pnl = self
-                        .inner
-                        .borrow()
-                        .snapshot_sum_per_position
-                        .get(position_id)
-                        .copied();
-
-                    if let Some(sum_pnl) = sum_pnl {
-                        if !pnl_currency_is_compatible(&account, currency, sum_pnl.currency) {
-                            return None;
-                        }
-                        let mut pnl = sum_pnl.as_decimal();
-
-                        if let Some(base_currency) = account.base_currency() {
-                            // For closed positions, we don't have entry price, use current rates
-                            let xrate = cache.get_xrate(
-                                instrument_id.venue,
+                            xrate
+                        } else {
+                            log::warn!(
+                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                                 sum_pnl.currency,
-                                base_currency,
-                                PriceType::Mid,
+                                base_currency
                             );
+                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                            return None;
+                        };
 
-                            if let Some(xrate) = xrate {
-                                pnl = self.checked_convert_realized_pnl(
-                                    pnl,
-                                    xrate,
-                                    currency,
-                                    *instrument_id,
-                                )?;
-                            } else {
-                                log::warn!(
-                                    "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                                    sum_pnl.currency,
-                                    base_currency
-                                );
-                                self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                                return None;
-                            }
-                        }
-
-                        total_pnl =
-                            self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
+                        pnl = self.checked_convert_realized_pnl(
+                            pnl,
+                            xrate,
+                            currency,
+                            *instrument_id,
+                        )?;
                     }
+
+                    total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
                 }
             }
 

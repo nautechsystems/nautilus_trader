@@ -2117,6 +2117,7 @@ pub struct Cache {
     order_lists: AHashMap<OrderListId, OrderList>,
     positions: AHashMap<PositionId, SharedCell<Position>>,
     position_snapshots: AHashMap<PositionId, Vec<PositionSnapshotFrame>>,
+    position_snapshot_revisions: AHashMap<PositionId, u64>,
     #[cfg(feature = "defi")]
     pub(crate) defi: crate::defi::cache::DefiCache,
 }
@@ -2202,6 +2203,7 @@ impl Cache {
             order_lists: AHashMap::new(),
             positions: AHashMap::new(),
             position_snapshots: AHashMap::new(),
+            position_snapshot_revisions: AHashMap::new(),
             #[cfg(feature = "defi")]
             defi: crate::defi::cache::DefiCache::default(),
         }
@@ -3389,6 +3391,7 @@ impl Cache {
 
         // Always clean up position snapshots (even if position not in cache)
         self.position_snapshots.remove(&position_id);
+        self.bump_position_snapshot_revision(position_id);
     }
 
     /// Purges the instrument with the `instrument_id` from the cache (if found).
@@ -3564,6 +3567,7 @@ impl Cache {
         self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
+        self.position_snapshot_revisions.clear();
         self.greeks.clear();
         self.yield_curves.clear();
 

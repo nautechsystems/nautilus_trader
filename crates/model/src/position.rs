@@ -635,6 +635,12 @@ impl Position {
 
     /// Applies a cumulative fill correction allocated to this position and rebuilds derived state.
     ///
+    /// Returns the realized PnL of the cycles the rebuild closed before the current one, which
+    /// [`Self::realized_pnl`] no longer holds because reopening from flat resets it. A caller
+    /// archiving closed cycles needs this to keep their PnL once the correction has moved the
+    /// cycle boundaries its existing archive describes. `None` when the corrected history never
+    /// goes flat, so the current cycle covers all of it.
+    ///
     /// # Errors
     ///
     /// Returns an error when the allocation is stale, duplicated, or exceeds known fragments.
@@ -643,7 +649,7 @@ impl Position {
         event: OrderFillVoided,
         voided_qty: Quantity,
         commission_voided: Option<Money>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<Money>> {
         let fragment_qty = self
             .fill_fragments(event.client_order_id, event.trade_id)
             .iter()
@@ -678,8 +684,8 @@ impl Position {
             voided_qty,
             commission_voided,
         });
-        self.rebuild_from_replay();
-        Ok(())
+
+        Ok(self.rebuild_from_replay())
     }
 
     /// Returns durable fill fragments matching an order trade in local application order.
@@ -702,7 +708,10 @@ impl Position {
             .collect()
     }
 
-    fn rebuild_from_replay(&mut self) {
+    // The banked total assumes `replay_events` spans every cycle this position archived, since
+    // settling replaces all of its frames with one worth that total. Bounding the log has to
+    // preserve it at trim time; `Cache::settle_position_snapshots` documents the two ways.
+    fn rebuild_from_replay(&mut self) -> Option<Money> {
         let replay_events = self.replay_events.clone();
         let mut quantity_removed = AHashMap::<usize, Quantity>::new();
         let mut commission_removed = AHashMap::<usize, Money>::new();
@@ -742,6 +751,8 @@ impl Position {
 
         self.reset_derived_state();
 
+        let mut closed_cycles_pnl: Option<Money> = None;
+
         for (index, replay_event) in replay_events.iter().enumerate() {
             match replay_event {
                 PositionReplayEvent::Filled(fill) => {
@@ -766,6 +777,16 @@ impl Position {
                         continue;
                     }
 
+                    // `apply_fill` clears realized PnL when it reopens from flat, so bank the
+                    // closing cycle's total before it goes
+                    if self.side == PositionSide::Flat
+                        && let Some(realized_pnl) = self.realized_pnl
+                    {
+                        closed_cycles_pnl = Some(
+                            closed_cycles_pnl.map_or(realized_pnl, |total| total + realized_pnl),
+                        );
+                    }
+
                     let mut effective = fill.clone();
                     effective.last_qty = effective_qty;
                     effective.commission = effective_commission;
@@ -776,6 +797,8 @@ impl Position {
                 }
             }
         }
+
+        closed_cycles_pnl
     }
 
     fn apply_surviving_fill_commission(&mut self, fill: &OrderFilled, commission: Money) {

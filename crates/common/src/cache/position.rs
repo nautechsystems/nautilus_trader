@@ -137,6 +137,52 @@ impl Cache {
         Ok(CacheSnapshotRef::new(blob_ref, encoded))
     }
 
+    /// Replaces every NETTING archive frame held for `position` with the cycles a correction
+    /// rebuilt, worth `closed_cycles_pnl`.
+    ///
+    /// A correction that reaches an earlier cycle moves the boundaries the existing frames
+    /// describe, so they cannot be reconciled and are settled into one frame instead. Pass
+    /// `None` when the corrected history never goes flat, which leaves no archived cycle at all.
+    /// As with [`Self::purge_position`], the durable `cache://position-snapshots/...` entries
+    /// stay in general cache state.
+    ///
+    /// Requires `closed_cycles_pnl` to account for every frame held, since this removes all of
+    /// them. The position's replay log must therefore span every archived cycle for the ID. Any
+    /// future retention cap on the log has to preserve that at trim time, either by folding the
+    /// trimmed cycles' realized PnL into a baseline the rebuild adds to its banked total, or by
+    /// purging the frames those cycles produced in the same operation. Settling cannot detect the
+    /// shortfall, because frames carry no cycle identity to match against the retained log.
+    ///
+    /// Known limitation, shared with [`Self::purge_position`]: frame indices restart from zero,
+    /// so a later cycle can overwrite bytes an event store anchor already recorded, failing its
+    /// content-hash check on restore. Frames need an identity independent of their vector
+    /// position to fix it.
+    pub fn settle_position_snapshots(
+        &mut self,
+        position: &Position,
+        closed_cycles_pnl: Option<Money>,
+    ) {
+        self.position_snapshots.remove(&position.id);
+        self.bump_position_snapshot_revision(position.id);
+
+        if let Some(closed_cycles_pnl) = closed_cycles_pnl {
+            let (_, mut settled) = self.build_position_snapshot(position);
+            settled.realized_pnl = Some(closed_cycles_pnl);
+            self.store_position_snapshot(position.id, settled, None);
+        }
+    }
+
+    /// Records that the frames held for `position_id` were replaced rather than appended to.
+    ///
+    /// Consumers cache per-position aggregates keyed off the frame count, which settling and
+    /// purging can leave unchanged while the frames behind it differ.
+    pub(super) fn bump_position_snapshot_revision(&mut self, position_id: PositionId) {
+        *self
+            .position_snapshot_revisions
+            .entry(position_id)
+            .or_default() += 1;
+    }
+
     fn build_position_snapshot(&self, position: &Position) -> (String, Position) {
         let position_id = position.id;
 
@@ -321,6 +367,19 @@ impl Cache {
     #[must_use]
     pub fn position_snapshot_count(&self, position_id: &PositionId) -> usize {
         self.position_snapshots.get(position_id).map_or(0, Vec::len)
+    }
+
+    /// Returns how many times the frames stored for the `position_id` were replaced.
+    ///
+    /// Pair this with [`Self::position_snapshot_count`] to detect frame changes: settling or
+    /// purging can replace the frames without moving the count, so the count alone is not
+    /// enough to tell whether cached per-position aggregates are still current.
+    #[must_use]
+    pub fn position_snapshot_revision(&self, position_id: &PositionId) -> u64 {
+        self.position_snapshot_revisions
+            .get(position_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Returns all position snapshots with the given optional filters.

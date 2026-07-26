@@ -211,6 +211,11 @@ This snapshot is stored in the cache indexed by position ID. The position then r
 cycle while previous snapshots remain accessible. The Portfolio aggregates PnL across all snapshots
 for accurate totals.
 
+A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the
+cycle boundaries the stored snapshots describe, so the engine replaces them with the cycles the
+corrected history actually closes, keeping each counted once. See
+[Position replay across NETTING cycles](execution.md#position-replay-across-netting-cycles).
+
 :::note
 This historical snapshot mechanism differs from optional position state snapshots (`snapshot_positions`),
 which periodically record open-position state for telemetry. See the [Live guide](live.md) for
