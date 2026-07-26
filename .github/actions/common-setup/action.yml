@@ -9,6 +9,10 @@ inputs:
     description: Free disk space
     required: false
     default: "false"
+  free-disk-space-max-build:
+    description: Remove additional tools unused by large Linux build jobs
+    required: false
+    default: "false"
   build-type:
     description: Type of build (pre-commit, test, release)
     required: false
@@ -71,6 +75,7 @@ runs:
       shell: bash
       env:
         BUILD_TYPE: ${{ inputs.build-type }}
+        MAX_BUILD: ${{ inputs.free-disk-space-max-build }}
         RUNNER_ENV: ${{ runner.environment }}
       run: |
         args="--android --dotnet --docker-images --swap-storage"
@@ -79,6 +84,9 @@ runs:
         fi
         if [ "$RUNNER_ENV" = "github-hosted" ]; then
           args="$args --extra"
+        fi
+        if [ "$MAX_BUILD" = "true" ]; then
+          args="$args --max-build"
         fi
         bash scripts/ci/free-disk-space.sh $args
 

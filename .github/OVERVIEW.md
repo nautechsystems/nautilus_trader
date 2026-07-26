@@ -22,18 +22,19 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: main v1 CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
+- **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
   wheel builds, artifact uploads, release asset uploads, Trusted Publishing to PyPI and crates.io,
   release preflights, release attestations, registry verification, release checksum publication,
   final release asset verification, and final GitHub release publication and attestation
   verification. The nightly merge builds and publishes wheels for every supported platform.
-  Includes a plan step that skips builds on docs-only changes and skips Rust tests on Python-only
-  changes.
+  A dedicated Linux x86 job runs the workspace Rust suite once, and the required Python wheel jobs
+  fail when that prerequisite fails. The plan step skips builds on docs-only changes and skips Rust
+  tests on Python-only changes.
 - **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs for every pull request targeting
-  `develop`; its plan step skips builds for docs-only changes and skips Rust tests for Python-only
-  changes. Runs Linux x86 builds on the self-hosted `build-v2` pool and the full Python test suite
-  against wheels for every supported platform during the nightly merge. This workflow owns
-  cross-platform nightly validation outside the v1 wheel publication jobs.
+  `develop`; its plan step skips builds for docs-only changes. The main build workflow owns the
+  shared workspace Rust suite. This workflow runs Linux x86 builds on the self-hosted `build-v2`
+  pool and the full Python test suite against wheels for every supported platform during the
+  nightly merge. It owns cross-platform nightly validation outside the v1 wheel publication jobs.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
@@ -124,9 +125,10 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   job uploads `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow
   artifacts. `publish-github-release` verifies the final draft asset set, publishes the draft
   release, and verifies GitHub's release attestation.
-- **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
-  data caches speed up workflows while preserving hermetic builds. Build-matrix Rust cache saves
-  are restricted to push events. Self-hosted jobs use persistent target directories instead.
+- **Caching**: The dedicated Linux x86 Rust job restores caches for pull requests and produces them
+  from trusted `develop` pushes. Wheel-matrix Rust cache saves are restricted to push events.
+  Self-hosted jobs use persistent target directories instead. Prek hook environments use a separate
+  cache. The active large Parquet fixtures save after the Rust tests on a cache miss.
 - **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
   mainline branches are never cancelled.
 - **Runners**: Cross-platform wheel jobs use Depot 8-core runners for Linux and Windows, except

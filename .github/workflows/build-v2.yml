@@ -15,6 +15,7 @@ on:
     branches:
       - test-ci
       - test-ci-v2
+      - test-pre-commit-v2
       - develop
       - nightly
       - master
@@ -51,7 +52,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
-      run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
     steps:
       # https://github.com/step-security/harden-runner
@@ -93,6 +93,8 @@ jobs:
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
+      || github.event_name == 'push' && github.ref_name == 'test-ci'
+      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     env:
       # Self-hosted keeps Rust artifacts outside the workspace
@@ -100,11 +102,16 @@ jobs:
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
         && format('{0}/target', github.workspace)
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr' || 'nextest' }}
+        && 'ci-pr'
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && 'ci-pr'
+        || 'nextest' }}
       # Scopes incremental clippy/doc checks; empty for non-PR/push events.
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -139,17 +146,29 @@ jobs:
           build-type: "pre-commit"
           rust-cache-enabled: "false"
 
-      - name: Limit Cargo build jobs on untrusted PR runners
-        if: >-
-          github.event_name == 'pull_request'
-          && needs.plan.outputs.untrusted_pr != 'false'
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: runner.environment == 'github-hosted'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+
+      - name: Get lychee version
+        run: |
+          version="$(bash scripts/cargo-tool-version.sh lychee)"
+          echo "LYCHEE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install lychee
+        # https://github.com/taiki-e/install-action
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: lychee@${{ env.LYCHEE_VERSION }}
+        env:
+          # Ubuntu 22.04 glibc is older than Lychee's GNU binary requires
+          CARGO_BUILD_TARGET: x86_64-unknown-linux-musl
 
       - name: Run pre-commit
         run: prek run --all-files
 
   build:
-    if: needs.plan.outputs.run-tests == 'true'
+    if: github.ref != 'refs/heads/test-pre-commit-v2' && needs.plan.outputs.run-tests == 'true'
     needs:
       - plan
       - pre-commit
@@ -164,6 +183,8 @@ jobs:
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
+      || github.event_name == 'push' && github.ref_name == 'test-ci'
+      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     defaults:
       run:
@@ -172,43 +193,26 @@ jobs:
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr' || 'nextest' }}
+        && 'ci-pr'
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && 'ci-pr'
+        || 'nextest' }}
       MATURIN_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr-wheel' || 'release' }}
+        && 'ci-pr-wheel'
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && 'ci-pr-wheel'
+        || 'release' }}
       RUST_BACKTRACE: 1
       # Self-hosted keeps Rust artifacts outside the workspace
       CARGO_TARGET_DIR: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
         && format('{0}/target', github.workspace)
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && format('{0}/target', github.workspace)
         || format('/home/runner/.cache/cargo-target/py{0}', matrix.python-version) }}
-    # yamllint disable rule:line-length
-    services:
-      redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: nautilus
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d nautilus"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    # yamllint enable rule:line-length
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
@@ -235,60 +239,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
+          free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
           rust-cache-enabled: "false"
 
-      - name: Limit Cargo build jobs on untrusted PR runners
-        if: >-
-          github.event_name == 'pull_request'
-          && needs.plan.outputs.untrusted_pr != 'false'
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: runner.environment == 'github-hosted'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
-
-      - name: Install Nautilus CLI
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
-        run: bash scripts/ci/install-nautilus-cli.sh
-
-      - name: Init postgres schema
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USERNAME: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DATABASE: nautilus
-
-      - name: Cached test data
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        uses: ./.github/actions/common-test-data
-
-      # Doctests share this job with the nextest steps so both reuse the same
-      # workspace artifacts (`cargo nextest` cannot run doctests). They run
-      # first because rustdoc links one throwaway binary per doc example: those
-      # transient files are released before the nextest test-binary set lands,
-      # keeping peak disk below what a GitHub-hosted runner provides.
-      - name: Run Rust doctests
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-doc HYPERSYNC=true
-
-      - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core-selected HYPERSYNC=true NEXTEST_PROFILE=ci
-
-      - name: Run Rust tests (adapters)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-adapters HYPERSYNC=true NEXTEST_PROFILE=ci
-
-      - name: Clean Rust test artifacts
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: |
-          echo "::group::Disk space after Rust tests"
-          df -h .
-          echo "::endgroup::"
-          rm -rf "${CARGO_TARGET_DIR}/nextest"
-          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
-          df -h .
 
       # Update version for dev/nightly branches
       - name: Update version in pyproject.toml
@@ -320,6 +276,8 @@ jobs:
           V2_CARGO_TARGET_DIR: >-
             ${{ github.event_name == 'pull_request'
             && needs.plan.outputs.untrusted_pr != 'false'
+            && format('{0}/target/py-stubs-v2', github.workspace)
+            || github.event_name == 'push' && github.ref_name == 'test-ci'
             && format('{0}/target/py-stubs-v2', github.workspace)
             || '/home/runner/.cache/cargo-target/py-stubs-v2' }}
         run: |

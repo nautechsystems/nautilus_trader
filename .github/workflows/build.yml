@@ -6,7 +6,8 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop, test-ci, test-pre-commit]
+    # build.yml owns the shared Rust suite for test-ci-v2; v1 wheels skip that branch.
+    branches: [master, nightly, develop, test-ci, test-ci-v2, test-pre-commit]
   pull_request:
     branches-ignore: [master, nightly]
 
@@ -115,10 +116,7 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           build-type: "pre-commit"
-          rust-cache-enabled: >-
-            ${{ github.event_name == 'pull_request'
-            && needs.plan.outputs.untrusted_pr != 'false'
-            && 'true' || 'false' }}
+          rust-cache-enabled: "false"
 
       - name: Limit Cargo build jobs on untrusted PR runners
         if: >-
@@ -195,8 +193,136 @@ jobs:
           cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
             --store-path .supply-chain
 
+  rust-tests-linux-x86:
+    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-rust-tests == 'true'
+    name: rust tests (ubuntu-22.04)
+    runs-on: >-
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
+      && 'ubuntu-22.04'
+      || github.event_name == 'push' && github.ref_name == 'test-ci'
+      && 'ubuntu-22.04'
+      || github.event_name == 'pull_request'
+      && fromJson('["self-hosted", "Linux", "X64", "build"]')
+      || fromJson('["depot-ubuntu-22.04-8"]') }}
+    needs:
+      - plan
+      - pre-commit
+    env:
+      CARGO_CI_PROFILE: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr'
+        || github.event_name == 'push'
+        && (github.ref_name == 'develop' || github.ref_name == 'test-ci')
+        && 'ci-pr'
+        || 'nextest' }}
+      CARGO_TARGET_DIR: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr == 'false'
+        && '/home/runner/.cache/cargo-target/rust-tests-linux-x86'
+        || 'target/rust-tests-linux-x86' }}
+      RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
+    services:
+      redis:
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
+    # yamllint enable rule:line-length
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
+          rust-cache-enabled: >-
+            ${{ (runner.environment == 'github-hosted' || github.event_name == 'push')
+            && 'true' || 'false' }}
+          rust-cache-key: rust-tests-linux-x86
+          rust-cache-workspaces: . -> target/rust-tests-linux-x86
+          rust-cache-on-failure: "false"
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: runner.environment == 'github-hosted'
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+
+      - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
+      - name: Report disk space before Rust tests
+        run: bash scripts/ci/report-disk-space.bash "before Rust tests"
+
+      - name: Run Rust doctests
+        run: >-
+          make cargo-test-doc
+          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+
+      - name: Report disk space after Rust doctests
+        if: always()
+        run: bash scripts/ci/report-disk-space.bash "after Rust doctests"
+
+      - name: Run Rust tests
+        run: >-
+          make cargo-test NEXTEST_PROFILE=ci
+          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+
+      - name: Report disk space after Rust tests
+        if: always()
+        run: bash scripts/ci/report-disk-space.bash "after Rust tests"
+
   build-linux-x86:
-    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
+    if: >-
+      !cancelled()
+      && github.ref != 'refs/heads/test-pre-commit'
+      && github.ref != 'refs/heads/test-ci-v2'
+      && (needs.plan.result != 'success' || needs.plan.outputs.run-tests == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -214,6 +340,8 @@ jobs:
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
+      || github.event_name == 'push' && github.ref_name == 'test-ci'
+      && 'ubuntu-22.04'
       || github.event_name == 'pull_request'
       && fromJson('["self-hosted", "Linux", "X64", "build"]')
       || github.event_name == 'push' && github.ref_name == 'develop'
@@ -222,19 +350,29 @@ jobs:
     needs:
       - plan
       - pre-commit
+      - rust-tests-linux-x86
     env:
       BUILD_MODE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr' || 'release' }}
+        && 'ci-pr'
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && 'ci-pr'
+        || 'release' }}
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr' || 'nextest' }}
+        && 'ci-pr'
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && 'ci-pr'
+        || 'nextest' }}
       PARALLEL_BUILD: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'false' || 'true' }}
+        && 'false'
+        || github.event_name == 'push' && github.ref_name == 'test-ci'
+        && 'false'
+        || 'true' }}
       # Self-hosted develop pushes keep Rust artifacts outside the workspace so
       # they survive actions/checkout's git clean -ffdx between runs.
       CARGO_TARGET_DIR: >-
@@ -273,6 +411,26 @@ jobs:
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
+      - name: Require Linux build prerequisites
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
+          RUN_RUST_TESTS: ${{ needs.plan.outputs.run-rust-tests }}
+          RUST_TESTS_RESULT: ${{ needs.rust-tests-linux-x86.result }}
+        run: |
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "::error::CI planning did not pass."
+            exit 1
+          fi
+          if [ "$PRE_COMMIT_RESULT" != "success" ]; then
+            echo "::error::Pre-commit did not pass."
+            exit 1
+          fi
+          if [ "$RUN_RUST_TESTS" = "true" ] && [ "$RUST_TESTS_RESULT" != "success" ]; then
+            echo "::error::Rust tests did not pass."
+            exit 1
+          fi
+
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -288,17 +446,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
-          # Persistent CARGO_TARGET_DIR on the self-hosted build pool replaces
-          # Swatinem/rust-cache for develop push builds.
-          rust-cache-enabled: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'false' || 'true' }}
-          rust-cache-key: build-linux-x86
+          free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
+          rust-cache-enabled: >-
+            ${{ github.event_name == 'push'
+            && github.ref_name != 'develop'
+            && github.ref_name != 'test-ci'
+            && 'true' || 'false' }}
+          rust-cache-key: build-linux-x86-wheel
           rust-cache-workspaces: . -> target/build-linux-x86
           rust-cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Limit Cargo build jobs on GitHub-hosted runners
-        if: >-
-          github.event_name == 'pull_request'
-          && needs.plan.outputs.untrusted_pr != 'false'
+        if: runner.environment == 'github-hosted'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Install Nautilus CLI
@@ -314,56 +473,6 @@ jobs:
           POSTGRES_USERNAME: postgres
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
-      # GitHub-hosted PR runners vary in disk size; fail early with a clear message
-      # rather than a cryptic linker Bus error when a small VM runs out.
-      - name: Check available disk space
-        if: >-
-          needs.plan.outputs.run-rust-tests == 'true'
-          && github.event_name == 'pull_request'
-          && needs.plan.outputs.untrusted_pr != 'false'
-        run: |
-          echo "::group::Disk space before Rust tests"
-          df -h /
-          echo "::endgroup::"
-          avail_gb=$(($(df -Pk / | awk 'NR==2 {print $4}') / 1024 / 1024))
-          echo "Available on / : ${avail_gb}G"
-          if [ "${avail_gb}" -lt 25 ]; then
-            echo "::error::Only ${avail_gb}G free, runner too small for the Rust build. Re-run for a larger VM."
-            exit 1
-          elif [ "${avail_gb}" -lt 40 ]; then
-            echo "::warning::Only ${avail_gb}G free, the Rust build may run out of space, re-run if it fails."
-          fi
-
-      # Doctests share this job with the nextest steps so both reuse the same
-      # workspace artifacts (`cargo nextest` cannot run doctests). They run
-      # first because rustdoc links one throwaway binary per doc example: those
-      # transient files are released before the nextest test-binary set lands,
-      # keeping peak disk below what a GitHub-hosted runner provides.
-      - name: Run Rust doctests
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-doc EXTRA_FEATURES="capnp,hypersync"
-
-      - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
-
-      - name: Run Rust tests (adapters)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
-
-      - name: Clean Rust test artifacts
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: |
-          echo "::group::Disk space after Rust tests"
-          df -h . "${CARGO_TARGET_DIR}"
-          echo "::endgroup::"
-          rm -rf "${CARGO_TARGET_DIR}/nextest"
-          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
-          df -h . "${CARGO_TARGET_DIR}"
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
@@ -398,13 +507,14 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
     runs-on: depot-ubuntu-22.04-arm-8
-    # ARM stays off PRs, develop pushes, and pre-commit-only test runs.
+    # ARM stays off PRs, develop pushes, v2 validation, and pre-commit-only test runs
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' ||
+            github.ref_name == 'test-ci-v2' ||
             github.ref_name == 'test-pre-commit'))
         || github.event_name == 'pull_request'
       )
@@ -480,18 +590,17 @@ jobs:
           POSTGRES_DATABASE: nautilus
 
       - name: Cached test data
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
         uses: ./.github/actions/common-test-data
 
-      - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core-selected EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
-
-      - name: Run Rust tests (adapters)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-adapters EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
+      - name: Run Rust tests
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
+        run: >-
+          make cargo-test NEXTEST_PROFILE=ci
+          EXTRA_FEATURES="capnp,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
 
       - name: Clean Rust test artifacts
-        if: needs.plan.outputs.run-rust-tests == 'true'
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
           df -h .
@@ -516,11 +625,12 @@ jobs:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-macos:
-    # macOS stays off develop pushes and pre-commit-only test runs.
+    # macOS stays off develop pushes, v2 validation, and pre-commit-only test runs
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       github.event_name == 'push' &&
       github.ref != 'refs/heads/develop' &&
+      github.ref != 'refs/heads/test-ci-v2' &&
       github.ref != 'refs/heads/test-pre-commit'
     strategy:
       fail-fast: false
@@ -579,16 +689,14 @@ jobs:
           rust-cache-save-if: ${{ github.event_name == 'push' }}
           uv-cache-enabled: "false"
 
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
       - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
         env:
           CARGO_BUILD_WARNINGS: warn
         run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       - name: Clean Rust test artifacts
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
           rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
@@ -684,13 +792,14 @@ jobs:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-windows:
-    # Windows stays off PRs, develop pushes, and pre-commit-only test runs.
+    # Windows stays off PRs, develop pushes, v2 validation, and pre-commit-only test runs
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' ||
+            github.ref_name == 'test-ci-v2' ||
             github.ref_name == 'test-pre-commit'))
         || github.event_name == 'pull_request'
       )
@@ -747,9 +856,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           github_ref: ${{ github.ref }}
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
 
       - name: Run tests
         run: |
