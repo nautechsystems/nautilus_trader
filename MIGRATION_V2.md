@@ -245,8 +245,19 @@ V1 types from `nautilus_trader.config` move beside their owning runtime. For exa
 `BacktestRunConfig` comes from `nautilus_trader.backtest` and `PortfolioConfig` from
 `nautilus_trader.portfolio`.
 
-Use the generated type stubs in `python/nautilus_trader/` as the exact Python contract. The
-[Python v2 examples][python-v2-examples] show current live-node builders, adapter factories,
+Use the generated type stubs in `python/nautilus_trader/` as the supported Python contract for the
+names they declare, not as an exhaustive inventory of runtime-visible names. Two reviewed
+class-member exceptions apply:
+
+- Some adapter wire DTOs appear in public signatures or as runtime results. Their readback
+  properties are outside the supported member contract and omitted from the stubs.
+  `NON_CONTRACT_DTO_CLASSES` in the stub guard records the set.
+- `KrakenFuturesHttpClient.edit_orders_batch`, `KrakenFuturesHttpClient.submit_orders_batch`, and
+  `KrakenSpotHttpClient.submit_orders_batch` remain callable at runtime but absent from the stubs
+  because `pyo3_stub_gen` cannot represent their complex tuple parameter types. Static type
+  checkers cannot resolve these methods until the generator supports those parameter types.
+
+The [Python v2 examples][python-v2-examples] show current live-node builders, adapter factories,
 strategies, actors, and data/execution testers.
 
 Python v2 strategies subclass `Strategy` and override lifecycle or data callbacks:
