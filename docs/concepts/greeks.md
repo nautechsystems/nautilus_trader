@@ -62,7 +62,7 @@ and replays in backtests as built-in market data (not custom data). Writing and 
 use the standard catalog API:
 
 ```python
-catalog.write_data(greeks)               # greeks: list[OptionGreeks]
+catalog.write_data(greeks)  # greeks: list[OptionGreeks]
 greeks = catalog.query(data_cls=OptionGreeks)
 ```
 
@@ -118,8 +118,9 @@ result = black_scholes_greeks(s=100.0, r=0.05, b=0.0, vol=0.20, is_call=True, k=
 result = imply_vol_and_greeks(s=100.0, r=0.05, b=0.0, is_call=True, k=100.0, t=0.25, price=5.0)
 
 # Refine volatility from a starting vol estimate (faster convergence)
-result = refine_vol_and_greeks(s=100.0, r=0.05, b=0.0, is_call=True, k=100.0, t=0.25,
-                                target_price=5.0, initial_vol=0.18)
+result = refine_vol_and_greeks(
+    s=100.0, r=0.05, b=0.0, is_call=True, k=100.0, t=0.25, target_price=5.0, initial_vol=0.18
+)
 ```
 
 The `BlackScholesGreeksResult` returned by these functions contains: `price`, `vol`,
@@ -181,9 +182,9 @@ with `delta=1` (or beta-weighted delta) and no gamma/vega/theta.
 ```python
 greeks = calculator.instrument_greeks(
     instrument_id=option_id,
-    spot_shock=10.0,            # +10 points on underlying
-    vol_shock=0.02,             # +2% absolute vol increase
-    time_to_expiry_shock=1/365, # roll forward one day
+    spot_shock=10.0,  # +10 points on underlying
+    vol_shock=0.02,  # +2% absolute vol increase
+    time_to_expiry_shock=1 / 365,  # roll forward one day
 )
 ```
 
@@ -193,8 +194,8 @@ convergence:
 ```python
 greeks = calculator.instrument_greeks(
     instrument_id=option_id,
-    update_vol=True,        # use cached vol as starting point
-    cache_greeks=True,      # store result for next iteration
+    update_vol=True,  # use cached vol as starting point
+    cache_greeks=True,  # store result for next iteration
 )
 ```
 

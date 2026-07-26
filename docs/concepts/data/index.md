@@ -389,6 +389,7 @@ def on_historical_data(self, data):
     # are updated automatically with historical data
     pass
 
+
 def on_bar(self, bar):
     # Processes individual bars in real-time from subscribe_bars()
     # Indicators registered with this bar type will update automatically and they will be updated before this handler is called
@@ -631,7 +632,7 @@ This happens when raw values are produced with `int(value * FIXED_SCALAR)`
 instead of precision-aware conversion:
 
 ```python
-int(value * FIXED_SCALAR)             # Introduces floating-point errors
+int(value * FIXED_SCALAR)  # Introduces floating-point errors
 round(value * 10**precision) * scale  # Correct precision-aware conversion
 ```
 
@@ -784,7 +785,7 @@ catalog = ParquetDataCatalog(
         "key": "your-access-key-id",
         "secret": "your-secret-access-key",
         "endpoint_url": "https://s3.amazonaws.com",  # Optional custom endpoint
-    }
+    },
 )
 ```
 
@@ -797,7 +798,7 @@ catalog = ParquetDataCatalog(
     fs_storage_options={
         "project": "my-project-id",
         "token": "/path/to/service-account.json",  # Or "cloud" for default credentials
-    }
+    },
 )
 ```
 
@@ -813,7 +814,7 @@ catalog = ParquetDataCatalog(
         "account_name": "your-storage-account",
         "account_key": "your-account-key",
         # Or use SAS token: "sas_token": "your-sas-token"
-    }
+    },
 )
 ```
 
@@ -827,7 +828,7 @@ catalog = ParquetDataCatalog(
         "account_name": "your-storage-account",
         "account_key": "your-account-key",
         # Or use SAS token: "sas_token": "your-sas-token"
-    }
+    },
 )
 ```
 
@@ -845,10 +846,7 @@ catalog = ParquetDataCatalog.from_uri("s3://my-bucket/nautilus-data/")
 # With storage options
 catalog = ParquetDataCatalog.from_uri(
     "s3://my-bucket/nautilus-data/",
-    fs_storage_options={
-        "access_key_id": "your-key",
-        "secret_access_key": "your-secret"
-    }
+    fs_storage_options={"access_key_id": "your-key", "secret_access_key": "your-secret"},
 )
 ```
 
@@ -864,7 +862,7 @@ catalog.write_data(quote_ticks)
 catalog.write_data(
     trade_ticks,
     start=1704067200000000000,  # Optional start timestamp override (UNIX nanoseconds)
-    end=1704153600000000000,    # Optional end timestamp override (UNIX nanoseconds)
+    end=1704153600000000000,  # Optional end timestamp override (UNIX nanoseconds)
 )
 
 # Skip disjoint check for overlapping data
@@ -921,7 +919,7 @@ quotes = catalog.query(
     data_cls=QuoteTick,
     identifiers=["EUR/USD.SIM"],
     start="2024-01-01T00:00:00Z",
-    end="2024-01-02T00:00:00Z"
+    end="2024-01-02T00:00:00Z",
 )
 
 # Query trade ticks for a specific instrument and time range
@@ -1014,7 +1012,7 @@ data_config = BacktestDataConfig(
     catalog_fs_storage_options={
         "key": "your-access-key",
         "secret": "your-secret-key",
-        "region": "us-east-1"
+        "region": "us-east-1",
     },
     data_cls=OrderBookDelta,
     instrument_id=InstrumentId.from_str("BTC/USD.COINBASE"),
@@ -1114,9 +1112,7 @@ Catalogs defined this way can also be used for requesting historical data.
 from nautilus_trader.persistence.config import DataCatalogConfig
 
 catalog_config = DataCatalogConfig(
-    path="/path/to/catalog",
-    fs_protocol="file",
-    name="local_market_data"
+    path="/path/to/catalog", fs_protocol="file", name="local_market_data"
 )
 
 # Convert to catalog instance
@@ -1133,9 +1129,9 @@ catalog_config = DataCatalogConfig(
         "key": "your-access-key",
         "secret": "your-secret-key",
         "region": "us-west-2",
-        "endpoint_url": "https://s3.us-west-2.amazonaws.com"
+        "endpoint_url": "https://s3.us-west-2.amazonaws.com",
     },
-    name="cloud_market_data"
+    name="cloud_market_data",
 )
 ```
 
@@ -1149,9 +1145,7 @@ from nautilus_trader.persistence.config import DataCatalogConfig
 
 # Configure catalog for live system
 catalog_config = DataCatalogConfig(
-    path="/data/nautilus/catalog",
-    fs_protocol="file",
-    name="historical_data"
+    path="/data/nautilus/catalog", fs_protocol="file", name="historical_data"
 )
 
 # Use in trading node configuration
@@ -1225,11 +1219,11 @@ The catalog's query system uses a dual-backend architecture that selects the que
 
 ```python
 catalog.query(
-    data_cls=QuoteTick,                    # Data type to query
-    identifiers=["EUR/USD.SIM"],           # Instrument identifiers
-    start="2024-01-01T00:00:00Z",         # Start time (various formats supported)
-    end="2024-01-02T00:00:00Z",           # End time
-    files=None,                           # Leave unset for automatic file discovery
+    data_cls=QuoteTick,  # Data type to query
+    identifiers=["EUR/USD.SIM"],  # Instrument identifiers
+    start="2024-01-01T00:00:00Z",  # Start time (various formats supported)
+    end="2024-01-02T00:00:00Z",  # End time
+    files=None,  # Leave unset for automatic file discovery
 )
 ```
 
@@ -1286,9 +1280,7 @@ catalog.consolidate_catalog()
 
 # Consolidate files within a specific time range
 catalog.consolidate_catalog(
-    start="2024-01-01T00:00:00Z",
-    end="2024-01-02T00:00:00Z",
-    ensure_contiguous_files=True
+    start="2024-01-01T00:00:00Z", end="2024-01-02T00:00:00Z", ensure_contiguous_files=True
 )
 ```
 
@@ -1300,10 +1292,7 @@ catalog.consolidate_data(QuoteTick)
 
 # Consolidate specific instrument's files
 catalog.consolidate_data(
-    TradeTick,
-    identifier="BTC/USD.BINANCE",
-    start="2024-01-01",
-    end="2024-01-31"
+    TradeTick, identifier="BTC/USD.BINANCE", start="2024-01-01", end="2024-01-31"
 )
 ```
 
@@ -1317,15 +1306,11 @@ Split data files into fixed time periods for standardized file organization.
 import pandas as pd
 
 # Consolidate all files by 1-day periods
-catalog.consolidate_catalog_by_period(
-    period=pd.Timedelta(days=1)
-)
+catalog.consolidate_catalog_by_period(period=pd.Timedelta(days=1))
 
 # Consolidate by 1-hour periods within time range
 catalog.consolidate_catalog_by_period(
-    period=pd.Timedelta(hours=1),
-    start="2024-01-01T00:00:00Z",
-    end="2024-01-02T00:00:00Z"
+    period=pd.Timedelta(hours=1), start="2024-01-01T00:00:00Z", end="2024-01-02T00:00:00Z"
 )
 ```
 
@@ -1333,10 +1318,7 @@ catalog.consolidate_catalog_by_period(
 
 ```python
 # Consolidate quote data by 4-hour periods
-catalog.consolidate_data_by_period(
-    data_cls=QuoteTick,
-    period=pd.Timedelta(hours=4)
-)
+catalog.consolidate_data_by_period(data_cls=QuoteTick, period=pd.Timedelta(hours=4))
 
 # Consolidate specific instrument by 30-minute periods
 catalog.consolidate_data_by_period(
@@ -1344,7 +1326,7 @@ catalog.consolidate_data_by_period(
     identifier="EUR/USD.SIM",
     period=pd.Timedelta(minutes=30),
     start="2024-01-01",
-    end="2024-01-31"
+    end="2024-01-31",
 )
 ```
 
@@ -1356,10 +1338,7 @@ Remove data within a specified time range for specific data types and instrument
 
 ```python
 # Delete all data within a time range across the entire catalog
-catalog.delete_catalog_range(
-    start="2024-01-01T00:00:00Z",
-    end="2024-01-02T00:00:00Z"
-)
+catalog.delete_catalog_range(start="2024-01-01T00:00:00Z", end="2024-01-02T00:00:00Z")
 
 # Delete all data from the beginning up to a specific time
 catalog.delete_catalog_range(end="2024-01-01T00:00:00Z")
@@ -1369,17 +1348,14 @@ catalog.delete_catalog_range(end="2024-01-01T00:00:00Z")
 
 ```python
 # Delete all quote tick data for a specific instrument
-catalog.delete_data_range(
-    data_cls=QuoteTick,
-    identifier="BTC/USD.BINANCE"
-)
+catalog.delete_data_range(data_cls=QuoteTick, identifier="BTC/USD.BINANCE")
 
 # Delete trade data within a specific time range
 catalog.delete_data_range(
     data_cls=TradeTick,
     identifier="EUR/USD.SIM",
     start="2024-01-01T00:00:00Z",
-    end="2024-01-31T23:59:59Z"
+    end="2024-01-31T23:59:59Z",
 )
 ```
 
@@ -1659,8 +1635,7 @@ You can subscribe to custom data types within your actor/strategy in the followi
 
 ```python
 self.subscribe_data(
-    data_type=DataType(MyDataPoint,
-    metadata={"some_optional_category": 1}),
+    data_type=DataType(MyDataPoint, metadata={"some_optional_category": 1}),
     client_id=ClientId("MY_ADAPTER"),
 )
 ```
@@ -1688,6 +1663,7 @@ A signal is an automatically generated custom data identified by a name containi
 self.publish_signal("signal_name", value, ts_event)
 self.subscribe_signal("signal_name")
 
+
 def on_signal(self, signal):
     print("Signal", signal)
 ```
@@ -1713,7 +1689,8 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt, fo
 
 class GreeksData(Data):
     def __init__(
-        self, instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX"),
+        self,
+        instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX"),
         ts_event: int = 0,
         ts_init: int = 0,
         delta: float = 0.0,
@@ -1724,7 +1701,7 @@ class GreeksData(Data):
         self.delta = delta
 
     def __repr__(self):
-        return (f"GreeksData(ts_init={unix_nanos_to_iso8601(self._ts_init)}, instrument_id={self.instrument_id}, delta={self.delta:.2f})")
+        return f"GreeksData(ts_init={unix_nanos_to_iso8601(self._ts_init)}, instrument_id={self.instrument_id}, delta={self.delta:.2f})"
 
     @property
     def ts_event(self):
@@ -1744,7 +1721,12 @@ class GreeksData(Data):
 
     @classmethod
     def from_dict(cls, data: dict):
-        return GreeksData(InstrumentId.from_str(data["instrument_id"]), data["ts_event"], data["ts_init"], data["delta"])
+        return GreeksData(
+            InstrumentId.from_str(data["instrument_id"]),
+            data["ts_event"],
+            data["ts_init"],
+            data["delta"],
+        )
 
     def to_bytes(self):
         return msgspec.msgpack.encode(self.to_dict())
@@ -1779,11 +1761,14 @@ Here is an example of publishing and receiving data using the `MessageBus` from 
 ```python
 register_serializable_type(GreeksData, GreeksData.to_dict, GreeksData.from_dict)
 
+
 def publish_greeks(self, greeks_data: GreeksData):
     self.publish_data(DataType(GreeksData), greeks_data)
 
+
 def subscribe_to_greeks(self):
     self.subscribe_data(DataType(GreeksData))
+
 
 def on_data(self, data):
     if isinstance(data, GreeksData):
@@ -1798,8 +1783,10 @@ Here is an example of writing and reading data using the `Cache` from an actor o
 def greeks_key(instrument_id: InstrumentId):
     return f"{instrument_id}_GREEKS"
 
+
 def cache_greeks(self, greeks_data: GreeksData):
     self.cache.add(greeks_key(greeks_data.instrument_id), greeks_data.to_bytes())
+
 
 def greeks_from_cache(self, instrument_id: InstrumentId):
     return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
@@ -1814,7 +1801,8 @@ For streaming custom data to feather files or writing it to parquet files in a c
 register_arrow(GreeksData, GreeksData.schema(), GreeksData.to_catalog, GreeksData.from_catalog)
 
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-catalog = ParquetDataCatalog('.')
+
+catalog = ParquetDataCatalog(".")
 
 catalog.write_data([GreeksData()])
 ```
@@ -1909,7 +1897,7 @@ class GreeksData(Data):
         ts_init: int = 0,
         instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX"),
         delta: float = 0.0,
-  ) -> GreeksData: ...
+    ) -> GreeksData: ...
 ```
 
 ## Related guides

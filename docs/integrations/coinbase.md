@@ -150,7 +150,7 @@ A static-mock test environment for integration plumbing, per the
 
 ```python
 config = CoinbaseExecClientConfig(
-    api_key="ANY_NON_EMPTY_STRING",   # required by the adapter constructor
+    api_key="ANY_NON_EMPTY_STRING",  # required by the adapter constructor
     api_secret="ANY_NON_EMPTY_STRING",
     environment=CoinbaseEnvironment.SANDBOX,
 )

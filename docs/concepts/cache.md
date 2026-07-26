@@ -52,8 +52,10 @@ def on_bar(self, bar: Bar) -> None:
     # Current bar is provided in the parameter 'bar'
 
     # Get historical bars from Cache
-    last_bar = self.cache.bar(self.bar_type, index=0)        # Last bar (practically the same as the 'bar' parameter)
-    previous_bar = self.cache.bar(self.bar_type, index=1)    # Previous bar
+    last_bar = self.cache.bar(
+        self.bar_type, index=0
+    )  # Last bar (practically the same as the 'bar' parameter)
+    previous_bar = self.cache.bar(self.bar_type, index=1)  # Previous bar
     third_last_bar = self.cache.bar(self.bar_type, index=2)  # Third last bar
 
     # Get current position information
@@ -81,7 +83,7 @@ from nautilus_trader.config import CacheConfig, BacktestEngineConfig, TradingNod
 engine_config = BacktestEngineConfig(
     cache=CacheConfig(
         tick_capacity=10_000,  # Store last 10,000 ticks per instrument
-        bar_capacity=5_000,    # Store last 5,000 bars per bar type
+        bar_capacity=5_000,  # Store last 5,000 bars per bar type
     ),
 )
 
@@ -207,34 +209,58 @@ latest_bar = self.cache.bar(bar_type)  # Returns Bar or None if no such object e
 second_last_bar = self.cache.bar(bar_type, index=1)  # Returns Bar or None if no such object exists
 
 # Check if bars exist and get count
-bar_count = self.cache.bar_count(bar_type)  # Returns number of bars in cache for the specified bar type
-has_bars = self.cache.has_bars(bar_type)    # Returns bool indicating if any bars exist for the specified bar type
+bar_count = self.cache.bar_count(
+    bar_type
+)  # Returns number of bars in cache for the specified bar type
+has_bars = self.cache.has_bars(
+    bar_type
+)  # Returns bool indicating if any bars exist for the specified bar type
 ```
 
 #### Quote ticks
 
 ```python
 # Get quotes
-quotes = self.cache.quote_ticks(instrument_id)                     # Returns list[QuoteTick] or an empty list if no quotes found
-latest_quote = self.cache.quote_tick(instrument_id)                # Returns QuoteTick or None if no such object exists
-second_last_quote = self.cache.quote_tick(instrument_id, index=1)  # Returns QuoteTick or None if no such object exists
+quotes = self.cache.quote_ticks(
+    instrument_id
+)  # Returns list[QuoteTick] or an empty list if no quotes found
+latest_quote = self.cache.quote_tick(
+    instrument_id
+)  # Returns QuoteTick or None if no such object exists
+second_last_quote = self.cache.quote_tick(
+    instrument_id, index=1
+)  # Returns QuoteTick or None if no such object exists
 
 # Check quote availability
-quote_count = self.cache.quote_tick_count(instrument_id)  # Returns the number of quotes in cache for this instrument
-has_quotes = self.cache.has_quote_ticks(instrument_id)    # Returns bool indicating if any quotes exist for this instrument
+quote_count = self.cache.quote_tick_count(
+    instrument_id
+)  # Returns the number of quotes in cache for this instrument
+has_quotes = self.cache.has_quote_ticks(
+    instrument_id
+)  # Returns bool indicating if any quotes exist for this instrument
 ```
 
 #### Trade ticks
 
 ```python
 # Get trades
-trades = self.cache.trade_ticks(instrument_id)         # Returns list[TradeTick] or an empty list if no trades found
-latest_trade = self.cache.trade_tick(instrument_id)    # Returns TradeTick or None if no such object exists
-second_last_trade = self.cache.trade_tick(instrument_id, index=1)  # Returns TradeTick or None if no such object exists
+trades = self.cache.trade_ticks(
+    instrument_id
+)  # Returns list[TradeTick] or an empty list if no trades found
+latest_trade = self.cache.trade_tick(
+    instrument_id
+)  # Returns TradeTick or None if no such object exists
+second_last_trade = self.cache.trade_tick(
+    instrument_id, index=1
+)  # Returns TradeTick or None if no such object exists
 
 # Check trade availability
-trade_count = self.cache.trade_tick_count(instrument_id)  # Returns the number of trades in cache for this instrument
-has_trades = self.cache.has_trade_ticks(instrument_id)    # Returns bool indicating if any trades exist
+trade_count = self.cache.trade_tick_count(
+    instrument_id
+)  # Returns the number of trades in cache for this instrument
+has_trades = self.cache.has_trade_ticks(
+    instrument_id
+)  # Returns bool indicating if any trades exist
 ```
 
 #### Order book
@@ -244,7 +270,9 @@ has_trades = self.cache.has_trade_ticks(instrument_id)    # Returns bool indicat
 book = self.cache.order_book(instrument_id)  # Returns OrderBook or None if no such object exists
 
 # Check if order book exists
-has_book = self.cache.has_order_book(instrument_id)  # Returns bool indicating if an order book exists
+has_book = self.cache.has_order_book(
+    instrument_id
+)  # Returns bool indicating if an order book exists
 
 # Get count of order book updates
 update_count = self.cache.book_update_count(instrument_id)  # Returns the number of updates received
@@ -281,17 +309,19 @@ bar_types = self.cache.bar_types(
 class MarketDataStrategy(Strategy):
     def on_start(self):
         # Subscribe to 1-minute bars
-        self.bar_type = BarType.from_str(f"{self.instrument_id}-1-MINUTE-LAST-EXTERNAL")  # example of instrument_id = "EUR/USD.FXCM"
+        self.bar_type = BarType.from_str(
+            f"{self.instrument_id}-1-MINUTE-LAST-EXTERNAL"
+        )  # example of instrument_id = "EUR/USD.FXCM"
         self.subscribe_bars(self.bar_type)
 
     def on_bar(self, bar: Bar) -> None:
         bars = self.cache.bars(self.bar_type)[:3]
-        if len(bars) < 3:   # Wait until we have at least 3 bars
+        if len(bars) < 3:  # Wait until we have at least 3 bars
             return
 
         # Access last 3 bars for analysis
-        current_bar = bars[0]    # Most recent bar
-        prev_bar = bars[1]       # Second to last bar
+        current_bar = bars[0]  # Most recent bar
+        prev_bar = bars[1]  # Second to last bar
         prev_prev_bar = bars[2]  # Third to last bar
 
         # Get latest quote and trade
@@ -326,44 +356,66 @@ order = self.cache.order(ClientOrderId("O-123"))
 orders = self.cache.orders()
 
 # Get orders filtered by specific criteria
-orders_for_venue = self.cache.orders(venue=venue)                       # All orders for a specific venue
-orders_for_strategy = self.cache.orders(strategy_id=strategy_id)        # All orders for a specific strategy
-orders_for_instrument = self.cache.orders(instrument_id=instrument_id)  # All orders for an instrument
+orders_for_venue = self.cache.orders(venue=venue)  # All orders for a specific venue
+orders_for_strategy = self.cache.orders(
+    strategy_id=strategy_id
+)  # All orders for a specific strategy
+orders_for_instrument = self.cache.orders(
+    instrument_id=instrument_id
+)  # All orders for an instrument
 ```
 
 ##### Order state queries
 
 ```python
 # Get orders by their current state
-open_orders = self.cache.orders_open()                       # Orders currently active at the venue
-closed_orders = self.cache.orders_closed()                   # Orders that have completed their lifecycle
-emulated_orders = self.cache.orders_emulated()               # Orders being simulated locally by the system
-inflight_orders = self.cache.orders_inflight()               # Orders submitted (or modified) to venue, but not yet confirmed
-local_active_orders = self.cache.orders_active_local()       # Orders still managed locally (initialized, emulated, or released)
+open_orders = self.cache.orders_open()  # Orders currently active at the venue
+closed_orders = self.cache.orders_closed()  # Orders that have completed their lifecycle
+emulated_orders = self.cache.orders_emulated()  # Orders being simulated locally by the system
+inflight_orders = (
+    self.cache.orders_inflight()
+)  # Orders submitted (or modified) to venue, but not yet confirmed
+local_active_orders = (
+    self.cache.orders_active_local()
+)  # Orders still managed locally (initialized, emulated, or released)
 
 # Check specific order states
-exists = self.cache.order_exists(client_order_id)            # Checks if an order with the given ID exists in the cache
-is_open = self.cache.is_order_open(client_order_id)          # Checks if an order is currently open
-is_closed = self.cache.is_order_closed(client_order_id)      # Checks if an order is closed
-is_emulated = self.cache.is_order_emulated(client_order_id)  # Checks if an order is being simulated locally
-is_inflight = self.cache.is_order_inflight(client_order_id)  # Checks if an order is submitted or modified, but not yet confirmed
-is_active_local = self.cache.is_order_active_local(client_order_id)  # Checks if an order is still managed locally
+exists = self.cache.order_exists(
+    client_order_id
+)  # Checks if an order with the given ID exists in the cache
+is_open = self.cache.is_order_open(client_order_id)  # Checks if an order is currently open
+is_closed = self.cache.is_order_closed(client_order_id)  # Checks if an order is closed
+is_emulated = self.cache.is_order_emulated(
+    client_order_id
+)  # Checks if an order is being simulated locally
+is_inflight = self.cache.is_order_inflight(
+    client_order_id
+)  # Checks if an order is submitted or modified, but not yet confirmed
+is_active_local = self.cache.is_order_active_local(
+    client_order_id
+)  # Checks if an order is still managed locally
 ```
 
 ##### Order statistics
 
 ```python
 # Get counts of orders in different states
-open_count = self.cache.orders_open_count()                  # Number of open orders
-closed_count = self.cache.orders_closed_count()              # Number of closed orders
-emulated_count = self.cache.orders_emulated_count()          # Number of emulated orders
-inflight_count = self.cache.orders_inflight_count()          # Number of inflight orders
-local_active_count = self.cache.orders_active_local_count()  # Number of locally active orders (initialized, emulated, or released)
-total_count = self.cache.orders_total_count()                # Total number of orders in the system
+open_count = self.cache.orders_open_count()  # Number of open orders
+closed_count = self.cache.orders_closed_count()  # Number of closed orders
+emulated_count = self.cache.orders_emulated_count()  # Number of emulated orders
+inflight_count = self.cache.orders_inflight_count()  # Number of inflight orders
+local_active_count = (
+    self.cache.orders_active_local_count()
+)  # Number of locally active orders (initialized, emulated, or released)
+total_count = self.cache.orders_total_count()  # Total number of orders in the system
 
 # Get filtered order counts
-buy_orders_count = self.cache.orders_open_count(side=OrderSide.BUY)  # Number of currently open BUY orders
-venue_orders_count = self.cache.orders_total_count(venue=venue)      # Total number of orders for a given venue
+buy_orders_count = self.cache.orders_open_count(
+    side=OrderSide.BUY
+)  # Number of currently open BUY orders
+venue_orders_count = self.cache.orders_total_count(
+    venue=venue
+)  # Total number of orders for a given venue
 ```
 
 #### Positions
@@ -377,50 +429,60 @@ The `Cache` maintains a record of all positions and offers several ways to query
 position = self.cache.position(PositionId("P-123"))
 
 # Get positions by their state
-all_positions = self.cache.positions()            # All positions in the system
-open_positions = self.cache.positions_open()      # All currently open positions
+all_positions = self.cache.positions()  # All positions in the system
+open_positions = self.cache.positions_open()  # All currently open positions
 closed_positions = self.cache.positions_closed()  # All closed positions
 
 # Get positions filtered by various criteria
-venue_positions = self.cache.positions(venue=venue)                       # Positions for a specific venue
-instrument_positions = self.cache.positions(instrument_id=instrument_id)  # Positions for a specific instrument
-strategy_positions = self.cache.positions(strategy_id=strategy_id)        # Positions for a specific strategy
-long_positions = self.cache.positions(side=PositionSide.LONG)             # All long positions
+venue_positions = self.cache.positions(venue=venue)  # Positions for a specific venue
+instrument_positions = self.cache.positions(
+    instrument_id=instrument_id
+)  # Positions for a specific instrument
+strategy_positions = self.cache.positions(
+    strategy_id=strategy_id
+)  # Positions for a specific strategy
+long_positions = self.cache.positions(side=PositionSide.LONG)  # All long positions
 ```
 
 ##### Position state queries
 
 ```python
 # Check position states
-exists = self.cache.position_exists(position_id)        # Checks if a position with the given ID exists
-is_open = self.cache.is_position_open(position_id)      # Checks if a position is open
+exists = self.cache.position_exists(position_id)  # Checks if a position with the given ID exists
+is_open = self.cache.is_position_open(position_id)  # Checks if a position is open
 is_closed = self.cache.is_position_closed(position_id)  # Checks if a position is closed
 
 # Get position and order relationships
-orders = self.cache.orders_for_position(position_id)       # All orders related to a specific position
-position = self.cache.position_for_order(client_order_id)  # Find the position associated with a specific order
+orders = self.cache.orders_for_position(position_id)  # All orders related to a specific position
+position = self.cache.position_for_order(
+    client_order_id
+)  # Find the position associated with a specific order
 ```
 
 ##### Position statistics
 
 ```python
 # Get position counts in different states
-open_count = self.cache.positions_open_count()      # Number of currently open positions
+open_count = self.cache.positions_open_count()  # Number of currently open positions
 closed_count = self.cache.positions_closed_count()  # Number of closed positions
-total_count = self.cache.positions_total_count()    # Total number of positions in the system
+total_count = self.cache.positions_total_count()  # Total number of positions in the system
 
 # Get filtered position counts
-long_positions_count = self.cache.positions_open_count(side=PositionSide.LONG)              # Number of open long positions
-instrument_positions_count = self.cache.positions_total_count(instrument_id=instrument_id)  # Number of positions for a given instrument
+long_positions_count = self.cache.positions_open_count(
+    side=PositionSide.LONG
+)  # Number of open long positions
+instrument_positions_count = self.cache.positions_total_count(
+    instrument_id=instrument_id
+)  # Number of positions for a given instrument
 ```
 
 #### Accounts
 
 ```python
 # Access account information
-account = self.cache.account(account_id)       # Retrieve account by ID
+account = self.cache.account(account_id)  # Retrieve account by ID
 account = self.cache.account_for_venue(venue)  # Retrieve account for a specific venue
-account_id = self.cache.account_id(venue)      # Retrieve account ID for a venue
+account_id = self.cache.account_id(venue)  # Retrieve account ID for a venue
 ```
 
 #### Instruments and currencies
@@ -429,16 +491,18 @@ account_id = self.cache.account_id(venue)      # Retrieve account ID for a venue
 
 ```python
 # Get instrument information
-instrument = self.cache.instrument(instrument_id) # Retrieve a specific instrument by its ID
-all_instruments = self.cache.instruments()        # Retrieve all instruments in the cache
+instrument = self.cache.instrument(instrument_id)  # Retrieve a specific instrument by its ID
+all_instruments = self.cache.instruments()  # Retrieve all instruments in the cache
 
 # Get filtered instruments
-venue_instruments = self.cache.instruments(venue=venue)              # Instruments for a specific venue
+venue_instruments = self.cache.instruments(venue=venue)  # Instruments for a specific venue
 instruments_by_underlying = self.cache.instruments(underlying="ES")  # Instruments by underlying
 
 # Get instrument identifiers
-instrument_ids = self.cache.instrument_ids()                   # Get all instrument IDs
-venue_instrument_ids = self.cache.instrument_ids(venue=venue)  # Get instrument IDs for a specific venue
+instrument_ids = self.cache.instrument_ids()  # Get all instrument IDs
+venue_instrument_ids = self.cache.instrument_ids(
+    venue=venue
+)  # Get instrument IDs for a specific venue
 ```
 
 ### Purging cached data
@@ -603,6 +667,7 @@ The following example shows how you might store data in the `Cache` so multiple 
 ```python
 import pickle
 
+
 class MyStrategy(Strategy):
     def on_start(self):
         # Prepare data you want to share with other strategies
@@ -622,6 +687,7 @@ Another strategy can retrieve the cached data as follows:
 
 ```python
 import pickle
+
 
 class AnotherStrategy(Strategy):
     def on_start(self):

@@ -404,6 +404,7 @@ from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.model.data import DataType
 
+
 class MyStrategy(Strategy):
     def on_start(self):
         # Subscribe to ticker data

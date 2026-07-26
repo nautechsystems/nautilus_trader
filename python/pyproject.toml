@@ -186,6 +186,7 @@ ignore = [
   "E501", # Line too long (linted separately)
   "E741", # Ambiguous variable name (single char)
   "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
+  "ISC004", # multi-line string concatenation in collections is intentional for wrapped messages
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "S101", # Use of assert detected (OK in test suite)

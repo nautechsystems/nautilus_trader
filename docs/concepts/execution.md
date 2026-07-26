@@ -329,8 +329,8 @@ config = EMACrossTWAPConfig(
     trade_size=Decimal("0.05"),
     fast_ema_period=10,
     slow_ema_period=20,
-    twap_horizon_secs=10.0,   # execution algorithm parameter (total horizon in seconds)
-    twap_interval_secs=2.5,    # execution algorithm parameter (seconds between orders)
+    twap_horizon_secs=10.0,  # execution algorithm parameter (total horizon in seconds)
+    twap_interval_secs=2.5,  # execution algorithm parameter (seconds between orders)
 )
 
 # Instantiate your strategy

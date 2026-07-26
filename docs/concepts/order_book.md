@@ -49,14 +49,13 @@ self.subscribe_order_book_at_interval(instrument_id, interval_ms=1000)
 Each subscription type delivers data to the corresponding handler:
 
 ```python
-def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
-    ...
+def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
 
-def on_order_book_depth(self, depth: OrderBookDepth10) -> None:
-    ...
 
-def on_order_book(self, order_book: OrderBook) -> None:
-    ...
+def on_order_book_depth(self, depth: OrderBookDepth10) -> None: ...
+
+
+def on_order_book(self, order_book: OrderBook) -> None: ...
 ```
 
 ## Accessing the book

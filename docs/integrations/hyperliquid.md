@@ -309,7 +309,7 @@ so no additional client configuration is required.
 To narrow the loaded set, filter with `InstrumentProviderConfig`:
 
 ```python
-instrument_provider=InstrumentProviderConfig(
+instrument_provider = InstrumentProviderConfig(
     load_all=True,
     filters={"market_types": ["perp_hip3"]},
 )
@@ -576,7 +576,7 @@ The instrument provider supports filtering when loading instruments via
 Example loading only perpetual instruments:
 
 ```python
-instrument_provider=InstrumentProviderConfig(
+instrument_provider = InstrumentProviderConfig(
     load_all=True,
     filters={"market_types": ["perp"]},
 )
@@ -741,6 +741,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterest
 
+
 def on_data(self, data) -> None:
     if isinstance(data, HyperliquidOpenInterest):
         if data.open_interest > Decimal("1000"):
@@ -793,6 +794,7 @@ self.subscribe_data(
     data_type=DataType(HyperliquidAllDexsAssetCtxs),
     client_id=HYPERLIQUID_CLIENT_ID,
 )
+
 
 def on_data(self, data) -> None:
     if isinstance(data, HyperliquidAllDexsAssetCtxs):
@@ -883,6 +885,7 @@ If you disable normalization, you can apply the same rounding in your strategy:
 
 ```python
 from decimal import Decimal, ROUND_DOWN
+
 
 def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
     if price == 0:

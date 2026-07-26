@@ -119,11 +119,14 @@ The message bus approach is ideal when you need:
 ```python
 from nautilus_trader.core.message import Event
 
+
 # Define a custom event
 class Each10thBarEvent(Event):
     TOPIC = "each_10th_bar"  # Topic name
+
     def __init__(self, bar):
         self.bar = bar
+
 
 # Subscribe in a component (in Strategy)
 self.msgbus.subscribe(Each10thBarEvent.TOPIC, self.on_each_10th_bar)
@@ -131,6 +134,7 @@ self.msgbus.subscribe(Each10thBarEvent.TOPIC, self.on_each_10th_bar)
 # Publish an event (in Strategy)
 event = Each10thBarEvent(bar)
 self.msgbus.publish(Each10thBarEvent.TOPIC, event)
+
 
 # Handler (in Strategy)
 def on_each_10th_bar(self, event: Each10thBarEvent):
@@ -180,17 +184,22 @@ The Data publish/subscribe approach works well when you need:
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.custom import customdataclass
 
+
 @customdataclass
 class GreeksData(Data):
     delta: float
     gamma: float
 
+
 # Publish data (in Actor / Strategy)
-data = GreeksData(delta=0.75, gamma=0.1, ts_event=1_630_000_000_000_000_000, ts_init=1_630_000_000_000_000_000)
+data = GreeksData(
+    delta=0.75, gamma=0.1, ts_event=1_630_000_000_000_000_000, ts_init=1_630_000_000_000_000_000
+)
 self.publish_data(GreeksData, data)
 
 # Subscribe to receiving data  (in Actor / Strategy)
 self.subscribe_data(GreeksData)
+
 
 # Handler (this is static callback function with fixed name)
 def on_data(self, data: Data):
@@ -248,6 +257,7 @@ self.publish_signal(
     ts_event=bar.ts_event,  # timestamp from triggering event
 )
 
+
 # Handler (this is static callback function with fixed name)
 def on_signal(self, signal):
     # IMPORTANT: We match against signal.value, not signal.name
@@ -257,14 +267,14 @@ def on_signal(self, signal):
                 f"New highest price was reached. | "
                 f"Signal value: {signal.value} | "
                 f"Signal time: {unix_nanos_to_dt(signal.ts_event)}",
-                color=LogColor.GREEN
+                color=LogColor.GREEN,
             )
         case signals.NEW_LOWEST_PRICE:
             self.log.info(
                 f"New lowest price was reached. | "
                 f"Signal value: {signal.value} | "
                 f"Signal time: {unix_nanos_to_dt(signal.ts_event)}",
-                color=LogColor.RED
+                color=LogColor.RED,
             )
 ```
 
@@ -347,8 +357,7 @@ def register_serializable_type(
     cls,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
-):
-    ...
+): ...
 ```
 
 - `cls`: The type to register.
@@ -506,9 +515,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 
 # Create a MessageBusConfig instance with types filtering
-message_bus = MessageBusConfig(
-    types_filter=[QuoteTick, TradeTick]
-)
+message_bus = MessageBusConfig(types_filter=[QuoteTick, TradeTick])
 ```
 
 ### Stream auto-trimming

@@ -128,8 +128,7 @@ positions_report = trader.generate_positions_report()
 positions = cache.positions()
 snapshots = cache.position_snapshots()  # For NETTING OMS
 positions_report = ReportProvider.generate_positions_report(
-    positions=positions,
-    snapshots=snapshots
+    positions=positions, snapshots=snapshots
 )
 ```
 
@@ -168,6 +167,7 @@ Tracks account balance and margin changes over time:
 # Using Trader helper method (recommended)
 # Requires venue parameter
 from nautilus_trader.model.identifiers import Venue
+
 venue = Venue("BINANCE")
 account_report = trader.generate_account_report(venue)
 
@@ -367,13 +367,14 @@ During live trading, generate reports periodically:
 ```python
 import pandas as pd
 
+
 class ReportingActor(Actor):
     def on_start(self):
         # Schedule periodic reporting
         self.clock.set_timer(
             name="generate_reports",
             interval=pd.Timedelta(minutes=30),
-            callback=self.generate_reports
+            callback=self.generate_reports,
         )
 
     def generate_reports(self, event):

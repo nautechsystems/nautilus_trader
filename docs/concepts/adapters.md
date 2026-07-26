@@ -161,8 +161,10 @@ def on_start(self) -> None:
     # Subscribe to live bars
     self.subscribe_bars(BarType.from_str("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"))
 
+
 def on_trade_tick(self, tick: TradeTick) -> None:
     self.log.info(f"Trade: {tick}")
+
 
 def on_bar(self, bar: Bar) -> None:
     self.log.info(f"Bar: {bar}")

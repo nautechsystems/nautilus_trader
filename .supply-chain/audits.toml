@@ -704,6 +704,12 @@ criteria = "safe-to-deploy"
 delta = "0.17.0 -> 0.18.0"
 notes = "Fixes vertical border rendering when a cell is covered by both row and column spans, and derives extra traits for EntityIterator. No new dependencies, build script, filesystem, network, or unsafe code changes."
 
+[[audits.pest]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.8.7 -> 2.8.8"
+notes = "Reviewed parser-state delta: tag_node now ignores tags during lookahead. No new dependencies, unsafe code, build script, network, filesystem, process, credential, or data-exfiltration behavior."
+
 [[audits.portable-atomic]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -793,6 +799,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.3 -> 0.8.4"
 notes = "Narrows published crate contents, fixes docs.rs cfg, ignores empty SSL_CERT_DIR path components, and updates tests/docs. No new dependencies, build script, unsafe code, or network behavior in library code."
+
+[[audits.rustls-pki-types]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.15.0 -> 1.15.1"
+notes = "Reviewed DNS-name validation rewrite and benchmark-only metadata. No new runtime dependencies, unsafe code, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.rustls-webpki]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -912,6 +924,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.7.0 -> 2.7.1"
 notes = "Documentation-only clarification of tokio::main expansion plus dependency metadata updates. No runtime, unsafe, build script, filesystem, network, or process behavior."
+
+[[audits.tokio-stream]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.18 -> 0.1.19"
+notes = "Reviewed cooperative scheduling, FusedStream and collection support, JoinSetStream, size-hint and polling fixes. No new unsafe code, build script, network destination, process, credential, or data-exfiltration behavior."
 
 [[audits.tokio-tungstenite]]
 who = "Nautech Systems <info@nautechsystems.io>"

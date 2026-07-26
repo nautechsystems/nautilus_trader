@@ -117,8 +117,8 @@ from nautilus_trader.config import LiveExecEngineConfig
 
 config = LiveExecEngineConfig(
     reconciliation=True,
-    open_check_interval_secs=30.0,       # Enable open order polling
-    open_check_lookback_mins=60,         # Look back 60 minutes
+    open_check_interval_secs=30.0,  # Enable open order polling
+    open_check_lookback_mins=60,  # Look back 60 minutes
     # position_check_interval_secs=None  # Disabled by default
 )
 ```

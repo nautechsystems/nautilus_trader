@@ -156,7 +156,9 @@ linear_perp_id = InstrumentId.from_str("ETHUSDT.BITMEX")  # Ethereum perpetual (
 futures_id = InstrumentId.from_str("XBTM24.BITMEX")  # Bitcoin futures expiring June 2024
 
 # Prediction market contracts
-prediction_id = InstrumentId.from_str("P_XBTETFV23.BITMEX")  # Bitcoin ETF SEC approval prediction expiring October 2023
+prediction_id = InstrumentId.from_str(
+    "P_XBTETFV23.BITMEX"
+)  # Bitcoin ETF SEC approval prediction expiring October 2023
 ```
 
 :::note

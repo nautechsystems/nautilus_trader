@@ -112,9 +112,9 @@ venue_config = BacktestVenueConfig(
         fill_model_path="nautilus_trader.backtest.models:FillModel",
         config_path="nautilus_trader.backtest.config:FillModelConfig",
         config={
-            "prob_fill_on_limit": 0.2,    # Chance a limit order fills when price matches
-            "prob_slippage": 0.5,         # Chance of 1-tick slippage (L1 data only)
-            "random_seed": 42,            # Optional: Set for reproducible results
+            "prob_fill_on_limit": 0.2,  # Chance a limit order fills when price matches
+            "prob_slippage": 0.5,  # Chance of 1-tick slippage (L1 data only)
+            "random_seed": 42,  # Optional: Set for reproducible results
         },
     ),
 )
@@ -193,6 +193,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.book import OrderBook, BookOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.core.rust.model import BookType
+
 
 class MyCustomFillModel(FillModel):
     def get_orderbook_for_fill_simulation(

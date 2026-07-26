@@ -106,6 +106,7 @@ def data_generator():
     yield load_chunk_2()
     yield load_chunk_3()
 
+
 engine.add_data_iterator(
     data_name="my_data_stream",
     generator=data_generator(),

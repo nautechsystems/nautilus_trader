@@ -700,7 +700,9 @@ from nautilus_trader.model import ClientId
 
 # In your `on_start` method
 self.subscribe_data(
-    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
+    data_type=DataType(
+        BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+    ),
     client_id=ClientId("BINANCE"),
 )
 ```
@@ -1404,7 +1406,7 @@ The Rust-backed v2 instrument provider controls both selection and fee policy:
 ```python
 from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
 
-instrument_provider=BinanceInstrumentProviderConfig(
+instrument_provider = BinanceInstrumentProviderConfig(
     load_all=False,
     load_ids=["BTCUSDT.BINANCE", "ETHUSDT.BINANCE"],
     filters={"quotes": ["USDT"], "bases": ["BTC", "ETH"]},
@@ -1447,7 +1449,7 @@ To suppress these warnings:
 ```python
 from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
 
-instrument_provider=BinanceInstrumentProviderConfig(
+instrument_provider = BinanceInstrumentProviderConfig(
     load_all=True,
     log_warnings=False,
 )
@@ -1511,7 +1513,7 @@ To use hedge mode:
                 base_url_ws=None,  # Override with custom endpoint
                 use_reduce_only=False,  # Must be disabled for Hedge mode
             ),
-        }
+        },
     )
     ```
 
@@ -1519,7 +1521,8 @@ To use hedge mode:
 
     ```python
     class EMACrossHedgeMode(Strategy):
-        ...,  # Omitted
+        (...,)  # Omitted
+
         def buy(self) -> None:
             order: MarketOrder = self.order_factory.market(
                 instrument_id=self.instrument_id,

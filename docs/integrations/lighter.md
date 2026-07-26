@@ -158,7 +158,7 @@ Script source:
 from nautilus_trader.adapters.lighter import revoke_lighter_integrator
 from nautilus_trader.adapters.lighter import LighterEnvironment
 
-await revoke_lighter_integrator()                            # mainnet (default)
+await revoke_lighter_integrator()  # mainnet (default)
 await revoke_lighter_integrator(LighterEnvironment.TESTNET)  # testnet
 ```
 

@@ -223,18 +223,18 @@ register_theme(
     name="corporate",
     template="plotly_white",  # Base Plotly template
     colors={
-        "primary": "#003366",      # Navy blue
-        "positive": "#2e8b57",     # Sea green
-        "negative": "#c41e3a",     # Cardinal red
-        "neutral": "#808080",      # Gray
-        "background": "#ffffff",   # White
-        "grid": "#e5e5e5",         # Light gray
+        "primary": "#003366",  # Navy blue
+        "positive": "#2e8b57",  # Sea green
+        "negative": "#c41e3a",  # Cardinal red
+        "neutral": "#808080",  # Gray
+        "background": "#ffffff",  # White
+        "grid": "#e5e5e5",  # Light gray
         # Optional table colors (defaults will be provided if omitted)
         "table_section": "#e5e5e5",
         "table_row_odd": "#f8f8f8",
         "table_row_even": "#ffffff",
         "table_text": "#000000",
-    }
+    },
 )
 
 # Use the custom theme
@@ -305,6 +305,7 @@ render traces onto a Plotly figure object.
 from nautilus_trader.analysis.tearsheet import register_chart
 import plotly.graph_objects as go
 
+
 def my_custom_chart(returns, output_path=None, title="Custom Chart", theme="plotly_white"):
     """
     Create a custom visualization.
@@ -317,13 +318,15 @@ def my_custom_chart(returns, output_path=None, title="Custom Chart", theme="plot
 
     # Create your visualization
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=returns.index,
-        y=returns.cumsum(),
-        mode="lines",
-        name="Custom Metric",
-        line={"color": theme_config["colors"]["primary"]},
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=returns.index,
+            y=returns.cumsum(),
+            mode="lines",
+            name="Custom Metric",
+            line={"color": theme_config["colors"]["primary"]},
+        )
+    )
 
     fig.update_layout(
         title=title,
@@ -336,6 +339,7 @@ def my_custom_chart(returns, output_path=None, title="Custom Chart", theme="plot
         fig.write_html(output_path)
 
     return fig
+
 
 # Register the chart for standalone use (via `get_chart()` / `list_charts()`)
 register_chart("my_custom", my_custom_chart)
@@ -354,6 +358,7 @@ from nautilus_trader.analysis import TearsheetCustomChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.analysis import register_tearsheet_chart
+
 
 def _render_my_metric(fig, row, col, returns, theme_config, **kwargs):
     """
@@ -390,6 +395,7 @@ def _render_my_metric(fig, row, col, returns, theme_config, **kwargs):
 
     fig.update_xaxes(title_text="Date", row=row, col=col)
     fig.update_yaxes(title_text="Volatility (%)", row=row, col=col)
+
 
 # Register for tearsheet use
 register_tearsheet_chart(

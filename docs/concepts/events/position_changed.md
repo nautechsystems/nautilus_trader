@@ -26,8 +26,7 @@ Reading the event in a strategy handler:
 ```python
 def on_position_changed(self, event: PositionChanged) -> None:
     self.log.info(
-        f"Changed {event.instrument_id} to {event.signed_qty} "
-        f"(realized={event.realized_pnl})",
+        f"Changed {event.instrument_id} to {event.signed_qty} (realized={event.realized_pnl})",
     )
 ```
 

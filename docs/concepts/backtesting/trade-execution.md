@@ -160,8 +160,8 @@ venue_config = BacktestVenueConfig(
     oms_type="NETTING",
     account_type="MARGIN",
     starting_balances=["100_000 USD"],
-    trade_execution=True,      # Required for queue_position
-    queue_position=True,       # Enable queue position tracking
+    trade_execution=True,  # Required for queue_position
+    queue_position=True,  # Enable queue position tracking
 )
 ```
 

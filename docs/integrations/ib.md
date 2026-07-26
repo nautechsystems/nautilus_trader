@@ -108,9 +108,9 @@ from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGat
 gateway_config = DockerizedIBGatewayConfig(
     username="your_username",  # Or set TWS_USERNAME env var
     password="your_password",  # Or set TWS_PASSWORD env var
-    trading_mode="paper",      # "paper" or "live"
-    read_only_api=True,        # Set to False to allow order execution
-    timeout=300,               # Startup timeout in seconds
+    trading_mode="paper",  # "paper" or "live"
+    read_only_api=True,  # Set to False to allow order execution
+    timeout=300,  # Startup timeout in seconds
 )
 
 # This may take a short while to start up, especially the first time
@@ -328,7 +328,7 @@ Symbol-prefix to MIC venue overrides. Applied **first** in venue resolution, ind
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbol_to_mic_venue={
         "SPX": "XCBO",  # OPT with exchange SMART -> XCBO
-        "ES": "XCME",   # All ES futures/options use CME MIC
+        "ES": "XCME",  # All ES futures/options use CME MIC
         "SPY": "ARCX",  # SPY specifically uses ARCA
     },
 )
@@ -423,18 +423,22 @@ For FX instruments, use slash-separated symbols such as `EUR/USD.IDEALPRO`. The 
 local symbol form belongs to raw symbology, for example `EUR.USD=CASH.IDEALPRO`.
 
 ```python
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
-    load_ids=frozenset([
-        "EUR/USD.IDEALPRO",    # Forex
-        "SPY.ARCA",            # Stock
-        "ESM24.CME",           # Future
-        "BTC/USD.PAXOS",       # Crypto
-        "^SPX.CBOE",           # Index
-    ]),
+    load_ids=frozenset(
+        [
+            "EUR/USD.IDEALPRO",  # Forex
+            "SPY.ARCA",  # Stock
+            "ESM24.CME",  # Future
+            "BTC/USD.PAXOS",  # Crypto
+            "^SPX.CBOE",  # Index
+        ]
+    ),
 )
 ```
 
@@ -451,7 +455,7 @@ options_chain_expiry = IBContract(
     symbol="SPX",
     exchange="CBOE",
     build_options_chain=True,
-    lastTradeDateOrContractMonth='20240718',
+    lastTradeDateOrContractMonth="20240718",
 )
 
 # Load options chain for date range
@@ -473,11 +477,13 @@ futures_chain = IBContract(
 )
 
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
-    load_contracts=frozenset([
-        options_chain_expiry,
-        options_chain_range,
-        futures_chain,
-    ]),
+    load_contracts=frozenset(
+        [
+            options_chain_expiry,
+            options_chain_range,
+            futures_chain,
+        ]
+    ),
 )
 ```
 
@@ -487,54 +493,78 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
 # Stocks
-IBContract(secType='STK', exchange='SMART', primaryExchange='ARCA', symbol='SPY')
-IBContract(secType='STK', exchange='SMART', primaryExchange='NASDAQ', symbol='AAPL')
+IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", symbol="SPY")
+IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", symbol="AAPL")
 
 # Bonds
-IBContract(secType='BOND', secIdType='ISIN', secId='US03076KAA60')
-IBContract(secType='BOND', secIdType='CUSIP', secId='912828XE8')
+IBContract(secType="BOND", secIdType="ISIN", secId="US03076KAA60")
+IBContract(secType="BOND", secIdType="CUSIP", secId="912828XE8")
 
 # Individual Options
-IBContract(secType='OPT', exchange='SMART', symbol='SPY',
-           lastTradeDateOrContractMonth='20251219', strike=500, right='C')
+IBContract(
+    secType="OPT",
+    exchange="SMART",
+    symbol="SPY",
+    lastTradeDateOrContractMonth="20251219",
+    strike=500,
+    right="C",
+)
 
 # Options Chain (loads all strikes/expirations)
-IBContract(secType='STK', exchange='SMART', primaryExchange='ARCA', symbol='SPY',
-           build_options_chain=True, min_expiry_days=10, max_expiry_days=60)
+IBContract(
+    secType="STK",
+    exchange="SMART",
+    primaryExchange="ARCA",
+    symbol="SPY",
+    build_options_chain=True,
+    min_expiry_days=10,
+    max_expiry_days=60,
+)
 
 # CFDs
-IBContract(secType='CFD', symbol='IBUS30')
-IBContract(secType='CFD', symbol='DE40EUR', exchange='SMART')
+IBContract(secType="CFD", symbol="IBUS30")
+IBContract(secType="CFD", symbol="DE40EUR", exchange="SMART")
 
 # Individual Futures
-IBContract(secType='FUT', exchange='CME', symbol='ES',
-           lastTradeDateOrContractMonth='20240315')
+IBContract(secType="FUT", exchange="CME", symbol="ES", lastTradeDateOrContractMonth="20240315")
 
 # Futures Chain (loads all expirations)
-IBContract(secType='CONTFUT', exchange='CME', symbol='ES', build_futures_chain=True)
+IBContract(secType="CONTFUT", exchange="CME", symbol="ES", build_futures_chain=True)
 
 # Options on Futures (FOP) - Individual
-IBContract(secType='FOP', exchange='CME', symbol='ES',
-           lastTradeDateOrContractMonth='20240315', strike=4200, right='C')
+IBContract(
+    secType="FOP",
+    exchange="CME",
+    symbol="ES",
+    lastTradeDateOrContractMonth="20240315",
+    strike=4200,
+    right="C",
+)
 
 # Options on Futures Chain (loads all strikes/expirations)
-IBContract(secType='CONTFUT', exchange='CME', symbol='ES',
-           build_options_chain=True, min_expiry_days=7, max_expiry_days=60)
+IBContract(
+    secType="CONTFUT",
+    exchange="CME",
+    symbol="ES",
+    build_options_chain=True,
+    min_expiry_days=7,
+    max_expiry_days=60,
+)
 
 # Forex
-IBContract(secType='CASH', exchange='IDEALPRO', symbol='EUR', currency='USD')
-IBContract(secType='CASH', exchange='IDEALPRO', symbol='GBP', currency='JPY')
+IBContract(secType="CASH", exchange="IDEALPRO", symbol="EUR", currency="USD")
+IBContract(secType="CASH", exchange="IDEALPRO", symbol="GBP", currency="JPY")
 
 # Cryptocurrencies
-IBContract(secType='CRYPTO', symbol='BTC', exchange='PAXOS', currency='USD')
-IBContract(secType='CRYPTO', symbol='ETH', exchange='PAXOS', currency='USD')
+IBContract(secType="CRYPTO", symbol="BTC", exchange="PAXOS", currency="USD")
+IBContract(secType="CRYPTO", symbol="ETH", exchange="PAXOS", currency="USD")
 
 # Indices
-IBContract(secType='IND', symbol='SPX', exchange='CBOE')
-IBContract(secType='IND', symbol='NDX', exchange='NASDAQ')
+IBContract(secType="IND", symbol="SPX", exchange="CBOE")
+IBContract(secType="IND", symbol="NDX", exchange="NASDAQ")
 
 # Commodities
-IBContract(secType='CMDTY', symbol='XAUUSD', exchange='SMART')
+IBContract(secType="CMDTY", symbol="XAUUSD", exchange="SMART")
 ```
 
 ### Advanced configuration options
@@ -569,8 +599,8 @@ For continuous futures contracts (using `secType='CONTFUT'`), the adapter create
 
 ```python
 # Continuous futures examples
-IBContract(secType='CONTFUT', exchange='CME', symbol='ES')  # -> ES.CME
-IBContract(secType='CONTFUT', exchange='NYMEX', symbol='CL') # -> CL.NYMEX
+IBContract(secType="CONTFUT", exchange="CME", symbol="ES")  # -> ES.CME
+IBContract(secType="CONTFUT", exchange="NYMEX", symbol="CL")  # -> CL.NYMEX
 
 # With MIC venue conversion enabled
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
@@ -606,16 +636,20 @@ call_leg = InstrumentId.from_str("SPY C400.SMART")
 put_leg = InstrumentId.from_str("SPY P390.SMART")
 
 # Create a 1:1 call spread (long call, short call)
-call_spread_id = new_generic_spread_id([
-    (call_leg, 1),   # Long 1 contract
-    (put_leg, -1),   # Short 1 contract
-])
+call_spread_id = new_generic_spread_id(
+    [
+        (call_leg, 1),  # Long 1 contract
+        (put_leg, -1),  # Short 1 contract
+    ]
+)
 
 # Create a 1:2 ratio spread
-ratio_spread_id = new_generic_spread_id([
-    (call_leg, 1),   # Long 1 contract
-    (put_leg, 2),    # Long 2 contracts
-])
+ratio_spread_id = new_generic_spread_id(
+    [
+        (call_leg, 1),  # Long 1 contract
+        (put_leg, 2),  # Long 2 contracts
+    ]
+)
 ```
 
 ### Dynamic spread loading
@@ -627,6 +661,7 @@ Option spreads must be requested before they can be traded or subscribed to for 
 def on_start(self):
     # Request the spread instrument
     self.request_instrument(spread_id)
+
 
 def on_instrument(self, instrument):
     # Handle the loaded spread instrument
@@ -665,7 +700,9 @@ The `HistoricInteractiveBrokersClient` provides methods for retrieving historica
 ### Historical data client
 
 ```python
-from nautilus_trader.adapters.interactive_brokers.historical.client import HistoricInteractiveBrokersClient
+from nautilus_trader.adapters.interactive_brokers.historical.client import (
+    HistoricInteractiveBrokersClient,
+)
 from ibapi.common import MarketDataTypeEnum
 
 # Initialize the client
@@ -674,7 +711,7 @@ client = HistoricInteractiveBrokersClient(
     port=7497,
     client_id=1,
     market_data_type=MarketDataTypeEnum.DELAYED_FROZEN,  # Use delayed data if no subscription
-    log_level="INFO"
+    log_level="INFO",
 )
 
 # Connect to TWS/Gateway
@@ -781,17 +818,17 @@ import datetime
 # Request historical bars
 bars = await client.request_bars(
     bar_specifications=[
-        "1-MINUTE-LAST",    # 1-minute bars using last price
-        "5-MINUTE-MID",     # 5-minute bars using midpoint
-        "1-HOUR-LAST",      # 1-hour bars using last price
-        "1-DAY-LAST",       # Daily bars using last price
+        "1-MINUTE-LAST",  # 1-minute bars using last price
+        "5-MINUTE-MID",  # 5-minute bars using midpoint
+        "1-HOUR-LAST",  # 1-hour bars using last price
+        "1-DAY-LAST",  # Daily bars using last price
     ],
     start_date_time=datetime.datetime(2023, 11, 1, 9, 30),
     end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
     tz_name="America/New_York",
     contracts=contracts,
     use_rth=True,  # Regular Trading Hours only
-    timeout=120,   # Request timeout in seconds
+    timeout=120,  # Request timeout in seconds
 )
 ```
 
@@ -834,7 +871,9 @@ The adapter supports various bar specifications:
 import asyncio
 import datetime
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
-from nautilus_trader.adapters.interactive_brokers.historical.client import HistoricInteractiveBrokersClient
+from nautilus_trader.adapters.interactive_brokers.historical.client import (
+    HistoricInteractiveBrokersClient,
+)
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
@@ -891,6 +930,7 @@ async def download_historical_data():
     # Disconnect
     await client.disconnect()
 
+
 # Run the example
 if __name__ == "__main__":
     asyncio.run(download_historical_data())
@@ -936,7 +976,9 @@ The `InteractiveBrokersInstrumentProvider` provides access to financial instrume
 #### Basic configuration
 
 ```python
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
@@ -944,24 +986,28 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
     build_futures_chain=False,  # Set to True if fetching futures chains
     build_options_chain=False,  # Set to True if fetching options chains
-    min_expiry_days=10,         # Minimum days to expiry for derivatives
-    max_expiry_days=60,         # Maximum days to expiry for derivatives
+    min_expiry_days=10,  # Minimum days to expiry for derivatives
+    max_expiry_days=60,  # Maximum days to expiry for derivatives
     convert_exchange_to_mic_venue=False,  # Use MIC codes for venue mapping
-    cache_validity_days=1,      # Cache instrument data for 1 day
-    load_ids=frozenset([
-        # Individual instruments using simplified symbology
-        "EUR/USD.IDEALPRO",     # Forex
-        "BTC/USD.PAXOS",        # Cryptocurrency
-        "SPY.ARCA",             # Stock ETF
-        "V.NYSE",               # Individual stock
-        "ESM4.CME",             # Future contract (single digit year)
-        "^SPX.CBOE",            # Index
-    ]),
-    load_contracts=frozenset([
-        # Complex instruments using IBContract
-        IBContract(secType='STK', symbol='AAPL', exchange='SMART', primaryExchange='NASDAQ'),
-        IBContract(secType='CASH', symbol='GBP', currency='USD', exchange='IDEALPRO'),
-    ]),
+    cache_validity_days=1,  # Cache instrument data for 1 day
+    load_ids=frozenset(
+        [
+            # Individual instruments using simplified symbology
+            "EUR/USD.IDEALPRO",  # Forex
+            "BTC/USD.PAXOS",  # Cryptocurrency
+            "SPY.ARCA",  # Stock ETF
+            "V.NYSE",  # Individual stock
+            "ESM4.CME",  # Future contract (single digit year)
+            "^SPX.CBOE",  # Index
+        ]
+    ),
+    load_contracts=frozenset(
+        [
+            # Complex instruments using IBContract
+            IBContract(secType="STK", symbol="AAPL", exchange="SMART", primaryExchange="NASDAQ"),
+            IBContract(secType="CASH", symbol="GBP", currency="USD", exchange="IDEALPRO"),
+        ]
+    ),
 )
 ```
 
@@ -971,27 +1017,29 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 # Configuration for options and futures chains
 advanced_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
-    build_futures_chain=True,   # Enable futures chain loading
-    build_options_chain=True,   # Enable options chain loading
-    min_expiry_days=7,          # Load contracts expiring in 7+ days
-    max_expiry_days=90,         # Load contracts expiring within 90 days
-    load_contracts=frozenset([
-        # Load SPY options chain
-        IBContract(
-            secType='STK',
-            symbol='SPY',
-            exchange='SMART',
-            primaryExchange='ARCA',
-            build_options_chain=True,
-        ),
-        # Load ES futures chain
-        IBContract(
-            secType='CONTFUT',
-            exchange='CME',
-            symbol='ES',
-            build_futures_chain=True,
-        ),
-    ]),
+    build_futures_chain=True,  # Enable futures chain loading
+    build_options_chain=True,  # Enable options chain loading
+    min_expiry_days=7,  # Load contracts expiring in 7+ days
+    max_expiry_days=90,  # Load contracts expiring within 90 days
+    load_contracts=frozenset(
+        [
+            # Load SPY options chain
+            IBContract(
+                secType="STK",
+                symbol="SPY",
+                exchange="SMART",
+                primaryExchange="ARCA",
+                build_options_chain=True,
+            ),
+            # Load ES futures chain
+            IBContract(
+                secType="CONTFUT",
+                exchange="CME",
+                symbol="ES",
+                build_futures_chain=True,
+            ),
+        ]
+    ),
 )
 ```
 
@@ -1049,7 +1097,7 @@ data_client_config = InteractiveBrokersDataClientConfig(
     ignore_quote_tick_size_updates=False,  # Include size-only updates
     instrument_provider=instrument_provider_config,
     connection_timeout=300,  # 5 minutes
-    request_timeout_secs=60,      # 1 minute
+    request_timeout_secs=60,  # 1 minute
 )
 ```
 
@@ -1230,6 +1278,7 @@ exec_config = InteractiveBrokersExecClientConfig(
 
 # Option 2: Use environment variable
 import os
+
 os.environ["TWS_ACCOUNT"] = "DU123456"
 exec_config = InteractiveBrokersExecClientConfig(
     account_id=None,  # Will use TWS_ACCOUNT env var
@@ -1258,12 +1307,12 @@ from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 
 # Create order with IB-specific parameters
 order_tags = IBOrderTags(
-    allOrNone=True,           # All-or-none order
-    ocaGroup="MyGroup1",      # One-cancels-all group
-    ocaType=1,                # Cancel with block
+    allOrNone=True,  # All-or-none order
+    ocaGroup="MyGroup1",  # One-cancels-all group
+    ocaType=1,  # Cancel with block
     activeStartTime="20240315 09:30:00 EST",  # GTC activation time
-    activeStopTime="20240315 16:00:00 EST",   # GTC deactivation time
-    goodAfterTime="20240315 09:35:00 EST",    # Good after time
+    activeStopTime="20240315 16:00:00 EST",  # GTC deactivation time
+    goodAfterTime="20240315 09:35:00 EST",  # Good after time
 )
 
 # Apply tags to an order
@@ -1588,11 +1637,17 @@ from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
@@ -1602,14 +1657,16 @@ from nautilus_trader.live.node import TradingNode
 # Instrument provider configuration
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
-    load_ids=frozenset([
-        "EUR/USD.IDEALPRO",
-        "GBP/USD.IDEALPRO",
-        "SPY.ARCA",
-        "QQQ.NASDAQ",
-        "AAPL.NASDAQ",
-        "MSFT.NASDAQ",
-    ]),
+    load_ids=frozenset(
+        [
+            "EUR/USD.IDEALPRO",
+            "GBP/USD.IDEALPRO",
+            "SPY.ARCA",
+            "QQQ.NASDAQ",
+            "AAPL.NASDAQ",
+            "MSFT.NASDAQ",
+        ]
+    ),
 )
 
 # Data client configuration
@@ -1640,7 +1697,7 @@ config_node = TradingNodeConfig(
     exec_clients={IB: exec_client_config},
     data_engine=LiveDataEngineConfig(
         time_bars_timestamp_on_close=False,  # IB standard: use bar open time
-        validate_data_sequence=True,         # Discard out-of-sequence bars
+        validate_data_sequence=True,  # Discard out-of-sequence bars
     ),
     timeout_connection=90.0,
     timeout_reconciliation=5.0,
@@ -1774,12 +1831,10 @@ data_client_config = InteractiveBrokersDataClientConfig(
 config_node = TradingNodeConfig(
     trader_id="MULTI-ACCOUNT-001",
     logging=LoggingConfig(log_level="INFO"),
-
     # Single data client shared across accounts
     data_clients={
         "IB": data_client_config,
     },
-
     # Multiple execution clients, one per account
     exec_clients={
         # First account: Paper trading account
@@ -1791,7 +1846,6 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
             routing=RoutingConfig(default=False),  # Not default
         ),
-
         # Second account: Live trading account
         "IB-LIVE": InteractiveBrokersExecClientConfig(
             ibg_host="127.0.0.1",
@@ -1801,7 +1855,6 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
             routing=RoutingConfig(default=True),  # Set as default
         ),
-
         # Third account: Another managed account
         "IB-ACCOUNT3": InteractiveBrokersExecClientConfig(
             ibg_host="127.0.0.1",
@@ -1843,6 +1896,7 @@ config_node = TradingNodeConfig(
 from nautilus_trader.model.identifiers import AccountId, ClientId
 from nautilus_trader.trading.strategy import Strategy
 
+
 class MultiAccountStrategy(Strategy):
     """Example strategy using multiple IB accounts."""
 
@@ -1872,17 +1926,13 @@ class MultiAccountStrategy(Strategy):
     def check_paper_pnl(self, instrument_id):
         """Check realized PnL for paper account."""
         pnl = self.portfolio.realized_pnl(
-            instrument_id=instrument_id,
-            account_id=self.paper_account
+            instrument_id=instrument_id, account_id=self.paper_account
         )
         return pnl
 
     def check_live_pnl(self, instrument_id):
         """Check realized PnL for live account."""
-        pnl = self.portfolio.realized_pnl(
-            instrument_id=instrument_id,
-            account_id=self.live_account
-        )
+        pnl = self.portfolio.realized_pnl(instrument_id=instrument_id, account_id=self.live_account)
         return pnl
 ```
 
@@ -1899,14 +1949,11 @@ live_account = cache.account(AccountId("IB-LIVE-U987654"))
 paper_account_by_id = cache.account(AccountId("IB-PAPER-DU123456"))
 
 # Alternative: Query account using account_id parameter (also works)
-paper_account_via_account_id = cache.account_for_venue(
-    account_id=AccountId("IB-PAPER-DU123456")
-)
+paper_account_via_account_id = cache.account_for_venue(account_id=AccountId("IB-PAPER-DU123456"))
 
 # Query portfolio properties by account
 paper_realized_pnl = portfolio.realized_pnl(
-    instrument_id=instrument_id,
-    account_id=AccountId("IB-PAPER-DU123456")
+    instrument_id=instrument_id, account_id=AccountId("IB-PAPER-DU123456")
 )
 
 # Query portfolio properties aggregated across all IB accounts
@@ -1940,6 +1987,7 @@ def run_trading_node():
     finally:
         if node:
             node.dispose()
+
 
 if __name__ == "__main__":
     run_trading_node()
@@ -2031,7 +2079,7 @@ data_config = InteractiveBrokersDataClientConfig(
 # Set reasonable timeouts
 config = InteractiveBrokersDataClientConfig(
     connection_timeout=300,  # 5 minutes
-    request_timeout_secs=60,      # 1 minute
+    request_timeout_secs=60,  # 1 minute
     # ... other config
 )
 ```

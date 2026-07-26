@@ -112,7 +112,7 @@ config = BacktestRunConfig(
 Custom model with parameters:
 
 ```python
-margin_model=MarginModelConfig(
+margin_model = MarginModelConfig(
     model_type="my_package.my_module:CustomMarginModel",
     config={
         "risk_multiplier": 1.5,

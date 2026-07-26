@@ -313,7 +313,7 @@ onto fills when Bybit execution messages do not include `positionIdx`.
 To override, pass `position_idx` via `params`:
 
 ```python
-params={"position_idx": 1}  # 0 one-way, 1 long, 2 short
+params = {"position_idx": 1}  # 0 one-way, 1 long, 2 short
 ```
 
 ### Risk events
@@ -443,7 +443,7 @@ order = strategy.order_factory.market(
     instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_str("0.1"),
-    params={"is_leverage": True}  # Enable margin for this order
+    params={"is_leverage": True},  # Enable margin for this order
 )
 strategy.submit_order(order)
 ```

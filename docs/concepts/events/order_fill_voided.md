@@ -93,8 +93,7 @@ carries:
 ```python
 def on_order_fill_voided(self, event: OrderFillVoided) -> None:
     self.log.warning(
-        f"Corrected {event.trade_id}: voided={event.voided_qty} "
-        f"reopened={event.is_reopened}",
+        f"Corrected {event.trade_id}: voided={event.voided_qty} reopened={event.is_reopened}",
     )
 ```
 

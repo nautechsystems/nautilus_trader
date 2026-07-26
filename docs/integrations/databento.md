@@ -310,7 +310,7 @@ self.subscribe_trade_ticks(
 # Subscribe to top 10 levels of market depth
 self.subscribe_order_book_depth(
     instrument_id=instrument_id,
-    depth=10  # MBP-10 schema is automatically selected
+    depth=10,  # MBP-10 schema is automatically selected
 )
 
 # The depth parameter must be 10 for Databento
@@ -323,7 +323,7 @@ self.subscribe_order_book_depth(
 # Subscribe to full order book updates (market by order)
 self.subscribe_order_book_deltas(
     instrument_id=instrument_id,
-    book_type=BookType.L3_MBO  # Uses MBO schema
+    book_type=BookType.L3_MBO,  # Uses MBO schema
 )
 
 # Make MBO subscriptions at node startup so Databento can replay from session start
@@ -333,24 +333,16 @@ self.subscribe_order_book_deltas(
 
 ```python
 # Subscribe to 1-minute bars (automatically uses ohlcv-1m schema)
-self.subscribe_bars(
-    bar_type=BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
-)
+self.subscribe_bars(bar_type=BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
 
 # Subscribe to 1-second bars (automatically uses ohlcv-1s schema)
-self.subscribe_bars(
-    bar_type=BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL")
-)
+self.subscribe_bars(bar_type=BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
 
 # Subscribe to hourly bars (automatically uses ohlcv-1h schema)
-self.subscribe_bars(
-    bar_type=BarType.from_str(f"{instrument_id}-1-HOUR-LAST-EXTERNAL")
-)
+self.subscribe_bars(bar_type=BarType.from_str(f"{instrument_id}-1-HOUR-LAST-EXTERNAL"))
 
 # Subscribe to daily bars (automatically uses ohlcv-1d schema)
-self.subscribe_bars(
-    bar_type=BarType.from_str(f"{instrument_id}-1-DAY-LAST-EXTERNAL")
-)
+self.subscribe_bars(bar_type=BarType.from_str(f"{instrument_id}-1-DAY-LAST-EXTERNAL"))
 ```
 
 ### Custom data type subscriptions

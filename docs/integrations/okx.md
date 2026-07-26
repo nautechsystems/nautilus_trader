@@ -229,7 +229,7 @@ OKX has specific requirements for client order IDs:
 When configuring your strategy, ensure you set:
 
 ```python
-use_hyphens_in_client_order_ids=False
+use_hyphens_in_client_order_ids = False
 ```
 
 :::
@@ -407,7 +407,7 @@ The adapter selects the trade mode from:
 
 ```python
 # Simple SPOT trading without leverage (uses 'cash' mode)
-exec_clients={
+exec_clients = {
     OKX: OKXExecClientConfig(
         instrument_types=(OKXInstrumentType.SPOT,),
         use_spot_margin=False,  # Default - simple SPOT
@@ -416,7 +416,7 @@ exec_clients={
 }
 
 # SPOT trading WITH margin/leverage (uses 'isolated' or 'cross' mode)
-exec_clients={
+exec_clients = {
     OKX: OKXExecClientConfig(
         instrument_types=(OKXInstrumentType.SPOT,),
         use_spot_margin=True,  # Enable margin trading for SPOT
@@ -430,7 +430,7 @@ exec_clients={
 
 ```python
 # Derivatives with isolated margin (default - uses 'isolated' mode)
-exec_clients={
+exec_clients = {
     OKX: OKXExecClientConfig(
         instrument_types=(OKXInstrumentType.SWAP,),
         margin_mode=OKXMarginMode.ISOLATED,  # Or omit - ISOLATED is default
@@ -439,7 +439,7 @@ exec_clients={
 }
 
 # Derivatives with cross margin (uses 'cross' mode)
-exec_clients={
+exec_clients = {
     OKX: OKXExecClientConfig(
         instrument_types=(OKXInstrumentType.SWAP,),
         margin_mode=OKXMarginMode.CROSS,  # Share margin across all positions
@@ -455,10 +455,10 @@ mode per order based on the instrument being traded:
 
 ```python
 # Mixed SPOT + SWAP configuration
-exec_clients={
+exec_clients = {
     OKX: OKXExecClientConfig(
         instrument_types=(OKXInstrumentType.SPOT, OKXInstrumentType.SWAP),
-        use_spot_margin=True,           # Applies to SPOT orders only
+        use_spot_margin=True,  # Applies to SPOT orders only
         margin_mode=OKXMarginMode.CROSS,  # Applies to SWAP orders only
         # ... other config
     ),
@@ -685,6 +685,7 @@ adapter falls back to emitting both.
 ```python
 # Default (both conventions, receiver branches)
 self.subscribe_option_greeks(instrument_id)
+
 
 def on_option_greeks(self, greeks: OptionGreeks) -> None:
     if greeks.convention == GreeksConvention.BLACK_SCHOLES:
@@ -1161,7 +1162,10 @@ Below is an example configuration for a live trading node using OKX data and exe
 ```python
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig, OKXExecClientConfig
-from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory, OKXLiveExecClientFactory
+from nautilus_trader.adapters.okx.factories import (
+    OKXLiveDataClientFactory,
+    OKXLiveExecClientFactory,
+)
 from nautilus_trader.config import InstrumentProviderConfig, TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
@@ -1173,9 +1177,9 @@ config = TradingNodeConfig(
     ...,
     data_clients={
         OKX: OKXDataClientConfig(
-            api_key=None,           # Will use OKX_API_KEY env var
-            api_secret=None,        # Will use OKX_API_SECRET env var
-            api_passphrase=None,    # Will use OKX_API_PASSPHRASE env var
+            api_key=None,  # Will use OKX_API_KEY env var
+            api_secret=None,  # Will use OKX_API_SECRET env var
+            api_passphrase=None,  # Will use OKX_API_PASSPHRASE env var
             base_url_http=None,
             base_url_ws=None,
             environment=OKXEnvironment.LIVE,

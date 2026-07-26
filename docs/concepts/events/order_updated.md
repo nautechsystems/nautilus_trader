@@ -29,8 +29,7 @@ Reading the event in a strategy handler:
 ```python
 def on_order_updated(self, event: OrderUpdated) -> None:
     self.log.info(
-        f"Order {event.client_order_id} updated: "
-        f"qty={event.quantity} price={event.price}",
+        f"Order {event.client_order_id} updated: qty={event.quantity} price={event.price}",
     )
 ```
 

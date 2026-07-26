@@ -151,11 +151,11 @@ handles translation to Kraken's native format internally.
 **Instrument ID format:**
 
 ```python
-InstrumentId.from_str("BTC/USD.KRAKEN")   # Spot BTC/USD
-InstrumentId.from_str("ETH/USD.KRAKEN")   # Spot ETH/USD
-InstrumentId.from_str("SOL/USD.KRAKEN")   # Spot SOL/USD
+InstrumentId.from_str("BTC/USD.KRAKEN")  # Spot BTC/USD
+InstrumentId.from_str("ETH/USD.KRAKEN")  # Spot ETH/USD
+InstrumentId.from_str("SOL/USD.KRAKEN")  # Spot SOL/USD
 InstrumentId.from_str("BTC/USDT.KRAKEN")  # Spot BTC/USDT
-InstrumentId.from_str("ETH/BTC.KRAKEN")   # Spot ETH/BTC (normalized from ETH/XBT)
+InstrumentId.from_str("ETH/BTC.KRAKEN")  # Spot ETH/BTC (normalized from ETH/XBT)
 ```
 
 ### Futures markets
@@ -504,7 +504,7 @@ trading).
 **Configuration:**
 
 ```python
-exec_clients={
+exec_clients = {
     KRAKEN: {
         "use_spot_position_reports": True,
         "spot_positions_quote_currency": "USDT",  # Default
@@ -537,8 +537,8 @@ from nautilus_trader.model.enums import AccountType
 exec_clients = {
     KRAKEN: KrakenExecClientConfig(
         spot_account_type=AccountType.MARGIN,
-        default_leverage=3,             # optional config-level default
-        margin_balance_asset="ZGBP",    # optional summary-display asset
+        default_leverage=3,  # optional config-level default
+        margin_balance_asset="ZGBP",  # optional summary-display asset
     ),
 }
 ```
@@ -650,9 +650,9 @@ overflows before it can decay, causing `EAPI:Rate limit exceeded` errors.
 Recommended settings for Kraken:
 
 ```python
-exec_engine=LiveExecEngineConfig(
+exec_engine = LiveExecEngineConfig(
     reconciliation=True,
-    open_check_interval_secs=30.0,    # 30s minimum for Starter tier
+    open_check_interval_secs=30.0,  # 30s minimum for Starter tier
     position_check_interval_secs=120.0,  # 2 minutes
 )
 ```
