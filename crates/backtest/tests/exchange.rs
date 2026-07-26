@@ -80,11 +80,21 @@ fn get_exchange(
     book_type: BookType,
     cache: Option<Rc<RefCell<Cache>>>,
 ) -> Rc<RefCell<SimulatedExchange>> {
+    get_exchange_with_oms(venue, OmsType::Netting, account_type, book_type, cache)
+}
+
+fn get_exchange_with_oms(
+    venue: Venue,
+    oms_type: OmsType,
+    account_type: AccountType,
+    book_type: BookType,
+    cache: Option<Rc<RefCell<Cache>>>,
+) -> Rc<RefCell<SimulatedExchange>> {
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
     let clock = Rc::new(RefCell::new(TestClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
-        .oms_type(OmsType::Netting)
+        .oms_type(oms_type)
         .account_type(account_type)
         .book_type(book_type)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
@@ -207,6 +217,145 @@ fn test_matching_engine_iteration_order_is_stable_across_rebuilds(
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
     }
+}
+
+#[rstest]
+fn test_append_only_matching_engine_raw_ids_start_at_one_and_increment(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(second_instrument.clone())
+        .unwrap();
+
+    let exchange = exchange.borrow();
+    assert_eq!(
+        exchange
+            .get_matching_engine(&first_instrument.id())
+            .unwrap()
+            .raw_id,
+        1
+    );
+    assert_eq!(
+        exchange
+            .get_matching_engine(&second_instrument.id())
+            .unwrap()
+            .raw_id,
+        2
+    );
+}
+
+#[rstest]
+fn test_readded_instrument_does_not_collide_generated_fill_ids(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let saving_handler = register_order_event_saving_handler();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let exchange = get_exchange_with_oms(
+        Venue::new("BINANCE"),
+        OmsType::Hedging,
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(second_instrument.clone())
+        .unwrap();
+
+    let fill_timestamp = UnixNanos::from(2);
+    exchange.borrow_mut().process_quote_tick(&QuoteTick::new(
+        first_instrument.id(),
+        Price::from("1000.00"),
+        Price::from("1001.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    let pre_readd_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(first_instrument.id())
+        .client_order_id(ClientOrderId::from("O-READD-PRE"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .build();
+    submit_matching_option_limit(&exchange, &cache, &pre_readd_order, fill_timestamp);
+
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+
+    for instrument in [&first_instrument, &second_instrument] {
+        exchange.borrow_mut().process_quote_tick(&QuoteTick::new(
+            instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ));
+    }
+
+    let first_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(first_instrument.id())
+        .client_order_id(ClientOrderId::from("O-READD-FIRST"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .build();
+    let second_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(second_instrument.id())
+        .client_order_id(ClientOrderId::from("O-READD-SECOND"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .build();
+
+    submit_matching_option_limit(&exchange, &cache, &first_order, fill_timestamp);
+    submit_matching_option_limit(&exchange, &cache, &second_order, fill_timestamp);
+
+    let messages = saving_handler.get_messages();
+    let pre_readd_fill = matching_option_fill(&messages, pre_readd_order.client_order_id());
+    let first_fill = matching_option_fill(&messages, first_order.client_order_id());
+    let second_fill = matching_option_fill(&messages, second_order.client_order_id());
+    assert_eq!(pre_readd_fill.ts_event, first_fill.ts_event);
+    assert_ne!(pre_readd_fill.venue_order_id, first_fill.venue_order_id);
+    assert_ne!(pre_readd_fill.trade_id, first_fill.trade_id);
+    assert_eq!(first_fill.ts_event, second_fill.ts_event);
+    assert_ne!(first_fill.venue_order_id, second_fill.venue_order_id);
+    assert_ne!(first_fill.position_id, second_fill.position_id);
+    assert_ne!(first_fill.trade_id, second_fill.trade_id);
 }
 
 #[rstest]
