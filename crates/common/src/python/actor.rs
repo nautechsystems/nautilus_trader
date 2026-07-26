@@ -822,6 +822,21 @@ impl PyDataActor {
         }
     }
 
+    /// Creates a new [`PyDataActor`] from a Python config object.
+    ///
+    /// Extracts a [`DataActorConfig`] when the object provides one, falling back to defaults
+    /// otherwise, and retains the original object so `.config` returns what the caller passed.
+    /// Subclass constructors share this so the base is built the same way everywhere.
+    #[must_use]
+    pub fn from_py_config(config: Option<Py<PyAny>>) -> Self {
+        let actor_config = config
+            .as_ref()
+            .and_then(|obj| Python::attach(|py| obj.extract::<DataActorConfig>(py).ok()));
+        let mut actor = Self::new(actor_config);
+        actor.set_config(config);
+        actor
+    }
+
     /// Sets the Python instance reference for method dispatch.
     ///
     /// This enables the `PyDataActor` to forward method calls (like `on_start`, `on_stop`)
@@ -1191,12 +1206,7 @@ impl PyDataActor {
     #[new]
     #[pyo3(signature = (config=None))]
     fn py_new(config: Option<Py<PyAny>>) -> Self {
-        let actor_config = config
-            .as_ref()
-            .and_then(|obj| Python::attach(|py| obj.extract::<DataActorConfig>(py).ok()));
-        let mut actor = Self::new(actor_config);
-        actor.set_config(config);
-        actor
+        Self::from_py_config(config)
     }
 
     #[pyo3(signature = (config=None))]

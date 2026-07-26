@@ -206,44 +206,6 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Names added to a generated stub's ``__all__`` beyond what pyo3-stub-gen emits.
-# Adapter stub ``__all__`` is owned by ``sync_adapter_all_exports`` (copied from
-# the runtime facade), so only non-adapter modules appear here.
-EXTRA_ALL_EXPORTS: dict[str, tuple[str, ...]] = {
-    "nautilus_trader/trading/__init__.pyi": ("Controller",),
-}
-
-# Full class-body stubs for pure-Python classes that pyo3-stub-gen cannot
-# generate. The bidirectional guard validates these against the runtime class's
-# own (non-inherited) public members. Add a class here only when the class is
-# pure Python and its method signatures are stable.
-PURE_PYTHON_CLASS_STUBS: dict[str, str] = {
-    "nautilus_trader/trading/__init__.pyi": """\
-class Controller(common.DataActor):
-    def __init__(self, config: typing.Any | None = None) -> None: ...
-    def create_actor_from_config(
-        self, actor_config: common.ImportableActorConfig, start: bool = True
-    ) -> model.ActorId: ...
-    def create_strategy_from_config(
-        self, strategy_config: ImportableStrategyConfig, start: bool = True
-    ) -> model.StrategyId: ...
-    def start_actor(self, actor_id: model.ActorId) -> None: ...
-    def start_actor_from_id(self, actor_id: model.ActorId) -> None: ...
-    def stop_actor(self, actor_id: model.ActorId) -> None: ...
-    def stop_actor_from_id(self, actor_id: model.ActorId) -> None: ...
-    def remove_actor(self, actor_id: model.ActorId) -> None: ...
-    def remove_actor_from_id(self, actor_id: model.ActorId) -> None: ...
-    def start_strategy(self, strategy_id: model.StrategyId) -> None: ...
-    def start_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
-    def stop_strategy(self, strategy_id: model.StrategyId) -> None: ...
-    def stop_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
-    def market_exit_strategy(self, strategy_id: model.StrategyId) -> None: ...
-    def market_exit_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
-    def remove_strategy(self, strategy_id: model.StrategyId) -> None: ...
-    def remove_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
-""",
-}
-
 MODEL_EXPORTS = frozenset(MODULE_FIXUPS["model"].all_exports)
 
 
@@ -463,82 +425,24 @@ def inject_reexports(content: str, stub_path: Path) -> str:
     """
     posix = stub_path.as_posix()
     reexports = next((v for k, v in EXTRA_REEXPORTS.items() if posix.endswith(k)), None)
-    exports = next((v for k, v in EXTRA_ALL_EXPORTS.items() if posix.endswith(k)), None)
 
-    if not reexports and not exports:
+    if not reexports:
         return content
-
-    if reexports:
-        lines = content.split("\n")
-        missing = [imp for imp in reexports if imp not in lines]
-
-        if missing:
-            insert_at = 0
-
-            for i, line in enumerate(lines):
-                if line.startswith(("import ", "from ")):
-                    insert_at = i + 1
-
-            lines[insert_at:insert_at] = missing
-            content = "\n".join(lines)
-
-    if exports:
-        content = _add_names_to_all(content, list(exports))
-
-    return content
-
-
-def inject_pure_python_class_stubs(content: str, stub_path: Path) -> str:
-    """
-    Inject full class-body stubs for pure-Python classes into a module stub.
-
-    Removes any stale import re-exports for classes that now have a full stub body, then
-    inserts the body after the last existing class definition.
-
-    """
-    posix = stub_path.as_posix()
-    entry = next(
-        (v for k, v in PURE_PYTHON_CLASS_STUBS.items() if posix.endswith(k)),
-        None,
-    )
-
-    if entry is None:
-        return content
-
-    tree = ast.parse(entry)
-    class_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
 
     lines = content.split("\n")
+    missing = [imp for imp in reexports if imp not in lines]
 
-    stale_lines = {
-        f"from nautilus_trader.trading.controller import {name} as {name}" for name in class_names
-    }
-    lines = [line for line in lines if line.strip() not in stale_lines]
+    if missing:
+        insert_at = 0
 
-    body = entry.strip()
-    if body in "\n".join(lines):
-        return "\n".join(lines)
+        for i, line in enumerate(lines):
+            if line.startswith(("import ", "from ")):
+                insert_at = i + 1
 
-    insert_at = len(lines)
-    for i, line in enumerate(lines):
-        if line.startswith("def ") or (
-            line.startswith("class ")
-            and not any(line.startswith(f"class {name}") for name in class_names)
-        ):
-            insert_at = i
-            while insert_at > 0 and lines[insert_at - 1].startswith("@"):
-                insert_at -= 1
-            break
+        lines[insert_at:insert_at] = missing
+        content = "\n".join(lines)
 
-    while insert_at > 0 and not lines[insert_at - 1].strip():
-        insert_at -= 1
-
-    if insert_at > 0 and lines[insert_at - 1].strip():
-        lines.insert(insert_at, "")
-        insert_at += 1
-    lines.insert(insert_at, body)
-
-    return "\n".join(lines)
+    return content
 
 
 def post_process_stubs(root: Path) -> None:
@@ -596,9 +500,6 @@ def post_process_stubs(root: Path) -> None:
 
         # Inject re-exports for hand-written Python symbols (e.g. ReportProvider)
         content = inject_reexports(content, stub_file)
-
-        # Inject full class-body stubs for pure-Python classes (e.g. Controller)
-        content = inject_pure_python_class_stubs(content, stub_file)
 
         # Normalize formatting
         content = normalize_stub_content(content)

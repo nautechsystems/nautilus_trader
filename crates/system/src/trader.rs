@@ -407,7 +407,7 @@ impl Trader {
             anyhow::bail!("Actor {actor_id} is already registered");
         }
 
-        crate::python::controller::attach_controller_handle(&python_controller, trader, actor_id)?;
+        crate::python::controller::bind_controller_trader(&python_controller, trader)?;
 
         trader
             .borrow_mut()

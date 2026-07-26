@@ -15,7 +15,6 @@
 
 from nautilus_trader._fixup import fixup_module_names
 from nautilus_trader._libnautilus.trading import *  # noqa: F403 (undefined-local-with-import-star)
-from nautilus_trader.trading.controller import Controller as Controller
 
 
 fixup_module_names(globals(), __name__)

@@ -22,6 +22,7 @@ automatically and should not define __init__.
 
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import DataActorConfig
+from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
@@ -120,13 +121,18 @@ class ControllerRegistrationProbe(Controller):
 
 class ControllerCreatedStrategy(Strategy):
     started = 0
+    stopped = 0
 
     @classmethod
     def reset(cls):
         cls.started = 0
+        cls.stopped = 0
 
     def on_start(self):
         type(self).started += 1
+
+    def on_stop(self):
+        type(self).stopped += 1
 
 
 class StrategyCreatingController(Controller):
@@ -147,6 +153,103 @@ class StrategyCreatingController(Controller):
                 config={"strategy_id": "ControllerCreatedStrategy-001"},
             ),
         )
+
+
+class ControllerCreatedActor(DataActor):
+    started = 0
+    stopped = 0
+
+    @classmethod
+    def reset(cls):
+        cls.started = 0
+        cls.stopped = 0
+
+    def on_start(self):
+        type(self).started += 1
+
+    def on_stop(self):
+        type(self).stopped += 1
+
+
+class ActorLifecycleController(Controller):
+    """
+    Drives a created actor through the `*_from_id` control aliases.
+
+    Also attempts to remove itself, which the controller must ignore.
+
+    """
+
+    created_actor_id = None
+    steps: list[str] = []
+
+    @classmethod
+    def reset(cls):
+        cls.created_actor_id = None
+        cls.steps = []
+
+    def on_start(self):
+        actor_id = self.create_actor_from_config(
+            ImportableActorConfig(
+                actor_path="tests.unit.common.actor:ControllerCreatedActor",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "ControllerCreatedActor-001"},
+            ),
+            start=False,
+        )
+        type(self).created_actor_id = actor_id
+        type(self).steps.append("created")
+
+        self.start_actor_from_id(actor_id)
+        type(self).steps.append("started")
+
+        self.stop_actor_from_id(actor_id)
+        type(self).steps.append("stopped")
+
+        # A wrong controller identity would stop and dispose this controller instead
+        self.remove_actor(self.actor_id)
+        type(self).steps.append("self_remove_ignored")
+
+        self.remove_actor_from_id(actor_id)
+        type(self).steps.append("removed")
+
+    def on_stop(self):
+        # Recorded in the same sequence so a premature self-stop is ordered before "removed"
+        type(self).steps.append("controller_stopped")
+
+
+class StrategyLifecycleController(Controller):
+    """
+    Drives a created strategy through one alias and two canonical control methods.
+    """
+
+    created_strategy_id = None
+    steps: list[str] = []
+
+    @classmethod
+    def reset(cls):
+        cls.created_strategy_id = None
+        cls.steps = []
+
+    def on_start(self):
+        strategy_id = self.create_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:ControllerCreatedStrategy",
+                config_path="tests.unit.common.actor:TestStrategyConfig",
+                config={"strategy_id": "ControllerCreatedStrategy-001"},
+            ),
+            start=False,
+        )
+        type(self).created_strategy_id = strategy_id
+        type(self).steps.append("created")
+
+        self.start_strategy_from_id(strategy_id)
+        type(self).steps.append("started")
+
+        self.stop_strategy(strategy_id)
+        type(self).steps.append("stopped")
+
+        self.remove_strategy(strategy_id)
+        type(self).steps.append("removed")
 
 
 class NonStartingStrategyCreatingController(StrategyCreatingController):

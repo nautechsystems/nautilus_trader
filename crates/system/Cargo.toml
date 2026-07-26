@@ -31,6 +31,7 @@ python = [
   "nautilus-persistence/python",
   "nautilus-trading/python",
   "pyo3",
+  "pyo3-stub-gen",
   "streaming",
 ]
 streaming = ["nautilus-persistence"]
@@ -70,6 +71,7 @@ sysinfo = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }

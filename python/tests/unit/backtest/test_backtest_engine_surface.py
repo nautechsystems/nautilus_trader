@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
 from strategies.backtest_surface import DoubleSpawnExecutionAlgorithm
 from strategies.backtest_surface import MarketDataAuditActor
 from strategies.backtest_surface import MarketDataAuditActorConfig
@@ -66,11 +67,13 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 from nautilus_trader.trading import BookImbalanceActorConfig
 from nautilus_trader.trading import CompositeMarketMakerConfig
+from nautilus_trader.trading import Controller
 from nautilus_trader.trading import EmaCrossConfig
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import GridMarketMakerConfig
@@ -78,9 +81,13 @@ from nautilus_trader.trading import ImportableControllerConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import ActorLifecycleController
+from tests.unit.common.actor import ControllerCreatedActor
 from tests.unit.common.actor import ControllerCreatedStrategy
 from tests.unit.common.actor import NonStartingStrategyCreatingController
 from tests.unit.common.actor import StrategyCreatingController
+from tests.unit.common.actor import StrategyLifecycleController
+from tests.unit.common.actor import TestControllerConfig
 
 
 USD = Currency.from_str("USD")
@@ -324,6 +331,118 @@ def test_importable_controller_preserves_strategy_start_flag_on_start():
     )
     assert ControllerCreatedStrategy.started == 0
     engine.dispose()
+
+
+def test_importable_controller_drives_actor_lifecycle_through_id_aliases():
+    ActorLifecycleController.reset()
+    ControllerCreatedActor.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:ActorLifecycleController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    assert ActorLifecycleController.steps == [
+        "created",
+        "started",
+        "stopped",
+        "self_remove_ignored",
+        "removed",
+        "controller_stopped",
+    ]
+    assert str(ActorLifecycleController.created_actor_id) == "ControllerCreatedActor-001"
+    assert ControllerCreatedActor.started == 1
+    assert ControllerCreatedActor.stopped == 1
+    engine.dispose()
+
+
+def test_importable_controller_drives_strategy_lifecycle():
+    StrategyLifecycleController.reset()
+    ControllerCreatedStrategy.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:StrategyLifecycleController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    assert StrategyLifecycleController.steps == ["created", "started", "stopped", "removed"]
+    assert str(StrategyLifecycleController.created_strategy_id) == "ControllerCreatedStrategy-001"
+    assert ControllerCreatedStrategy.started == 1
+    assert ControllerCreatedStrategy.stopped == 1
+    engine.dispose()
+
+
+def test_importable_controller_rejects_non_controller_class():
+    with pytest.raises(RuntimeError, match="must inherit from"):
+        BacktestEngine(
+            BacktestEngineConfig(
+                bypass_logging=True,
+                run_analysis=False,
+                controller=ImportableControllerConfig(
+                    controller_path="tests.unit.common.actor:TestActor",
+                    config_path="tests.unit.common.actor:TestControllerConfig",
+                    config={"actor_id": "Controller-001"},
+                ),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("method_name", "target"),
+    [
+        ("start_actor", ActorId("Actor-001")),
+        ("start_actor_from_id", ActorId("Actor-001")),
+        ("stop_actor", ActorId("Actor-001")),
+        ("stop_actor_from_id", ActorId("Actor-001")),
+        ("remove_actor", ActorId("Actor-001")),
+        ("remove_actor_from_id", ActorId("Actor-001")),
+        ("start_strategy", StrategyId("Strategy-001")),
+        ("start_strategy_from_id", StrategyId("Strategy-001")),
+        ("stop_strategy", StrategyId("Strategy-001")),
+        ("stop_strategy_from_id", StrategyId("Strategy-001")),
+        ("market_exit_strategy", StrategyId("Strategy-001")),
+        ("market_exit_strategy_from_id", StrategyId("Strategy-001")),
+        ("remove_strategy", StrategyId("Strategy-001")),
+        ("remove_strategy_from_id", StrategyId("Strategy-001")),
+        (
+            "create_actor_from_config",
+            ImportableActorConfig(
+                actor_path="tests.unit.common.actor:ControllerCreatedActor",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "ControllerCreatedActor-001"},
+            ),
+        ),
+        (
+            "create_strategy_from_config",
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:ControllerCreatedStrategy",
+                config_path="tests.unit.common.actor:TestStrategyConfig",
+                config={"strategy_id": "ControllerCreatedStrategy-001"},
+            ),
+        ),
+    ],
+)
+def test_controller_control_methods_require_registration(method_name, target):
+    controller = Controller(TestControllerConfig(actor_id=ActorId("Controller-001")))
+
+    with pytest.raises(RuntimeError, match="Controller is not registered with a trader"):
+        getattr(controller, method_name)(target)
 
 
 def test_importable_strategy_routes_synthetic_bars_through_native_twap():
