@@ -800,28 +800,21 @@ mod tests {
         matches!(event, DataEvent::Response(DataResponse::Data(_)))
     }
 
-    #[derive(Clone, Default)]
-    struct RtdsTestServerState {
-        received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
-    }
+    type CacheProbe = Arc<dyn Fn() -> bool + Send + Sync>;
 
-    async fn handle_rtds_upgrade(
-        ws: WebSocketUpgrade,
-        State(state): State<RtdsTestServerState>,
-    ) -> axum::response::Response {
-        ws.on_upgrade(move |socket| handle_rtds_socket(socket, state))
-    }
-
-    async fn handle_rtds_socket(mut socket: WebSocket, state: RtdsTestServerState) {
+    async fn record_json_ws_payloads(
+        mut socket: WebSocket,
+        received_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    ) {
         while let Some(result) = socket.next().await {
             let Ok(message) = result else { break };
 
             match message {
                 AxumWsMessage::Text(text) => {
-                    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    let Ok(payload) = serde_json::from_str::<Value>(&text) else {
                         continue;
                     };
-                    state.received_payloads.lock().await.push(payload);
+                    received_payloads.lock().await.push(payload);
                 }
                 AxumWsMessage::Ping(data) => {
                     if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
@@ -832,6 +825,18 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    #[derive(Clone, Default)]
+    struct RtdsTestServerState {
+        received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    }
+
+    async fn handle_rtds_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<RtdsTestServerState>,
+    ) -> axum::response::Response {
+        ws.on_upgrade(move |socket| record_json_ws_payloads(socket, state.received_payloads))
     }
 
     async fn start_rtds_test_server(state: RtdsTestServerState) -> SocketAddr {
@@ -1922,6 +1927,9 @@ mod tests {
     struct TestServerState {
         gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
         clob_market_by_condition: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
+        market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+        market_cache_probe: Arc<StdMutex<Option<CacheProbe>>>,
+        market_cache_at_connect: Arc<StdMutex<Vec<bool>>>,
     }
 
     async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
@@ -1954,6 +1962,27 @@ mod tests {
         }
     }
 
+    async fn handle_market_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<TestServerState>,
+    ) -> axum::response::Response {
+        let cache_probe = state
+            .market_cache_probe
+            .lock()
+            .expect("market_cache_probe mutex poisoned")
+            .clone();
+
+        if let Some(cache_probe) = cache_probe {
+            state
+                .market_cache_at_connect
+                .lock()
+                .expect("market_cache_at_connect mutex poisoned")
+                .push(cache_probe());
+        }
+
+        ws.on_upgrade(move |socket| record_json_ws_payloads(socket, state.market_payloads))
+    }
+
     async fn start_mock_server(state: TestServerState) -> SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -1963,6 +1992,7 @@ mod tests {
             .route("/markets", get(handle_gamma_markets))
             .route("/markets/keyset", get(handle_gamma_markets_keyset))
             .route("/markets/{condition_id}", get(handle_clob_market))
+            .route("/ws/market", get(handle_market_upgrade))
             .with_state(state);
 
         tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
@@ -2990,6 +3020,93 @@ mod tests {
             !client
                 .resolve_poll_watchlist
                 .contains_key(&"0xCOND-POLL".to_string())
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn auto_load_quote_subscription_caches_before_ws_subscribe() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await =
+            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 0;
+
+        let instrument_id = fixture_yes_instrument_id();
+        let instruments = client.instruments.clone();
+        *state
+            .market_cache_probe
+            .lock()
+            .expect("market_cache_probe mutex poisoned") = Some(Arc::new(move || {
+            instruments.load().contains_key(&instrument_id)
+        }));
+
+        assert_eq!(client.ws_client.connection_count(), 0);
+
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                Some(*POLYMARKET_VENUE),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("subscribe_quotes should queue auto-load");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.market_payloads.lock().await.is_empty() }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let emitted_instrument = tokio::time::timeout(StdDuration::from_secs(1), async {
+            loop {
+                match data_rx.recv().await {
+                    Some(DataEvent::Instrument(instrument)) if instrument.id() == instrument_id => {
+                        return instrument;
+                    }
+                    Some(_) => {}
+                    None => panic!("data event channel closed before instrument publication"),
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for instrument publication");
+
+        let payloads = state.market_payloads.lock().await.clone();
+        let cache_at_connect = state
+            .market_cache_at_connect
+            .lock()
+            .expect("market_cache_at_connect mutex poisoned")
+            .clone();
+        let cached_instrument = client
+            .instruments
+            .load()
+            .get(&instrument_id)
+            .cloned()
+            .expect("instrument should be cached");
+        client
+            .ws_client
+            .disconnect()
+            .await
+            .expect("disconnect failed");
+
+        assert_eq!(emitted_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
+        assert_eq!(cached_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
+        assert_eq!(cache_at_connect, vec![true]);
+        assert_eq!(
+            payloads,
+            vec![serde_json::json!({
+                "assets_ids": [TEST_TOKEN_ID_YES],
+                "type": "market",
+            })],
         );
     }
 

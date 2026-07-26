@@ -330,6 +330,7 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX Python reconciliation emitting duplicate order acceptance events
 - Fixed Architect AX client order ID bounds, query correlation, and rejection when market previews fail
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
+- Fixed Polymarket auto-loaded instruments not reaching WebSocket subscription (#4574), thanks for reporting @nietoga
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
 - Fixed Polymarket Gamma market and event keyset filters, validation, and repeated query encoding
 - Fixed Polymarket Gamma discovery to use keyset pagination beyond the legacy offset cap

@@ -375,6 +375,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         for instrument_id, future in pending.items():
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
+                # LiveDataEngine queues processing, so expose the instrument before waking waiters.
+                self._cache.add_instrument(instrument)
                 self._handle_data(instrument)
 
                 if not future.done():

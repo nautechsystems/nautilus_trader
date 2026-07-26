@@ -24,6 +24,7 @@ import pytest
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
+from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.data import PolymarketDataClient
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
@@ -39,6 +40,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.data import OrderBookDelta
@@ -51,6 +53,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.functions import eventually
 
 
 class _RecordingPolymarketDataClient(PolymarketDataClient):
@@ -585,6 +588,110 @@ async def test_ensure_instrument_loaded_state_table(
         assert instrument in client.emitted
     else:
         provider.load_ids_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_quote_ticks_auto_load_populates_cache_before_ws(event_loop) -> None:
+    instrument = _make_binary_option(
+        "0.01",
+        InstrumentId.from_str("0xCONDITION-0xTOKEN.POLYMARKET"),
+    )
+    token_id = get_polymarket_token_id(instrument.id)
+    clock = LiveClock()
+    msgbus = MessageBus(trader_id=TraderId("TEST-001"), clock=clock)
+    cache = Cache()
+    engine = LiveDataEngine(loop=event_loop, msgbus=msgbus, cache=cache, clock=clock)
+    cache_at_process: list[BinaryOption | None] = []
+    process = engine.process
+
+    def record_process(data: BinaryOption) -> None:
+        cache_at_process.append(cache.instrument(data.id))
+        process(data)
+
+    msgbus.deregister(endpoint="DataEngine.process", handler=engine.process)
+    msgbus.register(endpoint="DataEngine.process", handler=record_process)
+    provider = MagicMock(spec=PolymarketInstrumentProvider)
+    provider.load_ids_async = AsyncMock()
+    provider.find.return_value = instrument
+    client = PolymarketDataClient(
+        loop=event_loop,
+        http_client=MagicMock(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        instrument_provider=provider,
+        config=PolymarketDataClientConfig(auto_load_debounce_ms=1),
+        name="TEST-POLYMARKET",
+    )
+    cache_at_ws: list[BinaryOption | None] = []
+
+    async def record_ws_subscription(_token_id: str) -> None:
+        cache_at_ws.append(cache.instrument(instrument.id))
+
+    client._ws_client = MagicMock()
+    client._ws_client.is_connected.return_value = True
+    client._ws_client.subscribe = AsyncMock(side_effect=record_ws_subscription)
+    ensure_results: list[bool] = []
+    ensure_instrument_loaded = client._ensure_instrument_loaded
+
+    async def record_ensure_result(instrument_id: InstrumentId) -> bool:
+        result = await ensure_instrument_loaded(instrument_id)
+        ensure_results.append(result)
+        return result
+
+    client._ensure_instrument_loaded = record_ensure_result  # type: ignore[method-assign]
+    published: list[BinaryOption] = []
+    msgbus.subscribe(
+        topic=f"data.instrument.{instrument.id.venue}.{instrument.id.symbol}",
+        handler=published.append,
+    )
+    client._add_subscription_quote_ticks(instrument.id)
+    command = SubscribeQuoteTicks(
+        instrument_id=instrument.id,
+        client_id=None,
+        venue=instrument.id.venue,
+        command_id=UUID4(),
+        ts_init=0,
+        params=None,
+    )
+
+    engine_started = False
+    try:
+        await client._subscribe_quote_ticks(command)
+        cache_at_return = cache.instrument(instrument.id)
+        engine.start()
+        engine_started = True
+        await eventually(lambda: published == [instrument])
+        data_count = engine.data_count
+    finally:
+        if engine_started:
+            engine.stop()
+            await eventually(
+                lambda: all(
+                    task is not None and task.done()
+                    for task in (
+                        engine.get_cmd_queue_task(),
+                        engine.get_req_queue_task(),
+                        engine.get_res_queue_task(),
+                        engine.get_data_queue_task(),
+                    )
+                ),
+            )
+        engine.dispose()
+
+    provider.load_ids_async.assert_awaited_once_with(
+        [instrument.id],
+        transient_condition_ids=ANY,
+    )
+    client._ws_client.subscribe.assert_awaited_once_with(
+        token_id,
+    )
+    assert ensure_results == [True]
+    assert cache_at_process == [instrument]
+    assert cache_at_ws == [instrument]
+    assert cache_at_return == instrument
+    assert published == [instrument]
+    assert data_count == 1
 
 
 @pytest.mark.asyncio
