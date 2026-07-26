@@ -242,6 +242,7 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PendingUpdate, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PendingUpdate, OrderEventAny::Triggered(_)) => Self::Triggered,
+            (Self::PendingUpdate, OrderEventAny::Submitted(_)) => Self::PendingUpdate,  // Real world possibility
             (Self::PendingUpdate, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
             (Self::PendingUpdate, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::PendingUpdate, OrderEventAny::ModifyRejected(_)) => Self::PendingUpdate,  // Handled by modify_rejected to restore previous_status
@@ -2926,6 +2927,60 @@ mod tests {
             .apply(OrderEventAny::PendingUpdate(pending_update))
             .unwrap();
         assert_eq!(order.status(), OrderStatus::PendingUpdate);
+
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), Quantity::from(50_000));
+    }
+
+    #[rstest]
+    fn test_pending_update_accepts_delayed_submitted() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let submitted = OrderSubmittedSpec::builder()
+            .ts_event(UnixNanos::from(1_000))
+            .build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let pending_update = OrderPendingUpdateSpec::builder().build();
+
+        // A distinct account and timestamp so the `submitted` handler's writes are
+        // observable: with identical specs the assertions below cannot tell whether
+        // the handler ran at all.
+        let delayed_submitted = OrderSubmittedSpec::builder()
+            .account_id(AccountId::from("SIM-002"))
+            .ts_event(UnixNanos::from(3_000))
+            .build();
+        let updated = OrderUpdatedSpec::builder()
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PendingUpdate);
+        assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
+        assert_eq!(order.account_id(), Some(AccountId::from("SIM-001")));
+        assert_eq!(order.ts_submitted(), Some(UnixNanos::from(1_000)));
+
+        order
+            .apply(OrderEventAny::Submitted(delayed_submitted))
+            .unwrap();
+
+        // The order holds PendingUpdate and keeps the pre-update status, so the
+        // in-flight modify can still be resolved.
+        assert_eq!(order.status(), OrderStatus::PendingUpdate);
+        assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
+
+        // The handler applied the delayed event's fields, matching `_submitted` in
+        // the Cython engine (`base.pyx`), which assigns both unconditionally.
+        assert_eq!(order.account_id(), Some(AccountId::from("SIM-002")));
+        assert_eq!(order.ts_submitted(), Some(UnixNanos::from(3_000)));
 
         order.apply(OrderEventAny::Updated(updated)).unwrap();
 
