@@ -48,7 +48,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     events::{AccountState, OrderAccepted, OrderEventAny, OrderRejected},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
@@ -459,11 +459,192 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_mass_status_restores_historical_terminal_orders() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
+    *state.orders_payload.lock().await = Some(serde_json::json!({
+        "orders": [
+            {
+                "ts": 1_704_067_200,
+                "tn": 500_000_000,
+                "oid": "OID-FILLED",
+                "aid": "account-1",
+                "u": "u",
+                "s": "EURUSD-PERP",
+                "p": "1.08400",
+                "q": 100,
+                "xq": 100,
+                "rq": 0,
+                "o": "FILLED",
+                "d": "B",
+                "tif": "IOC",
+                "cid": 12345,
+                "r": null,
+                "tag": null,
+                "txt": null,
+                "po": false
+            },
+            {
+                "ts": 1_704_067_201,
+                "tn": 600_000_000,
+                "oid": "OID-CANCELED",
+                "aid": "account-1",
+                "u": "u",
+                "s": "EURUSD-PERP",
+                "p": "1.08390",
+                "q": 200,
+                "xq": 50,
+                "rq": 150,
+                "o": "CANCELED",
+                "d": "S",
+                "tif": "GTC",
+                "cid": null,
+                "r": null,
+                "tag": null,
+                "txt": null,
+                "po": true
+            }
+        ]
+    }));
+    *state.fills_payload.lock().await = Some(serde_json::json!({
+        "fills": [{
+            "trade_id": "T-FILLED",
+            "order_id": "OID-FILLED",
+            "fee": "0.10",
+            "is_taker": true,
+            "is_block_trade": false,
+            "is_final_settlement": false,
+            "price": "1.08410",
+            "quantity": 100,
+            "side": "B",
+            "symbol": "EURUSD-PERP",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "account_id": "account-1"
+        }]
+    }));
+    *state.positions_payload.lock().await = Some(serde_json::json!({ "positions": [] }));
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status");
+    let order_reports = mass_status.order_reports();
+    let filled = order_reports
+        .get(&VenueOrderId::from("OID-FILLED"))
+        .expect("filled historical order");
+    let canceled = order_reports
+        .get(&VenueOrderId::from("OID-CANCELED"))
+        .expect("canceled historical order");
+    let fill_reports = mass_status.fill_reports();
+
+    assert_eq!(order_reports.len(), 2);
+    assert_eq!(
+        filled.client_order_id,
+        Some(ClientOrderId::from("CID-12345"))
+    );
+    assert_eq!(filled.order_status, OrderStatus::Filled);
+    assert_eq!(filled.quantity, Quantity::from("100"));
+    assert_eq!(filled.filled_qty, Quantity::from("100"));
+    assert_eq!(filled.price, Some(Price::from("1.08400")));
+    assert_eq!(filled.time_in_force, TimeInForce::Ioc);
+    assert_eq!(canceled.client_order_id, None);
+    assert_eq!(canceled.order_status, OrderStatus::Canceled);
+    assert_eq!(canceled.quantity, Quantity::from("200"));
+    assert_eq!(canceled.filled_qty, Quantity::from("50"));
+    assert_eq!(canceled.price, Some(Price::from("1.08390")));
+    assert_eq!(canceled.order_side, OrderSide::Sell);
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(
+        fill_reports
+            .get(&VenueOrderId::from("OID-FILLED"))
+            .expect("companion fill")
+            .first()
+            .expect("first companion fill")
+            .last_px,
+        Price::from("1.08410")
+    );
+    let queries = state.orders_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].start_timestamp_ns, None);
+    assert_eq!(queries[0].end_timestamp_ns, None);
+    drop(queries);
+    assert_eq!(state.open_orders_queries.lock().await.len(), 0);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_open_only_uses_open_orders() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({
+        "orders": [{
+            "tn": 500_000_000,
+            "ts": 1_704_067_200,
+            "d": "B",
+            "o": "ACCEPTED",
+            "oid": "OID-OPEN",
+            "p": "1.08400",
+            "q": 100,
+            "rq": 100,
+            "s": "EURUSD-PERP",
+            "tif": "GTC",
+            "u": "u",
+            "xq": 0,
+            "cid": null,
+            "tag": null,
+            "po": true
+        }]
+    }));
+    *state.orders_payload.lock().await = Some(serde_json::json!({
+        "orders": [create_historical_order(
+            "OID-HISTORICAL",
+            "FILLED",
+            1_704_067_201,
+        )]
+    }));
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("OID-OPEN"));
+    assert_eq!(reports[0].order_status, OrderStatus::Accepted);
+    assert_eq!(state.open_orders_queries.lock().await.len(), 1);
+    assert_eq!(state.orders_queries.lock().await.len(), 0);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_order_status_reports_filters() {
     let (addr, state) = start_test_server().await.unwrap();
 
     // Replace default fixture with EURUSD + XAU orders across different states
-    *state.open_orders_payload.lock().await = Some(serde_json::json!({
+    let payload = serde_json::json!({
         "orders": [
             {
                 "tn": 1704067200,
@@ -517,7 +698,16 @@ async fn test_generate_order_status_reports_filters() {
         "total_count": 3,
         "limit": 100,
         "offset": 0
-    }));
+    });
+    *state.orders_payload.lock().await = Some(payload.clone());
+    let open_orders = payload["orders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|order| order["o"] == "ACCEPTED")
+        .cloned()
+        .collect::<Vec<_>>();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": open_orders }));
 
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -557,7 +747,6 @@ async fn test_generate_order_status_reports_filters() {
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].instrument_id, InstrumentId::from("XAU-PERP.AX"),);
 
-    // open_only -> drops the FILLED one
     let cmd = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -591,7 +780,7 @@ async fn test_generate_order_status_reports_filters() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports_reads_all_pages() {
+async fn test_generate_order_status_reports_reads_all_partial_pages() {
     let (addr, state) = start_test_server().await.unwrap();
     let orders = (0..101)
         .map(|index| {
@@ -613,7 +802,8 @@ async fn test_generate_order_status_reports_reads_all_pages() {
             })
         })
         .collect::<Vec<_>>();
-    *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": orders }));
+    *state.orders_payload.lock().await = Some(serde_json::json!({ "orders": orders }));
+    *state.orders_page_size.lock().await = Some(25);
 
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -641,6 +831,7 @@ async fn test_generate_order_status_reports_reads_all_pages() {
     assert_eq!(venue_order_ids.len(), 101);
     assert!(venue_order_ids.contains(&VenueOrderId::from("OID-000")));
     assert!(venue_order_ids.contains(&VenueOrderId::from("OID-100")));
+    assert_eq!(state.orders_queries.lock().await.len(), 5);
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -665,9 +856,10 @@ async fn test_generate_order_status_reports_rejects_duplicate_order_ids() {
         "cid": null,
         "tag": null,
     });
-    *state.open_orders_payload.lock().await = Some(serde_json::json!({
+    *state.orders_payload.lock().await = Some(serde_json::json!({
         "orders": [order.clone(), order],
     }));
+    *state.orders_page_size.lock().await = Some(1);
 
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -692,10 +884,116 @@ async fn test_generate_order_status_reports_rejects_duplicate_order_ids() {
 
     assert_eq!(
         error.to_string(),
-        "AX open-orders pagination returned duplicate order ID OID-DUPLICATE"
+        "AX orders pagination returned duplicate order ID OID-DUPLICATE"
     );
+    assert_eq!(state.orders_queries.lock().await.len(), 2);
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_rejects_repeated_cursor() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.orders_payload.lock().await = Some(serde_json::json!({
+        "orders": [
+            create_historical_order("OID-001", "ACCEPTED", 1_704_067_200),
+            create_historical_order("OID-002", "ACCEPTED", 1_704_067_201),
+            create_historical_order("OID-003", "ACCEPTED", 1_704_067_202),
+        ]
+    }));
+    *state.orders_page_size.lock().await = Some(1);
+    *state.orders_repeated_cursor.lock().await = Some("same".to_string());
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "AX orders pagination repeated cursor \"same\""
+    );
+    assert_eq!(state.orders_queries.lock().await.len(), 2);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_forwards_historical_bounds() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let start = UnixNanos::from(1_704_067_200_123_456_789);
+    let end = UnixNanos::from(1_704_067_299_987_654_321);
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(start),
+        Some(end),
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let queries = state.orders_queries.lock().await;
+
+    assert!(reports.is_empty());
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].start_timestamp_ns, Some(start.as_i64()));
+    assert_eq!(queries[0].end_timestamp_ns, Some(end.as_i64()));
+    assert_eq!(queries[0].limit, Some(100));
+    assert_eq!(queries[0].cursor, None);
+    drop(queries);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+fn create_historical_order(oid: &str, status: &str, ts: i64) -> serde_json::Value {
+    serde_json::json!({
+        "ts": ts,
+        "tn": 500_000_000,
+        "oid": oid,
+        "aid": "account-1",
+        "u": "u",
+        "s": "EURUSD-PERP",
+        "p": "1.08400",
+        "q": 100,
+        "xq": 0,
+        "rq": 100,
+        "o": status,
+        "d": "B",
+        "tif": "GTC",
+        "cid": null,
+        "r": null,
+        "tag": null,
+        "txt": null,
+        "po": true
+    })
 }
 
 #[rstest]

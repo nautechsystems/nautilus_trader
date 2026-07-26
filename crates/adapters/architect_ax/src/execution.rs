@@ -992,10 +992,20 @@ impl ExecutionClient for AxExecutionClient {
         let cid_map = self.ws_orders.cid_to_client_order_id().clone();
         let cid_resolver = move |cid: u64| cid_map.get(&cid).map(|v| *v);
 
-        let mut reports = self
-            .http_client
-            .request_order_status_reports(self.core.account_id, Some(cid_resolver))
-            .await?;
+        let mut reports = if cmd.open_only {
+            self.http_client
+                .request_order_status_reports(self.core.account_id, Some(cid_resolver))
+                .await?
+        } else {
+            self.http_client
+                .request_historical_order_status_reports(
+                    self.core.account_id,
+                    cmd.start,
+                    cmd.end,
+                    Some(cid_resolver),
+                )
+                .await?
+        };
 
         if let Some(instrument_id) = cmd.instrument_id {
             reports.retain(|report| report.instrument_id == instrument_id);

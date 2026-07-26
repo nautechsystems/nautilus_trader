@@ -34,12 +34,12 @@ use serde_json::json;
 use ustr::Ustr;
 
 use super::models::{
-    AxBalancesResponse, AxCandle, AxFill, AxFundingRate, AxInstrument, AxOpenOrder, AxPosition,
-    AxRestTrade,
+    AxBalancesResponse, AxCandle, AxFill, AxFundingRate, AxInstrument, AxOpenOrder, AxOrderDetail,
+    AxPosition, AxRestTrade,
 };
 use crate::common::{
     consts::AX_VENUE,
-    enums::AxCandleWidth,
+    enums::{AxCandleWidth, AxOrderSide, AxOrderStatus, AxTimeInForce},
     parse::{
         ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos,
         ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, create_architect_trade_id,
@@ -482,21 +482,114 @@ pub fn parse_order_status_report<F>(
 where
     F: Fn(u64) -> Option<ClientOrderId>,
 {
+    parse_order_status_report_fields(
+        &OrderStatusReportFields::from(order),
+        account_id,
+        instrument,
+        ts_init,
+        cid_resolver,
+    )
+}
+
+/// Parses an Ax historical order into a Nautilus [`OrderStatusReport`].
+///
+/// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
+/// to a `ClientOrderId`. This is needed because orders submitted via WebSocket use
+/// a hashed `cid` for correlation rather than storing the full `ClientOrderId` in the tag.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Price or quantity fields cannot be parsed.
+/// - Timestamp conversion fails.
+pub fn parse_order_detail_status_report<F>(
+    order: &AxOrderDetail,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+    cid_resolver: Option<&F>,
+) -> anyhow::Result<OrderStatusReport>
+where
+    F: Fn(u64) -> Option<ClientOrderId>,
+{
+    parse_order_status_report_fields(
+        &OrderStatusReportFields::from(order),
+        account_id,
+        instrument,
+        ts_init,
+        cid_resolver,
+    )
+}
+
+struct OrderStatusReportFields<'a> {
+    ts: i64,
+    oid: &'a str,
+    price: Decimal,
+    quantity: u64,
+    filled_qty: u64,
+    status: AxOrderStatus,
+    side: AxOrderSide,
+    time_in_force: AxTimeInForce,
+    cid: Option<u64>,
+}
+
+impl<'a> From<&'a AxOpenOrder> for OrderStatusReportFields<'a> {
+    fn from(order: &'a AxOpenOrder) -> Self {
+        Self {
+            ts: order.ts,
+            oid: &order.oid,
+            price: order.p,
+            quantity: order.q,
+            filled_qty: order.xq,
+            status: order.o,
+            side: order.d,
+            time_in_force: order.tif,
+            cid: order.cid,
+        }
+    }
+}
+
+impl<'a> From<&'a AxOrderDetail> for OrderStatusReportFields<'a> {
+    fn from(order: &'a AxOrderDetail) -> Self {
+        Self {
+            ts: order.ts,
+            oid: &order.oid,
+            price: order.p,
+            quantity: order.q,
+            filled_qty: order.xq,
+            status: order.o,
+            side: order.d,
+            time_in_force: order.tif,
+            cid: order.cid,
+        }
+    }
+}
+
+fn parse_order_status_report_fields<F>(
+    order: &OrderStatusReportFields<'_>,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+    cid_resolver: Option<&F>,
+) -> anyhow::Result<OrderStatusReport>
+where
+    F: Fn(u64) -> Option<ClientOrderId>,
+{
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&order.oid);
-    let order_side = order.d.into();
-    let order_status = order.o.into();
-    let time_in_force = order.tif.into();
+    let venue_order_id = VenueOrderId::new(order.oid);
+    let order_side = order.side.into();
+    let order_status = order.status.into();
+    let time_in_force = order.time_in_force.into();
 
     // The current AX wire shape maps to a Nautilus limit order.
     let order_type = OrderType::Limit;
 
     // Parse quantity (Ax uses i64 contracts)
-    let quantity = Quantity::new(order.q as f64, instrument.size_precision());
-    let filled_qty = Quantity::new(order.xq as f64, instrument.size_precision());
+    let quantity = Quantity::new(order.quantity as f64, instrument.size_precision());
+    let filled_qty = Quantity::new(order.filled_qty as f64, instrument.size_precision());
 
     // Parse price
-    let price = decimal_to_price_dp(order.p, instrument.price_precision(), "order.p")?;
+    let price = decimal_to_price_dp(order.price, instrument.price_precision(), "order.p")?;
 
     // Ax timestamps are in Unix epoch seconds
     let ts_event = ax_timestamp_s_to_unix_nanos(order.ts)?;

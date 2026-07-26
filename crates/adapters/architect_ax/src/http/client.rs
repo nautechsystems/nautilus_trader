@@ -68,7 +68,8 @@ use super::{
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate, parse_instrument,
-        parse_order_status_report, parse_position_status_report, parse_trade_tick,
+        parse_order_detail_status_report, parse_order_status_report, parse_position_status_report,
+        parse_trade_tick,
     },
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
@@ -2084,6 +2085,95 @@ impl AxHttpClient {
                 .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
 
             match parse_order_status_report(
+                order,
+                account_id,
+                &instrument,
+                ts_init,
+                cid_resolver.as_ref(),
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    log::warn!("Failed to parse order {}: {e}", order.oid);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests historical orders from Ax and parses them to Nautilus
+    /// [`OrderStatusReport`].
+    ///
+    /// Requires instruments to be cached for parsing order details.
+    ///
+    /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
+    /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The HTTP request or pagination contract fails.
+    /// - An order's instrument is not found in the cache.
+    /// - Order parsing fails.
+    pub async fn request_historical_order_status_reports<F>(
+        &self,
+        account_id: AccountId,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
+        const PAGE_SIZE: i32 = 100;
+
+        let mut params = GetOrdersParams {
+            start_timestamp_ns: start.map(|timestamp| timestamp.as_i64()),
+            end_timestamp_ns: end.map(|timestamp| timestamp.as_i64()),
+            limit: Some(PAGE_SIZE),
+            ..Default::default()
+        };
+        let mut orders = Vec::new();
+        let mut seen_cursors = HashSet::new();
+        let mut seen_order_ids = HashSet::new();
+
+        loop {
+            let response = self
+                .inner
+                .get_orders(&params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            for order in response.orders {
+                anyhow::ensure!(
+                    seen_order_ids.insert(order.oid.clone()),
+                    "AX orders pagination returned duplicate order ID {}",
+                    order.oid
+                );
+                orders.push(order);
+            }
+
+            match response.next_cursor {
+                Some(next_cursor) => {
+                    anyhow::ensure!(
+                        seen_cursors.insert(next_cursor.clone()),
+                        "AX orders pagination repeated cursor {next_cursor:?}"
+                    );
+                    params.cursor = Some(next_cursor);
+                }
+                None => break,
+            }
+        }
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::with_capacity(orders.len());
+
+        for order in &orders {
+            let instrument = self
+                .get_instrument(&order.s)
+                .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
+
+            match parse_order_detail_status_report(
                 order,
                 account_id,
                 &instrument,

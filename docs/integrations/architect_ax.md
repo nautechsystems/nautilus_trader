@@ -219,13 +219,15 @@ Nautilus data type.
 - `GET /tickers` returns limit/offset page metadata and supports `limit`, `offset`, and `sort`
   query parameters.
 - `GET /ticker` returns the ticker under a top-level `ticker` response field.
-- `GET /open-orders` uses limit/offset pagination. Reconciliation traverses all pages and validates
-  totals, offsets, duplicates, and completeness so detected response drift fails the request.
+- `GET /open-orders` uses limit/offset pagination. Open-order reconciliation traverses all pages
+  and validates totals, offsets, duplicates, and completeness so detected response drift fails the
+  request.
 - `GET /fills` and `GET /funding-rates` use cursor pagination. The adapter traverses each cursor
   chain as a best-effort historical read; AX corrections during traversal are not an atomic
   snapshot.
 - `GET /orders` exposes cursor metadata and supports `order_id`, `order_ids`, `account_id`, and
-  optional timestamp filters.
+  optional timestamp filters. Startup mass-status reconciliation traverses its cursor chain,
+  accepts partial pages, and rejects repeated cursors or duplicate order IDs.
 - `GET /transactions` requires `start_timestamp_ns` and `end_timestamp_ns` with a range no wider
   than 7 days. The low-level client exposes its cursor and account selectors.
 - `GET /order-status` can include `reject_reason` and `reject_message` for rejected orders.
@@ -328,14 +330,15 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | -------------------- | --------- | ------------------------------------------------------- |
 | Query open orders    | ✓         | List all active orders.                                 |
 | Query single order   | ✓         | By venue order ID or client order ID (any order state). |
-| Order status reports | ✓         | Reconciliation from open orders; see note below.        |
+| Order status reports | ✓         | Open‑order checks and historical startup mass status.   |
 | Fill reports         | ✓         | Execution and fill history.                             |
 
 :::note
-Order status reports for reconciliation are generated from the open orders endpoint.
-Filled or canceled orders are not included in the reconciliation snapshot. Single-order
-queries via `query_order` use the dedicated `/order-status` endpoint which works for
-any order state.
+Bulk open-order checks use `/open-orders` when `open_check_open_only` is enabled, which is the
+default. Otherwise, they use `/orders`. Startup mass-status reconciliation uses `/orders`, so its
+snapshot includes historical terminal orders such as filled and canceled orders. Single-order
+queries via `query_order` use the dedicated `/order-status` endpoint, which works for any order
+state.
 
 AX open and historical order payloads do not expose a stop order type or trigger price.
 REST-derived reconciliation therefore reports every visible external order as a limit order. The
