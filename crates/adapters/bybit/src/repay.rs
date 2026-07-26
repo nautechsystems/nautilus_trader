@@ -139,8 +139,7 @@ mod tests {
         response::{IntoResponse, Response},
         routing::{get, post},
     };
-    use nautilus_core::UnixNanos;
-    use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
+    use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;

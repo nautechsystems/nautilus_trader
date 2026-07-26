@@ -161,6 +161,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 account locks and margins using settlement currency instead of each calculated currency
 - Fixed v2 portfolio pending recovery discarding initial margin after recalculating maintenance margin
 - Fixed v2 portfolio initialization materializing account balance currencies in a nondeterministic order
+- Fixed v2 margin accounts fabricating zero balances for currencies the venue never reported, which denied orders on unified accounts
 - Fixed v2 invalid or out-of-range notional and PnL valuations panicking or falling back to zero
 - Fixed v2 multi-currency cash equity double-counting assets already credited to account balances
 - Fixed v2 quanto position notionals using quote currency instead of settlement currency

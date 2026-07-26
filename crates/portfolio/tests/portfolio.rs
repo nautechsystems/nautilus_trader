@@ -743,13 +743,14 @@ const ORDERING_SYMBOLS: [&str; 6] = [
     "EUR/USD", "EUR/GBP", "EUR/CHF", "EUR/CAD", "EUR/AUD", "EUR/NZD",
 ];
 
-// Instrument ids sort by symbol, so margin recalculation materializes the unreported
-// currencies in this sequence whichever order the cache was populated in. USD keeps the
-// leading slot the venue-reported balance gave it.
-const ORDERING_BALANCE_CODES: [&str; 6] = ["USD", "AUD", "CAD", "CHF", "GBP", "NZD"];
+// Instrument ids sort by symbol, so margin recalculation visits them in this sequence
+// whichever order the cache was populated in, and `margins` records that sequence.
+const ORDERING_MARGIN_SYMBOLS: [&str; 6] = [
+    "EUR/AUD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/NZD", "EUR/USD",
+];
 
-// The account reports only USD, so every other instrument quote currency is materialized at
-// zero by `MarginAccount::recalculate_balance` as the portfolio recalculates margins.
+// The account reports only USD, so every other instrument quote currency carries a margin
+// with no venue-reported balance behind it.
 fn ordering_portfolio(reversed: bool) -> (Portfolio, AccountId, Vec<InstrumentAny>) {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
@@ -797,16 +798,22 @@ fn ordering_portfolio(reversed: bool) -> (Portfolio, AccountId, Vec<InstrumentAn
     (portfolio, account_id, instruments)
 }
 
-fn materialized_balance_currencies(portfolio: &Portfolio, account_id: &AccountId) -> Vec<Currency> {
+fn margin_and_balance_order(
+    portfolio: &Portfolio,
+    account_id: &AccountId,
+) -> (Vec<InstrumentId>, Vec<Currency>) {
     let cache = portfolio.cache();
     let cache = cache.borrow();
     let Some(AccountAny::Margin(account)) = cache.account_owned(account_id) else {
         panic!("margin account not found");
     };
-    account.balances.keys().copied().collect()
+    (
+        account.margins.keys().copied().collect(),
+        account.balances.keys().copied().collect(),
+    )
 }
 
-fn balance_currencies_after_initialize_positions(reversed: bool) -> Vec<Currency> {
+fn order_after_initialize_positions(reversed: bool) -> (Vec<InstrumentId>, Vec<Currency>) {
     let (mut portfolio, account_id, instruments) = ordering_portfolio(reversed);
 
     for (i, instrument) in instruments.iter().enumerate() {
@@ -831,10 +838,10 @@ fn balance_currencies_after_initialize_positions(reversed: bool) -> Vec<Currency
     }
 
     portfolio.initialize_positions();
-    materialized_balance_currencies(&portfolio, &account_id)
+    margin_and_balance_order(&portfolio, &account_id)
 }
 
-fn balance_currencies_after_initialize_orders(reversed: bool) -> Vec<Currency> {
+fn order_after_initialize_orders(reversed: bool) -> (Vec<InstrumentId>, Vec<Currency>) {
     let (mut portfolio, account_id, instruments) = ordering_portfolio(reversed);
 
     for (i, instrument) in instruments.iter().enumerate() {
@@ -880,33 +887,32 @@ fn balance_currencies_after_initialize_orders(reversed: bool) -> Vec<Currency> {
     }
 
     portfolio.initialize_orders();
-    materialized_balance_currencies(&portfolio, &account_id)
+    margin_and_balance_order(&portfolio, &account_id)
 }
 
 // Repeated because each run builds its own cache and portfolio, so an `AHashSet` anywhere on
-// the initialization path reseeds and reorders the balances the account materializes.
+// the initialization path reseeds and reorders the margins the account records.
 #[rstest]
-#[case::orders(balance_currencies_after_initialize_orders)]
-#[case::positions(balance_currencies_after_initialize_positions)]
-fn test_initialization_materializes_balances_in_instrument_id_order(
-    #[case] balance_currencies: fn(bool) -> Vec<Currency>,
+#[case::orders(order_after_initialize_orders)]
+#[case::positions(order_after_initialize_positions)]
+fn test_initialization_recalculates_margins_in_instrument_id_order(
+    #[case] initialize: fn(bool) -> (Vec<InstrumentId>, Vec<Currency>),
 ) {
-    let expected: Vec<Currency> = ORDERING_BALANCE_CODES
+    let expected_margins: Vec<InstrumentId> = ORDERING_MARGIN_SYMBOLS
         .iter()
-        .map(|code| Currency::from(*code))
+        .map(|symbol| InstrumentId::new(Symbol::from(*symbol), Venue::test_default()))
         .collect();
 
     for run in 0..16 {
-        assert_eq!(
-            balance_currencies(false),
-            expected,
-            "forward run {run} diverged"
-        );
-        assert_eq!(
-            balance_currencies(true),
-            expected,
-            "reversed run {run} diverged"
-        );
+        for reversed in [false, true] {
+            let (margins, balances) = initialize(reversed);
+            assert_eq!(margins, expected_margins, "run {run} reversed {reversed}");
+            assert_eq!(
+                balances,
+                vec![Currency::USD()],
+                "run {run} reversed {reversed} materialized an unreported currency"
+            );
+        }
     }
 }
 
