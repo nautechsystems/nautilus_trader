@@ -1092,28 +1092,28 @@ def test_backtest_cash_margin_account_order_fill_position_parity_golden():
         aud_orders[OrderSide.BUY],
         OrderSide.BUY,
         Quantity.from_int(100_000),
-        0.7,
+        Decimal("0.70000"),
         ["1.40 USD"],
     )
     _assert_filled_market_order(
         aud_orders[OrderSide.SELL],
         OrderSide.SELL,
         Quantity.from_int(100_000),
-        0.7002,
+        Decimal("0.70020"),
         ["1.40 USD"],
     )
     _assert_filled_market_order(
         eth_orders[OrderSide.BUY],
         OrderSide.BUY,
         Quantity.from_str("0.50000"),
-        2000.0,
+        Decimal("2000.00"),
         ["0.10000000 USDT"],
     )
     _assert_filled_market_order(
         eth_orders[OrderSide.SELL],
         OrderSide.SELL,
         Quantity.from_str("0.50000"),
-        2001.0,
+        Decimal("2001.00"),
         ["0.10005000 USDT"],
     )
     _assert_closed_position(
@@ -1176,7 +1176,7 @@ def _assert_filled_market_order(
     order,
     side: OrderSide,
     quantity: Quantity,
-    avg_px: float,
+    avg_px: Decimal,
     commissions: list[str],
 ) -> None:
     assert order.side == side
@@ -1189,7 +1189,7 @@ def _assert_filled_market_order(
         assert filled_qty == quantity
     order_avg_px = getattr(order, "avg_px", None)
     if order_avg_px is None:
-        assert float(order.to_dict()["avg_px"]) == avg_px
+        assert Decimal(order.to_dict()["avg_px"]) == avg_px
     else:
         assert order_avg_px == avg_px
     raw_commissions = order.commissions()

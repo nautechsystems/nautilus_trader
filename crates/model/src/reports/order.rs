@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt::Display, str::FromStr};
+use std::fmt::Display;
 
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
@@ -212,25 +212,10 @@ impl OrderStatusReport {
     }
 
     /// Sets the average price.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `avg_px` cannot be converted to a valid `Decimal`.
-    pub fn with_avg_px(mut self, avg_px: f64) -> anyhow::Result<Self> {
-        if !avg_px.is_finite() {
-            anyhow::bail!(
-                "avg_px must be finite, was: {} (is_nan: {}, is_infinite: {})",
-                avg_px,
-                avg_px.is_nan(),
-                avg_px.is_infinite()
-            );
-        }
-
-        self.avg_px =
-            Some(Decimal::from_str(&avg_px.to_string()).map_err(|e| {
-                anyhow::anyhow!("Failed to convert avg_px to Decimal: {avg_px} ({e})")
-            })?);
-        Ok(self)
+    #[must_use]
+    pub const fn with_avg_px(mut self, avg_px: Decimal) -> Self {
+        self.avg_px = Some(avg_px);
+        self
     }
 
     /// Sets the activation price.
@@ -537,15 +522,14 @@ mod tests {
     }
 
     #[rstest]
-    #[expect(clippy::panic_in_result_fn)]
-    fn test_order_status_report_builder_methods() -> anyhow::Result<()> {
+    fn test_order_status_report_builder_methods() {
         let report = test_order_status_report()
             .with_client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
             .with_order_list_id(OrderListId::from("OL-001"))
             .with_venue_position_id(PositionId::from("P-001"))
             .with_parent_order_id(ClientOrderId::from("O-PARENT"))
             .with_price(Price::from("1.00000"))
-            .with_avg_px(1.00001)?
+            .with_avg_px(dec!(1.00001))
             .with_trigger_price(Price::from("0.99000"))
             .with_trigger_type(TriggerType::Default)
             .with_limit_offset(dec!(0.0001))
@@ -583,7 +567,6 @@ mod tests {
         assert_eq!(report.cancel_reason, Some("User requested".to_string()));
         assert_eq!(report.ts_triggered, Some(UnixNanos::from(1_500_000_000)));
         assert_eq!(report.contingency_type, ContingencyType::Oco);
-        Ok(())
     }
 
     #[rstest]
@@ -687,8 +670,7 @@ mod tests {
     }
 
     #[rstest]
-    #[expect(clippy::panic_in_result_fn)]
-    fn test_order_status_report_with_optional_fields() -> anyhow::Result<()> {
+    fn test_order_status_report_with_optional_fields() {
         let mut report = test_order_status_report();
 
         // Initially no optional fields set
@@ -700,7 +682,7 @@ mod tests {
         // Test builder pattern with various optional fields
         report = report
             .with_price(Price::from("1.00000"))
-            .with_avg_px(1.00001)?
+            .with_avg_px(dec!(1.00001))
             .with_post_only(true)
             .with_reduce_only(true);
 
@@ -708,7 +690,6 @@ mod tests {
         assert_eq!(report.avg_px, Some(dec!(1.00001)));
         assert!(report.post_only);
         assert!(report.reduce_only);
-        Ok(())
     }
 
     #[rstest]

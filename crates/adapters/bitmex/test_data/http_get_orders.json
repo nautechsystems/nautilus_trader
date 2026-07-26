@@ -63,7 +63,7 @@
         "leavesQty": 0,
         "simpleCumQty": null,
         "cumQty": 200,
-        "avgPx": 98950.5,
+        "avgPx": 98950.500000000004,
         "multiLegReportingType": "SingleSecurity",
         "text": "Submitted via API.",
         "transactTime": "2024-11-25T10:25:00.000Z",

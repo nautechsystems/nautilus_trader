@@ -1314,8 +1314,7 @@ fn make_test_report(
         None,
     )
     .with_price(Price::from("100.00"))
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
     report.post_only = post_only;
     report
 }
@@ -1593,8 +1592,7 @@ fn test_incremental_inferred_fill_clamps_out_of_range_price() {
         UnixNanos::from(1_000_000),
         None,
     )
-    .with_avg_px(0.510)
-    .unwrap();
+    .with_avg_px(dec!(0.510));
 
     let fill = create_incremental_inferred_fill(
         &order,
@@ -1644,8 +1642,7 @@ fn test_inferred_fill_clamps_out_of_range_avg_px() {
         UnixNanos::from(1_000_000),
         None,
     )
-    .with_avg_px(43.642)
-    .unwrap();
+    .with_avg_px(dec!(43.642));
 
     let fill = create_inferred_fill(
         &order,
@@ -1734,8 +1731,7 @@ fn test_inferred_fill_for_qty_clamps_out_of_range_avg_px() {
         UnixNanos::from(1_000_000),
         None,
     )
-    .with_avg_px(43.642)
-    .unwrap();
+    .with_avg_px(dec!(43.642));
 
     let fill = create_inferred_fill_for_qty(
         &order,
@@ -4252,8 +4248,7 @@ fn test_create_inferred_fill_for_qty_uses_report_avg_px() {
         UnixNanos::from(1_000_000),
         None,
     )
-    .with_avg_px(105.50)
-    .unwrap();
+    .with_avg_px(dec!(105.50));
 
     let result = create_inferred_fill_for_qty(
         &order,
@@ -4598,8 +4593,7 @@ fn test_create_incremental_inferred_fill_with_commission() {
         UnixNanos::from(1_000_000),
         None,
     )
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
 
     let commission = Some(Money::new(2.50, Currency::USDT()));
 

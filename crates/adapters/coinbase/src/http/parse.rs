@@ -31,7 +31,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
 use crate::{
     common::{
@@ -671,7 +671,7 @@ pub fn parse_order_status_report(
         && avg_decimal.is_sign_positive()
         && !avg_decimal.is_zero()
     {
-        report = report.with_avg_px(avg_decimal.to_f64().unwrap_or_default())?;
+        report = report.with_avg_px(avg_decimal);
     }
 
     if post_only_from_configuration(order) {

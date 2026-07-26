@@ -659,8 +659,8 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .try_get::<Option<&str>, _>("liquidity_side")
             .ok()
             .and_then(|x| x.map(|x| LiquiditySide::from_str(x).expect("Invalid `LiquiditySide`")));
-        let avg_px = row.try_get::<Option<f64>, _>("avg_px").ok().flatten();
-        let slippage = row.try_get::<Option<f64>, _>("slippage").ok().flatten();
+        let avg_px = row.try_get::<Option<Decimal>, _>("avg_px").ok().flatten();
+        let slippage = row.try_get::<Option<Decimal>, _>("slippage").ok().flatten();
         let commissions = row
             .try_get::<Option<Vec<String>>, _>("commissions")?
             .map_or_else(Vec::new, |c| {

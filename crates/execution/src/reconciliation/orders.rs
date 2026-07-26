@@ -19,8 +19,6 @@
 //! helper turns a venue-sourced report into zero or more `OrderEventAny`s that are
 //! safe to apply to the local order model.
 
-use std::str::FromStr;
-
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -35,7 +33,6 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
@@ -1426,8 +1423,7 @@ fn calculate_incremental_fill_price(
         let last_qty = report_filled_qty - order_filled_qty;
 
         let report_notional = report_avg_px * report_filled_qty.as_decimal();
-        let order_notional = Decimal::from_str(&order_avg_px.to_string()).unwrap_or_default()
-            * order_filled_qty.as_decimal();
+        let order_notional = order_avg_px * order_filled_qty.as_decimal();
         let last_notional = report_notional - order_notional;
         let last_px_decimal = last_notional / last_qty.as_decimal();
 

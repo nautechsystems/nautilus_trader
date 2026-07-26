@@ -23,9 +23,9 @@
 //! reconstruct its event-derived state.
 //!
 //! A fill-void correction rebuilds the derived fill state from the fills that survive it.
-//! `avg_px` folds those fills in `Decimal` and converts once at its public `f64` boundary, so the
-//! float never re-enters the next average and a rebuild agrees with the incremental update over
-//! the same fills.
+//! `avg_px` folds those fills in `Decimal` and keeps the quotient at that precision, so no float
+//! conversion enters the next average and a rebuild agrees with the incremental update over the
+//! same fills. `slippage` derives from `avg_px` in the same arithmetic.
 
 pub mod any;
 pub mod limit;
@@ -343,8 +343,8 @@ pub trait Order: 'static + Send {
         }
     }
 
-    fn avg_px(&self) -> Option<f64>;
-    fn slippage(&self) -> Option<f64>;
+    fn avg_px(&self) -> Option<Decimal>;
+    fn slippage(&self) -> Option<Decimal>;
     fn init_id(&self) -> UUID4;
     fn ts_init(&self) -> UnixNanos;
     fn ts_submitted(&self) -> Option<UnixNanos>;
@@ -633,11 +633,8 @@ pub trait Order: 'static + Send {
             report = report.with_cancel_reason(reason.to_string());
         }
 
-        // Skip a non-finite avg_px rather than fail the whole snapshot
-        if let Some(avg_px) = self.avg_px()
-            && let Ok(updated) = report.clone().with_avg_px(avg_px)
-        {
-            report = updated;
+        if let Some(avg_px) = self.avg_px() {
+            report = report.with_avg_px(avg_px);
         }
 
         Some(report)
@@ -736,8 +733,8 @@ pub struct OrderCore {
     pub voided_qty: Quantity,
     pub leaves_qty: Quantity,
     pub overfill_qty: Quantity,
-    pub avg_px: Option<f64>,
-    pub slippage: Option<f64>,
+    pub avg_px: Option<Decimal>,
+    pub slippage: Option<Decimal>,
     pub init_id: UUID4,
     pub ts_init: UnixNanos,
     pub ts_submitted: Option<UnixNanos>,
@@ -1317,7 +1314,7 @@ impl OrderCore {
         &self,
         additional: Option<&OrderFillVoided>,
         pending: Option<&OrderFilled>,
-    ) -> Option<f64> {
+    ) -> Option<Decimal> {
         let corrections = self.fill_corrections(additional);
         let mut notional = Decimal::ZERO;
         let mut quantity = Decimal::ZERO;
@@ -1342,7 +1339,7 @@ impl OrderCore {
             quantity = quantity.saturating_add(last_qty);
         }
 
-        (!quantity.is_zero()).then(|| (notional / quantity).as_f64())
+        notional.checked_div(quantity)
     }
 
     fn fill_corrections<'a>(
@@ -1373,10 +1370,10 @@ impl OrderCore {
 
     pub fn set_slippage(&mut self, price: Price) {
         self.slippage = self.avg_px.and_then(|avg_px| {
-            let current_price = price.as_f64();
+            let current_price = price.as_decimal();
             match self.side {
-                OrderSide::Buy if avg_px > current_price => Some(avg_px - current_price),
-                OrderSide::Sell if avg_px < current_price => Some(current_price - avg_px),
+                OrderSide::Buy if avg_px > current_price => avg_px.checked_sub(current_price),
+                OrderSide::Sell if avg_px < current_price => current_price.checked_sub(avg_px),
                 _ => None,
             }
         });
@@ -1453,6 +1450,8 @@ impl OrderCore {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -1575,7 +1574,7 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::Filled);
         assert_eq!(order.filled_qty(), Quantity::from(100_000));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
-        assert_eq!(order.avg_px(), Some(1.0));
+        assert_eq!(order.avg_px(), Some(dec!(1.0)));
         assert!(!order.is_open());
         assert!(order.is_closed());
         assert_eq!(order.commission(&Currency::USD()), None);
@@ -1613,7 +1612,7 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from(100_000));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         // Weighted avg: (50_000 * -5.0 + 50_000 * -7.0) / 100_000 = -6.0
-        assert_eq!(order.avg_px(), Some(-6.0));
+        assert_eq!(order.avg_px(), Some(dec!(-6.0)));
     }
 
     fn fill(trade_id: &str, last_qty: &str, last_px: &str) -> (TradeId, Quantity, Price) {
@@ -1677,7 +1676,48 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from(6));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         assert_eq!(order.voided_qty(), Quantity::from(0));
-        assert_eq!(order.avg_px(), Some(0.2));
+        assert_eq!(order.avg_px(), Some(dec!(0.2)));
+    }
+
+    #[rstest]
+    fn test_avg_px_keeps_a_quotient_no_f64_can_hold() {
+        // (1 * 1.00) + (2 * 2.00) = 5.00 over 3 filled. The exact quotient repeats, so `Decimal`
+        // carries it to its full 28-place scale where the widest `f64` holds 1.6666666666666667.
+        let order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from(3),
+            &[fill("TRADE-1", "1", "1.00"), fill("TRADE-2", "2", "2.00")],
+        );
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from(3));
+        assert_eq!(order.avg_px(), Some(dec!(1.6666666666666666666666666667)));
+        assert_ne!(
+            order.avg_px(),
+            Some(Decimal::from_f64_retain(5.0_f64 / 3.0).unwrap())
+        );
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "1.07", "1.00", Some(dec!(0.07)))]
+    #[case(OrderSide::Sell, "0.93", "1.00", Some(dec!(0.07)))]
+    #[case(OrderSide::Buy, "0.93", "1.00", None)]
+    #[case(OrderSide::Sell, "1.07", "1.00", None)]
+    fn test_set_slippage_by_side(
+        #[case] order_side: OrderSide,
+        #[case] fill_px: &str,
+        #[case] reference_px: &str,
+        #[case] expected: Option<Decimal>,
+    ) {
+        // Slippage only accrues against the order: a buy filled above the reference price and a
+        // sell filled below it. The opposite cases are price improvement and stay `None`.
+        let mut order =
+            market_order_with_fills(order_side, Quantity::from(1), &[fill("T-1", "1", fill_px)]);
+
+        order.set_slippage(Price::from(reference_px));
+
+        assert_eq!(order.avg_px(), Some(Decimal::from_str(fill_px).unwrap()));
+        assert_eq!(order.slippage(), expected);
     }
 
     #[rstest]
@@ -1695,7 +1735,7 @@ mod tests {
         fills.reverse();
         let descending = market_order_with_fills(OrderSide::Buy, Quantity::from(100_000), &fills);
 
-        assert_eq!(ascending.avg_px(), Some(1.000_017));
+        assert_eq!(ascending.avg_px(), Some(dec!(1.000_017)));
         assert_eq!(descending.avg_px(), ascending.avg_px());
         assert_eq!(descending.filled_qty(), ascending.filled_qty());
     }
@@ -1727,7 +1767,7 @@ mod tests {
         // (1 * 0.05) + (3 * 0.15) = 0.50 over 4 filled: 0.125 exactly, whether the fold runs
         // incrementally over the fills, as the rebuild after the void drops the third fill, or
         // over the whole event stream on replay. The f64 rebuild returns 0.12499999999999999.
-        assert_eq!(expected.avg_px(), Some(0.125));
+        assert_eq!(expected.avg_px(), Some(dec!(0.125)));
         assert_eq!(corrected.avg_px(), expected.avg_px());
         assert_eq!(replayed.avg_px(), expected.avg_px());
         assert_eq!(corrected.status(), OrderStatus::Voided);
@@ -1761,7 +1801,7 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from(4));
         assert_eq!(order.voided_qty(), Quantity::from(2));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
-        assert_eq!(order.avg_px(), Some(1.07));
+        assert_eq!(order.avg_px(), Some(dec!(1.07)));
     }
 
     #[rstest]
@@ -1799,8 +1839,8 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from(4));
         assert_eq!(order.voided_qty(), Quantity::from(2));
         assert_eq!(order.leaves_qty(), Quantity::from(2));
-        assert_eq!(order.avg_px(), Some(1.07));
-        assert_eq!(order.slippage(), Some(1.07 - 1.0));
+        assert_eq!(order.avg_px(), Some(dec!(1.07)));
+        assert_eq!(order.slippage(), Some(dec!(0.07)));
     }
 
     #[rstest]
@@ -1844,7 +1884,7 @@ mod tests {
 
         assert_eq!(order.status(), OrderStatus::Filled);
         assert_eq!(order.filled_qty(), Quantity::from("0.000000000010"));
-        assert_eq!(order.avg_px(), Some(1.000_017));
+        assert_eq!(order.avg_px(), Some(dec!(1.000_017)));
     }
 
     #[cfg(feature = "high-precision")]
@@ -1864,7 +1904,7 @@ mod tests {
         // (2e-16 * 1e-12) + (6e-16 * 3e-12) = 2e-27 over 8e-16 filled: 2.5e-12 exactly.
         assert_eq!(order.status(), OrderStatus::Filled);
         assert_eq!(order.filled_qty(), Quantity::from("0.0000000000000008"));
-        assert_eq!(order.avg_px(), Some(2.5e-12));
+        assert_eq!(order.avg_px(), Some(dec!(2.5e-12)));
     }
 
     #[rstest]

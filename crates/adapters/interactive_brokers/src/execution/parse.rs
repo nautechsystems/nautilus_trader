@@ -284,7 +284,7 @@ pub fn parse_order_status_to_report(
     }
 
     if include_avg_px {
-        report = report.with_avg_px(avg_px_value)?;
+        report = report.with_avg_px(decimal_from_f64(avg_px_value)?);
     }
 
     Ok(report)

@@ -1020,8 +1020,7 @@ async fn test_external_order_canceled_with_partial_fill() {
         Quantity::from("1.0"),
         Quantity::from("0.5"),
     )
-    .with_avg_px(3000.00)
-    .unwrap();
+    .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
     // Add fill report for the partial fill
@@ -1096,8 +1095,7 @@ async fn test_external_terminal_order_with_incomplete_real_fills_infers_residual
         Quantity::from("2.0"),
         Quantity::from("1.5"),
     )
-    .with_avg_px(3000.00)
-    .unwrap();
+    .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
     let real_trade_id = TradeId::from("T-TERMINAL-RESIDUAL-001");
@@ -1190,8 +1188,7 @@ async fn test_cached_order_canceled_with_fills() {
         Quantity::from("2.0"),
         Quantity::from("1.0"),
     )
-    .with_avg_px(3000.00)
-    .unwrap();
+    .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
     // Add fill report
@@ -1309,8 +1306,7 @@ async fn test_reconcile_mass_status_creates_external_order_filled() {
         Quantity::from("1.0"),
         Quantity::from("1.0"),
     )
-    .with_avg_px(3000.50)
-    .unwrap();
+    .with_avg_px(dec!(3000.50));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -1355,8 +1351,7 @@ async fn test_external_order_filled_uses_real_fills() {
         Quantity::from("2.0"),
         Quantity::from("2.0"),
     )
-    .with_avg_px(3000.00)
-    .unwrap();
+    .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
     // Add two separate fill reports (multi-fill execution)
@@ -1475,8 +1470,7 @@ async fn test_external_order_filled_with_partial_fills_generates_inferred() {
         Quantity::from("3.000"),
         Quantity::from("3.000"),
     )
-    .with_avg_px(3000.00)
-    .unwrap();
+    .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
     // But we only have fill reports for 2.0 (missing 1.0)
@@ -1600,8 +1594,7 @@ async fn test_synthetic_orders_bypass_filter_unclaimed_external() {
         Quantity::from("1.0"),
         Quantity::from("1.0"),
     )
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -2271,8 +2264,7 @@ async fn test_inferred_fill_is_not_committed_as_reported_fill() {
         Quantity::from("2.0"),
         Quantity::from("2.0"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     let real_trade_id = TradeId::from("T-INFERRED-SOURCE");
     let source = ctx
         .manager
@@ -2520,8 +2512,7 @@ async fn test_retained_fill_projects_missing_order_without_reapplying(
         Quantity::from("1.000"),
         Quantity::from("1.000"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     let venue_position_id = (oms_type == OmsType::Hedging).then_some(position_id);
     if let Some(position_id) = venue_position_id {
         order_report = order_report.with_venue_position_id(position_id);
@@ -2651,8 +2642,7 @@ async fn test_inferred_delta_for_retained_order_applies_new_economics(
         Quantity::from("10.000"),
         Quantity::from("10.000"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     mass_status.add_order_reports(vec![report]);
 
     ctx.manager
@@ -2734,8 +2724,7 @@ async fn test_missing_venue_order_id_collision_is_scoped_by_instrument() {
         Quantity::from("1.000"),
         Quantity::from("1.000"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     mass_status.add_order_reports(vec![report]);
 
     ctx.manager
@@ -2825,8 +2814,7 @@ async fn test_partially_known_fills_apply_only_new_economics(
         Quantity::from("3.000"),
         Quantity::from("3.000"),
     )
-    .with_avg_px(3033.333333)
-    .unwrap();
+    .with_avg_px(dec!(3033.333333));
     let known_fill_report = FillReport::new(
         test_account_id(),
         instrument_id,
@@ -2991,8 +2979,7 @@ async fn test_partial_window_known_fill_does_not_reapply_economics(
         Quantity::from("2.000"),
         Quantity::from("2.000"),
     )
-    .with_avg_px(3100.0)
-    .unwrap();
+    .with_avg_px(dec!(3100.0));
     let fill_report = FillReport::new(
         test_account_id(),
         instrument_id,
@@ -3109,8 +3096,7 @@ async fn test_fill_before_retained_netting_lifecycle_projects_order_only() {
         Quantity::from("1.000"),
         Quantity::from("1.000"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     let current_order_report = create_order_status_report(
         Some(current_order_id),
         current_venue_order_id,
@@ -3119,8 +3105,7 @@ async fn test_fill_before_retained_netting_lifecycle_projects_order_only() {
         Quantity::from("1.000"),
         Quantity::from("1.000"),
     )
-    .with_avg_px(3200.0)
-    .unwrap();
+    .with_avg_px(dec!(3200.0));
     let old_fill_report = FillReport::new(
         test_account_id(),
         instrument_id,
@@ -3234,8 +3219,7 @@ async fn test_filled_report_with_reduced_quantity_closes_partially_filled_order(
         Quantity::from("5.000"),
         Quantity::from("5.000"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     mass_status.add_order_reports(vec![report]);
 
     ctx.manager
@@ -4066,8 +4050,7 @@ async fn test_reconcile_mass_status_external_order_partially_filled() {
         Quantity::from("10.0"),
         Quantity::from("3.0"),
     )
-    .with_avg_px(3000.50)
-    .unwrap();
+    .with_avg_px(dec!(3000.50));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -4284,8 +4267,7 @@ async fn test_inferred_fill_generated_when_venue_reports_filled() {
         Quantity::from("10.0"),
         Quantity::from("5.0"), // 5 filled
     )
-    .with_avg_px(3001.50)
-    .unwrap();
+    .with_avg_px(dec!(3001.50));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -4340,8 +4322,7 @@ async fn test_inferred_fill_uses_avg_px_for_first_fill() {
         Quantity::from("10.0"),
         Quantity::from("3.0"),
     )
-    .with_avg_px(2999.75)
-    .unwrap();
+    .with_avg_px(dec!(2999.75));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -4531,8 +4512,7 @@ async fn test_market_order_inferred_fill_is_taker() {
         UnixNanos::default(),
         Some(UUID4::new()),
     )
-    .with_avg_px(3005.00)
-    .unwrap();
+    .with_avg_px(dec!(3005.00));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -4645,8 +4625,7 @@ async fn test_incremental_fill_calculates_weighted_price() {
         Quantity::from("10.0"),
         Quantity::from("8.0"),
     )
-    .with_avg_px(3002.50)
-    .unwrap();
+    .with_avg_px(dec!(3002.50));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -4849,8 +4828,7 @@ async fn test_mass_status_reconciles_when_filled_qty_differs() {
         Quantity::from("10.0"),
         Quantity::from("5.0"),
     )
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -5768,8 +5746,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_ba
         UnixNanos::from(1_000_000),
         None,
     )
-    .with_avg_px(3000.0)
-    .unwrap()
+    .with_avg_px(dec!(3000.0))
     .with_venue_position_id(venue_position_id);
 
     mass_status.add_order_reports(vec![order_report]);
@@ -6420,8 +6397,7 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
         Quantity::from("2.000"),
         Quantity::from("2.000"),
     )
-    .with_avg_px(3100.00)
-    .unwrap();
+    .with_avg_px(dec!(3100.00));
     mass_status.add_order_reports(vec![order_report]);
 
     let fill = FillReport::new(
@@ -8203,8 +8179,7 @@ async fn test_duplicate_order_reports_keeps_most_advanced_state() {
         UnixNanos::from(2_000),
         None,
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
 
     mass_status.add_order_reports(vec![report_partial, report_filled]);
 
@@ -8299,8 +8274,7 @@ async fn test_reconciliation_order_skipped_on_restart() {
         UnixNanos::from(1_000),
         None,
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
     mass_status.add_order_reports(vec![report]);
 
     let result = ctx
@@ -8355,8 +8329,7 @@ async fn test_partially_filled_order_has_fills_applied() {
         Quantity::from("10.0"),
         Quantity::from("5.0"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
 
     let fill = FillReport::new(
         test_account_id(),
@@ -8453,8 +8426,7 @@ async fn test_working_order_with_new_fills_updates_correctly() {
         Quantity::from("10.0"),
         Quantity::from("7.0"),
     )
-    .with_avg_px(3000.0)
-    .unwrap();
+    .with_avg_px(dec!(3000.0));
 
     let new_fill = FillReport::new(
         test_account_id(),
@@ -9520,8 +9492,7 @@ async fn test_check_open_orders_defers_with_recent_local_activity() {
         Quantity::from("10.0"),
         Quantity::from("5.0"),
     )
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
 
     let mock_client = MockExecutionClient::new(vec![report]);
     let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
@@ -9580,8 +9551,7 @@ async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
         Quantity::from("10.0"),
         Quantity::from("5.0"),
     )
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
 
     let mock_client = MockExecutionClient::new(vec![report]);
     let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
@@ -9637,8 +9607,7 @@ async fn test_check_open_orders_proceeds_without_local_activity() {
         Quantity::from("10.0"),
         Quantity::from("5.0"),
     )
-    .with_avg_px(100.0)
-    .unwrap();
+    .with_avg_px(dec!(100.0));
 
     let mock_client = MockExecutionClient::new(vec![report]);
     let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];

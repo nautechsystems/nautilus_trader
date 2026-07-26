@@ -702,6 +702,13 @@ impl BitmexRawHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
     pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
+        self.place_order_response(params).await
+    }
+
+    async fn place_order_response<T: DeserializeOwned>(
+        &self,
+        params: PostOrderParams,
+    ) -> Result<T, BitmexHttpError> {
         // BitMEX spec requires form-encoded body for POST /order
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| {
@@ -719,6 +726,13 @@ impl BitmexRawHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
     pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
+        self.cancel_orders_response(params).await
+    }
+
+    async fn cancel_orders_response<T: DeserializeOwned>(
+        &self,
+        params: DeleteOrderParams,
+    ) -> Result<T, BitmexHttpError> {
         // BitMEX spec requires form-encoded body for DELETE /order
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| {
@@ -736,6 +750,13 @@ impl BitmexRawHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
     pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
+        self.amend_order_response(params).await
+    }
+
+    async fn amend_order_response<T: DeserializeOwned>(
+        &self,
+        params: PutOrderParams,
+    ) -> Result<T, BitmexHttpError> {
         // BitMEX spec requires form-encoded body for PUT /order
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| {
@@ -760,6 +781,13 @@ impl BitmexRawHttpClient {
         &self,
         params: DeleteAllOrdersParams,
     ) -> Result<Value, BitmexHttpError> {
+        self.cancel_all_orders_response(params).await
+    }
+
+    async fn cancel_all_orders_response<T: DeserializeOwned>(
+        &self,
+        params: DeleteAllOrdersParams,
+    ) -> Result<T, BitmexHttpError> {
         self.send_request(Method::DELETE, "/order/all", Some(&params), None, true)
             .await
     }
@@ -1765,9 +1793,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.place_order(params).await?;
-
-        let order: BitmexOrder = serde_json::from_value(response)?;
+        let order: BitmexOrder = self.inner.place_order_response(params).await?;
 
         if order.ord_status == Some(BitmexOrderStatus::Rejected) {
             let reason = order
@@ -1813,9 +1839,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.cancel_orders(params).await?;
-
-        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let orders: Vec<BitmexOrder> = self.inner.cancel_orders_response(params).await?;
         let order = orders
             .into_iter()
             .next()
@@ -1873,9 +1897,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.cancel_orders(params).await?;
-
-        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let orders: Vec<BitmexOrder> = self.inner.cancel_orders_response(params).await?;
 
         let ts_init = self.generate_ts_init();
         let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
@@ -1927,9 +1949,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.cancel_all_orders(params).await?;
-
-        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let orders: Vec<BitmexOrder> = self.inner.cancel_all_orders_response(params).await?;
 
         let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
@@ -2000,9 +2020,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.amend_order(params).await?;
-
-        let order: BitmexOrder = serde_json::from_value(response)?;
+        let order: BitmexOrder = self.inner.amend_order_response(params).await?;
 
         if order.ord_status == Some(BitmexOrderStatus::Rejected) {
             let reason = order

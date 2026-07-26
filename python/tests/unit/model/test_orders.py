@@ -1263,7 +1263,7 @@ def test_apply_filled():
     assert order.status == OrderStatus.FILLED
     assert order.quantity == Quantity.from_int(100_000)
     assert len(order.events()) == 4
-    assert order.avg_px == 1.0
+    assert order.avg_px == Decimal("1.00000")
     assert order.event_count == 4
     assert isinstance(order.last_event, OrderFilled)
     assert order.leaves_qty == Quantity.from_int(0)

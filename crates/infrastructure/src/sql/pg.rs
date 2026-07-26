@@ -289,17 +289,16 @@ pub async fn init_postgres(
         };
 
         for sql_statement in sql_statements {
-            sqlx::query(AssertSqlSafe(sql_statement.as_str()))
+            if let Err(e) = sqlx::query(AssertSqlSafe(sql_statement.as_str()))
                 .execute(pg)
                 .await
-                .map_err(|e| {
-                    if e.to_string().contains("already exists") {
-                        log::info!("Already exists error on statement, skipping");
-                    } else {
-                        panic!("Error executing statement {sql_statement} with error: {e:?}")
-                    }
-                })
-                .unwrap();
+            {
+                if e.to_string().contains("already exists") {
+                    log::info!("Already exists error on statement, skipping");
+                } else {
+                    anyhow::bail!("Error executing statement {sql_statement} with error: {e:?}");
+                }
+            }
         }
     }
 
@@ -363,24 +362,33 @@ pub async fn init_postgres(
 
 // Splits semicolon-delimited SQL into individual statements.
 //
-// Skips `--` line comments and respects single-quoted string literals, so a semicolon inside a
-// comment or string literal does not split a statement. Used for the plain DDL schema files; the
-// PL/pgSQL files are split separately on their function terminators.
+// Skips `--` line comments and respects single-quoted string literals and `$$` dollar-quoted
+// bodies, so a semicolon inside a comment, string literal, or `DO` block does not split a
+// statement. Tagged `$tag$` quoting is not recognised; keep the schema files on bare `$$`.
+// Used for the plain DDL schema files; the PL/pgSQL files are split separately on their
+// function terminators.
 fn split_sql_statements(sql: &str) -> Vec<String> {
     let mut statements = Vec::new();
     let mut current = String::new();
     let mut chars = sql.chars().peekable();
     let mut in_string = false;
+    let mut in_dollar_quote = false;
 
     while let Some(c) = chars.next() {
         match c {
-            '\'' => {
+            '\'' if !in_dollar_quote => {
                 // A `''` escape toggles twice, leaving the state unchanged, which is correct
                 in_string = !in_string;
                 current.push(c);
             }
 
-            '-' if !in_string && chars.peek() == Some(&'-') => {
+            '$' if !in_string && chars.peek() == Some(&'$') => {
+                chars.next();
+                in_dollar_quote = !in_dollar_quote;
+                current.push_str("$$");
+            }
+
+            '-' if !in_string && !in_dollar_quote && chars.peek() == Some(&'-') => {
                 for next in chars.by_ref() {
                     if next == '\n' {
                         current.push('\n');
@@ -389,7 +397,7 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
                 }
             }
 
-            ';' if !in_string => {
+            ';' if !in_string && !in_dollar_quote => {
                 let trimmed = current.trim();
                 if !trimmed.is_empty() {
                     statements.push(format!("{trimmed};"));
@@ -534,6 +542,27 @@ ALTER TABLE pool_snapshot ADD COLUMN IF NOT EXISTS validation_state TEXT;";
             split_sql_statements(sql),
             vec!["CREATE TABLE a (\n  id INT,  \n  name TEXT\n);"]
         );
+    }
+
+    #[rstest]
+    fn test_split_sql_statements_keeps_dollar_quoted_body_intact() {
+        // The guarded column migrations are `DO $$ ... $$` blocks whose bodies carry their own
+        // semicolons; splitting on those would hand Postgres a fragment.
+        let sql = "\
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE column_name = 'avg_px') THEN
+        ALTER TABLE \"order\" ALTER COLUMN avg_px TYPE NUMERIC;
+    END IF;
+END $$;
+SELECT 1;";
+        let statements = split_sql_statements(sql);
+
+        assert_eq!(statements.len(), 2);
+        assert!(statements[0].starts_with("DO $$"));
+        assert!(statements[0].ends_with("END $$;"));
+        assert!(statements[0].contains("ALTER COLUMN avg_px TYPE NUMERIC;"));
+        assert_eq!(statements[1], "SELECT 1;");
     }
 
     #[rstest]

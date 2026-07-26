@@ -828,11 +828,10 @@ pub fn parse_ws_order_status_report(
     }
 
     if !order.avg_price.is_empty() && order.avg_price != "0" {
-        let avg_px = order
-            .avg_price
-            .parse::<f64>()
-            .with_context(|| format!("Failed to parse avg_price='{}' as f64", order.avg_price))?;
-        report = report.with_avg_px(avg_px)?;
+        let avg_px = order.avg_price.parse::<Decimal>().with_context(|| {
+            format!("Failed to parse avg_price='{}' as Decimal", order.avg_price)
+        })?;
+        report = report.with_avg_px(avg_px);
     }
 
     if !order.trigger_price.is_empty() && order.trigger_price != "0" {
@@ -1124,6 +1123,8 @@ pub fn parse_ws_account_state(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::{
         data::BarSpecification,
         enums::{
@@ -1381,6 +1382,30 @@ mod tests {
             UnixNanos::new(1_672_364_262_444_000_000)
         );
         assert_eq!(report.ts_last, UnixNanos::new(1_672_364_262_457_000_000));
+    }
+
+    #[rstest]
+    fn parse_ws_order_avg_price_keeps_every_digit_the_venue_sent() {
+        // 28 significant digits is exactly what `Decimal` holds, and more than `f64` can:
+        // routing the same string through `f64` first collapses it to 30000.500000000004.
+        let raw = "30000.50000000000372529029846";
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order_filled.json");
+        let mut msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+        msg.data[0].avg_price = raw.to_string();
+
+        let report = parse_ws_order_status_report(
+            &msg.data[0],
+            &instrument,
+            AccountId::new("BYBIT-001"),
+            TS,
+        )
+        .unwrap();
+
+        let via_f64: Decimal = raw.parse::<f64>().unwrap().to_string().parse().unwrap();
+        assert_eq!(report.avg_px, Some(Decimal::from_str(raw).unwrap()));
+        assert_ne!(report.avg_px, Some(via_f64));
     }
 
     #[rstest]

@@ -68,7 +68,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::recency::RecencyMap;
@@ -113,7 +113,7 @@ fn build_cross_zero_leg_report(
         venue_ts_last,
     );
 
-    OrderStatusReport::new(
+    let report = OrderStatusReport::new(
         account_id,
         instrument_id,
         None,
@@ -129,8 +129,9 @@ fn build_cross_zero_leg_report(
         ts_now,
         None,
     )
-    .with_avg_px(avg_px.to_f64().unwrap_or(0.0))
-    .ok()
+    .with_avg_px(avg_px);
+
+    Some(report)
 }
 
 /// Execution clients responsible for reporting one cached entity.
@@ -2699,7 +2700,7 @@ impl ExecutionManager {
 
                     Quantity::from_decimal_dp(fill_qty, instrument.size_precision())
                         .ok()
-                        .and_then(|order_qty| {
+                        .map(|order_qty| {
                             let fill_price =
                                 Price::from_decimal_dp(fill_px, instrument.price_precision()).ok();
                             let venue_order_id = create_position_reconciliation_venue_order_id(
@@ -2730,8 +2731,7 @@ impl ExecutionManager {
                                 ts_now,
                                 None,
                             )
-                            .with_avg_px(fill_px.to_f64().unwrap_or(0.0))
-                            .ok()
+                            .with_avg_px(fill_px)
                         })
                         .map(|order_report| {
                             log::info!(
@@ -2956,8 +2956,7 @@ impl ExecutionManager {
             ts_now,
             None,
         )
-        .with_avg_px(venue_avg_px.to_f64().unwrap_or(0.0))
-        .ok()?;
+        .with_avg_px(venue_avg_px);
 
         // Preserve venue_position_id for hedging mode
         if let Some(venue_position_id) = report.venue_position_id {
@@ -3326,8 +3325,7 @@ impl ExecutionManager {
             ts_now,
             None,
         )
-        .with_avg_px(fill_px.to_f64().unwrap_or(0.0))
-        .ok()?;
+        .with_avg_px(fill_px);
 
         if let Some(venue_position_id) = report.venue_position_id {
             order_report = order_report.with_venue_position_id(venue_position_id);

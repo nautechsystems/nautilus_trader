@@ -967,7 +967,7 @@ pub fn parse_order_status_report(
     }
 
     if let Some(avg_px) = order.avg_px {
-        report = report.with_avg_px(avg_px)?;
+        report = report.with_avg_px(avg_px);
     }
 
     if let Some(trigger_price) = order.stop_px {
@@ -1310,7 +1310,10 @@ mod tests {
         assert_eq!(order2.ord_status, Some(BitmexOrderStatus::Filled));
         assert_eq!(order2.leaves_qty, Some(0));
         assert_eq!(order2.cum_qty, Some(200));
-        assert_eq!(order2.avg_px, Some(98950.5));
+        assert_eq!(
+            order2.avg_px,
+            Some(Decimal::from_str("98950.500000000004").unwrap())
+        );
     }
 
     #[rstest]
@@ -1688,7 +1691,7 @@ mod tests {
             triggered: None,
             working_indicator: Some(false),
             ord_rej_reason: None,
-            avg_px: Some(45050.0),
+            avg_px: Some(Decimal::from_str("45050.0").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
             transact_time: Some(
@@ -1744,7 +1747,7 @@ mod tests {
             triggered: None,
             working_indicator: Some(true),
             ord_rej_reason: None,
-            avg_px: Some(48100.0),
+            avg_px: Some(Decimal::from_str("48100.0").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
             transact_time: Some(
@@ -3163,7 +3166,7 @@ mod tests {
             working_indicator: Some(false),
             ord_rej_reason: None,
             leaves_qty: Some(0), // No remaining quantity
-            avg_px: Some(50050.0),
+            avg_px: Some(Decimal::from_str("30000.500000000004").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
             transact_time: Some(
@@ -3188,6 +3191,10 @@ mod tests {
         assert_eq!(report.order_status, OrderStatus::Filled);
         assert_eq!(report.account_id.to_string(), "BITMEX-123456");
         assert_eq!(report.filled_qty.as_f64(), 100.0);
+        assert_eq!(
+            report.avg_px,
+            Some(Decimal::from_str("30000.500000000004").unwrap())
+        );
     }
 
     #[rstest]
@@ -3389,7 +3396,7 @@ mod tests {
             working_indicator: None,
             ord_rej_reason: None,
             leaves_qty: Some(0),
-            avg_px: Some(50000.0),
+            avg_px: Some(Decimal::from_str("50000.0").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
             transact_time: Some(

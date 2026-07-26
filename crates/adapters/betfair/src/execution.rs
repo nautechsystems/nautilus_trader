@@ -263,9 +263,7 @@ impl BetfairExecutionClient {
                 let venue_order_id = order.venue_order_id()?;
                 let bet_id = venue_order_id.to_string();
                 let filled_qty = order.filled_qty().as_decimal();
-                let avg_px = order.avg_px().map_or(Decimal::ZERO, |px| {
-                    Decimal::try_from(px).unwrap_or(Decimal::ZERO)
-                });
+                let avg_px = order.avg_px().unwrap_or(Decimal::ZERO);
                 let trade_ids = order
                     .trade_ids()
                     .iter()

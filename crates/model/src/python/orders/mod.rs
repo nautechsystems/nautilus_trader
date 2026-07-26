@@ -15,6 +15,7 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use rust_decimal::Decimal;
 
 use crate::{
     enums::{LiquiditySide, OrderType},
@@ -111,7 +112,7 @@ macro_rules! impl_order_common_pymethods {
         impl $type {
             #[getter]
             #[pyo3(name = "avg_px")]
-            fn py_avg_px(&self) -> Option<f64> {
+            fn py_avg_px(&self) -> Option<Decimal> {
                 self.avg_px()
             }
 
@@ -177,7 +178,7 @@ macro_rules! impl_order_common_pymethods {
 
             #[getter]
             #[pyo3(name = "slippage")]
-            fn py_slippage(&self) -> Option<f64> {
+            fn py_slippage(&self) -> Option<Decimal> {
                 self.slippage()
             }
 

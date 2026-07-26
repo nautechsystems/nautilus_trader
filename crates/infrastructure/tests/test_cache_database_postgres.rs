@@ -17,7 +17,7 @@
 #[cfg(feature = "postgres")]
 #[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
-    use std::{collections::HashSet, time::Duration};
+    use std::{collections::HashSet, str::FromStr, time::Duration};
 
     use bytes::Bytes;
     use indexmap::indexmap;
@@ -27,7 +27,11 @@ mod serial_tests {
         testing::{wait_until, wait_until_async},
     };
     use nautilus_core::{Params, UnixNanos};
-    use nautilus_infrastructure::sql::{cache::get_pg_cache_database, queries::DatabaseQueries};
+    use nautilus_infrastructure::sql::{
+        cache::get_pg_cache_database,
+        pg::{connect_pg, get_postgres_connect_options, init_postgres},
+        queries::DatabaseQueries,
+    };
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
@@ -36,7 +40,7 @@ mod serial_tests {
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{
-            OrderEventAny, OrderFilled, PositionSnapshot,
+            OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
             account::stubs::cash_account_state_million_usd,
         },
         identifiers::{
@@ -56,7 +60,9 @@ mod serial_tests {
     };
     use nautilus_persistence::test_data::RustTestCustomData;
     use nautilus_serialization::ensure_custom_data_registered;
+    use rust_decimal::Decimal;
     use serde::Serialize;
+    use sqlx::AssertSqlSafe;
     use ustr::Ustr;
 
     pub(crate) fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
@@ -1238,6 +1244,156 @@ mod serial_tests {
         assert!(result.is_ok());
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_snapshot_keeps_exact_avg_px_and_slippage() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-2");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        // Full 28-place scale, which the previous `double precision` column could not hold
+        let mut snapshot: OrderSnapshot = order.into();
+        snapshot.avg_px = Some(Decimal::from_str("1.6666666666666666666666666667").unwrap());
+        snapshot.slippage = Some(Decimal::from_str("0.0000000000000000000000000001").unwrap());
+
+        pg_cache.add_order_snapshot(&snapshot).unwrap();
+
+        wait_until(
+            || {
+                pg_cache
+                    .load_order_snapshot(&client_order_id)
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        );
+
+        let loaded = pg_cache
+            .load_order_snapshot(&client_order_id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded.avg_px, snapshot.avg_px);
+        assert_eq!(loaded.slippage, snapshot.slippage);
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_init_postgres_skips_existing_objects_on_re_run() {
+        // `types.sql` has no `CREATE TYPE IF NOT EXISTS`, so a re-run against an initialized
+        // database always raises "already exists" on the first statement. The loader must skip it
+        // and carry on; it previously mapped that branch to `Err(())` and unwrapped, aborting init.
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_pg(options.clone().into()).await.unwrap();
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+
+        let result = init_postgres(&pg, options.database, options.password, Some(schema_dir)).await;
+
+        assert!(
+            result.is_ok(),
+            "re-running init must succeed, was {result:?}"
+        );
+    }
+
+    // Extracts the guarded order-column migration from the real schema file, so the test runs the
+    // shipped SQL rather than a copy of it.
+    fn order_numeric_migration_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/tables.sql");
+        let schema = std::fs::read_to_string(path).unwrap();
+        let start = schema
+            .find("DO $$")
+            .expect("no DO block in tables.sql; the order-column migration moved");
+        let end = schema[start..]
+            .find("END $$;")
+            .expect("unterminated DO block in tables.sql")
+            + start
+            + "END $$;".len();
+        let block = schema[start..end].to_string();
+        assert!(
+            block.contains("avg_px TYPE NUMERIC") && block.contains("slippage TYPE NUMERIC"),
+            "first DO block in tables.sql is no longer the order-column migration"
+        );
+        block
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_column_migration_converts_legacy_floats_without_rounding() {
+        // A direct `double precision::numeric` cast rounds to 15 significant digits, so these
+        // would land as 1.23456789012346 and 1.66666666666667. The shipped migration casts through
+        // `text` instead, which takes float8's shortest round-trip output.
+        const LEGACY_AVG_PX: &str = "1.2345678901234567";
+        const LEGACY_SLIPPAGE: &str = "1.6666666666666667";
+
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_pg(options.into()).await.unwrap();
+
+        // The whole exercise runs inside a transaction that is always rolled back: PostgreSQL DDL
+        // is transactional, so neither the column downgrade nor the probe row can outlive the
+        // test, even on panic.
+        let mut tx = pg.begin().await.unwrap();
+
+        sqlx::query(
+            r#"ALTER TABLE "order"
+               ALTER COLUMN avg_px TYPE DOUBLE PRECISION USING avg_px::float8,
+               ALTER COLUMN slippage TYPE DOUBLE PRECISION USING slippage::float8"#,
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"INSERT INTO "order" (id, strategy_id, client_order_id, order_type, order_side,
+               quantity, time_in_force, status, avg_px, slippage, init_id, ts_init, ts_last)
+               VALUES ('O-LEGACY-FLOAT', 'S-1', 'O-LEGACY-FLOAT', 'MARKET', 'BUY', '1', 'GTC',
+               'FILLED', $1, $2, 'i', '0', '0')"#,
+        )
+        .bind(LEGACY_AVG_PX.parse::<f64>().unwrap())
+        .bind(LEGACY_SLIPPAGE.parse::<f64>().unwrap())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        sqlx::query(AssertSqlSafe(order_numeric_migration_sql()))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let (avg_px, slippage): (Decimal, Decimal) =
+            sqlx::query_as(r#"SELECT avg_px, slippage FROM "order" WHERE id = 'O-LEGACY-FLOAT'"#)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let types: Vec<String> = sqlx::query_scalar(
+            "SELECT data_type FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = 'order'
+               AND column_name IN ('avg_px', 'slippage')
+             ORDER BY column_name",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.rollback().await.unwrap();
+
+        assert_eq!(types, vec!["numeric".to_string(), "numeric".to_string()]);
+        assert_eq!(avg_px, Decimal::from_str(LEGACY_AVG_PX).unwrap());
+        assert_eq!(slippage, Decimal::from_str(LEGACY_SLIPPAGE).unwrap());
     }
 
     #[tokio::test(flavor = "multi_thread")]

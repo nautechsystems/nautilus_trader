@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     expire_time TEXT,
     filled_qty TEXT DEFAULT '0',
     liquidity_side TEXT,
-    avg_px DOUBLE PRECISION,
-    slippage DOUBLE PRECISION,
+    avg_px NUMERIC,
+    slippage NUMERIC,
     commissions TEXT[],
     status TEXT NOT NULL,
     is_post_only BOOLEAN,
@@ -121,6 +121,32 @@ CREATE TABLE IF NOT EXISTS "order" (
 );
 -- Bring databases created before trailing-stop activation-price persistence forward
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS activation_price TEXT;
+-- Widen the order average-price columns from DOUBLE PRECISION to unconstrained NUMERIC.
+--
+-- Guarded because `ALTER COLUMN ... TYPE ... USING` takes ACCESS EXCLUSIVE and rewrites the whole
+-- table, and this file is re-issued on every `nautilus database init`.
+--
+-- Cast through `text` rather than directly: a direct `double precision::numeric` rounds to 15
+-- significant digits, so 1.2345678901234567 would land as 1.23456789012346. Going via `text`
+-- takes float8's shortest round-trip output and keeps the stored value.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'order' AND column_name = 'avg_px' AND data_type = 'double precision'
+    ) THEN
+        ALTER TABLE "order" ALTER COLUMN avg_px TYPE NUMERIC USING avg_px::text::NUMERIC;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'order' AND column_name = 'slippage' AND data_type = 'double precision'
+    ) THEN
+        ALTER TABLE "order" ALTER COLUMN slippage TYPE NUMERIC USING slippage::text::NUMERIC;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "order_event" (
     id TEXT PRIMARY KEY NOT NULL,

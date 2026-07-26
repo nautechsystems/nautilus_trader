@@ -224,6 +224,7 @@ impl PostgresCacheDatabase {
         let pg_connect_options =
             get_postgres_connect_options(host, port, username, password, database);
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
+        check_schema_migrated(&pool).await?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
         let handle = get_runtime().spawn(async move {
@@ -284,6 +285,36 @@ impl PostgresCacheDatabase {
 
         log_task_stopped(CACHE_PROCESS);
     }
+}
+
+// Fails fast when the connected database predates the exact-average columns.
+//
+// Both directions of the mismatch are otherwise silent: `numeric -> double precision` is an
+// implicit cast so writes truncate, and the row readers use `.ok().flatten()` so reads degrade
+// to `None`. A column absent altogether is left to the query that first touches it.
+async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let stale: Vec<String> = sqlx::query_scalar(
+        "SELECT table_name || '.' || column_name || ' (' || data_type || ')'
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (table_name, column_name) IN (('order', 'avg_px'), ('order', 'slippage'))
+          AND data_type <> 'numeric'
+        ORDER BY table_name, column_name",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if stale.is_empty() {
+        return Ok(());
+    }
+
+    Err(sqlx::Error::Configuration(
+        format!(
+            "Postgres schema is out of date, {} should be `numeric`: run `nautilus database init` to migrate",
+            stale.join(", ")
+        )
+        .into(),
+    ))
 }
 
 async fn handle_query(

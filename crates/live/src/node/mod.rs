@@ -2923,6 +2923,7 @@ mod tests {
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -3308,8 +3309,7 @@ mod tests {
             UnixNanos::from(1_000),
             None,
         )
-        .with_avg_px(100.0)
-        .unwrap();
+        .with_avg_px(dec!(100.0));
         let inferred = create_inferred_fill_for_qty(
             &order,
             &report,

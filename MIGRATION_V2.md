@@ -432,6 +432,15 @@ The cutover accepts these differences from v1:
     the ID is not `None`.
 - Catalog order-event data written before `activation_price` and `OrderFilled.info` were added cannot
   be read by the new schema. Regenerate or migrate that data before upgrading a catalog in place.
+- `Order.avg_px` and `Order.slippage` are `decimal.Decimal`, where v1 exposes `float`. v2 no longer
+  converts the weighted average through `f64`, so comparisons against float literals can fail on a
+  fractional value: `Decimal("0.70000") == 0.7` is `False`. Compare against `Decimal("0.7")`, or wrap
+  the operand with `Decimal(str(value))`.
+- `Order.to_dict()` returns `avg_px` and `slippage` as strings, matching how the other decimal
+  fields already serialize. Wrap the value in `Decimal(...)` before doing arithmetic on it.
+- Postgres-backed deployments must run `nautilus database init` before starting a v2 node. The
+  `order.avg_px` and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node
+  now fails at connect time while the old column types remain.
 
 ## Deferred limits
 

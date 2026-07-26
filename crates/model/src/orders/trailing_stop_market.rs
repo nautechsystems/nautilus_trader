@@ -440,11 +440,11 @@ impl Order for TrailingStopMarketOrder {
         self.overfill_qty
     }
 
-    fn avg_px(&self) -> Option<f64> {
+    fn avg_px(&self) -> Option<Decimal> {
         self.avg_px
     }
 
-    fn slippage(&self) -> Option<f64> {
+    fn slippage(&self) -> Option<Decimal> {
         self.slippage
     }
 
@@ -957,16 +957,7 @@ mod tests {
             .apply(OrderEventAny::Filled(order_filled_event))
             .unwrap();
 
-        // The slippage calculation should be triggered by the filled event
-        assert!(accepted_order.slippage().is_some());
-
-        // We can also check the actual slippage value
-        let expected_slippage = 98.50 - 90.0; // For buy order: execution price - trigger price
-        let actual_slippage = accepted_order.slippage().unwrap();
-
-        assert!(
-            (actual_slippage - expected_slippage).abs() < 0.001,
-            "Expected slippage around {expected_slippage}, was {actual_slippage}"
-        );
+        // The fill triggers the slippage calculation: 98.50 - 90.0 for a buy order
+        assert_eq!(accepted_order.slippage(), Some(dec!(8.50)));
     }
 }

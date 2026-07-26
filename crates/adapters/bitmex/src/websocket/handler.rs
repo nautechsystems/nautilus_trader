@@ -30,7 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 use super::{
     enums::{BitmexWsAuthAction, BitmexWsOperation},
     error::BitmexWsError,
-    messages::{BitmexHttpRequest, BitmexWsFrame, BitmexWsMessage},
+    messages::{BitmexHttpRequest, BitmexTableMessage, BitmexWsFrame, BitmexWsMessage},
 };
 
 /// Commands sent from the outer client to the inner message handler.
@@ -272,6 +272,15 @@ impl BitmexWsFeedHandler {
         if Self::is_heartbeat_message(text) {
             log::trace!("Ignoring heartbeat control message: {text}");
             return None;
+        }
+
+        match BitmexTableMessage::from_json_if_table(text) {
+            Ok(Some(table)) => return Some(BitmexWsFrame::Table(table)),
+            Ok(None) => {}
+            Err(e) => {
+                log::error!("Failed to parse WebSocket message: {e}: {text}");
+                return None;
+            }
         }
 
         match serde_json::from_str(text) {

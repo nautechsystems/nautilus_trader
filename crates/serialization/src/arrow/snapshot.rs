@@ -46,8 +46,8 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::u64("expire_time", true),
     JsonFieldSpec::utf8("filled_qty", false),
     JsonFieldSpec::utf8("liquidity_side", true),
-    JsonFieldSpec::f64("avg_px", true),
-    JsonFieldSpec::f64("slippage", true),
+    JsonFieldSpec::decimal_str("avg_px", true),
+    JsonFieldSpec::decimal_str("slippage", true),
     JsonFieldSpec::utf8_json("commissions", false),
     JsonFieldSpec::utf8("status", false),
     JsonFieldSpec::boolean("is_post_only", false),
@@ -151,6 +151,7 @@ impl_snapshot_arrow!(
 mod tests {
     use std::str::FromStr;
 
+    use arrow::datatypes::DataType;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{OrderSide, OrderType, PositionSide},
@@ -160,6 +161,7 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -179,6 +181,110 @@ mod tests {
         let batch =
             OrderSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
         let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![snapshot]);
+    }
+
+    fn make_order_snapshot(avg_px: Option<Decimal>, slippage: Option<Decimal>) -> OrderSnapshot {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000"))
+            .quantity(Quantity::from("0.5"))
+            .build();
+        let mut snapshot = OrderSnapshot::from(order);
+        snapshot.avg_px = avg_px;
+        snapshot.slippage = slippage;
+        snapshot
+    }
+
+    // The catalog spec before `avg_px` and `slippage` became exact
+    fn legacy_float64_fields() -> Vec<JsonFieldSpec> {
+        ORDER_SNAPSHOT_FIELDS
+            .iter()
+            .map(|spec| match spec.name {
+                "avg_px" | "slippage" => JsonFieldSpec::f64(spec.name, spec.nullable),
+                _ => *spec,
+            })
+            .collect()
+    }
+
+    #[rstest]
+    fn test_order_snapshot_round_trip_preserves_exact_avg_px_and_slippage() {
+        // A quotient at full `Decimal` scale, which is the precision the `Float64` column could
+        // not hold.
+        let snapshot = make_order_snapshot(
+            Some(Decimal::from_str("1.6666666666666666666666666667").unwrap()),
+            Some(Decimal::from_str("0.0000000000000000000000000001").unwrap()),
+        );
+        let metadata = snapshot.metadata();
+        let batch =
+            OrderSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
+
+        let avg_px_field = batch.schema().field_with_name("avg_px").unwrap().clone();
+        let slippage_field = batch.schema().field_with_name("slippage").unwrap().clone();
+        let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(avg_px_field.data_type(), &DataType::Utf8);
+        assert_eq!(slippage_field.data_type(), &DataType::Utf8);
+        assert_eq!(decoded, vec![snapshot]);
+    }
+
+    #[rstest]
+    fn test_order_snapshot_round_trip_null_avg_px_and_slippage() {
+        let snapshot = make_order_snapshot(None, None);
+        let metadata = snapshot.metadata();
+        let batch =
+            OrderSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
+        let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![snapshot]);
+    }
+
+    #[rstest]
+    fn test_order_snapshot_decodes_legacy_float64_columns() {
+        // A catalog file written while the fields were `f64`: the columns are `Float64`, not
+        // `Utf8`, and must still decode to the same economic state without a version marker.
+        let snapshot = make_order_snapshot(Some(dec!(1.07)), Some(dec!(0.07)));
+        let metadata = snapshot.metadata();
+        let legacy_batch = encode_batch(
+            "OrderSnapshot",
+            &metadata,
+            std::slice::from_ref(&snapshot),
+            &legacy_float64_fields(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            legacy_batch
+                .schema()
+                .field_with_name("avg_px")
+                .unwrap()
+                .data_type(),
+            &DataType::Float64
+        );
+
+        let decoded =
+            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
+                .unwrap();
+
+        assert_eq!(decoded, vec![snapshot]);
+    }
+
+    #[rstest]
+    fn test_order_snapshot_decodes_legacy_float64_null_columns() {
+        let snapshot = make_order_snapshot(None, None);
+        let metadata = snapshot.metadata();
+        let legacy_batch = encode_batch(
+            "OrderSnapshot",
+            &metadata,
+            std::slice::from_ref(&snapshot),
+            &legacy_float64_fields(),
+        )
+        .unwrap();
+        let decoded =
+            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
+                .unwrap();
 
         assert_eq!(decoded, vec![snapshot]);
     }

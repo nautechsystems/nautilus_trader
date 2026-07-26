@@ -1025,7 +1025,7 @@ pub fn parse_order_status_report_sbe(
     }
 
     if let Some(ap) = avg_px {
-        report = report.with_avg_px(ap.as_f64())?;
+        report = report.with_avg_px(ap.as_decimal());
     }
 
     if let Some(tp) = trigger_price {
@@ -1166,7 +1166,7 @@ pub fn parse_new_order_response_sbe(
     }
 
     if let Some(ap) = avg_px {
-        report = report.with_avg_px(ap.as_f64())?;
+        report = report.with_avg_px(ap.as_decimal());
     }
 
     if let Some(tp) = trigger_price {
@@ -2134,7 +2134,9 @@ mod tests {
         assert_eq!(report.price, Some(Price::new(121.0, 2)));
         assert_eq!(report.trigger_price, Some(Price::new(120.0, 2)));
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
-        assert_eq!(report.avg_px.unwrap().to_string(), "121");
+        // `as_decimal()` carries the price precision, where the old `as_f64()` hop dropped it
+        assert_eq!(report.avg_px, Some(dec!(121.00)));
+        assert_eq!(report.avg_px.unwrap().to_string(), "121.00");
         assert!(!report.post_only);
         assert_eq!(
             report.ts_accepted,

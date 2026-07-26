@@ -118,6 +118,7 @@ adapter set. The following limits remain deferred:
 - Added Polymarket v2 `PolymarketDataLoader` v2 for public discovery and historical trades
 - Added Tardis MEXC spot and futures market data support
 - Added v2 `ExecutionEngineConfig.carry_replay_events_on_reopen` to carry position replay state across NETTING close/reopen cycles (#4546), thanks @HungNgo4444
+- Added v2 `Decimal` order fill pricing; `Order.avg_px` and `Order.slippage` no longer round through `f64`
 
 ### Breaking Changes
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
@@ -128,6 +129,10 @@ adapter set. The following limits remain deferred:
 - Changed Rust CLI parser fields to crate-private; use `nautilus_cli::cli_command` and `run`
 - Changed v2 portfolios to record daily equity snapshots by default; set `equity_curve=False` to opt out
 - Changed v2 order-event schemas to persist activation prices and fill `info`; old catalogs must be migrated
+- Changed v2 `Order.avg_px` and `Order.slippage` from `f64` to `Decimal` in Rust, and from `float` to `decimal.Decimal` in Python
+- Changed Rust `OrderStatusReport::with_avg_px` to take a `Decimal` and return `Self`; it no longer returns a `Result`
+- Changed v2 SQL `order.avg_px` and `order.slippage` to `NUMERIC`; run `nautilus database init` before starting a Postgres-backed node, which now fails fast on the old column types
+- Changed the v2 `OrderSnapshot` Arrow schema to write `avg_px` and `slippage` as strings; the decoder also accepts the old `Float64` columns, but migrate an existing catalog rather than appending to it, since a directory holding both column types fails schema inference
 - Changed v2 instrument Arrow schemas to persist all constraints; old catalogs must be migrated
 - Changed v2 trailing-stop and order-event constructors to accept activation prices and fill `info`
 - Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
@@ -152,6 +157,8 @@ adapter set. The following limits remain deferred:
 
 ### Fixes
 - Fixed v2 PyO3 API coverage and Python exception handling
+- Fixed `nautilus database init` panicking instead of skipping existing schema objects on re-run
+- Fixed the v2 SQL schema loader splitting dollar-quoted (`$$`) statement bodies on their inner semicolons
 - Fixed v2 `BettingInstrument` catalog round trips corrupting raw symbols, increments, and precisions
 - Fixed v2 instrument catalog round trips dropping constraints, margins, and fees
 - Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
