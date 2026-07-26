@@ -466,17 +466,24 @@ When trading Spot with margin enabled (`is_leverage=True`), Bybit automatically 
 However, after you close the short position (BUY order fills), the borrowed coins are **NOT automatically repaid** - they continue accruing hourly interest charges until manually repaid.
 This can result in significant interest costs if left unattended.
 
-### Automatic repayment (recommended)
+### Rust v2 automatic repayment (recommended)
 
-NautilusTrader automatically repays spot margin borrows immediately after BUY orders fill on Spot instruments.
-This feature is **enabled by default** via the `auto_repay_spot_borrows` configuration flag.
+The Rust v2 execution client can automatically repay spot margin borrows after BUY orders fully fill
+on Spot instruments. This feature is disabled by default, so set
+`auto_repay_spot_borrows=True` to opt in.
 
 **How it works:**
 
-1. When a Spot BUY order fills, the execution client automatically attempts to repay any outstanding borrows for that coin.
-2. The repayment uses Bybit's `no-convert-repay` endpoint, which repays the full outstanding borrow amount.
-3. If the repayment fails (e.g., API error), it logs the error but does not crash the execution client.
-4. Repayments are automatically skipped during Bybit's UTC blackout window (see below).
+1. When a Spot BUY order fully fills on the standard `execution` channel, the execution client
+   attempts to repay the base coin borrow.
+1. The repayment is capped at the lesser of the outstanding borrow and the base quantity acquired
+   across the order's executions.
+1. The execution client uses Bybit's converting repay endpoint to cover base-denominated trading
+   fees. For MNT, which Bybit excludes from converting repayment, it uses no-convert repay and
+   subtracts MNT-denominated fees from the amount.
+1. A failed request or `FA` result status is logged without crashing the execution client. A `P`
+   result status is logged as processing, not complete.
+1. The execution client defers queued repayments during Bybit's UTC blackout window.
 
 **Example:**
 
@@ -487,7 +494,7 @@ config = BybitExecClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
     product_types=[BybitProductType.SPOT],
-    auto_repay_spot_borrows=True,  # Default is True
+    auto_repay_spot_borrows=True,  # Opt in; default is False
 )
 ```
 
@@ -574,30 +581,27 @@ class MyStrategy(Strategy):
             self.log.info(f"Borrow amount for {data.coin}: {data.borrow_amount}")
 ```
 
-### UTC blackout window
+### Rust v2 UTC blackout window
 
-Bybit blocks `no-convert-repay` operations daily during **04:00-05:30 UTC** for interest calculation processing. NautilusTrader automatically detects this window and skips repayment attempts, logging a warning instead.
+Bybit blocks both repayment endpoints from **4 minutes through 5 minutes 30 seconds past every UTC
+hour** for interest calculation. Auto-repayment keeps the request queued and attempts it at 5
+minutes 31 seconds past the hour.
 
-During the blackout window, any BUY order fills will trigger a warning like:
+### Rust v2 auto-repayment configuration
 
-```
-Skipping borrow repayment for BTC due to Bybit blackout window (04:00-05:30 UTC daily). Will need manual repayment.
-```
+| Option                    | Type   | Default | Description                                                                                                                |
+| ------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `auto_repay_spot_borrows` | `bool` | `False` | If `True`, automatically repay Spot margin borrows after BUY orders fully fill. Repayment is deferred during the blackout. |
 
-**Important:** If your BUY orders fill during the blackout window, you'll need to manually repay the borrows after 05:30 UTC to stop interest accrual, or wait for the next BUY order fill outside the blackout window.
-
-### Configuration options
-
-| Option                    | Type   | Default | Description                                                                                                                                                         |
-| ------------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auto_repay_spot_borrows` | `bool` | `True`  | If `True`, automatically repay spot margin borrows after BUY orders fill. Prevents interest accrual on borrowed coins. Repayment is skipped during blackout window. |
-
-### Important notes
+### Rust v2 auto-repayment notes
 
 - Auto-repayment only triggers on **Spot BUY orders**, not derivatives.
-- Repayment uses the `no-convert-repay` endpoint which repays the full outstanding borrow by default.
-- The feature gracefully handles API errors and logs failures without crashing.
-- Manual borrowing is still required before opening short positions unless auto-borrow is enabled on your Bybit account.
+- Repayment uses converting repayment except for MNT, which uses no-convert repayment.
+- Bybit documents the endpoint restrictions and result statuses in
+  [Manual Repay](https://bybit-exchange.github.io/docs/v5/account/repay) and
+  [Manual Repay Without Asset Conversion](https://bybit-exchange.github.io/docs/v5/account/no-convert-repay).
+- Manual borrowing is still required before opening short positions unless auto-borrow is enabled
+  on your Bybit account.
 
 ### Spot trading limitations
 

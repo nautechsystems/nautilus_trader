@@ -30,7 +30,8 @@ use nautilus_bybit::{
         consts::BYBIT_VENUE,
         enums::{
             BybitAccountType, BybitBboSideType, BybitMarginMode, BybitOrderType, BybitPositionIdx,
-            BybitProductType, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
+            BybitProductType, BybitRepayStatus, BybitTpSlMode, BybitTriggerType,
+            BybitUnifiedMarginStatus,
         },
     },
     http::{
@@ -685,12 +686,17 @@ async fn handle_no_convert_repay(
             .into_response();
     }
 
-    // Return successful repay response
+    let result_status = if repay_req["coin"] == "FAIL" {
+        "FA"
+    } else {
+        "SU"
+    };
+
     Json(json!({
         "retCode": 0,
         "retMsg": "OK",
         "result": {
-            "resultStatus": "SU"
+            "resultStatus": result_status
         },
         "retExtInfo": {},
         "time": 1704470400123i64
@@ -719,7 +725,7 @@ async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -
     }
 
     // Parse JSON body
-    let Ok(_): Result<Value, _> = serde_json::from_slice(&body) else {
+    let Ok(repay_req): Result<Value, _> = serde_json::from_slice(&body) else {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -733,12 +739,17 @@ async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -
             .into_response();
     };
 
-    // Return successful repay response
+    let result_status = if repay_req["coin"] == "FAIL" {
+        "FA"
+    } else {
+        "SU"
+    };
+
     Json(json!({
         "retCode": 0,
         "retMsg": "OK",
         "result": {
-            "resultStatus": "SU"
+            "resultStatus": result_status
         },
         "retExtInfo": {},
         "time": 1704470400123i64
@@ -2184,7 +2195,7 @@ async fn test_repay_spot_borrow_with_amount() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
-    assert_eq!(response.result.result_status, "SU");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
 }
 
 #[rstest]
@@ -2211,7 +2222,7 @@ async fn test_repay_spot_borrow_without_amount() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
-    assert_eq!(response.result.result_status, "SU");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
 }
 
 #[rstest]
@@ -2254,7 +2265,7 @@ async fn test_repay_spot_borrow_with_conversion_with_amount() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
-    assert_eq!(response.result.result_status, "SU");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
 }
 
 #[rstest]
@@ -2284,7 +2295,7 @@ async fn test_repay_spot_borrow_with_conversion_without_amount() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
-    assert_eq!(response.result.result_status, "SU");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
 }
 
 #[rstest]
@@ -2300,6 +2311,43 @@ async fn test_repay_spot_borrow_with_conversion_requires_credentials() {
         .repay_spot_borrow_with_conversion("ETH", Some(amount))
         .await;
     assert!(result.is_err(), "Should fail without credentials");
+}
+
+#[rstest]
+#[case::without_conversion(false)]
+#[case::with_conversion(true)]
+#[tokio::test]
+async fn test_repay_spot_borrow_rejects_failed_result_status(#[case] with_conversion: bool) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let amount = Some(Quantity::new_checked(0.5, 8).unwrap());
+
+    let result = if with_conversion {
+        client
+            .repay_spot_borrow_with_conversion("FAIL", amount)
+            .await
+            .map(|_| ())
+    } else {
+        client.repay_spot_borrow("FAIL", amount).await.map(|_| ())
+    };
+
+    let error = result.expect_err("failed result status should return an error");
+    assert!(
+        error.to_string().contains("result status FA"),
+        "Unexpected error: {error}"
+    );
 }
 
 #[rstest]

@@ -1074,6 +1074,23 @@ pub enum BybitMarginAction {
     GetBorrowAmount,
 }
 
+/// Result status returned by Bybit repayment endpoints.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, strum::Display, Serialize, Deserialize)]
+pub enum BybitRepayStatus {
+    /// The repayment is processing.
+    #[serde(rename = "P")]
+    #[strum(serialize = "P")]
+    Processing,
+    /// The repayment succeeded.
+    #[serde(rename = "SU")]
+    #[strum(serialize = "SU")]
+    Success,
+    /// The repayment failed.
+    #[serde(rename = "FA")]
+    #[strum(serialize = "FA")]
+    Failed,
+}
+
 /// Position status enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]

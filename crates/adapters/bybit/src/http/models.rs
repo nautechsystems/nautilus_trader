@@ -24,9 +24,9 @@ use crate::common::{
         BybitAccountType, BybitApiKeyType, BybitCancelType, BybitContractType, BybitCreateType,
         BybitExecType, BybitInnovationFlag, BybitInstrumentStatus, BybitMarginMode,
         BybitMarginTrading, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
-        BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType,
-        BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
-        BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
+        BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType,
+        BybitRepayStatus, BybitSmpType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce,
+        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
     },
     models::{
         BybitCursorList, BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
@@ -1401,7 +1401,7 @@ pub type BybitBorrowResponse = BybitResponse<BybitBorrowResult>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitNoConvertRepayResult {
-    pub result_status: String,
+    pub result_status: BybitRepayStatus,
 }
 
 /// Response alias for no-convert repay requests.
@@ -1415,7 +1415,7 @@ pub type BybitNoConvertRepayResponse = BybitResponse<BybitNoConvertRepayResult>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitRepayResult {
-    pub result_status: String,
+    pub result_status: BybitRepayStatus,
 }
 
 /// Response alias for manual repay requests.
@@ -2159,7 +2159,7 @@ mod tests {
 
         assert_eq!(response.ret_code, 0);
         assert_eq!(response.ret_msg, "OK");
-        assert_eq!(response.result.result_status, "SU");
+        assert_eq!(response.result.result_status, BybitRepayStatus::Success);
     }
 
     #[rstest]
@@ -2178,7 +2178,7 @@ mod tests {
 
         assert_eq!(response.ret_code, 0);
         assert_eq!(response.ret_msg, "success");
-        assert_eq!(response.result.result_status, "P");
+        assert_eq!(response.result.result_status, BybitRepayStatus::Processing);
     }
 
     #[rstest]

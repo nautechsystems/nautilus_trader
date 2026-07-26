@@ -93,7 +93,7 @@ use crate::common::{
     enums::{
         BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
         BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType, BybitTpSlMode,
+        BybitPositionMode, BybitProductType, BybitRepayStatus, BybitTpSlMode,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2323,10 +2323,13 @@ impl BybitHttpClient {
         amount: Option<Quantity>,
     ) -> anyhow::Result<BybitNoConvertRepayResponse> {
         let amount_str = amount.as_ref().map(|q| q.to_string());
-        self.inner
+        let response = self
+            .inner
             .no_convert_repay(coin, amount_str.as_deref())
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to repay spot borrow for {coin}: {e}"))
+            .map_err(|e| anyhow::anyhow!("Failed to repay spot borrow for {coin}: {e}"))?;
+        Self::ensure_repay_accepted(coin, response.result.result_status)?;
+        Ok(response)
     }
 
     /// Repays spot borrows for a specific coin, converting other assets if required.
@@ -2352,12 +2355,23 @@ impl BybitHttpClient {
         amount: Option<Quantity>,
     ) -> anyhow::Result<BybitRepayResponse> {
         let amount_str = amount.as_ref().map(|q| q.to_string());
-        self.inner
+        let response = self
+            .inner
             .repay(Some(coin), amount_str.as_deref())
             .await
             .map_err(|e| {
                 anyhow::anyhow!("Failed to repay spot borrow (with conversion) for {coin}: {e}")
-            })
+            })?;
+        Self::ensure_repay_accepted(coin, response.result.result_status)?;
+        Ok(response)
+    }
+
+    fn ensure_repay_accepted(coin: &str, status: BybitRepayStatus) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            status != BybitRepayStatus::Failed,
+            "Bybit repay for {coin} returned result status {status}"
+        );
+        Ok(())
     }
 
     /// Generate SPOT position reports from wallet balances.

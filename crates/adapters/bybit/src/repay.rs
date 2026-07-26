@@ -25,27 +25,39 @@
 //! bought), so the amount actually received is slightly less than the amount
 //! borrowed. Repayment therefore uses the venue's manual (converting) repay
 //! endpoint, which draws that small shortfall from other assets rather than
-//! failing on an insufficient debt-coin balance.
+//! failing on an insufficient debt-coin balance. MNT uses no-convert repayment
+//! because Bybit excludes it from converting repayment.
 
 use std::time::Duration;
 
+use anyhow::Context;
 use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_model::types::Quantity;
+use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
-use crate::http::client::BybitHttpClient;
+use crate::{common::enums::BybitRepayStatus, http::client::BybitHttpClient};
 
-/// Start of Bybit's hourly repayment blackout, in seconds past the hour (mm:04:00).
 const BLACKOUT_START_SEC: u64 = 4 * 60;
-/// End of Bybit's hourly repayment blackout, in seconds past the hour (mm:05:30).
 const BLACKOUT_END_SEC: u64 = 5 * 60 + 30;
 
-/// A request to repay an outstanding SPOT borrow for `coin`, capped at
-/// `quantity` (the amount just bought).
+// Bybit excludes MNT from convert-repay but permits no-convert repayment:
+// https://bybit-exchange.github.io/docs/v5/account/repay
+const CONVERT_REPAY_UNSUPPORTED_COIN: &str = "MNT";
+
 #[derive(Clone, Debug)]
 pub(crate) struct RepayRequest {
     pub(crate) coin: Ustr,
     pub(crate) quantity: Quantity,
+    pub(crate) base_fee: Decimal,
+    pub(crate) repayment_precision: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RepayOutcome {
+    Processing,
+    Repaid,
+    Skipped,
 }
 
 /// Delay to wait out Bybit's hourly repayment blackout (mm:04:00-mm:05:30 UTC,
@@ -78,53 +90,89 @@ pub(crate) async fn run_spot_repay_consumer(
             tokio::time::sleep(wait).await;
         }
 
-        repay_coin(&http_client, req.coin, req.quantity).await;
+        if let Err(e) = repay_coin(&http_client, req).await {
+            log::error!("Failed to repay spot borrow: {e}");
+        }
     }
 
     log::debug!("Spot repay consumer stopped");
 }
 
 /// Repays the outstanding borrow for a single coin, capped at `bought`.
-async fn repay_coin(http_client: &BybitHttpClient, coin: Ustr, bought: Quantity) {
+async fn repay_coin(
+    http_client: &BybitHttpClient,
+    request: RepayRequest,
+) -> anyhow::Result<RepayOutcome> {
+    let RepayRequest {
+        coin,
+        quantity: bought,
+        base_fee,
+        repayment_precision,
+    } = request;
     let coin_str = coin.as_str();
 
-    let outstanding = match http_client.get_spot_borrow_amount(coin_str).await {
-        Ok(amount) => amount,
-        Err(e) => {
-            log::error!("Failed to query borrow amount for {coin}: {e}");
-            return;
-        }
-    };
+    let outstanding = http_client
+        .get_spot_borrow_amount(coin_str)
+        .await
+        .with_context(|| format!("failed to query borrow amount for {coin}"))?;
 
     if outstanding.is_zero() {
         log::debug!("No outstanding borrow for {coin}");
-        return;
+        return Ok(RepayOutcome::Skipped);
     }
 
-    let repay = outstanding.min(bought.as_decimal());
-    let repay_qty = match Quantity::from_decimal_dp(repay, bought.precision) {
-        Ok(qty) => qty,
-        Err(e) => {
-            log::error!("Failed to build repay quantity for {coin} ({repay}): {e}");
-            return;
-        }
+    let uses_conversion = coin_str != CONVERT_REPAY_UNSUPPORTED_COIN;
+    let available = if uses_conversion {
+        bought.as_decimal()
+    } else {
+        (bought.as_decimal() - base_fee).max(Decimal::ZERO)
     };
+    let precision = if uses_conversion {
+        bought.precision
+    } else {
+        repayment_precision
+    };
+    let repay = outstanding.min(available);
+    let repay = repay.round_dp_with_strategy(u32::from(precision), RoundingStrategy::ToZero);
+    let repay_qty = Quantity::from_decimal_dp(repay, precision)
+        .with_context(|| format!("failed to build repay quantity for {coin} ({repay})"))?;
 
     if repay_qty.is_zero() {
-        return;
+        return Ok(RepayOutcome::Skipped);
     }
 
-    // The BUY fee is charged in the base coin, so the received amount is a touch
-    // below the borrow. Use the converting repay so that small shortfall is
-    // covered from other assets instead of failing with an insufficient balance.
-    match http_client
-        .repay_spot_borrow_with_conversion(coin_str, Some(repay_qty))
-        .await
-    {
-        Ok(_) => log::info!(
-            "Repaid {repay} {coin} spot borrow (outstanding was {outstanding}, bought {bought})"
-        ),
-        Err(e) => log::error!("Failed to repay spot borrow for {coin}: {e}"),
+    let status = if uses_conversion {
+        http_client
+            .repay_spot_borrow_with_conversion(coin_str, Some(repay_qty))
+            .await?
+            .result
+            .result_status
+    } else {
+        http_client
+            .repay_spot_borrow(coin_str, Some(repay_qty))
+            .await?
+            .result
+            .result_status
+    };
+
+    match status {
+        BybitRepayStatus::Success => {
+            log::info!(
+                "Repaid {repay_qty} {coin} spot borrow \
+                 (outstanding was {outstanding}, bought {bought})"
+            );
+            Ok(RepayOutcome::Repaid)
+        }
+        BybitRepayStatus::Processing => {
+            log::info!(
+                "Repayment of {repay_qty} {coin} spot borrow is processing \
+                 (outstanding was {outstanding}, bought {bought})"
+            );
+            Ok(RepayOutcome::Processing)
+        }
+        BybitRepayStatus::Failed => {
+            anyhow::bail!("Bybit repay for {coin} returned result status {status}")
+        }
     }
 }
 
@@ -149,9 +197,11 @@ mod tests {
 
     type RepayBodies = Arc<Mutex<Vec<Value>>>;
 
-    #[derive(Clone, Default)]
+    #[derive(Clone)]
     struct MockVenue {
         repay_bodies: RepayBodies,
+        no_convert_repay_bodies: RepayBodies,
+        result_status: &'static str,
     }
 
     fn wallet_with_borrow(coin: &str, spot_borrow: &str) -> Value {
@@ -162,18 +212,30 @@ mod tests {
         let coins = wallet["result"]["list"][0]["coin"]
             .as_array_mut()
             .expect("fixture has a coin list");
-        let entry = coins
-            .iter_mut()
-            .find(|entry| entry["coin"] == coin)
-            .expect("fixture has the requested coin");
+        let entry = if let Some(index) = coins.iter().position(|entry| entry["coin"] == coin) {
+            &mut coins[index]
+        } else {
+            let mut entry = coins.first().expect("fixture has a coin").clone();
+            entry["coin"] = json!(coin);
+            coins.push(entry);
+            coins.last_mut().expect("inserted coin is present")
+        };
         entry["spotBorrow"] = json!(spot_borrow);
 
         wallet
     }
 
-    async fn spawn_mock_venue(wallet: Option<Value>) -> (String, RepayBodies) {
-        let state = MockVenue::default();
+    async fn spawn_mock_venue(
+        wallet: Option<Value>,
+        result_status: &'static str,
+    ) -> (String, RepayBodies, RepayBodies) {
+        let state = MockVenue {
+            repay_bodies: RepayBodies::default(),
+            no_convert_repay_bodies: RepayBodies::default(),
+            result_status,
+        };
         let repay_bodies = state.repay_bodies.clone();
+        let no_convert_repay_bodies = state.no_convert_repay_bodies.clone();
 
         let router = Router::new()
             .route(
@@ -189,6 +251,10 @@ mod tests {
                 }),
             )
             .route("/v5/account/repay", post(handle_repay))
+            .route(
+                "/v5/account/no-convert-repay",
+                post(handle_no_convert_repay),
+            )
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -198,17 +264,33 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
 
-        (format!("http://{addr}"), repay_bodies)
+        (
+            format!("http://{addr}"),
+            repay_bodies,
+            no_convert_repay_bodies,
+        )
     }
 
     async fn handle_repay(State(state): State<MockVenue>, body: axum::body::Bytes) -> Response {
         let params: Value = serde_json::from_slice(&body).expect("valid repay body");
         state.repay_bodies.lock().unwrap().push(params);
+        repay_response(state.result_status)
+    }
 
+    async fn handle_no_convert_repay(
+        State(state): State<MockVenue>,
+        body: axum::body::Bytes,
+    ) -> Response {
+        let params: Value = serde_json::from_slice(&body).expect("valid repay body");
+        state.no_convert_repay_bodies.lock().unwrap().push(params);
+        repay_response(state.result_status)
+    }
+
+    fn repay_response(result_status: &str) -> Response {
         Json(json!({
             "retCode": 0,
             "retMsg": "OK",
-            "result": {"resultStatus": "SU"},
+            "result": {"resultStatus": result_status},
             "retExtInfo": {},
             "time": 1704470400123i64
         }))
@@ -230,6 +312,15 @@ mod tests {
         .unwrap()
     }
 
+    fn repay_request(coin: &str, bought: f64, precision: u8) -> RepayRequest {
+        RepayRequest {
+            coin: Ustr::from(coin),
+            quantity: Quantity::new(bought, precision),
+            base_fee: Decimal::ZERO,
+            repayment_precision: precision,
+        }
+    }
+
     fn single_repay_amount(bodies: &RepayBodies, coin: &str) -> Decimal {
         let bodies = bodies.lock().unwrap();
         assert_eq!(bodies.len(), 1, "Expected exactly one repay request");
@@ -247,19 +338,61 @@ mod tests {
     #[rstest]
     #[case::capped_at_outstanding("5.0", 10.0, dec!(5.0))]
     #[case::capped_at_bought("10.0", 0.25, dec!(0.25))]
+    #[case::truncates_at_precision("0.12356", 1.0, dec!(0.123))]
     #[tokio::test]
     async fn test_repay_coin_repays_lesser_of_outstanding_and_bought(
         #[case] outstanding: &str,
         #[case] bought: f64,
         #[case] expected: Decimal,
     ) {
-        let (base_url, repay_bodies) =
-            spawn_mock_venue(Some(wallet_with_borrow("ETH", outstanding))).await;
+        let (base_url, repay_bodies, _) =
+            spawn_mock_venue(Some(wallet_with_borrow("ETH", outstanding)), "SU").await;
         let client = test_client(base_url);
 
-        repay_coin(&client, Ustr::from("ETH"), Quantity::new(bought, 3)).await;
+        let outcome = repay_coin(&client, repay_request("ETH", bought, 3))
+            .await
+            .unwrap();
 
+        assert_eq!(outcome, RepayOutcome::Repaid);
         assert_eq!(single_repay_amount(&repay_bodies, "ETH"), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_repay_coin_uses_no_convert_for_mnt_and_excludes_base_fee() {
+        let (base_url, repay_bodies, no_convert_repay_bodies) =
+            spawn_mock_venue(Some(wallet_with_borrow("MNT", "1.0")), "SU").await;
+        let client = test_client(base_url);
+        let request = RepayRequest {
+            coin: Ustr::from("MNT"),
+            quantity: Quantity::from("1.000"),
+            base_fee: dec!(0.0015),
+            repayment_precision: 8,
+        };
+
+        let outcome = repay_coin(&client, request).await.unwrap();
+
+        assert_eq!(outcome, RepayOutcome::Repaid);
+        assert!(repay_bodies.lock().unwrap().is_empty());
+        assert_eq!(
+            single_repay_amount(&no_convert_repay_bodies, "MNT"),
+            dec!(0.9985)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_repay_coin_reports_processing_status() {
+        let (base_url, repay_bodies, _) =
+            spawn_mock_venue(Some(wallet_with_borrow("ETH", "1.0")), "P").await;
+        let client = test_client(base_url);
+
+        let outcome = repay_coin(&client, repay_request("ETH", 1.0, 3))
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, RepayOutcome::Processing);
+        assert_eq!(single_repay_amount(&repay_bodies, "ETH"), dec!(1.0));
     }
 
     #[rstest]
@@ -267,12 +400,15 @@ mod tests {
     #[case::outstanding_below_one_tick("0.000000012")]
     #[tokio::test]
     async fn test_repay_coin_skips_when_nothing_to_repay(#[case] outstanding: &str) {
-        let (base_url, repay_bodies) =
-            spawn_mock_venue(Some(wallet_with_borrow("ETH", outstanding))).await;
+        let (base_url, repay_bodies, _) =
+            spawn_mock_venue(Some(wallet_with_borrow("ETH", outstanding)), "SU").await;
         let client = test_client(base_url);
 
-        repay_coin(&client, Ustr::from("ETH"), Quantity::new(1.0, 3)).await;
+        let outcome = repay_coin(&client, repay_request("ETH", 1.0, 3))
+            .await
+            .unwrap();
 
+        assert_eq!(outcome, RepayOutcome::Skipped);
         assert!(
             repay_bodies.lock().unwrap().is_empty(),
             "Should not repay an outstanding borrow of {outstanding}"
@@ -282,11 +418,12 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_repay_coin_skips_when_borrow_query_fails() {
-        let (base_url, repay_bodies) = spawn_mock_venue(None).await;
+        let (base_url, repay_bodies, _) = spawn_mock_venue(None, "SU").await;
         let client = test_client(base_url);
 
-        repay_coin(&client, Ustr::from("ETH"), Quantity::new(1.0, 3)).await;
+        let result = repay_coin(&client, repay_request("ETH", 1.0, 3)).await;
 
+        assert!(result.is_err());
         assert!(
             repay_bodies.lock().unwrap().is_empty(),
             "Should not repay when the borrow amount is unknown"

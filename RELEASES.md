@@ -141,6 +141,7 @@ adapter set. The following limits remain deferred:
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
 - Changed Architect AX request models and low-level APIs to current schemas; unverified stop-limit orders are rejected
 - Changed BitMEX quanto multipliers from raw to settlement-currency units (#4507), thanks for reporting @4px4d9cdby-star
+- Changed Bybit repay result status fields from `String` to `BybitRepayStatus`
 - Removed Polymarket v2 `ack_timeout_secs` config field; the buffer-and-drain submit path has no acknowledgment wait to bound
 
 ### Security
@@ -304,6 +305,7 @@ adapter set. The following limits remain deferred:
 - Fixed Blockchain RPC pool snapshots panicking on incomplete topology
 - Fixed Bybit post-only rejections omitting the `due_post_only` flag (#4500), thanks @dxwil
 - Fixed Bybit spot instruments missing `min_notional` and the newer lot-size fields (#4527), thanks @dxwil
+- Fixed Bybit v2 spot margin auto-repayment quantities, MNT fees, and result handling
 - Fixed Bybit WebSocket fills hardcoding the commission currency to the quote currency (#4536), thanks @dxwil
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
 - Fixed Databento MBO fill/no-action decoding and replay gating (#4446), thanks @taozle
@@ -409,6 +411,7 @@ adapter set. The following limits remain deferred:
 - Upgraded `pyarrow` to v25.0.0
 
 ### Documentation Updates
+- Updated Bybit v2 spot margin auto-repayment behavior and configuration
 - Added the v1-to-v2 property, method, and callback migration matrix
 - Added canonical references and doc comments for portfolio statistics
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs
