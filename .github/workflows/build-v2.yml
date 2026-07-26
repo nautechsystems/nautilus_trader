@@ -18,24 +18,56 @@ on:
       - develop
       - nightly
       - master
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+    branches:
+      - develop
+
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref_name, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  AUDIT_PR: >-
+    ${{ github.event_name == 'pull_request'
+    && (!github.event.pull_request.head.repo.full_name
+    || github.event.pull_request.head.repo.full_name != github.repository) }}
+  UNTRUSTED_PR: >-
+    ${{ github.event_name == 'pull_request'
+    && (!github.event.pull_request.head.repo.full_name
+    || github.event.pull_request.head.repo.full_name != github.repository
+    || !github.event.pull_request.user.login
+    || github.event.pull_request.user.login == 'dependabot[bot]') }}
   PACKAGE_DIR: python
 
 jobs:
   plan:
+    name: plan-v2
     runs-on: ubuntu-latest
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
+      untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: >-
+            ${{ env.AUDIT_PR == 'true' && 'audit'
+            || vars.STEP_SECURITY_EGRESS_POLICY
+            || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Export CI policy
+        id: policy
+        run: echo "untrusted_pr=${UNTRUSTED_PR}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -48,31 +80,41 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    # Fork PRs stay on GitHub-hosted runners.
+    name: pre-commit-v2
+    if: ${{ !cancelled() }}
+    needs: plan
+    # Untrusted PRs stay on GitHub-hosted runners
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     env:
-      # Self-hosted keeps Rust artifacts outside the workspace.
+      # Self-hosted keeps Rust artifacts outside the workspace
       CARGO_TARGET_DIR: >-
-        ${{ github.event.pull_request.head.repo.fork
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
         && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
       CARGO_CI_PROFILE: >-
-        ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr' || 'nextest' }}
       # Scopes incremental clippy/doc checks; empty for non-PR/push events.
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: >-
+            ${{ env.AUDIT_PR == 'true' && 'audit'
+            || vars.STEP_SECURITY_EGRESS_POLICY
+            || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -95,10 +137,12 @@ jobs:
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
           build-type: "pre-commit"
-          rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+          rust-cache-enabled: "false"
 
-      - name: Limit Cargo build jobs on fork PR runners
-        if: github.event.pull_request.head.repo.fork
+      - name: Limit Cargo build jobs on untrusted PR runners
+        if: >-
+          github.event_name == 'pull_request'
+          && needs.plan.outputs.untrusted_pr != 'false'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Run pre-commit
@@ -116,17 +160,30 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-    runs-on: [self-hosted, Linux, X64, build-v2]
+    runs-on: >-
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
+      && 'ubuntu-22.04'
+      || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     defaults:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
-      CARGO_CI_PROFILE: nextest
+      CARGO_CI_PROFILE: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr' || 'nextest' }}
+      MATURIN_PROFILE: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr-wheel' || 'release' }}
       RUST_BACKTRACE: 1
-      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
-      # giving us persistent on-disk Rust artifact reuse between runs.
-      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/py${{ matrix.python-version }}
+      # Self-hosted keeps Rust artifacts outside the workspace
+      CARGO_TARGET_DIR: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && format('{0}/target', github.workspace)
+        || format('/home/runner/.cache/cargo-target/py{0}', matrix.python-version) }}
     # yamllint disable rule:line-length
     services:
       redis:
@@ -155,7 +212,10 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: >-
+            ${{ env.AUDIT_PR == 'true' && 'audit'
+            || vars.STEP_SECURITY_EGRESS_POLICY
+            || 'block' }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -175,8 +235,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
-          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
           rust-cache-enabled: "false"
+
+      - name: Limit Cargo build jobs on untrusted PR runners
+        if: >-
+          github.event_name == 'pull_request'
+          && needs.plan.outputs.untrusted_pr != 'false'
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Install Nautilus CLI
         if: needs.plan.outputs.run-rust-tests == 'true'
@@ -242,7 +307,7 @@ jobs:
         run: |
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
-            maturin build --release --out ../dist
+            maturin build --profile "$MATURIN_PROFILE" --out ../dist
 
       - name: Run v2 Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -251,8 +316,14 @@ jobs:
       - name: Check generated v2 file drift
         # Keep this 3.13 condition in sync with the matrix so drift is checked once per run.
         if: matrix.python-version == '3.13'
+        env:
+          V2_CARGO_TARGET_DIR: >-
+            ${{ github.event_name == 'pull_request'
+            && needs.plan.outputs.untrusted_pr != 'false'
+            && format('{0}/target/py-stubs-v2', github.workspace)
+            || '/home/runner/.cache/cargo-target/py-stubs-v2' }}
         run: |
-          make py-stubs-v2 V2_CARGO_TARGET_DIR=/home/runner/.cache/cargo-target/py-stubs-v2
+          make py-stubs-v2 V2_CARGO_TARGET_DIR="$V2_CARGO_TARGET_DIR"
           bash scripts/ci/check-v2-generated-drift.bash
 
       - name: Upload wheel artifact

@@ -29,10 +29,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   verification. The nightly merge builds and publishes wheels for every supported platform.
   Includes a plan step that skips builds on docs-only changes and skips Rust tests on Python-only
   changes.
-- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux x86 builds on the
-  self-hosted `build-v2` pool and runs the full Python test suite against wheels for every supported
-  platform during the nightly merge. This workflow owns cross-platform nightly validation outside
-  the v1 wheel publication jobs.
+- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs for every pull request targeting
+  `develop`; its plan step skips builds for docs-only changes and skips Rust tests for Python-only
+  changes. Runs Linux x86 builds on the self-hosted `build-v2` pool and the full Python test suite
+  against wheels for every supported platform during the nightly merge. This workflow owns
+  cross-platform nightly validation outside the v1 wheel publication jobs.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
@@ -124,8 +125,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   artifacts. `publish-github-release` verifies the final draft asset set, publishes the draft
   release, and verifies GitHub's release attestation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
-  data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
-  to push events to prevent PR cache pollution.
+  data caches speed up workflows while preserving hermetic builds. Build-matrix Rust cache saves
+  are restricted to push events. Self-hosted jobs use persistent target directories instead.
 - **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
   mainline branches are never cancelled.
 - **Runners**: Cross-platform wheel jobs use Depot 8-core runners for Linux and Windows, except
@@ -141,9 +142,12 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   declare a GitHub Environment can override the repo or org value with an environment-scoped variable. The
   publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. Security audit
   jobs read repo and org variables directly and run in audit mode for fork PRs when variables are absent.
-- **Fork PR handling**: `build.yml` falls back to `egress-policy: audit` for fork PRs. Forks cannot
-  access repo or org variables, so the allow lists would be empty and block all network access. Fork PRs
-  run with read-only permissions and no access to secrets, so audit mode is safe.
+- **Untrusted PR handling**: `build.yml` and `build-v2.yml` use self-hosted runners only for
+  same-repository, non-Dependabot PRs with a known author. Fork and missing-origin PRs use
+  GitHub-hosted runners with `egress-policy: audit` because they cannot read the repository or
+  organization endpoint variables. Dependabot and missing-author PRs also use GitHub-hosted
+  runners, but retain the configured egress policy, which defaults to `block`. These jobs run with
+  read-only permissions and no access to Actions secrets.
 
 ### Security gate override
 

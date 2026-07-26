@@ -57,7 +57,8 @@ else
   # the merge-base against the current base branch head so the diff reflects
   # only what this PR actually changes relative to where it will land.
   if [[ -z "${BASE_REF:-}" ]]; then
-    run_all "BASE_REF not set: running all jobs"
+    echo "::error::BASE_REF is required for pull_request events" >&2
+    exit 1
   fi
   if ! merge_base="$(git merge-base "origin/${BASE_REF}" HEAD 2> /dev/null)"; then
     run_all "Failed to compute merge-base against origin/${BASE_REF}: running all jobs"

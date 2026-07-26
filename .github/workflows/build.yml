@@ -16,11 +16,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Fork PRs lack repo/org vars, so audit instead of block.
-  EGRESS_POLICY: >-
-    ${{ github.event.pull_request.head.repo.fork && 'audit'
-    || vars.STEP_SECURITY_EGRESS_POLICY
-    || 'block' }}
+  AUDIT_PR: >-
+    ${{ github.event_name == 'pull_request'
+    && (!github.event.pull_request.head.repo.full_name
+    || github.event.pull_request.head.repo.full_name != github.repository) }}
+  UNTRUSTED_PR: >-
+    ${{ github.event_name == 'pull_request'
+    && (!github.event.pull_request.head.repo.full_name
+    || github.event.pull_request.head.repo.full_name != github.repository
+    || !github.event.pull_request.user.login
+    || github.event.pull_request.user.login == 'dependabot[bot]') }}
+  EGRESS_POLICY: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
 
 jobs:
   plan:
@@ -28,14 +34,19 @@ jobs:
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
+      untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Export CI policy
+        id: policy
+        run: echo "untrusted_pr=${UNTRUSTED_PR}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -53,19 +64,25 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    # Fork PRs stay GitHub-hosted.
+    if: ${{ !cancelled() }}
+    needs: plan
+    # Untrusted PRs stay GitHub-hosted
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     env:
-      # Self-hosted keeps Rust artifacts outside the workspace.
+      # Self-hosted keeps Rust artifacts outside the workspace
       CARGO_TARGET_DIR: >-
-        ${{ github.event.pull_request.head.repo.fork
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
         && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
       CARGO_CI_PROFILE: >-
-        ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr' || 'nextest' }}
       # Scopes incremental clippy/doc checks; empty for non-PR/push events.
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -73,7 +90,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -99,10 +116,14 @@ jobs:
           free-disk-space: "true"
           build-type: "pre-commit"
           rust-cache-enabled: >-
-            ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+            ${{ github.event_name == 'pull_request'
+            && needs.plan.outputs.untrusted_pr != 'false'
+            && 'true' || 'false' }}
 
-      - name: Limit Cargo build jobs on GitHub-hosted runners
-        if: github.event.pull_request.head.repo.fork
+      - name: Limit Cargo build jobs on untrusted PR runners
+        if: >-
+          github.event_name == 'pull_request'
+          && needs.plan.outputs.untrusted_pr != 'false'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Run pre-commit
@@ -120,7 +141,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -152,7 +173,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -187,10 +208,11 @@ jobs:
       run:
         shell: bash
     # Ubuntu 22.04 (glibc 2.35) keeps the wheel runtime range broad.
-    # Fork PRs stay GitHub-hosted.
+    # Untrusted PRs stay GitHub-hosted
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
     runs-on: >-
-      ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
       || github.event_name == 'pull_request'
       && fromJson('["self-hosted", "Linux", "X64", "build"]')
@@ -202,13 +224,16 @@ jobs:
       - pre-commit
     env:
       BUILD_MODE: >-
-        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
         && 'ci-pr' || 'release' }}
       CARGO_CI_PROFILE: >-
-        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
         && 'ci-pr' || 'nextest' }}
       PARALLEL_BUILD: >-
-        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
         && 'false' || 'true' }}
       # Self-hosted develop pushes keep Rust artifacts outside the workspace so
       # they survive actions/checkout's git clean -ffdx between runs.
@@ -243,7 +268,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -271,7 +296,9 @@ jobs:
           rust-cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Limit Cargo build jobs on GitHub-hosted runners
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        if: >-
+          github.event_name == 'pull_request'
+          && needs.plan.outputs.untrusted_pr != 'false'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Install Nautilus CLI
@@ -291,13 +318,13 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
-      # Fork-PR runners vary in disk size; fail early with a clear message
+      # GitHub-hosted PR runners vary in disk size; fail early with a clear message
       # rather than a cryptic linker Bus error when a small VM runs out.
       - name: Check available disk space
         if: >-
           needs.plan.outputs.run-rust-tests == 'true'
           && github.event_name == 'pull_request'
-          && github.event.pull_request.head.repo.fork
+          && needs.plan.outputs.untrusted_pr != 'false'
         run: |
           echo "::group::Disk space before Rust tests"
           df -h /
@@ -414,7 +441,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -519,7 +546,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -759,7 +786,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -821,7 +848,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -898,7 +925,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -956,7 +983,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1027,7 +1054,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1073,7 +1100,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1161,7 +1188,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1205,7 +1232,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1262,7 +1289,7 @@ jobs:
       # Security hardening
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1320,7 +1347,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1367,7 +1394,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1407,7 +1434,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1496,7 +1523,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1605,7 +1632,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
