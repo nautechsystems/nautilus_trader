@@ -182,7 +182,7 @@ else
 CARGO_FEATURES := $(BASE_FEATURES)
 endif
 CORE_SELECTED_FEATURE_LIST := $(filter-out hypersync,$(subst $(comma),$(space),$(CARGO_FEATURES)))
-CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEATURE_LIST)))
+CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEATURE_LIST))),nautilus-serialization/sbe
 
 # Standard-precision (64-bit) selection, shared by the test and clippy targets.
 # Two independent routes re-enable high precision, and both must be closed or the build
