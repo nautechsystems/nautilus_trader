@@ -1520,26 +1520,6 @@ mod tests {
         registry
     }
 
-    fn wait_for_high_watermark(store: &EventStoreLifecycle, expected: u64) {
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= expected {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "event store high_watermark did not reach {expected} within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-    }
-
     #[derive(Debug, Clone)]
     struct SharedMemoryBackend(Arc<Mutex<MemoryBackend>>);
 
@@ -1765,9 +1745,7 @@ mod tests {
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.test.audit");
         msgbus::publish_any(topic, &TestAuditMessage { value: 42 });
-        wait_for_high_watermark(&store, 2);
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -1815,8 +1793,6 @@ mod tests {
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.test.memory");
         msgbus::publish_any(topic, &TestAuditMessage { value: 7 });
-        wait_for_high_watermark(&store, 2);
-
         store.seal(UnixNanos::from(1_000));
 
         let backend = memory.lock().expect("memory backend");
@@ -2776,28 +2752,7 @@ mod tests {
         let endpoint = MStr::<Endpoint>::from("test.exec.engine.process");
         msgbus::send_any_value(endpoint, &submit_order);
 
-        // RunStarted is seq=1; the captured SubmitOrder lands at seq=2 once the
-        // writer commits.
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured SubmitOrder did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        // Seal cleanly so we can re-open the run read-only
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -2851,7 +2806,6 @@ mod tests {
 
         let second = make_submit_order(ClientOrderId::from("O-marker-2"));
         msgbus::send_any_value(MStr::<Endpoint>::from("test.exec.process"), &second);
-        wait_for_high_watermark(&store, 3);
         store.seal(UnixNanos::from(500));
 
         let marker_path = tmp
@@ -2972,16 +2926,6 @@ mod tests {
                 UnixNanos::from(5_001),
             )
             .expect("capture");
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        while session.high_watermark() < 2 {
-            assert!(
-                Instant::now() < deadline,
-                "event-store high_watermark {} did not reach 2 within deadline",
-                session.high_watermark(),
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
         session
             .close(UnixNanos::from(6_000))
             .expect("close session");
@@ -3110,25 +3054,7 @@ mod tests {
         let callback = TimeEventCallback::from(|_: TimeEvent| {});
         TimeEventHandler::new(event, callback).run();
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured TimeEvent did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3240,25 +3166,7 @@ mod tests {
         let endpoint = MStr::<Endpoint>::from("test.exec.engine.envelope");
         msgbus::send_trading_command(endpoint, command);
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured TradingCommand did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3332,25 +3240,7 @@ mod tests {
         let topic: MStr<msgbus::Topic> = MStr::from("events.order.ETHUSDT-PERP.BINANCE");
         msgbus::publish_order_event(topic, &event);
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured OrderEventAny did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3438,25 +3328,7 @@ mod tests {
             DataCommand::Subscribe(subscribe.clone()),
         );
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 3 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured DataCommand entries did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3550,26 +3422,8 @@ mod tests {
         );
         msgbus::send_response(&correlation_id, &DataResponse::Quotes(response.clone()));
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured DataResponse did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
         assert!(*handler_called.borrow());
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
