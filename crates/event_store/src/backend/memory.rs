@@ -781,7 +781,7 @@ mod tests {
             other => panic!("expected Backend, was {other:?}"),
         }
         assert!(!open_backend.manifest().expect("manifest").is_sealed());
-        // The run is still writeable.
+        // The run is still writable
         open_backend
             .append_batch(&[append_with(1, 10, Vec::new())])
             .expect("append");

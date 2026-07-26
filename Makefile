@@ -636,7 +636,6 @@ docs-check-links:  #-- Check for broken links in documentation (periodic audit)
 		--exclude-path target \
 		--exclude-path docs/python-api-latest \
 		--exclude "file://.*/python-api-latest/.*" \
-		--exclude-file .lycheeignore \
 		"**/*.md" "docs/**/*.py"
 	@printf "$(GREEN)Link check passed$(RESET)\n"
 
