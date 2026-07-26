@@ -1250,19 +1250,6 @@ async fn start_exec_test_server_with_fill_fixture(
             .unwrap();
     });
 
-    let health_url = format!("http://{addr}/api/v3/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
-    wait_until_async(
-        || {
-            let url = health_url.clone();
-            let client = http_client.clone();
-            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
-
     (addr, captured_queries)
 }
 
