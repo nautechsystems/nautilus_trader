@@ -288,6 +288,12 @@ pub(crate) enum TradeDedupSource {
     Reconciliation,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PendingOrderAction {
+    Modify,
+    Cancel,
+}
+
 #[derive(Debug)]
 pub(crate) struct TradeDedupCache {
     inner: Mutex<TradeDedupCacheInner>,
@@ -412,6 +418,9 @@ pub(crate) struct WsDispatchState {
     /// is initialised on the first emitted `OrderAccepted` and refreshed
     /// on every emitted `OrderUpdated`.
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
+    /// Local lifecycle action that a venue frame or reconciliation report
+    /// must not bypass before its confirming event or rejection arrives.
+    pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderAction>>,
     /// FIFO queue of submits awaiting a venue response. The consumption loop
     /// pops on every `SendTxAck` / `SendTxRejected` so it can attribute a
     /// rejection back to the originating order (sendTx error frames carry no
@@ -630,6 +639,7 @@ impl WsDispatchState {
             seen_trade_ids: Arc::new(TradeDedupCache::new(REPLAY_CACHE_CAPACITY)),
             triggered_emitted: Arc::new(DashSet::new()),
             order_snapshots: Arc::new(DashMap::new()),
+            pending_order_actions: Arc::new(DashMap::new()),
             pending_sendtx: Arc::new(Mutex::new(VecDeque::new())),
             account_streams_ready: Arc::new(AccountStreamsReady::new()),
         }
@@ -754,6 +764,34 @@ impl WsDispatchState {
         self.order_snapshots.insert(cloid, snapshot);
     }
 
+    pub(crate) fn set_pending_order_action(
+        &self,
+        cloid: ClientOrderId,
+        action: PendingOrderAction,
+    ) {
+        self.pending_order_actions.insert(cloid, action);
+    }
+
+    pub(crate) fn pending_order_action(&self, cloid: &ClientOrderId) -> Option<PendingOrderAction> {
+        self.pending_order_actions
+            .get(cloid)
+            .map(|entry| *entry.value())
+    }
+
+    pub(crate) fn clear_pending_order_action_if(
+        &self,
+        cloid: &ClientOrderId,
+        action: PendingOrderAction,
+    ) -> bool {
+        self.pending_order_actions
+            .remove_if(cloid, |_, current| *current == action)
+            .is_some()
+    }
+
+    pub(crate) fn clear_pending_order_action(&self, cloid: &ClientOrderId) {
+        self.pending_order_actions.remove(cloid);
+    }
+
     /// Register identity context for an order the client just dispatched.
     /// The consumption loop reads this to decide whether to emit typed events.
     pub(crate) fn register_order_identity(&self, cloid: ClientOrderId, identity: OrderIdentity) {
@@ -766,10 +804,12 @@ impl WsDispatchState {
         self.order_identities.remove(cloid);
         self.triggered_emitted.remove(cloid);
         self.order_snapshots.remove(cloid);
+        self.clear_pending_order_action(cloid);
     }
 
     /// Move a terminal order from active maps into the bounded replay cache.
     pub(crate) fn retire_order_identity(&self, cloid: &ClientOrderId) {
+        self.clear_pending_order_action(cloid);
         let Some((_, identity)) = self.order_identities.remove(cloid) else {
             return;
         };
@@ -978,6 +1018,36 @@ impl WsDispatchState {
                 .unwrap_or_else(|| ClientOrderId::new(report.venue_order_id.as_str()));
             report = report.with_client_order_id(resolved);
         }
+        report
+    }
+
+    /// Preserve an unresolved local modify or cancel across a non-terminal
+    /// working report. Confirming shape and terminal events clear the marker.
+    pub(crate) fn preserve_pending_order_status(
+        &self,
+        mut report: OrderStatusReport,
+    ) -> OrderStatusReport {
+        let Some(cloid) = report.client_order_id else {
+            return report;
+        };
+
+        if report.order_status.is_closed() {
+            self.clear_pending_order_action(&cloid);
+            return report;
+        }
+
+        if !matches!(
+            report.order_status,
+            OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled,
+        ) {
+            return report;
+        }
+
+        report.order_status = match self.pending_order_action(&cloid) {
+            Some(PendingOrderAction::Modify) => OrderStatus::PendingUpdate,
+            Some(PendingOrderAction::Cancel) => OrderStatus::PendingCancel,
+            None => return report,
+        };
         report
     }
 
@@ -1259,7 +1329,7 @@ pub(crate) async fn lookup_order_status_report(
         {
             report = report.with_client_order_id(cloid);
         }
-        Some(report)
+        Some(dispatch.preserve_pending_order_status(report))
     };
 
     let mut active_matches = active.orders.iter().filter(|order| matches_order(order));
@@ -2270,6 +2340,93 @@ mod tests {
         assert_eq!(
             translated.client_order_id.map(|c| c.to_string()),
             Some("not-an-int".to_string()),
+        );
+    }
+
+    #[rstest]
+    #[case(
+        PendingOrderAction::Modify,
+        OrderStatus::Accepted,
+        OrderStatus::PendingUpdate
+    )]
+    #[case(
+        PendingOrderAction::Modify,
+        OrderStatus::Triggered,
+        OrderStatus::PendingUpdate
+    )]
+    #[case(
+        PendingOrderAction::Modify,
+        OrderStatus::PartiallyFilled,
+        OrderStatus::PendingUpdate
+    )]
+    #[case(
+        PendingOrderAction::Cancel,
+        OrderStatus::Accepted,
+        OrderStatus::PendingCancel
+    )]
+    #[case(
+        PendingOrderAction::Cancel,
+        OrderStatus::Triggered,
+        OrderStatus::PendingCancel
+    )]
+    #[case(
+        PendingOrderAction::Cancel,
+        OrderStatus::PartiallyFilled,
+        OrderStatus::PendingCancel
+    )]
+    fn preserve_pending_order_status_maps_working_report(
+        #[case] action: PendingOrderAction,
+        #[case] venue_status: OrderStatus,
+        #[case] expected: OrderStatus,
+    ) {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new(format!("PENDING-{action:?}-{venue_status:?}"));
+        state.set_pending_order_action(cid, action);
+        let mut report = stub_open_order_status_report(cid.as_str());
+        report.order_status = venue_status;
+
+        let preserved = state.preserve_pending_order_status(report);
+
+        assert_eq!(preserved.client_order_id, Some(cid));
+        assert_eq!(
+            preserved.venue_order_id,
+            VenueOrderId::new("281476929510110"),
+        );
+        assert_eq!(preserved.order_status, expected);
+        assert_eq!(preserved.quantity, Quantity::from("0.01"));
+        assert_eq!(preserved.price, None);
+        assert_eq!(preserved.trigger_price, None);
+        assert_eq!(state.pending_order_action(&cid), Some(action));
+    }
+
+    #[rstest]
+    fn preserve_pending_order_status_clears_terminal_action() {
+        let state = WsDispatchState::new();
+        let cid = cloid("PENDING-TERMINAL");
+        state.set_pending_order_action(cid, PendingOrderAction::Modify);
+        let mut report = stub_open_order_status_report(cid.as_str());
+        report.order_status = OrderStatus::Filled;
+
+        let preserved = state.preserve_pending_order_status(report);
+
+        assert_eq!(preserved.client_order_id, Some(cid));
+        assert_eq!(preserved.order_status, OrderStatus::Filled);
+        assert_eq!(preserved.quantity, Quantity::from("0.01"));
+        assert_eq!(preserved.price, None);
+        assert_eq!(preserved.trigger_price, None);
+        assert_eq!(state.pending_order_action(&cid), None);
+    }
+
+    #[rstest]
+    fn clear_pending_order_action_if_keeps_different_action() {
+        let state = WsDispatchState::new();
+        let cid = cloid("PENDING-DIFFERENT");
+        state.set_pending_order_action(cid, PendingOrderAction::Cancel);
+
+        assert!(!state.clear_pending_order_action_if(&cid, PendingOrderAction::Modify));
+        assert_eq!(
+            state.pending_order_action(&cid),
+            Some(PendingOrderAction::Cancel),
         );
     }
 

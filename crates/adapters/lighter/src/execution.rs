@@ -105,11 +105,12 @@ use crate::{
         LighterWsError,
         client::LighterWebSocketClient,
         dispatch::{
-            LIGHTER_INSTRUMENT_CACHE, MAX_RECONCILIATION_PAGES, OrderIdentity, PendingSendTx,
-            PendingSendTxKind, TradeDedupSource, WsDispatchState, cache_instruments_for_reports,
-            derive_market_order_price_ticks, evict_terminal_mappings, lookup_order_status_report,
-            nautilus_to_lighter_order_type, nautilus_to_lighter_tif, order_expiry_for,
-            parse_http_order_to_report, price_to_ticks, quantity_to_ticks, unwrap_reports_or_warn,
+            LIGHTER_INSTRUMENT_CACHE, MAX_RECONCILIATION_PAGES, OrderIdentity, PendingOrderAction,
+            PendingSendTx, PendingSendTxKind, TradeDedupSource, WsDispatchState,
+            cache_instruments_for_reports, derive_market_order_price_ticks,
+            evict_terminal_mappings, lookup_order_status_report, nautilus_to_lighter_order_type,
+            nautilus_to_lighter_tif, order_expiry_for, parse_http_order_to_report, price_to_ticks,
+            quantity_to_ticks, unwrap_reports_or_warn,
         },
         messages::{
             AccountStream, ExecutionReport, LighterWsChannel, NautilusWsMessage,
@@ -1343,14 +1344,26 @@ impl LighterExecutionClient {
 
     fn dispatch_signed_cancel_order(&self, cmd: &CancelOrder, credential: &Credential) {
         let context = self.fanout_dispatch_context(credential);
+        self.dispatch
+            .set_pending_order_action(cmd.client_order_id, PendingOrderAction::Cancel);
+        let emit_cancel_rejected = self.can_emit_order_cancel_rejected(&cmd.client_order_id);
+        if !emit_cancel_rejected {
+            self.dispatch
+                .clear_pending_order_action_if(&cmd.client_order_id, PendingOrderAction::Cancel);
+        }
+
         let prepared = match self
             .prepare_cancel_order_plan(cmd)
             .and_then(|plan| context.sign_cancel_order(&plan))
         {
             Ok(prepared) => prepared,
             Err(e) => {
+                self.dispatch.clear_pending_order_action_if(
+                    &cmd.client_order_id,
+                    PendingOrderAction::Cancel,
+                );
                 let reason = format!("Lighter cancel_order failed: {e}");
-                if self.can_emit_order_cancel_rejected(&cmd.client_order_id) {
+                if emit_cancel_rejected {
                     log::warn!("{reason} for {}", cmd.client_order_id);
                     self.emitter.emit_order_cancel_rejected_event(
                         cmd.strategy_id,
@@ -1369,7 +1382,6 @@ impl LighterExecutionClient {
                 return;
             }
         };
-        let emit_cancel_rejected = self.can_emit_order_cancel_rejected(&prepared.client_order_id);
 
         self.spawn_task("cancel_order", async move {
             context
@@ -1428,9 +1440,15 @@ impl LighterExecutionClient {
     }
 
     fn dispatch_signed_modify_order(&self, cmd: &ModifyOrder, credential: &Credential) {
+        self.dispatch
+            .set_pending_order_action(cmd.client_order_id, PendingOrderAction::Modify);
         let prepared = match self.prepare_signed_modify_order(cmd, credential) {
             Ok(prepared) => prepared,
             Err(e) => {
+                self.dispatch.clear_pending_order_action_if(
+                    &cmd.client_order_id,
+                    PendingOrderAction::Modify,
+                );
                 let reason = format!("Lighter modify_order failed: {e}");
                 log::warn!("{reason} for {}", cmd.client_order_id);
                 self.emitter.emit_order_modify_rejected_event(
@@ -1493,6 +1511,10 @@ impl LighterExecutionClient {
                     let reason = format!("Lighter modify_order dispatch failed: {e}");
                     log::error!("{reason} for {client_order_id}");
                     dispatch.remove_pending_sendtx_by_nonce(nonce);
+                    dispatch.clear_pending_order_action_if(
+                        &client_order_id,
+                        PendingOrderAction::Modify,
+                    );
                     rollback_tx_dispatch(&dispatch, &credential, None, nonce);
                     emitter.emit_order_modify_rejected_event(
                         strategy_id,
@@ -2390,6 +2412,8 @@ impl FanoutDispatchContext {
                 let reason = format!("Lighter cancel_order dispatch failed: {e}");
                 log::error!("{reason} for {client_order_id}");
                 self.dispatch.remove_pending_sendtx_by_nonce(nonce);
+                self.dispatch
+                    .clear_pending_order_action_if(&client_order_id, PendingOrderAction::Cancel);
                 rollback_tx_dispatch(&self.dispatch, &self.credential, None, nonce);
 
                 if emit_cancel_rejected {
@@ -2790,6 +2814,7 @@ fn handle_send_tx_rejection(
                     pending.nonce,
                 );
             }
+            dispatch.clear_pending_order_action_if(client_order_id, PendingOrderAction::Cancel);
             emitter.emit_order_cancel_rejected_event(
                 *strategy_id,
                 *instrument_id,
@@ -2818,6 +2843,7 @@ fn handle_send_tx_rejection(
                     pending.nonce,
                 );
             }
+            dispatch.clear_pending_order_action_if(client_order_id, PendingOrderAction::Modify);
             emitter.emit_order_modify_rejected_event(
                 *strategy_id,
                 *instrument_id,
@@ -3372,6 +3398,25 @@ impl ExecutionClient for LighterExecutionClient {
             return Ok(());
         }
 
+        for cancel in &cmd.cancels {
+            self.dispatch
+                .set_pending_order_action(cancel.client_order_id, PendingOrderAction::Cancel);
+        }
+        let emit_cancel_rejected: Vec<bool> = cmd
+            .cancels
+            .iter()
+            .map(|cancel| self.can_emit_order_cancel_rejected(&cancel.client_order_id))
+            .collect();
+
+        for (cancel, emit) in cmd.cancels.iter().zip(&emit_cancel_rejected) {
+            if !emit {
+                self.dispatch.clear_pending_order_action_if(
+                    &cancel.client_order_id,
+                    PendingOrderAction::Cancel,
+                );
+            }
+        }
+
         if cmd.cancels.len() > LIGHTER_MAX_BATCH_TX {
             let reason = format!(
                 "Lighter batch-cancel fanout supports at most {LIGHTER_MAX_BATCH_TX} txs, was {}",
@@ -3379,6 +3424,10 @@ impl ExecutionClient for LighterExecutionClient {
             );
 
             for cancel in &cmd.cancels {
+                self.dispatch.clear_pending_order_action_if(
+                    &cancel.client_order_id,
+                    PendingOrderAction::Cancel,
+                );
                 self.emitter.emit_order_cancel_rejected_event(
                     cancel.strategy_id,
                     cancel.instrument_id,
@@ -3392,11 +3441,14 @@ impl ExecutionClient for LighterExecutionClient {
         }
 
         let mut plans = Vec::with_capacity(cmd.cancels.len());
-        for cancel in &cmd.cancels {
-            let emit_cancel_rejected = self.can_emit_order_cancel_rejected(&cancel.client_order_id);
+        for (cancel, emit_cancel_rejected) in cmd.cancels.iter().zip(emit_cancel_rejected) {
             match self.prepare_cancel_order_plan(cancel) {
                 Ok(plan) => plans.push((plan, emit_cancel_rejected)),
                 Err(e) => {
+                    self.dispatch.clear_pending_order_action_if(
+                        &cancel.client_order_id,
+                        PendingOrderAction::Cancel,
+                    );
                     let reason = format!("Lighter cancel_order failed: {e}");
 
                     if emit_cancel_rejected {
@@ -3439,6 +3491,10 @@ impl ExecutionClient for LighterExecutionClient {
                             .await;
                     }
                     Err(e) if emit_cancel_rejected => {
+                        context.dispatch.clear_pending_order_action_if(
+                            &failure.2,
+                            PendingOrderAction::Cancel,
+                        );
                         context.emitter.emit_order_cancel_rejected_event(
                             failure.0,
                             failure.1,
@@ -3651,7 +3707,8 @@ impl ExecutionClient for LighterExecutionClient {
                 if let Some(report) =
                     parse_http_order_to_report(order, &self.registry, self.core.account_id, ts_init)
                 {
-                    active_reports.push(self.dispatch.translate_order_cloid(report));
+                    let report = self.dispatch.translate_order_cloid(report);
+                    active_reports.push(self.dispatch.preserve_pending_order_status(report));
                 }
             }
         }
@@ -3710,8 +3767,9 @@ impl ExecutionClient for LighterExecutionClient {
                                     self.core.account_id,
                                     ts_init,
                                 ) {
+                                    let report = self.dispatch.translate_order_cloid(report);
                                     inactive_reports
-                                        .push(self.dispatch.translate_order_cloid(report));
+                                        .push(self.dispatch.preserve_pending_order_status(report));
                                 }
                             }
 
@@ -4250,6 +4308,15 @@ fn dispatch_lighter_order(
             crate::common::enums::LighterOrderStatus::Pending
                 | crate::common::enums::LighterOrderStatus::Open,
         );
+        let pending_action = dispatch.pending_order_action(&cloid);
+        if is_live_status && pending_action == Some(PendingOrderAction::Cancel) {
+            log::debug!(
+                "Deferring Lighter {:?} frame while cancel is pending for {cloid}",
+                order.status,
+            );
+            return;
+        }
+
         let current_shape = match lighter_order_shape(order, &instrument, identity.order_type) {
             Ok(shape) => shape,
             Err(e) => {
@@ -4263,6 +4330,17 @@ fn dispatch_lighter_order(
         let shape_changed = prior_shape
             .as_ref()
             .is_some_and(|prev| prev != &current_shape);
+        let fresh_trigger = order.status == crate::common::enums::LighterOrderStatus::Open
+            && order.trigger_status == crate::common::enums::LighterTriggerStatus::Ready
+            && !dispatch.triggered_was_emitted(&cloid);
+
+        if pending_action == Some(PendingOrderAction::Modify) && fresh_trigger && !shape_changed {
+            log::debug!(
+                "Deferring Lighter trigger while modify confirmation is pending for {cloid}",
+            );
+            return;
+        }
+
         let open_ctx = OpenFrameContext {
             accepted_already_emitted: dispatch.accepted_was_emitted(&cloid),
             triggered_already_emitted: dispatch.triggered_was_emitted(&cloid),
@@ -4323,6 +4401,7 @@ fn dispatch_lighter_order(
         match parse_ws_order_status_report(order, &instrument, account_id, ts_init) {
             Ok(mut report) => {
                 report = dispatch.translate_order_cloid(report);
+                report = dispatch.preserve_pending_order_status(report);
 
                 if let Some(cloid) = &report.client_order_id {
                     dispatch.venue_id_map.insert(*cloid, report.venue_order_id);
@@ -4570,8 +4649,29 @@ fn dispatch_tracked_order_event(
             // `Open`; `accepted_was_emitted` already gated parsing to
             // produce `Updated` instead of duplicate `Accepted`. No need
             // to re-synthesise the accept here.
+            dispatch.clear_pending_order_action_if(&cloid, PendingOrderAction::Modify);
             is_terminal = false;
             emitter.send_order_event(OrderEventAny::Updated(e));
+        }
+        ParsedOrderEvent::UpdatedThenTriggered { updated, triggered } => {
+            if !dispatch.mark_triggered_emitted(cloid) {
+                log::debug!("Skipping duplicate OrderTriggered for {cloid}");
+                return;
+            }
+            ensure_accepted_emitted(
+                cloid,
+                venue_order_id,
+                identity,
+                account_id,
+                trader_id,
+                emitter,
+                dispatch,
+                ts_init,
+            );
+            dispatch.clear_pending_order_action_if(&cloid, PendingOrderAction::Modify);
+            is_terminal = false;
+            emitter.send_order_event(OrderEventAny::Updated(updated));
+            emitter.send_order_event(OrderEventAny::Triggered(triggered));
         }
         ParsedOrderEvent::Canceled(e) => {
             ensure_accepted_emitted(
@@ -6107,6 +6207,7 @@ mod tests {
             0,
             "local-send-failure must remove the pending cancel entry",
         );
+        assert_eq!(client.dispatch.pending_order_action(&client_order_id), None);
     }
 
     #[tokio::test]
@@ -6142,6 +6243,10 @@ mod tests {
             "unknown outcome must not emit OrderCancelRejected",
         );
         assert_eq!(client.dispatch.pending_sendtx_len(), 1);
+        assert_eq!(
+            client.dispatch.pending_order_action(&client_order_id),
+            Some(PendingOrderAction::Cancel),
+        );
         assert_eq!(
             client
                 .dispatch
@@ -6198,6 +6303,7 @@ mod tests {
 
         assert_nonce_reusable(&client.dispatch);
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(client.dispatch.pending_order_action(&client_order_id), None);
         assert!(
             tokio::time::timeout(Duration::from_millis(50), rx.recv())
                 .await
@@ -6406,6 +6512,12 @@ mod tests {
 
         for cancel in cancels {
             assert!(rejected_ids.contains(&cancel.client_order_id));
+            assert_eq!(
+                client
+                    .dispatch
+                    .pending_order_action(&cancel.client_order_id),
+                None,
+            );
         }
         assert_nonce_reusable(&client.dispatch);
         assert_eq!(
@@ -6461,6 +6573,12 @@ mod tests {
                 }
                 other => panic!("expected CancelRejected, was {other:?}"),
             }
+            assert_eq!(
+                client
+                    .dispatch
+                    .pending_order_action(&cancel.client_order_id),
+                None,
+            );
         }
         assert_nonce_reusable(&client.dispatch);
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
@@ -6553,6 +6671,7 @@ mod tests {
             0,
             "local-send-failure must remove the pending modify entry",
         );
+        assert_eq!(client.dispatch.pending_order_action(&client_order_id), None);
     }
 
     #[tokio::test]
@@ -6591,6 +6710,10 @@ mod tests {
             "unknown outcome must not emit OrderModifyRejected",
         );
         assert_eq!(client.dispatch.pending_sendtx_len(), 1);
+        assert_eq!(
+            client.dispatch.pending_order_action(&client_order_id),
+            Some(PendingOrderAction::Modify),
+        );
         assert_eq!(
             client
                 .dispatch
@@ -6643,6 +6766,7 @@ mod tests {
 
         assert_nonce_reusable(&client.dispatch);
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(client.dispatch.pending_order_action(&client_order_id), None);
         assert!(
             tokio::time::timeout(Duration::from_millis(50), rx.recv())
                 .await
@@ -7691,6 +7815,10 @@ mod tests {
     }
 
     fn register_identity(rig: &DispatcherRig) {
+        register_identity_for(rig, OrderType::Limit);
+    }
+
+    fn register_identity_for(rig: &DispatcherRig, order_type: OrderType) {
         let derived = rig.dispatch.derive_client_order_index(&rig.cloid);
         let client_order_index = rig.dispatch.register_cloid(derived, rig.cloid).unwrap();
         rig.dispatch.register_order_identity(
@@ -7699,7 +7827,7 @@ mod tests {
                 rig.instrument_id,
                 strategy_id(),
                 OrderSide::Buy,
-                OrderType::Limit,
+                order_type,
                 client_order_index,
             ),
         );
@@ -7909,6 +8037,250 @@ mod tests {
         }
         let snapshot = rig.dispatch.snapshot_for(&rig.cloid).expect("snapshot");
         assert_eq!(snapshot.price, Some(Price::from("2400.00")));
+    }
+
+    #[rstest]
+    #[case(LighterOrderStatus::Pending)]
+    #[case(LighterOrderStatus::Open)]
+    fn dispatch_lighter_order_defers_live_frame_while_cancel_pending(
+        #[case] status: LighterOrderStatus,
+    ) {
+        let mut rig = dispatcher_rig(match status {
+            LighterOrderStatus::Pending => "24-PENDING",
+            LighterOrderStatus::Open => "24-OPEN",
+            other => panic!("unexpected case {other:?}"),
+        });
+        register_identity(&rig);
+        let order = dispatcher_test_order(&rig, LighterOrderStatus::Open);
+
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(1),
+        );
+        assert_eq!(drain_events(&mut rig.rx).len(), 1);
+
+        rig.dispatch
+            .set_pending_order_action(rig.cloid, PendingOrderAction::Cancel);
+        let mut late = order;
+        late.status = status;
+        late.initial_base_amount = Decimal::from_str("0.0075").unwrap();
+        late.price = Decimal::from_str("2400.00").unwrap();
+
+        dispatch_lighter_order(
+            &late,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(2),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert_eq!(events.len(), 0, "late frame must be silent: {events:?}");
+        assert_eq!(
+            rig.dispatch.pending_order_action(&rig.cloid),
+            Some(PendingOrderAction::Cancel),
+        );
+        assert!(rig.dispatch.accepted_was_emitted(&rig.cloid));
+        assert!(!rig.dispatch.triggered_was_emitted(&rig.cloid));
+        assert_eq!(
+            rig.dispatch.lookup_venue_order_id(&rig.cloid),
+            Some(VenueOrderId::new("281476929510110")),
+        );
+        assert!(rig.dispatch.order_identities.contains_key(&rig.cloid));
+        assert_eq!(
+            rig.dispatch.snapshot_for(&rig.cloid),
+            Some(crate::websocket::dispatch::OrderShapeSnapshot {
+                quantity: Quantity::from("0.0050"),
+                price: Some(Price::from("2352.74")),
+                trigger_price: None,
+            }),
+        );
+    }
+
+    #[rstest]
+    fn dispatch_lighter_order_emits_updated_then_triggered_for_one_frame() {
+        let mut rig = dispatcher_rig("25");
+        register_identity_for(&rig, OrderType::StopLimit);
+        let mut order = dispatcher_test_order(&rig, LighterOrderStatus::Pending);
+        order.order_type = LighterOrderKind::StopLossLimit;
+        order.trigger_price = Decimal::from_str("2300.00").unwrap();
+
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(1),
+        );
+        let accepted = drain_events(&mut rig.rx);
+        assert_eq!(accepted.len(), 1, "expected one acceptance: {accepted:?}");
+        assert!(matches!(
+            accepted[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_)),
+        ));
+
+        rig.dispatch
+            .set_pending_order_action(rig.cloid, PendingOrderAction::Modify);
+        let mut triggered = order;
+        triggered.status = LighterOrderStatus::Open;
+        triggered.trigger_status = LighterTriggerStatus::Ready;
+        triggered.initial_base_amount = Decimal::from_str("0.0075").unwrap();
+        triggered.price = Decimal::from_str("2400.00").unwrap();
+        triggered.trigger_price = Decimal::from_str("2390.00").unwrap();
+
+        dispatch_lighter_order(
+            &triggered,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(2),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert_eq!(
+            events.len(),
+            2,
+            "expected Updated then Triggered: {events:?}",
+        );
+
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.trader_id, trader_id());
+                assert_eq!(event.strategy_id, strategy_id());
+                assert_eq!(event.instrument_id, rig.instrument_id);
+                assert_eq!(event.client_order_id, rig.cloid);
+                assert_eq!(
+                    event.venue_order_id,
+                    Some(VenueOrderId::new("281476929510110")),
+                );
+                assert_eq!(event.account_id, Some(account_id()));
+                assert_eq!(event.quantity, Quantity::from("0.0075"));
+                assert_eq!(event.price, Some(Price::from("2400.00")));
+                assert_eq!(event.trigger_price, Some(Price::from("2390.00")));
+            }
+            other => panic!("first event should be Updated, was {other:?}"),
+        }
+
+        match &events[1] {
+            ExecutionEvent::Order(OrderEventAny::Triggered(event)) => {
+                assert_eq!(event.trader_id, trader_id());
+                assert_eq!(event.strategy_id, strategy_id());
+                assert_eq!(event.instrument_id, rig.instrument_id);
+                assert_eq!(event.client_order_id, rig.cloid);
+                assert_eq!(
+                    event.venue_order_id,
+                    Some(VenueOrderId::new("281476929510110")),
+                );
+                assert_eq!(event.account_id, Some(account_id()));
+            }
+            other => panic!("second event should be Triggered, was {other:?}"),
+        }
+        assert_eq!(rig.dispatch.pending_order_action(&rig.cloid), None);
+        assert!(rig.dispatch.accepted_was_emitted(&rig.cloid));
+        assert!(rig.dispatch.triggered_was_emitted(&rig.cloid));
+        assert_eq!(
+            rig.dispatch.snapshot_for(&rig.cloid),
+            Some(crate::websocket::dispatch::OrderShapeSnapshot {
+                quantity: Quantity::from("0.0075"),
+                price: Some(Price::from("2400.00")),
+                trigger_price: Some(Price::from("2390.00")),
+            }),
+        );
+
+        dispatch_lighter_order(
+            &triggered,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(3),
+        );
+        assert!(
+            drain_events(&mut rig.rx).is_empty(),
+            "replayed frame must be silent",
+        );
+    }
+
+    #[rstest]
+    fn dispatch_lighter_order_defers_trigger_until_modify_resolves() {
+        let mut rig = dispatcher_rig("26");
+        register_identity_for(&rig, OrderType::StopLimit);
+        let mut order = dispatcher_test_order(&rig, LighterOrderStatus::Pending);
+        order.order_type = LighterOrderKind::StopLossLimit;
+        order.trigger_price = Decimal::from_str("2300.00").unwrap();
+
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(1),
+        );
+        assert_eq!(drain_events(&mut rig.rx).len(), 1);
+
+        rig.dispatch
+            .set_pending_order_action(rig.cloid, PendingOrderAction::Modify);
+        order.status = LighterOrderStatus::Open;
+        order.trigger_status = LighterTriggerStatus::Ready;
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(2),
+        );
+
+        assert!(drain_events(&mut rig.rx).is_empty());
+        assert_eq!(
+            rig.dispatch.pending_order_action(&rig.cloid),
+            Some(PendingOrderAction::Modify),
+        );
+        assert!(!rig.dispatch.triggered_was_emitted(&rig.cloid));
+
+        assert!(
+            rig.dispatch
+                .clear_pending_order_action_if(&rig.cloid, PendingOrderAction::Modify,)
+        );
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(3),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert_eq!(events.len(), 1, "expected deferred trigger: {events:?}");
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Triggered(event)) => {
+                assert_eq!(event.client_order_id, rig.cloid);
+                assert_eq!(
+                    event.venue_order_id,
+                    Some(VenueOrderId::new("281476929510110")),
+                );
+                assert_eq!(event.account_id, Some(account_id()));
+            }
+            other => panic!("expected Triggered, was {other:?}"),
+        }
+        assert!(rig.dispatch.triggered_was_emitted(&rig.cloid));
     }
 
     #[rstest]

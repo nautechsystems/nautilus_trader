@@ -87,7 +87,7 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
         TimeInForce, TriggerType,
     },
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel},
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
         TraderId, VenueOrderId,
@@ -3516,6 +3516,130 @@ async fn test_generate_order_status_report_resolves_single_active_client_index()
     assert_eq!(report.client_order_id, Some(order.client_order_id()));
     assert_eq!(report.venue_order_id, venue_order_id);
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_report_preserves_pending_modify() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let order = make_limit_order(
+        "O-RECONCILE-PENDING-MODIFY",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let client_order_id = order.client_order_id();
+    let venue_order_id = VenueOrderId::from("281476929510301");
+    cache_order(&cache, order);
+
+    let accepted = OrderEventAny::Accepted(OrderAccepted::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        client_order_id,
+        venue_order_id,
+        account_id(),
+        UUID4::new(),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+        false,
+    ));
+    cache
+        .borrow_mut()
+        .update_order(&accepted)
+        .expect("apply OrderAccepted");
+    let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        client_order_id,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+        false,
+        Some(venue_order_id),
+    ));
+    cache
+        .borrow_mut()
+        .update_order(&pending)
+        .expect("apply OrderPendingUpdate");
+
+    *state.active_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue_order_id.as_str(),
+            client_order_id.as_str(),
+            "open",
+            "0.0000",
+        )],
+        None,
+    ));
+
+    client
+        .modify_order(ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            client_order_id,
+            Some(venue_order_id),
+            Some(Quantity::from("0.0100")),
+            Some(Price::from("2400.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::from(3),
+            None,
+            None,
+        ))
+        .expect("modify_order");
+    await_send_tx_count(&state, 1).await;
+
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::from(4),
+            Some(eth_perp_id()),
+            Some(client_order_id),
+            Some(venue_order_id),
+            None,
+            None,
+        ))
+        .await
+        .expect("pending modify lookup")
+        .expect("order report");
+
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert_eq!(report.venue_order_id, venue_order_id);
+    assert_eq!(report.account_id, account_id());
+    assert_eq!(report.instrument_id, eth_perp_id());
+    assert_eq!(report.order_status, OrderStatus::PendingUpdate);
+    assert_eq!(report.quantity, Quantity::from("0.0050"));
+    assert_eq!(report.price, Some(Price::from("2361.31")));
+    assert_eq!(report.trigger_price, None);
+    assert_eq!(report.filled_qty, Quantity::from("0.0000"));
+
+    let cached = cache
+        .borrow()
+        .order_owned(&client_order_id)
+        .expect("cached order");
+    assert_eq!(cached.status(), OrderStatus::PendingUpdate);
+    assert_eq!(cached.quantity(), Quantity::from("0.0050"));
+    assert_eq!(cached.price(), Some(Price::from("2361.31")));
+    assert_eq!(cached.trigger_price(), None);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none(),
+        "reconciliation lookup must emit no typed order event",
+    );
 
     client.disconnect().await.expect("disconnect");
 }

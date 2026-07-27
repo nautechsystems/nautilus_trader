@@ -675,6 +675,10 @@ pub(crate) enum ParsedOrderEvent {
     Triggered(OrderTriggered),
     Rejected(OrderRejected),
     Updated(OrderUpdated),
+    UpdatedThenTriggered {
+        updated: OrderUpdated,
+        triggered: OrderTriggered,
+    },
 }
 
 /// Inputs that the consumption-loop dispatcher hands to
@@ -740,12 +744,14 @@ pub(crate) fn lighter_order_shape(
 ///
 /// The `Open` branch decision matrix (in order):
 ///
-/// - `trigger_status == Ready` and not yet emitted → `Triggered`.
-/// - Not yet accepted → `Accepted` (the dispatcher seeds the shape
+/// - Already accepted with a fresh `Ready` trigger and a changed shape
+///   -> `Updated`, then `Triggered`.
+/// - `trigger_status == Ready` and not yet emitted -> `Triggered`.
+/// - Not yet accepted -> `Accepted` (the dispatcher seeds the shape
 ///   snapshot so subsequent diffs are meaningful).
 /// - Already accepted and the order shape changed (qty / price / trigger)
-///   → `Updated` (the dispatcher refreshes the shape snapshot).
-/// - Already accepted with no shape change → `None` (snapshot replay).
+///   -> `Updated` (the dispatcher refreshes the shape snapshot).
+/// - Already accepted with no shape change -> `None` (snapshot replay).
 ///
 /// # Errors
 ///
@@ -772,10 +778,46 @@ pub(crate) fn parse_lighter_order_event(
     match order.status {
         LighterOrderStatus::InProgress => Ok(None),
         LighterOrderStatus::Pending | LighterOrderStatus::Open => {
-            if order.status == LighterOrderStatus::Open
+            let fresh_trigger = order.status == LighterOrderStatus::Open
                 && order.trigger_status == LighterTriggerStatus::Ready
-                && !open_ctx.triggered_already_emitted
-            {
+                && !open_ctx.triggered_already_emitted;
+
+            if fresh_trigger && open_ctx.accepted_already_emitted && open_ctx.shape_changed {
+                let shape = lighter_order_shape(order, instrument, identity.order_type)?;
+                let updated = OrderUpdated::new(
+                    trader_id,
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    cloid,
+                    shape.quantity,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(account_id),
+                    shape.price,
+                    shape.trigger_price,
+                    None,
+                    false,
+                );
+                let triggered = OrderTriggered::new(
+                    trader_id,
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    cloid,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(account_id),
+                );
+                Ok(Some(ParsedOrderEvent::UpdatedThenTriggered {
+                    updated,
+                    triggered,
+                }))
+            } else if fresh_trigger {
                 let triggered = OrderTriggered::new(
                     trader_id,
                     identity.strategy_id,
