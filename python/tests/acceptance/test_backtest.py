@@ -54,6 +54,7 @@ from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import PositionSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
@@ -1256,9 +1257,8 @@ class TestBacktestPnLAlignmentAcceptance:
     Validates that PnL is consistently calculated across the system.
 
     The v1 suite asserts equality between trader.generate_positions_report,
-    portfolio.realized_pnl, and account balance changes. v2's BacktestEngine does not
-    yet expose the trader/portfolio/account APIs externally, so we assert that the
-    relevant strategy ran and produced position cycles via BacktestResult.
+    portfolio.realized_pnl, and account balance changes. The v2 tests cover the
+    corresponding result summaries and post-run portfolio, cache, and account state.
 
     """
 
@@ -1341,11 +1341,7 @@ class TestBacktestPnLAlignmentAcceptance:
 
     def test_backtest_postrun_pnl_alignment(self):
         """
-        Mirrors GitHub issue #2856: positions report PnL == backtest post-run total PnL.
-
-        v2 backtest result does not expose the analyzer or positions report externally,
-        so we verify the engine ran the configured cycles and produced position events.
-
+        Checks the shorter open-close-reopen scenario through BacktestResult.
         """
         engine, audusd = self._build_engine(oms_type=OmsType.NETTING)
         engine.add_data(_build_pnl_quotes(audusd, periods=35, scenario="rising"))
@@ -1369,6 +1365,97 @@ class TestBacktestPnLAlignmentAcceptance:
         assert result.iterations == 35
         assert result.total_orders == len(actions)
         engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "oms_type",
+    [
+        pytest.param(OmsType.NETTING, id="netting"),
+        pytest.param(OmsType.HEDGING, id="hedging"),
+    ],
+)
+def test_backtest_postrun_realized_pnl_by_oms_type(oms_type):
+    engine = _engine()
+    audusd = TestInstrumentProvider.audusd_sim()
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=oms_type,
+        account_type=AccountType.MARGIN,
+        base_currency=Currency.from_str("USD"),
+        starting_balances=[Money.from_str("1000000.00 USD")],
+    )
+    engine.add_instrument(audusd)
+    engine.add_data(_build_pnl_quotes(audusd, periods=70, scenario="multi_cycle"))
+
+    actions = [
+        [10, "BUY", "100000"],
+        [20, "SELL", "100000"],
+        [30, "BUY", "100000"],
+        [40, "SELL", "100000"],
+        [50, "SELL", "100000"],
+        [60, "BUY", "100000"],
+    ]
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path=TICK_SCHEDULED_STRATEGY,
+            config_path=TICK_SCHEDULED_CONFIG,
+            config={"instrument_id": str(audusd.id), "actions": actions},
+        ),
+    )
+
+    engine.run()
+    result = engine.get_result()
+    positions = engine.cache.positions()
+    positions.sort(key=lambda position: str(position.id))
+    snapshots = engine.cache.position_snapshots()
+
+    assert result.iterations == 70
+    assert result.total_orders == len(actions)
+
+    if oms_type == OmsType.NETTING:
+        assert engine.portfolio.realized_pnl(audusd.id) == Money.from_str("15.60 USD")
+        assert result.total_positions == 3
+        assert len(positions) == 1
+        assert len(snapshots) == 2
+
+        position = positions[0]
+        assert position.side == PositionSide.FLAT
+        assert position.quantity == Quantity.from_int(0)
+        assert not position.is_open
+        assert position.is_closed
+        assert position.event_count == 2
+        assert [snapshot.side for snapshot in snapshots] == [PositionSide.FLAT] * 2
+        assert [snapshot.quantity for snapshot in snapshots] == [Quantity.from_int(0)] * 2
+        assert [snapshot.is_open for snapshot in snapshots] == [False] * 2
+        assert [snapshot.is_closed for snapshot in snapshots] == [True] * 2
+        assert [snapshot.event_count for snapshot in snapshots] == [2] * 2
+        assert [snapshot.realized_pnl for snapshot in snapshots] + [position.realized_pnl] == [
+            Money.from_str("15.20 USD"),
+            Money.from_str("-14.80 USD"),
+            Money.from_str("15.20 USD"),
+        ]
+    else:
+        assert engine.portfolio.realized_pnl(audusd.id) == Money.from_str("-8.40 USD")
+        assert result.total_positions == 6
+        assert len(positions) == 6
+        assert snapshots == []
+        assert [position.side for position in positions] == [
+            PositionSide.LONG,
+            PositionSide.SHORT,
+            PositionSide.LONG,
+            PositionSide.SHORT,
+            PositionSide.SHORT,
+            PositionSide.LONG,
+        ]
+        assert [position.quantity for position in positions] == [Quantity.from_int(100_000)] * 6
+        assert [position.is_open for position in positions] == [True] * 6
+        assert [position.is_closed for position in positions] == [False] * 6
+        assert [position.event_count for position in positions] == [1] * 6
+        assert [position.realized_pnl for position in positions] == [
+            Money.from_str("-1.40 USD"),
+        ] * 6
+
+    engine.dispose()
 
 
 def _build_audusd_engine_with_quotes(periods: int = 3, oms_type=OmsType.HEDGING):
