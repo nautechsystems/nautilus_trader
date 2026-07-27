@@ -458,7 +458,7 @@ endef
 
 .PHONY: pre-flight
 pre-flight: export CARGO_TARGET_DIR=$(TARGET_DIR)
-pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-debug, pytest)
+pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, DST, build-debug, pytest)
 	$(info $(M) Running pre-flight checks...)
 	@if ! git diff --quiet; then \
 		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
@@ -471,6 +471,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
 		&& $(MAKE) --no-print-directory build-debug \
 		&& $(MAKE) --no-print-directory pytest \
@@ -1262,7 +1263,7 @@ pytest-v2: build-debug-v2  #-- Run v2 Python tests
 
 .PHONY: pre-flight-v2
 pre-flight-v2: export CARGO_TARGET_DIR=target-v2
-pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, build, generated drift, audit)
+pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, DST, build, generated drift, audit)
 	$(info $(M) Running v2 pre-flight checks...)
 	@if ! git diff --quiet; then \
 		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
@@ -1275,6 +1276,7 @@ pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, build, generated dr
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
 		&& $(MAKE) --no-print-directory build-debug-v2 \
 		&& $(MAKE) --no-print-directory check-v2-generated-drift \

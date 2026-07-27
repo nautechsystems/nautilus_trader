@@ -722,7 +722,13 @@ mod tests {
 
         assert_eq!(result.unwrap(), 42);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        #[cfg(not(all(feature = "simulation", madsim)))]
         assert_eq!(start.elapsed(), Duration::from_millis(200));
+        #[cfg(all(feature = "simulation", madsim))]
+        assert!(
+            start.elapsed() >= Duration::from_millis(200)
+                && start.elapsed() < Duration::from_millis(201)
+        );
     }
 
     #[rstest]

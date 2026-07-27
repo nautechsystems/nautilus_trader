@@ -103,31 +103,34 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::live::dst::{task, time};
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_push_prunes_finished_handles() {
         let tasks = TaskHandles::default();
 
-        let finished = tokio::spawn(async {});
+        let finished = task::spawn(async {});
 
-        tokio::time::timeout(Duration::from_secs(1), async {
+        time::timeout(Duration::from_secs(1), async {
             while !finished.is_finished() {
-                tokio::task::yield_now().await;
+                task::yield_now().await;
             }
         })
         .await
         .expect("task should finish");
 
         tasks.push(finished);
-        tasks.push(tokio::spawn(std::future::pending()));
+        tasks.push(task::spawn(std::future::pending()));
 
         assert_eq!(tasks.len(), 1);
         tasks.abort_all();
     }
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_abort_all_drains_before_aborting() {
         let tasks = TaskHandles::default();
         let mut drop_receivers = Vec::new();
@@ -135,7 +138,7 @@ mod tests {
         for _ in 0..2 {
             let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
             let signal = DropSignal { tx: Some(drop_tx) };
-            tasks.push(tokio::spawn(async move {
+            tasks.push(task::spawn(async move {
                 let _signal = signal;
                 std::future::pending::<()>().await;
             }));
@@ -147,7 +150,7 @@ mod tests {
         assert!(tasks.is_empty());
 
         for drop_rx in drop_receivers {
-            tokio::time::timeout(Duration::from_secs(1), drop_rx)
+            time::timeout(Duration::from_secs(1), drop_rx)
                 .await
                 .expect("aborted task should drop its future")
                 .expect("drop signal should be sent");
@@ -155,11 +158,12 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_take_all_extracts_handles() {
         let tasks = TaskHandles::default();
-        tasks.push(tokio::spawn(std::future::pending()));
-        tasks.push(tokio::spawn(std::future::pending()));
+        tasks.push(task::spawn(std::future::pending()));
+        tasks.push(task::spawn(std::future::pending()));
 
         let handles = tasks.take_all();
 
@@ -171,13 +175,14 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_all_finished_preserves_handles() {
         let tasks = TaskHandles::default();
         assert!(tasks.all_finished());
 
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-        tasks.push(tokio::spawn(async move {
+        tasks.push(task::spawn(async move {
             let _ = release_rx.await;
         }));
 
@@ -185,9 +190,9 @@ mod tests {
         assert_eq!(tasks.len(), 1);
 
         release_tx.send(()).expect("task should still be waiting");
-        tokio::time::timeout(Duration::from_secs(1), async {
+        time::timeout(Duration::from_secs(1), async {
             while !tasks.all_finished() {
-                tokio::task::yield_now().await;
+                task::yield_now().await;
             }
         })
         .await
@@ -198,20 +203,21 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_drop_detaches_tasks() {
         let tasks = TaskHandles::default();
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
 
-        tasks.push(tokio::spawn(async move {
+        tasks.push(task::spawn(async move {
             let _ = release_rx.await;
             let _ = done_tx.send(());
         }));
         drop(tasks);
         let _ = release_tx.send(());
 
-        tokio::time::timeout(Duration::from_secs(1), done_rx)
+        time::timeout(Duration::from_secs(1), done_rx)
             .await
             .expect("detached task should complete")
             .expect("completion signal should be sent");
