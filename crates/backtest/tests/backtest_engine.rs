@@ -14,8 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     fmt::Debug,
+    rc::Rc,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -43,8 +44,9 @@ use nautilus_indicators::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, InstrumentClose,
-        MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
+        InstrumentClose, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
+        stubs::{StubCustomData, stub_custom_data},
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
@@ -156,6 +158,51 @@ impl Debug for EmptyActor {
 }
 
 impl DataActor for EmptyActor {}
+
+struct CustomDataRecorder {
+    core: DataActorCore,
+    data_type: DataType,
+    received: Rc<RefCell<Vec<i64>>>,
+}
+
+impl CustomDataRecorder {
+    fn new(data_type: DataType, received: Rc<RefCell<Vec<i64>>>) -> Self {
+        let config = DataActorConfig {
+            actor_id: Some(ActorId::from("CUSTOM-DATA-RECORDER")),
+            ..Default::default()
+        };
+        Self {
+            core: DataActorCore::new(config),
+            data_type,
+            received,
+        }
+    }
+}
+
+nautilus_actor!(CustomDataRecorder);
+
+impl Debug for CustomDataRecorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CustomDataRecorder)).finish()
+    }
+}
+
+impl DataActor for CustomDataRecorder {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_data(self.data_type.clone(), None, None);
+        Ok(())
+    }
+
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+        let payload = data
+            .data
+            .as_any()
+            .downcast_ref::<StubCustomData>()
+            .ok_or_else(|| anyhow::anyhow!("Expected StubCustomData"))?;
+        self.received.borrow_mut().push(payload.value);
+        Ok(())
+    }
+}
 
 struct EmptyExecAlgorithm {
     core: ExecutionAlgorithmCore,
@@ -964,6 +1011,82 @@ fn create_engine() -> BacktestEngine {
         .unwrap();
     engine.add_venue(venue_config).unwrap();
     engine
+}
+
+#[rstest]
+fn test_add_custom_data_bypasses_market_setup_and_replays_in_order(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let config = BacktestEngineConfig {
+        bypass_logging: true,
+        run_analysis: false,
+        ..Default::default()
+    };
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let first = stub_custom_data(2, 2, None, None);
+    let second = stub_custom_data(1, 1, None, None);
+    let unscoped_data_type = first.data_type.clone();
+    // DataType identifiers scope catalog paths, not messaging topics.
+    let instrument_id = crypto_perpetual_ethusdt.id();
+    let third = stub_custom_data(4, 4, None, Some(instrument_id.to_string()));
+    let fourth = stub_custom_data(3, 3, None, Some(instrument_id.to_string()));
+    let received = Rc::new(RefCell::new(Vec::new()));
+
+    engine
+        .add_actor(CustomDataRecorder::new(
+            unscoped_data_type,
+            Rc::clone(&received),
+        ))
+        .unwrap();
+    engine
+        .add_data(
+            vec![Data::Custom(first), Data::Custom(second)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine
+        .add_data(
+            vec![Data::Custom(third), Data::Custom(fourth)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    assert!(
+        engine
+            .kernel()
+            .data_engine
+            .borrow()
+            .registered_clients()
+            .is_empty()
+    );
+
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L2_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .build()
+        .unwrap();
+    engine.add_venue(venue_config).unwrap();
+    engine
+        .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+        .unwrap();
+
+    let data_count_before_run = engine.kernel().data_engine.borrow().data_count();
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(*received.borrow(), vec![1, 2, 3, 4]);
+    assert_eq!(engine.get_result().iterations, 4);
+    assert_eq!(
+        engine.kernel().data_engine.borrow().data_count(),
+        data_count_before_run + 4
+    );
+    engine.dispose();
 }
 
 fn create_eur_base_margin_engine() -> BacktestEngine {

@@ -40,9 +40,9 @@ use nautilus_model::defi::DefiData;
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
-        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{
@@ -1787,6 +1787,10 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::InstrumentClose(close));
     }
 
+    if let Ok(custom) = obj.extract::<CustomData>() {
+        return Ok(Data::Custom(custom));
+    }
+
     #[cfg(feature = "defi")]
     if let Ok(defi) = obj.extract::<DefiData>() {
         return Ok(Data::Defi(Box::new(defi)));
@@ -1841,6 +1845,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 mod model_tests {
     use nautilus_execution::python::{fee::PyFeeModel, fill::PyFillModel};
     use nautilus_model::{
+        data::{Data, stubs::stub_custom_data},
         enums::{AccountType, BookType, OmsType, OtoTriggerMode},
         identifiers::Venue,
         types::{Currency, Money},
@@ -1853,6 +1858,23 @@ mod model_tests {
     use rstest::rstest;
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    fn test_pyobject_to_data_accepts_custom_data() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let custom = stub_custom_data(2, 42, None, None);
+            let obj = custom.into_py_any(py).unwrap();
+            let converted = super::pyobject_to_data(py, obj.bind(py)).unwrap();
+
+            let Data::Custom(converted) = converted else {
+                panic!("Expected Data::Custom");
+            };
+            assert_eq!(converted.data_type.type_name(), "StubCustomData");
+            assert_eq!(converted.data.ts_init().as_u64(), 2);
+        });
+    }
 
     #[rstest]
     fn test_add_venue_accepts_python_defined_fee_and_fill_models() {

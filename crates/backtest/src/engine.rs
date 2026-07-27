@@ -397,14 +397,15 @@ impl BacktestEngine {
         Ok(())
     }
 
-    /// Adds market data to the engine for replay during the backtest run.
+    /// Adds data to the engine for replay during the backtest run.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `data` is empty.
-    /// - `validate` is `true` and the instrument for the first element has not been
-    ///   added to the cache via [`add_instrument`](Self::add_instrument).
+    /// - `validate` is `true`, the first element is built-in market data (excluding
+    ///   custom and DeFi data), and its instrument has not been added to the cache via
+    ///   [`add_instrument`](Self::add_instrument).
     /// - `validate` is `true` and the first element is a [`Data::Bar`] whose
     ///   `aggregation_source` is not [`AggregationSource::External`].
     pub fn add_data(
@@ -435,7 +436,7 @@ impl BacktestEngine {
             #[cfg(not(feature = "defi"))]
             let first_is_defi = false;
 
-            if !first_is_defi {
+            if !first_is_defi && !matches!(first, Data::Custom(_)) {
                 let first_instrument_id = first.instrument_id();
                 anyhow::ensure!(
                     self.kernel
@@ -471,11 +472,17 @@ impl BacktestEngine {
         }
 
         for item in &to_add {
+            let ts = item.ts_init();
+            batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
+            batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
+
             #[cfg(feature = "defi")]
             if matches!(item, Data::Defi(_)) {
-                let ts = item.ts_init();
-                batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
-                batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
+                continue;
+            }
+
+            if matches!(item, Data::Custom(_)) {
+                // Custom data routes by DataType and is independent of market venue bookkeeping.
                 continue;
             }
 
@@ -487,10 +494,6 @@ impl BacktestEngine {
             }
 
             self.add_market_data_client_if_not_exists(instr_id.venue);
-
-            let ts = item.ts_init();
-            batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
-            batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
         }
 
         if let Some(ts) = batch_min_ts
