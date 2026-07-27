@@ -742,7 +742,7 @@ impl LiveNode {
                 })?;
 
             if let Some(config) = config.as_ref() {
-                configure_py_execution_algorithm(&mut py_exec_algorithm_ref, config)?;
+                py_exec_algorithm_ref.configure_from_py_config(config)?;
             }
 
             py_exec_algorithm_ref.set_python_instance(exec_algorithm.clone_ref(py));
@@ -812,7 +812,7 @@ impl LiveNode {
                     python_exec_algorithm.extract::<PyRefMut<PyExecutionAlgorithm>>()
                 {
                     if let Some(config_obj) = config_instance.as_ref() {
-                        configure_py_execution_algorithm(&mut py_exec_algorithm_ref, config_obj)?;
+                        py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
                     }
 
                     py_exec_algorithm_ref
@@ -1665,40 +1665,6 @@ fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option
         .getattr(attr)
         .ok()
         .and_then(|val| val.extract::<bool>().ok())
-}
-
-fn configure_py_execution_algorithm(
-    py_exec_algorithm_ref: &mut PyRefMut<'_, PyExecutionAlgorithm>,
-    config_obj: &Bound<'_, PyAny>,
-) -> anyhow::Result<()> {
-    let id_attr = config_obj
-        .getattr("exec_algorithm_id")
-        .ok()
-        .filter(|v| !v.is_none())
-        .or_else(|| config_obj.getattr("actor_id").ok().filter(|v| !v.is_none()));
-
-    if let Some(id_value) = id_attr {
-        let exec_algorithm_id = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-            eaid
-        } else if let Ok(aid) = id_value.extract::<ActorId>() {
-            ExecAlgorithmId::new_checked(aid.inner().as_str())?
-        } else if let Ok(id_str) = id_value.extract::<String>() {
-            ExecAlgorithmId::new_checked(&id_str)?
-        } else {
-            anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
-        };
-        py_exec_algorithm_ref.set_exec_algorithm_id(exec_algorithm_id);
-    }
-
-    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
-        py_exec_algorithm_ref.set_log_events(val);
-    }
-
-    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
-        py_exec_algorithm_ref.set_log_commands(val);
-    }
-
-    Ok(())
 }
 
 fn extract_external_order_claims_config_attr(

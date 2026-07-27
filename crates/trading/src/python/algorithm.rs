@@ -58,8 +58,6 @@ use crate::algorithm::{
     ImportableExecAlgorithmConfig,
 };
 
-const DEFAULT_PY_EXEC_ALGORITHM_ID: &str = "PY-EXEC";
-
 /// Inner state of `PyExecutionAlgorithm`, shared between Python and Rust registries.
 pub struct PyExecutionAlgorithmInner {
     core: ExecutionAlgorithmCore,
@@ -126,7 +124,7 @@ impl PyExecutionAlgorithm {
     pub fn new(config: Option<ExecutionAlgorithmConfig>) -> Self {
         let mut config = config.unwrap_or_default();
         if config.exec_algorithm_id.is_none() {
-            config.exec_algorithm_id = Some(ExecAlgorithmId::new(DEFAULT_PY_EXEC_ALGORITHM_ID));
+            config.exec_algorithm_id = Some(ExecAlgorithmId::new(stringify!(ExecutionAlgorithm)));
         }
 
         let core = ExecutionAlgorithmCore::new(config);
@@ -579,13 +577,39 @@ impl PyExecutionAlgorithm {
 
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
-    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
+    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) -> PyResult<()> {
+        let retained_config = if config.is_none() {
+            Python::attach(|py| {
+                slf.borrow()
+                    .inner()
+                    .config
+                    .as_ref()
+                    .map(|config| config.clone_ref(py))
+            })
+        } else {
+            None
+        };
+        let has_configured_id = if let Some(config) = config.as_ref().or(retained_config.as_ref()) {
+            Python::attach(|py| slf.borrow_mut().configure_from_py_config(config.bind(py)))
+                .map_err(to_pyvalue_err)?
+        } else {
+            false
+        };
+
+        if !has_configured_id {
+            let py_type = slf.get_type();
+            let type_name = py_type.name()?;
+            let exec_algorithm_id =
+                ExecAlgorithmId::new_checked(type_name.to_str()?).map_err(to_pyvalue_err)?;
+            slf.borrow_mut().set_exec_algorithm_id(exec_algorithm_id);
+        }
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
         let mut borrowed = slf.borrow_mut();
         borrowed.set_python_instance(py_self);
         if config.is_some() {
             borrowed.set_config(config);
         }
+        Ok(())
     }
 
     #[getter]
@@ -1095,6 +1119,52 @@ impl PyExecutionAlgorithm {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_closed")]
     fn py_on_position_closed(&mut self, event: PositionClosed) {}
+}
+
+impl PyExecutionAlgorithm {
+    /// Applies Python configuration overrides.
+    ///
+    /// Returns whether the config supplied an execution algorithm ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an ID has an unsupported type or invalid value.
+    pub fn configure_from_py_config(&mut self, config: &Bound<'_, PyAny>) -> anyhow::Result<bool> {
+        let id = config
+            .getattr("exec_algorithm_id")
+            .ok()
+            .filter(|id| !id.is_none())
+            .or_else(|| config.getattr("actor_id").ok().filter(|id| !id.is_none()));
+        let has_id = if let Some(id) = id {
+            let exec_algorithm_id = if let Ok(exec_algorithm_id) = id.extract::<ExecAlgorithmId>() {
+                exec_algorithm_id
+            } else if let Ok(actor_id) = id.extract::<ActorId>() {
+                ExecAlgorithmId::new_checked(actor_id.inner().as_str())?
+            } else if let Ok(id) = id.extract::<String>() {
+                ExecAlgorithmId::new_checked(&id)?
+            } else {
+                anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
+            };
+            self.set_exec_algorithm_id(exec_algorithm_id);
+            true
+        } else {
+            false
+        };
+
+        if let Ok(log_events) = config.getattr("log_events")
+            && let Ok(log_events) = log_events.extract::<bool>()
+        {
+            self.set_log_events(log_events);
+        }
+
+        if let Ok(log_commands) = config.getattr("log_commands")
+            && let Ok(log_commands) = log_commands.extract::<bool>()
+        {
+            self.set_log_commands(log_commands);
+        }
+
+        Ok(has_id)
+    }
 }
 
 #[pyo3::pymethods]

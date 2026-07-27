@@ -23,6 +23,7 @@ from nautilus_trader.common import ComponentState
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import DataActorConfig
 from nautilus_trader.core import UUID4
+from nautilus_trader.model import ActorId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
@@ -59,6 +60,37 @@ class RequiredConfigBacktestExecAlgorithm(DataActor):
     def __init__(self, config: RequiredConfigBacktestExecAlgorithmConfig):
         super().__init__()
         type(self).received_exec_algorithm_id = config.exec_algorithm_id
+
+
+class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class SecondDefaultExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class NonForwardingExecutionAlgorithm(ExecutionAlgorithm):
+    def __init__(self, config):
+        super().__init__()
+
+
+class InternalConfigExecutionAlgorithm(ExecutionAlgorithm):
+    def __init__(self):
+        super().__init__(
+            ExecutionAlgorithmConfig(
+                exec_algorithm_id=ExecAlgorithmId("INTERNAL-CONFIG"),
+            ),
+        )
+
+
+class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
+    def __init__(self):
+        super().__init__(
+            DataActorConfig(
+                actor_id=ActorId("INTERNAL-ACTOR-ID"),
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -237,6 +269,60 @@ def test_execution_algorithm_config_with_explicit_values():
     assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
     assert config.log_events is False
     assert config.log_commands is False
+
+
+def test_execution_algorithm_derives_default_id_from_runtime_class():
+    base = ExecutionAlgorithm()
+    first = FirstDefaultExecutionAlgorithm()
+    second = SecondDefaultExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=None),
+    )
+
+    assert base.exec_algorithm_id == ExecAlgorithmId("ExecutionAlgorithm")
+    assert first.exec_algorithm_id == ExecAlgorithmId("FirstDefaultExecutionAlgorithm")
+    assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultExecutionAlgorithm")
+
+
+def test_execution_algorithm_preserves_explicit_id_without_forwarding_config():
+    exec_algorithm_id = ExecAlgorithmId("NON-FORWARDING")
+    exec_algorithm = NonForwardingExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=exec_algorithm_id),
+    )
+
+    assert exec_algorithm.exec_algorithm_id == exec_algorithm_id
+
+
+def test_execution_algorithm_preserves_explicit_id_created_inside_subclass():
+    exec_algorithm = InternalConfigExecutionAlgorithm()
+
+    assert exec_algorithm.exec_algorithm_id == ExecAlgorithmId("INTERNAL-CONFIG")
+
+
+def test_execution_algorithm_uses_actor_id_created_inside_subclass():
+    exec_algorithm = InternalActorIdExecutionAlgorithm()
+
+    assert exec_algorithm.exec_algorithm_id == ExecAlgorithmId("INTERNAL-ACTOR-ID")
+
+
+def test_execution_algorithm_rejects_non_ascii_derived_id():
+    non_ascii_algorithm = type("Strategy\u00e9", (ExecutionAlgorithm,), {})
+
+    with pytest.raises(ValueError, match="non-ASCII char"):
+        non_ascii_algorithm()
+
+
+def test_add_exec_algorithms_registers_distinct_class_derived_ids():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = FirstDefaultExecutionAlgorithm()
+    second = SecondDefaultExecutionAlgorithm()
+
+    engine.add_exec_algorithms([first, second])
+
+    assert first.exec_algorithm_id == ExecAlgorithmId("FirstDefaultExecutionAlgorithm")
+    assert first.is_registered() is True
+    assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultExecutionAlgorithm")
+    assert second.is_registered() is True
+    engine.dispose()
 
 
 def test_execution_algorithm_deny_order_updates_cache_once():

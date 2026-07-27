@@ -1241,37 +1241,7 @@ impl PyBacktestEngine {
                 };
 
                 if let Some(config_obj) = config_instance.as_ref() {
-                    let id_attr = config_obj
-                        .getattr("exec_algorithm_id")
-                        .ok()
-                        .filter(|v| !v.is_none())
-                        .or_else(|| config_obj.getattr("actor_id").ok().filter(|v| !v.is_none()));
-
-                    if let Some(id_value) = id_attr {
-                        let exec_algorithm_id =
-                            if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-                                eaid
-                            } else if let Ok(aid) = id_value.extract::<ActorId>() {
-                                ExecAlgorithmId::new_checked(aid.inner().as_str())?
-                            } else if let Ok(id_str) = id_value.extract::<String>() {
-                                ExecAlgorithmId::new_checked(&id_str)?
-                            } else {
-                                anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
-                            };
-                        py_exec_algorithm_ref.set_exec_algorithm_id(exec_algorithm_id);
-                    }
-
-                    if let Ok(log_events) = config_obj.getattr("log_events")
-                        && let Ok(log_events_val) = log_events.extract::<bool>()
-                    {
-                        py_exec_algorithm_ref.set_log_events(log_events_val);
-                    }
-
-                    if let Ok(log_commands) = config_obj.getattr("log_commands")
-                        && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                    {
-                        py_exec_algorithm_ref.set_log_commands(log_commands_val);
-                    }
+                    py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
                 }
 
                 py_exec_algorithm_ref.set_python_instance(exec_algorithm.clone_ref(py));

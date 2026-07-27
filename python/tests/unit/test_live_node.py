@@ -87,6 +87,14 @@ class LifecycleExecutionAlgorithm(ExecutionAlgorithm):
         type(self).start_observations.append((self.state, self.is_running()))
 
 
+class FirstDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class SecondDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
 def test_importable_actor_config_construction():
     config = ImportableActorConfig(
         actor_path="tests.unit.common.actor:TestActor",
@@ -604,6 +612,19 @@ def test_add_exec_algorithm_registers_constructed_instance(live_node):
 
     with pytest.raises(RuntimeError, match="'PY-LIVE-CONSTRUCTED' is already registered"):
         live_node.add_exec_algorithm(duplicate)
+
+
+def test_add_exec_algorithms_registers_distinct_class_derived_ids(live_node):
+    first = FirstDefaultLiveExecutionAlgorithm()
+    second = SecondDefaultLiveExecutionAlgorithm()
+
+    live_node.add_exec_algorithm(first)
+    live_node.add_exec_algorithm(second)
+
+    assert first.exec_algorithm_id == ExecAlgorithmId("FirstDefaultLiveExecutionAlgorithm")
+    assert first.is_registered() is True
+    assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultLiveExecutionAlgorithm")
+    assert second.is_registered() is True
 
 
 def test_add_exec_algorithm_rejects_running_node():
