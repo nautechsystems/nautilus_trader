@@ -318,6 +318,14 @@ fn test_cache_api_empty_read_surface_returns_empty(cache: Cache) {
     assert_eq!(api.quote_at_index(&instrument_id, 0), None);
     assert_eq!(api.trade_at_index(&instrument_id, 0), None);
     assert_eq!(api.bar_at_index(&bar_type, 0), None);
+    assert_eq!(api.mark_price_count(&instrument_id), 0);
+    assert_eq!(api.index_price_count(&instrument_id), 0);
+    assert_eq!(api.funding_rate_count(&instrument_id), 0);
+    assert_eq!(api.instrument_status_count(&instrument_id), 0);
+    assert!(!api.has_mark_prices(&instrument_id));
+    assert!(!api.has_index_prices(&instrument_id));
+    assert!(!api.has_funding_rates(&instrument_id));
+    assert!(!api.has_instrument_statuses(&instrument_id));
 }
 
 #[rstest]
@@ -3148,6 +3156,34 @@ fn instrument_status_with_ts(instrument_id: InstrumentId, ts_event: u64) -> Inst
 }
 
 #[rstest]
+fn test_cache_api_market_data_history_introspection() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+    let mark_price = mark_price_with_ts(instrument_id, 1);
+    let index_price = index_price_with_ts(instrument_id, 2);
+    let funding_rate = funding_rate_with_ts(instrument_id, 3);
+    let instrument_status = instrument_status_with_ts(instrument_id, 4);
+
+    cache.add_mark_price(mark_price).unwrap();
+    cache.add_index_price(index_price).unwrap();
+    cache.add_funding_rate(funding_rate).unwrap();
+    cache.add_instrument_status(instrument_status).unwrap();
+
+    let cell = RefCell::new(cache);
+    let api = CacheApi::new(&cell);
+
+    assert_eq!(api.mark_price_count(&instrument_id), 1);
+    assert_eq!(api.index_price_count(&instrument_id), 1);
+    assert_eq!(api.funding_rate_count(&instrument_id), 1);
+    assert_eq!(api.instrument_status_count(&instrument_id), 1);
+    assert!(api.has_mark_prices(&instrument_id));
+    assert!(api.has_index_prices(&instrument_id));
+    assert!(api.has_funding_rates(&instrument_id));
+    assert!(api.has_instrument_statuses(&instrument_id));
+    assert_eq!(api.funding_rates(&instrument_id), Some(vec![funding_rate]));
+}
+
+#[rstest]
 fn test_add_quotes_enforces_tick_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = QuoteTick::default().instrument_id;
@@ -3219,6 +3255,8 @@ fn test_add_mark_prices_enforces_tick_capacity() {
         .collect::<Vec<_>>();
 
     assert_eq!(cached.len(), 3);
+    assert_eq!(cache.mark_price_count(&instrument_id), 3);
+    assert!(cache.has_mark_prices(&instrument_id));
     assert_eq!(ts_events, vec![4, 3, 2]);
 }
 
@@ -3240,6 +3278,8 @@ fn test_add_index_prices_enforces_tick_capacity() {
         .collect::<Vec<_>>();
 
     assert_eq!(cached.len(), 3);
+    assert_eq!(cache.index_price_count(&instrument_id), 3);
+    assert!(cache.has_index_prices(&instrument_id));
     assert_eq!(ts_events, vec![4, 3, 2]);
 }
 
@@ -3260,6 +3300,8 @@ fn test_add_funding_rates_enforces_tick_capacity() {
         .collect::<Vec<_>>();
 
     assert_eq!(cached.len(), 3);
+    assert_eq!(cache.funding_rate_count(&instrument_id), 3);
+    assert!(cache.has_funding_rates(&instrument_id));
     assert_eq!(ts_events, vec![4, 3, 2]);
 }
 
@@ -3281,6 +3323,8 @@ fn test_add_instrument_statuses_enforces_tick_capacity() {
         .collect::<Vec<_>>();
 
     assert_eq!(cached.len(), 3);
+    assert_eq!(cache.instrument_status_count(&instrument_id), 3);
+    assert!(cache.has_instrument_statuses(&instrument_id));
     assert_eq!(ts_events, vec![4, 3, 2]);
 }
 
