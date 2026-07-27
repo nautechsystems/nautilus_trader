@@ -468,6 +468,7 @@ mod tests {
     use std::str::FromStr;
 
     use chrono::Utc;
+    use nautilus_core::correctness::CorrectnessError;
     use nautilus_model::{
         data::BarType,
         enums::{AggressorSide, OrderSide},
@@ -569,6 +570,24 @@ mod tests {
                 || error_msg.contains("Failed to parse ticker"),
             "Expected ticker format error, was: {error_msg}"
         );
+    }
+
+    #[rstest]
+    fn test_parse_instrument_any_checked() {
+        let mut market = create_test_market();
+        market.tick_size = Decimal::ZERO;
+
+        let result = parse_instrument_any(&market, None, None, UnixNanos::default());
+
+        assert!(result.is_err());
+
+        let correctness_error = result.err().unwrap();
+
+        let not_positive = correctness_error
+            .downcast_ref::<CorrectnessError>()
+            .unwrap();
+
+        assert!(matches!(not_positive, CorrectnessError::NotPositive { .. }));
     }
 
     #[rstest]
