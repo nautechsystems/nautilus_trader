@@ -24,7 +24,7 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{InstrumentId, TraderId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Exchange {
+pub enum Exchange {
     Dydx,
     Bybit,
 }
@@ -44,7 +44,7 @@ impl FromStr for Exchange {
 }
 
 impl Exchange {
-    pub(crate) fn build_node(
+    pub fn build_node(
         self,
         trader_id: TraderId,
     ) -> Result<(LiveNode, InstrumentId), Box<dyn std::error::Error>> {

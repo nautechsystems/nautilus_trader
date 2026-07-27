@@ -39,7 +39,7 @@ use crate::strategy::grid_mm::config::GridMarketMakerConfig;
 /// Orders persist across ticks and are only replaced when the mid-price moves
 /// by at least `requote_threshold_bps`. The grid is shifted by a skew proportional
 /// to the current net position to discourage inventory buildup.
-pub(crate) struct GridMarketMaker {
+pub struct GridMarketMaker {
     pub(super) core: StrategyCore,
     pub(super) config: GridMarketMakerConfig,
     pub(super) instrument: Option<InstrumentAny>,
@@ -52,7 +52,8 @@ pub(crate) struct GridMarketMaker {
 impl GridMarketMaker {
     /// Creates a new [`GridMarketMaker`] instance from config.
     #[must_use]
-    pub(crate) fn new(config: GridMarketMakerConfig) -> Self {
+    #[allow(dead_code)]
+    pub fn new(config: GridMarketMakerConfig) -> Self {
         Self {
             core: StrategyCore::new(config.base.clone()),
             instrument: None,

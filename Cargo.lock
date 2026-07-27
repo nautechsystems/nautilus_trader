@@ -1764,35 +1764,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bin"
-version = "0.1.0"
-dependencies = [
- "ahash 0.8.12",
- "anyhow",
- "bon",
- "dotenvy",
- "futures-util",
- "log",
- "nautilus-bybit",
- "nautilus-common",
- "nautilus-core",
- "nautilus-dydx",
- "nautilus-live",
- "nautilus-model",
- "nautilus-persistence",
- "nautilus-trading",
- "rust_decimal",
- "rustls",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7095,6 +7066,35 @@ dependencies = [
  "nautilus-model",
  "nautilus-trading",
  "tokio",
+]
+
+[[package]]
+name = "nautilus_bin"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "bon",
+ "dotenvy",
+ "futures-util",
+ "log",
+ "nautilus-bybit",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-dydx",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-persistence",
+ "nautilus-trading",
+ "rust_decimal",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

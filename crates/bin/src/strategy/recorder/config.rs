@@ -3,7 +3,7 @@ use nautilus_trading::StrategyConfig;
 
 
 #[derive(Debug, Clone, bon::Builder)]
-pub(crate) struct RecorderConfig {
+pub struct RecorderConfig {
     #[builder(default = StrategyConfig {
         strategy_id: Some(StrategyId::from("RECORDER-001")),
         order_id_tag: Some("002".to_string()),

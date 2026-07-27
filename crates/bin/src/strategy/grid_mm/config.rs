@@ -34,7 +34,7 @@ use nautilus_trading::StrategyConfig;
 //     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
 // )]
 #[derive(Debug, Clone, bon::Builder)]
-pub(crate) struct GridMarketMakerConfig {
+pub struct GridMarketMakerConfig {
     /// Base strategy configuration.
     #[builder(default = StrategyConfig {
         strategy_id: Some(StrategyId::from("GRID_MM-001")),

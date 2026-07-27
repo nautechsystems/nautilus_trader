@@ -1,5 +1,5 @@
 [package]
-name = "bin"
+name = "nautilus_bin"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

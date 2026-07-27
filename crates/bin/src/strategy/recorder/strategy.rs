@@ -13,7 +13,7 @@ use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_trading::{StrategyCore, nautilus_strategy};
 
 use crate::strategy::recorder::config::RecorderConfig;
-pub(crate) struct Recorder {
+pub struct Recorder {
     pub(super) core: StrategyCore,
     pub(crate) instrument_id: InstrumentId,
     pub(crate) instrument_precision: u8,
@@ -23,8 +23,8 @@ pub(crate) struct Recorder {
 }
 
 impl Recorder {
-    #[must_use]
-    pub(crate) fn new(config: RecorderConfig) -> Self {
+    #[allow(dead_code)]
+    pub fn new(config: RecorderConfig) -> Self {
         Self {
             core: StrategyCore::new(config.base.clone()),
             instrument_id: config.instrument_id,
