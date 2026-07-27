@@ -125,16 +125,18 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   job uploads `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow
   artifacts. `publish-github-release` verifies the final draft asset set, publishes the draft
   release, and verifies GitHub's release attestation.
-- **Caching**: The dedicated Linux x86 Rust job restores caches for pull requests and produces them
-  from trusted `develop` pushes. Wheel-matrix Rust cache saves are restricted to push events.
-  Self-hosted jobs use persistent target directories instead. Prek hook environments use a separate
-  cache. The active large Parquet fixtures save after the Rust tests on a cache miss.
+- **Caching**: The dedicated Linux x86 Rust job restores its action cache for untrusted PRs and
+  produces it from trusted `develop` and `test-ci` pushes. Its other self-hosted runs use a
+  persistent target. Linux x86 wheel jobs disable action caching and use persistent targets for
+  trusted pushes. Other wheel-matrix Rust caches save only on pushes. Prek hook environments use a
+  separate cache. The active large Parquet fixtures save after the Rust tests on a cache miss.
 - **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
   mainline branches are never cancelled.
-- **Runners**: Cross-platform wheel jobs use Depot 8-core runners for Linux and Windows, except
-  Linux x86 jobs assigned to the self-hosted build pools. macOS and lightweight jobs use GitHub
-  runners. The scheduled `nightly-tests.yml` workflow uses no Depot runners. Custom runner labels
-  are declared in `.github/actionlint.yaml`.
+- **Runners**: Trusted Linux x86 build and test jobs, including `test-ci`, use the self-hosted build
+  pools. Untrusted PRs use GitHub-hosted runners under the policy below. Depot 8-core runners cover
+  platforms without self-hosted capacity, such as Linux ARM and Windows cross-platform builds.
+  macOS and lightweight jobs use GitHub runners. The scheduled `nightly-tests.yml` workflow uses no
+  Depot runners. Custom runner labels are declared in `.github/actionlint.yaml`.
 
 ### Runtime hardening
 

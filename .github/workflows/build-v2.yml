@@ -93,8 +93,6 @@ jobs:
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
-      || github.event_name == 'push' && github.ref_name == 'test-ci'
-      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     env:
       # Self-hosted keeps Rust artifacts outside the workspace
@@ -102,14 +100,10 @@ jobs:
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
         && format('{0}/target', github.workspace)
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
-        && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr'
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
         && 'ci-pr'
         || 'nextest' }}
       # Scopes incremental clippy/doc checks; empty for non-PR/push events.
@@ -183,8 +177,6 @@ jobs:
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
-      || github.event_name == 'push' && github.ref_name == 'test-ci'
-      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     defaults:
       run:
@@ -194,14 +186,10 @@ jobs:
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
         && 'ci-pr'
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
-        && 'ci-pr'
         || 'nextest' }}
       MATURIN_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr-wheel'
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
         && 'ci-pr-wheel'
         || 'release' }}
       RUST_BACKTRACE: 1
@@ -209,8 +197,6 @@ jobs:
       CARGO_TARGET_DIR: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && format('{0}/target', github.workspace)
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
         && format('{0}/target', github.workspace)
         || format('/home/runner/.cache/cargo-target/py{0}', matrix.python-version) }}
     steps:
@@ -276,8 +262,6 @@ jobs:
           V2_CARGO_TARGET_DIR: >-
             ${{ github.event_name == 'pull_request'
             && needs.plan.outputs.untrusted_pr != 'false'
-            && format('{0}/target/py-stubs-v2', github.workspace)
-            || github.event_name == 'push' && github.ref_name == 'test-ci'
             && format('{0}/target/py-stubs-v2', github.workspace)
             || '/home/runner/.cache/cargo-target/py-stubs-v2' }}
         run: |

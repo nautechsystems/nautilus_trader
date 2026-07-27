@@ -200,11 +200,7 @@ jobs:
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
-      || github.event_name == 'push' && github.ref_name == 'test-ci'
-      && 'ubuntu-22.04'
-      || github.event_name == 'pull_request'
-      && fromJson('["self-hosted", "Linux", "X64", "build"]')
-      || fromJson('["depot-ubuntu-22.04-8"]') }}
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     needs:
       - plan
       - pre-commit
@@ -219,9 +215,12 @@ jobs:
         || 'nextest' }}
       CARGO_TARGET_DIR: >-
         ${{ github.event_name == 'pull_request'
-        && needs.plan.outputs.untrusted_pr == 'false'
-        && '/home/runner/.cache/cargo-target/rust-tests-linux-x86'
-        || 'target/rust-tests-linux-x86' }}
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'target/rust-tests-linux-x86'
+        || github.event_name == 'push'
+        && (github.ref_name == 'develop' || github.ref_name == 'test-ci')
+        && 'target/rust-tests-linux-x86'
+        || '/home/runner/.cache/cargo-target/rust-tests-linux-x86' }}
       RUST_BACKTRACE: 1
     # yamllint disable rule:line-length
     services:
@@ -267,8 +266,11 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
+          # Develop and test-ci produce the cache restored by GitHub-hosted PR jobs.
           rust-cache-enabled: >-
-            ${{ (runner.environment == 'github-hosted' || github.event_name == 'push')
+            ${{ (runner.environment == 'github-hosted'
+            || github.event_name == 'push'
+            && (github.ref_name == 'develop' || github.ref_name == 'test-ci'))
             && 'true' || 'false' }}
           rust-cache-key: rust-tests-linux-x86
           rust-cache-workspaces: . -> target/rust-tests-linux-x86
@@ -334,19 +336,13 @@ jobs:
       run:
         shell: bash
     # Ubuntu 22.04 (glibc 2.35) keeps the wheel runtime range broad.
-    # Untrusted PRs stay GitHub-hosted
+    # Untrusted PRs stay GitHub-hosted; all other Linux x86 work stays self-hosted
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
     runs-on: >-
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
-      || github.event_name == 'push' && github.ref_name == 'test-ci'
-      && 'ubuntu-22.04'
-      || github.event_name == 'pull_request'
-      && fromJson('["self-hosted", "Linux", "X64", "build"]')
-      || github.event_name == 'push' && github.ref_name == 'develop'
-      && fromJson('["self-hosted", "Linux", "X64", "build"]')
-      || fromJson('["depot-ubuntu-22.04-8"]') }}
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     needs:
       - plan
       - pre-commit
@@ -356,27 +352,25 @@ jobs:
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
         && 'ci-pr'
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
-        && 'ci-pr'
         || 'release' }}
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
-        && 'ci-pr'
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
         && 'ci-pr'
         || 'nextest' }}
       PARALLEL_BUILD: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
         && 'false'
-        || github.event_name == 'push' && github.ref_name == 'test-ci'
-        && 'false'
         || 'true' }}
-      # Self-hosted develop pushes keep Rust artifacts outside the workspace so
+      # Self-hosted mainline pushes keep Rust artifacts outside the workspace so
       # they survive actions/checkout's git clean -ffdx between runs.
       CARGO_TARGET_DIR: >-
-        ${{ github.event_name == 'push' && github.ref_name == 'develop'
+        ${{ github.event_name == 'push'
+        && (github.ref_name == 'develop'
+        || github.ref_name == 'master'
+        || github.ref_name == 'nightly'
+        || github.ref_name == 'test-ci')
         && format('/home/runner/.cache/cargo-target/build-linux-x86/py{0}', matrix.python-version)
         || format('{0}/target/build-linux-x86', github.workspace) }}
       RUST_BACKTRACE: 1
@@ -447,14 +441,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
           free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
-          rust-cache-enabled: >-
-            ${{ github.event_name == 'push'
-            && github.ref_name != 'develop'
-            && github.ref_name != 'test-ci'
-            && 'true' || 'false' }}
-          rust-cache-key: build-linux-x86-wheel
-          rust-cache-workspaces: . -> target/build-linux-x86
-          rust-cache-save-if: ${{ github.event_name == 'push' }}
+          rust-cache-enabled: "false"
 
       - name: Limit Cargo build jobs on GitHub-hosted runners
         if: runner.environment == 'github-hosted'
@@ -507,13 +494,14 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
     runs-on: depot-ubuntu-22.04-arm-8
-    # ARM stays off PRs, develop pushes, v2 validation, and pre-commit-only test runs
+    # ARM stays off PRs, develop and test-ci pushes, v2 validation, and pre-commit-only test runs
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' ||
+            github.ref_name == 'test-ci' ||
             github.ref_name == 'test-ci-v2' ||
             github.ref_name == 'test-pre-commit'))
         || github.event_name == 'pull_request'
@@ -626,11 +614,12 @@ jobs:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-macos:
-    # macOS stays off develop pushes, v2 validation, and pre-commit-only test runs
+    # macOS stays off develop and test-ci pushes, v2 validation, and pre-commit-only test runs
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       github.event_name == 'push' &&
       github.ref != 'refs/heads/develop' &&
+      github.ref != 'refs/heads/test-ci' &&
       github.ref != 'refs/heads/test-ci-v2' &&
       github.ref != 'refs/heads/test-pre-commit'
     strategy:
@@ -793,13 +782,14 @@ jobs:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-windows:
-    # Windows stays off PRs, develop pushes, v2 validation, and pre-commit-only test runs
+    # Windows stays off PRs, develop and test-ci pushes, v2 validation, and pre-commit-only test runs
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' ||
+            github.ref_name == 'test-ci' ||
             github.ref_name == 'test-ci-v2' ||
             github.ref_name == 'test-pre-commit'))
         || github.event_name == 'pull_request'
