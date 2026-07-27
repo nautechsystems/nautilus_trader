@@ -215,11 +215,21 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             }
 
             if ctx.active_quote_subs.contains(&instrument_id) {
+                let price_increment = {
+                    let instruments = ctx.instruments.load();
+                    let Some(instrument) = instruments.get(&instrument_id) else {
+                        log::error!("No instrument for {instrument_id}");
+                        return;
+                    };
+                    instrument.price_increment()
+                };
+
                 match parse_quote_from_snapshot(
                     &snap,
                     instrument_id,
                     meta.price_precision,
                     meta.size_precision,
+                    price_increment,
                     ctx.drop_quotes_missing_side,
                     ts_init,
                 ) {
@@ -337,6 +347,14 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
 
                 if ctx.active_quote_subs.contains(&instrument_id) {
+                    let price_increment = {
+                        let instruments = ctx.instruments.load();
+                        let Some(instrument) = instruments.get(&instrument_id) else {
+                            log::error!("No instrument for {instrument_id}");
+                            continue;
+                        };
+                        instrument.price_increment()
+                    };
                     // Clone and drop guard before emit to avoid DashMap deadlock
                     let last_quote = ctx.last_quotes.get(&instrument_id).map(|r| *r);
 
@@ -345,6 +363,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         instrument_id,
                         meta.price_precision,
                         meta.size_precision,
+                        price_increment,
                         ctx.drop_quotes_missing_side,
                         last_quote.as_ref(),
                         ts_event,
@@ -3429,7 +3448,14 @@ mod tests {
     }
 
     #[rstest]
-    fn tick_size_change_same_precision_different_value_triggers_epoch() {
+    #[case::same_precision("0.005", "0.001", 3, "0.999")]
+    #[case::between_non_power_ticks("0.005", "0.0025", 4, "0.9975")]
+    fn tick_size_change_rebuilds_exact_increment(
+        #[case] old_tick: &str,
+        #[case] new_tick: &str,
+        #[case] expected_precision: u8,
+        #[case] expected_max: &str,
+    ) {
         let asset_id_str = "0xTOKEN_VALUE";
         let token_ustr = Ustr::from(asset_id_str);
         let market = "0xMARKET";
@@ -3438,7 +3464,7 @@ mod tests {
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
-            Price::from("0.005"),
+            Price::from(old_tick),
             Quantity::from("0.01"),
         );
         let instrument_id = inst.id();
@@ -3448,7 +3474,7 @@ mod tests {
             OrderBook::new(instrument_id, BookType::L2_MBP),
         );
 
-        let change = make_tick_change(market, asset_id_str, "0.005", "0.001");
+        let change = make_tick_change(market, asset_id_str, old_tick, new_tick);
         handle_market_message(change, &ctx);
 
         assert!(!ctx.order_books.contains_key(&instrument_id));
@@ -3457,7 +3483,7 @@ mod tests {
                 .contains(&instrument_id)
         );
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
-        assert_eq!(meta.price_precision, 3);
+        assert_eq!(meta.price_precision, expected_precision);
 
         let rebuilt = ctx
             .instruments
@@ -3465,10 +3491,9 @@ mod tests {
             .get(&instrument_id)
             .cloned()
             .expect("rebuilt instrument");
-        assert_eq!(rebuilt.price_increment(), Price::from("0.001"));
-        // Rebuild derives tick-relative bounds for the new 0.001 tick
-        assert_eq!(rebuilt.min_price(), Some(Price::from("0.001")));
-        assert_eq!(rebuilt.max_price(), Some(Price::from("0.999")));
+        assert_eq!(rebuilt.price_increment(), Price::from(new_tick));
+        assert_eq!(rebuilt.min_price(), Some(Price::from(new_tick)));
+        assert_eq!(rebuilt.max_price(), Some(Price::from(expected_max)));
 
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert!(
@@ -3880,7 +3905,7 @@ mod tests {
     }
 
     #[rstest]
-    fn price_change_missing_side_quote_uses_boundary_when_drop_disabled() {
+    fn price_change_missing_sides_use_current_tick_bounds_when_drop_disabled() {
         let asset_id_str = "0xTOKEN12";
         let market = "0xMARKET";
 
@@ -3889,25 +3914,18 @@ mod tests {
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
-            Price::from("0.001"),
+            Price::from("0.005"),
             Quantity::from("0.01"),
         );
         let instrument_id = inst.id();
         ctx.active_quote_subs.insert(instrument_id);
 
-        let pc = MarketWsMessage::PriceChange(PolymarketQuotes {
-            market: Ustr::from(market),
-            price_changes: vec![PolymarketQuote {
-                asset_id: Ustr::from(asset_id_str),
-                price: "0.50".to_string(),
-                side: PolymarketOrderSide::Buy,
-                size: "20".to_string(),
-                hash: String::new(),
-                best_bid: Some("0.50".to_string()),
-                best_ask: Some("1".to_string()),
-            }],
-            timestamp: "1700000003000".to_string(),
-        });
+        let change = make_tick_change(market, asset_id_str, "0.005", "0.0025");
+        handle_market_message(change, &ctx);
+
+        while data_rx.try_recv().is_ok() {}
+
+        let pc = make_price_change(market, asset_id_str, "0.50", "20");
         handle_market_message(pc, &ctx);
 
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
@@ -3918,9 +3936,9 @@ mod tests {
                 _ => None,
             })
             .unwrap_or_else(|| panic!("expected quote event, found: {events:?}"));
-        assert_eq!(emitted_quote.bid_price, Price::from("0.50"));
-        assert_eq!(emitted_quote.bid_size, Quantity::from("20.00"));
-        assert_eq!(emitted_quote.ask_price, Price::from("0.999"));
+        assert_eq!(emitted_quote.bid_price, Price::from("0.0025"));
+        assert_eq!(emitted_quote.bid_size, Quantity::from("0.00"));
+        assert_eq!(emitted_quote.ask_price, Price::from("0.9975"));
         assert_eq!(emitted_quote.ask_size, Quantity::from("0.00"));
     }
 

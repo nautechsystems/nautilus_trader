@@ -314,7 +314,7 @@ pub fn rebuild_instrument_with_tick_size(
 
 // Returns the tradeable price bounds `[tick_size, 1 - tick_size]` for a Polymarket outcome,
 // mirroring the venue range enforced in `PolymarketOrderBuilder::validate_limit_price`.
-fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(Price, Price)> {
+pub(crate) fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(Price, Price)> {
     let min_price = Price::from_decimal(tick_size)?;
     let max_price = Price::from_decimal(Decimal::ONE - tick_size)?;
     Ok((min_price, max_price))
@@ -686,6 +686,8 @@ mod tests {
     #[rstest]
     #[case(0.1, "0.1", "0.9", 1)]
     #[case(0.01, "0.01", "0.99", 2)]
+    #[case(0.005, "0.005", "0.995", 3)]
+    #[case(0.0025, "0.0025", "0.9975", 4)]
     #[case(0.001, "0.001", "0.999", 3)]
     #[case(0.0001, "0.0001", "0.9999", 4)]
     fn test_create_instrument_tick_relative_price_bounds(
@@ -761,6 +763,32 @@ mod tests {
         // Bounds reflect the new tick, not the pre-change 0.01-tick range
         assert_eq!(rebuilt.min_price(), Some(Price::from("0.001")));
         assert_eq!(rebuilt.max_price(), Some(Price::from("0.999")));
+    }
+
+    #[rstest]
+    #[case("0.005", "0.0025", 4, "0.9975")]
+    #[case("0.0025", "0.005", 3, "0.995")]
+    fn test_rebuild_instrument_between_non_power_ticks(
+        #[case] old_tick: &str,
+        #[case] new_tick: &str,
+        #[case] expected_precision: u8,
+        #[case] expected_max: &str,
+    ) {
+        let market = load_gamma_market("gamma_market.json");
+        let defs = parse_gamma_market(&market).unwrap();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
+        let instrument =
+            rebuild_instrument_with_tick_size(&instrument, old_tick, ts_init, ts_init).unwrap();
+
+        let rebuilt =
+            rebuild_instrument_with_tick_size(&instrument, new_tick, ts_init, ts_init).unwrap();
+
+        assert_eq!(instrument.price_increment(), Price::from(old_tick));
+        assert_eq!(rebuilt.price_precision(), expected_precision);
+        assert_eq!(rebuilt.price_increment(), Price::from(new_tick));
+        assert_eq!(rebuilt.min_price(), Some(Price::from(new_tick)));
+        assert_eq!(rebuilt.max_price(), Some(Price::from(expected_max)));
     }
 
     #[rstest]

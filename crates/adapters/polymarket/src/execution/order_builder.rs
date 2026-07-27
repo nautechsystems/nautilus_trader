@@ -217,10 +217,17 @@ impl PolymarketOrderBuilder {
             .ok_or_else(|| "Limit orders require a price".to_string())?;
         let tick = tick_size.as_decimal();
         let max_price = Decimal::ONE - tick;
+        let price_decimal = price.as_decimal();
 
-        if price.as_decimal() < tick || price.as_decimal() > max_price {
+        if price_decimal < tick || price_decimal > max_price {
             return Err(format!(
                 "Limit order price {price} outside Polymarket range [{tick}, {max_price}]"
+            ));
+        }
+
+        if price_decimal % tick != Decimal::ZERO {
+            return Err(format!(
+                "Limit order price {price} does not conform to Polymarket tick size {tick}"
             ));
         }
 
@@ -558,6 +565,10 @@ mod tests {
     #[case("0.999", "0.001")]
     #[case("0.0001", "0.0001")]
     #[case("0.9999", "0.0001")]
+    #[case("0.005", "0.005")]
+    #[case("0.995", "0.005")]
+    #[case("0.0025", "0.0025")]
+    #[case("0.9975", "0.0025")]
     fn test_validate_limit_order_price_boundary_allowed(
         #[case] price: &str,
         #[case] tick_size: &str,
@@ -565,6 +576,37 @@ mod tests {
         let order = make_limit_at_price(false, false, false, TimeInForce::Gtc, Price::from(price));
         assert!(
             PolymarketOrderBuilder::validate_limit_price(&order, Price::from(tick_size)).is_ok()
+        );
+    }
+
+    #[rstest]
+    #[case("0.505", "0.005")]
+    #[case("0.5025", "0.0025")]
+    fn test_validate_limit_order_price_aligned_allowed(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+    ) {
+        let order = make_limit_at_price(false, false, false, TimeInForce::Gtc, Price::from(price));
+        assert!(
+            PolymarketOrderBuilder::validate_limit_price(&order, Price::from(tick_size)).is_ok()
+        );
+    }
+
+    #[rstest]
+    #[case("0.501", "0.005")]
+    #[case("0.501", "0.0025")]
+    fn test_validate_limit_order_price_misaligned_denied(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+    ) {
+        let order = make_limit_at_price(false, false, false, TimeInForce::Gtc, Price::from(price));
+        let error = PolymarketOrderBuilder::validate_limit_price(&order, Price::from(tick_size))
+            .unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "Limit order price {price} does not conform to Polymarket tick size {tick_size}"
+            )
         );
     }
 

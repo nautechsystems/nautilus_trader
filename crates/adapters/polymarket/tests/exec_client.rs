@@ -3032,16 +3032,17 @@ fn add_instrument_to_cache_with_size_precision(
     instrument_id: InstrumentId,
     size_precision: u8,
 ) {
-    add_instrument_to_cache_with_precisions(cache, instrument_id, 4, size_precision);
+    add_instrument_to_cache_with_tick(cache, instrument_id, "0.0001", size_precision);
 }
 
-fn add_instrument_to_cache_with_precisions(
+fn add_instrument_to_cache_with_tick(
     cache: &Rc<RefCell<Cache>>,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    tick_size: &str,
     size_precision: u8,
 ) {
     let symbol = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+    let price_increment = Price::from(tick_size);
     let size_increment = if size_precision == 0 {
         Quantity::from("1")
     } else {
@@ -3059,12 +3060,9 @@ fn add_instrument_to_cache_with_precisions(
         Currency::pUSD(),
         UnixNanos::default(), // activation_ns
         UnixNanos::default(), // expiration_ns
-        price_precision,
+        price_increment.precision,
         size_precision,
-        Price::from(format!(
-            "0.{}1",
-            "0".repeat((price_precision as usize).saturating_sub(1))
-        )),
+        price_increment,
         size_increment,
         None, // outcome
         None, // description
@@ -3269,6 +3267,48 @@ async fn test_submit_order_denied_for_price_out_of_range(#[case] price: &str) {
 }
 
 #[rstest]
+#[case("0.005", "0.501")]
+#[case("0.0025", "0.501")]
+#[tokio::test]
+async fn test_submit_order_denied_for_price_misaligned(
+    #[case] tick_size: &str,
+    #[case] price: &str,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, tick_size, 2);
+    let order = make_limit_order_at_price(
+        "O-PRICE-MISALIGNED",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from(price),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        format!("Limit order price {price} does not conform to Polymarket tick size {tick_size}")
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+}
+
+#[rstest]
 #[case("0.0001")]
 #[case("0.9999")]
 #[tokio::test]
@@ -3318,7 +3358,7 @@ async fn test_submit_immediate_limit_buy_denies_fractional_cent_maker_amount(
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_precisions(&cache, instrument_id, 3, 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 2);
     let order = make_limit_order_at_price_and_quantity(
         "O-IOC-FRACTIONAL-CENT",
         instrument_id,
@@ -3363,7 +3403,7 @@ async fn test_submit_immediate_limit_sell_preserves_fractional_cent_taker_amount
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_precisions(&cache, instrument_id, 3, 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 2);
     let order = make_limit_order_at_price_and_quantity(
         "O-SELL-FRACTIONAL-CENT",
         instrument_id,
@@ -3409,13 +3449,15 @@ async fn test_submit_immediate_limit_sell_preserves_fractional_cent_taker_amount
 }
 
 #[rstest]
-#[case::tick_tenth(1, "0.5", "10", "5000000", "10000000")]
-#[case::tick_hundredth(2, "0.56", "10", "5600000", "10000000")]
-#[case::tick_thousandth(3, "0.961", "10", "9610000", "10000000")]
-#[case::tick_ten_thousandth(4, "0.9612", "25", "24030000", "25000000")]
+#[case::tick_tenth("0.1", "0.5", "10", "5000000", "10000000")]
+#[case::tick_hundredth("0.01", "0.56", "10", "5600000", "10000000")]
+#[case::tick_half_cent("0.005", "0.505", "10", "5050000", "10000000")]
+#[case::tick_quarter_cent("0.0025", "0.5025", "20", "10050000", "20000000")]
+#[case::tick_thousandth("0.001", "0.961", "10", "9610000", "10000000")]
+#[case::tick_ten_thousandth("0.0001", "0.9612", "25", "24030000", "25000000")]
 #[tokio::test]
 async fn test_submit_limit_order_serializes_amount_matrix(
-    #[case] price_precision: u8,
+    #[case] tick_size: &str,
     #[case] price: &str,
     #[case] quantity: &str,
     #[case] notional_amount: &str,
@@ -3435,7 +3477,7 @@ async fn test_submit_limit_order_serializes_amount_matrix(
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_precisions(&cache, instrument_id, price_precision, 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, tick_size, 2);
     let order = make_limit_order_at_price_and_quantity(
         "O-AMOUNT-MATRIX",
         instrument_id,
@@ -3865,13 +3907,15 @@ async fn test_submit_order_5xx_exhausts_retries_submit_outcome_unknown() {
 }
 
 #[rstest]
-#[case::tick_tenth(1, "0.5", "10", "5000000", "10000000")]
-#[case::tick_hundredth(2, "0.56", "10", "5600000", "10000000")]
-#[case::tick_thousandth(3, "0.961", "10", "9610000", "10000000")]
-#[case::tick_ten_thousandth(4, "0.9612", "25", "24030000", "25000000")]
+#[case::tick_tenth("0.1", "0.5", "10", "5000000", "10000000")]
+#[case::tick_hundredth("0.01", "0.56", "10", "5600000", "10000000")]
+#[case::tick_half_cent("0.005", "0.505", "10", "5050000", "10000000")]
+#[case::tick_quarter_cent("0.0025", "0.5025", "20", "10050000", "20000000")]
+#[case::tick_thousandth("0.001", "0.961", "10", "9610000", "10000000")]
+#[case::tick_ten_thousandth("0.0001", "0.9612", "25", "24030000", "25000000")]
 #[tokio::test]
 async fn test_submit_order_list_serializes_amount_matrix(
-    #[case] price_precision: u8,
+    #[case] tick_size: &str,
     #[case] price: &str,
     #[case] quantity: &str,
     #[case] notional_amount: &str,
@@ -3894,7 +3938,7 @@ async fn test_submit_order_list_serializes_amount_matrix(
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_precisions(&cache, instrument_id, price_precision, 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, tick_size, 2);
     let buy = make_limit_order_at_price_and_quantity(
         "O-LIST-AMOUNT-BUY",
         instrument_id,
@@ -3971,7 +4015,7 @@ async fn test_submit_order_list_denies_unrepresentable_immediate_buys_before_pos
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache_with_precisions(&cache, instrument_id, 3, 2);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 2);
     let orders = [
         make_limit_order_at_price_and_quantity(
             "O-LIST-FAK-FRACTIONAL-CENT",
