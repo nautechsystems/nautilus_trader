@@ -443,6 +443,7 @@ adapter set. The following limits remain deferred:
 - Updated Architect AX integration docs for current market-data, REST schema, and funding-rate behavior
 - Updated Lighter integration docs for sequential order fanout and reconciliation limits
 - Updated Polymarket v2 examples and integration docs for current markets, order modes, and configuration
+- Added `managed` parameter docs for `DataActor` book subscriptions (#4589), thanks @sbOogway
 - Fixed PyO3 docstring generation for attributes with trailing comments
 - Fixed Lighter get-started Python v2 development wheel link
 

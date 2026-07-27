@@ -1429,6 +1429,10 @@ pub trait DataActor: Component {
     }
 
     /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
+    ///
+    /// When `managed` is true, the data engine maintains an [`OrderBook`] in the cache for each
+    /// instrument the subscription resolves to, applying each batch of deltas as it arrives.
+    /// A parent subscription resolves to every matching underlying instrument.
     fn subscribe_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
@@ -1467,6 +1471,10 @@ pub trait DataActor: Component {
     }
 
     /// Subscribe to streaming [`OrderBookDepth10`] data for the `instrument_id`.
+    ///
+    /// When `managed` is true, the data engine maintains an [`OrderBook`] in the cache for each
+    /// instrument the subscription resolves to, applying each update as it arrives.
+    /// A parent subscription resolves to every matching underlying instrument.
     fn subscribe_book_depth10(
         &mut self,
         instrument_id: InstrumentId,
