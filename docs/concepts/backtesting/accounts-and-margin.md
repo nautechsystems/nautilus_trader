@@ -1,9 +1,12 @@
-# Backtest accounts and margin
+# Backtest Accounts and Margin
+
+Backtest venues use simulated accounts for balances, margin, and funding settlement. For the full
+account model and margin formulas, see [Accounting](../accounting.md).
 
 ## Funding
 
 Backtests settle perpetual funding at funding boundaries from `FundingRateUpdate` data. When an
-update has `next_funding_ns`, the simulated exchange stores the latest rate and the backtest clock
+update has `next_funding_ns`, the simulated exchange stores the latest rate, and the backtest clock
 emits one `FundingSettlement` at that timestamp. Without `next_funding_ns`, the exchange settles
 only when `ts_event` lands on the `interval` boundary. Updates without a boundary remain strategy
 data and do not create funding payments.
@@ -20,106 +23,75 @@ flowchart LR
     G --> H
 ```
 
+The settlement adjusts the open position and the matching account balance before the portfolio
+observes the new state.
+
 `PositionAdjusted` remains the position accounting event. A positive funding rate debits long
 positions and credits short positions. The resulting adjustment changes realized PnL, and the
 matching account balance update records the cash movement.
 
 ## Accounts
 
-Every backtest venue is attached with one of three `account_type` values: `CASH`, `MARGIN`, or
-`BETTING`. For the full data model, query API, and margin model reference, see
-[Accounting](../accounting.md).
-
-Example of adding a `CASH` account for a backtest venue:
+Every backtest venue uses one of three `account_type` values: `CASH`, `MARGIN`, or `BETTING`.
+The low-level API accepts model types directly:
 
 ```python
-from nautilus_trader.adapters.binance import BINANCE_VENUE
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import OmsType, AccountType
-from nautilus_trader.model import Money, Currency
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import Venue
 
-# Initialize the backtest engine
-engine = BacktestEngine()
-
-# Add a CASH account for the venue
+engine = BacktestEngine(BacktestEngineConfig())
 engine.add_venue(
-    venue=BINANCE_VENUE,  # Create or reference a Venue identifier
+    venue=Venue("BINANCE"),
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
-    starting_balances=[Money(10_000, USDT)],
+    starting_balances=[Money.from_str("10_000 USDT")],
+)
+```
+
+The high-level API accepts the same enum values but represents starting balances as strings:
+
+```python
+from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import OmsType
+
+venue = BacktestVenueConfig(
+    name="SIM",
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    book_type=BookType.L1_MBP,
+    starting_balances=["10_000 USDT"],
 )
 ```
 
 ## Margin models
 
-Margin models determine how the simulated exchange reserves collateral for orders and positions in
-backtest runs. The model types (`StandardMarginModel` vs `LeveragedMarginModel`), their formulas,
-the default behavior, and custom model authoring are covered in the dedicated
-[Accounting](../accounting.md#margin-models) guide.
-
-This section covers only the backtest-specific configuration.
-
-### Backtest venue configuration
-
-Specify the margin model on `BacktestVenueConfig` via `MarginModelConfig`:
+Margin accounts use `LeveragedMarginModel` by default. Pass `StandardMarginModel` when the
+simulation should reserve the instrument's fixed initial and maintenance margin percentages
+without reducing them by account leverage.
 
 ```python
-from nautilus_trader.backtest.config import BacktestVenueConfig
-from nautilus_trader.backtest.config import MarginModelConfig
+from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import StandardMarginModel
 
-venue_config = BacktestVenueConfig(
+venue = BacktestVenueConfig(
     name="SIM",
-    oms_type="NETTING",
-    account_type="MARGIN",
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.MARGIN,
+    book_type=BookType.L1_MBP,
     starting_balances=["1_000_000 USD"],
-    margin_model=MarginModelConfig(model_type="standard"),  # Options: 'standard', 'leveraged'
+    margin_model=StandardMarginModel(),
 )
 ```
 
-Available `model_type` values:
-
-- `"leveraged"`: margin reduced by leverage (default).
-- `"standard"`: fixed percentages (traditional brokers).
-- Fully-qualified class path for a custom model:
-  `"my_package.my_module:MyMarginModel"`.
-
-### High-level backtest API
-
-When using the high-level API, attach the margin model in the same way:
-
-```python
-from nautilus_trader.backtest.config import BacktestVenueConfig
-from nautilus_trader.backtest.config import MarginModelConfig
-from nautilus_trader.config import BacktestRunConfig
-
-venue_config = BacktestVenueConfig(
-    name="SIM",
-    oms_type="NETTING",
-    account_type="MARGIN",
-    starting_balances=["1_000_000 USD"],
-    margin_model=MarginModelConfig(
-        model_type="standard",  # Traditional broker simulation
-    ),
-)
-
-config = BacktestRunConfig(
-    venues=[venue_config],
-    # ... other config
-)
-```
-
-Custom model with parameters:
-
-```python
-margin_model = MarginModelConfig(
-    model_type="my_package.my_module:CustomMarginModel",
-    config={
-        "risk_multiplier": 1.5,
-        "use_leverage": False,
-        "volatility_threshold": 0.02,
-    },
-)
-```
-
-The model is applied to the simulated exchange during backtest execution.
+`BacktestVenueConfig` accepts the built-in `StandardMarginModel` and `LeveragedMarginModel`
+objects directly. The current high-level configuration does not load custom margin models from
+class-path strings.

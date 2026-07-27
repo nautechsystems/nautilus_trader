@@ -1,4 +1,7 @@
-# Backtest execution flow
+# Backtest Execution Flow
+
+The backtest loop processes market state before strategy callbacks, then settles commands generated
+at the same timestamp.
 
 ## Data and message sequencing
 
@@ -57,6 +60,8 @@ sequenceDiagram
     end
 ```
 
+The three phases ensure resting orders see the incoming market before newly submitted orders do.
+
 Timer events use the same settle mechanism but batch by timestamp: all callbacks at timestamp T
 execute first, then venues are settled for T before advancing to T+1. For timer behavior used by
 internally aggregated bars, see
@@ -100,15 +105,8 @@ stops the engines.
 
 ## Timer-only backtests
 
-The backtest engine supports running with timers but no market data. This is useful for scheduled
-operations or testing timer-based logic. Timers fire in chronological order, and timer callbacks can
-dynamically add data via `add_data_iterator()` which will be processed in sequence.
-
-:::warning
-Data added by timer callbacks at the exact start time should have timestamps **after** the start
-time. The engine reads the first data point before processing start-time timers, so dynamically
-added data with timestamps at or before the start time may not be processed in the expected order.
-:::
+The backtest engine supports runs with timers but no market data. This is useful for scheduled
+operations or testing timer-based logic. Timers fire in chronological order.
 
 ## Deterministic trade IDs
 
@@ -117,7 +115,7 @@ for each generated fill. The ID is formatted as `T-{hash:016x}-{count:03d}`, whe
 hex is an FNV-1a hash of `(venue, raw_id, ts_init)` and the trailing counter distinguishes multiple
 fills at the same `ts_init` (e.g. several legs of a bar-driven fill).
 
-**Properties**:
+Deterministic trade IDs have these properties:
 
 - Deterministic across runs: the same replayed data produces the same
   `TradeId` every time, so downstream dedup and golden-output comparisons stay

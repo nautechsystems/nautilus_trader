@@ -14,6 +14,9 @@ backtesting:
 | High‑level | You want `BacktestNode`, config objects, data catalogs, and batch runs. |
 | Low‑level  | You want direct `BacktestEngine` control and manual component setup.    |
 
+The pages in this section describe the current Rust backtest engine and its Python package-root
+API.
+
 ## Reading guide
 
 The generated sidebar may sort these pages alphabetically. Use this order when reading the section
@@ -32,6 +35,6 @@ end to end:
 
 ## Related guides
 
-- [Strategies](../strategies.md) - Develop strategies to backtest.
-- [Visualization](../visualization.md) - Generate tearsheets from backtest results.
-- [Reports](../reports.md) - Analyze backtest performance data.
+- [Strategies](../strategies.md): Develop strategies to backtest.
+- [Visualization](../visualization.md): Generate tearsheets from backtest results.
+- [Reports](../reports.md): Analyze backtest performance data.

@@ -1,16 +1,14 @@
-# Backtest data and venues
+# Backtest Data and Venues
 
 ## Data
 
-Data provided for backtesting drives the execution flow. Since a variety of data types can be used,
-it's crucial that your venue configurations align with the data being provided for backtesting.
-Mismatches between data and configuration can lead to unexpected behavior during execution.
+Historical data advances the backtest clock, updates simulated market state, and drives strategy
+callbacks. The venue's `book_type` determines which data can update the matching book, so the
+configuration must match the available data.
 
-NautilusTrader is primarily designed and optimized for order book data, which provides a complete
-representation of every price level or order in the market, reflecting the real-time behavior of a
-trading venue. This provides the greatest execution granularity and realism. However, if granular
-order book data is either not available or necessary, then the platform has the capability of
-processing market data in the following descending order of detail:
+Order book data exposes more execution detail than quotes, trades, or bars, but even a recorded
+book cannot show how a simulated order would have changed the market. NautilusTrader supports the
+following data in descending order of detail:
 
 ```mermaid
 flowchart LR
@@ -29,35 +27,25 @@ flowchart LR
     style B fill:#6d9a7d,color:#fff
 ```
 
-1. **Order Book Data/Deltas (L3 market-by-order)**:
-   - Full market depth with visibility of all individual orders.
+More granular data exposes more of the recorded queue and depth, while less granular data requires
+more simulation assumptions.
 
-2. **Order Book Data/Deltas (L2 market-by-price)**:
-   - Market depth visibility across all price levels.
-
-3. **Quote Ticks (L1 market-by-price)**:
-   - Top of book only - best bid and ask prices and sizes.
-
-4. **Trade Ticks**:
-   - Actual executed trades.
-
-5. **Bars**:
-   - Aggregated trading activity over fixed time intervals (e.g., 1-minute, 1-hour, 1-day).
+- **L3 order book data (market-by-order)**: Individual orders at each recorded price level.
+- **L2 order book data (market-by-price)**: Aggregate size at each recorded price level.
+- **L1 quote ticks (market-by-price)**: Best bid and ask prices and sizes.
+- **Trade ticks**: Recorded executions.
+- **Bars**: Aggregated price and volume over fixed intervals.
 
 ### Choosing data: cost vs. accuracy
 
-For many trading strategies, bar data (e.g., 1-minute) can be sufficient for backtesting and
-strategy development. This is particularly important because bar data is typically much more
-accessible and cost-effective compared to tick or order book data.
-
-Given this practical reality, Nautilus is designed to support bar-based backtesting with advanced
-features that maximize simulation accuracy, even when working with lower granularity data.
+Bar data can be sufficient for early strategy development and is often cheaper and easier to
+obtain than tick or order book data. It cannot establish intrabar price order, spread, depth, or
+queue position, so execution-sensitive strategies need more granular validation.
 
 :::tip
-For some trading strategies, it can be practical to start development with bar data to validate core
-trading ideas. If the strategy looks promising, but is more sensitive to precise execution timing
-(e.g., requires fills at specific prices between OHLC levels, or uses tight take-profit/stop-loss
-levels), you can then invest in higher granularity data for more accurate validation.
+Start with bars to test the core signal when appropriate. Move to quotes, trades, or depth data
+before relying on results that depend on spread, exact intrabar order, tight exits, or queue
+position.
 :::
 
 ## Venues
@@ -71,10 +59,11 @@ execution processing from the following options:
 - `L3_MBO`: Level 3 market-by-order. Order book depth is maintained, with all individual orders
   tracked as provided by the data.
 
-The `book_type` determines which data types the matching engine uses to update book state and drive
-execution. Data types not applicable for a given `book_type` are ignored for book and price updates,
-though precision validation still applies and the engine clock still advances. Strategies always
-receive all subscribed data via the data engine regardless of `book_type`.
+The `book_type` determines which data updates book state and drives matching. Data that does not
+apply to the selected book is ignored for book and price updates, but the outer backtest clock still
+advances. Strategies continue to receive subscribed data through the data engine. Precision
+validation depends on the matching path; for example, a bar ignored by an L2 or L3 venue returns
+before executable-bar precision checks.
 
 | Data type          | L1_MBP            | L2_MBP            | L3_MBO            |
 | ------------------ | ----------------- | ----------------- | ----------------- |

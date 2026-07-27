@@ -1,122 +1,74 @@
-# Backtest APIs and repeated runs
+# Backtest APIs and Repeated Runs
+
+NautilusTrader provides a low-level `BacktestEngine` API for direct control and a high-level
+`BacktestNode` API for catalog-backed, configurable runs.
 
 ## Choosing an API level
 
-Consider using the **low-level** API when:
+Use the low-level API when:
 
-- Your entire data stream can be processed within the available machine resources (e.g., RAM).
-- You prefer not to store data in the Nautilus-specific Parquet format.
-- You have a specific need or preference to retain raw data in its original format (e.g., CSV,
-  binary, etc.).
-- You require fine-grained control over the `BacktestEngine`, such as the ability to re-run
-  backtests on identical datasets while swapping out components (e.g., actors or strategies) or
-  adjusting parameter configurations.
+- The data fits in memory or you will stream batches manually.
+- You want to load data from formats other than a Nautilus Parquet catalog.
+- You need direct control over venues, instruments, actors, strategies, or execution algorithms.
+- You want to rerun the same loaded data with selected components changed.
 
-Consider using the **high-level** API when:
+Use the high-level API when:
 
-- Your data stream exceeds available memory, requiring streaming data in batches.
-- You want the performance and convenience of the `ParquetDataCatalog` for storing data in the
-  Nautilus-specific Parquet format.
-- You value the flexibility and functionality of passing configuration objects to define and manage
-  multiple backtest runs across various engines simultaneously.
+- The data lives in a `ParquetDataCatalog`.
+- The data requires automatic chunked loading.
+- You want one configuration object to describe and identify a catalog-backed run.
+- You want each independent run to use a fresh engine.
 
 ## Low-level API
 
-The low-level API centers around a `BacktestEngine`, where inputs are initialized and added manually
-via a Python script. An instantiated `BacktestEngine` can accept the following:
-
-- Lists of `Data` objects, which are automatically sorted into monotonic order based on `ts_init`.
-- Multiple venues, manually initialized.
-- Multiple actors, manually initialized and added.
-- Multiple execution algorithms, manually initialized and added.
-
-This approach offers detailed control over the backtesting process, allowing you to manually
-configure each component.
-
-### Loading large datasets efficiently
-
-When working with large amounts of data across multiple instruments, the way you load data can
-significantly impact performance.
-
-#### The performance consideration
-
-By default, `BacktestEngine.add_data()` sorts the entire data stream (existing data + newly added
-data) on each call when `sort=True` (the default). This means:
-
-- First call with 1M bars: sorts 1M bars.
-- Second call with 1M bars: sorts 2M bars.
-- Third call with 1M bars: sorts 3M bars.
-- And so on...
-
-This repeated sorting of increasingly large datasets can become a bottleneck when loading data for
-multiple instruments.
-
-#### Optimization strategies
-
-**Strategy 1: Defer sorting until the end (recommended for multiple instruments)**
+The low-level API centers on `BacktestEngine`. Create the engine with a
+`BacktestEngineConfig`, then add venues, instruments, components, and data before calling `run()`:
 
 ```python
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import BacktestEngineConfig
 
-engine = BacktestEngine()
-
-# Setup venue and instruments
+engine = BacktestEngine(BacktestEngineConfig())
 engine.add_venue(...)
-engine.add_instrument(instrument1)
-engine.add_instrument(instrument2)
-engine.add_instrument(instrument3)
-
-# Load all data WITHOUT sorting on each call
-engine.add_data(instrument1_bars, sort=False)
-engine.add_data(instrument2_bars, sort=False)
-engine.add_data(instrument3_bars, sort=False)
-
-# Sort once at the end - much more efficient!
-engine.sort_data()
-
-# Now run your backtest
+engine.add_instrument(instrument)
 engine.add_strategy(strategy)
+engine.add_data(data)
 engine.run()
 ```
 
-**Strategy 2: Collect and add in a single batch**
+### Loading data
+
+Each `add_data()` call copies its input into an independent stream. The engine orders each stream
+by replay timestamp and merges all streams chronologically during the run. Adding one batch per
+instrument does not repeatedly sort a cumulative list:
 
 ```python
-# Collect all data first
-all_bars = []
-all_bars.extend(instrument1_bars)
-all_bars.extend(instrument2_bars)
-all_bars.extend(instrument3_bars)
-
-# Add once with sorting
-engine.add_data(all_bars, sort=True)
+engine.add_data(instrument1_bars)
+engine.add_data(instrument2_bars)
+engine.add_data(instrument3_bars)
+engine.run()
 ```
 
-**Strategy 3: Use streaming API for very large datasets**
-
-For datasets that don't fit in memory, there are two streaming approaches:
-
-**Automatic chunking** - supply a generator that yields batches. The engine pulls chunks lazily
-during a single `run()` call:
+Keep the default `sort=True` unless a batching workflow deliberately manages run readiness. A call
+with `sort=False` marks the engine as not ready to run. Call `sort_data()` before `run()` unless a
+later `add_data(..., sort=True)` call has restored readiness:
 
 ```python
-def data_generator():
-    # Yield chunks of data (each chunk is a list of Data objects)
-    yield load_chunk_1()
-    yield load_chunk_2()
-    yield load_chunk_3()
-
-
-engine.add_data_iterator(
-    data_name="my_data_stream",
-    generator=data_generator(),
-)
-
-engine.run()  # Chunks are consumed on-demand
+engine.add_data(instrument1_bars, sort=False)
+engine.add_data(instrument2_bars, sort=False)
+engine.sort_data()
+engine.run()
 ```
 
-**Manual chunking** - load and run each batch yourself. This is the pattern used internally by
-`BacktestNode` and gives full control over batch boundaries:
+`sort_data()` marks the independently ordered streams as ready for replay. It is safe to call more
+than once.
+
+The engine copies each input sequence. Clearing or modifying the original Python list after
+`add_data()` does not change the loaded stream.
+
+### Streaming batches manually
+
+Use streaming mode when the complete dataset does not fit in memory:
 
 ```python
 engine.add_strategy(strategy)
@@ -126,70 +78,68 @@ for batch in data_batches:
     engine.run(streaming=True)
     engine.clear_data()
 
-engine.end()  # Finalize: flushes remaining timers, stops engines, produces results
+engine.end()
 ```
 
-:::note
-In streaming mode, timer advancement stops when data exhausts for each batch. Timers scheduled past
-the last data point (e.g. bar aggregation intervals) are deferred until more data arrives or `end()`
-is called, which flushes up to the `end` boundary from the last `run()` call.
-:::
+`run(streaming=True)` pauses when the current data is exhausted. It does not finalize the trader or
+advance timers beyond that batch. Call `end()` after the final batch to flush timers to the last
+run boundary, invoke stop handlers, and produce the final result.
 
-:::tip[Performance impact]
-For a backtest with 10 instruments, each with 1M bars:
-
-- Sorting on each call: ~10 sorts of increasing size (1M, 2M, 3M, ... 10M bars).
-- Sorting once at the end: 1 sort of 10M bars.
-
-The deferred sorting approach can be **significantly faster** for large datasets.
-:::
-
-### Data loading contract
-
-The `BacktestEngine` enforces important invariants to ensure data integrity:
-
-**Requirements:**
-
-- All data must be sorted before calling `run()`.
-- When using `sort=False`, you **must** call `sort_data()` before running.
-- The engine validates this and raises `RuntimeError` if unsorted data is detected.
-- Calling `sort_data()` multiple times is safe (idempotent).
-
-**Safety guarantees:**
-
-- Data lists are always copied internally to prevent external mutations from affecting engine state.
-- You can safely clear or modify data lists after passing them to `add_data()`.
-- Adding data with `sort=True` makes it immediately available for backtesting.
-
-This design ensures data integrity while enabling performance optimizations for large datasets.
+The low-level API does not expose a generator-based `add_data_iterator()` method. `BacktestNode`
+provides automatic catalog chunking; direct engine users stream with the loop above.
 
 ## High-level API
 
-The high-level API centers around a `BacktestNode`, which orchestrates the management of multiple
-`BacktestEngine` instances, each defined by a `BacktestRunConfig`. Multiple configurations can be
-bundled into a list and processed by the node in one run.
+The high-level API centers on `BacktestNode`. Each `BacktestRunConfig` contains:
 
-Each `BacktestRunConfig` object consists of the following:
+- One or more `BacktestVenueConfig` objects.
+- One or more `BacktestDataConfig` objects.
+- An optional `BacktestEngineConfig`.
+- Optional chunk size, time bounds, exception handling, and disposal settings.
 
-- A list of `BacktestDataConfig` objects.
-- A list of `BacktestVenueConfig` objects.
-- A list of `ImportableActorConfig` objects.
-- A list of `ImportableStrategyConfig` objects.
-- A list of `ImportableExecAlgorithmConfig` objects.
-- An optional `ImportableControllerConfig` object.
-- An optional `BacktestEngineConfig` object, with a default configuration if not specified.
+Build the node before adding strategies through its run-specific methods:
+
+```python
+from nautilus_trader.backtest import BacktestDataConfig
+from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.backtest import BacktestRunConfig
+from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import OmsType
+
+venue = BacktestVenueConfig(
+    name="SIM",
+    oms_type=OmsType.HEDGING,
+    account_type=AccountType.MARGIN,
+    book_type=BookType.L1_MBP,
+    starting_balances=["1_000_000 USD"],
+)
+data = BacktestDataConfig(
+    data_type="QuoteTick",
+    catalog_path="/data/catalog",
+    instrument_id=instrument_id,
+)
+config = BacktestRunConfig(
+    venues=[venue],
+    data=[data],
+    engine=BacktestEngineConfig(),
+    chunk_size=100_000,
+)
+
+node = BacktestNode([config])
+node.build()
+node.add_strategy_from_config(config.id, strategy_config)
+results = node.run()
+```
+
+`BacktestNode` also provides methods for adding actors and built-in strategies to a built run.
 
 ## Shutdown on error
 
-Set `BacktestEngineConfig.shutdown_on_error=True` so that a Rust error log ends the backtest run.
-The Rust logger records the first `log::error!` emitted after the kernel starts, and the kernel
-converts that trigger into a `ShutdownSystem` command the next time the backtest loop checks for
-shutdown.
-
-The shutdown request follows the normal backtest stop path. It stops the trader and engines, then
-returns the backtest results collected up to the shutdown point. It does not abort the process. For
-final `on_stop` and command-settling behavior, see
-[shutdown semantics](execution-flow.md#shutdown-semantics).
+Set `BacktestEngineConfig.shutdown_on_error=True` to request a normal shutdown when the Rust logger
+emits an error record:
 
 ```python
 from nautilus_trader.backtest import BacktestEngineConfig
@@ -197,105 +147,78 @@ from nautilus_trader.backtest import BacktestEngineConfig
 config = BacktestEngineConfig(shutdown_on_error=True)
 ```
 
-Error logs suppressed by component filters or `bypass_logging=True` still request shutdown. The
-trigger is cleared and re-armed when a new kernel run starts, so a process can run another backtest
-without reinitializing the logging system. Shutdown-on-error observes Rust `log` records, not Python
-`logging.error(...)` calls.
+The backtest loop observes the request, stops the trader and engines, and returns results collected
+up to that point. It does not abort the process. Error records suppressed by component filters or
+`bypass_logging=True` still request shutdown. Python `logging.error(...)` calls do not.
+
+The trigger resets when a new kernel run starts. For final `on_stop` and command-settling behavior,
+see [shutdown semantics](execution-flow.md#shutdown-semantics).
 
 ## Repeated runs
 
-When conducting multiple backtest runs, it's important to understand how components reset to avoid
-unexpected behavior.
+`BacktestEngine.reset()` returns trading state and loaded component state to their initial values.
+It keeps data, instruments, venues, actors, strategies, and execution algorithms registered.
 
-### Resetting BacktestEngine
+The reset clears:
 
-The `.reset()` method returns engine state and loaded component state to their **initial value**. It
-keeps loaded components, data, instruments, and venues registered.
-
-**What gets reset:**
-
-- All trading state (orders, positions, account balances).
-- Loaded actors, strategies, and execution algorithms are reset in place.
+- Orders, positions, and account balances.
+- Component runtime state.
 - Engine counters and timestamps.
 
-**What persists:**
+The reset retains:
 
-- Data added via `.add_data()` (use `.clear_data()` to remove).
-- Instruments (must match the persisted data).
-- Venue configurations.
-- Loaded actors, strategies, and execution algorithms.
+- Data added through `add_data()`.
+- Instruments and venue configuration.
+- Registered actors, strategies, and execution algorithms.
 
-**Instrument handling:**
+Instruments remain loaded because the default backtest cache configuration sets
+`drop_instruments_on_reset=False`.
 
-For `BacktestEngine`, instruments persist across resets by default (because data persists and
-instruments must match data). This is configured via `CacheConfig.drop_instruments_on_reset=False`
-in the default `BacktestEngineConfig`.
+### Use fresh nodes for independent runs
 
-### Approaches for multiple backtest runs
-
-There are two main approaches for running multiple backtests:
-
-#### Use BacktestNode for production
-
-The high-level API is designed for multiple backtest runs with different configurations:
+`BacktestNode` accepts one `BacktestRunConfig`. To run independent configurations, create and
+dispose one node at a time:
 
 ```python
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config import BacktestRunConfig
-
-# Define multiple run configurations
 configs = [
-    BacktestRunConfig(...),  # Run 1
-    BacktestRunConfig(...),  # Run 2
-    BacktestRunConfig(...),  # Run 3
+    BacktestRunConfig(...),
+    BacktestRunConfig(...),
+    BacktestRunConfig(...),
 ]
+results = []
 
-# Execute all runs
-node = BacktestNode(configs=configs)
-results = node.run()
+for config in configs:
+    node = BacktestNode([config])
+    try:
+        results.extend(node.run())
+    finally:
+        node.dispose()
 ```
 
-Each run gets a fresh engine with clean state - no reset() needed.
+Build each node and register its strategies before `run()` when they are not supplied by a
+controller.
 
-#### Use BacktestEngine.reset
+### Reuse loaded data for parameter runs
 
-For fine-grained control with the low-level API:
+Use `reset()` when runs should share loaded data and venue setup:
 
 ```python
-from nautilus_trader.backtest.engine import BacktestEngine
-
-engine = BacktestEngine()
-
-# Setup once
+engine = BacktestEngine(BacktestEngineConfig())
 engine.add_venue(...)
-engine.add_instrument(ETHUSDT)
+engine.add_instrument(instrument)
 engine.add_data(data)
 
-# Run 1
 engine.add_strategy(strategy1)
 engine.run()
 
-# Reset and run 2 with the same loaded strategy
 engine.reset()
 engine.run()
 
-# Reset and run 3 with a different strategy
 engine.reset()
 engine.clear_strategies()
 engine.add_strategy(strategy2)
 engine.run()
 ```
 
-:::note
-Instruments and data persist across resets by default for `BacktestEngine`, making parameter
-optimizations straightforward.
-:::
-
-:::tip[Best practices]
-
-- **For production backtesting:** Use `BacktestNode` with configuration objects.
-- **For parameter optimizations:** Use `BacktestEngine.reset()` to keep data and instruments,
-  then call `clear_strategies()` before adding a replacement strategy instance.
-- **For quick experiments:** Either approach works - choose based on individual use case.
-
-:::
+Call `clear_strategies()` before replacing a strategy instance. Use `clear_data()` only when the
+next run should load a different dataset.
