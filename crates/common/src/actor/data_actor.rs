@@ -1429,6 +1429,9 @@ pub trait DataActor: Component {
     }
 
     /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
+    /// 
+    /// `managed` parameter controls whether the deltas are automatically written in the cache
+    /// and let the engine manage an internal order book data structure.
     fn subscribe_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
