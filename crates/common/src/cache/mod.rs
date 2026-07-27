@@ -3184,82 +3184,105 @@ impl Cache {
     ///
     /// For safety, an order is prevented from being purged if it's open.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
-        // Check if order exists and is safe to purge before removing
-        let order_cell = self.orders.get(&client_order_id).cloned();
+        struct OrderDetails {
+            is_open: bool,
+            instrument_id: InstrumentId,
+            strategy_id: StrategyId,
+            account_id: Option<AccountId>,
+            exec_algorithm_id: Option<ExecAlgorithmId>,
+            exec_spawn_id: Option<ClientOrderId>,
+            position_id: Option<PositionId>,
+            venue_order_id: Option<VenueOrderId>,
+            venue_order_ids: Vec<VenueOrderId>,
+        }
 
-        // Prevent purging open orders
-        if let Some(ref order_cell) = order_cell
-            && order_cell.borrow().is_open()
+        let order_cell = self.orders.get(&client_order_id).cloned();
+        let order_details = order_cell.as_ref().map(|cell| {
+            let order = cell.borrow();
+            OrderDetails {
+                is_open: order.is_open(),
+                instrument_id: order.instrument_id(),
+                strategy_id: order.strategy_id(),
+                account_id: order.account_id(),
+                exec_algorithm_id: order.exec_algorithm_id(),
+                exec_spawn_id: order.exec_spawn_id(),
+                position_id: order.position_id(),
+                venue_order_id: order.venue_order_id(),
+                venue_order_ids: order.venue_order_ids().into_iter().copied().collect(),
+            }
+        });
+
+        if order_details
+            .as_ref()
+            .is_some_and(|details| details.is_open)
         {
             log::warn!("Order {client_order_id} found open when purging, skipping purge");
             return;
         }
 
-        // If order exists in cache, remove it and clean up order-specific indices
-        if let Some(ref order_cell) = order_cell {
-            let order = order_cell.borrow();
-            // Safe to purge
+        if order_details.is_some() {
             self.orders.remove(&client_order_id);
+        } else {
+            log::warn!("Order {client_order_id} not found when purging");
+        }
 
-            // Remove order from venue index
+        let indexed_position_id = self.index.order_position.remove(&client_order_id);
+        let indexed_strategy_id = self.index.order_strategy.remove(&client_order_id);
+        self.index.order_client.remove(&client_order_id);
+        let indexed_venue_order_id = self.index.client_order_ids.remove(&client_order_id);
+
+        if let Some(details) = &order_details {
             if let Some(venue_orders) = self
                 .index
                 .venue_orders
-                .get_mut(&order.instrument_id().venue)
+                .get_mut(&details.instrument_id.venue)
             {
                 venue_orders.remove(&client_order_id);
                 if venue_orders.is_empty() {
-                    self.index.venue_orders.remove(&order.instrument_id().venue);
+                    self.index.venue_orders.remove(&details.instrument_id.venue);
                 }
             }
 
-            // Remove venue order ID index if exists
-            if let Some(venue_order_id) = order.venue_order_id() {
-                self.index.venue_order_ids.remove(&venue_order_id);
+            // As with the strategy buckets below, an absent bucket is left absent: recreating
+            // it would suppress the `index.instrument_positions` integrity check.
+            // As with the strategy buckets below, an absent bucket is left absent: recreating
+            // it would suppress the `index.instrument_positions` integrity check.
+            let instrument_orders_became_empty = self
+                .index
+                .instrument_orders
+                .get_mut(&details.instrument_id)
+                .is_some_and(|instrument_orders| {
+                    instrument_orders.remove(&client_order_id);
+                    instrument_orders.is_empty()
+                });
+
+            let has_instrument_positions = self
+                .index
+                .instrument_positions
+                .get(&details.instrument_id)
+                .is_some_and(|positions| !positions.is_empty());
+
+            if instrument_orders_became_empty && !has_instrument_positions {
+                self.index.instrument_orders.remove(&details.instrument_id);
             }
 
-            // Remove from instrument orders index
-            if let Some(instrument_orders) =
-                self.index.instrument_orders.get_mut(&order.instrument_id())
-            {
-                instrument_orders.remove(&client_order_id);
-                if instrument_orders.is_empty() {
-                    self.index.instrument_orders.remove(&order.instrument_id());
-                }
-            }
+            if let Some(exec_algorithm_id) = details.exec_algorithm_id {
+                let became_empty = self
+                    .index
+                    .exec_algorithm_orders
+                    .get_mut(&exec_algorithm_id)
+                    .is_some_and(|orders| {
+                        orders.remove(&client_order_id);
+                        orders.is_empty()
+                    });
 
-            // Remove from position orders index if associated with a position
-            if let Some(position_id) = order.position_id()
-                && let Some(position_orders) = self.index.position_orders.get_mut(&position_id)
-            {
-                position_orders.remove(&client_order_id);
-                if position_orders.is_empty() {
-                    self.index.position_orders.remove(&position_id);
-                }
-            }
-
-            // Remove from exec algorithm orders index if it has an exec algorithm
-            if let Some(exec_algorithm_id) = order.exec_algorithm_id()
-                && let Some(exec_algorithm_orders) =
-                    self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
-            {
-                exec_algorithm_orders.remove(&client_order_id);
-                if exec_algorithm_orders.is_empty() {
+                if became_empty {
                     self.index.exec_algorithm_orders.remove(&exec_algorithm_id);
+                    self.index.exec_algorithms.remove(&exec_algorithm_id);
                 }
             }
 
-            // Clean up strategy orders reverse index
-            if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&order.strategy_id())
-            {
-                strategy_orders.remove(&client_order_id);
-                if strategy_orders.is_empty() {
-                    self.index.strategy_orders.remove(&order.strategy_id());
-                }
-            }
-
-            // Clean up account orders index
-            if let Some(account_id) = order.account_id()
+            if let Some(account_id) = details.account_id
                 && let Some(account_orders) = self.index.account_orders.get_mut(&account_id)
             {
                 account_orders.remove(&client_order_id);
@@ -3268,8 +3291,7 @@ impl Cache {
                 }
             }
 
-            // Clean up exec spawn reverse index (if this order is a spawned child)
-            if let Some(exec_spawn_id) = order.exec_spawn_id()
+            if let Some(exec_spawn_id) = details.exec_spawn_id
                 && let Some(spawn_orders) = self.index.exec_spawn_orders.get_mut(&exec_spawn_id)
             {
                 spawn_orders.remove(&client_order_id);
@@ -3277,29 +3299,125 @@ impl Cache {
                     self.index.exec_spawn_orders.remove(&exec_spawn_id);
                 }
             }
-
-            log::info!("Purged order {client_order_id}");
-        } else {
-            log::warn!("Order {client_order_id} not found when purging");
         }
 
-        // Always clean up order indices (even if order was not in cache)
-        self.index.order_position.remove(&client_order_id);
-        let strategy_id = self.index.order_strategy.remove(&client_order_id);
-        self.index.order_client.remove(&client_order_id);
-        self.index.client_order_ids.remove(&client_order_id);
+        let mut position_ids = AHashSet::new();
+        if let Some(position_id) = indexed_position_id {
+            position_ids.insert(position_id);
+        }
 
-        // Clean up reverse index when order not in cache (using forward index)
-        if let Some(strategy_id) = strategy_id
-            && let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id)
+        if let Some(position_id) = order_details
+            .as_ref()
+            .and_then(|details| details.position_id)
         {
-            strategy_orders.remove(&client_order_id);
-            if strategy_orders.is_empty() {
-                self.index.strategy_orders.remove(&strategy_id);
+            position_ids.insert(position_id);
+        }
+
+        let mut strategy_ids = AHashSet::new();
+        if let Some(strategy_id) = indexed_strategy_id {
+            strategy_ids.insert(strategy_id);
+        }
+
+        if let Some(details) = &order_details {
+            strategy_ids.insert(details.strategy_id);
+        }
+
+        for position_id in position_ids {
+            if self.positions.contains_key(&position_id) {
+                if let Some(position_orders) = self.index.position_orders.get_mut(&position_id) {
+                    position_orders.remove(&client_order_id);
+                }
+                continue;
+            }
+
+            let has_other_orders =
+                if let Some(position_orders) = self.index.position_orders.get_mut(&position_id) {
+                    position_orders.remove(&client_order_id);
+                    !position_orders.is_empty()
+                } else {
+                    self.index
+                        .order_position
+                        .values()
+                        .any(|candidate| *candidate == position_id)
+                };
+
+            if has_other_orders {
+                continue;
+            }
+
+            self.index.position_orders.remove(&position_id);
+            if let Some(strategy_id) = self.index.position_strategy.remove(&position_id) {
+                strategy_ids.insert(strategy_id);
+                if let Some(strategy_positions) =
+                    self.index.strategy_positions.get_mut(&strategy_id)
+                {
+                    strategy_positions.remove(&position_id);
+                    if strategy_positions.is_empty() {
+                        self.index.strategy_positions.remove(&strategy_id);
+                    }
+                }
+            }
+
+            if let Some(details) = &order_details
+                && let Some(venue_positions) = self
+                    .index
+                    .venue_positions
+                    .get_mut(&details.instrument_id.venue)
+            {
+                venue_positions.remove(&position_id);
+                if venue_positions.is_empty() {
+                    self.index
+                        .venue_positions
+                        .remove(&details.instrument_id.venue);
+                }
             }
         }
 
-        // Remove spawn parent entry if this order was a spawn root
+        for strategy_id in strategy_ids {
+            // An absent reverse bucket is not an empty one: it means the index is already
+            // inconsistent, possibly while another cached order still uses this strategy.
+            // Retiring the registry entry here would both drop a live strategy from
+            // `strategy_ids` and stop `check_integrity` reporting the missing bucket, so the
+            // absent case is left exactly as found.
+            let strategy_orders_became_empty = self
+                .index
+                .strategy_orders
+                .get_mut(&strategy_id)
+                .is_some_and(|strategy_orders| {
+                    strategy_orders.remove(&client_order_id);
+                    strategy_orders.is_empty()
+                });
+
+            let has_positions = self
+                .index
+                .strategy_positions
+                .get(&strategy_id)
+                .is_some_and(|strategy_positions| !strategy_positions.is_empty());
+
+            if strategy_orders_became_empty && !has_positions {
+                self.index.strategy_orders.remove(&strategy_id);
+                self.index.strategies.remove(&strategy_id);
+            }
+        }
+
+        let mut venue_order_ids = AHashSet::new();
+        if let Some(venue_order_id) = indexed_venue_order_id {
+            venue_order_ids.insert(venue_order_id);
+        }
+
+        if let Some(details) = &order_details {
+            venue_order_ids.extend(details.venue_order_ids.iter().copied());
+            if let Some(venue_order_id) = details.venue_order_id {
+                venue_order_ids.insert(venue_order_id);
+            }
+        }
+
+        for venue_order_id in venue_order_ids {
+            if self.index.venue_order_ids.get(&venue_order_id) == Some(&client_order_id) {
+                self.index.venue_order_ids.remove(&venue_order_id);
+            }
+        }
+
         self.index.exec_spawn_orders.remove(&client_order_id);
 
         self.index.orders.remove(&client_order_id);
@@ -3309,6 +3427,10 @@ impl Cache {
         self.index.orders_emulated.remove(&client_order_id);
         self.index.orders_inflight.remove(&client_order_id);
         self.index.orders_pending_cancel.remove(&client_order_id);
+
+        if order_details.is_some() {
+            log::info!("Purged order {client_order_id}");
+        }
     }
 
     /// Purges the position with the `position_id` from the cache (if found).
@@ -3344,22 +3466,49 @@ impl Cache {
             }
 
             // Remove from instrument positions index
-            if let Some(instrument_positions) =
-                self.index.instrument_positions.get_mut(&pos.instrument_id)
-            {
-                instrument_positions.remove(&position_id);
-                if instrument_positions.is_empty() {
-                    self.index.instrument_positions.remove(&pos.instrument_id);
+            let instrument_positions_became_empty = self
+                .index
+                .instrument_positions
+                .get_mut(&pos.instrument_id)
+                .is_some_and(|positions| {
+                    positions.remove(&position_id);
+                    positions.is_empty()
+                });
+
+            if instrument_positions_became_empty {
+                self.index.instrument_positions.remove(&pos.instrument_id);
+                let instrument_orders_empty = self
+                    .index
+                    .instrument_orders
+                    .get(&pos.instrument_id)
+                    .is_some_and(|orders| orders.is_empty());
+
+                if instrument_orders_empty {
+                    self.index.instrument_orders.remove(&pos.instrument_id);
                 }
             }
 
             // Remove from strategy positions index
-            if let Some(strategy_positions) =
-                self.index.strategy_positions.get_mut(&pos.strategy_id)
-            {
-                strategy_positions.remove(&position_id);
-                if strategy_positions.is_empty() {
-                    self.index.strategy_positions.remove(&pos.strategy_id);
+            let strategy_positions_became_empty = self
+                .index
+                .strategy_positions
+                .get_mut(&pos.strategy_id)
+                .is_some_and(|positions| {
+                    positions.remove(&position_id);
+                    positions.is_empty()
+                });
+
+            if strategy_positions_became_empty {
+                self.index.strategy_positions.remove(&pos.strategy_id);
+                let strategy_orders_empty = self
+                    .index
+                    .strategy_orders
+                    .get(&pos.strategy_id)
+                    .is_some_and(|orders| orders.is_empty());
+
+                if strategy_orders_empty {
+                    self.index.strategy_orders.remove(&pos.strategy_id);
+                    self.index.strategies.remove(&pos.strategy_id);
                 }
             }
 
