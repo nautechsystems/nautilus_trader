@@ -572,16 +572,16 @@ impl WsSetupState {
     }
 }
 
-fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Router {
-    create_exec_test_router_with_fill_fixture(order_query_count, FillFixtureMode::Stable, None)
+fn create_exec_test_router(order_query_received: Option<Arc<tokio::sync::Notify>>) -> Router {
+    create_exec_test_router_with_fill_fixture(order_query_received, FillFixtureMode::Stable, None)
 }
 
 fn create_exec_test_router_with_fill_fixture(
-    order_query_count: Option<Arc<AtomicUsize>>,
+    order_query_received: Option<Arc<tokio::sync::Notify>>,
     mode: FillFixtureMode,
     captured_queries: Option<CapturedQueries>,
 ) -> Router {
-    let order_query_count_for_order_route = order_query_count;
+    let order_query_received_for_order_route = order_query_received;
     let state = FillFixtureState {
         mode,
         captured_queries,
@@ -703,14 +703,14 @@ fn create_exec_test_router_with_fill_fixture(
                 },
             )
             .get(move |headers: HeaderMap| {
-                let order_query_count = order_query_count_for_order_route.clone();
+                let order_query_received = order_query_received_for_order_route.clone();
                 async move {
                     if !has_auth_headers(&headers) {
                         return unauthorized_response().into_response();
                     }
 
-                    if let Some(count) = order_query_count {
-                        count.fetch_add(1, Ordering::SeqCst);
+                    if let Some(received) = order_query_received {
+                        received.notify_one();
                     }
 
                     no_such_order_response().into_response()
@@ -1202,13 +1202,13 @@ async fn send_ws_setup_error(
 }
 
 async fn start_exec_test_server() -> SocketAddr {
-    start_exec_test_server_with_order_query_count(None).await
+    start_exec_test_server_with_order_query_signal(None).await
 }
 
-async fn start_exec_test_server_with_order_query_count(
-    order_query_count: Option<Arc<AtomicUsize>>,
+async fn start_exec_test_server_with_order_query_signal(
+    order_query_received: Option<Arc<tokio::sync::Notify>>,
 ) -> SocketAddr {
-    let router = create_exec_test_router(order_query_count);
+    let router = create_exec_test_router(order_query_received);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -2910,8 +2910,9 @@ async fn test_query_account_does_not_block_within_runtime() {
 #[rstest]
 #[tokio::test]
 async fn test_query_order_missing_order_emits_no_order_report() {
-    let order_query_count = Arc::new(AtomicUsize::new(0));
-    let addr = start_exec_test_server_with_order_query_count(Some(order_query_count.clone())).await;
+    let order_query_received = Arc::new(tokio::sync::Notify::new());
+    let addr =
+        start_exec_test_server_with_order_query_signal(Some(order_query_received.clone())).await;
     let base_url = format!("http://{addr}");
 
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
@@ -2937,26 +2938,14 @@ async fn test_query_order_missing_order_emits_no_order_report() {
 
     client.query_order(query_cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let order_query_count = order_query_count.clone();
-            async move { order_query_count.load(Ordering::SeqCst) > 0 }
-        },
-        Duration::from_secs(5),
-    )
+    tokio::time::timeout(Duration::from_secs(10), order_query_received.notified())
+        .await
+        .expect("Timed out waiting for authenticated order query");
+
+    assert_no_event_matching(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_)))
+    })
     .await;
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut emitted_order_report = false;
-
-    while let Ok(event) = rx.try_recv() {
-        if matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))) {
-            emitted_order_report = true;
-        }
-    }
-
-    assert!(!emitted_order_report);
 }
 
 async fn connected_client_with_command_responses(
@@ -3367,12 +3356,26 @@ async fn assert_no_order_event_matching<F>(
 ) where
     F: Fn(&OrderEventAny) -> bool,
 {
+    assert_no_event_matching(rx, |event| {
+        if let ExecutionEvent::Order(order_event) = event {
+            predicate(order_event)
+        } else {
+            false
+        }
+    })
+    .await;
+}
+
+async fn assert_no_event_matching<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) where
+    F: Fn(&ExecutionEvent) -> bool,
+{
     let unexpected = tokio::time::timeout(Duration::from_millis(500), async {
         loop {
             let event = rx.recv().await.expect("Execution event channel closed");
-            if let ExecutionEvent::Order(order_event) = &event
-                && predicate(order_event)
-            {
+            if predicate(&event) {
                 return event;
             }
         }
@@ -3380,7 +3383,7 @@ async fn assert_no_order_event_matching<F>(
     .await;
 
     if let Ok(event) = unexpected {
-        panic!("Unexpected order event: {event:?}");
+        panic!("Unexpected execution event: {event:?}");
     }
 }
 
