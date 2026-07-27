@@ -308,8 +308,7 @@ class MyExecutionAlgorithm(ExecutionAlgorithm):
             ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("MY-ALGO")),
         )
 
-    def on_order(self, order) -> None:
-        ...
+    def on_order(self, order) -> None: ...
 ```
 
 Python execution algorithms provide cache and portfolio access, a clock for timers, signals, and

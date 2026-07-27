@@ -1887,7 +1887,10 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::{BybitOrderSide, BybitOrderType, BybitStopOrderType, BybitTriggerDirection},
+            enums::{
+                BybitExecType, BybitOrderSide, BybitOrderType, BybitStopOrderType,
+                BybitTriggerDirection,
+            },
             testing::load_test_json,
         },
         http::models::{
@@ -2874,6 +2877,27 @@ mod tests {
         let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_http_corporate_action_fill_report() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_executions.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["result"]["list"][0]["execType"] = json!("CorporateAction");
+        let response: BybitTradeHistoryResponse = serde_json::from_value(value).unwrap();
+        let execution = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
+        assert!(execution.exec_type.is_exchange_generated());
+
+        let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("8c065341-7b52-4ca9-ac2c-37e31ac55c94")
+        );
     }
 
     #[rstest]

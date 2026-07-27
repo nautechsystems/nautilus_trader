@@ -318,6 +318,7 @@ adapter set. The following limits remain deferred:
 - Fixed Bybit spot instruments missing `min_notional` and the newer lot-size fields (#4527), thanks @dxwil
 - Fixed Bybit v2 spot margin auto-repayment quantities, MNT fees, and result handling
 - Fixed Bybit WebSocket fills hardcoding the commission currency to the quote currency (#4536), thanks @dxwil
+- Fixed Bybit REST and WebSocket corporate-action executions failing deserialization
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
 - Fixed Databento MBO fill/no-action decoding and replay gating (#4446), thanks @taozle
 - Fixed Deribit tracked fill and amendment routing while preserving external-order reports

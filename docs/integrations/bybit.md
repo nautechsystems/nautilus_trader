@@ -333,6 +333,7 @@ Bybit emits venue-initiated fills with `execType` set to:
   position after margin was exhausted.
 - `Delivery`: USDC futures delivery.
 - `Settle`: Inverse futures settlement.
+- `CorporateAction`: Stock split or reverse stock split.
 
 The adapter flags each as exchange-generated and logs a warning containing the
 execution ID, symbol, side, quantity, and price. Fills flow through the normal

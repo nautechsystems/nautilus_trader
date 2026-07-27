@@ -1242,7 +1242,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::{BybitOrderSide, BybitProductType},
+            enums::{BybitExecType, BybitOrderSide, BybitProductType},
             parse::{parse_linear_instrument, parse_spot_instrument},
             testing::load_test_json,
         },
@@ -1767,6 +1767,48 @@ mod tests {
             event,
             ExecutionEvent::Report(ExecutionReport::Fill(_))
         ));
+    }
+
+    #[rstest]
+    fn test_dispatch_corporate_action_execution_emits_only_fill_report() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        let json = load_test_json("ws_account_execution_adl.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["execType"] = serde_json::Value::String("CorporateAction".to_string());
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(value).unwrap();
+        let execution = &msg.data[0];
+
+        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
+        assert!(execution.exec_type.is_exchange_generated());
+        assert!(execution.order_link_id.is_empty());
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(msg),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.client_order_id, None);
+                assert_eq!(
+                    report.venue_order_id,
+                    VenueOrderId::from("9aac161b-8ed6-450d-9cab-c5cc67c21785")
+                );
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
