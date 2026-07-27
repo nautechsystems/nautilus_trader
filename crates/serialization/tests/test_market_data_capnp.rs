@@ -36,9 +36,16 @@ use nautilus_model::{
         MarketStatusAction, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, TradeId},
-    types::{Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
-use nautilus_serialization::capnp::{FromCapnp, ToCapnp, market_capnp};
+use nautilus_serialization::capnp::{
+    FromCapnp, ToCapnp,
+    conversions::{
+        deserialize_money, deserialize_price, deserialize_quantity, serialize_money,
+        serialize_price, serialize_quantity,
+    },
+    market_capnp,
+};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -77,6 +84,24 @@ fn test_quote_tick_roundtrip() {
     assert_eq!(quote.ask_size, decoded.ask_size);
     assert_eq!(quote.ts_event, decoded.ts_event);
     assert_eq!(quote.ts_init, decoded.ts_init);
+}
+
+#[rstest]
+fn test_capnp_resolved_raw_width_roundtrip() {
+    // Values chosen so their fixed-point raw crosses 64 bits only when the model resolves to
+    // high precision, which is what makes this decode against the resolved alias rather than
+    // this crate's own feature.
+    let price = Price::from("50000.00");
+    let quantity = Quantity::from("20000.00");
+    let money = Money::new(20_000.0, Currency::USD());
+
+    let price_bytes = serialize_price(&price).unwrap();
+    let quantity_bytes = serialize_quantity(&quantity).unwrap();
+    let money_bytes = serialize_money(&money).unwrap();
+
+    assert_eq!(deserialize_price(&price_bytes).unwrap(), price);
+    assert_eq!(deserialize_quantity(&quantity_bytes).unwrap(), quantity);
+    assert_eq!(deserialize_money(&money_bytes).unwrap(), money);
 }
 
 #[rstest]
