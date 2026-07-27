@@ -14,11 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use nautilus_common::enums::Environment;
+use serde::{de, Deserialize, Deserializer};
 use std::path::Path;
+use std::str::FromStr;
 
 #[derive(Debug, Deserialize)]
-pub struct GridMmConfig {
+pub struct GridMarketMakerTomlConfig {
     pub exchange: String,
     pub trader_id: String,
     pub instrument_id: String,
@@ -38,7 +40,7 @@ pub struct GridMmConfig {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RecorderSection {
+pub struct RecorderTomlConfig {
     pub exchange: String,
     pub trader_id: String,
     pub instrument_id: String,
@@ -46,24 +48,46 @@ pub struct RecorderSection {
     pub path: String,
 }
 
+
+
+#[derive(Debug, Deserialize)]
+pub struct MattiasMarketMakerTomlConfig {
+    pub exchange: String,
+    pub trader_id: String,
+    pub instrument_id: String,
+    #[serde(default = "default_recorder_path")]
+    pub path: String,
+    /// execution environment. possible values are live and backtest
+    #[serde(deserialize_with = "deserialize_environment")]
+    pub execution_environment: Environment
+}
+
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(rename = "grid_mm")]
-    pub grid_mm: Option<GridMmConfig>,
-    pub recorder: Option<RecorderSection>,
+    pub grid_mm: Option<GridMarketMakerTomlConfig>,
+    pub recorder: Option<RecorderTomlConfig>,
+    pub mmm: Option<MattiasMarketMakerTomlConfig>
 }
 
 impl Config {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let contents = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("Failed to read config at {:?}", path.as_ref()))?;
-        let config: Config = toml::from_str(&contents)?;
+            .with_context(|| format!("Failed to read config at {:?}", path.as_ref().display()))?;
+        let config: Self = toml::from_str(&contents)?;
         Ok(config)
     }
 
     pub fn load() -> Result<Self> {
         Self::from_file("config.toml")
     }
+}
+
+fn deserialize_environment<'de, D>(deserializer: D) -> Result<Environment, D::Error>
+where D: Deserializer<'de> {
+    let s = String::deserialize(deserializer)?;
+    Environment::from_str(&s).map_err(de::Error::custom)
 }
 
 fn default_num_levels() -> usize {

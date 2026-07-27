@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .path(cfg.path)
         .build();
 
-    let strategy = Recorder::new(config);
+    let strategy = Recorder::new(&config);
 
     node.add_strategy(strategy)?;
     node.run().await?;

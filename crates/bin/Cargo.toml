@@ -21,6 +21,7 @@ nautilus-core = { workspace = true }
 nautilus-dydx = { workspace = true }
 nautilus-bybit = { workspace = true }
 nautilus-persistence = { workspace = true }
+nautilus-backtest = { workspace = true, features = ["streaming"]}
 rustls = { workspace = true }
 
 ahash = { workspace = true }

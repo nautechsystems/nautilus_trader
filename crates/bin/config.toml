@@ -1,18 +1,25 @@
 [grid_mm]
 exchange = "bybit"
 trader_id = "TESTER-001"
-instrument_id = "ETH-PERP.BYBIT"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
 max_position = "20"
 trade_size = "20"
 num_levels = 3
 grid_step_bps = 10
 skew_factor = 0.0
 requote_threshold_bps = 5
-expire_time_secs = 5
+expire_time_secs = 1
 on_cancel_resubmit = false
 
 [recorder]
 exchange = "bybit"
 trader_id = "TESTER-001"
-instrument_id = "ETH-PERP.BYBIT"
-path = "data/"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
+path = "/home/mattia/dev/nautilus_trader/data/"
+
+[mmm]
+execution_environment = "backtest" # backtest, live, sandbox
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
+path = "/home/mattia/dev/nautilus_trader/data/"

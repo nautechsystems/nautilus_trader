@@ -7078,6 +7078,7 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "log",
+ "nautilus-backtest",
  "nautilus-bybit",
  "nautilus-common",
  "nautilus-core",

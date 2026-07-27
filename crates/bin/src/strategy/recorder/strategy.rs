@@ -7,12 +7,11 @@ use nautilus_model::{
     enums::BookType::L2_MBP,
     identifiers::InstrumentId,
     instruments::InstrumentAny,
-    types::{Price, Quantity},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_trading::{StrategyCore, nautilus_strategy};
 
-use crate::strategy::recorder::config::RecorderConfig;
+use crate::{strategy::recorder::config::RecorderConfig, utils::micro_price};
 pub struct Recorder {
     pub(super) core: StrategyCore,
     pub(crate) instrument_id: InstrumentId,
@@ -24,7 +23,7 @@ pub struct Recorder {
 
 impl Recorder {
     #[allow(dead_code)]
-    pub fn new(config: RecorderConfig) -> Self {
+    pub fn new(config: &RecorderConfig) -> Self {
         Self {
             core: StrategyCore::new(config.base.clone()),
             instrument_id: config.instrument_id,
@@ -43,21 +42,7 @@ impl Debug for Recorder {
     }
 }
 
-fn micro_price(
-    ask_price: Price,
-    bid_price: Price,
-    ask_size: Quantity,
-    bid_size: Quantity,
-    precision: u8,
-) -> Price {
-    Price::new(
-        ((bid_size.as_decimal() * ask_price.as_decimal()
-            + ask_size.as_decimal() * bid_price.as_decimal())
-            / (bid_size + ask_size).as_decimal())
-        .as_f64(),
-        precision,
-    )
-}
+
 
 impl DataActor for Recorder {
     fn on_start(&mut self) -> anyhow::Result<()> {
@@ -97,7 +82,10 @@ impl DataActor for Recorder {
         )?;
 
         let instrument = self.cache().instrument(&self.instrument_id).unwrap();
-        log::info!("{:#?}", instrument);
+        
+        self.data_catalog.write_instruments(vec![instrument.clone()])?;
+
+        log::info!("{instrument:#?}");
         match instrument {
             InstrumentAny::Betting(_betting_instrumentt) => todo!(),
             InstrumentAny::BinaryOption(_binary_option) => todo!(),
@@ -108,7 +96,7 @@ impl DataActor for Recorder {
             InstrumentAny::CryptoOption(_crypto_option) => todo!(),
             InstrumentAny::CryptoOptionSpread(_crypto_option_spread) => todo!(),
             InstrumentAny::CryptoPerpetual(crypto_perpetual) => {
-                self.instrument_precision = crypto_perpetual.price_precision
+                self.instrument_precision = crypto_perpetual.price_precision;
             }
             InstrumentAny::CurrencyPair(_currency_pair) => todo!(),
             InstrumentAny::Equity(_equity) => todo!(),
@@ -156,7 +144,7 @@ impl DataActor for Recorder {
         &mut self,
         deltas: &nautilus_model::data::OrderBookDeltas,
     ) -> anyhow::Result<()> {
-        log::debug!("{:#?}", deltas);
+        log::debug!("{deltas:#?}");
         deltas.deltas.iter().for_each(|delta| {
             self.buffer.push(Data::Delta(*delta));
         });
@@ -166,14 +154,14 @@ impl DataActor for Recorder {
 
     fn on_trade(&mut self, tick: &nautilus_model::data::TradeTick) -> anyhow::Result<()> {
 
-        log::debug!("{:?}", tick);
+        log::debug!("{tick:?}");
 
         self.buffer.push(Data::Trade(*tick));
         Ok(())
     }
 
     fn on_time_event(&mut self, event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
-        log::debug!("{:?}", event);
+        log::debug!("{event:?}");
         log::debug!("{:?}", self.data_catalog);
 
         if self.is_first_timer {

@@ -214,7 +214,7 @@ impl DataActor for GridMarketMaker {
     }
 
     fn on_time_event(&mut self, event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
-        log::info!("{:#?}", event);
+        log::info!("{event:#?}");
         Ok(())
     }
 
@@ -227,7 +227,7 @@ impl DataActor for GridMarketMaker {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        log::info!("{:#?}", quote);
+        log::info!("{quote:#?}");
         let mid_f64 = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
         let price_precision = self.price_precision.ok_or_else(|| {
             anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
