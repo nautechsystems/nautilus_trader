@@ -92,6 +92,7 @@ NEXTEST_PROFILE ?= default
 # Local Rust concurrency defaults are capped by host CPU count so lower-spec
 # machines do not inherit settings meant for high-core workstations.
 # Override with CARGO_BUILD_JOBS or NEXTEST_TEST_THREADS when needed
+HOST_OS := $(shell uname -s)
 HOST_CPU_COUNT := $(shell \
 	n=`getconf _NPROCESSORS_ONLN 2>/dev/null` || n=; \
 	if [ -z "$$n" ]; then n=`sysctl -n hw.ncpu 2>/dev/null` || n=; fi; \
@@ -214,6 +215,14 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
 	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
 	cargo-miri-plugin cargo-miri cargo-ci-benches build-debug-v2 py-stubs-v2 \
 	install-cli
+
+# Apple ld can emit compact-unwind size warnings for large Rust binaries
+# Rust source warnings remain denied by -Dwarnings in .cargo/config.toml
+ifeq ($(HOST_OS),Darwin)
+ifeq ($(origin CARGO_BUILD_WARNINGS),undefined)
+$(CARGO_BUILD_JOB_TARGETS): export CARGO_BUILD_WARNINGS=warn
+endif
+endif
 
 NEXTEST_ENV_TARGETS := cargo-test cargo-test-extras cargo-test-postgres-ci cargo-test-core-local \
 	cargo-test-core-selected cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
