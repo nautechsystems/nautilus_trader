@@ -35,10 +35,10 @@ use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, hex, nanos::UnixNanos, time::AtomicTime,
+    collections::AtomicMap, consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, hex,
+    nanos::UnixNanos, time::AtomicTime,
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
@@ -2344,7 +2344,7 @@ fn spot_sbe_stp(mode: Option<BinanceSelfTradePreventionMode>) -> SbeSelfTradePre
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,
     clock: &'static AtomicTime,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
 }
 
 impl Clone for BinanceSpotHttpClient {
@@ -2427,7 +2427,7 @@ impl BinanceSpotHttpClient {
         Ok(Self {
             inner: Arc::new(inner),
             clock,
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
         })
     }
 
@@ -2471,26 +2471,26 @@ impl BinanceSpotHttpClient {
     /// Retrieves an instrument from the cache.
     fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
-            .get(&symbol)
-            .map(|entry| entry.value().clone())
+            .get_cloned(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
     /// Caches multiple instruments.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst);
-        }
+        self.instruments_cache.rcu(move |cache| {
+            for instrument in &instruments {
+                cache.insert(instrument.raw_symbol().inner(), instrument.clone());
+            }
+        });
     }
 
     /// Replaces the complete instrument cache.
     pub fn replace_instruments(&self, instruments: &[InstrumentAny]) {
-        self.instruments_cache.clear();
-        for instrument in instruments {
-            self.instruments_cache
-                .insert(instrument.raw_symbol().inner(), instrument.clone());
-        }
+        let cache = instruments
+            .iter()
+            .map(|instrument| (instrument.raw_symbol().inner(), instrument.clone()))
+            .collect();
+        self.instruments_cache.store(cache);
     }
 
     /// Caches a single instrument.
@@ -2502,9 +2502,7 @@ impl BinanceSpotHttpClient {
     /// Gets an instrument from the cache by symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Tests connectivity to the API.
@@ -2992,8 +2990,7 @@ impl BinanceSpotHttpClient {
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
-            .get(&instrument_id.symbol.inner())
-            .map(|entry| entry.value().clone())
+            .get_cloned(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id).into())
     }
 
