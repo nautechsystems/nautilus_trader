@@ -22,18 +22,6 @@ use nautilus_model::enums::PriceType;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-fn directional_rates(bid: Decimal, ask: Decimal, price_type: PriceType) -> (Decimal, Decimal) {
-    match price_type {
-        PriceType::Bid => (bid, Decimal::ONE / ask),
-        PriceType::Ask => (ask, Decimal::ONE / bid),
-        PriceType::Mid => {
-            let mid = (bid + ask) / Decimal::TWO;
-            (mid, Decimal::ONE / mid)
-        }
-        _ => unreachable!("Price type was validated before graph construction"),
-    }
-}
-
 /// Calculates the exchange rate between two currencies using provided bid and ask quotes.
 ///
 /// This function builds a graph of direct conversion rates from the quotes and uses a DFS to
@@ -131,6 +119,18 @@ pub fn get_exchange_rate(
 
     // No conversion path found
     Ok(None)
+}
+
+fn directional_rates(bid: Decimal, ask: Decimal, price_type: PriceType) -> (Decimal, Decimal) {
+    match price_type {
+        PriceType::Bid => (bid, Decimal::ONE / ask),
+        PriceType::Ask => (ask, Decimal::ONE / bid),
+        PriceType::Mid => {
+            let mid = (bid + ask) / Decimal::TWO;
+            (mid, Decimal::ONE / mid)
+        }
+        _ => unreachable!("Price type was validated before graph construction"),
+    }
 }
 
 #[cfg(test)]
