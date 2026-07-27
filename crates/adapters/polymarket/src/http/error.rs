@@ -44,6 +44,17 @@ pub enum Error {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    #[error(
+        "bad request: {endpoint} token cost {token_cost} exceeds {tier} tier {bucket} burst {burst}"
+    )]
+    BurstExceeded {
+        endpoint: &'static str,
+        token_cost: u32,
+        tier: String,
+        bucket: String,
+        burst: u32,
+    },
+
     #[error("exchange error: {0}")]
     Exchange(String),
 
@@ -174,6 +185,7 @@ impl Error {
             Self::Auth(_)
             | Self::RateLimit { .. }
             | Self::BadRequest(_)
+            | Self::BurstExceeded { .. }
             | Self::Exchange(_)
             | Self::UrlParse(_) => false,
         }
@@ -262,6 +274,16 @@ mod tests {
         assert!(!Error::rate_limit("/orders", 10, None).is_retryable());
         assert!(!Error::auth("test").is_retryable());
         assert!(!Error::bad_request("test").is_retryable());
+        assert!(
+            !Error::BurstExceeded {
+                endpoint: "/orders",
+                token_cost: 121,
+                tier: "Standard".to_string(),
+                bucket: "cancel".to_string(),
+                burst: 120,
+            }
+            .is_retryable()
+        );
         assert!(!Error::decode("test").is_retryable());
     }
 

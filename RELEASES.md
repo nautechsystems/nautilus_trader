@@ -357,6 +357,7 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket limit IOC/FOK BUY orders submitting invalid fractional-cent maker amounts
 - Fixed Polymarket v2 instrument price bounds to match the current tick-relative venue range instead of static limits
 - Fixed Polymarket v2 instrument parsing and tick-size changes panicking on unsupported price precision (#4534), thanks for reporting @mystic-io
+- Fixed Polymarket v2 batch‑cancel and cancel‑all requests exceeding the venue order ID limit and per‑signer cancellation burst
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)

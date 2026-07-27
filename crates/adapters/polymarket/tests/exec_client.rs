@@ -91,6 +91,14 @@ use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+const TEST_CHUNK_PRIVATE_KEY: &str =
+    "0x2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+const TEST_CANCEL_ALL_PRIVATE_KEY: &str =
+    "0x3234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+const TEST_CHUNK_FAILURE_PRIVATE_KEY: &str =
+    "0x4234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+const TEST_CHUNK_DOWNGRADE_PRIVATE_KEY: &str =
+    "0x5234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const TEST_SIGNER_ADDRESS: &str = "0x1be31a94361a391bbafb2a4ccd704f57dc04d4bb";
 const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
 const DEFAULT_ACCEPTED_ORDER_ID: &str =
@@ -103,6 +111,14 @@ enum ShutdownCancelMode {
     Individual,
     CancelAll,
     Batch,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CancelChunkRetry {
+    None,
+    Succeeds,
+    Exhausts,
+    Downgrades,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,6 +204,10 @@ struct TestServerState {
     cancel_request_gate: Arc<RequestGate>,
     batch_cancel_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     batch_cancel_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    batch_cancel_response_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
+    batch_cancel_response_headers: Arc<tokio::sync::Mutex<VecDeque<HeaderMap>>>,
+    batch_cancel_bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    batch_cancel_echo_rejections: Arc<AtomicBool>,
     batch_cancel_delete_count: Arc<tokio::sync::Mutex<usize>>,
     batch_cancel_request_gate: Arc<RequestGate>,
     order_request_gate: Arc<RequestGate>,
@@ -233,6 +253,10 @@ impl Default for TestServerState {
             cancel_request_gate: Arc::new(RequestGate::default()),
             batch_cancel_response: Arc::new(tokio::sync::Mutex::new(None)),
             batch_cancel_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            batch_cancel_response_statuses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            batch_cancel_response_headers: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            batch_cancel_bodies: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            batch_cancel_echo_rejections: Arc::new(AtomicBool::new(false)),
             batch_cancel_delete_count: Arc::new(tokio::sync::Mutex::new(0)),
             batch_cancel_request_gate: Arc::new(RequestGate::default()),
             order_request_gate: Arc::new(RequestGate::default()),
@@ -537,19 +561,53 @@ async fn handle_delete_orders(State(state): State<TestServerState>, body: Bytes)
     *state.last_path.lock().await = "/orders".to_string();
     *state.batch_cancel_delete_count.lock().await += 1;
 
-    if let Ok(v) = serde_json::from_slice::<Value>(&body) {
-        *state.last_body.lock().await = Some(v);
+    let request = serde_json::from_slice::<Value>(&body).ok();
+    if let Some(request) = &request {
+        *state.last_body.lock().await = Some(request.clone());
+        state.batch_cancel_bodies.lock().await.push(request.clone());
     }
 
     state.batch_cancel_request_gate.wait().await;
 
-    let status = *state.batch_cancel_response_status.lock().await;
-    let resp = state.batch_cancel_response.lock().await;
-    let body = resp
-        .clone()
-        .unwrap_or_else(|| load_json("http_batch_cancel_response.json"));
+    let status = if let Some(status) = state
+        .batch_cancel_response_statuses
+        .lock()
+        .await
+        .pop_front()
+    {
+        status
+    } else {
+        *state.batch_cancel_response_status.lock().await
+    };
+    let body = if state.batch_cancel_echo_rejections.load(Ordering::Acquire) {
+        let not_canceled = request
+            .as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|order_id| (order_id.to_string(), json!("order not found")))
+            .collect::<serde_json::Map<_, _>>();
+        json!({"canceled": [], "not_canceled": not_canceled})
+    } else {
+        state
+            .batch_cancel_response
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| load_json("http_batch_cancel_response.json"))
+    };
     record_canceled_order_ids(&state, &body).await;
-    (status, Json(body)).into_response()
+    let mut response = (status, Json(body)).into_response();
+    response.headers_mut().extend(
+        state
+            .batch_cancel_response_headers
+            .lock()
+            .await
+            .pop_front()
+            .unwrap_or_default(),
+    );
+    response
 }
 
 async fn record_open_order_ids(state: &TestServerState, responses: &[Value]) {
@@ -5165,6 +5223,217 @@ async fn test_batch_cancel_orders_with_partial_failure() {
     // No CancelRejected events expected.
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+#[case::batch(
+    ShutdownCancelMode::Batch,
+    1_121,
+    TEST_CHUNK_PRIVATE_KEY,
+    CancelChunkRetry::Succeeds
+)]
+#[case::cancel_all(
+    ShutdownCancelMode::CancelAll,
+    121,
+    TEST_CANCEL_ALL_PRIVATE_KEY,
+    CancelChunkRetry::None
+)]
+#[case::late_failure(
+    ShutdownCancelMode::Batch,
+    121,
+    TEST_CHUNK_FAILURE_PRIVATE_KEY,
+    CancelChunkRetry::Exhausts
+)]
+#[case::tier_downgrade(
+    ShutdownCancelMode::Batch,
+    241,
+    TEST_CHUNK_DOWNGRADE_PRIVATE_KEY,
+    CancelChunkRetry::Downgrades
+)]
+#[tokio::test]
+async fn test_group_cancel_orders_bounds_retries_and_result_processing(
+    #[case] mode: ShutdownCancelMode,
+    #[case] order_count: usize,
+    #[case] private_key: &str,
+    #[case] chunk_retry: CancelChunkRetry,
+) {
+    let state = TestServerState::default();
+    state
+        .batch_cancel_echo_rejections
+        .store(true, Ordering::Release);
+
+    match chunk_retry {
+        CancelChunkRetry::None => {}
+        CancelChunkRetry::Succeeds => {
+            state.batch_cancel_response_statuses.lock().await.extend([
+                StatusCode::OK,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::OK,
+                StatusCode::OK,
+            ]);
+            let mut headers = HeaderMap::new();
+            headers.insert("poly-ratelimit-tier", "Gold".parse().unwrap());
+            state
+                .batch_cancel_response_headers
+                .lock()
+                .await
+                .push_back(headers);
+        }
+        CancelChunkRetry::Exhausts => {
+            state.batch_cancel_response_statuses.lock().await.extend([
+                StatusCode::OK,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ]);
+        }
+        CancelChunkRetry::Downgrades => {
+            state.batch_cancel_response_statuses.lock().await.extend([
+                StatusCode::OK,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::OK,
+                StatusCode::OK,
+            ]);
+            let mut headers = state.batch_cancel_response_headers.lock().await;
+
+            for tier in ["Gold", "Standard"] {
+                let mut response_headers = HeaderMap::new();
+                response_headers.insert("poly-ratelimit-tier", tier.parse().unwrap());
+                headers.push_back(response_headers);
+            }
+        }
+    }
+    let addr = start_mock_server(state.clone()).await;
+    let max_retries = u32::from(!matches!(chunk_retry, CancelChunkRetry::None));
+    let mut config = create_test_exec_config_with_retries(addr, max_retries);
+    config.private_key = Some(private_key.to_string());
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut cancels = Vec::with_capacity(order_count);
+    let mut expected_client_order_ids = HashSet::with_capacity(order_count);
+    let mut venue_order_ids = Vec::with_capacity(order_count);
+    for index in 0..order_count {
+        let client_order_id = format!("O-CHUNK-{index}");
+        let venue_order_id = format!("0x{index:064x}");
+        let mut order = make_limit_order(
+            &client_order_id,
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            false,
+            false,
+            TimeInForce::Gtc,
+        );
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        submit_and_accept_order(&cache, &mut order, &venue_order_id);
+        cancels.push(make_cancel_cmd(&client_order_id, instrument_id));
+        expected_client_order_ids.insert(client_order_id);
+        venue_order_ids.push(venue_order_id);
+    }
+
+    match mode {
+        ShutdownCancelMode::Batch => client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*POLYMARKET_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                cancels,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap(),
+        ShutdownCancelMode::CancelAll => client
+            .cancel_all_orders(CancelAllOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*POLYMARKET_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                OrderSide::Buy,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap(),
+        ShutdownCancelMode::Individual => unreachable!(),
+    }
+
+    let mut processed_client_order_ids = HashSet::with_capacity(order_count);
+
+    if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { *state.batch_cancel_delete_count.lock().await == 3 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    } else {
+        for _ in 0..order_count {
+            let event = assert_order_event(recv_execution_event(&mut rx).await, "CancelRejected");
+            let OrderEventAny::CancelRejected(event) = event else {
+                unreachable!();
+            };
+            assert!(processed_client_order_ids.insert(event.client_order_id.to_string()));
+        }
+    }
+    assert_no_execution_event(&mut rx).await;
+
+    let bodies = state.batch_cancel_bodies.lock().await;
+    let body_lengths = bodies
+        .iter()
+        .map(|body| body.as_array().unwrap().len())
+        .collect::<Vec<_>>();
+
+    match chunk_retry {
+        CancelChunkRetry::None => assert_eq!(body_lengths, vec![120, 1]),
+        CancelChunkRetry::Succeeds => {
+            assert_eq!(body_lengths, vec![120, 1_000, 1_000, 1]);
+            assert_eq!(bodies[1], bodies[2]);
+        }
+        CancelChunkRetry::Exhausts => {
+            assert_eq!(body_lengths, vec![120, 1, 1]);
+            assert_eq!(bodies[1], bodies[2]);
+        }
+        CancelChunkRetry::Downgrades => {
+            assert_eq!(body_lengths, vec![120, 121, 120, 1]);
+        }
+    }
+    let successful_body_indices: &[usize] = match chunk_retry {
+        CancelChunkRetry::None => &[0, 1],
+        CancelChunkRetry::Succeeds => &[0, 2, 3],
+        CancelChunkRetry::Exhausts => &[0],
+        CancelChunkRetry::Downgrades => &[0, 2, 3],
+    };
+    let successful_order_ids = bodies
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| successful_body_indices.contains(index))
+        .flat_map(|(_, body)| body.as_array().unwrap())
+        .map(|order_id| order_id.as_str().unwrap().to_string())
+        .collect::<HashSet<_>>();
+    let expected_successful_order_ids = if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
+        venue_order_ids[..120].iter().cloned().collect()
+    } else {
+        venue_order_ids.iter().cloned().collect()
+    };
+
+    assert_eq!(successful_order_ids, expected_successful_order_ids);
+
+    if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
+        assert!(processed_client_order_ids.is_empty());
+    } else {
+        assert_eq!(processed_client_order_ids, expected_client_order_ids);
+    }
+    assert_eq!(*state.batch_cancel_delete_count.lock().await, bodies.len());
 }
 
 #[rstest]

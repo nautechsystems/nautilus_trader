@@ -267,6 +267,7 @@ impl OrderSubmitter {
     pub(crate) async fn cancel_order(&self, venue_order_id: &str) -> HttpResult<CancelResponse> {
         let http_client = self.http_client.clone();
         let order_id = venue_order_id.to_string();
+
         self.retry_manager
             .execute_with_retry_with_delay(
                 "cancel_order",
@@ -287,8 +288,34 @@ impl OrderSubmitter {
         &self,
         venue_order_ids: &[&str],
     ) -> HttpResult<CancelResponse> {
-        let http_client = self.http_client.clone();
         let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
+        if order_ids.is_empty() {
+            return self.cancel_orders_chunk(&order_ids).await;
+        }
+
+        let mut response = CancelResponse::default();
+        let mut offset = 0;
+
+        while offset < order_ids.len() {
+            let limit = self.http_client.cancel_batch_limit().await;
+            let end = offset.saturating_add(limit).min(order_ids.len());
+            match self.cancel_orders_chunk(&order_ids[offset..end]).await {
+                Ok(chunk_response) => {
+                    response.merge(chunk_response);
+                    offset = end;
+                }
+                Err(e @ Error::BurstExceeded { .. }) => {
+                    log::warn!("Cancellation batch limit changed, reselecting chunk: {e}");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(response)
+    }
+
+    async fn cancel_orders_chunk(&self, order_ids: &[String]) -> HttpResult<CancelResponse> {
+        let http_client = self.http_client.clone();
+        let order_ids = order_ids.to_vec();
 
         self.retry_manager
             .execute_with_retry_with_delay(

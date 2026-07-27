@@ -244,10 +244,13 @@ impl PolymarketRateLimiter {
 
                 let limits = state.tier.limits().bucket(bucket);
                 if cost > limits.burst {
-                    return Err(Error::bad_request(format!(
-                        "{endpoint} token cost {cost} exceeds {} tier {bucket} burst {}",
-                        state.tier, limits.burst
-                    )));
+                    return Err(Error::BurstExceeded {
+                        endpoint,
+                        token_cost: cost,
+                        tier: state.tier.to_string(),
+                        bucket: bucket.to_string(),
+                        burst: limits.burst,
+                    });
                 }
 
                 let bucket = state.bucket_mut(bucket);
@@ -272,6 +275,10 @@ impl PolymarketRateLimiter {
 
             sleep(wait).await;
         }
+    }
+
+    pub(crate) async fn burst(&self, bucket: TradingBucket) -> u32 {
+        self.state.lock().await.tier.limits().bucket(bucket).burst
     }
 
     pub(crate) async fn observe_response(
@@ -642,6 +649,9 @@ mod tests {
         assert_eq!(state.tier.limits().cancel.rate, 400.0);
         assert_eq!(state.tier.limits().cancel.burst, 600);
         assert_eq!(state.order.tokens, 59.0);
+        drop(state);
+
+        assert_eq!(limiter.burst(TradingBucket::Cancel).await, 600);
     }
 
     #[rstest]

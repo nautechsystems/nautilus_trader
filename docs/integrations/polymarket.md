@@ -352,7 +352,7 @@ reports expiry as an `OrderCanceled` event, not `OrderExpired`.
 | ------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Batch Submit | ✓              | The adapter uses `POST /orders` for independent limit‑order batches (max 15 orders per request). See [Batch submit](#batch-submit). |
 | Batch Modify | -              | *Not supported by Polymarket*.                                                                                                      |
-| Batch Cancel | ✓              | The adapter uses `DELETE /orders`.                                                                                                  |
+| Batch Cancel | ✓              | The adapter uses `DELETE /orders`. See [Batch cancel](#batch-cancel).                                                               |
 
 #### Batch submit
 
@@ -371,7 +371,20 @@ sequential 15‑order chunks.
 - If the batch response omits a leg, that order stays submitted for reconciliation. The adapter
   registers the signed order's expected hash so later WebSocket events and cancels still resolve to
   the local order. An omitted response cannot prove that the venue rejected the order.
-- `BatchCancelOrders` is dispatched to `DELETE /orders` in one shot.
+
+#### Batch cancel
+
+`BatchCancelOrders` and `CancelAllOrders` commands with resolved venue order IDs use Polymarket's
+[`DELETE /orders`](https://docs.polymarket.com/api-reference/trade/cancel-multiple-orders)
+endpoint. The adapter sends sequential chunks and chooses each new chunk from the smaller of the
+endpoint's 1,000‑ID limit and the signer's current cancellation burst. A signer starts with the
+Standard 120‑token burst, and a tier reported by one response applies to the next new chunk.
+
+Each chunk retries independently with the same order IDs unless a lower reported tier requires
+smaller chunks before the retry. The adapter merges the completed responses and processes each
+requested order once after every chunk succeeds. If a later chunk exhausts its retries, earlier
+chunks may already have changed venue state, but the adapter emits no partial per‑order results;
+reconciliation resolves the unknown overall outcome.
 
 ### Submit error handling
 
@@ -887,10 +900,12 @@ Covered requests consume:
 | Cancellation | `DELETE /cancel-all`           | 1 plus successful cancellations          |
 | Cancellation | `DELETE /cancel-market-orders` | 1 plus successful matching cancellations |
 
-Batch admission is all or nothing. The adapter rejects a batch locally when its cost exceeds the
-current tier's burst, so callers must split it. Cancel-all and cancel-market requests debit one token
-before the request, then debit each successful cancellation after the response. Standard through
-Gold tiers can enter cancellation debt; Platinum through Elite tiers floor the balance at zero.
+A request waits for its full token cost and is rejected locally only when that cost exceeds the
+current tier's burst. Before each new `DELETE /orders` chunk, the adapter recomputes its cap from the
+smaller of the endpoint's 1,000‑ID limit and that burst. Cancel‑all and cancel‑market requests debit
+one token before the request, then debit each successful cancellation after the response. Standard
+through Gold tiers can enter cancellation debt; Platinum through Elite tiers floor the balance at
+zero.
 
 `Poly-RateLimit-Remaining` can lower the local balance, and `Poly-RateLimit-Reset` extends a rejected
 or indebted bucket's wait. The adapter logs `Poly-RateLimit-Warning` responses with the endpoint,
@@ -949,6 +964,9 @@ The following limitations are currently known:
 - Reduce-only orders are not supported.
 - Batch submit (`POST /orders`) accepts at most 15 orders per request; the adapter splits larger
   `SubmitOrderList` commands into sequential 15-order chunks.
+- Batch cancel (`DELETE /orders`) accepts at most 1,000 order IDs per request; the adapter also
+  limits each new chunk to the signer's current cancellation burst and recomputes that limit before
+  the chunk.
 - Position reports omit balances below 0.01 shares. Do not treat an omitted report as proof that a
   dust position is flat; a sub-minimum residual cannot be exited through the CLOB's five-share
   minimum order size. Position reconciliation therefore tolerates differences through 0.009999
@@ -1003,7 +1021,7 @@ Class/struct: `PolymarketExecClientConfig`.
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
 | `proxy_url`                                         | `None`                | HTTP or HTTPS proxy for every execution transport.                                                                    |
 | `http_timeout_secs`                                 | `60`                  | HTTP timeout in seconds.                                                                                              |
-| `max_retries`                                       | `3`                   | Retries for single‑order submit and cancel requests.                                                                  |
+| `max_retries`                                       | `3`                   | Retries for single‑order submit/cancel requests and for each batch‑cancel chunk.                                      |
 | `retry_delay_initial_ms`                            | `1000`                | Initial retry delay.                                                                                                  |
 | `retry_delay_max_ms`                                | `10000`               | Maximum retry delay.                                                                                                  |
 | `heartbeat_enabled`                                 | `false`               | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |

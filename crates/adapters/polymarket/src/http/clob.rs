@@ -63,6 +63,8 @@ const PATH_CANCEL_ALL: &str = "/cancel-all";
 const PATH_CANCEL_MARKET_ORDERS: &str = "/cancel-market-orders";
 const PATH_HEARTBEATS: &str = "/heartbeats";
 
+const CLOB_CANCEL_BATCH_LIMIT: usize = 1_000;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PostOrderBody<'a> {
@@ -555,6 +557,10 @@ impl PolymarketClobHttpClient {
             .await
     }
 
+    pub(crate) async fn cancel_batch_limit(&self) -> usize {
+        cancel_batch_limit(self.rate_limiter.burst(TradingBucket::Cancel).await)
+    }
+
     /// Cancels all open orders.
     pub async fn cancel_all(&self) -> Result<BatchCancelResponse> {
         self.send_delete_with_cancel_debit(PATH_CANCEL_ALL, None)
@@ -730,6 +736,12 @@ fn batch_cost(endpoint: &'static str, len: usize) -> Result<u32> {
     Ok(cost)
 }
 
+fn cancel_batch_limit(burst: u32) -> usize {
+    usize::try_from(burst)
+        .unwrap_or(usize::MAX)
+        .min(CLOB_CANCEL_BATCH_LIMIT)
+}
+
 fn canceled_count(response: &BatchCancelResponse) -> u32 {
     u32::try_from(response.canceled.len()).unwrap_or(u32::MAX)
 }
@@ -844,5 +856,17 @@ mod tests {
         };
 
         assert_eq!(canceled_count(&response), 2);
+    }
+
+    #[rstest]
+    #[case::standard(120, 120)]
+    #[case::silver(600, 600)]
+    #[case::gold(1_200, 1_000)]
+    #[case::elite(1_800, 1_000)]
+    fn test_cancel_batch_limit_uses_tier_burst_and_venue_ceiling(
+        #[case] burst: u32,
+        #[case] expected: usize,
+    ) {
+        assert_eq!(cancel_batch_limit(burst), expected);
     }
 }
