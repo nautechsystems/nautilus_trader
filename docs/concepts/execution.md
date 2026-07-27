@@ -96,9 +96,9 @@ not reopen `VOIDED`. See the complete
 
 A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by
 `key=value` context, for example `QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=15, max_quantity=10`.
-The table covers local denials emitted by the risk and execution engines. These codes are the
-source of truth for locally denied orders; venue rejections (`OrderRejected`) pass through the
-venue's own text unchanged.
+The table covers local denials emitted by execution algorithms, execution clients, the risk engine,
+and the execution engine. These codes are the source of truth for locally denied orders; venue
+rejections (`OrderRejected`) pass through the venue's own text unchanged.
 
 <!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
 <!-- BEGIN GENERATED: order-denied-reasons -->
@@ -138,11 +138,11 @@ venue's own text unchanged.
 | `TRADING_STATE_REDUCING`              | Trading is reducing; the order would increase exposure.                         |
 | `TRAILING_STOP_CALC_FAILED`           | The trailing stop trigger price could not be calculated.                        |
 | `UNSUPPORTED_ORDER_LIST`              | The venue does not support the requested order list.                            |
-| `UNSUPPORTED_ORDER_TYPE`              | The order type is not supported by the venue.                                   |
+| `UNSUPPORTED_ORDER_TYPE`              | The order type is not supported.                                                |
 | `UNSUPPORTED_TIME_IN_FORCE`           | The order's time in force is not supported.                                     |
 | `UNSUPPORTED_TP_SL`                   | The venue does not support the requested take‑profit/stop‑loss parameters.      |
 | `UNSUPPORTED_TRAILING_OFFSET_TYPE`    | The order's trailing offset type is not supported.                              |
-| `VALIDATION_FAILED`                   | The order failed adapter validation before submission.                          |
+| `VALIDATION_FAILED`                   | The order failed validation before submission.                                  |
 
 <!-- END GENERATED: order-denied-reasons -->
 
@@ -289,7 +289,8 @@ Orders routed to TWAP require these string-valued `exec_algorithm_params`:
 
 Both values must parse as positive numbers, and `horizon_secs` must be at least
 `interval_secs`. The algorithm submits the first slice immediately and the remaining slices at
-the configured interval.
+the configured interval. TWAP denies the primary order before submission when the order type,
+instrument, or schedule is unsupported or invalid.
 
 ### Writing execution algorithms
 
@@ -321,7 +322,8 @@ implementation passes each order to `on_order(...)`.
 
 :::warning
 Validate required `exec_algorithm_params` keys and parse their string values before executing an
-order.
+order. Call `deny_order(...)` with a standardized [reason code](#order-denied-reasons), such as
+`VALIDATION_FAILED: horizon_secs not found in exec_algorithm_params`, when the order cannot be executed.
 :::
 
 An order received by an execution algorithm is the primary order. Use these methods to create

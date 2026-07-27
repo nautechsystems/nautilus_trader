@@ -175,6 +175,68 @@ pub trait ExecutionAlgorithm: DataActor {
         Ok(())
     }
 
+    /// Denies an order by applying and publishing an `OrderDenied` event.
+    ///
+    /// An order absent from the cache is added first, with its `OrderInitialized` event published
+    /// before the denial. A closed cached order is left unchanged. Use an `OrderDeniedReason`
+    /// string for the standardized reason.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The algorithm is not registered with a trader.
+    /// - The order cannot be added to the cache.
+    /// - The denial cannot be applied, including an invalid order state transition.
+    ///
+    /// No event is published when the denial cannot be applied.
+    fn deny_order(&mut self, order: &OrderAny, reason: Ustr) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
+        registered_trader_id(core)?;
+        let ts_now = core.clock_mut().timestamp_ns();
+        let event = OrderEventAny::Denied(OrderDenied::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        ));
+
+        let publish_initialized = {
+            let cache_rc = core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+
+            if cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached_order| cached_order.is_closed())
+            {
+                return Ok(());
+            }
+
+            let publish_initialized = if cache.order_exists(&order.client_order_id()) {
+                false
+            } else {
+                cache.add_order(order.clone(), None, None, false)?;
+                true
+            };
+
+            cache.update_order(&event)?;
+            publish_initialized
+        };
+
+        if publish_initialized {
+            publish_order_initialized(order);
+        }
+        publish_order_event(&event);
+
+        Ok(())
+    }
+
     /// Handles a cancel order command for algorithm-managed orders.
     ///
     /// This generates an internal cancel event and publishes it. The order
@@ -1392,9 +1454,9 @@ mod tests {
         msgbus::TypedHandler,
     };
     use nautilus_model::{
-        enums::{OrderSide, OrderType},
+        enums::{OrderSide, OrderStatus, OrderType},
         events::{
-            OrderAccepted, OrderCanceled, OrderDenied, OrderRejected,
+            OrderAccepted, OrderCanceled, OrderDenied, OrderDeniedReason, OrderRejected,
             order::spec::{
                 OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFillVoidedSpec,
                 OrderFilledSpec, OrderRejectedSpec,
@@ -1547,6 +1609,145 @@ mod tests {
         register_algorithm(&mut algo);
 
         assert_eq!(algo.trader_id(), Some(TraderId::from("TRADER-001")));
+    }
+
+    #[rstest]
+    fn test_algorithm_deny_order_updates_cache_and_publishes_once() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let strategy_id = StrategyId::from("STRAT-ALGO-DENY");
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            strategy_id,
+            InstrumentId::from("BTC/USDT.BINANCE"),
+            ClientOrderId::from("O-ALGO-DENY"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        {
+            let cache_rc = algo.core.cache_rc();
+            cache_rc
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let reason = OrderDeniedReason::ValidationFailed {
+            detail: "invalid execution schedule".to_string(),
+        }
+        .to_string();
+        let reason = Ustr::from(&reason);
+        let (handler, events) = subscribe_order_topic(strategy_id);
+
+        algo.deny_order(&order, reason).unwrap();
+        algo.deny_order(&order, reason).unwrap();
+
+        msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
+        let cached_order = algo.cache().order(&order.client_order_id()).unwrap();
+        let events = events.borrow();
+
+        assert_eq!(cached_order.status(), OrderStatus::Denied);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            OrderEventAny::Denied(event)
+                if event.reason == reason
+                    && event.strategy_id == strategy_id
+                    && event.client_order_id == order.client_order_id()
+        ));
+    }
+
+    #[rstest]
+    fn test_algorithm_deny_order_initializes_missing_order_once() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let strategy_id = StrategyId::from("STRAT-ALGO-DENY-MISSING");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-ALGO-DENY-MISSING"))
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let reason = Ustr::from("VALIDATION_FAILED: invalid execution schedule");
+        let (handler, events) = subscribe_order_topic(strategy_id);
+
+        algo.deny_order(&order, reason).unwrap();
+        algo.deny_order(&order, reason).unwrap();
+
+        msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
+        let cached_order = algo.cache().order(&order.client_order_id()).unwrap();
+        let events = events.borrow();
+
+        assert_eq!(cached_order.status(), OrderStatus::Denied);
+        assert_eq!(cached_order.event_count(), 2);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            OrderEventAny::Initialized(event)
+                if event.strategy_id == strategy_id
+                    && event.client_order_id == order.client_order_id()
+        ));
+        assert!(matches!(
+            &events[1],
+            OrderEventAny::Denied(event)
+                if event.reason == reason
+                    && event.strategy_id == strategy_id
+                    && event.client_order_id == order.client_order_id()
+        ));
+    }
+
+    #[rstest]
+    fn test_algorithm_deny_order_does_not_publish_when_apply_fails() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let strategy_id = StrategyId::from("STRAT-ALGO-DENY-APPLY");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-ALGO-DENY-APPLY"))
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let order = TestOrderStubs::make_accepted_order(&order);
+        {
+            let cache_rc = algo.core.cache_rc();
+            cache_rc
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let (handler, events) = subscribe_order_topic(strategy_id);
+
+        let error = algo
+            .deny_order(
+                &order,
+                Ustr::from("VALIDATION_FAILED: invalid execution schedule"),
+            )
+            .unwrap_err();
+
+        msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
+        let cached_order = algo.cache().order(&order.client_order_id()).unwrap();
+
+        assert!(matches!(
+            error.downcast_ref::<OrderError>(),
+            Some(OrderError::InvalidStateTransition)
+        ));
+        assert_eq!(cached_order.status(), OrderStatus::Accepted);
+        assert!(events.borrow().is_empty());
     }
 
     #[rstest]

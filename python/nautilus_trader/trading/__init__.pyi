@@ -401,6 +401,7 @@ class ExecutionAlgorithm:
         tags: typing.Sequence[str] | None = None,
         reduce_primary: bool = True,
     ) -> model.MarketToLimitOrder: ...
+    def deny_order(self, order: typing.Any, reason: str) -> None: ...
     def submit_order(
         self,
         order: typing.Any,

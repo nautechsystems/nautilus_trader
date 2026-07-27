@@ -262,7 +262,7 @@ pub enum OrderDeniedReason {
         /// The reason the order list is unsupported.
         detail: String,
     },
-    /// The order type is not supported by the venue.
+    /// The order type is not supported.
     #[error("UNSUPPORTED_ORDER_TYPE: {order_type}")]
     UnsupportedOrderType {
         /// The unsupported order type.
@@ -274,7 +274,7 @@ pub enum OrderDeniedReason {
         /// The reason the take-profit/stop-loss parameters are unsupported.
         detail: String,
     },
-    /// The order failed adapter validation before submission.
+    /// The order failed validation before submission.
     #[error("VALIDATION_FAILED: {detail}")]
     ValidationFailed {
         /// The validation failure detail.
@@ -356,11 +356,11 @@ impl OrderDeniedCode {
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::InvalidClientOrderId => "The client order ID is invalid for the venue.",
             Self::UnsupportedOrderList => "The venue does not support the requested order list.",
-            Self::UnsupportedOrderType => "The order type is not supported by the venue.",
+            Self::UnsupportedOrderType => "The order type is not supported.",
             Self::UnsupportedTpSl => {
                 "The venue does not support the requested take‑profit/stop‑loss parameters."
             }
-            Self::ValidationFailed => "The order failed adapter validation before submission.",
+            Self::ValidationFailed => "The order failed validation before submission.",
             Self::StreamReconciling => {
                 "A post‑reconnect stream reconciliation is in progress; retry once it completes."
             }

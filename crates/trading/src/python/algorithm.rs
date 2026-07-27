@@ -938,6 +938,12 @@ impl PyExecutionAlgorithm {
         ))
     }
 
+    #[pyo3(name = "deny_order")]
+    fn py_deny_order(&mut self, py: Python<'_>, order: Py<PyAny>, reason: &str) -> PyResult<()> {
+        let order = pyobject_to_order_any(py, order)?;
+        ExecutionAlgorithm::deny_order(self, &order, Ustr::from(reason)).map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (order, position_id=None, client_id=None))]
     fn py_submit_order(

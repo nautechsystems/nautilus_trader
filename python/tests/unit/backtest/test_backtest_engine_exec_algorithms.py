@@ -22,7 +22,18 @@ from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import DataActorConfig
+from nautilus_trader.core import UUID4
+from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ExecAlgorithmId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import MarketOrder
+from nautilus_trader.model import OrderDenied
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TraderId
 from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
@@ -121,6 +132,7 @@ class RequiredConfigBacktestExecAlgorithm(DataActor):
                 "reduce_primary",
             ],
         ),
+        ("deny_order", ["self", "order", "reason"]),
         ("submit_order", ["self", "order", "position_id", "client_id"]),
         ("modify_order", ["self", "order", "quantity", "price", "trigger_price", "client_id"]),
         ("modify_order_in_place", ["self", "order", "quantity", "price", "trigger_price"]),
@@ -187,6 +199,12 @@ def test_execution_algorithm_pre_registration_surface():
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = exec_algorithm.portfolio
 
+    with pytest.raises(RuntimeError, match="ExecutionAlgorithm not registered"):
+        exec_algorithm.deny_order(
+            create_market_order(),
+            "VALIDATION_FAILED: invalid Python execution schedule",
+        )
+
 
 @pytest.mark.parametrize(
     "method_name",
@@ -219,6 +237,27 @@ def test_execution_algorithm_config_with_explicit_values():
     assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
     assert config.log_events is False
     assert config.log_commands is False
+
+
+def test_execution_algorithm_deny_order_updates_cache_once():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-DENY")),
+    )
+    engine.add_exec_algorithm(exec_algorithm)
+    order = create_market_order()
+    reason = "VALIDATION_FAILED: invalid Python execution schedule"
+
+    exec_algorithm.deny_order(order, reason)
+    exec_algorithm.deny_order(order, reason)
+
+    cached_order = exec_algorithm.cache.order(order.client_order_id)
+    assert cached_order.status == OrderStatus.DENIED
+    assert cached_order.event_count == 2
+    assert isinstance(cached_order.last_event, OrderDenied)
+    assert cached_order.last_event.reason == reason
+    assert cached_order.last_event.strategy_id == order.strategy_id
+    engine.dispose()
 
 
 def test_add_native_exec_algorithm_rejects_unknown_type():
@@ -444,3 +483,19 @@ def test_add_exec_algorithms_from_configs_registers_multiple_algorithms():
     with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-B' is already registered"):
         engine.add_exec_algorithm_from_config(configs[1])
     engine.dispose()
+
+
+def create_market_order():
+    return MarketOrder(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("DENY-001"),
+        instrument_id=InstrumentId.from_str("AUD/USD.SIM"),
+        client_order_id=ClientOrderId("O-PY-DENY"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+    )
