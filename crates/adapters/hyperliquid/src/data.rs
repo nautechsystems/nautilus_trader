@@ -28,7 +28,7 @@ use chrono::{DateTime, Utc};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::{
         DataEvent,
         data::{
@@ -92,7 +92,7 @@ pub struct HyperliquidDataClient {
     cancellation_token: CancellationToken,
     ws_stream_handle: Option<JoinHandle<()>>,
     stream_health_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
@@ -173,7 +173,7 @@ impl HyperliquidDataClient {
             cancellation_token: CancellationToken::new(),
             ws_stream_handle: None,
             stream_health_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
@@ -192,16 +192,11 @@ impl HyperliquidDataClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     fn abort_stream_health_monitor(&mut self) {

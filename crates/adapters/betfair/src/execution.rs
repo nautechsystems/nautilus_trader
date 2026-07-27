@@ -47,6 +47,7 @@ use nautilus_common::{
     live::{
         get_runtime,
         runner::{get_data_event_sender, get_exec_event_sender},
+        task::TaskHandles,
     },
     messages::{
         DataEvent, ExecutionReport,
@@ -147,7 +148,7 @@ pub struct BetfairExecutionClient {
     pending_resync: Arc<AtomicBool>,
     is_reconciling: Arc<AtomicBool>,
     replay_buffer: Arc<Mutex<Vec<OCM>>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     keep_alive_handle: Option<JoinHandle<()>>,
     account_refresh_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
     account_state_handle: Option<JoinHandle<()>>,
@@ -188,7 +189,7 @@ impl BetfairExecutionClient {
             pending_resync: Arc::new(AtomicBool::new(false)),
             is_reconciling: Arc::new(AtomicBool::new(false)),
             replay_buffer: Arc::new(Mutex::new(Vec::new())),
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             keep_alive_handle: None,
             account_refresh_tx: None,
             account_state_handle: None,
@@ -213,9 +214,7 @@ impl BetfairExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn reconcile_market_ids(&self) -> Option<Vec<String>> {
@@ -393,10 +392,7 @@ impl BetfairExecutionClient {
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     fn abort_background_tasks(&mut self) {

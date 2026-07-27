@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -136,7 +136,7 @@ pub struct BinanceSpotExecutionClient {
     us_credentials: Option<(String, String)>,
     ws_authenticated: Arc<tokio::sync::Notify>,
     ws_user_data_subscribed: Arc<tokio::sync::Notify>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
 }
 
 impl BinanceSpotExecutionClient {
@@ -214,7 +214,7 @@ impl BinanceSpotExecutionClient {
             us_credentials,
             ws_authenticated: Arc::new(tokio::sync::Notify::new()),
             ws_user_data_subscribed: Arc::new(tokio::sync::Notify::new()),
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
         })
     }
 

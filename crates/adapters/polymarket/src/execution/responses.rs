@@ -13,13 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
-use nautilus_common::live::get_runtime;
-use nautilus_core::{MUTEX_POISONED, UUID4, time::AtomicTime};
+use nautilus_common::live::{get_runtime, task::TaskHandles};
+use nautilus_core::{UUID4, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -30,7 +27,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 
 use super::{
     cancellations::execute_deferred_cancel,
@@ -56,7 +52,7 @@ pub(super) async fn handle_batch_order_responses(
     order_identities: &OrderIdentityRegistry,
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
-    pending_tasks: &Arc<Mutex<Vec<JoinHandle<()>>>>,
+    pending_tasks: &Arc<TaskHandles>,
     account_id: AccountId,
 ) {
     let response_len = responses.len();
@@ -114,10 +110,6 @@ pub(super) async fn handle_batch_order_responses(
     }
 
     if !deferred.is_empty() {
-        let mut tasks = pending_tasks.lock().expect(MUTEX_POISONED);
-
-        tasks.retain(|handle| !handle.is_finished());
-
         for (order, order_id_str, venue_order_id) in deferred {
             let submitter = submitter.clone();
             let emitter = emitter.clone();
@@ -135,7 +127,7 @@ pub(super) async fn handle_batch_order_responses(
                 )
                 .await;
             });
-            tasks.push(handle);
+            pending_tasks.push(handle);
         }
     }
 }

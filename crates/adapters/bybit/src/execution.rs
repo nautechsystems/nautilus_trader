@@ -17,7 +17,7 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    UnixNanos,
     env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -104,7 +104,7 @@ pub struct BybitExecutionClient {
     ws_private_stream_handle: Option<JoinHandle<()>>,
     ws_trade_stream_handle: Option<JoinHandle<()>>,
     repay_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     dispatch_state: Arc<WsDispatchState>,
 }
@@ -180,7 +180,7 @@ impl BybitExecutionClient {
             ws_private_stream_handle: None,
             ws_trade_stream_handle: None,
             repay_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             instruments_cache: Arc::new(AHashMap::new()),
             dispatch_state: Arc::new(WsDispatchState::default()),
         })
@@ -220,16 +220,11 @@ impl BybitExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -2209,13 +2204,7 @@ mod tests {
 
     async fn wait_for_spawned_tasks(client: &BybitExecutionClient) {
         for _ in 0..20 {
-            if client
-                .pending_tasks
-                .lock()
-                .expect(MUTEX_POISONED)
-                .iter()
-                .all(tokio::task::JoinHandle::is_finished)
-            {
+            if client.pending_tasks.all_finished() {
                 return;
             }
 

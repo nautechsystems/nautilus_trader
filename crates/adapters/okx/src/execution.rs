@@ -17,7 +17,7 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    UnixNanos,
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -93,7 +93,7 @@ pub struct OKXExecutionClient {
     ws_stream_handle: Option<JoinHandle<()>>,
     ws_business_stream_handle: Option<JoinHandle<()>>,
     ws_dispatch_state: Arc<WsDispatchState>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
 }
 
 impl OKXExecutionClient {
@@ -172,7 +172,7 @@ impl OKXExecutionClient {
             ws_stream_handle: None,
             ws_business_stream_handle: None,
             ws_dispatch_state,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
         })
     }
 
@@ -824,9 +824,7 @@ impl OKXExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     // Partitions algo cancel orders into regular and advance, then spawns
@@ -917,11 +915,7 @@ impl OKXExecutionClient {
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     /// Polls the cache until the account is registered or timeout is reached.

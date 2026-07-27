@@ -31,7 +31,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -224,7 +224,7 @@ pub struct BinanceFuturesExecutionClient {
     recovery_task: Option<JoinHandle<()>>,
     recovery_lock: Arc<TokioMutex<()>>,
     recovery_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     is_hedge_mode: AtomicBool,
 }
 
@@ -326,7 +326,7 @@ impl BinanceFuturesExecutionClient {
             recovery_task: None,
             recovery_lock: Arc::new(TokioMutex::new(())),
             recovery_tx: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             is_hedge_mode: AtomicBool::new(false),
         })
     }

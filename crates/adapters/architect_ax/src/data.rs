@@ -31,7 +31,7 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -109,7 +109,7 @@ pub struct AxDataClient {
     cancellation_token: CancellationToken,
     /// Background task handles.
     tasks: Vec<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     auth_refresh_handle: Option<JoinHandle<()>>,
     /// Channel sender for emitting data events to the DataEngine.
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -147,7 +147,7 @@ impl AxDataClient {
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             auth_refresh_handle: None,
             data_sender,
             instruments,
@@ -330,16 +330,11 @@ impl AxDataClient {
         F: Future<Output = ()> + Send + 'static,
     {
         let handle = get_runtime().spawn(fut);
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     fn abort_all_tasks(&mut self) {

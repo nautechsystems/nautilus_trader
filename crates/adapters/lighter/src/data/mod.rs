@@ -17,7 +17,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -29,7 +29,7 @@ use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::{
         DataEvent,
         data::{
@@ -47,7 +47,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, UnixNanos,
+    AtomicMap, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -103,7 +103,7 @@ pub struct LighterDataClient {
     registry: Arc<MarketRegistry>,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Mutex<Vec<JoinHandle<()>>>,
+    tasks: TaskHandles,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
@@ -168,7 +168,7 @@ impl LighterDataClient {
             registry,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
-            tasks: Mutex::new(Vec::new()),
+            tasks: TaskHandles::default(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             instrument_statuses: Arc::new(DashMap::new()),
@@ -236,21 +236,15 @@ impl LighterDataClient {
             }
         });
 
-        let mut tasks = self.tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.tasks.push(handle);
     }
 
     fn abort_tasks(&self) {
-        let mut tasks = self.tasks.lock().expect(MUTEX_POISONED);
-        for task in tasks.drain(..) {
-            task.abort();
-        }
+        self.tasks.abort_all();
     }
 
     async fn shutdown_tasks(&self) {
-        let handles: Vec<JoinHandle<()>> =
-            self.tasks.lock().expect(MUTEX_POISONED).drain(..).collect();
+        let handles = self.tasks.take_all();
 
         if handles.is_empty() {
             return;
@@ -446,7 +440,7 @@ impl LighterDataClient {
             log::debug!("Lighter WebSocket consumption loop finished");
         });
 
-        self.tasks.lock().expect(MUTEX_POISONED).push(task);
+        self.tasks.push(task);
         log::debug!("Lighter WebSocket consumption task spawned");
 
         Ok(())
@@ -553,7 +547,7 @@ impl LighterDataClient {
             }
         });
 
-        self.tasks.lock().expect(MUTEX_POISONED).push(handle);
+        self.tasks.push(handle);
     }
 
     fn clear_market_stats_subscriptions(&self) {
@@ -2699,9 +2693,9 @@ mod tests {
         };
         let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
 
-        assert!(client.tasks.lock().unwrap().is_empty());
+        assert!(client.tasks.is_empty());
         client.spawn_instrument_refresh();
-        assert!(client.tasks.lock().unwrap().is_empty());
+        assert!(client.tasks.is_empty());
     }
 
     #[tokio::test]
@@ -2712,13 +2706,12 @@ mod tests {
         };
         let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
 
-        assert!(client.tasks.lock().unwrap().is_empty());
+        assert!(client.tasks.is_empty());
         client.spawn_instrument_refresh();
-        assert_eq!(client.tasks.lock().unwrap().len(), 1);
+        assert_eq!(client.tasks.len(), 1);
 
         client.cancellation_token.cancel();
-        let handles: Vec<_> = client.tasks.lock().unwrap().drain(..).collect();
-        for task in handles {
+        for task in client.tasks.take_all() {
             task.await.unwrap();
         }
     }
@@ -2749,13 +2742,13 @@ mod tests {
             let _ = started_tx.send(());
             std::future::pending::<()>().await;
         });
-        client.tasks.lock().unwrap().push(handle);
+        client.tasks.push(handle);
         started_rx.await.expect("registered task started");
 
         client.reset().expect("reset");
 
         assert!(old_token.is_cancelled());
-        assert!(client.tasks.lock().unwrap().is_empty());
+        assert!(client.tasks.is_empty());
         assert!(!client.cancellation_token.is_cancelled());
         tokio::time::timeout(Duration::from_secs(2), dropped_rx)
             .await
@@ -2798,7 +2791,7 @@ mod tests {
             .expect("connect returns Ok when already connected");
 
         assert!(
-            client.tasks.lock().unwrap().is_empty(),
+            client.tasks.is_empty(),
             "an already-connected client must not spawn duplicate tasks",
         );
         assert!(client.is_connected());
@@ -2821,12 +2814,12 @@ mod tests {
             let _ = hold_rx.await;
             let _ = sender.send(DataEvent::Instrument(instrument));
         });
-        assert_eq!(client.tasks.lock().unwrap().len(), 1);
+        assert_eq!(client.tasks.len(), 1);
 
         client.disconnect().await.expect("disconnect");
 
         assert!(
-            client.tasks.lock().unwrap().is_empty(),
+            client.tasks.is_empty(),
             "disconnect must drain tracked tasks",
         );
         assert!(!client.is_connected());
@@ -2853,12 +2846,12 @@ mod tests {
             let _ = started_tx.send(());
             std::future::pending::<()>().await;
         });
-        client.tasks.lock().unwrap().push(handle);
+        client.tasks.push(handle);
         started_rx.await.expect("task started");
 
         client.disconnect().await.expect("disconnect");
 
-        assert!(client.tasks.lock().unwrap().is_empty());
+        assert!(client.tasks.is_empty());
         assert!(!client.is_connected());
         tokio::time::timeout(Duration::from_secs(5), dropped_rx)
             .await

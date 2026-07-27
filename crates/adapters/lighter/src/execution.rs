@@ -41,7 +41,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
     enums::LogColor,
-    live::{runner::get_exec_event_sender, runtime::get_runtime},
+    live::{runner::get_exec_event_sender, runtime::get_runtime, task::TaskHandles},
     log_debug,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -182,7 +182,7 @@ pub struct LighterExecutionClient {
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
     tx_send_sequencer: TxSendSequencer,
     registry: Arc<MarketRegistry>,
-    pending_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    pending_tasks: Arc<TaskHandles>,
     ws_stream_handle: Option<JoinHandle<()>>,
     cancellation_token: CancellationToken,
     /// WebSocket dispatch state: cloid translation tables, nonce manager,
@@ -264,7 +264,7 @@ impl LighterExecutionClient {
             tx_rate_limiter,
             tx_send_sequencer: TxSendSequencer::new(),
             registry,
-            pending_tasks: Arc::new(Mutex::new(Vec::new())),
+            pending_tasks: Arc::new(TaskHandles::default()),
             ws_stream_handle: None,
             cancellation_token: CancellationToken::new(),
             dispatch: WsDispatchState::new(),
@@ -294,8 +294,7 @@ impl LighterExecutionClient {
     /// task holding the lock previously panicked.
     #[must_use]
     pub fn pending_tasks_all_finished(&self) -> bool {
-        let tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.iter().all(|h| h.is_finished())
+        self.pending_tasks.all_finished()
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -308,16 +307,11 @@ impl LighterExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|h| !h.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
@@ -2122,7 +2116,7 @@ struct FanoutDispatchContext {
     tx_send_sequencer: TxSendSequencer,
     dispatch: WsDispatchState,
     nonce_recovery_inflight: Arc<AtomicBool>,
-    pending_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    pending_tasks: Arc<TaskHandles>,
 }
 
 impl FanoutDispatchContext {
@@ -2194,9 +2188,7 @@ impl FanoutDispatchContext {
                 }
             }
         });
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|task| !task.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn sign_create_order(&self, plan: CreateOrderPlan) -> anyhow::Result<PreparedCreateOrder> {

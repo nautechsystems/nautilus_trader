@@ -2014,9 +2014,10 @@ Model known values explicitly instead of via a catch-all: a documented `"unknown
 
 ### Spawning async tasks (`spawn_task`)
 
-Data and execution clients spawn background tasks for WebSocket stream processing,
-periodic polling, and order submission. Wrap all spawned work with a `spawn_task()`
-method that provides error logging and handle tracking:
+Data and execution clients spawn async tasks for WebSocket stream processing, periodic polling, and
+order submission. Store mutex‑backed task collections in
+`nautilus_common::live::task::TaskHandles`. Keep a client‑local `spawn_task()` method for spawning
+and error logging:
 
 ```rust
 fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -2030,15 +2031,15 @@ where
         }
     });
 
-    let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-    tasks.retain(|handle| !handle.is_finished());
-    tasks.push(handle);
+    self.pending_tasks.push(handle);
 }
 ```
 
-Store task handles in `pending_tasks: Mutex<Vec<JoinHandle<()>>>`. Each call to
-`spawn_task` prunes finished handles before pushing the new one, preventing unbounded
-growth. On disconnect, abort all remaining handles.
+`TaskHandles::push` prunes completed handles before storing the new handle. Use `abort_all` when the
+client aborts outstanding work, `take_all` when it applies a client‑specific join policy, or
+`all_finished` when it needs non‑draining lifecycle inspection. Await only the owned handles
+returned by `take_all`. Keep task spawning, failure logging, cancellation, and join policy in
+client‑local code.
 
 ### Never use `block_on` in trait methods
 

@@ -25,7 +25,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -37,7 +37,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::ORDER_NOT_FOUND,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::{
         ExecutionReport,
         execution::{
@@ -48,7 +48,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
+    AtomicMap, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -137,7 +137,7 @@ pub struct DeriveExecutionClient {
     signing: SigningContext,
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     ws_stream_handle: Option<JoinHandle<()>>,
     dispatch_state: Arc<WsDispatchState>,
 }
@@ -233,7 +233,7 @@ impl DeriveExecutionClient {
             signing,
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             ws_stream_handle: None,
             dispatch_state: Arc::new(WsDispatchState::new()),
         })
@@ -277,16 +277,11 @@ impl DeriveExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     async fn ensure_instruments_initialized(&self) -> anyhow::Result<()> {

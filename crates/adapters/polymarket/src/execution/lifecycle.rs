@@ -183,26 +183,16 @@ impl PolymarketExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     pub(super) fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     pub(super) async fn await_pending_tasks(&self) {
         loop {
-            let tasks: Vec<_> = self
-                .pending_tasks
-                .lock()
-                .expect(MUTEX_POISONED)
-                .drain(..)
-                .collect();
+            let tasks = self.pending_tasks.take_all();
 
             if tasks.is_empty() {
                 break;
