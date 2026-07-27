@@ -31,7 +31,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::State,
-    http::{HeaderMap, Method, StatusCode, Uri},
+    http::{HeaderMap, HeaderName, Method, StatusCode, Uri},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
 };
@@ -48,6 +48,7 @@ use nautilus_polymarket::{
     http::{
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
         data_api::PolymarketDataApiHttpClient,
+        error::Error,
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
         query::{
@@ -81,6 +82,7 @@ struct TestServerState {
     heartbeat_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     heartbeat_response: Arc<tokio::sync::Mutex<Value>>,
     rate_limit_after: Arc<AtomicUsize>,
+    rate_limit_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     /// Delay before `handle_get_orders` responds. Used by the timeout test.
     get_orders_delay_secs: Arc<AtomicUsize>,
     orders_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
@@ -116,6 +118,7 @@ impl Default for TestServerState {
                 "heartbeat_id": "heartbeat-next",
             }))),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
+            rate_limit_response_headers: Arc::new(tokio::sync::Mutex::new(HeaderMap::new())),
             get_orders_delay_secs: Arc::new(AtomicUsize::new(0)),
             orders_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -220,13 +223,15 @@ async fn maybe_rate_limit(state: &TestServerState) -> Option<Response> {
     *count += 1;
     let limit = state.rate_limit_after.load(Ordering::Relaxed);
     if *count > limit {
-        Some(
-            (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({"error": "Rate limit exceeded"})),
-            )
-                .into_response(),
+        let mut response = (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "Rate limit exceeded"})),
         )
+            .into_response();
+        response
+            .headers_mut()
+            .extend(state.rate_limit_response_headers.lock().await.clone());
+        Some(response)
     } else {
         None
     }
@@ -278,6 +283,28 @@ async fn handle_post_order(
         *state.last_body.lock().await = Some(v);
     }
     Json(load_json("http_order_response_ok.json")).into_response()
+}
+
+async fn handle_post_orders(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(r) = maybe_rate_limit(&state).await {
+        return r;
+    }
+    *state.last_headers.lock().await = extract_headers(&headers);
+
+    let Ok(value) = serde_json::from_slice::<Value>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let response_count = value.as_array().map_or(0, Vec::len);
+    *state.last_body.lock().await = Some(value);
+    Json(Value::Array(vec![
+        load_json("http_order_response_ok.json");
+        response_count
+    ]))
+    .into_response()
 }
 
 async fn handle_delete_order(
@@ -586,7 +613,10 @@ fn create_test_router(state: TestServerState) -> Router {
             "/order",
             post(handle_post_order).delete(handle_delete_order),
         )
-        .route("/orders", delete(handle_delete_orders))
+        .route(
+            "/orders",
+            post(handle_post_orders).delete(handle_delete_orders),
+        )
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market))
         .route("/heartbeats", post(handle_heartbeat))
@@ -878,6 +908,175 @@ async fn test_rate_limit_returns_error() {
     // Third request exceeds the limit
     let result = client.get_orders(GetOrdersParams::default()).await;
     assert!(result.is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_rate_limit_preserves_retry_after_and_is_definitive() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(0, Ordering::Relaxed);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        HeaderName::from_static("poly-ratelimit-remaining"),
+        "0".parse().unwrap(),
+    );
+    response_headers.insert(
+        HeaderName::from_static("poly-ratelimit-tier"),
+        "Standard".parse().unwrap(),
+    );
+    response_headers.insert(HeaderName::from_static("retry-after"), "2".parse().unwrap());
+    *state.rate_limit_response_headers.lock().await = response_headers;
+    let addr = start_mock_server(state).await;
+    let client = PolymarketClobHttpClient::new(
+        test_credential(),
+        "0x0000000000000000000000000000000000000248".to_string(),
+        Some(format!("http://{addr}")),
+        5,
+    )
+    .unwrap();
+    let order: PolymarketOrder =
+        serde_json::from_value(load_json("http_signed_order.json")).unwrap();
+
+    let error = client
+        .post_order(&order, PolymarketOrderType::GTC, false)
+        .await
+        .unwrap_err();
+
+    let Error::RateLimit {
+        endpoint,
+        token_cost,
+        retry_after_ms,
+    } = &error
+    else {
+        panic!("expected rate-limit error, was {error}");
+    };
+    assert_eq!(*endpoint, "/order");
+    assert_eq!(*token_cost, 1);
+    assert_eq!(*retry_after_ms, Some(2_000));
+    assert!(error.is_retryable());
+    assert!(!error.is_submit_outcome_unknown());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_order_rate_limit_reports_entry_cost() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(0, Ordering::Relaxed);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "1".parse().unwrap());
+    *state.rate_limit_response_headers.lock().await = response_headers;
+    let addr = start_mock_server(state).await;
+    let client = PolymarketClobHttpClient::new(
+        test_credential(),
+        "0x0000000000000000000000000000000000000249".to_string(),
+        Some(format!("http://{addr}")),
+        5,
+    )
+    .unwrap();
+    let order: PolymarketOrder =
+        serde_json::from_value(load_json("http_signed_order.json")).unwrap();
+    let orders = [
+        (&order, PolymarketOrderType::GTC, false),
+        (&order, PolymarketOrderType::GTC, false),
+        (&order, PolymarketOrderType::GTC, false),
+    ];
+
+    let error = client.post_orders(&orders).await.unwrap_err();
+
+    let Error::RateLimit {
+        endpoint,
+        token_cost,
+        retry_after_ms,
+    } = error
+    else {
+        panic!("expected rate-limit error");
+    };
+    assert_eq!(endpoint, "/orders");
+    assert_eq!(token_cost, 3);
+    assert_eq!(retry_after_ms, Some(1_000));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_rate_limit_reports_submitted_id_cost() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(0, Ordering::Relaxed);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "1".parse().unwrap());
+    *state.rate_limit_response_headers.lock().await = response_headers;
+    let addr = start_mock_server(state).await;
+    let client = PolymarketClobHttpClient::new(
+        test_credential(),
+        "0x0000000000000000000000000000000000000250".to_string(),
+        Some(format!("http://{addr}")),
+        5,
+    )
+    .unwrap();
+
+    let error = client
+        .cancel_orders(&["order-1", "order-2"])
+        .await
+        .unwrap_err();
+
+    let Error::RateLimit {
+        endpoint,
+        token_cost,
+        retry_after_ms,
+    } = error
+    else {
+        panic!("expected rate-limit error");
+    };
+    assert_eq!(endpoint, "/orders");
+    assert_eq!(token_cost, 2);
+    assert_eq!(retry_after_ms, Some(1_000));
+}
+
+#[rstest]
+#[tokio::test(start_paused = true)]
+async fn test_retry_after_delays_next_order_request() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(0, Ordering::Relaxed);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "2".parse().unwrap());
+    *state.rate_limit_response_headers.lock().await = response_headers;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = create_test_router(state.clone());
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    tokio::task::yield_now().await;
+    let client = PolymarketClobHttpClient::new(
+        test_credential(),
+        "0x0000000000000000000000000000000000000251".to_string(),
+        Some(format!("http://{addr}")),
+        5,
+    )
+    .unwrap();
+    let order: PolymarketOrder =
+        serde_json::from_value(load_json("http_signed_order.json")).unwrap();
+
+    client
+        .post_order(&order, PolymarketOrderType::GTC, false)
+        .await
+        .unwrap_err();
+    state.rate_limit_after.store(usize::MAX, Ordering::Relaxed);
+
+    let retry_client = client.clone();
+    let retry_order = order.clone();
+
+    let retry = tokio::spawn(async move {
+        retry_client
+            .post_order(&retry_order, PolymarketOrderType::GTC, false)
+            .await
+    });
+    tokio::task::yield_now().await;
+    assert_eq!(*state.request_count.lock().await, 1);
+
+    tokio::time::advance(Duration::from_millis(1_999)).await;
+    assert_eq!(*state.request_count.lock().await, 1);
+
+    tokio::time::advance(Duration::from_millis(1)).await;
+    retry.await.unwrap().unwrap();
+    assert_eq!(*state.request_count.lock().await, 2);
 }
 
 #[rstest]

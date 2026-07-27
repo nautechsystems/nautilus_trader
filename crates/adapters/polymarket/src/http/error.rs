@@ -15,6 +15,8 @@
 
 //! HTTP error types for the Polymarket adapter.
 
+use std::time::Duration;
+
 use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
 use thiserror::Error;
 
@@ -30,10 +32,12 @@ pub enum Error {
     #[error("auth error: {0}")]
     Auth(String),
 
-    #[error("Rate limited on {scope} (weight={weight}) retry_after_ms={retry_after_ms:?}")]
+    #[error(
+        "Rate limited on {endpoint} (token_cost={token_cost}) retry_after_ms={retry_after_ms:?}"
+    )]
     RateLimit {
-        scope: &'static str,
-        weight: u32,
+        endpoint: &'static str,
+        token_cost: u32,
         retry_after_ms: Option<u64>,
     },
 
@@ -68,10 +72,14 @@ impl Error {
         Self::Auth(msg.into())
     }
 
-    pub fn rate_limit(scope: &'static str, weight: u32, retry_after_ms: Option<u64>) -> Self {
+    pub fn rate_limit(
+        endpoint: &'static str,
+        token_cost: u32,
+        retry_after_ms: Option<u64>,
+    ) -> Self {
         Self::RateLimit {
-            scope,
-            weight,
+            endpoint,
+            token_cost,
             retry_after_ms,
         }
     }
@@ -144,7 +152,12 @@ impl Error {
 
     pub fn is_retryable(&self) -> bool {
         match self {
-            Self::Transport(_) | Self::Timeout | Self::RateLimit { .. } => true,
+            Self::Transport(_) | Self::Timeout => true,
+            Self::RateLimit {
+                token_cost,
+                retry_after_ms,
+                ..
+            } => retry_after_ms.is_some() || *token_cost == 0,
             Self::Http { status, .. } => *status >= 500,
             _ => false,
         }
@@ -154,19 +167,31 @@ impl Error {
     /// adapter cannot prove whether the venue accepted or rejected the order.
     pub fn is_submit_outcome_unknown(&self) -> bool {
         match self {
-            Self::Transport(_)
-            | Self::Timeout
-            | Self::RateLimit { .. }
-            | Self::Serde(_)
-            | Self::Decode(_)
-            | Self::Io(_) => true,
+            Self::Transport(_) | Self::Timeout | Self::Serde(_) | Self::Decode(_) | Self::Io(_) => {
+                true
+            }
             Self::Http { status, .. } => *status >= 500,
-            Self::Auth(_) | Self::BadRequest(_) | Self::Exchange(_) | Self::UrlParse(_) => false,
+            Self::Auth(_)
+            | Self::RateLimit { .. }
+            | Self::BadRequest(_)
+            | Self::Exchange(_)
+            | Self::UrlParse(_) => false,
         }
     }
 
     pub fn is_rate_limited(&self) -> bool {
         matches!(self, Self::RateLimit { .. })
+    }
+
+    #[must_use]
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::RateLimit {
+                retry_after_ms: Some(retry_after_ms),
+                ..
+            } => Some(Duration::from_millis(*retry_after_ms)),
+            _ => None,
+        }
     }
 
     pub fn is_auth_error(&self) -> bool {
@@ -206,21 +231,23 @@ mod tests {
         let rate_limit_err = Error::rate_limit("test", 30, Some(30000));
         assert!(rate_limit_err.is_rate_limited());
         assert!(rate_limit_err.is_retryable());
+        assert_eq!(rate_limit_err.retry_after(), Some(Duration::from_secs(30)));
 
         let http_err = Error::http(500, "Internal server error");
         assert!(http_err.is_retryable());
+        assert_eq!(http_err.retry_after(), None);
     }
 
     #[rstest]
     fn test_error_display() {
         let err = Error::RateLimit {
-            scope: "order",
-            weight: 10,
+            endpoint: "/orders",
+            token_cost: 10,
             retry_after_ms: Some(60000),
         };
         assert_eq!(
             err.to_string(),
-            "Rate limited on order (weight=10) retry_after_ms=Some(60000)"
+            "Rate limited on /orders (token_cost=10) retry_after_ms=Some(60000)"
         );
     }
 
@@ -228,9 +255,11 @@ mod tests {
     fn test_retryable_errors() {
         assert!(Error::transport("test").is_retryable());
         assert!(Error::Timeout.is_retryable());
-        assert!(Error::rate_limit("test", 10, None).is_retryable());
+        assert!(Error::rate_limit("/orders", 10, Some(1_000)).is_retryable());
+        assert!(Error::rate_limit("unknown", 0, None).is_retryable());
         assert!(Error::http(500, "server error").is_retryable());
 
+        assert!(!Error::rate_limit("/orders", 10, None).is_retryable());
         assert!(!Error::auth("test").is_retryable());
         assert!(!Error::bad_request("test").is_retryable());
         assert!(!Error::decode("test").is_retryable());
@@ -240,10 +269,10 @@ mod tests {
     fn test_submit_outcome_unknown_errors() {
         assert!(Error::transport("test").is_submit_outcome_unknown());
         assert!(Error::Timeout.is_submit_outcome_unknown());
-        assert!(Error::rate_limit("test", 10, None).is_submit_outcome_unknown());
         assert!(Error::http(500, "server error").is_submit_outcome_unknown());
         assert!(Error::decode("bad json").is_submit_outcome_unknown());
 
+        assert!(!Error::rate_limit("/orders", 10, Some(1_000)).is_submit_outcome_unknown());
         assert!(!Error::auth("test").is_submit_outcome_unknown());
         assert!(!Error::bad_request("test").is_submit_outcome_unknown());
         assert!(!Error::http(404, "not found").is_submit_outcome_unknown());

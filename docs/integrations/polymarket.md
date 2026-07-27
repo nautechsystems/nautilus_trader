@@ -16,17 +16,22 @@ preparation.
 
 ## Installation
 
-To install NautilusTrader with Polymarket support:
+The Python v2 package includes the Polymarket adapter; no adapter-specific extra is required.
+
+To install the latest Python v2 release candidate:
 
 ```bash
-uv pip install "nautilus_trader[polymarket]"
+uv pip install --pre nautilus_trader
 ```
 
-To build from source with all extras (including Polymarket):
+To build Python v2 from source, run from the repository root:
 
 ```bash
-uv sync --all-extras
+make build-debug-v2
 ```
+
+For branch development wheels and source-build prerequisites, see
+[Python v2 installation](../getting_started/installation.md#python-v2-release-candidate-wheels).
 
 ## Examples
 
@@ -248,39 +253,6 @@ We recommend using environment variables to manage your credentials.
 
 Polymarket supports live `L2_MBP` order book deltas, quotes, and trades. Instrument definitions are
 published by bootstrap, configured refreshes, new-market discovery, and tick-size changes.
-
-### Generic subscription commands
-
-| Test ID | Command             | Disposition | Matrix |
-| ------- | ------------------- | ----------- | ------ |
-| TC-D02  | Singular instrument | Supported   | Run    |
-| TC-D12  | `OrderBookDepth10`  | Unsupported | Skip   |
-| TC-D60  | Instrument status   | Unsupported | Skip   |
-| TC-D61  | Instrument close    | Unsupported | Skip   |
-
-- TC-D02 receives live definition publications from the shared instrument sources. It does not
-  replay a cached definition. Unsubscribe removes the per-instrument data-engine handler without
-  stopping bootstrap, refresh, new-market, or tick-size-change publishers.
-- TC-D12 has no separate Polymarket feed. Use managed `L2_MBP` deltas; the adapter does not
-  synthesize a second book stream from its local book.
-- TC-D60 cannot own delivery: new-market status belongs to configured discovery, while resolution
-  status belongs to open-position tracking. A generic command cannot start or stop either source.
-- TC-D61 cannot own delivery: resolution close events belong to open-position tracking and must
-  remain active until exposure closes. A generic unsubscribe cannot stop that source.
-
-The unsupported commands return an explicit error when called directly. This does not remove the
-resolution behavior described in [Market resolution events](#market-resolution-events): the data
-client still emits `InstrumentStatus` and `InstrumentClose` for position-tracked legs.
-
-For `DataTesterConfig` and live capability matrices:
-
-- Enable `subscribe_instrument` for TC-D02 and set `update_instruments_interval_mins=1` so the
-  matrix observes a real Gamma refresh rather than a cached replay.
-- Record TC-D12 as skipped. Exercise the supported book contract with `subscribe_book_deltas=true`
-  and `manage_book=true`; set `book_levels_to_print=10` when only the top ten levels need display.
-- Record TC-D60 and TC-D61 as skipped. Leave `subscribe_instrument_status` and
-  `subscribe_instrument_close` disabled because their resolution events require position-owned
-  lifecycle state rather than generic subscription ownership.
 
 ## Orders capability
 
@@ -881,11 +853,55 @@ ones are full and closing a secondary connection once it owns no assets.
 
 ## Rate limiting
 
-Polymarket enforces rate limits via Cloudflare throttling.
-When limits are exceeded, requests are throttled on sliding windows. Sustained
-overshoot can still surface as HTTP 429 responses or temporary blocking.
+Polymarket applies Cloudflare IP limits to its APIs and separate per-signer token buckets to CLOB
+order and cancellation requests. The V2 adapter enforces the signer limits in process. All clients
+for one signer use the same limiter, which has independent order and cancellation buckets.
 
-### Selected REST limits
+### Per-signer CLOB trading limits
+
+The adapter starts each signer at the Standard tier. Polymarket determines tier eligibility from
+the maker wallet's cumulative 30-day trading volume, even when the maker differs from the signer,
+and refreshes assignments every three hours. The adapter does not calculate eligibility: a
+recognized `Poly-RateLimit-Tier` response header selects one of these encoded profiles and updates
+both buckets, while an unknown tier is logged and ignored.
+
+| Tier     | 30-day maker volume | Order rate (tokens/s) | Order burst | Cancel rate (tokens/s) | Cancel burst | Negative cancel balance |
+| -------- | ------------------- | --------------------: | ----------: | ---------------------: | -----------: | ----------------------- |
+| Standard | -                   |                    40 |          60 |                     80 |          120 | Yes                     |
+| Copper   | $30,000+            |                    60 |          90 |                    120 |          180 | Yes                     |
+| Bronze   | $50,000+            |                    80 |         120 |                    160 |          240 | Yes                     |
+| Silver   | $100,000+           |                   200 |         300 |                    400 |          600 | Yes                     |
+| Gold     | $500,000+           |                   400 |         600 |                    800 |        1,200 | Yes                     |
+| Platinum | $2.5M+              |                   450 |         675 |                    900 |        1,350 | No                      |
+| Diamond  | $5M+                |                   525 |         787 |                  1,050 |        1,575 | No                      |
+| Elite    | $10M+               |                   600 |         900 |                  1,200 |        1,800 | No                      |
+
+Covered requests consume:
+
+| Bucket       | Request                        | Token cost                               |
+| ------------ | ------------------------------ | ---------------------------------------- |
+| Order        | `POST /order`                  | 1                                        |
+| Order        | `POST /orders`                 | Number of orders                         |
+| Cancellation | `DELETE /order`                | 1                                        |
+| Cancellation | `DELETE /orders`               | Number of submitted order IDs            |
+| Cancellation | `DELETE /cancel-all`           | 1 plus successful cancellations          |
+| Cancellation | `DELETE /cancel-market-orders` | 1 plus successful matching cancellations |
+
+Batch admission is all or nothing. The adapter rejects a batch locally when its cost exceeds the
+current tier's burst, so callers must split it. Cancel-all and cancel-market requests debit one token
+before the request, then debit each successful cancellation after the response. Standard through
+Gold tiers can enter cancellation debt; Platinum through Elite tiers floor the balance at zero.
+
+`Poly-RateLimit-Remaining` can lower the local balance, and `Poly-RateLimit-Reset` extends a rejected
+or indebted bucket's wait. The adapter logs `Poly-RateLimit-Warning` responses with the endpoint,
+token cost, tier, remaining balance, and reset time.
+
+A `429 Too Many Requests` response with `Retry-After` blocks the applicable bucket for at least that
+delay and can then be retried; without `Retry-After`, the adapter does not retry it automatically. A
+standalone 429 is a definitive venue rejection. Transport failures, timeouts, and any submit with an
+earlier ambiguous attempt remain ambiguous outcomes.
+
+### Selected IP-based REST limits
 
 Polymarket changes these quotas over time. As of 2026-07-10, the official limits are:
 
@@ -915,14 +931,15 @@ The WebSocket quotas are not part of the published REST rate-limits table. The V
 `ws_max_subscriptions` (default 200) by sharding subscriptions across a pool of market connections.
 
 :::warning
-Exceeding Polymarket rate limits triggers Cloudflare throttling. Requests are queued
-using sliding windows rather than rejected immediately, but sustained overshoot can
-result in HTTP 429 responses or temporary blocking.
+Exceeding the IP-based limits triggers Cloudflare throttling. Requests are queued using sliding
+windows rather than rejected immediately, but sustained overshoot can result in HTTP 429 responses
+or temporary blocking.
 :::
 
 :::info
-For the latest rate limit details, see the official Polymarket documentation:
-<https://docs.polymarket.com/api-reference/rate-limits>
+For the latest limits, see the official Polymarket
+[CLOB trading rate limits](https://docs.polymarket.com/api-reference/trading-rate-limits) and
+[general rate limits](https://docs.polymarket.com/api-reference/rate-limits).
 :::
 
 ## Limitations and considerations
@@ -1219,6 +1236,41 @@ retry.
 The legacy v1 loader also exposes lower-level raw fetch and parse methods, Python HTTP injection,
 and convenience scripts. Those v1-only APIs remain under the top-level legacy package and are not
 part of the Python v2 facade.
+
+## Developer test matrix
+
+### Generic subscription commands
+
+| Test ID | Command             | Disposition | Matrix |
+| ------- | ------------------- | ----------- | ------ |
+| TC-D02  | Singular instrument | Supported   | Run    |
+| TC-D12  | `OrderBookDepth10`  | Unsupported | Skip   |
+| TC-D60  | Instrument status   | Unsupported | Skip   |
+| TC-D61  | Instrument close    | Unsupported | Skip   |
+
+- TC-D02 receives live definition publications from the shared instrument sources. It does not
+  replay a cached definition. Unsubscribe removes the per-instrument data-engine handler without
+  stopping bootstrap, refresh, new-market, or tick-size-change publishers.
+- TC-D12 has no separate Polymarket feed. Use managed `L2_MBP` deltas; the adapter does not
+  synthesize a second book stream from its local book.
+- TC-D60 cannot own delivery: new-market status belongs to configured discovery, while resolution
+  status belongs to open-position tracking. A generic command cannot start or stop either source.
+- TC-D61 cannot own delivery: resolution close events belong to open-position tracking and must
+  remain active until exposure closes. A generic unsubscribe cannot stop that source.
+
+The unsupported commands return an explicit error when called directly. This does not remove the
+resolution behavior described in [Market resolution events](#market-resolution-events): the data
+client still emits `InstrumentStatus` and `InstrumentClose` for position-tracked legs.
+
+For `DataTesterConfig` and live capability matrices:
+
+- Enable `subscribe_instrument` for TC-D02 and set `update_instruments_interval_mins=1` so the
+  matrix observes a real Gamma refresh rather than a cached replay.
+- Record TC-D12 as skipped. Exercise the supported book contract with `subscribe_book_deltas=true`
+  and `manage_book=true`; set `book_levels_to_print=10` when only the top ten levels need display.
+- Record TC-D60 and TC-D61 as skipped. Leave `subscribe_instrument_status` and
+  `subscribe_instrument_close` disabled because their resolution events require position-owned
+  lifecycle state rather than generic subscription ownership.
 
 ## Contributing
 

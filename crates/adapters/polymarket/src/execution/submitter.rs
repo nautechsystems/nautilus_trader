@@ -222,7 +222,7 @@ impl OrderSubmitter {
 
         let response = match self
             .retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "submit_market_order",
                 || {
                     let http_client = http_client.clone();
@@ -237,13 +237,14 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
         {
             Ok(response) => response,
             Err(e)
-                if e.is_submit_outcome_unknown() || saw_unknown_outcome.load(Ordering::Acquire) =>
+                if submit_outcome_is_unknown(&e, saw_unknown_outcome.load(Ordering::Acquire)) =>
             {
                 return Err(UnknownSubmitError {
                     reason: e.to_string(),
@@ -267,7 +268,7 @@ impl OrderSubmitter {
         let http_client = self.http_client.clone();
         let order_id = venue_order_id.to_string();
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "cancel_order",
                 || {
                     let http_client = http_client.clone();
@@ -275,6 +276,7 @@ impl OrderSubmitter {
                     async move { http_client.cancel_order(&order_id).await }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
@@ -289,7 +291,7 @@ impl OrderSubmitter {
         let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "cancel_orders",
                 || {
                     let http_client = http_client.clone();
@@ -300,6 +302,7 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
@@ -316,7 +319,7 @@ impl OrderSubmitter {
         let oid = order_id.to_string();
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "get_order",
                 || {
                     let http_client = http_client.clone();
@@ -324,6 +327,7 @@ impl OrderSubmitter {
                     async move { http_client.get_order_optional(&oid).await }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
@@ -386,7 +390,7 @@ impl OrderSubmitter {
 
         let result = self
             .retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "submit_limit_order",
                 || {
                     let http_client = http_client.clone();
@@ -408,6 +412,7 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await;
@@ -440,6 +445,10 @@ impl OrderSubmitter {
         // the whole batch without an idempotency key we can verify here.
         self.http_client.post_orders(&order_refs).await
     }
+}
+
+fn submit_outcome_is_unknown(error: &Error, earlier_attempt_unknown: bool) -> bool {
+    error.is_submit_outcome_unknown() || earlier_attempt_unknown
 }
 
 fn signed_base_quantity(
@@ -493,5 +502,18 @@ mod tests {
             signed_base_quantity(maker_amount, taker_amount, side),
             expected
         );
+    }
+
+    #[rstest]
+    fn test_rate_limit_is_definitive_unless_an_earlier_attempt_was_unknown() {
+        let rate_limit = Error::rate_limit("/order", 1, Some(2_000));
+
+        assert!(!submit_outcome_is_unknown(&rate_limit, false));
+        assert!(submit_outcome_is_unknown(&rate_limit, true));
+        assert!(submit_outcome_is_unknown(
+            &Error::transport("connection reset"),
+            false
+        ));
+        assert!(submit_outcome_is_unknown(&Error::Timeout, false));
     }
 }
