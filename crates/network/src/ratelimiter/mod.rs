@@ -576,22 +576,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_burst_size_replenished_in_truncation() {
-        // 100_000_000_000ns * u32::MAX overflows u64, `as u64` silently truncates
-        let quota = Quota::with_period(Duration::from_secs(100))
+    #[case::large(Duration::from_secs(100), u32::MAX, Duration::from_mins(7_158_278_825))]
+    #[case::saturated(Duration::MAX, 2, Duration::MAX)]
+    fn test_burst_size_replenished_in(
+        #[case] replenish_interval: Duration,
+        #[case] burst_size: u32,
+        #[case] expected: Duration,
+    ) {
+        let quota = Quota::with_period(replenish_interval)
             .unwrap()
-            .allow_burst(NonZeroU32::new(u32::MAX).unwrap());
+            .allow_burst(NonZeroU32::new(burst_size).unwrap());
 
-        let replenished_in = quota.burst_size_replenished_in();
-        let full: u128 = 100_000_000_000u128 * u128::from(u32::MAX);
-        let truncated = full as u64;
-
-        assert_eq!(replenished_in, Duration::from_nanos(truncated));
-        assert_ne!(
-            full,
-            u128::from(truncated),
-            "Truncation should have occurred"
-        );
+        assert_eq!(quota.burst_size_replenished_in(), expected);
     }
 
     #[rstest]

@@ -769,10 +769,12 @@ impl ExecutionClient for DeriveExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        self.reconciliation_context()
-            .generate_mass_status(lookback_mins)
-            .await
-            .map(Some)
+        Box::pin(
+            self.reconciliation_context()
+                .generate_mass_status(lookback_mins),
+        )
+        .await
+        .map(Some)
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
@@ -1865,7 +1867,7 @@ impl DeriveReconciliationContext {
 
     async fn recover_after_reconnect(&self) -> anyhow::Result<()> {
         self.refresh_account_state().await?;
-        let mass_status = self.generate_mass_status(None).await?;
+        let mass_status = Box::pin(self.generate_mass_status(None)).await?;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(Vec::len).sum();
         let position_count = mass_status.position_reports().len();

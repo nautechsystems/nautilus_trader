@@ -143,6 +143,14 @@ impl SocketClientInner {
             idle_timeout_ms,
             certs_dir,
         } = &config.clone();
+        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
+        let reconnect_backoff = ExponentialBackoff::new(
+            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
+            reconnect_backoff_factor.unwrap_or(1.5),
+            reconnect_jitter_ms.unwrap_or(100),
+            true, // immediate-first
+        )?;
         let connector = if let Some(dir) = certs_dir {
             let config = create_tls_config_from_certs_dir(Path::new(dir), false)?;
             Some(Connector::Rustls(Arc::new(config)))
@@ -250,15 +258,6 @@ impl SocketClientInner {
             )
         });
 
-        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
-        let backoff = ExponentialBackoff::new(
-            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
-            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
-            reconnect_backoff_factor.unwrap_or(1.5),
-            reconnect_jitter_ms.unwrap_or(100),
-            true, // immediate-first
-        )?;
-
         Ok(Self {
             config,
             connector,
@@ -269,7 +268,7 @@ impl SocketClientInner {
             connection_mode,
             state_notify,
             reconnect_timeout,
-            backoff,
+            backoff: reconnect_backoff,
             handler: message_handler.clone(),
             reconnect_max_attempts: *reconnect_max_attempts,
             reconnect_attempt_count: 0,
@@ -1634,6 +1633,45 @@ mod rust_tests {
     };
 
     use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_dial() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(100.1),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+
+        let error = match SocketClientInner::connect_url(config).await {
+            Ok(_) => panic!("invalid reconnect backoff should be rejected"),
+            Err(e) => e,
+        };
+
+        assert!(
+            error.to_string().contains("factor"),
+            "error should mention the invalid factor, was: {error}"
+        );
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "invalid reconnect backoff must be rejected before dialing"
+        );
+    }
 
     #[rstest]
     #[tokio::test]

@@ -342,6 +342,16 @@ impl WebSocketClientInner {
         } else {
             Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10_000))
         };
+        let backoff = ExponentialBackoff::new(
+            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
+            config.reconnect_backoff_factor.unwrap_or(1.5),
+            config.reconnect_jitter_ms.unwrap_or(100),
+            true, // immediate-first
+        )
+        .map_err(|e| {
+            TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+        })?;
 
         let reconnect_headers = ReconnectHeaders::new(config.headers.clone());
 
@@ -404,17 +414,6 @@ impl WebSocketClientInner {
                 writer_tx.clone(),
             )
         });
-
-        let backoff = ExponentialBackoff::new(
-            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
-            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
-            config.reconnect_backoff_factor.unwrap_or(1.5),
-            config.reconnect_jitter_ms.unwrap_or(100),
-            true, // immediate-first
-        )
-        .map_err(|e| {
-            TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
-        })?;
 
         let mut config = config;
         config.headers.clear();
@@ -2279,9 +2278,11 @@ fn fail_registered_auth(auth_tracker: &OnceLock<AuthTracker>, reason: &str) {
     }
 }
 
-// Abort controller task on drop to clean up background tasks
 impl Drop for WebSocketClient {
     fn drop(&mut self) {
+        self.connection_mode
+            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+
         if !self.controller_task.is_finished() {
             self.controller_task.abort();
             log_task_aborted("controller");
@@ -2297,6 +2298,7 @@ mod tests {
     use std::{num::NonZeroU32, sync::Arc, time::Duration};
 
     use futures_util::{SinkExt, StreamExt};
+    use rstest::rstest;
     use tokio::{
         net::TcpListener,
         task::{self, JoinHandle},
@@ -2311,6 +2313,7 @@ mod tests {
     };
 
     use crate::{
+        mode::ConnectionMode,
         ratelimiter::quota::Quota,
         websocket::{TransportBackend, WebSocketClient, WebSocketConfig},
     };
@@ -2434,6 +2437,21 @@ mod tests {
 
         client.disconnect().await;
         assert!(client.is_disconnected());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_drop_sets_shared_connection_mode_closed() {
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+        let connection_mode = client.connection_mode_atomic();
+
+        drop(client);
+
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_mode),
+            ConnectionMode::Closed
+        );
     }
 
     #[tokio::test]
@@ -3677,6 +3695,57 @@ mod rust_tests {
             }
             other => panic!("expected InvalidInput IO error, was: {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_dial() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let accepted_clone = Arc::clone(&accepted);
+
+        let server = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            accepted_clone.store(true, Ordering::SeqCst);
+            accept_async(stream).await.unwrap();
+        });
+        let (handler, _rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(100.1),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+
+        let error = WebSocketClientInner::connect_url(config, Some(handler), None)
+            .await
+            .expect_err("invalid reconnect backoff should be rejected");
+
+        match error {
+            TransportError::Io(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+                assert!(
+                    error.to_string().contains("factor"),
+                    "error should mention the invalid factor, was: {error}"
+                );
+            }
+            other => panic!("expected InvalidInput IO error, was: {other:?}"),
+        }
+        assert!(
+            !accepted.load(Ordering::SeqCst),
+            "invalid reconnect backoff must be rejected before dialing"
+        );
+        server.abort();
     }
 
     #[rstest]

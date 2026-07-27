@@ -42,8 +42,8 @@ pub struct RetryConfig {
     /// Whether the first retry should happen immediately without delay.
     /// Should be false for HTTP/order operations, true for connection operations.
     pub immediate_first: bool,
-    /// Optional maximum total elapsed time for all retries in milliseconds.
-    /// If exceeded, retries stop even if `max_retries` hasn't been reached.
+    /// Optional maximum total elapsed time across all attempts and retry delays in milliseconds.
+    /// When set, this deadline also bounds an in-flight operation.
     pub max_elapsed_ms: Option<u64>,
 }
 
@@ -156,6 +156,8 @@ where
 
         let mut attempt = 0;
         let start_time = dst::time::Instant::now();
+        let max_elapsed = self.config.max_elapsed_ms.map(Duration::from_millis);
+        let deadline = max_elapsed.and_then(|duration| start_time.checked_add(duration));
         let mut last_delayed_error = None;
 
         loop {
@@ -166,9 +168,9 @@ where
                 return Err(create_error("canceled".to_string()));
             }
 
-            if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
+            if let Some(max_elapsed) = max_elapsed {
                 let elapsed = start_time.elapsed();
-                if elapsed.as_millis() >= u128::from(max_elapsed_ms) {
+                if elapsed >= max_elapsed {
                     if let Some(e) = last_delayed_error {
                         return Err(e);
                     }
@@ -177,32 +179,48 @@ where
             }
             last_delayed_error = None;
 
-            let result = match (self.config.operation_timeout_ms, cancel) {
-                (Some(timeout_ms), Some(token)) => {
-                    tokio::select! {
-                        biased;
-                        result = dst::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
-                        () = token.cancelled() => {
-                            log::debug!("Operation '{operation_name}' canceled during execution");
-                            return Err(create_error("canceled".to_string()));
+            let attempt_future = async {
+                let result = match (self.config.operation_timeout_ms, cancel) {
+                    (Some(timeout_ms), Some(token)) => {
+                        tokio::select! {
+                            biased;
+                            result = dst::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
+                            () = token.cancelled() => {
+                                log::debug!("Operation '{operation_name}' canceled during execution");
+                                return Err(create_error("canceled".to_string()));
+                            }
                         }
                     }
-                }
-                (Some(timeout_ms), None) => {
-                    dst::time::timeout(Duration::from_millis(timeout_ms), operation()).await
-                }
-                (None, Some(token)) => {
-                    tokio::select! {
+                    (Some(timeout_ms), None) => {
+                        dst::time::timeout(Duration::from_millis(timeout_ms), operation()).await
+                    }
+                    (None, Some(token)) => tokio::select! {
                         biased;
                         result = operation() => Ok(result),
                         () = token.cancelled() => {
                             log::debug!("Operation '{operation_name}' canceled during execution");
                             return Err(create_error("canceled".to_string()));
                         }
-                    }
-                }
-                (None, None) => Ok(operation().await),
+                    },
+                    (None, None) => Ok(operation().await),
+                };
+                Ok(result)
             };
+            let result = if let Some(deadline) = deadline {
+                tokio::select! {
+                    biased;
+                    () = dst::time::sleep_until(deadline) => {
+                        if cancel.is_some_and(CancellationToken::is_cancelled) {
+                            log::debug!("Operation '{operation_name}' canceled during execution");
+                            return Err(create_error("canceled".to_string()));
+                        }
+                        return Err(create_error(self.budget_exceeded_msg(attempt)));
+                    }
+                    result = attempt_future => result,
+                }
+            } else {
+                attempt_future.await
+            }?;
 
             match result {
                 Ok(Ok(success)) => {
@@ -526,7 +544,7 @@ mod test_utils {
 mod tests {
     use std::sync::{
         Arc,
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     };
 
     #[cfg(all(feature = "simulation", madsim))]
@@ -864,6 +882,149 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
         assert!(elapsed.as_millis() >= 150);
         assert!(elapsed.as_millis() < 1000);
+    }
+
+    #[rstest]
+    #[case::without_operation_timeout(None)]
+    #[case::at_operation_timeout(Some(100))]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_max_elapsed_bounds_in_flight_attempt(#[case] operation_timeout_ms: Option<u64>) {
+        let config = RetryConfig {
+            max_retries: 3,
+            initial_delay_ms: 10,
+            max_delay_ms: 20,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms,
+            immediate_first: false,
+            max_elapsed_ms: Some(100),
+        };
+        let manager = RetryManager::new(config);
+        let attempts = Arc::new(AtomicU32::new(0));
+        let attempts_clone = Arc::clone(&attempts);
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_clone = Arc::clone(&completed);
+        let start = time::Instant::now();
+
+        let error = manager
+            .execute_with_retry(
+                "test_in_flight_budget",
+                move || {
+                    let attempts = Arc::clone(&attempts_clone);
+                    let completed = Arc::clone(&completed_clone);
+                    async move {
+                        attempts.fetch_add(1, Ordering::SeqCst);
+                        time::sleep(Duration::from_secs(1)).await;
+                        completed.store(true, Ordering::SeqCst);
+                        Ok::<i32, TestError>(42)
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await
+            .unwrap_err();
+
+        let TestError::Timeout(message) = error else {
+            panic!("expected retry budget timeout, was {error}");
+        };
+        assert_eq!(message, "Retry budget exceeded (1/4)");
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(!completed.load(Ordering::SeqCst));
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        assert_eq!(start.elapsed(), Duration::from_millis(100));
+        #[cfg(all(feature = "simulation", madsim))]
+        assert!(
+            start.elapsed() >= Duration::from_millis(100)
+                && start.elapsed() < Duration::from_millis(101)
+        );
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_max_elapsed_bounds_later_in_flight_attempt() {
+        let config = RetryConfig {
+            max_retries: 3,
+            initial_delay_ms: 10,
+            max_delay_ms: 10,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: Some(100),
+        };
+        let manager = RetryManager::new(config);
+        let attempts = Arc::new(AtomicU32::new(0));
+        let attempts_clone = Arc::clone(&attempts);
+
+        let error = manager
+            .execute_with_retry(
+                "test_later_in_flight_budget",
+                move || {
+                    let attempt = attempts_clone.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        if attempt == 0 {
+                            Err::<i32, TestError>(TestError::Retryable("first".to_string()))
+                        } else {
+                            std::future::pending().await
+                        }
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await
+            .unwrap_err();
+
+        let TestError::Timeout(message) = error else {
+            panic!("expected retry budget timeout, was {error}");
+        };
+        assert_eq!(message, "Retry budget exceeded (2/4)");
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_cancellation_takes_precedence_when_total_deadline_is_ready() {
+        let config = RetryConfig {
+            max_retries: 3,
+            initial_delay_ms: 10,
+            max_delay_ms: 10,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: Some(100),
+        };
+        let manager = RetryManager::new(config);
+        let token = CancellationToken::new();
+        let mut operation = Box::pin(manager.execute_with_retry_with_cancel(
+            "test_cancellation_at_deadline",
+            std::future::pending::<Result<i32, TestError>>,
+            should_retry_test_error,
+            create_test_error,
+            &token,
+        ));
+
+        assert!(futures::poll!(&mut operation).is_pending());
+        advance_clock(Duration::from_millis(100)).await;
+        token.cancel();
+
+        let error = operation.await.unwrap_err();
+        let TestError::Timeout(message) = error else {
+            panic!("expected cancellation timeout, was {error}");
+        };
+        assert_eq!(message, "canceled");
     }
 
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
