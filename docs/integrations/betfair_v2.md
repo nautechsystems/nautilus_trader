@@ -19,6 +19,7 @@ rewrite.
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------- |
 | Order types              | `MARKET` only supports `AT_THE_CLOSE`; `LIMIT` supports BSP on close flows.                                        | Stable guide is still Python shaped in this area.                         | Decide final Betfair market order model.             |
 | Batch operations         | `SubmitOrderList` and `BatchCancelOrders` are implemented.                                                         | Stable guide used to mark these as unsupported.                           | Keep and promote.                                    |
+| Voided fills             | Cumulative `sv` allocation emits `OrderFillVoided` order events.                                                   | Python publishes only the `BetfairOrderVoided` custom data type.          | Keep and promote.                                    |
 | Reconciliation scope     | `reconcile_market_ids_only` uses `reconcile_market_ids`; otherwise falls back to `stream_market_ids_filter`.       | Stable guide says stream filtering and reconciliation are separate.       | Decide if Rust keeps or removes this coupling.       |
 | Full image cache checks  | Rust uses `generate_mass_status()` at startup and on every stream reconnect; no `check_cache_against_order_image`. | Stable guide describes the Python full image cache check.                 | Add parity or document the Rust path as final.       |
 | Post‑reconnect halt      | `submit_order` and `submit_order_list` emit `OrderDenied STREAM_RECONCILING` while the reconcile is in flight.     | Python keeps trading during reconnect.                                    | Promote as the Rust default once `betfair.md` flips. |
@@ -190,12 +191,6 @@ The adapter handles several edge cases when processing fills from the stream:
 
 - **Incremental fills**: Betfair reports cumulative matched sizes. The adapter calculates
   incremental fills by tracking the last known filled quantity per order.
-- **Cumulative voids**: Betfair `sv` is cumulative. The adapter allocates increases to known,
-  locally applied fill lots newest-first and emits cumulative `OrderFillVoided` corrections.
-- **Reconnect safety**: A first-seen snapshot seeds its cumulative void state without reversing
-  exposure Nautilus never applied.
-- **Terminal disposition**: A Betfair void remains `EXECUTION_COMPLETE`, maps the order to
-  `VOIDED`, and never sets `is_reopened`.
 - **Overfill protection**: fills that would exceed the order quantity are rejected.
 - **Race conditions**: when stream fills arrive before the HTTP order response, the adapter
   caches the venue order ID immediately to ensure correct order matching.
@@ -207,6 +202,27 @@ The adapter handles several edge cases when processing fills from the stream:
 - **Gap-window fills**: a fill that completes and rolls off the unmatched book during a
   stream disconnect is recovered by the post-reconnect mass-status reconciliation; see
   [Post-reconnect reconciliation](#post-reconnect-reconciliation).
+
+### Voided fills
+
+Betfair can void matched bets after reporting them, for example after an integrity ruling or a VAR
+decision. The order stream carries the running total in `sv` (size voided). Voids caused by runner
+removal settle instead of streaming, so they do not reach this path.
+
+The adapter allocates each `sv` increase to locally applied fill lots newest-first and emits one
+cumulative [`OrderFillVoided`](../concepts/events/order_fill_voided.md) per affected `trade_id`. A
+first-seen snapshot seeds its cumulative void state without reversing exposure Nautilus never
+applied, so a reconnect does not double-correct. Any `sv` increase also triggers an account refresh.
+
+An `EXECUTION_COMPLETE` update with no locally applied fill lots takes the terminal path instead: one
+correction under a synthetic `VOID-{bet_id}` trade ID that carries the order to `VOIDED`. That status
+resolves only when `sv` is positive and both cancelled and lapsed quantities are zero, so a mixed
+update carrying `sc` or `sl` alongside `sv` emits no correction. Betfair voids never set
+`is_reopened`, so `VOIDED` is final.
+
+The adapter also publishes the [`BetfairOrderVoided`](#custom-data-types) custom data type carrying
+the venue's raw void detail. The Python adapter publishes only that type and no order event, so a
+Rust strategy receives position and PnL corrections that Python does not.
 
 ## Rate limiting
 

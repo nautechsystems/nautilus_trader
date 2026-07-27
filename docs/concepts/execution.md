@@ -76,22 +76,6 @@ flowchart LR
 Execution paths branch by emulation and algorithm routing before reaching the execution engine and
 client.
 
-## Fill corrections
-
-Some venues can later reduce or invalidate a fill. Nautilus records this as an
-[`OrderFillVoided`](events/order_fill_voided.md) event, never as an opposite-side fill. The event
-identifies the original trade and carries the cumulative voided quantity and fee correction.
-
-The execution engine rebuilds the affected order and positions and refreshes portfolio position and
-PnL caches before publishing the correction to strategies and execution algorithms. Adapters that
-support fill corrections request an authoritative account refresh after a void.
-
-Adapters must publish the referenced fill before a reopened correction or a partial correction that
-leaves the order executable. Without a local fill, a non-reopened correction makes the whole order
-terminal, even when `voided_qty` is less than the order quantity. A later working status report does
-not reopen `VOIDED`. See the complete
-[`OrderFillVoided` contract](events/order_fill_voided.md#contract).
-
 ## Order denied reasons
 
 A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by
@@ -471,6 +455,59 @@ but can leave a discrepancy after a legitimate venue overfill. `True` applies th
 and is not a substitute for duplicate-fill detection. Use
 [execution reconciliation](live.md#execution-reconciliation) to detect discrepancies.
 :::
+
+## Fill corrections
+
+Some venues can later reduce or invalidate a fill. Nautilus records this as an
+[`OrderFillVoided`](events/order_fill_voided.md) event, never as an opposite-side fill. The event
+identifies the original trade and carries the cumulative voided quantity and fee correction.
+
+The execution engine rebuilds the affected order and positions and refreshes portfolio position and
+PnL caches before publishing the correction to strategies and execution algorithms. Adapters that
+support fill corrections request an authoritative account refresh after a void.
+
+Adapters must publish the referenced fill before a reopened correction or a partial correction that
+leaves the order executable. Without a local fill, a non-reopened correction makes the whole order
+terminal, even when `voided_qty` is less than the order quantity. A later working status report does
+not reopen `VOIDED`. See the complete
+[`OrderFillVoided` contract](events/order_fill_voided.md#contract).
+
+### How voided fills occur
+
+A void is a venue action on a trade it already reported. The causes recur across asset classes:
+
+- Erroneous execution review: the venue nullifies a print that is substantially inconsistent with
+  the market at the time of execution, or one caused by an exchange system fault.
+- Settlement failure: a matched trade fails to settle, so the fill never takes economic effect.
+- Event invalidation: the underlying event is abandoned or a competitor is withdrawn, so matched
+  positions carry no exposure.
+- Post-trade restatement: the venue restates the quantity or fees of a trade during clearing.
+
+The event does not restate the fill price, so a venue price adjustment is not expressible as a
+single correction.
+
+A break reaches the client differently by venue. FIX venues signal one through
+[`ExecType <150>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_150.html) values `H` (trade
+cancel) and `G` (trade correct). Venues that notify out of band leave the break to surface through
+[execution reconciliation](live.md#execution-reconciliation).
+
+### Venue references
+
+Each venue publishes the conditions under which it acts:
+
+| Venue            | Mechanism                                                | Reference                                                                                                                                        |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Nasdaq           | Clearly erroneous transactions (Rule 11890).             | [Clearly erroneous transactions policy](https://www.nasdaqtrader.com/Trader.aspx?id=ClearlyErroneous).                                           |
+| NYSE             | Clearly erroneous executions (Rule 7.10).                | [Clearly erroneous execution review](https://www.nyse.com/trade/cee).                                                                            |
+| Cboe US equities | Clearly erroneous executions (BZX Rule 11.17).           | [Clearly erroneous execution form](https://www.cboe.com/us/equities/trading/cee_form/).                                                          |
+| CME Group        | Trade cancellations and price adjustments (Rule 588).    | [CME rulebook chapter 5](https://www.cmegroup.com/rulebook/CME/I/5/5.pdf).                                                                       |
+| Betfair          | Voided bets, reported as cumulative size voided (`sv`).  | [Void bets on the Stream API](https://support.developer.betfair.com/hc/en-us/articles/360000391492-How-are-void-bets-treated-by-the-Stream-API). |
+| Polymarket       | `FAILED` trade status after an on‑chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
+
+Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
+consumes: [Betfair](../integrations/betfair_v2.md#voided-fills) from the order change message `sv`
+field, and
+[Polymarket](../integrations/polymarket.md#trades) from the user channel trade status.
 
 ## Reconciliation reports
 
