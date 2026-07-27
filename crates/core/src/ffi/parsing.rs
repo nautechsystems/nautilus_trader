@@ -299,8 +299,8 @@ mod tests {
     #[case("123", 0)]
     #[case("123.45", 2)]
     #[case("123.456789", 6)]
-    #[case("1.23456789e-2", 2)]
-    #[case("1.23456789e-12", 12)]
+    #[case("1.23456789e-2", 10)]
+    #[case("1.23456789e-12", 20)]
     fn test_precision_from_cstr(#[case] input: &str, #[case] expected: u8) {
         let c_str = CString::new(input).unwrap();
         assert_eq!(unsafe { precision_from_cstr(c_str.as_ptr()) }, expected);

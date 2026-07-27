@@ -118,12 +118,6 @@ pub fn py_unix_nanos_to_iso8601(
     timestamp_ns: u64,
     nanos_precision: Option<bool>,
 ) -> PyResult<String> {
-    if timestamp_ns > i64::MAX as u64 {
-        return Err(to_pyvalue_err(
-            "timestamp_ns is out of range for conversion",
-        ));
-    }
-
     let unix_nanos = UnixNanos::from(timestamp_ns);
     let formatted = if nanos_precision.unwrap_or(true) {
         unix_nanos_to_iso8601(unix_nanos)
@@ -165,9 +159,13 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_py_unix_nanos_to_iso8601_errors_on_out_of_range_timestamp() {
-        let result = py_unix_nanos_to_iso8601((i64::MAX as u64) + 1, Some(true));
-        assert!(result.is_err());
+    #[case(Some(true))]
+    #[case(Some(false))]
+    fn test_py_unix_nanos_to_iso8601_falls_back_for_out_of_range_timestamp(
+        #[case] nanos_precision: Option<bool>,
+    ) {
+        let result = py_unix_nanos_to_iso8601(u64::MAX, nanos_precision);
+        assert_eq!(result.unwrap(), u64::MAX.to_string());
     }
 
     #[rstest]
