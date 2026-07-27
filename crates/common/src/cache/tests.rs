@@ -5091,6 +5091,107 @@ fn test_purge_order_cleans_up_strategy_orders_index() {
 }
 
 #[rstest]
+fn test_purge_order_preserves_absent_strategy_orders_bucket() {
+    let mut cache = Cache::default();
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim());
+    let strategy_id = StrategyId::new("S-SHARED");
+
+    let order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .strategy_id(strategy_id)
+        .client_order_id(ClientOrderId::new("O-SHARED-1"))
+        .build();
+    let order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .strategy_id(strategy_id)
+        .client_order_id(ClientOrderId::new("O-SHARED-2"))
+        .build();
+
+    let client_order_id_1 = order1.client_order_id();
+
+    cache.add_order(order1, None, None, false).unwrap();
+    cache.add_order(order2, None, None, false).unwrap();
+
+    // The inconsistent state `check_integrity` exists to report: the reverse bucket is
+    // missing while two cached orders still use the strategy.
+    cache.index.strategy_orders.remove(&strategy_id);
+
+    cache.purge_order(client_order_id_1);
+
+    assert!(
+        cache.index.strategies.contains(&strategy_id),
+        "strategy still used by a cached order must not be retired"
+    );
+    assert!(
+        !cache.index.strategy_orders.contains_key(&strategy_id),
+        "an absent reverse bucket must be left absent, not fabricated"
+    );
+    assert!(
+        !cache.check_integrity(),
+        "the missing reverse bucket must remain reportable"
+    );
+}
+
+#[rstest]
+fn test_purge_order_preserves_absent_instrument_orders_bucket() {
+    let mut cache = Cache::default();
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let instrument_id = instrument.id();
+    let position_id = PositionId::new("P-ABSENT-INSTRUMENT-BUCKET");
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache
+        .add_order(order.clone(), Some(position_id), None, false)
+        .unwrap();
+
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-ABSENT-INSTRUMENT-BUCKET")),
+        Some(position_id),
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, filled.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    // The inconsistent state `check_integrity` exists to report: the instrument keeps an
+    // open position while its orders bucket has gone missing.
+    cache.index.instrument_orders.remove(&instrument_id);
+
+    cache.purge_order(client_order_id);
+
+    assert!(
+        !cache.index.instrument_orders.contains_key(&instrument_id),
+        "an absent instrument bucket must be left absent, not fabricated"
+    );
+    assert!(
+        cache
+            .index
+            .instrument_positions
+            .contains_key(&instrument_id),
+        "the live position must still be indexed"
+    );
+    assert!(
+        !cache.check_integrity(),
+        "the missing instrument bucket must remain reportable"
+    );
+}
+
+#[rstest]
 fn test_purge_order_cleans_up_exec_spawn_orders_index() {
     // Regression test for exec_spawn_orders index cleanup bug
     // Verifies that after purging a spawned child order, it is removed from the parent's set

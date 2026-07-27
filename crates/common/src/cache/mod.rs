@@ -3243,29 +3243,26 @@ impl Cache {
                 }
             }
 
-            if let Some(instrument_orders) =
-                self.index.instrument_orders.get_mut(&details.instrument_id)
-            {
-                instrument_orders.remove(&client_order_id);
-            }
+            // As with the strategy buckets below, an absent bucket is left absent: recreating
+            // it would suppress the `index.instrument_positions` integrity check.
+            // As with the strategy buckets below, an absent bucket is left absent: recreating
+            // it would suppress the `index.instrument_positions` integrity check.
+            let instrument_orders_became_empty = self
+                .index
+                .instrument_orders
+                .get_mut(&details.instrument_id)
+                .is_some_and(|instrument_orders| {
+                    instrument_orders.remove(&client_order_id);
+                    instrument_orders.is_empty()
+                });
 
             let has_instrument_positions = self
                 .index
                 .instrument_positions
                 .get(&details.instrument_id)
                 .is_some_and(|positions| !positions.is_empty());
-            let has_instrument_orders = self
-                .index
-                .instrument_orders
-                .get(&details.instrument_id)
-                .is_some_and(|orders| !orders.is_empty());
 
-            if has_instrument_positions {
-                self.index
-                    .instrument_orders
-                    .entry(details.instrument_id)
-                    .or_default();
-            } else if !has_instrument_orders {
+            if instrument_orders_became_empty && !has_instrument_positions {
                 self.index.instrument_orders.remove(&details.instrument_id);
             }
 
@@ -3377,24 +3374,27 @@ impl Cache {
         }
 
         for strategy_id in strategy_ids {
-            if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id) {
-                strategy_orders.remove(&client_order_id);
-            }
-
-            let has_orders = self
+            // An absent reverse bucket is not an empty one: it means the index is already
+            // inconsistent, possibly while another cached order still uses this strategy.
+            // Retiring the registry entry here would both drop a live strategy from
+            // `strategy_ids` and stop `check_integrity` reporting the missing bucket, so the
+            // absent case is left exactly as found.
+            let strategy_orders_became_empty = self
                 .index
                 .strategy_orders
-                .get(&strategy_id)
-                .is_some_and(|strategy_orders| !strategy_orders.is_empty());
+                .get_mut(&strategy_id)
+                .is_some_and(|strategy_orders| {
+                    strategy_orders.remove(&client_order_id);
+                    strategy_orders.is_empty()
+                });
+
             let has_positions = self
                 .index
                 .strategy_positions
                 .get(&strategy_id)
                 .is_some_and(|strategy_positions| !strategy_positions.is_empty());
 
-            if has_positions {
-                self.index.strategy_orders.entry(strategy_id).or_default();
-            } else if !has_orders {
+            if strategy_orders_became_empty && !has_positions {
                 self.index.strategy_orders.remove(&strategy_id);
                 self.index.strategies.remove(&strategy_id);
             }
