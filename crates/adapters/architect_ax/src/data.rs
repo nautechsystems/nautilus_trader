@@ -109,6 +109,7 @@ pub struct AxDataClient {
     cancellation_token: CancellationToken,
     /// Background task handles.
     tasks: Vec<JoinHandle<()>>,
+    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     auth_refresh_handle: Option<JoinHandle<()>>,
     /// Channel sender for emitting data events to the DataEngine.
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -146,6 +147,7 @@ impl AxDataClient {
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
+            pending_tasks: Mutex::new(Vec::new()),
             auth_refresh_handle: None,
             data_sender,
             instruments,
@@ -323,8 +325,26 @@ impl AxDataClient {
         self.tasks.push(handle);
     }
 
+    fn spawn_task<F>(&self, fut: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let handle = get_runtime().spawn(fut);
+        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
+        tasks.retain(|handle| !handle.is_finished());
+        tasks.push(handle);
+    }
+
+    fn abort_pending_tasks(&self) {
+        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
+        for handle in tasks.drain(..) {
+            handle.abort();
+        }
+    }
+
     fn abort_all_tasks(&mut self) {
         self.cancellation_token.cancel();
+        self.abort_pending_tasks();
 
         for task in self.tasks.drain(..) {
             task.abort();
@@ -798,7 +818,7 @@ impl DataClient for AxDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             match http.request_instruments(None, None).await {
                 Ok(instruments) => {
                     if cancel.is_cancelled() {
@@ -848,7 +868,7 @@ impl DataClient for AxDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             match http.request_instrument(symbol, None, None).await {
                 Ok(instrument) => {
                     if cancel.is_cancelled() {
@@ -894,7 +914,7 @@ impl DataClient for AxDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             match http.request_book_snapshot(symbol, depth).await {
                 Ok(book) => {
                     if cancel.is_cancelled() {
@@ -944,7 +964,7 @@ impl DataClient for AxDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             match http
                 .request_trade_ticks(symbol, limit, start_nanos, end_nanos)
                 .await
@@ -1002,7 +1022,7 @@ impl DataClient for AxDataClient {
 
         let cancel = self.cancellation_token.clone();
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             match http.request_bars(symbol, start, end, width).await {
                 Ok(bars) => {
                     if cancel.is_cancelled() {
@@ -1049,7 +1069,7 @@ impl DataClient for AxDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             match http.request_funding_rates(instrument_id, start, end).await {
                 Ok(funding_rates) => {
                     if cancel.is_cancelled() {
