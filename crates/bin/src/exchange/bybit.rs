@@ -27,7 +27,7 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 
 pub(crate) const ACCOUNT_ID: &str = "BYBIT-001";
 pub(crate) const NODE_NAME: &str = "BYBIT-GRID-MM-001";
-pub(crate) const INSTRUMENT_ID: &str = "BTCUSDT-LINEAR.BYBIT";
+pub(crate) const INSTRUMENT_ID: &str = "OPUSDT-LINEAR.BYBIT";
 
 pub(crate) fn build_node(trader_id: TraderId) -> Result<LiveNode, Box<dyn std::error::Error>> {
     let bybit_env = BybitEnvironment::Mainnet;

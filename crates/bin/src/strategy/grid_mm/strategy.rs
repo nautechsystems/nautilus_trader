@@ -15,7 +15,7 @@
 
 //! Grid market making strategy implementation.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 
 use ahash::AHashSet;
 use nautilus_common::actor::DataActor;
@@ -33,15 +33,13 @@ use rust_decimal::Decimal;
 
 use crate::strategy::grid_mm::config::GridMarketMakerConfig;
 
-
-
 /// Grid market making strategy with inventory-based skewing.
 ///
 /// Places a symmetric grid of limit buy and sell orders around the mid-price.
 /// Orders persist across ticks and are only replaced when the mid-price moves
 /// by at least `requote_threshold_bps`. The grid is shifted by a skew proportional
 /// to the current net position to discourage inventory buildup.
-pub (crate) struct GridMarketMaker {
+pub(crate) struct GridMarketMaker {
     pub(super) core: StrategyCore,
     pub(super) config: GridMarketMakerConfig,
     pub(super) instrument: Option<InstrumentAny>,
@@ -199,6 +197,23 @@ impl DataActor for GridMarketMaker {
         }
 
         self.subscribe_quotes(instrument_id, None, None);
+        // self.subscribe_data(data_type, client_id, params);
+
+        self.clock().set_timer(
+            "GRID_MM_TIMER",
+            Duration::from_secs(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
+        log::info!("{:#?}", event);
         Ok(())
     }
 
@@ -211,6 +226,7 @@ impl DataActor for GridMarketMaker {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        log::info!("{:#?}", quote);
         let mid_f64 = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
         let price_precision = self.price_precision.ok_or_else(|| {
             anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
@@ -322,7 +338,7 @@ impl DataActor for GridMarketMaker {
         };
 
         for (side, price) in grid {
-            let order = self.order().limit(
+            let _order = self.order().limit(
                 instrument_id,
                 side,
                 trade_size,
@@ -340,7 +356,7 @@ impl DataActor for GridMarketMaker {
                 None,
                 None,
             );
-            self.submit_order(order, None, None, None)?;
+            // self.submit_order(order, None, None, None)?;
         }
 
         self.last_quoted_mid = Some(mid);

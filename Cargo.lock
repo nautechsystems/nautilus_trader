@@ -1771,6 +1771,7 @@ dependencies = [
  "anyhow",
  "bon",
  "dotenvy",
+ "futures-util",
  "log",
  "nautilus-bybit",
  "nautilus-common",
@@ -1778,11 +1779,17 @@ dependencies = [
  "nautilus-dydx",
  "nautilus-live",
  "nautilus-model",
+ "nautilus-persistence",
  "nautilus-trading",
  "rust_decimal",
+ "rustls",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tokio-util",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -10,6 +10,7 @@ license.workspace = true
 [lints]
 workspace = true
 
+
 [dependencies]
 nautilus-trading = { path = "../trading", features = ["examples"] }
 nautilus-common = { workspace = true, features = ["live"] }
@@ -19,13 +20,20 @@ nautilus-live = { workspace = true, features = ["node"] }
 nautilus-core = { workspace = true }
 nautilus-dydx = { workspace = true }
 nautilus-bybit = { workspace = true }
+nautilus-persistence = { workspace = true }
+rustls = { workspace = true }
 
 ahash = { workspace = true }
 bon = { workspace = true }
 dotenvy = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 anyhow.workspace = true
 log.workspace = true
 rust_decimal.workspace = true
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
