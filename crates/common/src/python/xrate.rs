@@ -31,10 +31,11 @@ use crate::xrate::get_exchange_rate;
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
+/// For conversions between distinct currencies (an identical `from_currency` and `to_currency`
+/// returns a rate of one without inspecting the quotes), returns an error if:
 /// - `quotes_bid` or `quotes_ask` is empty.
 /// - `quotes_bid` and `quotes_ask` lengths are not equal.
+/// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
 /// - The bid or ask side of a pair is missing.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
