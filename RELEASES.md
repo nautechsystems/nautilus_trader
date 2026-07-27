@@ -102,6 +102,7 @@ adapter set. The following limits remain deferred:
 - Added Binance Python v2 constants, instrument loading, order book CSV loading, and client-order-ID decoders
 - Added Binance Spot WebSocket trading setup timeout configuration (#4538), thanks @folknor
 - Added Bybit spot `margin_trading` instrument info field (#4540), thanks @dxwil
+- Added Bybit v2 automatic SPOT margin borrow repayment (#4543), thanks @dxwil
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
 - Added Architect AX dated futures parsing and configurable WebSocket heartbeat and disconnect cancellation
 - Added Architect AX funding-slot schedule requests via `GET /funding-slots`
@@ -226,6 +227,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 continuous reconciliation stalling indefinitely on a hung client report task (#4529), thanks @folknor
 - Fixed v2 live position reconciliation dropping hedge-mode venue reports per instrument and account (#4535), thanks @faysou
 - Fixed v2 order event application committing the state transition before validating the update (#4530), thanks @folknor
+- Fixed v2 pending‑update orders rejecting delayed submission acknowledgments (#4549), thanks @folknor
 - Fixed Python v2 order, event, balance, position, instrument, indicator, and config inspection
 - Fixed Python v2 `Price`, `Quantity`, and `Money` integer conversion and Money debug output losing precision
 - Fixed Python v2 cached `OrderList` fields and concrete cache return types (#4453), thanks @JiajunWan
@@ -262,6 +264,8 @@ adapter set. The following limits remain deferred:
 - Fixed catalog session Tokio runtime teardown blocking inside PyO3 deallocation (#4493), thanks for reporting @mystic-io and @faysou for the patch
 - Fixed global logger initialization races and reuse after guard teardown (#4520), thanks @folknor
 - Fixed `high-precision` crate builds pairing a 128-bit model with a 64-bit serializer, failing SBE and Cap'n Proto decoding (#4550), thanks @folknor
+- Fixed SBE and Cap'n Proto decoding when model precision differs from serializer features (#4567), thanks @folknor
+- Fixed order purges leaving stale cache index entries that could panic queries (#4569), thanks @folknor
 - Fixed indicator rolling-window bounds and averages past capacity (#4351), thanks @Martingale42
 - Fixed legacy `Equity` catalog round trips dropping quantity constraints (#4461), thanks for reporting @baturytalk and @chang-pro for the patch
 - Fixed live fill deduplication when trade IDs collide across accounts or instruments
@@ -272,6 +276,7 @@ adapter set. The following limits remain deferred:
 - Fixed mixed-instrument backtest order-list fills using the wrong book (#4392), thanks for reporting @gtalknitin
 - Fixed nondeterministic event ordering in backtests (#4480), thanks @folknor
 - Fixed portfolio PnL and account-state resolution for broker-routed instruments (#4451), thanks @dfjmax
+- Fixed reverse exchange rates using the wrong spread side and nondeterministic routes (#4568), thanks @folknor
 - Fixed routing-client position reconciliation tolerance lookup (#4490), thanks @folknor
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 - Fixed Rust RSI moving-average selection and max-value regression (#4382), thanks @bebop23
@@ -404,6 +409,7 @@ adapter set. The following limits remain deferred:
 - Added Binance SAPI base URL and path constants for upcoming margin support (#4447), thanks @akashchakrabortymsc-cmd
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Improved Clippy compatibility for nightly and all-feature Rust builds (#4505), thanks @folknor
+- Improved `Quantity` tests across feature‑conditional precision modes (#4556), thanks @folknor
 - Improved pre-commit checks for DST, Python errors, and Cargo dependency groups (#4506), thanks @folknor
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
 - Improved v2 NETTING backtest throughput by ~17% by encoding position snapshot frames only when a consumer reads them
@@ -412,6 +418,7 @@ adapter set. The following limits remain deferred:
 - Improved Lighter signing latency through faster quintic field multiplication and squaring
 - Improved Lighter signing and execution coverage for conditional, IOC, cancel-all, and leverage transactions
 - Improved adapter test runtime by replacing fixed waits in the Betfair, dYdX, Polymarket, and OKX suites (#4531, #4532, #4539, #4547), thanks @folknor
+- Improved adapter test runtime for Architect AX (#4554), BitMEX (#4555), and Bybit (#4553), thanks @folknor
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)
 - Upgraded Rust (MSRV) to 1.97.1
 - Upgraded Cython to v3.2.8
