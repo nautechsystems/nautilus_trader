@@ -28,7 +28,7 @@ mod serial_tests {
     };
     use nautilus_core::{Params, UnixNanos};
     use nautilus_infrastructure::sql::{
-        cache::get_pg_cache_database,
+        cache::{PostgresCacheDatabase, get_pg_cache_database},
         pg::{connect_pg, get_postgres_connect_options, init_postgres},
         queries::DatabaseQueries,
     };
@@ -62,7 +62,7 @@ mod serial_tests {
     use nautilus_serialization::ensure_custom_data_registered;
     use rust_decimal::Decimal;
     use serde::Serialize;
-    use sqlx::AssertSqlSafe;
+    use sqlx::{AssertSqlSafe, PgPool, postgres::PgConnectOptions};
     use ustr::Ustr;
 
     pub(crate) fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
@@ -72,9 +72,33 @@ mod serial_tests {
         assert_eq!(a_serialized, b_serialized);
     }
 
+    async fn get_test_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
+        match tokio::time::timeout(Duration::from_secs(2), get_pg_cache_database()).await {
+            Ok(result) => result.map_err(|e| {
+                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
+            }),
+            Err(e) => Err(anyhow::anyhow!(
+                "A running PostgreSQL service is required for this test: connection timed out: \
+                 {e}"
+            )),
+        }
+    }
+
+    async fn connect_test_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
+        match tokio::time::timeout(Duration::from_secs(2), connect_pg(options)).await {
+            Ok(result) => result.map_err(|e| {
+                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
+            }),
+            Err(e) => Err(anyhow::anyhow!(
+                "A running PostgreSQL service is required for this test: connection timed out: \
+                 {e}"
+            )),
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let test_id_value = Bytes::from("test_value");
         pg_cache
@@ -109,7 +133,7 @@ mod serial_tests {
     )]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_currency_and_instruments() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Define currencies
         let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
@@ -323,7 +347,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_truncate() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add items in currency and instrument table
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -356,7 +380,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_order_and_load_indexes() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1");
         let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2");
@@ -444,7 +468,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_index_order_position_round_trip() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
         let position_id_1 = PositionId::new("P-19700101-000000-001-001-1");
@@ -491,7 +515,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_position_round_trip() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -603,7 +627,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_position_replaces_event_log_for_reused_position_id() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -707,7 +731,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_position_duplicate_fill_returns_error() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -778,7 +802,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_position_event_without_position_id_returns_error() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let order = OrderTestBuilder::new(OrderType::Market)
@@ -814,7 +838,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_positions_skips_duplicate_fill_position() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -907,7 +931,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_order_for_open_order() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
@@ -979,7 +1003,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_account() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let mut account = AccountAny::Cash(CashAccount::new(
             cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
@@ -1024,7 +1048,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_account_without_existing_event_returns_error() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
         let event = cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
 
         let result = DatabaseQueries::add_account(&pg_cache.pool, true, event).await;
@@ -1043,7 +1067,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_quote() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
@@ -1078,7 +1102,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_trade() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
@@ -1113,7 +1137,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_bar() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -1148,7 +1172,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_signal() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add signal
         let name = Ustr::from("SignalExample");
@@ -1173,7 +1197,7 @@ mod serial_tests {
     async fn test_add_custom_data() {
         ensure_custom_data_registered::<RustTestCustomData>();
 
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument_id = InstrumentId::from("RUST.TEST");
         let metadata = indexmap! {
@@ -1218,7 +1242,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_order_snapshot() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
@@ -1248,7 +1272,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_snapshot_keeps_exact_avg_px_and_slippage() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-2");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
@@ -1300,7 +1324,7 @@ mod serial_tests {
         // database always raises "already exists" on the first statement. The loader must skip it
         // and carry on; it previously mapped that branch to `Err(())` and unwrapped, aborting init.
         let options = get_postgres_connect_options(None, None, None, None, None);
-        let pg = connect_pg(options.clone().into()).await.unwrap();
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
         let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
 
         let result = init_postgres(&pg, options.database, options.password, Some(schema_dir)).await;
@@ -1315,7 +1339,7 @@ mod serial_tests {
     async fn test_postgres_application_role_owns_schema_objects() {
         let options = get_postgres_connect_options(None, None, None, None, None);
         let expected_owner = options.database.clone();
-        let pg = connect_pg(options.clone().into()).await.unwrap();
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
         let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
 
         init_postgres(&pg, options.database, options.password, Some(schema_dir))
@@ -1399,7 +1423,7 @@ mod serial_tests {
         const LEGACY_SLIPPAGE: &str = "1.6666666666666667";
 
         let options = get_postgres_connect_options(None, None, None, None, None);
-        let pg = connect_pg(options.into()).await.unwrap();
+        let pg = connect_test_pg(options.into()).await.unwrap();
 
         // The whole exercise runs inside a transaction that is always rolled back: PostgreSQL DDL
         // is transactional, so neither the column downgrade nor the probe row can outlive the
@@ -1456,7 +1480,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_position_snapshot() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
