@@ -158,6 +158,8 @@ adapter set. The following limits remain deferred:
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
 
 ### Fixes
+- Fixed v2 clock `set_time_alert` and `set_timer` panicking on pre-epoch or out-of-range `DateTime` inputs
+- Fixed v2 clock past-alert warning logging the adjusted time instead of the original alert time
 - Fixed v2 PyO3 API coverage and Python exception handling
 - Fixed `nautilus database init` panicking instead of skipping existing schema objects on re-run
 - Fixed `nautilus database init` leaving schema objects owned by the bootstrap administrator

@@ -36,7 +36,8 @@ can handle events at whatever granularity you need.
 
 Timers and alerts produce `TimeEvent` objects. Pass a `callback` when calling
 `set_timer` or `set_time_alert` to direct events to your own method. If you
-omit the callback, the event is delivered to `on_event` instead.
+omit the callback, a callback previously registered under the same name is
+used when present; otherwise the event is delivered to `on_event` instead.
 
 ## Order events
 

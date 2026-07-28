@@ -694,6 +694,24 @@ pub fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos>
         .map(UnixNanos::from)
 }
 
+/// Converts a `DateTime<Utc>` to `UnixNanos`.
+///
+/// Unlike `UnixNanos::from(DateTime<Utc>)` which panics, this returns an error.
+///
+/// # Errors
+///
+/// Returns an error if the timestamp is before the UNIX epoch or out of range for `UnixNanos`.
+pub fn try_datetime_to_unix_nanos(value: DateTime<Utc>) -> anyhow::Result<UnixNanos> {
+    let nanos = value
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("DateTime timestamp out of range for UnixNanos"))?;
+
+    let nanos = u64::try_from(nanos)
+        .map_err(|_| anyhow::anyhow!("DateTime timestamp cannot be negative: {nanos}"))?;
+
+    Ok(UnixNanos::from(nanos))
+}
+
 #[cfg(test)]
 #[expect(
     clippy::float_cmp,
@@ -1187,6 +1205,34 @@ mod tests {
         let dt = Utc.timestamp_opt(0, 1_000).unwrap(); // 1 microsecond = 1000 nanos
         let result = datetime_to_unix_nanos(Some(dt));
         assert_eq!(result, Some(UnixNanos::from(1_000)));
+    }
+
+    #[rstest]
+    fn test_try_datetime_to_unix_nanos_valid() {
+        let dt = Utc.timestamp_opt(0, 1_000).unwrap();
+        assert_eq!(
+            try_datetime_to_unix_nanos(dt).unwrap(),
+            UnixNanos::from(1_000)
+        );
+    }
+
+    #[rstest]
+    fn test_try_datetime_to_unix_nanos_before_epoch_errors() {
+        let before_epoch = Utc.with_ymd_and_hms(1969, 12, 31, 23, 59, 59).unwrap();
+        let err = try_datetime_to_unix_nanos(before_epoch).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be negative"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_try_datetime_to_unix_nanos_out_of_range_errors() {
+        let err = try_datetime_to_unix_nanos(DateTime::<Utc>::MAX_UTC).unwrap_err();
+        assert!(
+            err.to_string().contains("out of range"),
+            "unexpected error: {err}"
+        );
     }
 
     #[rstest]
