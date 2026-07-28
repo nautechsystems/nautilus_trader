@@ -15,9 +15,39 @@
 
 //! Connection mode enumeration for socket clients.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU8, Ordering},
+};
 
 use strum::{AsRefStr, Display, EnumString};
+
+/// Irreversible validity token for a single connection's read task.
+#[derive(Clone, Debug)]
+pub(crate) struct ReadSessionFence {
+    valid: Arc<AtomicBool>,
+}
+
+impl ReadSessionFence {
+    /// Creates a valid fence for a newly spawned read task.
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        Self {
+            valid: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Invalidates the associated read session.
+    pub(crate) fn invalidate(&self) {
+        self.valid.store(false, Ordering::SeqCst);
+    }
+
+    /// Returns whether the associated read session is still current.
+    #[must_use]
+    pub(crate) fn is_valid(&self) -> bool {
+        self.valid.load(Ordering::SeqCst)
+    }
+}
 
 /// Connection mode for a socket client.
 ///

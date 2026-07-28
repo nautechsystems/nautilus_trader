@@ -29,9 +29,9 @@ pub type TcpMessageHandler = Arc<dyn Fn(&[u8]) + Send + Sync>;
 
 /// Represents a command for the writer task.
 #[derive(Debug)]
-pub enum WriterCommand {
+pub enum WriterCommand<W = TcpWriter> {
     /// Update the writer reference with a new one after reconnection.
-    Update(TcpWriter, tokio::sync::oneshot::Sender<bool>),
+    Update(W, tokio::sync::oneshot::Sender<bool>),
     /// Send data to the server.
     Send(Bytes),
 }
