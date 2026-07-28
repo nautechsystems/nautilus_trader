@@ -64,7 +64,7 @@ strip = false
 include = ["**/*.pyi"]
 
 [tool.uv]
-required-version = "==0.11.29"
+required-version = "==0.11.33"
 exclude-newer = "3 days"
 # These releases received an extra audit before bypassing the default cooldown.
 exclude-newer-package = { plotly = "8 hours", ruff = "8 hours", tzdata = "8 hours" }
@@ -110,7 +110,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.14.0", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.21"]
+dev = ["maturin==1.14.0", "mypy>=1.20.2,<2.0.0", "ruff>=0.16.0"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
