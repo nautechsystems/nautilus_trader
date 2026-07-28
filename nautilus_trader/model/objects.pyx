@@ -416,13 +416,13 @@ cdef class Quantity:
     cdef Quantity from_str_c(str value):
         value = value.replace('_', '')
 
+        decimal_value = decimal.Decimal(value)
+
         cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
         if precision > FIXED_PRECISION:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
-
-        decimal_value = decimal.Decimal(value)
 
         if decimal_value < 0:
             raise ValueError(
@@ -913,13 +913,14 @@ cdef class Price:
     cdef Price from_str_c(str value):
         value = value.replace('_', '')
 
+        decimal_value = decimal.Decimal(value)
+
         cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
         if precision > FIXED_PRECISION:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
 
-        decimal_value = decimal.Decimal(value)
         scaled = decimal_value * (10 ** precision)
         integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
 
