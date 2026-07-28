@@ -25,7 +25,7 @@ use ibapi::market_data::{
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{Bar, BarType},
+    data::{Bar, BarSpecification, BarType},
     enums::{BarAggregation, PriceType},
     types::{Price, Quantity},
 };
@@ -184,6 +184,8 @@ fn _validate_bar_prices(open: &mut f64, high: &mut f64, low: &mut f64, close: &f
 
 /// Convert IB Bar to Nautilus Bar.
 ///
+/// `ts_event` and `ts_init` are set to the bar close ([`bar_close_from_open`]).
+///
 /// # Errors
 ///
 /// Returns an error if conversion fails.
@@ -193,9 +195,11 @@ pub fn ib_bar_to_nautilus_bar(
     price_precision: u8,
     size_precision: u8,
 ) -> anyhow::Result<Bar> {
-    // Convert IB timestamp to UnixNanos
-    let ts_event = ib_bar_timestamp_to_unix_nanos(&ib_bar.date);
-    let ts_init = ts_event; // Use same timestamp for init
+    let ts_event = bar_close_from_open(
+        ib_bar_timestamp_to_unix_nanos(&ib_bar.date),
+        &bar_type.spec(),
+    );
+    let ts_init = ts_event;
 
     // Validate and correct prices
     let mut open = ib_bar.open;
@@ -227,6 +231,29 @@ pub fn ib_bar_to_nautilus_bar(
         ts_event,
         ts_init,
     ))
+}
+
+/// Compute a bar's close timestamp from its open timestamp and [`BarSpecification`].
+///
+/// Weekly/monthly bars are returned unchanged (IB stamps these at the period end).
+#[must_use]
+pub fn bar_close_from_open(open: UnixNanos, spec: &BarSpecification) -> UnixNanos {
+    let is_day = spec.aggregation == BarAggregation::Day;
+    let Some(duration_ns) = (match spec.aggregation {
+        BarAggregation::Second
+        | BarAggregation::Minute
+        | BarAggregation::Hour
+        | BarAggregation::Day => spec.timedelta().num_nanoseconds(),
+        _ => None,
+    }) else {
+        return open;
+    };
+    let close = open.saturating_add_ns(duration_ns as u64);
+    if is_day {
+        close.saturating_sub_ns(1_u64)
+    } else {
+        close
+    }
 }
 
 /// Convert IB historical bar timestamp to UnixNanos.
@@ -579,6 +606,9 @@ mod tests {
         assert_eq!(bar.low.as_f64(), 149.0);
         assert_eq!(bar.close.as_f64(), 150.5);
         assert_eq!(bar.volume.as_f64(), 1000.0);
+        let close = ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 10:01:00 UTC));
+        assert_eq!(bar.ts_event.as_u64(), close.as_u64());
+        assert_eq!(bar.ts_init.as_u64(), close.as_u64());
     }
 
     #[rstest]
@@ -605,6 +635,56 @@ mod tests {
         let bar = result.unwrap();
         // Negative volume should be converted to 0
         assert_eq!(bar.volume.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_bar_close_from_open_intraday() {
+        let open = ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 10:00:00 UTC));
+
+        let spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        assert_eq!(
+            bar_close_from_open(open, &spec).as_u64(),
+            ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 10:00:01 UTC)).as_u64(),
+        );
+
+        let spec = BarSpecification::new(5, BarAggregation::Second, PriceType::Last);
+        assert_eq!(
+            bar_close_from_open(open, &spec).as_u64(),
+            ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 10:00:05 UTC)).as_u64(),
+        );
+
+        let spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        assert_eq!(
+            bar_close_from_open(open, &spec).as_u64(),
+            ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 10:01:00 UTC)).as_u64(),
+        );
+
+        let spec = BarSpecification::new(1, BarAggregation::Hour, PriceType::Last);
+        assert_eq!(
+            bar_close_from_open(open, &spec).as_u64(),
+            ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 11:00:00 UTC)).as_u64(),
+        );
+    }
+
+    #[rstest]
+    fn test_bar_close_from_open_day() {
+        let open = ib_timestamp_to_unix_nanos(&datetime!(2024-01-01 00:00:00 UTC));
+        let spec = BarSpecification::new(1, BarAggregation::Day, PriceType::Last);
+        assert_eq!(
+            bar_close_from_open(open, &spec).as_u64(),
+            open.as_u64() + 86_400_000_000_000 - 1,
+        );
+    }
+
+    #[rstest]
+    fn test_bar_close_from_open_week_month() {
+        let open = ib_timestamp_to_unix_nanos(&datetime!(2024-01-13 00:00:00 UTC));
+
+        let spec = BarSpecification::new(1, BarAggregation::Week, PriceType::Last);
+        assert_eq!(bar_close_from_open(open, &spec).as_u64(), open.as_u64());
+
+        let spec = BarSpecification::new(1, BarAggregation::Month, PriceType::Last);
+        assert_eq!(bar_close_from_open(open, &spec).as_u64(), open.as_u64());
     }
 
     #[rstest]
