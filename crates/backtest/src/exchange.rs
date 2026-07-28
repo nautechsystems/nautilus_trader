@@ -136,6 +136,7 @@ pub struct SimulatedExchange {
     latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
+    last_raw_id: u32,
     settlement_prices: AHashMap<InstrumentId, Price>,
     pending_funding_rates: AHashMap<InstrumentId, FundingRateUpdate>,
     funding_settled_through: AHashMap<InstrumentId, UnixNanos>,
@@ -221,6 +222,7 @@ impl SimulatedExchange {
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
             matching_engines: IndexMap::new(),
+            last_raw_id: 0,
             settlement_prices: config.settlement_prices,
             pending_funding_rates: AHashMap::new(),
             funding_settled_through: AHashMap::new(),
@@ -365,7 +367,9 @@ impl SimulatedExchange {
     ///
     /// # Errors
     ///
-    /// Returns an error if the exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
+    /// Returns an error if:
+    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
+    /// - The matching engine raw ID is exhausted.
     ///
     /// # Panics
     ///
@@ -386,8 +390,6 @@ impl SimulatedExchange {
         {
             anyhow::bail!("Cash account cannot trade futures or perpetuals")
         }
-
-        self.instruments.insert(instrument.id(), instrument.clone());
 
         let price_protection = if self.price_protection_points == 0 {
             None
@@ -412,10 +414,13 @@ impl SimulatedExchange {
             .maybe_price_protection_points(price_protection)
             .build();
         let instrument_id = instrument.id();
-        let raw_id = u32::try_from(self.instruments.len())
-            .map_err(|e| anyhow::anyhow!("number of instruments exceeds u32::MAX: {e}"))?;
+        let raw_id = self
+            .last_raw_id
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("matching engine raw ID exhausted at u32::MAX"))?;
+        self.last_raw_id = raw_id;
         let matching_engine = OrderMatchingEngine::new(
-            instrument,
+            instrument.clone(),
             raw_id,
             self.fill_model.clone(),
             self.fee_model.clone(),
@@ -426,6 +431,7 @@ impl SimulatedExchange {
             Rc::clone(&self.cache),
             matching_engine_config,
         );
+        self.instruments.insert(instrument_id, instrument);
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
@@ -1772,6 +1778,7 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, BookType},
         identifiers::{ClientOrderId, StrategyId, TraderId},
+        instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         stubs::TestDefault,
     };
     use rstest::rstest;
@@ -1868,5 +1875,18 @@ mod tests {
 
         assert!(!exchange.has_pending_commands(UnixNanos::from(u64::MAX)));
         assert_eq!(exchange.max_inflight_command_ts(), None);
+    }
+
+    #[rstest]
+    fn test_add_instrument_raw_id_overflow_does_not_mutate_maps(audusd_sim: CurrencyPair) {
+        let mut exchange = setup_exchange(Dispatch::Immediate);
+        exchange.last_raw_id = u32::MAX;
+
+        let result = exchange.add_instrument(InstrumentAny::CurrencyPair(audusd_sim));
+
+        assert!(result.is_err());
+        assert!(exchange.instruments.is_empty());
+        assert!(exchange.matching_engines.is_empty());
+        assert_eq!(exchange.last_raw_id, u32::MAX);
     }
 }
