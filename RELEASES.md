@@ -436,7 +436,7 @@ adapter set. The following limits remain deferred:
 - Improved adapter test runtime for Architect AX (#4554), BitMEX (#4555), and Bybit (#4553), thanks @folknor
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)
 - Upgraded Rust (MSRV) to 1.97.1
-- Upgraded Cython to v3.2.8
+- Upgraded Cython to v3.2.9
 - Upgraded Cap'n Proto to v1.5.0
 - Upgraded `capnp` crate to v0.26.2
 - Upgraded `databento` crate to v0.55.0
