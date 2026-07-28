@@ -104,9 +104,16 @@ fn bench_quote_from_snapshot(c: &mut Criterion) {
                 unreachable!()
             };
             let instrument = instruments.get(&snap.asset_id).unwrap();
-            let quote =
-                parse_quote_from_snapshot(&snap, instrument.id(), px_prec, sz_prec, true, ts_init)
-                    .unwrap();
+            let quote = parse_quote_from_snapshot(
+                &snap,
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                instrument.price_increment(),
+                true,
+                ts_init,
+            )
+            .unwrap();
             black_box(quote);
         });
     });
@@ -135,6 +142,7 @@ fn bench_quote_from_price_change(c: &mut Criterion) {
                 instrument.id(),
                 px_prec,
                 sz_prec,
+                instrument.price_increment(),
                 true,
                 None,
                 ts_event,
