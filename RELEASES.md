@@ -178,6 +178,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
 - Fixed v2 realized PnL counting only the newest snapshot for NETTING positions with three or more cycles (v1 parity)
 - Fixed v2 realized PnL miscounting archived NETTING cycles whose boundaries a prior-cycle fill void moved
+- Fixed v2 duplicate replayed fills reopening a flat position and panicking on a later fill void replay
 - Fixed v2 portfolio snapshots retaining stale-price flags after the affected position side closed
 - Fixed v2 portfolio snapshots dropping temporarily unpriced positions and hiding stale valuations
 - Fixed v2 equity curves omitting unrealized PnL between fills (#3899), thanks for reporting @q-learning-trader

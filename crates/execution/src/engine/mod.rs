@@ -3711,11 +3711,11 @@ impl ExecutionEngine {
     }
 
     fn is_duplicate_closed_fill(position: &Position, fill: &OrderFilled) -> bool {
-        position.events.iter().any(|event| {
-            event.trade_id == fill.trade_id
-                && event.order_side == fill.order_side
-                && event.last_px == fill.last_px
-                && event.last_qty == fill.last_qty
+        position.replay_events.iter().any(|event| {
+            matches!(
+                event,
+                PositionReplayEvent::Filled(replayed) if replayed.trade_id == fill.trade_id
+            )
         })
     }
 

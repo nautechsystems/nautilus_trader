@@ -16222,6 +16222,83 @@ fn build_fill_void_from_cached_fill(
 }
 
 #[rstest]
+fn test_closed_netting_position_ignores_duplicate_from_prior_cycle() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        carry_replay_events_on_reopen: true,
+        ..Default::default()
+    };
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let position_id = run_netting_reopen(&mut execution_engine);
+
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-REPLAY-CLOSE-4",
+        "V-REPLAY-CLOSE-4",
+        "T-REPLAY-CLOSE-4",
+        OrderSide::Sell,
+        100_000,
+        position_id,
+    );
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-REPLAY-DUPLICATE",
+        "V-REPLAY-DUPLICATE",
+        REOPEN_ENTRY_TRADE_ID,
+        OrderSide::Buy,
+        100_000,
+        position_id,
+    );
+
+    {
+        let cache = execution_engine.cache().borrow();
+        let position = cache.position(&position_id).unwrap();
+
+        assert!(position.is_closed());
+        assert_eq!(position.quantity, Quantity::from(0));
+        assert_eq!(position.replay_events.len(), 4);
+        assert_eq!(cache.position_snapshot_count(&position_id), 1);
+    }
+
+    let voided = build_fill_void_from_cached_fill(
+        &execution_engine,
+        "O-REPLAY-CLOSE-4",
+        "T-REPLAY-CLOSE-4",
+        Quantity::from(100_000),
+    );
+    execution_engine.process(&voided);
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache.position(&position_id).unwrap();
+
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(
+        position.opening_order_id,
+        ClientOrderId::from("O-REPLAY-REOPEN-3"),
+    );
+    assert_eq!(position.events.len(), 1);
+    assert_eq!(position.replay_events.len(), 4);
+    assert_eq!(position.fill_voids.len(), 1);
+    assert_eq!(position.trade_ids.len(), 1);
+    assert!(
+        position
+            .trade_ids
+            .contains(&TradeId::from("T-REPLAY-REOPEN-3")),
+    );
+}
+
+#[rstest]
 fn test_netting_reopen_leaves_snapshot_unencoded_without_anchorer(
     mut execution_engine: ExecutionEngine,
 ) {
