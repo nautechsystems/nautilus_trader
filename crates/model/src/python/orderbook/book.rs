@@ -160,7 +160,12 @@ impl OrderBook {
     /// Returns an error if:
     /// - The delta's instrument ID does not match this book's instrument ID.
     /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
+    /// - An `Add` with `NoOrderSide` matches an order ID on both sides of the book.
     /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    ///
+    /// # Notes
+    ///
+    /// An ambiguous `NoOrderSide` `Update` or `Delete` is skipped with a warning.
     #[pyo3(name = "apply_delta")]
     fn py_apply_delta(&mut self, delta: &OrderBookDelta) -> PyResult<()> {
         self.apply_delta_unchecked(delta).map_err(to_pyruntime_err)
