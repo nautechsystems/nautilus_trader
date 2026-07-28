@@ -36,7 +36,7 @@ use std::{
     pin::pin,
     sync::{
         Arc,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
 };
@@ -44,7 +44,7 @@ use std::{
 use bytes::Bytes;
 use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
 
 use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
@@ -53,7 +53,7 @@ use crate::{
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::ConnectionMode,
+    mode::{ConnectionMode, ReadSessionFence},
     net::TcpStream,
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -62,9 +62,109 @@ use crate::{
 const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
 const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+const WRITE_TIMEOUT_SECS: u64 = 5;
 
 // Maximum buffer size for read operations (10 MB)
 const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
+
+pub(crate) struct SocketTerminalFinalizer {
+    connection_mode: Arc<AtomicU8>,
+    post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+    notification_started: AtomicBool,
+    completion: Arc<SocketFinalizationState>,
+}
+
+struct SocketFinalizationState {
+    notification_completed: AtomicBool,
+    completion_notify: tokio::sync::Notify,
+    state_notify: Arc<tokio::sync::Notify>,
+}
+
+struct SocketFinalizationCompletion {
+    state: Arc<SocketFinalizationState>,
+}
+
+impl Drop for SocketFinalizationCompletion {
+    fn drop(&mut self) {
+        self.state
+            .notification_completed
+            .store(true, Ordering::Release);
+        self.state.completion_notify.notify_waiters();
+        self.state.state_notify.notify_waiters();
+    }
+}
+
+impl SocketTerminalFinalizer {
+    pub(crate) fn new(
+        connection_mode: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
+        post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) -> Self {
+        Self {
+            connection_mode,
+            post_disconnection,
+            notification_started: AtomicBool::new(false),
+            completion: Arc::new(SocketFinalizationState {
+                notification_completed: AtomicBool::new(false),
+                completion_notify: tokio::sync::Notify::new(),
+                state_notify,
+            }),
+        }
+    }
+
+    pub(crate) fn transition_and_finalize(&self) {
+        self.connection_mode
+            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        self.finalize_closed();
+    }
+
+    fn finalize_closed(&self) {
+        if self
+            .notification_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            if let Some(handler) = self.post_disconnection.clone() {
+                let completion = SocketFinalizationCompletion {
+                    state: Arc::clone(&self.completion),
+                };
+                let job = move || {
+                    let _completion = completion;
+                    handler();
+                    log::debug!("Called `post_disconnection` handler");
+                };
+
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn_blocking(job);
+                } else {
+                    let _ = std::thread::Builder::new() // dst-ok: no runtime context
+                        .name("socket-terminal-finalizer".to_string())
+                        .spawn(job);
+                }
+            } else {
+                drop(SocketFinalizationCompletion {
+                    state: Arc::clone(&self.completion),
+                });
+            }
+        }
+    }
+
+    pub(crate) async fn wait_for_completion(&self) {
+        loop {
+            let mut notified = pin!(self.completion.completion_notify.notified());
+            notified.as_mut().enable();
+
+            if self
+                .completion
+                .notification_completed
+                .load(Ordering::Acquire)
+            {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
 
 /// Creates a `TcpStream` with the server.
 ///
@@ -89,6 +189,7 @@ struct SocketClientInner {
     config: SocketConfig,
     connector: Option<Connector>,
     read_task: Arc<tokio::task::JoinHandle<()>>,
+    read_fence: ReadSessionFence,
     write_task: tokio::task::JoinHandle<()>,
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
@@ -230,9 +331,11 @@ impl SocketClientInner {
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
+        let read_fence = ReadSessionFence::new();
 
         let read_task = Arc::new(Self::spawn_read_task(
             connection_mode.clone(),
+            read_fence.clone(),
             reader,
             message_handler.clone(),
             suffix.clone(),
@@ -262,6 +365,7 @@ impl SocketClientInner {
             config,
             connector,
             read_task,
+            read_fence,
             write_task,
             writer_tx,
             heartbeat_task,
@@ -460,6 +564,8 @@ impl SocketClientInner {
             return Ok(());
         }
 
+        self.read_fence.invalidate();
+
         if !self.read_task.is_finished() {
             self.read_task.abort();
             log_task_aborted("read");
@@ -482,8 +588,10 @@ impl SocketClientInner {
         }
 
         // Spawn new read task
+        self.read_fence = ReadSessionFence::new();
         self.read_task = Arc::new(Self::spawn_read_task(
             self.connection_mode.clone(),
+            self.read_fence.clone(),
             reader,
             self.handler.clone(),
             suffix.clone(),
@@ -506,80 +614,133 @@ impl SocketClientInner {
     }
 
     #[must_use]
-    fn spawn_read_task(
+    fn spawn_read_task<R>(
         connection_state: Arc<AtomicU8>,
-        mut reader: TcpReader,
+        read_fence: ReadSessionFence,
+        reader: R,
         handler: Option<TcpMessageHandler>,
         suffix: Vec<u8>,
         idle_timeout_ms: Option<u64>,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<()>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+    {
         log_task_started("read");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
         let idle_timeout = idle_timeout_ms.map(Duration::from_millis);
 
-        tokio::task::spawn(async move {
-            let mut buf = Vec::new();
-            let mut last_data_time = dst::time::Instant::now();
+        tokio::task::spawn(Self::run_read_loop(
+            connection_state,
+            read_fence,
+            reader,
+            handler,
+            suffix,
+            idle_timeout,
+            check_interval,
+        ))
+    }
 
-            loop {
-                if !ConnectionMode::from_atomic(&connection_state).is_active() {
+    async fn run_read_loop<R>(
+        connection_state: Arc<AtomicU8>,
+        read_fence: ReadSessionFence,
+        mut reader: R,
+        handler: Option<TcpMessageHandler>,
+        suffix: Vec<u8>,
+        idle_timeout: Option<Duration>,
+        check_interval: Duration,
+    ) where
+        R: AsyncRead + Unpin,
+    {
+        let mut buf = Vec::new();
+        let mut last_data_time = dst::time::Instant::now();
+
+        'read: loop {
+            if !ConnectionMode::from_atomic(&connection_state).is_active() || !read_fence.is_valid()
+            {
+                if !buf.is_empty() {
+                    log::debug!(
+                        "Dropping {} buffered bytes after socket session ended",
+                        buf.len()
+                    );
+                    buf.clear();
+                }
+                break;
+            }
+
+            match dst::time::timeout(check_interval, reader.read_buf(&mut buf)).await {
+                // Connection has been terminated or vector buffer is complete
+                Ok(Ok(0)) => {
+                    log::debug!("Connection closed by server");
                     break;
                 }
+                Ok(Err(e)) => {
+                    log::debug!("Connection ended: {e}");
+                    break;
+                }
+                // Received bytes of data
+                Ok(Ok(bytes)) => {
+                    log::trace!("Received <binary> {bytes} bytes");
+                    last_data_time = dst::time::Instant::now();
 
-                match dst::time::timeout(check_interval, reader.read_buf(&mut buf)).await {
-                    // Connection has been terminated or vector buffer is complete
-                    Ok(Ok(0)) => {
-                        log::debug!("Connection closed by server");
+                    if !ConnectionMode::from_atomic(&connection_state).is_active()
+                        || !read_fence.is_valid()
+                    {
+                        log::debug!(
+                            "Dropping {} buffered bytes after socket session ended",
+                            buf.len()
+                        );
+                        buf.clear();
                         break;
                     }
-                    Ok(Err(e)) => {
-                        log::debug!("Connection ended: {e}");
-                        break;
-                    }
-                    // Received bytes of data
-                    Ok(Ok(bytes)) => {
-                        log::trace!("Received <binary> {bytes} bytes");
-                        last_data_time = dst::time::Instant::now();
 
-                        while let Some((i, _)) = &buf
-                            .windows(suffix.len())
-                            .enumerate()
-                            .find(|(_, pair)| pair.eq(&suffix))
-                        {
-                            let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
-                            data.truncate(data.len() - suffix.len());
+                    while let Some((i, _)) = &buf
+                        .windows(suffix.len())
+                        .enumerate()
+                        .find(|(_, pair)| pair.eq(&suffix))
+                    {
+                        let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
+                        data.truncate(data.len() - suffix.len());
 
-                            if let Some(ref handler) = handler {
-                                handler(&data);
+                        if let Some(ref handler) = handler {
+                            if !ConnectionMode::from_atomic(&connection_state).is_active()
+                                || !read_fence.is_valid()
+                            {
+                                log::debug!(
+                                    "Dropping {} buffered bytes after socket session ended",
+                                    data.len() + buf.len()
+                                );
+                                buf.clear();
+                                break 'read;
                             }
+                            handler(&data);
                         }
+                    }
 
-                        if buf.len() > MAX_READ_BUFFER_BYTES {
-                            log::error!(
-                                "Read buffer exceeded maximum size ({MAX_READ_BUFFER_BYTES} bytes), closing connection"
+                    if buf.len() > MAX_READ_BUFFER_BYTES {
+                        log::error!(
+                            "Read buffer exceeded maximum size ({MAX_READ_BUFFER_BYTES} bytes), closing connection"
+                        );
+                        break;
+                    }
+                }
+                Err(_) => {
+                    if let Some(timeout) = idle_timeout {
+                        let idle_duration = last_data_time.elapsed();
+                        if idle_duration >= timeout {
+                            log::warn!(
+                                "Read idle timeout: no data received for {:.1}s",
+                                idle_duration.as_secs_f64()
                             );
                             break;
                         }
                     }
-                    Err(_) => {
-                        if let Some(timeout) = idle_timeout {
-                            let idle_duration = last_data_time.elapsed();
-                            if idle_duration >= timeout {
-                                log::warn!(
-                                    "Read idle timeout: no data received for {:.1}s",
-                                    idle_duration.as_secs_f64()
-                                );
-                                break;
-                            }
-                        }
-                    }
                 }
             }
+        }
 
-            log_task_stopped("read");
-        })
+        log_task_stopped("read");
     }
 
     /// Drains buffered messages after reconnection completes.
@@ -591,11 +752,14 @@ impl SocketClientInner {
     ///
     /// Returns `true` if a send error occurred (buffer may still contain unsent messages),
     /// `false` if all messages were sent successfully (buffer is empty).
-    async fn drain_reconnect_buffer(
+    async fn drain_reconnect_buffer<W>(
         buffer: &mut VecDeque<Bytes>,
-        writer: &mut TcpWriter,
+        writer: &mut W,
         suffix: &[u8],
-    ) -> bool {
+    ) -> bool
+    where
+        W: AsyncWrite + Unpin,
+    {
         if buffer.is_empty() {
             return false;
         }
@@ -636,13 +800,16 @@ impl SocketClientInner {
         send_error_occurred
     }
 
-    fn spawn_write_task(
+    fn spawn_write_task<W>(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
-        writer: TcpWriter,
-        mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
+        writer: W,
+        mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand<W>>,
         suffix: Vec<u8>,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<()>
+    where
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
         log_task_started("write");
 
         // Interval between checking the connection mode
@@ -726,12 +893,30 @@ impl SocketClientInner {
                                 write_buf.extend_from_slice(&msg);
                                 write_buf.extend_from_slice(&suffix);
 
-                                if let Err(e) = active_writer.write_all(&write_buf).await {
-                                    if is_connection_drop_io_error(&e) {
-                                        log::warn!("Failed to send message: {e}");
-                                    } else {
-                                        log::error!("Failed to send message: {e}");
+                                let write_result = dst::time::timeout(
+                                    Duration::from_secs(WRITE_TIMEOUT_SECS),
+                                    active_writer.write_all(&write_buf),
+                                )
+                                .await;
+                                let write_failed = match write_result {
+                                    Ok(Ok(())) => false,
+                                    Ok(Err(e)) => {
+                                        if is_connection_drop_io_error(&e) {
+                                            log::warn!("Failed to send message: {e}");
+                                        } else {
+                                            log::error!("Failed to send message: {e}");
+                                        }
+                                        true
                                     }
+                                    Err(_) => {
+                                        log::warn!(
+                                            "Timed out sending message after {WRITE_TIMEOUT_SECS}s"
+                                        );
+                                        true
+                                    }
+                                };
+
+                                if write_failed {
                                     reconnect_buffer.push_back(msg);
 
                                     // CAS: a disconnect landing mid-write must not be overwritten
@@ -811,6 +996,8 @@ impl Drop for SocketClientInner {
 /// Cleanup on drop: aborts background tasks and clears handlers to break reference cycles.
 impl CleanDrop for SocketClientInner {
     fn clean_drop(&mut self) {
+        self.read_fence.invalidate();
+
         if !self.read_task.is_finished() {
             self.read_task.abort();
             log_task_aborted("read");
@@ -850,6 +1037,7 @@ pub struct SocketClient {
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) reconnect_timeout: Duration,
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    pub(crate) terminal_finalizer: Arc<SocketTerminalFinalizer>,
 }
 
 impl Debug for SocketClient {
@@ -875,13 +1063,18 @@ impl SocketClient {
         let connection_mode = inner.connection_mode.clone();
         let state_notify = inner.state_notify.clone();
         let reconnect_timeout = inner.reconnect_timeout;
+        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
+            connection_mode.clone(),
+            state_notify.clone(),
+            post_disconnection,
+        ));
 
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
             state_notify.clone(),
             post_reconnection,
-            post_disconnection,
+            Arc::clone(&terminal_finalizer),
         );
 
         if let Some(handler) = post_connection {
@@ -895,6 +1088,7 @@ impl SocketClient {
             state_notify,
             reconnect_timeout,
             writer_tx,
+            terminal_finalizer,
         })
     }
 
@@ -949,23 +1143,26 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     pub async fn close(&self) {
+        self.close_with_timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS))
+            .await;
+    }
+
+    async fn close_with_timeout(&self, finalization_timeout: Duration) {
         // Preserve a CLOSED terminal state; the controller has already exited
         ConnectionMode::request_disconnect(&self.connection_mode);
         self.state_notify.notify_waiters();
 
-        if dst::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
-            while !self.is_closed() {
-                dst::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
-            }
-
+        if dst::time::timeout(
+            finalization_timeout,
+            self.terminal_finalizer.wait_for_completion(),
+        )
+        .await
+            == Ok(())
+        {
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
                 log_task_aborted("controller");
             }
-        })
-        .await
-            == Ok(())
-        {
             log_task_stopped("controller");
         } else {
             log::warn!("Timeout waiting for controller task to finish");
@@ -974,8 +1171,7 @@ impl SocketClient {
                 self.controller_task.abort();
                 log_task_aborted("controller");
             }
-            self.connection_mode
-                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+            self.terminal_finalizer.transition_and_finalize();
         }
     }
 
@@ -1062,7 +1258,7 @@ impl SocketClient {
         connection_mode: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-        post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        terminal_finalizer: Arc<SocketTerminalFinalizer>,
     ) -> tokio::task::JoinHandle<()> {
         const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 
@@ -1088,6 +1284,7 @@ impl SocketClient {
                         // Delay awaiting graceful shutdown
                         dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
+                        inner.read_fence.invalidate();
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
                             log_task_aborted("read");
@@ -1107,16 +1304,27 @@ impl SocketClient {
                     }
 
                     log::debug!("Closed");
-
-                    if let Some(ref handler) = post_disconnection {
-                        handler();
-                        log::debug!("Called `post_disconnection` handler");
-                    }
+                    terminal_finalizer.transition_and_finalize();
                     break; // Controller finished
                 }
 
                 if mode.is_closed() {
                     log::debug!("Connection closed");
+
+                    inner.read_fence.invalidate();
+                    if !inner.read_task.is_finished() {
+                        inner.read_task.abort();
+                        log_task_aborted("read");
+                    }
+
+                    if let Some(task) = &inner.heartbeat_task
+                        && !task.is_finished()
+                    {
+                        task.abort();
+                        log_task_aborted("heartbeat");
+                    }
+
+                    terminal_finalizer.finalize_closed();
                     break;
                 }
 
@@ -1143,9 +1351,20 @@ impl SocketClient {
                         log::error!(
                             "Max reconnection attempts ({max_attempts}) exceeded, transitioning to CLOSED"
                         );
-                        connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
-                        state_notify.notify_waiters();
-                        break;
+
+                        if connection_mode
+                            .compare_exchange(
+                                ConnectionMode::Reconnect.as_u8(),
+                                ConnectionMode::Closed.as_u8(),
+                                Ordering::SeqCst,
+                                Ordering::SeqCst,
+                            )
+                            .is_ok()
+                        {
+                            terminal_finalizer.finalize_closed();
+                            break;
+                        }
+                        continue;
                     }
 
                     inner.reconnect_attempt_count += 1;
@@ -1223,16 +1442,14 @@ impl SocketClient {
                     }
                 }
             }
-            inner
-                .connection_mode
-                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+            terminal_finalizer.finalize_closed();
 
             log_task_stopped("controller");
         })
     }
 }
 
-// Abort controller task on drop to clean up background tasks
+// Dropping cancels background work without reporting a terminal lifecycle transition.
 impl Drop for SocketClient {
     fn drop(&mut self) {
         if !self.controller_task.is_finished() {
@@ -1623,16 +1840,804 @@ mod tests {
 #[cfg(not(feature = "turmoil"))]
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 mod rust_tests {
+    use std::{
+        pin::Pin,
+        sync::{
+            Arc, Condvar, Mutex as StdMutex,
+            atomic::{AtomicUsize, Ordering as AtomicOrdering},
+        },
+        task::{Context, Poll, Waker},
+    };
+
     use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
+        io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
         net::TcpListener,
-        task,
+        sync::oneshot,
+        task::{self, yield_now},
         time::{Duration, sleep},
     };
 
     use super::*;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+    struct CondvarReleaseGuard {
+        release: Arc<(StdMutex<bool>, Condvar)>,
+    }
+
+    impl CondvarReleaseGuard {
+        fn new(release: Arc<(StdMutex<bool>, Condvar)>) -> Self {
+            Self { release }
+        }
+
+        fn release(&self) {
+            let (lock, condvar) = self.release.as_ref();
+            let mut released = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *released = true;
+            condvar.notify_all();
+        }
+    }
+
+    impl Drop for CondvarReleaseGuard {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+
+    async fn recv_rendezvous<T: Send + 'static>(
+        receiver: std::sync::mpsc::Receiver<T>,
+        name: &'static str,
+    ) -> T {
+        let receive_task = tokio::task::spawn_blocking(move || receiver.recv_timeout(TEST_TIMEOUT));
+
+        match tokio::time::timeout(TEST_TIMEOUT * 2, receive_task).await {
+            Ok(Ok(Ok(value))) => value,
+            Ok(Ok(Err(e))) => {
+                panic!("{name} did not arrive within the test timeout: {e}")
+            }
+            Ok(Err(e)) => panic!("{name} receive task failed: {e}"),
+            Err(e) => panic!("{name} receive task did not finish: {e}"),
+        }
+    }
+
+    async fn await_task_termination(
+        task: tokio::task::JoinHandle<()>,
+        name: &'static str,
+        cancellation_ok: bool,
+    ) {
+        match tokio::time::timeout(TEST_TIMEOUT, task).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) if cancellation_ok && e.is_cancelled() => {}
+            Ok(Err(e)) => panic!("{name} failed: {e}"),
+            Err(e) => panic!("{name} did not terminate within the test timeout: {e}"),
+        }
+    }
+
+    async fn wait_for_finalizer(finalizer: &SocketTerminalFinalizer, name: &'static str) {
+        tokio::time::timeout(TEST_TIMEOUT, finalizer.wait_for_completion())
+            .await
+            .unwrap_or_else(|_| panic!("{name} completion was not published"));
+    }
+
+    struct ScriptedReader {
+        first: Option<Vec<u8>>,
+        remainder: Arc<StdMutex<Option<Vec<u8>>>>,
+        pending_tx: Option<oneshot::Sender<()>>,
+        waker: Arc<StdMutex<Option<Waker>>>,
+    }
+
+    impl AsyncRead for ScriptedReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if let Some(first) = self.first.take() {
+                buf.put_slice(&first);
+                return Poll::Ready(Ok(()));
+            }
+
+            if let Some(remainder) = self.remainder.lock().unwrap().take() {
+                buf.put_slice(&remainder);
+                return Poll::Ready(Ok(()));
+            }
+
+            if let Some(tx) = self.pending_tx.take() {
+                let _ = tx.send(());
+            }
+            *self.waker.lock().unwrap() = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+
+    struct BackpressuredWriter {
+        stream: DuplexStream,
+        pending_tx: Option<oneshot::Sender<()>>,
+    }
+
+    impl AsyncWrite for BackpressuredWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let result = Pin::new(&mut self.stream).poll_write(cx, buf);
+            if result.is_pending()
+                && let Some(tx) = self.pending_tx.take()
+            {
+                let _ = tx.send(());
+            }
+            result
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.stream).poll_flush(cx)
+        }
+
+        fn poll_shutdown(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.stream).poll_shutdown(cx)
+        }
+    }
+
+    struct RecordingWriter {
+        bytes: Arc<StdMutex<Vec<u8>>>,
+    }
+
+    impl AsyncWrite for RecordingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            self.bytes.lock().unwrap().extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn test_socket_client(
+        connection_state: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
+        terminal_finalizer: Arc<SocketTerminalFinalizer>,
+        controller_task: tokio::task::JoinHandle<()>,
+    ) -> SocketClient {
+        let (writer_tx, _writer_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        SocketClient {
+            controller_task,
+            connection_mode: connection_state,
+            state_notify,
+            reconnect_timeout: Duration::from_secs(1),
+            writer_tx,
+            terminal_finalizer,
+        }
+    }
+
+    fn wait_for_finalizer_sync(finalizer: &SocketTerminalFinalizer) {
+        let deadline = std::time::Instant::now() + TEST_TIMEOUT * 2;
+
+        while !finalizer
+            .completion
+            .notification_completed
+            .load(Ordering::Acquire)
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "terminal callback did not complete"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_close_finalizes_after_controller_was_aborted() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Some(Arc::new(move || {
+                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
+            })),
+        ));
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        controller_task.abort();
+        let client = test_socket_client(
+            connection_state,
+            state_notify,
+            terminal_finalizer,
+            controller_task,
+        );
+
+        client.close_with_timeout(Duration::from_millis(1)).await;
+        wait_for_finalizer_sync(&client.terminal_finalizer);
+
+        assert!(client.is_closed());
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_close_does_not_wait_for_aborted_controller_to_finish() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release_guard = CondvarReleaseGuard::new(Arc::clone(&callback_release));
+        let callback_release_clone = Arc::clone(&callback_release);
+        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
+        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Some(Arc::new(move || {
+                callback_entered_tx.send(()).unwrap();
+                let (lock, condvar) = callback_release_clone.as_ref();
+                let mut released = lock.lock().unwrap();
+
+                while !*released {
+                    released = condvar.wait(released).unwrap();
+                }
+            })),
+        ));
+        let controller_finalizer = Arc::clone(&terminal_finalizer);
+        let controller_task = tokio::spawn(async move {
+            controller_finalizer.transition_and_finalize();
+        });
+        recv_rendezvous(
+            callback_entered_rx,
+            "controller-claimed terminal callback entry",
+        )
+        .await;
+        let client = test_socket_client(
+            connection_state,
+            state_notify,
+            terminal_finalizer,
+            controller_task,
+        );
+
+        let close_result = tokio::time::timeout(
+            TEST_TIMEOUT,
+            client.close_with_timeout(Duration::from_millis(1)),
+        )
+        .await;
+
+        callback_release_guard.release();
+
+        assert!(
+            close_result.is_ok(),
+            "close should return after aborting a controller blocked in a callback"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_close_dispatches_unclaimed_blocking_callback() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release_guard = CondvarReleaseGuard::new(Arc::clone(&callback_release));
+        let callback_release_clone = Arc::clone(&callback_release);
+        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
+        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Some(Arc::new(move || {
+                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
+                callback_entered_tx.send(()).unwrap();
+                let (lock, condvar) = callback_release_clone.as_ref();
+                let mut released = lock.lock().unwrap();
+
+                while !*released {
+                    released = condvar.wait(released).unwrap();
+                }
+            })),
+        ));
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let client = Arc::new(test_socket_client(
+            connection_state,
+            state_notify,
+            Arc::clone(&terminal_finalizer),
+            controller_task,
+        ));
+        let close_client = Arc::clone(&client);
+        let (close_finished_tx, close_finished_rx) = std::sync::mpsc::channel();
+
+        let close_task = tokio::spawn(async move {
+            close_client
+                .close_with_timeout(Duration::from_millis(1))
+                .await;
+            let _ = close_finished_tx.send(());
+        });
+
+        recv_rendezvous(callback_entered_rx, "close-claimed terminal callback entry").await;
+        recv_rendezvous(
+            close_finished_rx,
+            "close task completion while terminal callback was blocked",
+        )
+        .await;
+        let completion_while_blocked = terminal_finalizer
+            .completion
+            .notification_completed
+            .load(Ordering::Acquire);
+
+        callback_release_guard.release();
+
+        await_task_termination(close_task, "close task", false).await;
+        wait_for_finalizer(&terminal_finalizer, "close-claimed terminal callback").await;
+
+        assert!(!completion_while_blocked);
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+
+        tokio::time::timeout(
+            TEST_TIMEOUT,
+            client.close_with_timeout(Duration::from_millis(1)),
+        )
+        .await
+        .expect("second close did not return within the test timeout");
+        terminal_finalizer.transition_and_finalize();
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_panicking_terminal_callback_still_completes_notification() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Closed.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let finalizer = SocketTerminalFinalizer::new(
+            connection_state,
+            state_notify,
+            Some(Arc::new(|| panic!("terminal callback panic"))),
+        );
+
+        finalizer.finalize_closed();
+        wait_for_finalizer_sync(&finalizer);
+        assert!(
+            finalizer
+                .completion
+                .notification_completed
+                .load(Ordering::Acquire)
+        );
+    }
+
+    #[rstest]
+    fn test_concurrent_terminal_finalizers_notify_once() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Closed.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
+        let (callback_release_tx, callback_release_rx) = std::sync::mpsc::channel();
+        let callback_release_rx = Arc::new(StdMutex::new(callback_release_rx));
+        let callback_release_rx_clone = Arc::clone(&callback_release_rx);
+        let finalizer = Arc::new(SocketTerminalFinalizer::new(
+            connection_state,
+            state_notify,
+            Some(Arc::new(move || {
+                callback_entered_tx.send(()).unwrap();
+                callback_release_rx_clone
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(TEST_TIMEOUT)
+                    .expect("terminal callback release did not arrive within the test timeout");
+                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
+            })),
+        ));
+        let first_finalizer = Arc::clone(&finalizer);
+        let first = std::thread::spawn(move || first_finalizer.finalize_closed());
+        callback_entered_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("terminal callback entry did not arrive within the test timeout");
+        let second_finalizer = Arc::clone(&finalizer);
+        let second = std::thread::spawn(move || second_finalizer.finalize_closed());
+
+        second.join().unwrap();
+        callback_release_tx.send(()).unwrap();
+        first.join().unwrap();
+        wait_for_finalizer_sync(&finalizer);
+
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        assert!(
+            finalizer
+                .completion
+                .notification_completed
+                .load(Ordering::Acquire)
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_terminal_finalizer_cas_interleavings_notify_once(#[case] exhaustion_wins: bool) {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let callback_state = Arc::clone(&connection_state);
+        let finalizer = SocketTerminalFinalizer::new(
+            Arc::clone(&connection_state),
+            state_notify,
+            Some(Arc::new(move || {
+                assert_eq!(
+                    ConnectionMode::from_atomic(&callback_state),
+                    ConnectionMode::Closed
+                );
+                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
+            })),
+        );
+
+        if exhaustion_wins {
+            assert!(
+                connection_state
+                    .compare_exchange(
+                        ConnectionMode::Reconnect.as_u8(),
+                        ConnectionMode::Closed.as_u8(),
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_ok()
+            );
+            finalizer.finalize_closed();
+            assert!(!ConnectionMode::request_disconnect(&connection_state));
+        } else {
+            assert!(ConnectionMode::request_disconnect(&connection_state));
+            assert!(
+                connection_state
+                    .compare_exchange(
+                        ConnectionMode::Reconnect.as_u8(),
+                        ConnectionMode::Closed.as_u8(),
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_err()
+            );
+            finalizer.transition_and_finalize();
+        }
+
+        finalizer.transition_and_finalize();
+        wait_for_finalizer_sync(&finalizer);
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Closed
+        );
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        assert!(
+            finalizer
+                .completion
+                .notification_completed
+                .load(Ordering::Acquire)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_exhaustion_notifies_disconnection_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+
+        let server = task::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let _ = accepted_tx.send(());
+            let _ = release_rx.await;
+            drop(socket);
+            drop(listener);
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(100),
+            reconnect_delay_initial_ms: Some(1),
+            reconnect_delay_max_ms: Some(1),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let (callback_tx, callback_rx) = oneshot::channel();
+        let callback_tx = Arc::new(StdMutex::new(Some(callback_tx)));
+        let post_disconnection = Arc::new(move || {
+            callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
+
+            if let Some(tx) = callback_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+        });
+
+        let client = SocketClient::connect(config, None, None, Some(post_disconnection))
+            .await
+            .unwrap();
+        accepted_rx.await.unwrap();
+        release_tx.send(()).unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), callback_rx)
+            .await
+            .expect("reconnect exhaustion should invoke post_disconnection")
+            .unwrap();
+        assert!(client.is_closed());
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+
+        client.close().await;
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        server.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_graceful_close_notifies_disconnection_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+
+        let server = task::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            let _ = accepted_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_delay_max_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
+            connection_max_retries: None,
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let post_disconnection = Arc::new(move || {
+            callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
+        });
+        let client = SocketClient::connect(config, None, None, Some(post_disconnection))
+            .await
+            .unwrap();
+        accepted_rx.await.unwrap();
+
+        client.close().await;
+        client.close().await;
+
+        assert!(client.is_closed());
+        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_read_loop_drops_remaining_frames_after_session_replaced() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let read_fence = ReadSessionFence::new();
+        let received = Arc::new(StdMutex::new(Vec::<Vec<u8>>::new()));
+        let received_clone = Arc::clone(&received);
+        let handler_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let handler_release_guard = CondvarReleaseGuard::new(Arc::clone(&handler_release));
+        let handler_release_clone = Arc::clone(&handler_release);
+        let (handler_entered_tx, handler_entered_rx) = std::sync::mpsc::channel();
+        let handler: TcpMessageHandler = Arc::new(move |data| {
+            received_clone.lock().unwrap().push(data.to_vec());
+            handler_entered_tx.send(()).unwrap();
+            let (lock, condvar) = handler_release_clone.as_ref();
+            let mut released = lock.lock().unwrap();
+
+            while !*released {
+                released = condvar.wait(released).unwrap();
+            }
+        });
+        let reader = ScriptedReader {
+            first: Some(b"first\r\nsecond\r\n".to_vec()),
+            remainder: Arc::new(StdMutex::new(None)),
+            pending_tx: None,
+            waker: Arc::new(StdMutex::new(None)),
+        };
+        let read_task = SocketClientInner::spawn_read_task(
+            Arc::clone(&connection_state),
+            read_fence.clone(),
+            reader,
+            Some(handler),
+            b"\r\n".to_vec(),
+            None,
+        );
+
+        recv_rendezvous(handler_entered_rx, "socket first-handler entry").await;
+        connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        read_fence.invalidate();
+        read_task.abort();
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+
+        handler_release_guard.release();
+        await_task_termination(read_task, "old socket read task", true).await;
+
+        assert_eq!(received.lock().unwrap().as_slice(), &[b"first".to_vec()]);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_read_loop_drops_partial_old_session_frame() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let old_read_fence = ReadSessionFence::new();
+        let received = Arc::new(StdMutex::new(Vec::<Vec<u8>>::new()));
+        let received_clone = Arc::clone(&received);
+        let handler: TcpMessageHandler =
+            Arc::new(move |data| received_clone.lock().unwrap().push(data.to_vec()));
+        let (pending_tx, pending_rx) = oneshot::channel();
+        let remainder = Arc::new(StdMutex::new(None));
+        let waker = Arc::new(StdMutex::new(None));
+        let reader = ScriptedReader {
+            first: Some(b"old".to_vec()),
+            remainder: Arc::clone(&remainder),
+            pending_tx: Some(pending_tx),
+            waker: Arc::clone(&waker),
+        };
+
+        let read_task = SocketClientInner::spawn_read_task(
+            Arc::clone(&connection_state),
+            old_read_fence.clone(),
+            reader,
+            Some(handler),
+            b"\r\n".to_vec(),
+            None,
+        );
+
+        pending_rx.await.unwrap();
+        connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        old_read_fence.invalidate();
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        *remainder.lock().unwrap() = Some(b"\r\nnew\r\n".to_vec());
+        waker.lock().unwrap().take().unwrap().wake();
+        read_task.await.unwrap();
+
+        let fresh_reader = ScriptedReader {
+            first: Some(b"new\r\n".to_vec()),
+            remainder: Arc::new(StdMutex::new(None)),
+            pending_tx: None,
+            waker: Arc::new(StdMutex::new(None)),
+        };
+        let fresh_connection_state = Arc::clone(&connection_state);
+        let fresh_received = Arc::clone(&received);
+        let fresh_handler: TcpMessageHandler = Arc::new(move |data| {
+            fresh_received.lock().unwrap().push(data.to_vec());
+            fresh_connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        });
+        SocketClientInner::spawn_read_task(
+            Arc::clone(&connection_state),
+            ReadSessionFence::new(),
+            fresh_reader,
+            Some(fresh_handler),
+            b"\r\n".to_vec(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(received.lock().unwrap().as_slice(), &[b"new".to_vec()]);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_read_loop_stops_when_first_handler_ends_session() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let handler_state = Arc::clone(&connection_state);
+        let received = Arc::new(StdMutex::new(Vec::<Vec<u8>>::new()));
+        let received_clone = Arc::clone(&received);
+        let handler: TcpMessageHandler = Arc::new(move |data| {
+            received_clone.lock().unwrap().push(data.to_vec());
+            handler_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        });
+        let (pending_tx, _pending_rx) = oneshot::channel();
+        let reader = ScriptedReader {
+            first: Some(b"first\r\nsecond\r\n".to_vec()),
+            remainder: Arc::new(StdMutex::new(None)),
+            pending_tx: Some(pending_tx),
+            waker: Arc::new(StdMutex::new(None)),
+        };
+
+        SocketClientInner::spawn_read_task(
+            connection_state,
+            ReadSessionFence::new(),
+            reader,
+            Some(handler),
+            b"\r\n".to_vec(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(received.lock().unwrap().as_slice(), &[b"first".to_vec()]);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_stalled_socket_write_reconnects_and_replays_complete_message() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let (stream, _non_reading_peer) = tokio::io::duplex(1);
+        let (pending_tx, pending_rx) = oneshot::channel();
+        let writer: TestWriter = Box::pin(BackpressuredWriter {
+            stream,
+            pending_tx: Some(pending_tx),
+        });
+        let (writer_tx, writer_rx) =
+            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+        );
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"complete-message")))
+            .unwrap();
+        pending_rx.await.unwrap();
+
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let new_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+        let (update_tx, update_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(new_writer, update_tx))
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS)).await;
+        yield_now().await;
+
+        assert!(
+            tokio::time::timeout(Duration::from_secs(10), update_rx)
+                .await
+                .expect("writer update should not remain queued behind a stalled write")
+                .unwrap(),
+            "writer should report successful replay"
+        );
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect
+        );
+        assert_eq!(recorded.lock().unwrap().as_slice(), b"complete-message\r\n");
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
 
     #[rstest]
     #[tokio::test]

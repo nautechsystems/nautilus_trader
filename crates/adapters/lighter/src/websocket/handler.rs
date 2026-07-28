@@ -1696,10 +1696,15 @@ pub(crate) fn should_retry_lighter_ws_error(error: &LighterWsError) -> bool {
     match error {
         LighterWsError::Network(_) => true,
         // Closed and BrokenPipe are terminal on this client; only Timeout
-        // (wait_for_active) can recover if the connection comes up.
+        // (wait_for_active) can recover if the connection comes up. WriteTimeout
+        // is not retryable: the write was cancelled after it began, so the peer
+        // may already have the message and a retry could duplicate it.
         LighterWsError::Transport(send_error) => match send_error {
             SendError::Timeout => true,
-            SendError::Closed | SendError::ConnectionChanged | SendError::BrokenPipe(_) => false,
+            SendError::Closed
+            | SendError::ConnectionChanged
+            | SendError::BrokenPipe(_)
+            | SendError::WriteTimeout => false,
         },
         LighterWsError::Authentication(_)
         | LighterWsError::Parse(_)
@@ -3130,6 +3135,10 @@ mod tests {
     #[case::client_does_not_retry(LighterWsError::Client("no active WebSocket client".into()), false)]
     #[case::transport_closed_does_not_retry(LighterWsError::Transport(SendError::Closed), false)]
     #[case::transport_timeout_retries(LighterWsError::Transport(SendError::Timeout), true)]
+    #[case::transport_write_timeout_does_not_retry(
+        LighterWsError::Transport(SendError::WriteTimeout),
+        false
+    )]
     #[case::transport_broken_pipe_does_not_retry(
         LighterWsError::Transport(SendError::BrokenPipe(
             "writer closed".into(),
@@ -3144,6 +3153,7 @@ mod tests {
     #[rstest]
     #[case::closed(SendError::Closed)]
     #[case::timeout(SendError::Timeout)]
+    #[case::write_timeout(SendError::WriteTimeout)]
     #[case::broken_pipe(SendError::BrokenPipe("writer dropped".into()))]
     fn send_error_converts_into_transport_variant(#[case] send_error: SendError) {
         let err: LighterWsError = send_error.into();

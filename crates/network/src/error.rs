@@ -28,6 +28,13 @@ pub enum SendError {
     /// Timed out waiting for the client to become active.
     #[error("send failed: timeout waiting for active state")]
     Timeout,
+    /// Timed out while writing to the transport, so delivery is undetermined.
+    ///
+    /// Unlike [`SendError::Timeout`], which reports that a send never started, the write was
+    /// cancelled after it began: the peer may or may not have received the message. Callers must
+    /// not treat this as a plain retry.
+    #[error("send failed: timed out writing to transport, delivery undetermined")]
+    WriteTimeout,
     /// The connection changed before an ownership-bound message reached the writer.
     #[error("send failed: connection changed before write")]
     ConnectionChanged,
