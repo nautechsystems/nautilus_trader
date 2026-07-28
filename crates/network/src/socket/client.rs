@@ -49,7 +49,7 @@ use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::M
 
 use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
 use crate::{
-    backoff::ExponentialBackoff,
+    backoff::{ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, wait_reconnect_delay},
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
@@ -1266,6 +1266,7 @@ impl SocketClient {
             log_task_started("controller");
 
             let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
+            let mut reconnected_at = None;
 
             loop {
                 tokio::select! {
@@ -1344,6 +1345,21 @@ impl SocketClient {
                 }
 
                 if mode.is_reconnect() {
+                    let reconnect_uptime = reconnected_at
+                        .take()
+                        .map(|started: dst::time::Instant| started.elapsed());
+                    let previous_reconnect_stable = reconnect_uptime
+                        .is_some_and(|uptime| uptime >= RECONNECT_STABILITY_THRESHOLD);
+
+                    if previous_reconnect_stable {
+                        inner.backoff.reset();
+                        inner.reconnect_attempt_count = 0;
+                        log::debug!(
+                            "Socket remained active for at least {}s, resetting reconnect cycle",
+                            RECONNECT_STABILITY_THRESHOLD.as_secs()
+                        );
+                    }
+
                     // Check max reconnection attempts before attempting reconnect
                     if let Some(max_attempts) = inner.reconnect_max_attempts
                         && inner.reconnect_attempt_count >= max_attempts
@@ -1365,6 +1381,24 @@ impl SocketClient {
                             break;
                         }
                         continue;
+                    }
+
+                    if reconnect_uptime.is_some() && !previous_reconnect_stable {
+                        let duration = inner.backoff.next_duration();
+                        if !duration.is_zero() {
+                            log::warn!("Backing off for {}s...", duration.as_secs_f64());
+                        }
+
+                        if !wait_reconnect_delay(
+                            duration,
+                            connection_mode.as_ref(),
+                            state_notify.as_ref(),
+                        )
+                        .await
+                        {
+                            log::debug!("Backoff interrupted by terminal state");
+                            continue;
+                        }
                     }
 
                     inner.reconnect_attempt_count += 1;
@@ -1393,8 +1427,7 @@ impl SocketClient {
                         }
                         Some(Ok(())) => {
                             log::debug!("Reconnected successfully");
-                            inner.backoff.reset();
-                            inner.reconnect_attempt_count = 0;
+                            reconnected_at = Some(dst::time::Instant::now());
 
                             state_notify.notify_waiters();
 
@@ -1418,24 +1451,14 @@ impl SocketClient {
 
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
-                                // Race backoff sleep against disconnect
-                                tokio::select! {
-                                    biased;
-                                    () = dst::time::sleep(duration) => {}
-                                    () = async {
-                                        loop {
-                                            // Enable before the check so a disconnect notify between iterations is not missed
-                                            let mut notified = pin!(state_notify.notified());
-                                            notified.as_mut().enable();
-
-                                            if ConnectionMode::from_atomic(&connection_mode).is_disconnect() {
-                                                break;
-                                            }
-                                            notified.await;
-                                        }
-                                    } => {
-                                        log::debug!("Backoff interrupted by disconnect");
-                                    }
+                                if !wait_reconnect_delay(
+                                    duration,
+                                    connection_mode.as_ref(),
+                                    state_notify.as_ref(),
+                                )
+                                .await
+                                {
+                                    log::debug!("Backoff interrupted by terminal state");
                                 }
                             }
                         }

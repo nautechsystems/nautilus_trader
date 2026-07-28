@@ -23,6 +23,9 @@
 //! - Exponential backoff already prevents resource waste.
 //! - Automatic recovery can be useful when manual intervention is not desirable.
 //!
+//! A reconnect active for at least 10 seconds resets its attempt count and backoff delay.
+//! Shorter-lived connections continue the current reconnect cycle.
+//!
 //! Use `Some(n)` primarily for testing, development, or non-critical connections.
 
 use std::fmt::Debug;
@@ -68,7 +71,8 @@ pub struct SocketConfig {
     pub connection_max_retries: Option<u32>,
     /// The maximum number of reconnection attempts before giving up.
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
-    /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
+    /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
+    ///   failed or established connections active for less than 10 seconds.
     pub reconnect_max_attempts: Option<u32>,
     /// The idle timeout (milliseconds) for the read task.
     /// When set, the read task will break and trigger reconnection if no data

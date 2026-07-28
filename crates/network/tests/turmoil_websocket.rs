@@ -74,6 +74,9 @@ const MAX_RECONNECT_ATTEMPTS_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_3009;
 const STREAM_NOTIFY_CLOSED_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300A;
 const STREAM_DEAD_WRITE_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300B;
 const RECONNECTABLE_DROP_WHILE_WAITING_FOR_AUTH_SEED: u64 = 0x57EB_300C;
+const UNSTABLE_RECONNECT_SEED: u64 = 0x57EB_300D;
+const STABLE_RECONNECT_SEED: u64 = 0x57EB_300E;
+const UNSTABLE_RECONNECT_DELAY_MS: u64 = 750;
 const HEARTBEAT_PING_SEED: u64 = 0x57EB_3010;
 const SERVER_PING_PONG_SEED: u64 = 0x57EB_3011;
 const SERVER_CLOSE_FRAME_SEED: u64 = 0x57EB_3012;
@@ -224,6 +227,45 @@ async fn ws_echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error
                 }
             }
         });
+    }
+}
+
+async fn ws_drop_each_connection_server(
+    accepted: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let mut websocket = accept_async(stream).await?;
+        accepted.fetch_add(1, Ordering::SeqCst);
+        let _ = websocket.close(None).await;
+    }
+}
+
+async fn ws_hold_stable_reconnect_server(
+    accepted: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let mut websocket = accept_async(stream).await?;
+        let connection = accepted.fetch_add(1, Ordering::SeqCst);
+
+        match connection {
+            0 => {
+                let _ = websocket.close(None).await;
+            }
+            1 => {
+                tokio::time::sleep(Duration::from_secs(11)).await;
+                let _ = websocket.close(None).await;
+            }
+            _ => {
+                let _held_websocket = websocket;
+                std::future::pending::<()>().await;
+            }
+        }
     }
 }
 
@@ -459,6 +501,98 @@ fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: W
         client.disconnect().await;
         assert!(client.is_disconnected());
 
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_websocket_unstable_reconnects_exhaust_attempts(
+    mut websocket_config: WebSocketConfig,
+) {
+    websocket_config.reconnect_delay_initial_ms = Some(UNSTABLE_RECONNECT_DELAY_MS);
+    websocket_config.reconnect_delay_max_ms = Some(UNSTABLE_RECONNECT_DELAY_MS);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+    websocket_config.reconnect_max_attempts = Some(3);
+
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let server_accepted = Arc::clone(&accepted);
+    let mut builder =
+        seeded_builder_with_duration(UNSTABLE_RECONNECT_SEED, Duration::from_secs(10));
+    builder.min_message_latency(Duration::ZERO);
+    builder.max_message_latency(Duration::ZERO);
+    let mut sim = builder.build();
+
+    sim.host("server", move || {
+        ws_drop_each_connection_server(Arc::clone(&server_accepted))
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect("Initial WebSocket connection should succeed");
+        let started_at = tokio::time::Instant::now();
+
+        assert!(
+            wait_for(|| client.is_closed()).await,
+            "Rapidly dropped reconnects should exhaust the attempt limit"
+        );
+        assert!(
+            started_at.elapsed() >= Duration::from_millis(UNSTABLE_RECONNECT_DELAY_MS),
+            "Rapidly dropped reconnects should retain the backoff progression"
+        );
+        assert_eq!(
+            accepted.load(Ordering::SeqCst),
+            4,
+            "Server should accept the initial connection and three reconnect attempts"
+        );
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_websocket_stable_reconnect_resets_attempts(mut websocket_config: WebSocketConfig) {
+    websocket_config.reconnect_delay_initial_ms = Some(50);
+    websocket_config.reconnect_delay_max_ms = Some(200);
+    websocket_config.reconnect_backoff_factor = Some(2.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+    websocket_config.reconnect_max_attempts = Some(1);
+
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let server_accepted = Arc::clone(&accepted);
+    let mut sim =
+        seeded_builder_with_duration(STABLE_RECONNECT_SEED, Duration::from_secs(20)).build();
+
+    sim.host("server", move || {
+        ws_hold_stable_reconnect_server(Arc::clone(&server_accepted))
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect("Initial WebSocket connection should succeed");
+
+        tokio::time::sleep(Duration::from_secs(13)).await;
+
+        assert!(
+            wait_for(|| accepted.load(Ordering::SeqCst) >= 3).await,
+            "A stable reconnect should reset the attempt limit for the next drop"
+        );
+        assert!(
+            client.is_active(),
+            "Client should remain active on the connection after the reset"
+        );
+
+        client.disconnect().await;
         Ok(())
     });
 

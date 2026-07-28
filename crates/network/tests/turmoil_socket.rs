@@ -21,7 +21,10 @@
 #![cfg(feature = "turmoil")]
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -43,6 +46,9 @@ const RECONNECTION_SEED: u64 = 0x51C0_0002;
 const NETWORK_PARTITION_SEED: u64 = 0x51C0_0003;
 const CLOSE_DURING_RECONNECT_SEED: u64 = 0x51C0_0004;
 const CLOSE_DURING_BACKOFF_SEED: u64 = 0x51C0_0005;
+const UNSTABLE_RECONNECT_SEED: u64 = 0x51C0_0006;
+const STABLE_RECONNECT_SEED: u64 = 0x51C0_0007;
+const UNSTABLE_RECONNECT_DELAY_MS: u64 = 750;
 
 async fn wait_for<F>(mut condition: F) -> bool
 where
@@ -90,6 +96,41 @@ async fn echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> 
                 let _ = stream.shutdown().await;
             }
         });
+    }
+}
+
+async fn drop_each_connection_server(
+    accepted: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        accepted.fetch_add(1, Ordering::SeqCst);
+        drop(stream);
+    }
+}
+
+async fn hold_stable_reconnect_server(
+    accepted: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let connection = accepted.fetch_add(1, Ordering::SeqCst);
+
+        match connection {
+            0 => drop(stream),
+            1 => {
+                tokio::time::sleep(Duration::from_secs(11)).await;
+                drop(stream);
+            }
+            _ => {
+                let _held_stream = stream;
+                std::future::pending::<()>().await;
+            }
+        }
     }
 }
 
@@ -265,6 +306,92 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
         client.send_bytes(b"close".to_vec()).await.ok();
         client.close().await;
 
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_socket_unstable_reconnects_exhaust_attempts(mut socket_config: SocketConfig) {
+    socket_config.reconnect_delay_initial_ms = Some(UNSTABLE_RECONNECT_DELAY_MS);
+    socket_config.reconnect_delay_max_ms = Some(UNSTABLE_RECONNECT_DELAY_MS);
+    socket_config.reconnect_backoff_factor = Some(1.0);
+    socket_config.reconnect_jitter_ms = Some(0);
+    socket_config.reconnect_max_attempts = Some(3);
+
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let server_accepted = Arc::clone(&accepted);
+    let mut builder =
+        seeded_builder_with_duration(UNSTABLE_RECONNECT_SEED, Duration::from_secs(10));
+    builder.min_message_latency(Duration::ZERO);
+    builder.max_message_latency(Duration::ZERO);
+    let mut sim = builder.build();
+
+    sim.host("server", move || {
+        drop_each_connection_server(Arc::clone(&server_accepted))
+    });
+
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
+            .await
+            .expect("Initial socket connection should succeed");
+        let started_at = tokio::time::Instant::now();
+
+        assert!(
+            wait_for(|| client.is_closed()).await,
+            "Rapidly dropped reconnects should exhaust the attempt limit"
+        );
+        assert!(
+            started_at.elapsed() >= Duration::from_millis(UNSTABLE_RECONNECT_DELAY_MS),
+            "Rapidly dropped reconnects should retain the backoff progression"
+        );
+        assert_eq!(
+            accepted.load(Ordering::SeqCst),
+            4,
+            "Server should accept the initial connection and three reconnect attempts"
+        );
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_socket_stable_reconnect_resets_attempts(mut socket_config: SocketConfig) {
+    socket_config.reconnect_delay_initial_ms = Some(50);
+    socket_config.reconnect_delay_max_ms = Some(200);
+    socket_config.reconnect_backoff_factor = Some(2.0);
+    socket_config.reconnect_jitter_ms = Some(0);
+    socket_config.reconnect_max_attempts = Some(1);
+
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let server_accepted = Arc::clone(&accepted);
+    let mut sim =
+        seeded_builder_with_duration(STABLE_RECONNECT_SEED, Duration::from_secs(20)).build();
+
+    sim.host("server", move || {
+        hold_stable_reconnect_server(Arc::clone(&server_accepted))
+    });
+
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
+            .await
+            .expect("Initial socket connection should succeed");
+
+        tokio::time::sleep(Duration::from_secs(13)).await;
+
+        assert!(
+            wait_for(|| accepted.load(Ordering::SeqCst) >= 3).await,
+            "A stable reconnect should reset the attempt limit for the next drop"
+        );
+        assert!(
+            client.is_active(),
+            "Client should remain active on the connection after the reset"
+        );
+
+        client.close().await;
         Ok(())
     });
 

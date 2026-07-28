@@ -23,7 +23,10 @@
 //!
 //! Reconnect settings apply only in handler mode; stream mode ignores them.
 //! `reconnect_max_attempts: None` permits unlimited attempts with exponential backoff, while
-//! `Some(n)` closes the client after `n` consecutive failed attempts.
+//! `Some(n)` closes the client once `n` consecutive reconnect attempts have either failed or
+//! established connections active for less than 10 seconds. A reconnect active for at least 10
+//! seconds resets its attempt count and backoff delay; shorter-lived connections continue the
+//! current cycle.
 
 use std::fmt::Debug;
 
@@ -146,7 +149,8 @@ pub struct WebSocketConfig {
     /// The maximum number of reconnection attempts before giving up.
     /// **Note**: Only applies to handler mode. Ignored in stream mode.
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
-    /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
+    /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
+    ///   failed or established connections active for less than 10 seconds.
     #[serde(default)]
     pub reconnect_max_attempts: Option<u32>,
     /// The idle timeout (milliseconds) for the read task.
