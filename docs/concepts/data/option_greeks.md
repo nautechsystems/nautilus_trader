@@ -1,8 +1,8 @@
 # OptionGreeks
 
-`OptionGreeks` represents venue-provided option sensitivities and implied volatility
-for one option instrument. It is a native `Data` enum variant and can be recorded,
-replayed, and queried through the catalog.
+`OptionGreeks` represents venue‑provided option sensitivities and implied volatility for one option
+instrument. As a native `Data` enum variant, it can be recorded, replayed, and queried through the
+catalog.
 
 ## Fields
 
@@ -25,7 +25,7 @@ replayed, and queried through the catalog.
 - The Python constructor accepts `delta`, `gamma`, `vega`, `theta`, and optional `rho`
   as separate float arguments.
 - Option chain subscriptions use `underlying_price` and deltas to resolve ATM and
-  delta-based strike windows.
+  delta‑based strike windows.
 
 ## Example
 
@@ -80,6 +80,6 @@ greeks = OptionGreeks(
 
 ## Related guides
 
-- [Greeks](../greeks.md) covers venue-provided and locally computed Greeks.
+- [Greeks](../greeks.md) covers venue‑provided and locally computed Greeks.
 - [Options](../options.md#optiongreeks-data-type) covers option chain subscriptions.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

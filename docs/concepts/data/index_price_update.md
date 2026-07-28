@@ -1,8 +1,7 @@
 # IndexPriceUpdate
 
-`IndexPriceUpdate` represents the external index price used by a derivatives market.
-Venues often derive mark prices, funding calculations, or settlement behavior from
-an index price.
+`IndexPriceUpdate` represents an external index price used by a derivatives market. Venues often
+use index prices to calculate mark prices, funding, or settlement values.
 
 ## Fields
 
@@ -54,4 +53,4 @@ index = IndexPriceUpdate(
 
 - [MarkPriceUpdate](mark_price_update.md) covers mark prices.
 - [FundingRateUpdate](funding_rate_update.md) covers perpetual funding metadata.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

@@ -1,8 +1,7 @@
 # InstrumentStatus
 
-`InstrumentStatus` represents a change in the trading state of an instrument. It
-captures venue status events such as pre-open, trading, halt, pause, close, and
-short-selling restriction changes.
+`InstrumentStatus` represents a change in an instrument's trading state. It captures venue status
+events such as pre‑open, trading, halt, pause, close, and short‑selling restriction changes.
 
 ## Fields
 
@@ -20,8 +19,8 @@ short-selling restriction changes.
 
 ## Behavior
 
-- Optional booleans allow adapters to preserve venue-provided state without guessing.
-- `action` gives the normalized high-level status even when venue-specific details are
+- Optional booleans allow adapters to preserve venue‑provided state without guessing.
+- `action` gives the normalized high‑level status even when venue‑specific details are
   also stored in `reason` or `trading_event`.
 - Strategies can handle status updates through `on_instrument_status(...)`.
 
@@ -71,4 +70,4 @@ status = InstrumentStatus(
 
 - [InstrumentClose](instrument_close.md) covers instrument close price events.
 - [Instruments](../instruments/) covers instrument definitions.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

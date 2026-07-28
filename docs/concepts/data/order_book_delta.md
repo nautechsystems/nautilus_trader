@@ -1,12 +1,11 @@
 # OrderBookDelta
 
-`OrderBookDelta` represents one change to an order book. It is the most granular
-built-in book data type and supports the book types Nautilus uses for incremental
-book updates:
+`OrderBookDelta` represents one change to an order book. It is the most granular built‑in book data
+type and supports the book types NautilusTrader uses for incremental updates:
 
-- `L3_MBO`: Level 3 market-by-order (MBO) data.
-- `L2_MBP`: Level 2 market-by-price (MBP) data.
-- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data.
+- `L3_MBO`: Level 3 market‑by‑order (MBO) data.
+- `L2_MBP`: Level 2 market‑by‑price (MBP) data.
+- `L1_MBP`: Level 1 market‑by‑price (MBP) top‑of‑book data.
 
 The source feed and target `BookType` determine which granularity a delta carries.
 
@@ -113,4 +112,4 @@ delta = OrderBookDelta(
 
 - [OrderBookDeltas](order_book_deltas.md) covers batching deltas.
 - [Order books](../order_book.md) explains book types and local book state.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

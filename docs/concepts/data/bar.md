@@ -1,8 +1,7 @@
 # Bar
 
-`Bar` represents OHLCV price and volume data for a specific `BarType`. Bars can be
-provided externally by a venue or data provider, aggregated internally from quote or
-trade ticks, or aggregated from smaller bars.
+`Bar` represents OHLCV price and volume data for a specific `BarType`. A venue or data provider
+can supply bars, or NautilusTrader can aggregate them from quote ticks, trade ticks, or smaller bars.
 
 ## Fields
 
@@ -67,4 +66,4 @@ bar = Bar(
 
 - [Bars and aggregation](index.md#bars-and-aggregation) covers aggregation methods.
 - [Bar types](index.md#bar-types) explains `BarType` string syntax.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

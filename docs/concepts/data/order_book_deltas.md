@@ -1,8 +1,7 @@
 # OrderBookDeltas
 
-`OrderBookDeltas` groups a non-empty batch of `OrderBookDelta` records that belong
-to the same logical book event. It reduces per-message overhead when adapters receive
-or produce multiple book changes at once.
+`OrderBookDeltas` groups a non‑empty batch of `OrderBookDelta` records from one logical book event.
+It reduces per‑message overhead when an adapter receives or produces several changes at once.
 
 ## Fields
 
@@ -104,4 +103,4 @@ deltas = OrderBookDeltas(instrument_id, [bid, ask])
 
 - [OrderBookDelta](order_book_delta.md) covers the contained update type.
 - [Order books](../order_book.md) explains supported order book state.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

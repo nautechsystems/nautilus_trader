@@ -1,8 +1,7 @@
 # OrderBookDepth10
 
-`OrderBookDepth10` represents a fixed-depth book update with up to 10 bid levels
-and 10 ask levels. It is useful when a venue publishes a self-contained depth
-snapshot rather than incremental deltas.
+`OrderBookDepth10` represents a fixed‑depth book update with up to 10 bid levels and 10 ask levels.
+Use it when a venue publishes a self‑contained depth snapshot rather than incremental deltas.
 
 ## Fields
 
@@ -96,6 +95,6 @@ depth = OrderBookDepth10(
 
 ## Related guides
 
-- [QuoteTick](quote_tick.md) covers top-of-book data derived from depth.
+- [QuoteTick](quote_tick.md) covers top‑of‑book data derived from depth.
 - [Order books](index.md#order-books) explains order book state.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

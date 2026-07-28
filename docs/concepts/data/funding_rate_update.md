@@ -1,8 +1,7 @@
 # FundingRateUpdate
 
-`FundingRateUpdate` represents the current funding rate for a perpetual swap
-instrument. It can also include the funding interval and the next funding timestamp
-when the venue publishes them.
+`FundingRateUpdate` represents the funding rate for a perpetual swap instrument. It can also include
+the funding interval and next funding timestamp when the venue publishes them.
 
 ## Fields
 
@@ -58,4 +57,4 @@ funding = FundingRateUpdate(
 
 - [MarkPriceUpdate](mark_price_update.md) covers mark prices for derivatives.
 - [IndexPriceUpdate](index_price_update.md) covers index reference prices.
-- [Python API Reference](/docs/python-api-latest/model/data.html) lists Python members.
+- [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

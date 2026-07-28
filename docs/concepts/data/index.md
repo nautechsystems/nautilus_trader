@@ -1,15 +1,12 @@
 # Data
 
-NautilusTrader operates primarily on granular order book data for the highest realism
-in execution simulations. Backtests can also run on any supported market data type,
-depending on the desired simulation fidelity.
+NautilusTrader supports granular order book data, quotes, trades, bars, reference prices, and
+custom data. This overview links to the built‑in types and explains the concepts shared across
+backtesting, sandbox, and live environments.
 
 ## Built-in data types
 
-The main built-in market data types cover order book state, top-of-book updates,
-trades, bars, derivative reference prices, funding rates, and instrument lifecycle
-events. Each type has a dedicated guide with its fields, behavior, and construction
-examples.
+Each main built‑in market data type has a dedicated guide to its fields, behavior, and construction.
 
 | Data type                                     | Category             | Description                                          |
 | --------------------------------------------- | -------------------- | ---------------------------------------------------- |
@@ -26,22 +23,19 @@ examples.
 | [`InstrumentStatus`](instrument_status.md)    | Instrument event     | Trading, quoting, and halt status changes.           |
 | [`InstrumentClose`](instrument_close.md)      | Instrument event     | Close, settlement, or other venue close price event. |
 
-When data flows over the message bus, topic-addressable data stays under the `data`
+When data flows over the message bus, topic‑addressable data stays under the `data`
 root. Live streams use `data.<kind>...`; the data pipeline path uses
 `data.pipeline.<kind>...`. See [Message Bus](../message_bus.md#topic-hierarchy) for
 the topic hierarchy.
 
 ## Order books
 
-A high-performance order book implemented in Rust is available to maintain order
-book state based on provided data.
+A Rust `OrderBook` maintains state for one instrument in backtesting and live trading. NautilusTrader
+supports these book types:
 
-`OrderBook` instances are maintained per instrument for both backtesting and live
-trading, with the following book types available:
-
-- `L3_MBO`: Level 3 market-by-order (MBO). Uses every order book event at every price level, keyed by order ID.
-- `L2_MBP`: Level 2 market-by-price (MBP). Aggregates order book events by price level.
-- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book, also known as best bid and offer (BBO). Captures only top-level updates.
+- `L3_MBO`: Level 3 market‑by‑order (MBO) data, keyed by order ID at every price level.
+- `L2_MBP`: Level 2 market‑by‑price (MBP) data, aggregated by price level.
+- `L1_MBP`: Level 1 market‑by‑price (MBP) top‑of‑book data, also known as best bid and offer (BBO).
 
 :::note
 Quote, trade, and bar data (`QuoteTick`, `TradeTick`, and `Bar`) can also drive
@@ -75,14 +69,13 @@ All market data belongs to an instrument. The instrument definition supplies the
 identity, precision, price and size increments, limits, currencies, and contract
 semantics that make the data meaningful.
 
-See [Instruments](../instruments/) for the instrument taxonomy and per-type guides.
+See [Instruments](../instruments/) for the instrument taxonomy and per‑type guides.
 
 ## Bars and aggregation
 
 ### Introduction to bars
 
-A *bar* (also known as a candle, candlestick or kline) is a data structure that represents
-price and volume information over a specific period, including:
+A *bar*, also known as a candle, candlestick, or kline, summarizes price and volume over an interval:
 
 - Opening price
 - Highest price
@@ -90,136 +83,130 @@ price and volume information over a specific period, including:
 - Closing price
 - Traded volume (or ticks as a volume proxy)
 
-The system generates bars using an *aggregation method* that groups data by specific criteria.
+An *aggregation method* defines how NautilusTrader groups input data into bars.
 
 ### Purpose of data aggregation
 
-Data aggregation in NautilusTrader transforms granular market data into structured bars or candles for several reasons:
+Aggregation converts granular market data into bars that:
 
-- To provide data for technical indicators and strategy development.
-- Because time-aggregated data (like minute bars) are often sufficient for many strategies.
-- To reduce costs compared to high-frequency order book market data.
+- Supply inputs for technical indicators and strategies.
+- Match the time resolution a strategy needs.
+- Reduce storage and processing compared with high‑frequency order book data.
 
 ### Aggregation methods
 
-The platform implements various aggregation methods:
+NautilusTrader supports these aggregation methods:
 
-| Name               | Description                                                                | Category    |
-| :----------------- | :------------------------------------------------------------------------- | :---------- |
-| `TICK`             | Aggregation of a number of ticks.                                          | Threshold   |
-| `TICK_IMBALANCE`   | Aggregation of the buy/sell imbalance of ticks.                            | Threshold   |
-| `TICK_RUNS`        | Aggregation of sequential buy/sell runs of ticks.                          | Information |
-| `VOLUME`           | Aggregation of traded volume.                                              | Threshold   |
-| `VOLUME_IMBALANCE` | Aggregation of the buy/sell imbalance of traded volume.                    | Threshold   |
-| `VOLUME_RUNS`      | Aggregation of sequential runs of buy/sell traded volume.                  | Information |
-| `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold   |
-| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Threshold   |
-| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Information |
-| `RENKO`            | Aggregation based on fixed price movements (brick size in ticks).          | Threshold   |
-| `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time        |
-| `SECOND`           | Aggregation of time intervals with second granularity.                     | Time        |
-| `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time        |
-| `HOUR`             | Aggregation of time intervals with hour granularity.                       | Time        |
-| `DAY`              | Aggregation of time intervals with day granularity.                        | Time        |
-| `WEEK`             | Aggregation of time intervals with week granularity.                       | Time        |
-| `MONTH`            | Aggregation of time intervals with month granularity.                      | Time        |
-| `YEAR`             | Aggregation of time intervals with year granularity.                       | Time        |
+| Name               | Description                                               | Category    |
+| :----------------- | :-------------------------------------------------------- | :---------- |
+| `TICK`             | Number of ticks.                                          | Threshold   |
+| `TICK_IMBALANCE`   | Buy/sell imbalance of ticks.                              | Threshold   |
+| `TICK_RUNS`        | Sequential buy/sell runs of ticks.                        | Information |
+| `VOLUME`           | Traded volume.                                            | Threshold   |
+| `VOLUME_IMBALANCE` | Buy/sell imbalance of traded volume.                      | Threshold   |
+| `VOLUME_RUNS`      | Sequential buy/sell runs of traded volume.                | Information |
+| `VALUE`            | Notional trade value, also known as dollar bars.          | Threshold   |
+| `VALUE_IMBALANCE`  | Buy/sell imbalance of notional trade value.               | Threshold   |
+| `VALUE_RUNS`       | Sequential buy/sell runs of notional trade value.         | Information |
+| `RENKO`            | Fixed price movements, with brick size measured in ticks. | Price       |
+| `MILLISECOND`      | Time intervals with millisecond granularity.              | Time        |
+| `SECOND`           | Time intervals with second granularity.                   | Time        |
+| `MINUTE`           | Time intervals with minute granularity.                   | Time        |
+| `HOUR`             | Time intervals with hour granularity.                     | Time        |
+| `DAY`              | Time intervals with day granularity.                      | Time        |
+| `WEEK`             | Time intervals with week granularity.                     | Time        |
+| `MONTH`            | Time intervals with month granularity.                    | Time        |
+| `YEAR`             | Time intervals with year granularity.                     | Time        |
+
+The threshold, information, and time categories follow the `BarSpecification` predicates. `RENKO`
+is price‑driven and has no matching predicate. The broader information‑driven concept below
+includes both imbalance and runs bars.
 
 ### Information-driven bars
 
-Information-driven bars adapt their sampling frequency to market activity rather than using fixed
+Information‑driven bars adapt their sampling frequency to market activity rather than using fixed
 intervals. They are based on the concept of *aggressor side* (whether the trade initiator was a
 buyer or seller) and come in two families: **imbalance** and **runs**.
 
 **Imbalance bars** close when the *net* buy/sell activity reaches a threshold. Each trade contributes
-a signed value: positive for buyer-initiated trades and negative for seller-initiated. The bar closes
+a signed value: positive for buyer‑initiated trades and negative for seller‑initiated trades. The bar closes
 when the absolute imbalance reaches the configured step. This means that opposing trades cancel each
-other out, so imbalance bars tend to form more slowly in balanced markets and faster during directional moves.
+other out, so imbalance bars form more slowly in balanced markets and faster during directional moves.
 
 **Runs bars** close when *consecutive* activity from the same aggressor side reaches a threshold.
 Unlike imbalance bars, runs bars reset their counter when the aggressor side changes.
-This makes them sensitive to sustained one-sided pressure rather than net imbalance.
+This makes them sensitive to sustained one‑sided pressure rather than net imbalance.
 
 Both families have three variants based on what is measured:
 
-| Variant | Imbalance          | Runs          | What is measured                          |
-| :------ | :----------------- | :------------ | :---------------------------------------- |
-| Tick    | `TICK_IMBALANCE`   | `TICK_RUNS`   | Number of trades (each trade counts as 1) |
-| Volume  | `VOLUME_IMBALANCE` | `VOLUME_RUNS` | Traded volume (quantity)                  |
-| Value   | `VALUE_IMBALANCE`  | `VALUE_RUNS`  | Notional value (price x quantity)         |
+| Variant | Imbalance          | Runs          | What is measured              |
+| :------ | :----------------- | :------------ | :---------------------------- |
+| Tick    | `TICK_IMBALANCE`   | `TICK_RUNS`   | Number of trades.             |
+| Volume  | `VOLUME_IMBALANCE` | `VOLUME_RUNS` | Traded quantity.              |
+| Value   | `VALUE_IMBALANCE`  | `VALUE_RUNS`  | Price multiplied by quantity. |
 
 :::note
-Information-driven bars require `TradeTick` data because they need the `aggressor_side` field
+Information‑driven bars require `TradeTick` data because they need the `aggressor_side` field
 to classify each trade. They cannot be aggregated from `QuoteTick` data alone.
 :::
 
 ### Types of aggregation
 
-NautilusTrader implements three distinct data aggregation methods:
+NautilusTrader supports three aggregation inputs:
 
-1. **Trade-to-bar aggregation**: Creates bars from `TradeTick` objects (executed trades)
-   - Use case: For strategies analyzing execution prices or when working directly with trade data.
-   - Always uses the `LAST` price type in the bar specification.
-
-2. **Quote-to-bar aggregation**: Creates bars from `QuoteTick` objects (bid/ask prices)
-   - Use case: For strategies focusing on bid/ask spreads or market depth analysis.
-   - Uses `BID`, `ASK`, or `MID` price types in the bar specification.
-
-3. **Bar-to-bar aggregation**: Creates larger-timeframe `Bar` objects from smaller-timeframe `Bar` objects
-   - Use case: For resampling existing smaller timeframe bars (1-minute) into larger timeframes (5-minute, hourly).
-   - Always requires the `@` symbol in the specification.
+| Input         | Result                                    | Price type             | Syntax requirement  |
+| ------------- | ----------------------------------------- | ---------------------- | ------------------- |
+| `TradeTick`   | Trade‑to‑bar aggregation.                 | `LAST`                 | No `@` source.      |
+| `QuoteTick`   | Quote‑to‑bar aggregation.                 | `BID`, `ASK`, or `MID` | No `@` source.      |
+| Smaller `Bar` | Bar‑to‑bar aggregation into a larger bar. | Target bar price type. | Source follows `@`. |
 
 ### Bar types
 
-NautilusTrader defines a unique *bar type* (`BarType` class) based on the following components:
+`BarType` identifies a bar by:
 
-- **Instrument ID** (`InstrumentId`): Specifies the particular instrument for the bar.
-- **Bar Specification** (`BarSpecification`):
-  - `step`: Defines the interval or frequency of each bar.
-  - `aggregation`: Specifies the method used for data aggregation (see the above table).
-  - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
-- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus)
-  or externally (by a trading venue or data provider).
+- **Instrument ID** (`InstrumentId`): The instrument for the bar.
+- **Bar specification** (`BarSpecification`):
+  - `step`: The interval or frequency.
+  - `aggregation`: The aggregation method.
+  - `price_type`: The price basis, such as bid, ask, mid, or last.
+- **Aggregation source** (`AggregationSource`): Whether NautilusTrader or an external venue or data
+  provider aggregated the bar.
 
 :::note
-`BarSpecification` validates fixed-subunit time aggregations so bars align cleanly with their
-parent clock or calendar unit. `MILLISECOND` steps must divide 1000 and be less than 1000;
-`SECOND` and `MINUTE` steps must divide 60 and be less than 60; `HOUR` steps must divide 24 and
-be less than 24; and `MONTH` steps must divide 12 and be less than 12. Use the next larger
-aggregation when the step equals a parent unit, such as `1-HOUR` instead of `60-MINUTE`.
-`DAY`, `WEEK`, `YEAR`, threshold, information, and `RENKO` bars are not restricted by this
-fixed-subunit rule.
-
-A future version will allow advanced users to override this validation for arbitrary bar periods
-that do not align to clock or calendar boundaries.
+The Rust/PyO3 `BarSpecification` validates fixed‑subunit time aggregations so bars align cleanly
+with their parent clock or calendar unit. `MILLISECOND` steps must divide 1000 and be less than
+1000; `SECOND` and `MINUTE` steps must divide 60 and be less than 60; `HOUR` steps must divide 24
+and be less than 24; and `MONTH` steps must divide 12 and may equal 12. Except for `12-MONTH`, use
+the next larger aggregation when the step equals a parent unit, such as `1-HOUR` instead of
+`60-MINUTE`. In this model, `DAY`, `WEEK`, `YEAR`, threshold, information‑driven, and `RENKO` bars
+are not restricted by this fixed‑subunit rule. The legacy Cython constructor rejects `12-MONTH`.
 :::
 
 Bar types can also be classified as either *standard* or *composite*:
 
-- **Standard**: Generated from granular market data, such as quote-ticks or trade-ticks.
-- **Composite**: Derived from a higher-granularity bar type through subsampling (like 5-MINUTE bars aggregate from 1-MINUTE bars).
+- **Standard**: Generated from granular market data, such as quote ticks or trade ticks.
+- **Composite**: Derived from a finer‑grained bar type, such as 5‑minute bars aggregated from
+  1‑minute bars.
 
 ### Aggregation sources
 
 Bar data aggregation can be either *internal* or *external*:
 
-- `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
-- `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
+- `INTERNAL`: NautilusTrader aggregates the bar.
+- `EXTERNAL`: A venue or data provider aggregates the bar.
 
-For bar-to-bar aggregation, the target bar type is always `INTERNAL` (since you're doing the aggregation within NautilusTrader),
-but the source bars can be either `INTERNAL` or `EXTERNAL`, i.e., you can aggregate externally provided bars or already
-aggregated internal bars.
+For bar‑to‑bar aggregation, the target is always `INTERNAL`. The source can be `INTERNAL` or
+`EXTERNAL`.
 
-### Defining bar types with *string syntax*
+### Defining bar types with string syntax
 
 #### Standard bars
 
-You can define standard bar types from strings using the following convention:
+Define a standard bar type with:
 
 `{instrument_id}-{step}-{aggregation}-{price_type}-{INTERNAL | EXTERNAL}`
 
-For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval
-aggregated from trades locally by Nautilus:
+This example defines 5‑minute AAPL trade bars that NautilusTrader aggregates locally:
 
 ```python
 bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL")
@@ -227,20 +214,16 @@ bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL")
 
 #### Composite bars
 
-Composite bars are derived by aggregating higher-granularity bars into the desired bar type. To define a composite bar,
-use this convention:
+Define a composite bar type with:
 
 `{instrument_id}-{step}-{aggregation}-{price_type}-INTERNAL@{step}-{aggregation}-{INTERNAL | EXTERNAL}`
 
-**Notes**:
-
 - The derived bar type must use an `INTERNAL` aggregation source (since this is how the bar is aggregated).
-- The sampled bar type must have a higher granularity than the derived bar type.
+- The sampled bar type must be finer‑grained than the derived bar type.
 - The sampled instrument ID is inferred to match that of the derived bar type.
 - Composite bars can be aggregated *from* `INTERNAL` or `EXTERNAL` aggregation sources.
 
-For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval
-aggregated locally by Nautilus, from 1-minute interval bars aggregated externally:
+This example defines internal 5‑minute AAPL trade bars aggregated from external 1‑minute bars:
 
 ```python
 bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
@@ -250,28 +233,28 @@ bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"
 
 The `BarType` string format encodes both the target bar type and, optionally, the source data type:
 
-```
+```text
 {instrument_id}-{step}-{aggregation}-{price_type}-{source}@{step}-{aggregation}-{source}
 ```
 
-The part after the `@` symbol is optional and only used for bar-to-bar aggregation:
+The part after `@` applies only to bar‑to‑bar aggregation:
 
-- **Without `@`**: Aggregates from `TradeTick` objects (when price_type is `LAST`) or `QuoteTick` objects (when price_type is `BID`, `ASK`, or `MID`).
-- **With `@`**: Aggregates from existing `Bar` objects (specifying the source bar type).
+- **Without `@`**: Aggregate from `TradeTick` objects for `LAST`, or `QuoteTick` objects for
+  `BID`, `ASK`, or `MID`.
+- **With `@`**: Aggregate from existing `Bar` objects of the specified source type.
 
 #### Trade-to-bar example
 
 ```python
 def on_start(self) -> None:
-    # Define a bar type for aggregating from TradeTick objects
-    # Uses price_type=LAST which indicates TradeTick data as source
+    # LAST selects TradeTick data as the source
     bar_type = BarType.from_str("6EH4.XCME-50-VOLUME-LAST-INTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
 
-    # Request historical data (will receive bars in on_historical_data handler)
+    # Deliver historical bars to on_historical_data
     self.request_bars(bar_type, start=start)
 
-    # Subscribe to live data (will receive bars in on_bar handler)
+    # Deliver live bars to on_bar
     self.subscribe_bars(bar_type)
 ```
 
@@ -279,100 +262,90 @@ def on_start(self) -> None:
 
 ```python
 def on_start(self) -> None:
-    # Create 1-minute bars from ASK prices (in QuoteTick objects)
+    # Create 1-minute bars from QuoteTick ask prices
     bar_type_ask = BarType.from_str("6EH4.XCME-1-MINUTE-ASK-INTERNAL")
 
-    # Create 1-minute bars from BID prices (in QuoteTick objects)
+    # Create 1-minute bars from QuoteTick bid prices
     bar_type_bid = BarType.from_str("6EH4.XCME-1-MINUTE-BID-INTERNAL")
 
-    # Create 1-minute bars from MID prices (middle between ASK and BID prices in QuoteTick objects)
+    # Create 1-minute bars from QuoteTick mid prices
     bar_type_mid = BarType.from_str("6EH4.XCME-1-MINUTE-MID-INTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
 
-    # Request historical data and subscribe to live data
-    self.request_bars(bar_type_ask, start=start)  # Historical bars processed in on_historical_data
-    self.subscribe_bars(bar_type_ask)  # Live bars processed in on_bar
+    self.request_bars(bar_type_ask, start=start)
+    self.subscribe_bars(bar_type_ask)
 ```
 
 #### Bar-to-bar example
 
 ```python
 def on_start(self) -> None:
-    # Create 5-minute bars from 1-minute bars (Bar objects)
+    # Create 5-minute bars from 1-minute Bar objects
     # Format: target_bar_type@source_bar_type
-    # Note: price type (LAST) is only needed on the left target side, not on the source side
+    # The price type appears only on the target side
     bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
 
-    # Request historical data by providing the dependency-ordered aggregation chain
+    # Provide the aggregation chain in dependency order
     self.request_aggregated_bars([bar_type], start=start)
 
-    # Subscribe to live updates (processed in on_bar(...) handler)
+    # Deliver live updates to on_bar
     self.subscribe_bars(bar_type)
 ```
 
 #### Advanced bar-to-bar example
 
-You can create complex aggregation chains where you aggregate from already aggregated bars:
+Build longer aggregation chains from bars that NautilusTrader has already aggregated:
 
 ```python
-# First create 1-minute bars from TradeTick objects (LAST indicates TradeTick source)
+# Create 1-minute bars from TradeTick objects
 primary_bar_type = BarType.from_str("6EH4.XCME-1-MINUTE-LAST-INTERNAL")
 
-# Then create 5-minute bars from 1-minute bars
-# Note the @1-MINUTE-INTERNAL part identifying the source bars
+# Create 5-minute bars from the 1-minute bars
 intermediate_bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
 
-# Then create hourly bars from 5-minute bars
-# Note the @5-MINUTE-INTERNAL part identifying the source bars
+# Create hourly bars from the 5-minute bars
 hourly_bar_type = BarType.from_str("6EH4.XCME-1-HOUR-LAST-INTERNAL@5-MINUTE-INTERNAL")
 ```
 
 ### Working with bars: request vs. subscribe
 
-NautilusTrader provides two distinct operations for working with bars:
+NautilusTrader provides three operations for working with bars:
 
-- **`request_bars()`**: Fetches historical data for a standard `BarType`, processed by the
-  `on_historical_data()` handler.
-- **`request_aggregated_bars()`**: Fetches historical data for a dependency-ordered list of bar
-  types, building internal bars on the fly.
-- **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
-  It expects the instrument for the `BarType` to already be loaded in the cache.
+| Method                      | Purpose                                                  | Delivery handler       |
+| --------------------------- | -------------------------------------------------------- | ---------------------- |
+| `request_bars()`            | Fetch historical data for a standard `BarType`.          | `on_historical_data()` |
+| `request_aggregated_bars()` | Build internal bars from a dependency‑ordered type list. | `on_historical_data()` |
+| `subscribe_bars()`          | Subscribe to live bars.                                  | `on_bar()`             |
 
-The same cache precondition applies to quote, trade, order book, and other live
-subscriptions.
+`subscribe_bars()` expects the instrument for the `BarType` in the cache. The same precondition
+applies to other live market data subscriptions.
 
 These methods work together in a typical workflow:
 
-1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior.
-2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time.
+1. `request_bars()` loads historical data to initialize indicators or strategy state.
+1. `subscribe_bars()` continues the stream with live bars.
 
 :::tip[Request and subscribe ordering]
 
 When `validate_data_sequence=True` (common with live adapters such as Interactive Brokers),
 calling `subscribe_bars()` immediately after `request_bars()` can cause a race condition:
 live bars arriving before the historical batch may cause the validator to discard older
-warmup bars. To avoid it, pass a `callback` to `request_bars()` and subscribe from inside
-it, as shown in the example below.
+warmup bars. Pass a `callback` to `request_bars()` and subscribe from the callback.
 
 :::
 
-Example usage in `on_start()`:
+Use the callback in `on_start()`:
 
 ```python
 def on_start(self) -> None:
-    # Define bar type
     bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
 
-    # Register indicators before requesting history so they receive historical updates too
+    # Register indicators before requesting history
     self.register_indicator_for_bars(bar_type, self.my_indicator)
 
-    # Request historical data to initialize indicators
-    # These bars will be delivered to the on_historical_data(...) handler in strategy
-    # Subscribe to real-time bars as a callback to the request so the live stream
-    # only starts once history is loaded (see tip above)
-    # New live bars will be delivered to the on_bar(...) handler in strategy
+    # Start the live stream after the historical request completes
     self.request_bars(
         bar_type,
         start=start,
@@ -380,53 +353,49 @@ def on_start(self) -> None:
     )
 ```
 
-Required handlers in your strategy to receive the data:
+Define these strategy handlers to receive the data:
 
 ```python
 def on_historical_data(self, data):
-    # Processes historical Data objects from request_bars() or request_aggregated_bars()
-    # Note: indicators registered with register_indicator_for_bars
-    # are updated automatically with historical data
+    # Process historical data from either request method
     pass
 
 
 def on_bar(self, bar):
-    # Processes individual bars in real-time from subscribe_bars()
-    # Indicators registered with this bar type will update automatically and they will be updated before this handler is called
+    # Process individual bars from subscribe_bars()
     pass
 ```
 
 ### Historical data requests with aggregation
 
-When requesting historical bars for backtesting or initializing indicators, use
-`request_bars()` for standard bar types and `request_aggregated_bars()` for
-on-the-fly aggregation:
+Use `request_bars()` for standard historical bar types and `request_aggregated_bars()` for
+on‑the‑fly aggregation:
 
 ```python
 start = self.clock.utc_now() - timedelta(days=30)
 
-# Request raw 1-minute bars (aggregated from TradeTick objects as indicated by LAST price type)
+# Request external 1-minute bars
 self.request_bars(
     BarType.from_str("6EH4.XCME-1-MINUTE-LAST-EXTERNAL"),
     start=start,
 )
 
-# Request bars that are aggregated from historical trade ticks
+# Aggregate bars from historical trade ticks
 self.request_aggregated_bars(
     [BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL")],
     start=start,
 )
 
-# Request 5-minute bars aggregated from 1-minute bars
+# Aggregate 5-minute bars from 1-minute bars
 self.request_aggregated_bars(
     [BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")],
     start=start,
 )
 ```
 
-### Common pitfalls
+### Register indicators before requesting data
 
-**Register indicators before requesting data**: Ensure indicators are registered before requesting historical data so they get updated properly.
+Register indicators before requesting historical data so they receive those updates.
 
 ```python
 start = self.clock.utc_now() - timedelta(days=30)
@@ -435,36 +404,28 @@ start = self.clock.utc_now() - timedelta(days=30)
 self.register_indicator_for_bars(bar_type, self.ema)
 self.request_bars(bar_type, start=start)
 
-# Incorrect order
-self.request_bars(bar_type, start=start)  # Indicator won't receive historical data
+# Incorrect order: the indicator misses historical updates
+self.request_bars(bar_type, start=start)
 self.register_indicator_for_bars(bar_type, self.ema)
 ```
 
 ### Performance considerations
 
-Bar aggregators track OHLC prices via the fixed-point `Price` type. Threshold comparisons for
-tick and volume aggregators, including their imbalance and runs variants, use integer arithmetic,
-while value-based aggregators (value, value imbalance, and value runs) currently use `f64` for
-notional value and signed accumulation (these are being migrated to fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
-overhead:
+Bar aggregators track OHLC prices with the fixed‑point `Price` type. The aggregation method
+determines the additional work for each update:
 
-- **Time bars** are the most efficient for high-throughput data. The aggregator accumulates
-  OHLCV state per update; bar emission is driven by a timer rather than per-tick logic.
-- **Threshold bars** (tick, volume, value) add a lightweight counter or accumulator check per update.
+- **Time bars** accumulate OHLCV state per update and use a timer to emit bars.
+- **Threshold bars** (tick, volume, value) add a counter or accumulator check per update.
   Volume and value bars may split a single large trade across multiple bars when it exceeds the
   remaining threshold.
-- **Information-driven bars** (imbalance, runs) require tracking aggressor side and signed
-  accumulation per update. The overhead is slightly higher than threshold bars but still minimal.
-- **Renko bars** are price-driven and can emit multiple bars from a single large price move.
-  Otherwise the per-update cost is comparable to threshold bars.
-- **Composite bars** (bar-to-bar) are the most efficient way to produce higher-timeframe bars
-  when lower-timeframe bars are already available, as each input bar represents an already
-  aggregated period rather than a single tick.
+- **Information‑driven bars** (imbalance, runs) track aggressor side and signed accumulation.
+- **Renko bars** are price‑driven and can emit several bars from one large price move.
+- **Composite bars** process an aggregated source bar instead of each underlying tick.
 
 ### Time bar configuration
 
 Time bar behavior is controlled through `DataEngineConfig`. The following options
-apply to all time-based aggregation (millisecond through year):
+apply to all time‑based aggregation from milliseconds through years:
 
 | Option                              | Type   | Default       | Description                                                                                                                                     |
 | :---------------------------------- | :----- | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -487,66 +448,56 @@ config = DataEngineConfig(
 
 ## Timestamps
 
-The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events.
-These timestamps serve distinct purposes and help maintain precise timing information throughout the system:
+Many market data, order, and event objects carry two timestamps:
 
-- `ts_event`: UNIX timestamp (nanoseconds) representing when an event actually occurred.
-- `ts_init`: UNIX timestamp (nanoseconds) representing when Nautilus created the internal object representing that event.
+- `ts_event`: UNIX timestamp in nanoseconds when the event occurred.
+- `ts_init`: UNIX timestamp in nanoseconds when NautilusTrader initialized the object.
 
-### Examples
+### Typical meanings
 
-| **Event Type**   | **`ts_event`**                                        | **`ts_init`**                                                                                           |
-| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `TradeTick`      | Time when trade occurred at the exchange.             | Time when Nautilus received the trade data.                                                             |
-| `QuoteTick`      | Time when quote occurred at the exchange.             | Time when Nautilus received the quote data.                                                             |
-| `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update.                                                      |
-| `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars).          |
-| `DefiData`       | Time the block or pool event occurred.                | Time when Nautilus created the object from the chain data.                                              |
-| `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation.                                        |
-| `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation.                                |
-| `NewsEvent`      | Time when the news was published.                     | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
-| Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
+| Event type       | `ts_event`                             | `ts_init`                                        |
+| ---------------- | -------------------------------------- | ------------------------------------------------ |
+| `TradeTick`      | Trade time at the venue.               | Local object initialization time.                |
+| `QuoteTick`      | Quote time at the venue.               | Local object initialization time.                |
+| `OrderBookDelta` | Book update time at the venue.         | Local object initialization time.                |
+| `Bar`            | Configured bar open or close boundary. | Local aggregation or object initialization time. |
+| `DefiData`       | Block or pool event time.              | Object initialization time from the chain data.  |
+| `OrderFilled`    | Fill time at the venue.                | Local fill event initialization time.            |
+| `OrderCanceled`  | Cancellation time at the venue.        | Local cancellation event initialization time.    |
+| `NewsEvent`      | Publication time.                      | Local object initialization time.                |
+| Custom event     | Time defined by the custom event.      | Local object initialization time.                |
 
 :::note
-The `ts_init` field represents a more general concept than "time of reception" for events.
-It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
-This distinction is important because `ts_init` is not exclusive to "received events". It applies to any internal
-initialization process.
-
-For example, the `ts_init` field is also used for commands, where the concept of reception does not apply.
-This broader definition ensures consistent handling of initialization timestamps across various object types in the system.
+`ts_init` means initialization time, not always receipt time. Commands and internally generated
+events also use it even though NautilusTrader does not receive them from an external source.
 :::
 
 ### Latency analysis
 
-The dual timestamp system enables latency analysis within the platform:
-
-- Latency can be calculated as `ts_init - ts_event`.
-- This difference represents total system latency, including network transmission time, processing overhead, and any queueing delays.
-- It's important to remember that the clocks producing these timestamps are likely not synchronized.
+The difference `ts_init - ts_event` measures observed delay only when the clocks that produced both
+timestamps are synchronized. Otherwise, the result also includes clock offset and cannot represent
+system latency by itself.
 
 ### Environment-specific behavior
 
 #### Backtesting environment
 
 - Data is ordered by `ts_init` using a stable sort.
-- DeFi data (`DefiData`) breaks `ts_init` ties by on-chain position (block number, transaction
+- DeFi data (`DefiData`) breaks `ts_init` ties by on‑chain position (block number, transaction
   index, log index) so events from the same block replay in canonical chain order.
-- This behavior ensures deterministic processing order and simulates realistic system behavior, including latencies.
+- This ordering gives backtests deterministic replay.
 
 #### Live trading environment
 
-- The system processes data as it arrives to minimize latency and enable real-time decisions.
-  - For venue-sourced data, `ts_init` is typically when Nautilus creates the local object after receiving the update.
-  - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
-- We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
+Live trading processes data as it arrives. For venue‑sourced data, `ts_event` records the external
+event time, while `ts_init` usually records local object initialization after receipt.
 
 ### Other notes and considerations
 
 - For data from external sources, `ts_init` is usually the local receipt or normalization time,
   but clock skew means it is not guaranteed to be greater than or equal to `ts_event`.
-- For data created within Nautilus, `ts_init` and `ts_event` can be the same because the object is initialized at the same time the event happens.
-- Not every type with a `ts_init` field necessarily has a `ts_event` field. This reflects cases where:
+- For data created within NautilusTrader, `ts_init` and `ts_event` can match.
+- Some types with `ts_init` do not have `ts_event` because:
   - The initialization of an object happens at the same time as the event itself.
   - The concept of an external event time does not apply.
 
@@ -563,81 +514,78 @@ live). In live and sandbox modes a venue adapter creates a normalized data
 object and sends it through a channel; in backtests the engine feeds data
 directly. Either way the `DataEngine` stores it in the `Cache` (for cached
 types) and publishes it on the `MessageBus` to subscribed handlers.
-For a step-by-step trace with a sequence diagram, see
+For a step‑by‑step trace with a sequence diagram, see
 [Data flow: life of a quote tick](../architecture.md#data-flow-life-of-a-quote-tick).
 
-For users who need more flexibility, the platform also supports the creation of custom data types.
-For details on how to implement user-defined data types, see the [Custom Data](#custom-data) section below.
+See [Custom data](#custom-data) to define and publish another data type.
 
 ## Loading data
 
-NautilusTrader supports data loading and conversion for three main use cases:
+Load and convert data to:
 
-- Providing data for a `BacktestEngine` to run backtests.
-- Persisting the Nautilus-specific Parquet format for the data catalog via `ParquetDataCatalog.write_data(...)` to be later used with a `BacktestNode`.
-- For research purposes (to ensure data is consistent between research and backtesting).
+- Run backtests with `BacktestEngine`.
+- Persist NautilusTrader Parquet data with `ParquetDataCatalog.write_data(...)` for a
+  `BacktestNode`.
+- Use the same data in research and backtesting.
 
-Regardless of the destination, the process remains the same: converting diverse external data formats into Nautilus data structures.
+Each use case converts an external format into NautilusTrader data objects.
 
-To achieve this, two main components are necessary:
+The conversion uses:
 
-- A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object.
-- A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects.
+- A data loader for the source format, which returns a `pd.DataFrame` with the expected schema.
+- A data wrangler for the target type, which converts the frame into a `list[Data]`.
 
 ### Data loaders
 
-Data loader components are typically specific for the raw source/format and per integration. For instance, Binance order book data is stored in its raw CSV file form with
-an entirely different format to [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding/getting-started-with-dbn) files.
+Data loaders are specific to a source format. For example, Binance order book CSV data differs from
+[Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding/getting-started-with-dbn).
 
 ### Data wranglers
 
-Data wranglers are implemented per specific Nautilus data type, and can be found in the `nautilus_trader.persistence.wranglers` module.
-Common v1 wranglers include:
+The `nautilus_trader.persistence.wranglers` module provides wranglers for each NautilusTrader data
+type. Common v1 wranglers include:
 
 - `OrderBookDeltaDataWrangler`
 - `QuoteTickDataWrangler`
 - `TradeTickDataWrangler`
 - `BarDataWrangler`
 
-For Arrow v2 / PyO3 workflows, the v2 module also provides `OrderBookDepth10DataWranglerV2`.
+For Arrow v2 and PyO3 workflows, the v2 module also provides `OrderBookDepth10DataWranglerV2`.
 
 :::warning
-There are a number of **DataWrangler v2** components, which will take a `pd.DataFrame` typically
-with a different fixed width Nautilus Arrow v2 schema, and output PyO3 Nautilus objects which are only compatible with the new version
-of the Nautilus core, currently in development.
-
-**These PyO3 data objects are not compatible where v1 legacy Cython objects are expected (e.g., adding directly to a `BacktestEngine`).**
+DataWrangler v2 components accept the fixed‑width Arrow v2 schema and return PyO3 objects. These
+objects are not compatible with code that expects legacy v1 Cython objects, such as direct
+insertion into a v1 `BacktestEngine`.
 :::
 
 ### Fixed-point precision and raw values
 
-NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types for precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
+NautilusTrader uses fixed‑point arithmetic for `Price` and `Quantity`. Raw values must match the
+scale for their declared precision.
 
 #### Raw value requirements
 
-When constructing `Price` or `Quantity` using `from_raw()`, the raw value **must** be a valid multiple of the scale factor for the given precision. Valid raw values should come from:
+When constructing `Price` or `Quantity` with `from_raw()`, use a raw value from:
 
-- Accessing the `.raw` field of an existing value (e.g., `price.raw`).
-- Using the Nautilus fixed-point conversion functions.
-- Values from Nautilus-produced Arrow data.
+- The `.raw` field of an existing value, such as `price.raw`.
+- NautilusTrader fixed‑point conversion functions.
+- Values from Nautilus‑produced Arrow data.
 
 :::warning
-Raw values that are not valid multiples will cause a panic. The raw value must be divisible by `10^(FIXED_PRECISION - precision)` where `FIXED_PRECISION` is 9 (standard mode) or 16 (high-precision mode).
+For a precision below `FIXED_PRECISION`, the raw value must be divisible by
+`10^(FIXED_PRECISION - precision)`. Construction does not currently reject an invalid multiple,
+which can produce an incorrect value.
 :::
 
 #### Automatic raw value correction
 
-Catalog data can contain raw values with floating-point precision errors.
-This happens when raw values are produced with `int(value * FIXED_SCALAR)`
-instead of precision-aware conversion:
+Legacy catalog data written by earlier v2 wranglers can contain raw values with floating‑point
+errors. Those wranglers used `int(value * FIXED_SCALAR)` instead of precision‑aware conversion:
 
 ```python
 int(value * FIXED_SCALAR)  # Introduces floating-point errors
 round(value * 10**precision) * scale  # Correct precision-aware conversion
 ```
-
-For example, `int(0.67068 * 1e9)` produces `670680000000001` instead of
-the expected `670680000000000`.
 
 The Arrow decode path automatically corrects these values by rounding to
 the nearest valid multiple, so affected catalogs work without data migration.
@@ -648,14 +596,9 @@ This correction adds a small amount of overhead during data decoding.
 
 ### Transformation pipeline
 
-**Process flow**:
-
-1. Raw data (e.g., CSV) is input into the pipeline.
-2. A data-loading function processes the raw data and converts it into a `pd.DataFrame`.
-3. DataWrangler further processes the `pd.DataFrame` to generate a list of Nautilus objects.
-4. The Nautilus `list[Data]` is the output of the data loading process.
-
-The following diagram illustrates how raw data is transformed into Nautilus data structures:
+1. A data‑loading function reads raw data, such as CSV, into a `pd.DataFrame`.
+1. A data wrangler converts the frame into NautilusTrader objects.
+1. The pipeline returns a `list[Data]`.
 
 ```mermaid
 flowchart LR
@@ -669,12 +612,14 @@ flowchart LR
     wrangler --> output
 ```
 
-Concretely, this would involve:
+The loader normalizes the source format before the wrangler constructs domain objects.
 
-- `load_binance_order_book_deltas(...)` which reads Binance CSV files from disk and returns a `pd.DataFrame`.
-- `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`.
+For Binance order book deltas:
 
-The following example shows how to accomplish the above in Python:
+- `load_binance_order_book_deltas(...)` reads CSV files and returns a `pd.DataFrame`.
+- `OrderBookDeltaDataWrangler.process(...)` converts the frame into `list[OrderBookDelta]`.
+
+The following Python example applies both steps:
 
 ```python
 from nautilus_trader import TEST_DATA_DIR
@@ -691,60 +636,43 @@ df = load_binance_order_book_deltas(data_path)
 instrument = TestInstrumentProvider.btcusdt_binance()
 wrangler = OrderBookDeltaDataWrangler(instrument)
 
-# Process to a list `OrderBookDelta` Nautilus objects
+# Convert the frame into OrderBookDelta objects
 deltas = wrangler.process(df)
 ```
 
 ## Data catalog
 
-The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format. It is the primary data management system for both backtesting and live trading scenarios, providing efficient storage, retrieval, and streaming capabilities for market data.
+The data catalog stores NautilusTrader data in [Parquet](https://parquet.apache.org) files for
+backtesting, live trading, and research.
 
 ### Overview and architecture
 
-The NautilusTrader data catalog is built on a dual-backend architecture that combines the performance of Rust with the flexibility of Python:
+The data catalog uses two query backends:
 
 **Core components:**
 
-- **ParquetDataCatalog**: The main Python interface for data operations.
-- **Rust backend**: High-performance query engine for core data types (`OrderBookDelta`,
+- **`ParquetDataCatalog`**: The main Python interface for data operations.
+- **Rust backend**: Query engine for core data types (`OrderBookDelta`,
   `OrderBookDeltas`, `OrderBookDepth10`, `QuoteTick`, `TradeTick`, `Bar`,
-  `MarkPriceUpdate`) and registered same-binary Rust custom data.
-- **PyArrow backend**: Flexible fallback for custom data types and advanced filtering.
-- **fsspec integration**: Support for local and cloud storage (S3, GCS, Azure, etc.).
+  `MarkPriceUpdate`, `OptionGreeks`) and registered same‑binary Rust custom data.
+- **PyArrow backend**: Fallback for Python custom data types and PyArrow filters.
+- **fsspec integration**: Local and cloud storage access without an external database service.
 
-**Key benefits**:
-
-- **Performance**: Rust backend provides optimized query performance for core market data types.
-- **Flexibility**: PyArrow backend handles custom data types and complex filtering scenarios.
-- **Scalability**: Efficient compression and columnar storage reduce storage costs and improve I/O performance.
-- **Cloud native**: Built-in support for cloud storage providers through fsspec.
-- **No dependencies**: Self-contained solution requiring no external databases or services.
-
-**Storage format advantages:**
-
-- Superior compression ratio and read performance compared to CSV/JSON/HDF5.
-- Columnar storage enables efficient filtering and aggregation.
-- Schema evolution support for data model changes.
-- Cross-language compatibility (Python, Rust, Java, C++, etc.).
-
-The Arrow schemas used for the Parquet format are defined in two places: the Rust `model` and `persistence` crates for core market data types, and the Python `serialization/arrow/schema.py` module for additional types.
+Parquet provides compressed columnar storage and cross‑language access. The Rust `model` and
+`persistence` crates define Arrow schemas for core market data, while
+`serialization/arrow/schema.py` defines schemas for additional Python types.
 
 ### Initializing
 
-The data catalog can be initialized from a `NAUTILUS_PATH` environment variable, or by explicitly passing in a path like object.
+Initialize a catalog from a path‑like object, a URI, or the `NAUTILUS_PATH` environment variable.
 
 :::note[NAUTILUS_PATH environment variable]
-The `NAUTILUS_PATH` environment variable should point to the **root** directory containing your Nautilus data. The catalog will automatically append `/catalog` to this path.
-
-For example:
-
-- If `NAUTILUS_PATH=/home/user/trading_data`.
-- Then the catalog will be located at `/home/user/trading_data/catalog`.
-
-This is a common pattern when using `ParquetDataCatalog.from_env()` - make sure your `NAUTILUS_PATH` points to the parent directory, not the catalog directory itself.
+Set `NAUTILUS_PATH` to the parent of the catalog directory. For example,
+`NAUTILUS_PATH=/home/user/trading_data` makes `ParquetDataCatalog.from_env()` use
+`/home/user/trading_data/catalog`.
 :::
 
-The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
+Initialize a catalog for data already stored at a local path:
 
 ```python
 from pathlib import Path
@@ -753,16 +681,16 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 CATALOG_PATH = Path.cwd() / "catalog"
 
-# Create a new catalog instance
+# Initialize from an explicit path
 catalog = ParquetDataCatalog(CATALOG_PATH)
 
-# Alternative: Environment-based initialization
-catalog = ParquetDataCatalog.from_env()  # Uses NAUTILUS_PATH environment variable
+# Initialize from NAUTILUS_PATH
+catalog = ParquetDataCatalog.from_env()
 ```
 
 ### Filesystem protocols and storage options
 
-The catalog supports multiple filesystem protocols through fsspec integration, working across local and cloud storage systems.
+The catalog uses fsspec protocols for local and cloud storage.
 
 #### Supported filesystem protocols
 
@@ -802,7 +730,7 @@ catalog = ParquetDataCatalog(
 )
 ```
 
-**Azure Blob Storage :**
+**Azure Blob Storage:**
 
 `abfs` protocol
 
@@ -834,7 +762,7 @@ catalog = ParquetDataCatalog(
 
 #### URI-based initialization
 
-For convenience, you can use URI strings that automatically parse protocol and storage options:
+Use `from_uri()` to select the protocol from a URI:
 
 ```python
 # Local filesystem
@@ -852,7 +780,7 @@ catalog = ParquetDataCatalog.from_uri(
 
 ### Writing data
 
-Store data in the catalog using the `write_data()` method. All Nautilus built-in `Data` objects are supported, and any data which inherits from `Data` can be written.
+Use `write_data()` to store built‑in `Data` objects and registered custom `Data` subclasses.
 
 ```python
 # Write a list of data objects
@@ -871,15 +799,15 @@ catalog.write_data(bars, skip_disjoint_check=True)
 
 ### File naming and data organization
 
-The catalog automatically generates filenames based on the timestamp range of the data being
-written. Files are named using the pattern `{start_timestamp}_{end_timestamp}.parquet`, where
-each timestamp is an ISO 8601 value converted to a filename-safe form by replacing `:` and `.`
-with `-`.
+The catalog names files from their timestamp range with the pattern
+`{start_timestamp}_{end_timestamp}.parquet`. It converts each ISO 8601 timestamp to a filename‑safe
+form by replacing `:` and `.` with `-`.
 
 Data is organized in directories by data type and identifier
-(instrument ID, bar type, or custom identifier). Identifiers are made URI-safe by removing `/`:
+(instrument ID, bar type, or custom identifier). The catalog makes identifiers URI‑safe by
+removing `/`:
 
-```
+```text
 catalog/
 ├── data/
 │   ├── quote_ticks/
@@ -890,29 +818,18 @@ catalog/
 │           └── 2024-01-01T00-00-00-000000000Z_2024-01-01T23-59-59-999999999Z.parquet
 ```
 
-**Rust backend data types (enhanced performance):**
-
-The following data types use optimized Rust implementations:
-
-- `OrderBookDelta`.
-- `OrderBookDeltas`.
-- `OrderBookDepth10`.
-- `QuoteTick`.
-- `TradeTick`.
-- `Bar`.
-- `MarkPriceUpdate`.
-
 :::warning
 By default, overlapping writes raise a `ValueError` to maintain data integrity.
-Use `skip_disjoint_check=True` in `write_data()` to bypass this check when needed.
+Set `skip_disjoint_check=True` only when the overlap is intentional.
 :::
 
 ### Reading data
 
-Use the `query()` method to read data back from the catalog:
+Use `query()` to read data from the catalog:
 
 ```python
-from nautilus_trader.model import QuoteTick, TradeTick
+from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import TradeTick
 
 # Query quote ticks for a specific instrument and time range
 quotes = catalog.query(
@@ -931,30 +848,30 @@ trades = catalog.query(
 )
 ```
 
-### `BacktestDataConfig` - data specification for backtests
+### `BacktestDataConfig`: backtest data
 
-The `BacktestDataConfig` class is the primary mechanism for specifying data requirements before a backtest starts. It defines what data should be loaded from the catalog and how it should be filtered and processed during the backtest execution.
+`BacktestDataConfig` defines the catalog data that a `BacktestNode` loads for one run.
 
 #### Core parameters
 
 **Required parameters:**
 
 - `catalog_path`: Path to the data catalog directory.
-- `data_cls`: The data type class (e.g., QuoteTick, TradeTick, OrderBookDelta, Bar).
+- `data_cls`: Data type class, such as `QuoteTick`, `TradeTick`, `OrderBookDelta`, or `Bar`.
 
 **Optional parameters:**
 
-- `catalog_fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', etc.).
-- `catalog_fs_storage_options`: Storage-specific options (credentials, region, etc.).
-- `catalog_fs_rust_storage_options`: Storage-specific options for the Rust backend.
+- `catalog_fs_protocol`: Filesystem protocol, such as `file`, `s3`, or `gcs`.
+- `catalog_fs_storage_options`: Storage‑specific options, such as credentials or region.
+- `catalog_fs_rust_storage_options`: Storage‑specific options for the Rust backend.
 - `instrument_id`: Specific instrument to load data for.
-- `instrument_ids`: List of instruments (alternative to single instrument_id).
+- `instrument_ids`: List of instruments instead of one `instrument_id`.
 - `start_time`: Start time for data filtering (ISO string or UNIX nanoseconds).
 - `end_time`: End time for data filtering (ISO string or UNIX nanoseconds).
 - `filter_expr`: Additional PyArrow filter expressions.
 - `client_id`: Client ID for custom data types.
 - `metadata`: Additional metadata for data queries.
-- `bar_spec`: Bar specification for bar data (e.g., `"1-MINUTE-LAST"`). When combined
+- `bar_spec`: Bar specification for bar data, such as `"1-MINUTE-LAST"`. When combined
   with `instrument_id` or `instrument_ids`, this builds `...-EXTERNAL` bar identifiers.
 - `bar_types`: Explicit list of full bar types. Use this for `INTERNAL` bars or composite bars.
 - `optimize_file_loading`: Load directories instead of individual files when supported.
@@ -965,7 +882,8 @@ The `BacktestDataConfig` class is the primary mechanism for specifying data requ
 
 ```python
 from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.model import QuoteTick, InstrumentId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import QuoteTick
 
 data_config = BacktestDataConfig(
     catalog_path="/path/to/catalog",
@@ -988,7 +906,7 @@ data_config = BacktestDataConfig(
 )
 ```
 
-**Loading Bar Data:**
+**Loading bar data:**
 
 ```python
 data_config = BacktestDataConfig(
@@ -1003,7 +921,7 @@ data_config = BacktestDataConfig(
 
 #### Advanced configuration examples
 
-**Cloud Storage with Custom Filtering:**
+**Cloud storage with custom filtering:**
 
 ```python
 data_config = BacktestDataConfig(
@@ -1021,7 +939,7 @@ data_config = BacktestDataConfig(
 )
 ```
 
-**Custom Data with Client ID:**
+**Custom data with a client ID:**
 
 ```python
 data_config = BacktestDataConfig(
@@ -1036,12 +954,12 @@ data_config = BacktestDataConfig(
 
 #### Integration with BacktestRunConfig
 
-The `BacktestDataConfig` objects are integrated into the backtesting framework through `BacktestRunConfig`:
+Pass the data configurations to `BacktestRunConfig`:
 
 ```python
-from nautilus_trader.config import BacktestRunConfig, BacktestVenueConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
 
-# Define multiple data configurations
 data_configs = [
     BacktestDataConfig(
         catalog_path="/path/to/catalog",
@@ -1059,10 +977,9 @@ data_configs = [
     ),
 ]
 
-# Create backtest run configuration
 run_config = BacktestRunConfig(
     venues=[BacktestVenueConfig(name="SIM", oms_type="HEDGING")],
-    data=data_configs,  # List of data configurations
+    data=data_configs,
     start="2024-01-01T00:00:00Z",
     end="2024-01-02T00:00:00Z",
 )
@@ -1072,41 +989,33 @@ run_config = BacktestRunConfig(
 
 When a backtest runs, the `BacktestNode` processes each `BacktestDataConfig`:
 
-1. **Catalog Loading**: Creates a `ParquetDataCatalog` instance from the config.
-2. **Query Construction**: Builds query parameters from config attributes.
-3. **Data Retrieval**: Executes catalog queries using the appropriate backend.
-4. **Instrument Loading**: Loads instrument definitions if needed.
-5. **Engine Integration**: Adds data to the backtest engine with proper sorting.
+1. Create a `ParquetDataCatalog` from the configuration.
+1. Build the query from the configuration fields.
+1. Query the selected backend.
+1. Load required instrument definitions.
+1. Sort the data and add it to the backtest engine.
 
-The system automatically handles:
+### `DataCatalogConfig`: on-the-fly data loading
 
-- Instrument ID resolution and validation.
-- Data type validation and conversion.
-- Memory-efficient streaming for large datasets.
-- Error handling and logging.
-
-### DataCatalogConfig - on-the-fly data loading
-
-The `DataCatalogConfig` class provides configuration for on-the-fly data loading scenarios, particularly useful for backtests where the number of possible instruments is vast,
-Unlike `BacktestDataConfig` which pre-specifies data for backtests, `DataCatalogConfig` enables flexible catalog access during runtime.
-Catalogs defined this way can also be used for requesting historical data.
+`DataCatalogConfig` gives runtime access to a catalog, including historical data requests.
+Use it instead of `BacktestDataConfig` when the run cannot list all required data in advance.
 
 #### Core parameters
 
-**Required Parameters:**
+**Required parameters:**
 
 - `path`: Path to the data catalog directory.
 
-**Optional Parameters:**
+**Optional parameters:**
 
-- `fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', 'azure', etc.).
-- `fs_storage_options`: Protocol-specific storage options.
-- `fs_rust_storage_options`: Protocol-specific storage options for the Rust backend.
+- `fs_protocol`: Filesystem protocol, such as `file`, `s3`, `gcs`, or `az`.
+- `fs_storage_options`: Protocol‑specific storage options.
+- `fs_rust_storage_options`: Protocol‑specific storage options for the Rust backend.
 - `name`: Optional name identifier for the catalog configuration.
 
 #### Basic usage examples
 
-**Local Catalog Configuration:**
+**Local catalog configuration:**
 
 ```python
 from nautilus_trader.persistence.config import DataCatalogConfig
@@ -1115,7 +1024,6 @@ catalog_config = DataCatalogConfig(
     path="/path/to/catalog", fs_protocol="file", name="local_market_data"
 )
 
-# Convert to catalog instance
 catalog = catalog_config.as_catalog()
 ```
 
@@ -1137,31 +1045,31 @@ catalog_config = DataCatalogConfig(
 
 #### Integration with live trading
 
-`DataCatalogConfig` is commonly used in live trading configurations for historical data access:
+Add `DataCatalogConfig` to a live node configuration for historical data access:
 
 ```python
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.persistence.config import DataCatalogConfig
 
-# Configure catalog for live system
 catalog_config = DataCatalogConfig(
     path="/data/nautilus/catalog", fs_protocol="file", name="historical_data"
 )
 
-# Use in trading node configuration
 node_config = TradingNodeConfig(
     # ... other configurations
-    catalogs=[catalog_config],  # Enable historical data access
+    catalogs=[catalog_config],
 )
 ```
 
 #### Streaming configuration
 
-For streaming data to catalogs during live trading or backtesting, use `StreamingConfig`:
+Use `StreamingConfig` to stream live or backtest data to a catalog:
 
 ```python
-from nautilus_trader.persistence.config import StreamingConfig, RotationMode
 import pandas as pd
+
+from nautilus_trader.persistence.config import RotationMode
+from nautilus_trader.persistence.config import StreamingConfig
 
 streaming_config = StreamingConfig(
     catalog_path="/path/to/streaming/catalog",
@@ -1176,7 +1084,7 @@ streaming_config = StreamingConfig(
 
 #### Use cases
 
-**Historical Data Analysis:**
+**Historical data analysis:**
 
 - Load historical data during live trading for strategy calculations.
 - Access reference data for instrument lookups.
@@ -1191,65 +1099,59 @@ streaming_config = StreamingConfig(
 **Research and development:**
 
 - Interactive data exploration in Jupyter notebooks.
-- Ad-hoc analysis and backtesting.
+- Ad hoc analysis and backtesting.
 - Data quality validation and monitoring.
 
 ### Query system and dual backend architecture
 
-The catalog's query system uses a dual-backend architecture that selects the query engine based on data type and query parameters.
+The catalog selects a query backend from the data type and query parameters.
 
 #### Backend selection logic
 
-**Rust backend (high performance):**
+| Backend | Data types                                                                                | Selected when                           |
+| ------- | ----------------------------------------------------------------------------------------- | --------------------------------------- |
+| Rust    | Core types and registered same‑binary Rust custom data.                                   | `files` is unset.                       |
+| PyArrow | Other custom data, plus any type supported by the Python serialization and schema system. | The type requires it or `files` is set. |
 
-- **Supported Types**: OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick, Bar, MarkPriceUpdate.
-- **Conditions**: Used when `files` parameter is None (automatic file discovery).
-- **Benefits**: Optimized performance, memory efficiency, native Arrow integration.
-  Registered same-binary Rust custom data types can also use this path.
-
-**PyArrow backend (flexible):**
-
-- **Supported Types**: All data types including custom data classes.
-- **Conditions**: Used for custom data types or when `files` parameter is specified.
-- **Benefits**: Advanced filtering, custom data support, complex query expressions.
+Core Rust query types include `OrderBookDelta`, `OrderBookDeltas`, `OrderBookDepth10`, `QuoteTick`,
+`TradeTick`, `Bar`, `MarkPriceUpdate`, and `OptionGreeks`.
 
 #### Query methods and parameters
 
-**Core query parameters:**
-
 ```python
 catalog.query(
-    data_cls=QuoteTick,  # Data type to query
-    identifiers=["EUR/USD.SIM"],  # Instrument identifiers
-    start="2024-01-01T00:00:00Z",  # Start time (various formats supported)
-    end="2024-01-02T00:00:00Z",  # End time
-    files=None,  # Leave unset for automatic file discovery
+    data_cls=QuoteTick,
+    identifiers=["EUR/USD.SIM"],
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z",
+    files=None,
 )
 ```
 
-- `where=` passes a DataFusion SQL predicate to Rust-backed queries.
-- `filter_expr=` passes a parsed PyArrow dataset expression to PyArrow-backed queries.
+- `where=` passes a DataFusion SQL predicate to Rust‑backed queries.
+- `filter_expr=` passes a parsed PyArrow dataset expression to PyArrow‑backed queries.
 
 **Time format support:**
 
 - ISO 8601 strings: `"2024-01-01T00:00:00Z"`.
-- UNIX nanoseconds: `1704067200000000000` (or ISO format: `"2024-01-01T00:00:00Z"`).
-- Pandas Timestamps: `pd.Timestamp("2024-01-01", tz="UTC")`.
-- Python datetime objects (timezone-aware recommended).
+- UNIX nanoseconds: `1704067200000000000`.
+- pandas timestamps: `pd.Timestamp("2024-01-01", tz="UTC")`.
+- Timezone‑aware Python `datetime` objects.
 
 **Filtering notes:**
 
-- Use `where=` for Rust-backed built-in market data queries.
-- Use `filter_expr=` for PyArrow-backed queries, including custom data and queries
+- Use `where=` for Rust‑backed built‑in market data queries.
+- Use `filter_expr=` for PyArrow‑backed queries, including custom data and queries
   forced onto the PyArrow path with `files=`.
 
 ### Catalog operations
 
-The catalog provides several operation functions for maintaining and organizing data files. These operations help optimize storage, improve query performance, and maintain data integrity.
+Catalog operations rename, consolidate, or delete data files.
 
 #### Reset file names
 
-Reset parquet file names to match their actual content timestamps. This ensures filename-based filtering works correctly.
+Reset Parquet file names to match their content timestamps so filename‑based filtering remains
+accurate.
 
 **Reset all files in catalog:**
 
@@ -1270,7 +1172,7 @@ catalog.reset_data_file_names(TradeTick, "BTC/USD.BINANCE")
 
 #### Consolidate catalog
 
-Combine multiple small parquet files into larger files to improve query performance and reduce storage overhead.
+Combine small Parquet files to reduce file count and query overhead.
 
 **Consolidate entire catalog:**
 
@@ -1298,7 +1200,7 @@ catalog.consolidate_data(
 
 #### Consolidate catalog by period
 
-Split data files into fixed time periods for standardized file organization.
+Split data files into fixed periods.
 
 **Consolidate entire catalog by period:**
 
@@ -1332,7 +1234,7 @@ catalog.consolidate_data_by_period(
 
 #### Delete data range
 
-Remove data within a specified time range for specific data types and instruments. This operation permanently deletes data and handles file intersections intelligently.
+Delete data within a time range, optionally limited to one data type and instrument.
 
 **Delete entire catalog range:**
 
@@ -1360,14 +1262,16 @@ catalog.delete_data_range(
 ```
 
 :::warning
-Delete operations permanently remove data and cannot be undone. Files that partially overlap the deletion range are split to preserve data outside the range.
+Delete operations cannot be undone. The catalog splits partially overlapping files to preserve data
+outside the range.
 :::
 
 ### Feather streaming and conversion
 
-The catalog supports streaming data to temporary feather files during backtests, which can then be converted to permanent parquet format for efficient querying.
+During a backtest, the catalog can stream data to temporary Feather files and convert them to
+Parquet for later queries.
 
-**Example: option greeks streaming**
+**Option Greeks streaming:**
 
 ```python
 from option_trader.greeks import GreeksData
@@ -1399,56 +1303,37 @@ greeks_data = catalog.query(
 )
 ```
 
-### Catalog summary
-
-The NautilusTrader data catalog provides market data management:
-
-**Core features**:
-
-- **Dual Backend**: Rust performance + Python flexibility.
-- **Multi-Protocol**: Local, S3, GCS, Azure storage.
-- **Streaming**: Feather -> Parquet conversion pipeline.
-- **Operations**: Reset file names, consolidate data, period-based organization.
-
-**Key use cases**:
-
-- **Backtesting**: Pre-configured data loading via BacktestDataConfig.
-- **Live Trading**: On-demand data access via DataCatalogConfig.
-- **Maintenance**: File consolidation and organization operations.
-- **Research**: Interactive querying and analysis.
-
 ## Data migrations
 
-NautilusTrader defines an internal data format specified in the `nautilus_model` crate.
-These models are serialized into Arrow record batches and written to Parquet files.
-Nautilus backtesting is most efficient when using these Nautilus-format Parquet files.
+The `nautilus_model` crate defines the internal data format. NautilusTrader serializes these models
+as Arrow record batches and stores them in Parquet files.
 
-However, migrating the data model between [precision modes](../../getting_started/installation.md#precision-mode) and schema changes can be challenging.
-This guide explains how to handle data migrations using our utility tools.
+Use the migration utilities when changing
+[precision modes](../../getting_started/installation.md#precision-mode) or schemas.
 
 ### Migration tools
 
-The `nautilus_persistence` crate provides two key utilities:
+The `nautilus_persistence` crate provides two utilities:
 
 #### `to_json`
 
-Converts Parquet files to JSON while preserving metadata:
+`to_json` converts Parquet files to JSON and preserves their metadata:
 
 - Creates two files:
 
-  - `<input>.json`: Contains the deserialized data
-  - `<input>.metadata.json`: Contains schema metadata and row group configuration
+  - `<input>.json`: Deserialized data.
+  - `<input>.metadata.json`: Schema metadata and row group configuration.
 
 - Automatically detects data type from filename:
 
-  - `OrderBookDelta` (contains "deltas" or "order_book_delta")
-  - `QuoteTick` (contains "quotes" or "quote_tick")
-  - `TradeTick` (contains "trades" or "trade_tick")
-  - `Bar` (contains "bars")
+  - `OrderBookDelta`: File name contains `deltas` or `order_book_delta`.
+  - `QuoteTick`: File name contains `quotes` or `quote_tick`.
+  - `TradeTick`: File name contains `trades` or `trade_tick`.
+  - `Bar`: File name contains `bars`.
 
 #### `to_parquet`
 
-Converts JSON back to Parquet format:
+`to_parquet` converts JSON back to Parquet:
 
 - Reads both the data JSON and metadata JSON files.
 - Preserves row group sizes from original metadata.
@@ -1457,83 +1342,77 @@ Converts JSON back to Parquet format:
 
 ### Migration process
 
-The following migration examples both use trades data (you can also migrate the other data types in the same way).
-All commands should be run from the root of the `persistence` crate directory.
+These examples use trade data. Run each command from `crates/persistence`.
 
 #### Migrating from standard-precision (64-bit) to high-precision (128-bit)
 
-This example describes a scenario where you want to migrate from standard-precision schema to high-precision schema.
+Convert a standard‑precision schema to a high‑precision schema:
 
 :::note
-If you're migrating from a catalog that used the `Int64` and `UInt64` Arrow data types for prices and sizes,
-be sure to check out commit [e284162](https://github.com/nautechsystems/nautilus_trader/commit/e284162cf27a3222115aeb5d10d599c8cf09cf50)
-**before** compiling the code that writes the initial JSON.
+For catalogs that used the `Int64` and `UInt64` Arrow data types for prices and sizes, build the
+initial `to_json` conversion from
+[commit `e284162`](https://github.com/nautechsystems/nautilus_trader/commit/e284162cf27a3222115aeb5d10d599c8cf09cf50).
 :::
 
-**1. Convert from standard-precision Parquet to JSON**:
+1. Convert standard‑precision Parquet to JSON:
 
-```bash
-cargo run --bin to_json trades.parquet
-```
+   ```bash
+   cargo run --features python --bin to_json -- trades.parquet
+   ```
 
-This will create `trades.json` and `trades.metadata.json` files.
+   This creates `trades.json` and `trades.metadata.json`.
 
-**2. Convert from JSON to high-precision Parquet**:
+1. Convert the JSON to high‑precision Parquet:
 
-Add the `--features high-precision` flag to write data as high-precision (128-bit) schema Parquet.
+   ```bash
+   cargo run --features "python high-precision" --bin to_parquet -- trades.json
+   ```
 
-```bash
-cargo run --features high-precision --bin to_parquet trades.json
-```
-
-This will create a `trades.parquet` file with high-precision schema data.
+   This creates `trades.parquet` with the high‑precision schema.
 
 #### Migrating schema changes
 
-This example describes a scenario where you want to migrate from one schema version to another.
+Convert data from one schema version to another:
 
-**1. Convert from old schema Parquet to JSON**:
+1. Convert the old‑schema Parquet file to JSON:
 
-Add the `--features high-precision` flag if the source data uses a high-precision (128-bit) schema.
+   For a high‑precision source, replace `--features python` with
+   `--features "python high-precision"`.
 
-```bash
-cargo run --bin to_json trades.parquet
-```
+   ```bash
+   cargo run --features python --bin to_json -- trades.parquet
+   ```
 
-This will create `trades.json` and `trades.metadata.json` files.
+   This creates `trades.json` and `trades.metadata.json`.
 
-**2. Switch to new schema version**:
+1. Switch to the new schema version:
 
-```bash
-git checkout <new-version>
-```
+   ```bash
+   git checkout <new-version>
+   ```
 
-**3. Convert from JSON back to new schema Parquet**:
+1. Convert the JSON to Parquet with the new schema:
 
-```bash
-cargo run --features high-precision --bin to_parquet trades.json
-```
+   ```bash
+   cargo run --features "python high-precision" --bin to_parquet -- trades.json
+   ```
 
-This will create a `trades.parquet` file with the new schema.
+   This creates `trades.parquet` with the new schema.
 
 ### Best practices
 
-- Always test migrations with a small dataset first.
-- Maintain backups of original files.
+- Test migrations with a small dataset first.
+- Back up the original files.
 - Verify data integrity after migration.
 - Perform migrations in a staging environment before applying them to production data.
 
 ## Custom data
 
-Due to the modular nature of the Nautilus design, it is possible to set up systems
-with very flexible data streams, including custom user-defined data types. This
-guide covers some possible use cases for this functionality.
-
-It's possible to create custom data types within the Nautilus system. First you
-will need to define your data by subclassing from `Data`.
+Define a custom data type by subclassing `Data`. Custom types can flow through backtesting and live
+systems, use the message bus, and persist in the cache or catalog.
 
 :::info
-As `Data` holds no state, it is not strictly necessary to call `super().__init__()`.
+`Data` holds no state, so a subclass does not need to call `super().__init__()`.
 :::
 
 ```python
@@ -1541,11 +1420,7 @@ from nautilus_trader.core import Data
 
 
 class MyDataPoint(Data):
-    """
-    This is an example of a user-defined data class, inheriting from the base class `Data`.
-
-    The fields `label`, `x`, `y`, and `z` in this class are examples of arbitrary user data.
-    """
+    """Example custom data with arbitrary user fields."""
 
     def __init__(
         self,
@@ -1588,25 +1463,15 @@ class MyDataPoint(Data):
         return self._ts_init
 ```
 
-The `Data` abstract base class acts as a contract within the system and requires two properties
-for all types of data: `ts_event` and `ts_init`. These represent the UNIX nanosecond timestamps
-for when the event occurred and when the object was initialized, respectively.
-
-The recommended approach to satisfy the contract is to assign `ts_event` and `ts_init`
-to backing fields, and then implement the `@property` for each as shown above
-(for completeness, the docstrings are copied from the `Data` base class).
+The `Data` abstract base class requires `ts_event` and `ts_init` properties. Store both timestamps
+in backing fields and expose them through properties, as shown above.
 
 :::info
-These timestamps enable Nautilus to correctly order data streams for backtests
-using monotonically increasing `ts_init` UNIX nanoseconds.
+Backtests order the data stream by `ts_init`.
 :::
 
-We can now work with this data type for backtesting and live trading. For instance,
-we could now create an adapter which is able to parse and create objects of this
-type - and send them back to the `DataEngine` for consumption by subscribers.
-
-You can publish a custom data type within your actor/strategy using the message bus
-in the following way:
+An adapter can construct this type and send it to the `DataEngine` for subscribers. An actor or
+strategy can publish it directly:
 
 ```python
 self.publish_data(
@@ -1615,11 +1480,9 @@ self.publish_data(
 )
 ```
 
-The `metadata` dictionary optionally adds more granular information that is used in the
-topic name to publish data with the message bus.
+The optional `metadata` dictionary adds fields to the message bus topic.
 
-Extra metadata information can also be passed to a `BacktestDataConfig` configuration object in order to
-enrich and describe custom data objects used in a backtesting context:
+Pass the same metadata to `BacktestDataConfig` for backtest data:
 
 ```python
 from nautilus_trader.config import BacktestDataConfig
@@ -1631,7 +1494,7 @@ data_config = BacktestDataConfig(
 )
 ```
 
-You can subscribe to custom data types within your actor/strategy in the following way:
+Subscribe to the custom type from an actor or strategy:
 
 ```python
 self.subscribe_data(
@@ -1640,24 +1503,21 @@ self.subscribe_data(
 )
 ```
 
-The `client_id` provides an identifier to route the data subscription to a specific client.
+`client_id` routes the subscription to a specific client.
 
-This will result in your actor/strategy passing these received `MyDataPoint`
-objects to your `on_data` method. You will need to check the type, as this
-method acts as a flexible handler for all custom data.
+NautilusTrader passes each received object to `on_data()`. Check its type because the handler
+receives all custom data:
 
 ```python
 def on_data(self, data: Data) -> None:
-    # First check the type of data
     if isinstance(data, MyDataPoint):
-        # Do something with the data
+        ...
 ```
 
 ### Publishing and receiving signal data
 
-Here is an example of publishing and receiving signal data using the `MessageBus` from an actor or strategy.
-A signal is an automatically generated custom data identified by a name containing only one value of a basic type
-(str, float, int, bool or bytes).
+A signal is a generated custom data type with a name and one `str`, `float`, `int`, `bool`, or
+`bytes` value. Publish and subscribe to a signal from an actor or strategy:
 
 ```python
 self.publish_signal("signal_name", value, ts_event)
@@ -1668,23 +1528,23 @@ def on_signal(self, signal):
     print("Signal", signal)
 ```
 
-### Option greeks example
+### Option Greeks example
 
-This example demonstrates how to create a custom data type for option Greeks, specifically the delta.
-By following these steps, you can create custom data types, subscribe to them, publish them, and store
-them in the `Cache` or `ParquetDataCatalog` for efficient retrieval.
+The following custom type carries option delta data and supports message bus, cache, and catalog
+storage:
 
 ```python
+from __future__ import annotations
+
 import msgspec
+import pyarrow as pa
+
 from nautilus_trader.core import Data
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model import DataType
-from nautilus_trader.serialization.base import register_serializable_type
-from nautilus_trader.serialization.arrow.serializer import register_arrow
-import pyarrow as pa
-
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt, format_iso8601
+from nautilus_trader.serialization.arrow.serializer import register_arrow
+from nautilus_trader.serialization.base import register_serializable_type
 
 
 class GreeksData(Data):
@@ -1700,18 +1560,21 @@ class GreeksData(Data):
         self._ts_init = ts_init
         self.delta = delta
 
-    def __repr__(self):
-        return f"GreeksData(ts_init={unix_nanos_to_iso8601(self._ts_init)}, instrument_id={self.instrument_id}, delta={self.delta:.2f})"
+    def __repr__(self) -> str:
+        return (
+            f"GreeksData(ts_init={unix_nanos_to_iso8601(self._ts_init)}, "
+            f"instrument_id={self.instrument_id}, delta={self.delta:.2f})"
+        )
 
     @property
-    def ts_event(self):
+    def ts_event(self) -> int:
         return self._ts_event
 
     @property
-    def ts_init(self):
+    def ts_init(self) -> int:
         return self._ts_init
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {
             "instrument_id": self.instrument_id.value,
             "ts_event": self._ts_event,
@@ -1720,30 +1583,30 @@ class GreeksData(Data):
         }
 
     @classmethod
-    def from_dict(cls, data: dict):
-        return GreeksData(
+    def from_dict(cls, data: dict) -> GreeksData:
+        return cls(
             InstrumentId.from_str(data["instrument_id"]),
             data["ts_event"],
             data["ts_init"],
             data["delta"],
         )
 
-    def to_bytes(self):
+    def to_bytes(self) -> bytes:
         return msgspec.msgpack.encode(self.to_dict())
 
     @classmethod
-    def from_bytes(cls, data: bytes):
+    def from_bytes(cls, data: bytes) -> GreeksData:
         return cls.from_dict(msgspec.msgpack.decode(data))
 
-    def to_catalog(self):
+    def to_catalog(self) -> pa.RecordBatch:
         return pa.RecordBatch.from_pylist([self.to_dict()], schema=GreeksData.schema())
 
     @classmethod
-    def from_catalog(cls, table: pa.Table):
-        return [GreeksData.from_dict(d) for d in table.to_pylist()]
+    def from_catalog(cls, table: pa.Table) -> list[GreeksData]:
+        return [cls.from_dict(data) for data in table.to_pylist()]
 
     @classmethod
-    def schema(cls):
+    def schema(cls) -> pa.Schema:
         return pa.schema(
             {
                 "instrument_id": pa.string(),
@@ -1756,7 +1619,7 @@ class GreeksData(Data):
 
 #### Publishing and receiving data
 
-Here is an example of publishing and receiving data using the `MessageBus` from an actor or strategy:
+Register the type, then publish and subscribe from an actor or strategy:
 
 ```python
 register_serializable_type(GreeksData, GreeksData.to_dict, GreeksData.from_dict)
@@ -1775,9 +1638,9 @@ def on_data(self, data):
         print("Data", data)
 ```
 
-#### Writing and reading data using the cache
+#### Cache storage
 
-Here is an example of writing and reading data using the `Cache` from an actor or strategy:
+Write and read serialized custom data through the `Cache`:
 
 ```python
 def greeks_key(instrument_id: InstrumentId):
@@ -1792,10 +1655,9 @@ def greeks_from_cache(self, instrument_id: InstrumentId):
     return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
 ```
 
-#### Writing and reading data using a catalog
+#### Catalog storage
 
-For streaming custom data to feather files or writing it to parquet files in a catalog
-(`register_arrow` needs to be used):
+Register the Arrow schema before streaming custom data to Feather or writing it to Parquet:
 
 ```python
 register_arrow(GreeksData, GreeksData.schema(), GreeksData.to_catalog, GreeksData.from_catalog)
@@ -1809,12 +1671,12 @@ catalog.write_data([GreeksData()])
 
 ### Creating a custom data class automatically
 
-The `@customdataclass` decorator enables the creation of a custom data class with default
-implementations for all the features described above.
-
-Each method can also be overridden if needed. Here is an example of its usage:
+The `@customdataclass` decorator generates the timestamp, serialization, and Arrow methods shown
+above. Override a generated method only when the defaults do not fit the type:
 
 ```python
+from nautilus_trader.core import Data
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model.custom import customdataclass
 
 
@@ -1834,10 +1696,9 @@ GreeksTestData(
 
 #### Python-only custom data with the PyO3 catalog
 
-To use custom data with the Rust-backed catalog (`ParquetDataCatalog` from `nautilus_pyo3`), use the
-`@customdataclass_pyo3()` decorator instead of `@customdataclass`. This adds the methods the Rust catalog
-expects (JSON and Arrow IPC serialization). After defining your class, register it once. You can pass either
-the **type** (recommended) or a **sample instance**:
+For custom data with the Rust‑backed `ParquetDataCatalog` from `nautilus_pyo3`, use
+`@customdataclass_pyo3()` instead of `@customdataclass`. It adds JSON and Arrow IPC methods. Register
+the class once after defining it:
 
 ```python
 from nautilus_trader.core.nautilus_pyo3 import ParquetDataCatalog
@@ -1854,7 +1715,7 @@ class MarketTickPython:
     volume: int = 0
 
 
-# Register by type (no instance needed; call once, e.g. at startup)
+# Register once at startup
 register_custom_data_class(MarketTickPython)
 
 catalog = ParquetDataCatalog("/path/to/catalog")
@@ -1874,13 +1735,8 @@ See `nautilus_trader.model.custom.customdataclass_pyo3` for details.
 
 #### Custom data type stub
 
-For better IDE code suggestions, you can create a `.pyi`
-stub file with the proper constructor signature for your custom data types as well as type hints for attributes.
-This is particularly useful when the constructor is dynamically generated at runtime, as it allows the IDE to recognize
-and provide suggestions for the class's methods and attributes.
-
-For instance, if you have a custom data class defined in `greeks.py`, you can create a corresponding `greeks.pyi` file
-with the following constructor signature:
+For a runtime‑generated constructor, add a `.pyi` file so IDEs can resolve the signature and
+attributes. A custom type in `greeks.py` can use this `greeks.pyi` stub:
 
 ```python
 from nautilus_trader.core import Data
@@ -1897,13 +1753,13 @@ class GreeksData(Data):
         ts_init: int = 0,
         instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX"),
         delta: float = 0.0,
-    ) -> GreeksData: ...
+    ) -> None: ...
 ```
 
 ## Related guides
 
-- [Instruments](../instruments/) - Financial instruments referenced by data.
-- [Options](../options.md) - Option instruments, chain subscriptions, and strike filtering.
-- [Greeks](../greeks.md) - Venue-provided and locally computed option Greeks.
-- [Cache](../cache.md) - Data storage and retrieval.
-- [Adapters](../adapters.md) - Data sources and connectivity.
+- [Instruments](../instruments/): Financial instruments referenced by data.
+- [Options](../options.md): Option instruments, chain subscriptions, and strike filtering.
+- [Greeks](../greeks.md): Venue‑provided and locally computed option Greeks.
+- [Cache](../cache.md): Data storage and retrieval.
+- [Adapters](../adapters.md): Data sources and connectivity.
