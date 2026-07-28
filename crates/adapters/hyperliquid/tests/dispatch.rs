@@ -16,7 +16,7 @@
 //! Integration tests for the Hyperliquid WebSocket execution dispatch.
 //!
 //! Covers the two-tier routing contract from
-//! `docs/developer_guide/adapters.md` lines 1232-1296 plus the GH-3827
+//! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates` plus the GH-3827
 //! cancel-replace handling:
 //!
 //! - Tracked orders emit typed [`OrderEventAny`] events (`OrderAccepted`,

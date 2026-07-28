@@ -16,8 +16,8 @@
 //! Integration tests for the Kraken Futures WebSocket execution dispatch.
 //!
 //! Validates the two-tier routing contract from
-//! `docs/developer_guide/adapters.md` lines 1232-1296 for the futures product:
-//! tracked orders (registered at submission via `OrderIdentity`) emit typed
+//! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates`:
+//! tracked orders for the futures product (registered at submission via `OrderIdentity`) emit typed
 //! [`OrderEventAny`] events; untracked / external orders fall back to
 //! [`ExecutionReport`] variants.
 

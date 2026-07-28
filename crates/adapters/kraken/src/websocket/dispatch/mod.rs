@@ -16,7 +16,7 @@
 //! WebSocket execution dispatch for the Kraken Spot and Futures clients.
 //!
 //! Implements the two-tier execution dispatch contract from
-//! `docs/developer_guide/adapters.md` (lines 1232-1296):
+//! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates`:
 //!
 //! 1. The execution client registers an [`OrderIdentity`] in [`WsDispatchState`]
 //!    when it submits an order.
