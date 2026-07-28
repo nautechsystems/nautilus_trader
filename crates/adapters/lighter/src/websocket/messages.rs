@@ -67,23 +67,54 @@ pub enum NautilusWsMessage {
     },
     AccountState(Box<AccountState>),
     SendTxAck {
+        connection_epoch: u64,
         tx_hash: Option<String>,
         code: i64,
     },
     SendTxRejected {
+        connection_epoch: u64,
         source: SendTxRejectionSource,
         code: Option<i64>,
         message: String,
         tx_hash: Option<String>,
     },
     Raw(serde_json::Value),
-    Reconnected,
+    Reconnected {
+        connection_epoch: u64,
+    },
     /// Marker emitted by the feed handler right after each account stream
     /// has delivered its first frame. The execution consumption loop forwards
     /// any preceding typed reports first, then marks the corresponding
     /// readiness flag, keeping `connect()` blocked until applied state is
     /// observable to strategies.
     AccountStreamFirstFrame(AccountStream),
+}
+
+impl NautilusWsMessage {
+    #[must_use]
+    pub(crate) fn with_connection_epoch(self, connection_epoch: u64) -> Self {
+        match self {
+            Self::SendTxAck { tx_hash, code, .. } => Self::SendTxAck {
+                connection_epoch,
+                tx_hash,
+                code,
+            },
+            Self::SendTxRejected {
+                source,
+                code,
+                message,
+                tx_hash,
+                ..
+            } => Self::SendTxRejected {
+                connection_epoch,
+                source,
+                code,
+                message,
+                tx_hash,
+            },
+            other => other,
+        }
+    }
 }
 
 /// Identifier for one of the five account-scoped WebSocket streams the

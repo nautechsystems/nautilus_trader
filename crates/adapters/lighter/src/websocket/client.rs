@@ -19,7 +19,7 @@ use std::{
     fmt::Debug,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -35,7 +35,7 @@ use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
         SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        channel_epoch_message_handler,
     },
 };
 
@@ -75,6 +75,7 @@ const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
 pub struct LighterWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
+    connection_epoch: Arc<ArcSwap<AtomicU64>>,
     signal: Arc<AtomicBool>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
@@ -127,6 +128,7 @@ impl Clone for LighterWebSocketClient {
         Self {
             url: self.url.clone(),
             connection_mode: Arc::clone(&self.connection_mode),
+            connection_epoch: Arc::clone(&self.connection_epoch),
             signal: Arc::clone(&self.signal),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None,
@@ -159,12 +161,14 @@ impl LighterWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
         ))));
+        let connection_epoch = Arc::new(ArcSwap::new(Arc::new(AtomicU64::new(0))));
 
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
             url,
             connection_mode,
+            connection_epoch,
             signal: Arc::new(AtomicBool::new(false)),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(placeholder_tx)),
             out_rx: None,
@@ -189,6 +193,11 @@ impl LighterWebSocketClient {
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.connection_mode.load().load(Ordering::Relaxed) == ConnectionMode::Active as u8
+    }
+
+    #[must_use]
+    pub(crate) fn connection_epoch(&self) -> u64 {
+        self.connection_epoch.load().load(Ordering::Acquire)
     }
 
     /// Waits until the underlying connection reports active, or returns an
@@ -272,7 +281,7 @@ impl LighterWebSocketClient {
             return Ok(());
         }
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_epoch_message_handler();
         let cfg = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
@@ -288,9 +297,9 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client = WebSocketClient::connect_with_rate_limiter(
+        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler(
             cfg,
-            Some(message_handler),
+            message_handler,
             None,
             None,
             ws_message_rate_limiter(&self.url),
@@ -303,6 +312,7 @@ impl LighterWebSocketClient {
         // Capture the connection-mode atomic before moving `client` into the
         // SetClient command below.
         let connection_mode_atomic = client.connection_mode_atomic();
+        let connection_epoch_atomic = client.connection_epoch_atomic();
 
         // Queue SetClient (and the instrument cache replay) onto the new
         // command channel BEFORE publishing it to clones or marking the
@@ -331,6 +341,7 @@ impl LighterWebSocketClient {
         *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
         self.connection_mode.store(connection_mode_atomic);
+        self.connection_epoch.store(connection_epoch_atomic);
 
         log::debug!("Lighter WebSocket connected: {}", self.url);
 
@@ -367,11 +378,14 @@ impl LighterWebSocketClient {
 
             loop {
                 match handler.next().await {
-                    Some(NautilusWsMessage::Reconnected) => {
+                    Some(NautilusWsMessage::Reconnected { connection_epoch }) => {
                         log::debug!("Lighter WebSocket reconnected");
                         restore_subscriptions();
 
-                        if handler.send(NautilusWsMessage::Reconnected).is_err() {
+                        if handler
+                            .send(NautilusWsMessage::Reconnected { connection_epoch })
+                            .is_err()
+                        {
                             if handler.is_stopped() {
                                 log::debug!("Failed to forward Reconnected (receiver dropped)");
                             } else {
@@ -817,10 +831,21 @@ impl LighterWebSocketClient {
         tx_type: u8,
         tx_info: Box<serde_json::value::RawValue>,
     ) -> Result<(), LighterWsError> {
+        self.send_tx_on_connection(tx_type, tx_info, self.connection_epoch())
+            .await
+    }
+
+    pub(crate) async fn send_tx_on_connection(
+        &self,
+        tx_type: u8,
+        tx_info: Box<serde_json::value::RawValue>,
+        connection_epoch: u64,
+    ) -> Result<(), LighterWsError> {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.send_cmd(HandlerCommand::SendTx {
             tx_type,
             tx_info,
+            connection_epoch,
             response_tx,
         })
         .await?;

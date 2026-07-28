@@ -586,8 +586,8 @@ account channels. A transparent reconnect also notifies the rotation task to min
 resubscribe after the WebSocket client starts replaying tracked subscriptions.
 
 On execution reconnect, the adapter starts a nonce-baseline refresh through
-`GET /api/v1/nextNonce`. New signed transaction dispatch is not gated while that HTTP refresh is in
-flight.
+`GET /api/v1/nextNonce`. New signed transaction dispatch is rejected until that refresh, or its
+background retry, installs the replacement connection's nonce baseline.
 
 Within a session, the adapter manages transaction nonces locally: venue confirmations advance the
 allocation window, definitive rejections or pre-handoff failures may roll back the latest nonce,

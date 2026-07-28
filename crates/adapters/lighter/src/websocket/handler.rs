@@ -126,6 +126,7 @@ pub enum HandlerCommand {
     SendTx {
         tx_type: u8,
         tx_info: Box<serde_json::value::RawValue>,
+        connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<(), LighterWsError>>,
     },
 }
@@ -205,7 +206,7 @@ pub(super) struct FeedHandler {
     inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<LighterWsError>,
@@ -232,7 +233,7 @@ impl FeedHandler {
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         subscriptions: SubscriptionState,
     ) -> Self {
@@ -307,12 +308,21 @@ impl FeedHandler {
 
     // Single-shot: sendTx payloads carry a signed nonce; transport-layer
     // retry could double-submit if the original landed and only the ack was lost.
-    async fn send_once(&self, payload: String) -> Result<(), LighterWsError> {
+    async fn send_once(
+        &self,
+        payload: String,
+        connection_epoch: u64,
+    ) -> Result<(), LighterWsError> {
         if let Some(client) = &self.inner {
-            client
-                .send_text(payload, None)
+            match client
+                .send_text_on_connection(payload, None, connection_epoch)
                 .await
-                .map_err(LighterWsError::Transport)
+            {
+                Err(SendError::BrokenPipe(message)) => {
+                    Err(LighterWsError::SendTxOutcomeUnknown(message))
+                }
+                result => result.map_err(LighterWsError::Transport),
+            }
         } else {
             Err(LighterWsError::Client(
                 "no active WebSocket client".to_string(),
@@ -356,6 +366,7 @@ impl FeedHandler {
         &self,
         tx_type: u8,
         tx_info: Box<serde_json::value::RawValue>,
+        connection_epoch: u64,
     ) -> Result<(), LighterWsError> {
         let request = LighterWsRequest::SendTx {
             data: super::messages::LighterWsSendTx { tx_type, tx_info },
@@ -368,11 +379,12 @@ impl FeedHandler {
                     payload.len(),
                 );
 
-                if let Err(e) = self.send_once(payload).await {
-                    log::error!("Error dispatching Lighter sendTx (tx_type={tx_type}): {e}");
-                    Err(e)
-                } else {
-                    Ok(())
+                match self.send_once(payload, connection_epoch).await {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        log::error!("Error dispatching Lighter sendTx (tx_type={tx_type}): {e}");
+                        Err(e)
+                    }
                 }
             }
             Err(e) => {
@@ -485,16 +497,20 @@ impl FeedHandler {
                         HandlerCommand::SendTx {
                             tx_type,
                             tx_info,
+                            connection_epoch,
                             response_tx,
                         } => {
-                            let result = self.dispatch_send_tx(tx_type, tx_info).await;
+                            let result = self
+                                .dispatch_send_tx(tx_type, tx_info, connection_epoch)
+                                .await;
+
                             if response_tx.send(result).is_err() {
                                 log::debug!("Lighter sendTx result receiver dropped");
                             }
                         }
                     }
                 }
-                Some(raw_msg) = self.raw_rx.recv() => {
+                Some((connection_epoch, raw_msg)) = self.raw_rx.recv() => {
                     match raw_msg {
                         Message::Text(text) => {
                             if text == RECONNECTED {
@@ -508,13 +524,20 @@ impl FeedHandler {
                                 self.pending_subs.clear();
                                 self.inflight_subs.clear();
                                 self.account_state_reconciler.reset();
-                                return Some(NautilusWsMessage::Reconnected);
+                                return Some(NautilusWsMessage::Reconnected {
+                                    connection_epoch,
+                                });
                             }
 
                             let ts_init = self.clock.get_time_ns();
 
                             if let Ok(frame) = serde_json::from_str::<LighterWsFrame>(&text) {
-                                let messages = self.handle_frame(frame, ts_init);
+                                let messages = self
+                                    .handle_frame(frame, ts_init)
+                                    .into_iter()
+                                    .map(|msg| msg.with_connection_epoch(connection_epoch))
+                                    .collect();
+
                                 if let Some(first) = self.dispatch_results(messages) {
                                     return Some(first);
                                 }
@@ -523,7 +546,7 @@ impl FeedHandler {
                             {
                                 let (matched, msg) = self.handle_control_value(&value);
                                 if let Some(first) = msg {
-                                    return Some(first);
+                                    return Some(first.with_connection_epoch(connection_epoch));
                                 }
 
                                 if !matched {
@@ -634,7 +657,11 @@ impl FeedHandler {
                             .map(str::to_string);
                         (
                             true,
-                            Some(NautilusWsMessage::SendTxAck { tx_hash, code: 200 }),
+                            Some(NautilusWsMessage::SendTxAck {
+                                connection_epoch: 0,
+                                tx_hash,
+                                code: 200,
+                            }),
                         )
                     }
                     Some(_) => {
@@ -1609,6 +1636,7 @@ fn send_tx_rejected_from_value(
         .and_then(|v| v.as_str())
         .map(str::to_string);
     NautilusWsMessage::SendTxRejected {
+        connection_epoch: 0,
         source,
         code,
         message,
@@ -1629,6 +1657,7 @@ fn send_tx_rejected_from_nested_error(
         .unwrap_or("")
         .to_string();
     NautilusWsMessage::SendTxRejected {
+        connection_epoch: 0,
         source,
         code,
         message,
@@ -1836,7 +1865,7 @@ mod tests {
     fn make_handler_with_account() -> FeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2176,7 +2205,7 @@ mod tests {
         let (_, msg) = handle_control_text(&mut handler, &payload);
 
         match msg.expect("SendTxAck emitted") {
-            NautilusWsMessage::SendTxAck { tx_hash, code } => {
+            NautilusWsMessage::SendTxAck { tx_hash, code, .. } => {
                 assert_eq!(code, 200);
                 assert_eq!(tx_hash.as_deref(), Some("0000abcd"));
             }
@@ -2202,6 +2231,7 @@ mod tests {
                 code,
                 message,
                 tx_hash,
+                ..
             } => {
                 assert_eq!(source, SendTxRejectionSource::Ack);
                 assert_eq!(code, Some(21727));
@@ -2251,6 +2281,7 @@ mod tests {
                 code,
                 message,
                 tx_hash,
+                ..
             } => {
                 assert_eq!(source, SendTxRejectionSource::BareError);
                 assert_eq!(code, Some(21702));
@@ -2278,6 +2309,7 @@ mod tests {
                 code,
                 message,
                 tx_hash,
+                ..
             } => {
                 assert_eq!(source, SendTxRejectionSource::BareError);
                 assert_eq!(code, Some(21149));
@@ -2446,7 +2478,7 @@ mod tests {
     fn handle_frame_account_orders_without_context_falls_back_to_raw() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2475,7 +2507,7 @@ mod tests {
         // before instrument bootstrap completes).
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2637,7 +2669,7 @@ mod tests {
     fn handle_frame_account_all_trades_snapshot_falls_back_to_raw_without_context() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2722,7 +2754,7 @@ mod tests {
     fn handle_frame_spot_market_stats_emits_index_update() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2746,7 +2778,7 @@ mod tests {
     fn handle_frame_spot_market_stats_all_emits_index_update() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2849,7 +2881,7 @@ mod tests {
     async fn send_tx_command_returns_handler_send_error_without_active_client() {
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -2862,6 +2894,7 @@ mod tests {
                     r#"{"AccountIndex":12345,"Nonce":42}"#.to_string(),
                 )
                 .unwrap(),
+                connection_epoch: 0,
                 response_tx,
             })
             .unwrap();
@@ -2884,7 +2917,7 @@ mod tests {
     async fn resubscribe_order_book_command_skips_when_reference_removed() {
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let subscriptions = SubscriptionState::new(':');
         let topic = LighterWsChannel::OrderBook(0).topic_key();
@@ -2913,7 +2946,7 @@ mod tests {
     async fn resubscribe_order_book_queues_when_inflight_is_at_cap() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let subscriptions = SubscriptionState::new(':');
         let topic = LighterWsChannel::OrderBook(0).topic_key();
@@ -3134,6 +3167,10 @@ mod tests {
     #[case::parse_does_not_retry(LighterWsError::Parse("bad json".into()), false)]
     #[case::client_does_not_retry(LighterWsError::Client("no active WebSocket client".into()), false)]
     #[case::transport_closed_does_not_retry(LighterWsError::Transport(SendError::Closed), false)]
+    #[case::transport_connection_changed_does_not_retry(
+        LighterWsError::Transport(SendError::ConnectionChanged),
+        false
+    )]
     #[case::transport_timeout_retries(LighterWsError::Transport(SendError::Timeout), true)]
     #[case::transport_write_timeout_does_not_retry(
         LighterWsError::Transport(SendError::WriteTimeout),
@@ -3154,6 +3191,7 @@ mod tests {
     #[case::closed(SendError::Closed)]
     #[case::timeout(SendError::Timeout)]
     #[case::write_timeout(SendError::WriteTimeout)]
+    #[case::connection_changed(SendError::ConnectionChanged)]
     #[case::broken_pipe(SendError::BrokenPipe("writer dropped".into()))]
     fn send_error_converts_into_transport_variant(#[case] send_error: SendError) {
         let err: LighterWsError = send_error.into();
@@ -3167,7 +3205,7 @@ mod tests {
     async fn subscribe_command_parks_in_pending_subs_when_inflight_at_cap() {
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -3204,7 +3242,7 @@ mod tests {
     async fn unsubscribe_drops_queued_subscribe_while_gate_full() {
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -3242,7 +3280,7 @@ mod tests {
     async fn reconnect_clears_gate_state() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
@@ -3258,14 +3296,14 @@ mod tests {
             .push_back((LighterWsChannel::Trade(0), None));
 
         raw_tx
-            .send(Message::Text(RECONNECTED.to_string().into()))
+            .send((7, Message::Text(RECONNECTED.to_string().into())))
             .expect("queue reconnect sentinel");
 
         let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
             .await
             .expect("timed out waiting for reconnect");
 
-        assert!(matches!(next, Some(NautilusWsMessage::Reconnected)));
+        assert!(matches!(next, Some(NautilusWsMessage::Reconnected { .. })));
         assert!(handler.inflight_subs.is_empty());
         assert!(handler.pending_subs.is_empty());
     }
@@ -3274,7 +3312,7 @@ mod tests {
     async fn pump_releases_inflight_slot_on_send_failure() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));

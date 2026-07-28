@@ -40,7 +40,7 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
@@ -93,8 +93,15 @@ pub(crate) struct OrderIdentity {
     pub(crate) order_side: OrderSide,
     pub(crate) order_type: OrderType,
     pub(crate) client_order_index: i64,
-    venue_order_id: Arc<Mutex<Option<VenueOrderId>>>,
+    binding: Arc<Mutex<OrderIdentityBinding>>,
     accepted_emitted: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Default)]
+struct OrderIdentityBinding {
+    venue_order_id: Option<VenueOrderId>,
+    submission_nonce: Option<i64>,
+    external_venue_ids: AHashSet<VenueOrderId>,
 }
 
 impl OrderIdentity {
@@ -111,24 +118,51 @@ impl OrderIdentity {
             order_side,
             order_type,
             client_order_index,
-            venue_order_id: Arc::new(Mutex::new(None)),
+            binding: Arc::new(Mutex::new(OrderIdentityBinding::default())),
             accepted_emitted: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    fn bind_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
-        let mut current = self.venue_order_id.lock().expect(MUTEX_POISONED);
-        match *current {
+    fn mark_submission(&self, nonce: i64) {
+        self.binding.lock().expect(MUTEX_POISONED).submission_nonce = Some(nonce);
+    }
+
+    fn bind_order_venue_id(&self, venue_order_id: VenueOrderId, nonce: i64) -> bool {
+        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        match binding.venue_order_id {
             Some(existing) => existing == venue_order_id,
             None => {
-                *current = Some(venue_order_id);
+                if binding.external_venue_ids.contains(&venue_order_id)
+                    || binding.submission_nonce != Some(nonce)
+                {
+                    binding.external_venue_ids.insert(venue_order_id);
+                    return false;
+                }
+                binding.venue_order_id = Some(venue_order_id);
+                true
+            }
+        }
+    }
+
+    fn bind_trade_venue_id(&self, venue_order_id: VenueOrderId) -> bool {
+        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        match binding.venue_order_id {
+            Some(existing) => existing == venue_order_id,
+            None => {
+                let owned = !binding.external_venue_ids.contains(&venue_order_id)
+                    && binding.submission_nonce.is_some();
+                if !owned {
+                    binding.external_venue_ids.insert(venue_order_id);
+                    return false;
+                }
+                binding.venue_order_id = Some(venue_order_id);
                 true
             }
         }
     }
 
     fn matches_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
-        *self.venue_order_id.lock().expect(MUTEX_POISONED) == Some(venue_order_id)
+        self.binding.lock().expect(MUTEX_POISONED).venue_order_id == Some(venue_order_id)
     }
 
     fn accepted_was_emitted(&self) -> bool {
@@ -151,6 +185,7 @@ impl OrderIdentity {
 /// order event on a venue rejection.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSendTx {
+    pub(crate) connection_epoch: u64,
     pub(crate) kind: PendingSendTxKind,
     pub(crate) submitted_at: UnixNanos,
     pub(crate) nonce: i64,
@@ -651,6 +686,13 @@ impl WsDispatchState {
     /// a late venue ACK to the next-head. In normal operation ACKs arrive in
     /// milliseconds; sustained queue growth indicates a stuck WS read loop.
     pub(crate) fn enqueue_pending_sendtx(&self, pending: PendingSendTx) {
+        if let PendingSendTxKind::Create {
+            order,
+            client_order_index: _,
+        } = &pending.kind
+        {
+            self.mark_order_submission(&order.client_order_id(), pending.nonce);
+        }
         self.pending_sendtx
             .lock()
             .expect(MUTEX_POISONED)
@@ -674,39 +716,54 @@ impl WsDispatchState {
     /// Lighter does not always echo `tx_hash`. With two or more transactions
     /// in flight, FIFO attribution is unsafe because responses may arrive out
     /// of order.
-    pub(crate) fn pop_pending_sendtx_if_only(&self) -> Option<PendingSendTx> {
+    pub(crate) fn pop_pending_sendtx_if_only(
+        &self,
+        connection_epoch: u64,
+    ) -> Option<PendingSendTx> {
         let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
-        if queue.len() != 1 {
+        let mut matches = queue
+            .iter()
+            .enumerate()
+            .filter(|(_, pending)| pending.connection_epoch == connection_epoch);
+        let (position, _) = matches.next()?;
+        if matches.next().is_some() {
             return None;
         }
-        queue.pop_front()
+        queue.remove(position)
     }
 
     /// Pop the sole pending entry only if its `submitted_at` is within
     /// `max_age_ms` of `now`.
     pub(crate) fn pop_pending_sendtx_if_only_within(
         &self,
+        connection_epoch: u64,
         now: UnixNanos,
         max_age_ms: u64,
     ) -> Option<PendingSendTx> {
         let cutoff_ns = now.as_u64().saturating_sub(max_age_ms * 1_000_000);
         let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
-        if queue.len() != 1 {
+        let mut matches = queue
+            .iter()
+            .enumerate()
+            .filter(|(_, pending)| pending.connection_epoch == connection_epoch);
+        let (position, pending) = matches.next()?;
+        let fresh = pending.submitted_at.as_u64() >= cutoff_ns;
+        if matches.next().is_some() || !fresh {
             return None;
         }
-
-        match queue.front() {
-            Some(pending) if pending.submitted_at.as_u64() >= cutoff_ns => queue.pop_front(),
-            _ => None,
-        }
+        queue.remove(position)
     }
 
-    /// Remove a pending entry by nonce. Used by the spawn-failure path when
-    /// `send_tx` errors locally before the venue ever sees the message; the
-    /// nonce is unique per submit and reachable from every dispatch path.
-    pub(crate) fn remove_pending_sendtx_by_nonce(&self, nonce: i64) -> Option<PendingSendTx> {
+    /// Remove a pending entry by connection epoch and nonce.
+    pub(crate) fn remove_pending_sendtx_by_nonce(
+        &self,
+        connection_epoch: u64,
+        nonce: i64,
+    ) -> Option<PendingSendTx> {
         let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
-        let pos = q.iter().position(|p| p.nonce == nonce)?;
+        let pos = q
+            .iter()
+            .position(|p| p.connection_epoch == connection_epoch && p.nonce == nonce)?;
         q.remove(pos)
     }
 
@@ -714,27 +771,30 @@ impl WsDispatchState {
     /// (case-insensitive hex comparison, optional `0x` prefix tolerated).
     /// The venue echoes the hash the client computed at signing time, so a
     /// match is exact attribution regardless of queue position.
-    pub(crate) fn remove_pending_sendtx_by_hash(&self, tx_hash: &str) -> Option<PendingSendTx> {
+    pub(crate) fn remove_pending_sendtx_by_hash(
+        &self,
+        connection_epoch: u64,
+        tx_hash: &str,
+    ) -> Option<PendingSendTx> {
         let tx_hash = tx_hash
             .strip_prefix("0x")
             .or_else(|| tx_hash.strip_prefix("0X"))
             .unwrap_or(tx_hash);
         let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
-        let pos = q
-            .iter()
-            .position(|p| p.tx_hash.eq_ignore_ascii_case(tx_hash))?;
+        let pos = q.iter().position(|p| {
+            p.connection_epoch == connection_epoch && p.tx_hash.eq_ignore_ascii_case(tx_hash)
+        })?;
         q.remove(pos)
     }
 
-    /// Drain every pending entry. Used on reconnect: responses to txs sent
-    /// on the previous connection are lost, so retained entries would only
-    /// misattribute responses arriving on the new connection.
-    pub(crate) fn drain_pending_sendtx(&self) -> Vec<PendingSendTx> {
-        self.pending_sendtx
-            .lock()
-            .expect(MUTEX_POISONED)
-            .drain(..)
-            .collect()
+    /// Drain pending entries owned by one disconnected connection.
+    pub(crate) fn drain_pending_sendtx(&self, connection_epoch: u64) -> Vec<PendingSendTx> {
+        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let (drained, retained) = std::mem::take(&mut *queue)
+            .into_iter()
+            .partition(|pending| pending.connection_epoch == connection_epoch);
+        *queue = retained;
+        drained.into()
     }
 
     /// Returns the current pending-sendTx queue length. Test-only helper.
@@ -796,6 +856,12 @@ impl WsDispatchState {
     /// The consumption loop reads this to decide whether to emit typed events.
     pub(crate) fn register_order_identity(&self, cloid: ClientOrderId, identity: OrderIdentity) {
         self.order_identities.insert(cloid, identity);
+    }
+
+    pub(crate) fn mark_order_submission(&self, cloid: &ClientOrderId, nonce: i64) {
+        if let Some(identity) = self.order_identities.get(cloid) {
+            identity.mark_submission(nonce);
+        }
     }
 
     /// Drop the identity entry for `cloid` after a terminal event or
@@ -982,7 +1048,23 @@ impl WsDispatchState {
     }
 
     /// Resolve and bind a live venue client id across active and replay caches.
-    pub(crate) fn resolve_live_cloid(
+    pub(crate) fn resolve_live_order_cloid(
+        &self,
+        raw_client_id: &str,
+        venue_order_id: VenueOrderId,
+        nonce: i64,
+    ) -> Option<ClientOrderId> {
+        if raw_client_id.is_empty() || raw_client_id == "0" {
+            return None;
+        }
+        let index = raw_client_id.parse::<i64>().ok()?;
+        let cloid = self.resolve_client_order_index(index)?;
+        self.order_identity(&cloid)?
+            .bind_order_venue_id(venue_order_id, nonce)
+            .then_some(cloid)
+    }
+
+    pub(crate) fn resolve_live_trade_cloid(
         &self,
         raw_client_id: &str,
         venue_order_id: VenueOrderId,
@@ -993,7 +1075,7 @@ impl WsDispatchState {
         let index = raw_client_id.parse::<i64>().ok()?;
         let cloid = self.resolve_client_order_index(index)?;
         self.order_identity(&cloid)?
-            .bind_venue_order_id(venue_order_id)
+            .bind_trade_venue_id(venue_order_id)
             .then_some(cloid)
     }
 
@@ -2308,10 +2390,11 @@ mod tests {
                 42,
             ),
         );
+        state.mark_order_submission(&original, 9);
 
         let report = stub_open_order_status_report("42");
         assert_eq!(
-            state.resolve_live_cloid("42", report.venue_order_id),
+            state.resolve_live_order_cloid("42", report.venue_order_id, 9),
             Some(original),
         );
         let translated = state.translate_order_cloid(report);
@@ -2468,10 +2551,11 @@ mod tests {
                 42,
             ),
         );
+        state.mark_order_submission(&original, 9);
 
         let report = stub_fill_report("42");
         assert_eq!(
-            state.resolve_live_cloid("42", report.venue_order_id),
+            state.resolve_live_trade_cloid("42", report.venue_order_id),
             Some(original),
         );
         let translated = state.translate_fill_cloid(report);
@@ -2537,8 +2621,9 @@ mod tests {
                 42,
             ),
         );
+        state.mark_order_submission(&original, 9);
         assert_eq!(
-            state.resolve_live_cloid("42", VenueOrderId::new("281476929510109")),
+            state.resolve_live_order_cloid("42", VenueOrderId::new("281476929510109"), 9,),
             Some(original),
         );
 
@@ -2953,6 +3038,7 @@ mod tests {
             .quantity(Quantity::from("0.01"))
             .build();
         PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order),
                 client_order_index: nonce,
@@ -2966,6 +3052,7 @@ mod tests {
 
     fn stub_pending_other(nonce: i64, submitted_at_ns: u64) -> PendingSendTx {
         PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Other,
             submitted_at: UnixNanos::from(submitted_at_ns),
             nonce,
@@ -3018,7 +3105,7 @@ mod tests {
         let within = UnixNanos::from(submitted_ns + 500 * 1_000_000);
         assert!(
             state
-                .pop_pending_sendtx_if_only_within(within, 1_000)
+                .pop_pending_sendtx_if_only_within(0, within, 1_000)
                 .is_some(),
         );
 
@@ -3026,7 +3113,7 @@ mod tests {
         let outside = UnixNanos::from(submitted_ns + 1_500 * 1_000_000);
         assert!(
             state
-                .pop_pending_sendtx_if_only_within(outside, 1_000)
+                .pop_pending_sendtx_if_only_within(0, outside, 1_000)
                 .is_none(),
             "outside the attribution window the head must not pop",
         );
@@ -3060,7 +3147,7 @@ mod tests {
         state.enqueue_pending_sendtx(stub_pending_other(11, now.as_u64() + 1));
 
         let removed = state
-            .remove_pending_sendtx_by_nonce(11)
+            .remove_pending_sendtx_by_nonce(0, 11)
             .expect("nonce 11 removed");
         assert!(matches!(removed.kind, PendingSendTxKind::Other));
         assert_eq!(removed.nonce, 11);
@@ -3081,18 +3168,18 @@ mod tests {
         state.enqueue_pending_sendtx(stub_pending_create("B", 12, now.as_u64() + 2));
 
         let removed = state
-            .remove_pending_sendtx_by_hash("hash0b")
+            .remove_pending_sendtx_by_hash(0, "hash0b")
             .expect("hash for nonce 11 removed");
         assert_eq!(removed.nonce, 11);
         assert_eq!(state.pending_sendtx_len(), 2);
 
         assert!(
-            state.remove_pending_sendtx_by_hash("hash0b").is_none(),
+            state.remove_pending_sendtx_by_hash(0, "hash0b").is_none(),
             "removed hash must not match again",
         );
 
         let upper = state
-            .remove_pending_sendtx_by_hash("0xHASH0C")
+            .remove_pending_sendtx_by_hash(0, "0xHASH0C")
             .expect("hash comparison is case-insensitive and prefix-tolerant");
         assert_eq!(pending_cloid(&upper), Some(cloid("B")));
 
@@ -3107,13 +3194,55 @@ mod tests {
         state.enqueue_pending_sendtx(stub_pending_create("A", 10, now.as_u64()));
         state.enqueue_pending_sendtx(stub_pending_other(11, now.as_u64() + 1));
 
-        let drained = state.drain_pending_sendtx();
+        let drained = state.drain_pending_sendtx(0);
 
         assert_eq!(drained.len(), 2);
         assert_eq!(drained[0].nonce, 10);
         assert_eq!(drained[1].nonce, 11);
         assert_eq!(state.pending_sendtx_len(), 0);
-        assert!(state.drain_pending_sendtx().is_empty());
+        assert!(state.drain_pending_sendtx(0).is_empty());
+    }
+
+    #[rstest]
+    fn reconnect_drain_keeps_replacement_epoch_enqueues_on_both_sides_of_cleanup() {
+        let state = WsDispatchState::new();
+        let mut disconnected = stub_pending_create("OLD", 10, 10);
+        disconnected.connection_epoch = 4;
+        let mut replacement_before_cleanup = stub_pending_other(11, 11);
+        replacement_before_cleanup.connection_epoch = 5;
+
+        state.enqueue_pending_sendtx(disconnected);
+        state.enqueue_pending_sendtx(replacement_before_cleanup);
+
+        let drained = state.drain_pending_sendtx(4);
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].connection_epoch, 4);
+        assert_eq!(drained[0].nonce, 10);
+        assert_eq!(pending_cloid(&drained[0]), Some(cloid("OLD")));
+
+        {
+            let queue = state.pending_sendtx.lock().expect(MUTEX_POISONED);
+            assert_eq!(queue.len(), 1);
+            assert_eq!(queue[0].connection_epoch, 5);
+            assert_eq!(queue[0].nonce, 11);
+            assert!(matches!(queue[0].kind, PendingSendTxKind::Other));
+        }
+
+        let mut replacement_after_cleanup = stub_pending_create("NEW", 12, 12);
+        replacement_after_cleanup.connection_epoch = 5;
+        state.enqueue_pending_sendtx(replacement_after_cleanup);
+
+        let queue = state.pending_sendtx.lock().expect(MUTEX_POISONED);
+        assert_eq!(queue.len(), 2);
+        assert_eq!(
+            queue
+                .iter()
+                .map(|pending| (pending.connection_epoch, pending.nonce))
+                .collect::<Vec<_>>(),
+            vec![(5, 11), (5, 12)],
+        );
+        assert!(matches!(queue[0].kind, PendingSendTxKind::Other));
+        assert_eq!(pending_cloid(&queue[1]), Some(cloid("NEW")));
     }
 
     #[rstest]

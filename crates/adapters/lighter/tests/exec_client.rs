@@ -2517,6 +2517,7 @@ async fn seed_open_order(
     let client_order_index = info["ClientOrderIndex"]
         .as_i64()
         .expect("ClientOrderIndex in tx_info");
+    let nonce = info["Nonce"].as_i64().expect("Nonce in tx_info");
 
     // The optimistic OrderSubmitted is emitted synchronously by submit_order
     // and applied to the cache so the state matches what the engine would
@@ -2547,6 +2548,7 @@ async fn seed_open_order(
                 client_order_index,
                 voi.as_str(),
                 &client_order_index.to_string(),
+                nonce,
             )]
         }
     }));
@@ -2567,6 +2569,7 @@ fn account_all_orders_open_entry(
     client_order_index: i64,
     order_id: &str,
     cloid_label: &str,
+    nonce: i64,
 ) -> Value {
     // Numeric values pinned to the venue's published `account_all_orders`
     // shape (see test_data/ws_account_orders_update.json for the wire
@@ -2583,7 +2586,7 @@ fn account_all_orders_open_entry(
         "owner_account_index": TEST_ACCOUNT_INDEX as i64,
         "initial_base_amount": "0.0050",
         "price": "2361.31",
-        "nonce": 100,
+        "nonce": nonce,
         "remaining_base_amount": "0.0050",
         "is_ask": false,
         "base_size": 50,

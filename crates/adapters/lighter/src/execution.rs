@@ -158,6 +158,8 @@ const AUTH_TOKEN_REFRESH_BACKOFF: AuthTokenRefreshBackoff = AuthTokenRefreshBack
     max_delay: AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY,
     window: AUTH_TOKEN_REFRESH_RETRY_WINDOW,
 };
+const NONCE_REFRESH_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
+const NONCE_REFRESH_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 // Bounds the informational tier-detection call so a slow or failing
 // `/account` endpoint cannot stall connect for the HTTP retry budget.
 const ACCOUNT_TIER_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -169,6 +171,7 @@ const ACCOUNT_TIER_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SENDTX_BARE_ERROR_WINDOW_MS: u64 = 1_000;
 const INTEGRATOR_AUTO_APPROVAL_MAX_TTL_MS: i64 = 5 * 365 * 24 * 60 * 60 * 1_000;
 const INTEGRATOR_AUTO_APPROVAL_MAX_FEE_TICK: u32 = 0;
+const NONCE_CONNECTION_EPOCH_UNAVAILABLE: u64 = u64::MAX;
 
 #[derive(Debug)]
 pub struct LighterExecutionClient {
@@ -181,6 +184,8 @@ pub struct LighterExecutionClient {
     ws_client: LighterWebSocketClient,
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
     tx_send_sequencer: TxSendSequencer,
+    nonce_submission_gate: Arc<tokio::sync::RwLock<()>>,
+    nonce_ready_connection_epoch: Arc<AtomicU64>,
     registry: Arc<MarketRegistry>,
     pending_tasks: Arc<TaskHandles>,
     ws_stream_handle: Option<JoinHandle<()>>,
@@ -263,6 +268,8 @@ impl LighterExecutionClient {
             ws_client,
             tx_rate_limiter,
             tx_send_sequencer: TxSendSequencer::new(),
+            nonce_submission_gate: Arc::new(tokio::sync::RwLock::new(())),
+            nonce_ready_connection_epoch: Arc::new(AtomicU64::new(0)),
             registry,
             pending_tasks: Arc::new(TaskHandles::default()),
             ws_stream_handle: None,
@@ -355,6 +362,9 @@ impl LighterExecutionClient {
         let Some(credential) = &self.credential else {
             return Ok(());
         };
+        self.nonce_ready_connection_epoch
+            .store(NONCE_CONNECTION_EPOCH_UNAVAILABLE, Ordering::Release);
+        let _refresh_guard = self.nonce_submission_gate.write().await;
 
         let response = self
             .http_client
@@ -385,6 +395,7 @@ impl LighterExecutionClient {
             return Ok(());
         };
 
+        let _refresh_guard = self.nonce_submission_gate.write().await;
         let response = self
             .http_client
             .get_next_nonce(credential.account_index(), credential.api_key_index())
@@ -685,8 +696,19 @@ impl LighterExecutionClient {
         let http_client_for_loop = self.http_client.clone();
         let registry_for_loop = Arc::clone(&self.registry);
         let auth_refresh_notify = Arc::clone(&self.auth_refresh_notify);
+        let nonce_submission_gate = Arc::clone(&self.nonce_submission_gate);
+        let nonce_ready_connection_epoch = Arc::clone(&self.nonce_ready_connection_epoch);
         let account_id_for_loop = self.core.account_id;
         let clock_for_loop = self.clock;
+        let nonce_refresh_retry = NonceRefreshRetry {
+            http_client: self.http_client.clone(),
+            dispatch: self.dispatch.clone(),
+            credential: self.credential.clone(),
+            submission_gate: Arc::clone(&self.nonce_submission_gate),
+            ready_connection_epoch: Arc::clone(&self.nonce_ready_connection_epoch),
+            ws_client: ws_client.clone(),
+            cancellation_token: self.cancellation_token.clone(),
+        };
 
         let task = get_runtime().spawn(async move {
             log::debug!("Lighter execution WebSocket consumption loop started");
@@ -818,7 +840,11 @@ impl LighterExecutionClient {
                                 dispatch.cache_account_state((*state).clone());
                                 emitter.send_account_state(*state);
                             }
-                            Some(NautilusWsMessage::Reconnected) => {
+                            Some(NautilusWsMessage::Reconnected { connection_epoch }) => {
+                                nonce_ready_connection_epoch.store(
+                                    NONCE_CONNECTION_EPOCH_UNAVAILABLE,
+                                    Ordering::Release,
+                                );
                                 // Subscriptions are restored by
                                 // `LighterWebSocketClient`'s reconnect logic;
                                 // the execution context is preserved by the
@@ -842,7 +868,9 @@ impl LighterExecutionClient {
                                 // Drained creates have unknown outcomes;
                                 // reconciliation resolves them, so warn
                                 // rather than emit rejections.
-                                let stale = dispatch.drain_pending_sendtx();
+                                let _refresh_guard = nonce_submission_gate.write().await;
+                                let disconnected_epoch = connection_epoch.saturating_sub(1);
+                                let stale = dispatch.drain_pending_sendtx(disconnected_epoch);
                                 if !stale.is_empty() {
                                     log::warn!(
                                         "Discarded {} pending sendTx entries on reconnect; \
@@ -877,6 +905,8 @@ impl LighterExecutionClient {
                                                 credential.api_key_index(),
                                                 response.nonce,
                                             );
+                                            nonce_ready_connection_epoch
+                                                .store(connection_epoch, Ordering::Release);
                                             log::debug!(
                                                 "Refreshed Lighter nonce after reconnect: \
                                                  account_index={}, next_nonce={}",
@@ -888,17 +918,25 @@ impl LighterExecutionClient {
                                             log::error!(
                                                 "Failed to refresh Lighter nonce after reconnect: {e}",
                                             );
+                                            nonce_refresh_retry
+                                                .clone()
+                                                .spawn(connection_epoch);
                                         }
                                     }
                                 }
                             }
-                            Some(NautilusWsMessage::SendTxAck { tx_hash, code }) => {
+                            Some(NautilusWsMessage::SendTxAck {
+                                connection_epoch,
+                                tx_hash,
+                                code,
+                            }) => {
                                 let account_index = credential_for_loop
                                     .as_ref()
                                     .map(|c| c.account_index());
-                                let acked = handle_send_tx_ack(
+                                let acked = handle_send_tx_ack_for_connection(
                                     &dispatch,
                                     account_index,
+                                    connection_epoch,
                                     code,
                                     tx_hash.as_deref(),
                                 );
@@ -921,6 +959,7 @@ impl LighterExecutionClient {
                                 }
                             }
                             Some(NautilusWsMessage::SendTxRejected {
+                                connection_epoch,
                                 source,
                                 code,
                                 message,
@@ -929,10 +968,11 @@ impl LighterExecutionClient {
                                 let account_index = credential_for_loop
                                     .as_ref()
                                     .map(|c| c.account_index());
-                                let needs_nonce_resync = handle_send_tx_rejection(
+                                let needs_nonce_resync = handle_send_tx_rejection_for_connection(
                                     &dispatch,
                                     &emitter,
                                     account_index,
+                                    connection_epoch,
                                     clock_for_loop.get_time_ns(),
                                     source,
                                     code,
@@ -946,6 +986,19 @@ impl LighterExecutionClient {
                                 if needs_nonce_resync
                                     && let Some(credential) = &credential_for_loop
                                 {
+                                    if ws_client.connection_epoch() != connection_epoch {
+                                        log::warn!(
+                                            "Skipping stale Lighter nonce rejection from connection \
+                                             epoch {connection_epoch}",
+                                        );
+                                        continue;
+                                    }
+                                    nonce_ready_connection_epoch.store(
+                                        NONCE_CONNECTION_EPOCH_UNAVAILABLE,
+                                        Ordering::Release,
+                                    );
+                                    let _refresh_guard = nonce_submission_gate.write().await;
+
                                     match http_client_for_loop
                                         .get_next_nonce(
                                             credential.account_index(),
@@ -959,6 +1012,8 @@ impl LighterExecutionClient {
                                                 credential.api_key_index(),
                                                 response.nonce,
                                             );
+                                            nonce_ready_connection_epoch
+                                                .store(connection_epoch, Ordering::Release);
                                             log::debug!(
                                                 "Hard-refreshed Lighter nonce after invalid-nonce \
                                                  rejection: account_index={}, next_nonce={}",
@@ -971,6 +1026,9 @@ impl LighterExecutionClient {
                                                 "Failed to refresh Lighter nonce after \
                                                  invalid-nonce rejection: {e}",
                                             );
+                                            nonce_refresh_retry
+                                                .clone()
+                                                .spawn(connection_epoch);
                                         }
                                     }
                                 }
@@ -1111,6 +1169,19 @@ impl LighterExecutionClient {
     }
 
     fn build_tx_context(&self, credential: &Credential) -> anyhow::Result<ReservedTxContext> {
+        let connection_epoch = self.ws_client.connection_epoch();
+        anyhow::ensure!(
+            self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
+            "Lighter nonce refresh is pending for connection epoch {connection_epoch}",
+        );
+        let nonce_guard = Arc::clone(&self.nonce_submission_gate)
+            .try_read_owned()
+            .context("Lighter nonce refresh is in progress")?;
+        anyhow::ensure!(
+            self.ws_client.connection_epoch() == connection_epoch
+                && self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
+            "Lighter connection or nonce state changed during transaction preparation",
+        );
         let nonce = match self
             .dispatch
             .nonce_manager
@@ -1128,11 +1199,14 @@ impl LighterExecutionClient {
 
         let now_ns = self.clock.get_time_ns().as_u64() as i64;
         let expired_at = (now_ns / 1_000_000).saturating_add(DEFAULT_TX_EXPIRY_MS);
-        let send_reservation = self.tx_send_sequencer.reserve(
-            credential.account_index(),
-            credential.api_key_index(),
-            nonce,
-        );
+        let send_reservation = self
+            .tx_send_sequencer
+            .reserve(
+                credential.account_index(),
+                credential.api_key_index(),
+                nonce,
+            )
+            .with_nonce_ownership(nonce_guard, connection_epoch);
 
         let context = TxContext {
             account_index: credential.account_index(),
@@ -1155,10 +1229,12 @@ impl LighterExecutionClient {
         let inflight = Arc::clone(&self.nonce_recovery_inflight);
         let http_client = self.http_client.clone();
         let dispatch = self.dispatch.clone();
+        let nonce_submission_gate = Arc::clone(&self.nonce_submission_gate);
         let account_index = credential.account_index();
         let api_key_index = credential.api_key_index();
 
         self.spawn_task("nonce_window_recovery", async move {
+            let _refresh_guard = nonce_submission_gate.write().await;
             let result = http_client
                 .get_next_nonce(account_index, api_key_index)
                 .await;
@@ -1330,6 +1406,8 @@ impl LighterExecutionClient {
             ws_client: self.ws_client.clone(),
             tx_rate_limiter: Arc::clone(&self.tx_rate_limiter),
             tx_send_sequencer: self.tx_send_sequencer.clone(),
+            nonce_submission_gate: Arc::clone(&self.nonce_submission_gate),
+            nonce_ready_connection_epoch: Arc::clone(&self.nonce_ready_connection_epoch),
             dispatch: self.dispatch.clone(),
             nonce_recovery_inflight: Arc::clone(&self.nonce_recovery_inflight),
             pending_tasks: Arc::clone(&self.pending_tasks),
@@ -1467,6 +1545,7 @@ impl LighterExecutionClient {
             tx_hash,
             mut send_reservation,
         } = prepared;
+        let connection_epoch = send_reservation.connection_epoch;
 
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1480,6 +1559,7 @@ impl LighterExecutionClient {
             send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
+                connection_epoch,
                 kind: PendingSendTxKind::Modify {
                     strategy_id,
                     instrument_id,
@@ -1493,7 +1573,7 @@ impl LighterExecutionClient {
             });
 
             if let Err(e) = ws_client
-                .send_tx(LighterTxType::ModifyOrder as u8, tx_info)
+                .send_tx_on_connection(LighterTxType::ModifyOrder as u8, tx_info, connection_epoch)
                 .await
             {
                 if matches!(e, LighterWsError::SendTxOutcomeUnknown(_)) {
@@ -1504,7 +1584,7 @@ impl LighterExecutionClient {
                 } else {
                     let reason = format!("Lighter modify_order dispatch failed: {e}");
                     log::error!("{reason} for {client_order_id}");
-                    dispatch.remove_pending_sendtx_by_nonce(nonce);
+                    dispatch.remove_pending_sendtx_by_nonce(connection_epoch, nonce);
                     dispatch.clear_pending_order_action_if(
                         &client_order_id,
                         PendingOrderAction::Modify,
@@ -1704,6 +1784,7 @@ impl LighterExecutionClient {
             context,
             mut send_reservation,
         } = self.build_tx_context(credential)?;
+        let connection_epoch = send_reservation.connection_epoch;
 
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
@@ -1740,6 +1821,7 @@ impl LighterExecutionClient {
             send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
+                connection_epoch,
                 kind: PendingSendTxKind::Other,
                 submitted_at: clock.get_time_ns(),
                 nonce: captured_nonce,
@@ -1748,7 +1830,11 @@ impl LighterExecutionClient {
             });
 
             if let Err(e) = ws_client
-                .send_tx(LighterTxType::UpdateLeverage as u8, tx_info)
+                .send_tx_on_connection(
+                    LighterTxType::UpdateLeverage as u8,
+                    tx_info,
+                    connection_epoch,
+                )
                 .await
             {
                 if matches!(e, LighterWsError::SendTxOutcomeUnknown(_)) {
@@ -1759,7 +1845,7 @@ impl LighterExecutionClient {
                 } else {
                     let reason = format!("Lighter update_leverage dispatch failed: {e}");
                     log::error!("{reason} for {instrument_id}");
-                    dispatch.remove_pending_sendtx_by_nonce(captured_nonce);
+                    dispatch.remove_pending_sendtx_by_nonce(connection_epoch, captured_nonce);
                     rollback_tx_dispatch(&dispatch, &credential, None, captured_nonce);
                 }
             }
@@ -1783,6 +1869,92 @@ struct AuthTokenRefreshBackoff {
     initial_delay: Duration,
     max_delay: Duration,
     window: Duration,
+}
+
+#[derive(Clone)]
+struct NonceRefreshRetry {
+    http_client: LighterHttpClient,
+    dispatch: WsDispatchState,
+    credential: Option<Credential>,
+    submission_gate: Arc<tokio::sync::RwLock<()>>,
+    ready_connection_epoch: Arc<AtomicU64>,
+    ws_client: LighterWebSocketClient,
+    cancellation_token: CancellationToken,
+}
+
+impl NonceRefreshRetry {
+    fn spawn(self, connection_epoch: u64) {
+        get_runtime().spawn(async move {
+            let Some(credential) = self.credential else {
+                return;
+            };
+            let mut retry_delay = NONCE_REFRESH_RETRY_INITIAL_DELAY;
+
+            loop {
+                tokio::select! {
+                    () = self.cancellation_token.cancelled() => return,
+                    () = tokio::time::sleep(retry_delay) => {}
+                }
+
+                if self.ws_client.connection_epoch() != connection_epoch
+                    || self.ready_connection_epoch.load(Ordering::Acquire) == connection_epoch
+                {
+                    return;
+                }
+
+                let _refresh_guard = tokio::select! {
+                    () = self.cancellation_token.cancelled() => return,
+                    guard = self.submission_gate.write() => guard,
+                };
+
+                if self.ws_client.connection_epoch() != connection_epoch
+                    || self.ready_connection_epoch.load(Ordering::Acquire) == connection_epoch
+                {
+                    return;
+                }
+
+                let result = tokio::select! {
+                    () = self.cancellation_token.cancelled() => return,
+                    result = self.http_client.get_next_nonce(
+                        credential.account_index(),
+                        credential.api_key_index(),
+                    ) => result,
+                };
+
+                match result {
+                    Ok(response) => {
+                        if self.ws_client.connection_epoch() != connection_epoch {
+                            return;
+                        }
+                        self.dispatch.nonce_manager.refresh(
+                            credential.account_index(),
+                            credential.api_key_index(),
+                            response.nonce,
+                        );
+                        self.ready_connection_epoch
+                            .store(connection_epoch, Ordering::Release);
+                        log::info!(
+                            "Recovered Lighter nonce refresh: account_index={}, \
+                             connection_epoch={connection_epoch}, next_nonce={}",
+                            credential.account_index(),
+                            response.nonce,
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to retry Lighter nonce refresh for connection epoch \
+                             {connection_epoch}: {e}",
+                        );
+                    }
+                }
+
+                retry_delay = retry_delay
+                    .saturating_mul(2)
+                    .min(NONCE_REFRESH_RETRY_MAX_DELAY);
+            }
+        });
+    }
 }
 
 fn auth_token_rotation_channels(account_index: i64) -> [LighterWsChannel; 5] {
@@ -1951,6 +2123,8 @@ impl TxSendSequencer {
             key,
             nonce,
             released: false,
+            nonce_guard: None,
+            connection_epoch: 0,
         }
     }
 
@@ -2018,9 +2192,21 @@ struct TxSendReservation {
     key: TxSendKey,
     nonce: i64,
     released: bool,
+    nonce_guard: Option<tokio::sync::OwnedRwLockReadGuard<()>>,
+    connection_epoch: u64,
 }
 
 impl TxSendReservation {
+    fn with_nonce_ownership(
+        mut self,
+        nonce_guard: tokio::sync::OwnedRwLockReadGuard<()>,
+        connection_epoch: u64,
+    ) -> Self {
+        self.nonce_guard = Some(nonce_guard);
+        self.connection_epoch = connection_epoch;
+        self
+    }
+
     async fn wait_for_turn(&self) {
         self.sequencer.wait_for_turn(self.key, self.nonce).await;
     }
@@ -2031,6 +2217,7 @@ impl TxSendReservation {
         }
 
         self.sequencer.release(self.key, self.nonce);
+        self.nonce_guard.take();
         self.released = true;
     }
 }
@@ -2114,6 +2301,8 @@ struct FanoutDispatchContext {
     ws_client: LighterWebSocketClient,
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
     tx_send_sequencer: TxSendSequencer,
+    nonce_submission_gate: Arc<tokio::sync::RwLock<()>>,
+    nonce_ready_connection_epoch: Arc<AtomicU64>,
     dispatch: WsDispatchState,
     nonce_recovery_inflight: Arc<AtomicBool>,
     pending_tasks: Arc<TaskHandles>,
@@ -2121,6 +2310,19 @@ struct FanoutDispatchContext {
 
 impl FanoutDispatchContext {
     fn build_tx_context(&self) -> anyhow::Result<ReservedTxContext> {
+        let connection_epoch = self.ws_client.connection_epoch();
+        anyhow::ensure!(
+            self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
+            "Lighter nonce refresh is pending for connection epoch {connection_epoch}",
+        );
+        let nonce_guard = Arc::clone(&self.nonce_submission_gate)
+            .try_read_owned()
+            .context("Lighter nonce refresh is in progress")?;
+        anyhow::ensure!(
+            self.ws_client.connection_epoch() == connection_epoch
+                && self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
+            "Lighter connection or nonce state changed during transaction preparation",
+        );
         let nonce = match self.dispatch.nonce_manager.next_nonce(
             self.credential.account_index(),
             self.credential.api_key_index(),
@@ -2135,11 +2337,14 @@ impl FanoutDispatchContext {
 
         let now_ns = self.clock.get_time_ns().as_u64() as i64;
         let expired_at = (now_ns / 1_000_000).saturating_add(DEFAULT_TX_EXPIRY_MS);
-        let send_reservation = self.tx_send_sequencer.reserve(
-            self.credential.account_index(),
-            self.credential.api_key_index(),
-            nonce,
-        );
+        let send_reservation = self
+            .tx_send_sequencer
+            .reserve(
+                self.credential.account_index(),
+                self.credential.api_key_index(),
+                nonce,
+            )
+            .with_nonce_ownership(nonce_guard, connection_epoch);
 
         Ok(ReservedTxContext {
             context: TxContext {
@@ -2160,10 +2365,12 @@ impl FanoutDispatchContext {
         let inflight = Arc::clone(&self.nonce_recovery_inflight);
         let http_client = self.http_client.clone();
         let dispatch = self.dispatch.clone();
+        let nonce_submission_gate = Arc::clone(&self.nonce_submission_gate);
         let account_index = self.credential.account_index();
         let api_key_index = self.credential.api_key_index();
 
         let handle = get_runtime().spawn(async move {
+            let _refresh_guard = nonce_submission_gate.write().await;
             let result = http_client
                 .get_next_nonce(account_index, api_key_index)
                 .await;
@@ -2274,6 +2481,7 @@ impl FanoutDispatchContext {
             tx_hash,
             mut send_reservation,
         } = prepared;
+        let connection_epoch = send_reservation.connection_epoch;
         let client_order_id = order.client_order_id();
 
         self.emitter.emit_order_submitted(&order);
@@ -2281,6 +2489,7 @@ impl FanoutDispatchContext {
         send_reservation.wait_for_turn().await;
         await_tx_quota(&self.tx_rate_limiter).await;
         self.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order.clone()),
                 client_order_index,
@@ -2293,7 +2502,7 @@ impl FanoutDispatchContext {
 
         if let Err(e) = self
             .ws_client
-            .send_tx(LighterTxType::CreateOrder as u8, tx_info)
+            .send_tx_on_connection(LighterTxType::CreateOrder as u8, tx_info, connection_epoch)
             .await
         {
             if matches!(e, LighterWsError::SendTxOutcomeUnknown(_)) {
@@ -2304,7 +2513,8 @@ impl FanoutDispatchContext {
             } else {
                 let reason = format!("Lighter submit_order dispatch failed: {e}");
                 log::error!("{reason} for {client_order_id}");
-                self.dispatch.remove_pending_sendtx_by_nonce(nonce);
+                self.dispatch
+                    .remove_pending_sendtx_by_nonce(connection_epoch, nonce);
                 rollback_tx_dispatch_create(
                     &self.dispatch,
                     &self.credential,
@@ -2370,10 +2580,12 @@ impl FanoutDispatchContext {
             tx_hash,
             mut send_reservation,
         } = prepared;
+        let connection_epoch = send_reservation.connection_epoch;
 
         send_reservation.wait_for_turn().await;
         await_tx_quota(&self.tx_rate_limiter).await;
         self.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch,
             kind: if emit_cancel_rejected {
                 PendingSendTxKind::Cancel {
                     strategy_id,
@@ -2392,7 +2604,7 @@ impl FanoutDispatchContext {
 
         if let Err(e) = self
             .ws_client
-            .send_tx(LighterTxType::CancelOrder as u8, tx_info)
+            .send_tx_on_connection(LighterTxType::CancelOrder as u8, tx_info, connection_epoch)
             .await
         {
             if matches!(e, LighterWsError::SendTxOutcomeUnknown(_)) {
@@ -2403,7 +2615,8 @@ impl FanoutDispatchContext {
             } else {
                 let reason = format!("Lighter cancel_order dispatch failed: {e}");
                 log::error!("{reason} for {client_order_id}");
-                self.dispatch.remove_pending_sendtx_by_nonce(nonce);
+                self.dispatch
+                    .remove_pending_sendtx_by_nonce(connection_epoch, nonce);
                 self.dispatch
                     .clear_pending_order_action_if(&client_order_id, PendingOrderAction::Cancel);
                 rollback_tx_dispatch(&self.dispatch, &self.credential, None, nonce);
@@ -2537,21 +2750,22 @@ impl Drop for TxDispatchGuard {
 // attribute only when one transaction is pending. An echoed hash is
 // authoritative: on a miss the entry was already consumed or never enqueued,
 // and a fallback would attribute the ack to the wrong tx.
-fn handle_send_tx_ack(
+fn handle_send_tx_ack_for_connection(
     dispatch: &WsDispatchState,
     account_index: Option<i64>,
+    connection_epoch: u64,
     code: i64,
     tx_hash: Option<&str>,
 ) -> Option<PendingSendTx> {
     let popped = match tx_hash {
         Some(hash) => {
-            let matched = dispatch.remove_pending_sendtx_by_hash(hash);
+            let matched = dispatch.remove_pending_sendtx_by_hash(connection_epoch, hash);
             if matched.is_none() {
                 log::warn!("Lighter sendTx ack unmatched: tx_hash={hash} code={code}");
             }
             matched
         }
-        None => dispatch.pop_pending_sendtx_if_only(),
+        None => dispatch.pop_pending_sendtx_if_only(connection_epoch),
     };
 
     if let (Some(pending), Some(account_index)) = (&popped, account_index) {
@@ -2726,10 +2940,11 @@ impl AckedOrderProbe {
     clippy::too_many_arguments,
     reason = "consumer-loop sink that flattens one SendTxRejected message without a wrapper struct"
 )]
-fn handle_send_tx_rejection(
+fn handle_send_tx_rejection_for_connection(
     dispatch: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
     account_index: Option<i64>,
+    connection_epoch: u64,
     now: UnixNanos,
     source: SendTxRejectionSource,
     code: Option<i64>,
@@ -2739,12 +2954,14 @@ fn handle_send_tx_rejection(
     let needs_nonce_resync = code == Some(LIGHTER_ERROR_CODE_INVALID_NONCE);
 
     let pending = match tx_hash {
-        Some(hash) => dispatch.remove_pending_sendtx_by_hash(hash),
+        Some(hash) => dispatch.remove_pending_sendtx_by_hash(connection_epoch, hash),
         None => match source {
-            SendTxRejectionSource::Ack => dispatch.pop_pending_sendtx_if_only(),
-            SendTxRejectionSource::BareError => {
-                dispatch.pop_pending_sendtx_if_only_within(now, SENDTX_BARE_ERROR_WINDOW_MS)
-            }
+            SendTxRejectionSource::Ack => dispatch.pop_pending_sendtx_if_only(connection_epoch),
+            SendTxRejectionSource::BareError => dispatch.pop_pending_sendtx_if_only_within(
+                connection_epoch,
+                now,
+                SENDTX_BARE_ERROR_WINDOW_MS,
+            ),
         },
     };
     let Some(pending) = pending else {
@@ -3091,6 +3308,10 @@ impl ExecutionClient for LighterExecutionClient {
 
         self.ensure_instruments_initialized_async().await?;
         self.refresh_nonce().await?;
+
+        // Auto-approval is an HTTP transaction prepared before the replacement WebSocket exists
+        self.nonce_ready_connection_epoch
+            .store(self.ws_client.connection_epoch(), Ordering::Release);
         self.detect_account_tier().await;
 
         if let Err(e) = self.submit_integrator_auto_approval().await {
@@ -3106,6 +3327,8 @@ impl ExecutionClient for LighterExecutionClient {
             });
 
             if is_unapproved {
+                self.nonce_ready_connection_epoch
+                    .store(NONCE_CONNECTION_EPOCH_UNAVAILABLE, Ordering::Release);
                 return Err(e.context(
                     "Lighter account is not integrator-approved (venue 21149); \
                      orders cannot be placed",
@@ -3114,12 +3337,17 @@ impl ExecutionClient for LighterExecutionClient {
             log::error!("Lighter integrator approval failed; continuing startup: {e:?}");
         }
 
+        self.nonce_ready_connection_epoch
+            .store(NONCE_CONNECTION_EPOCH_UNAVAILABLE, Ordering::Release);
+
         if let Err(e) = self.sync_nonce_from_venue().await {
             log::debug!(
                 "Failed to sync Lighter nonce after integrator approval; continuing startup: {e:?}"
             );
         }
         self.spawn_ws_consumer().await?;
+        self.nonce_ready_connection_epoch
+            .store(self.ws_client.connection_epoch(), Ordering::Release);
 
         if let Err(e) = self.await_account_streams_ready(30.0).await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
@@ -4278,8 +4506,11 @@ fn dispatch_lighter_order(
     };
 
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
-    let resolved_cloid =
-        dispatch.resolve_live_cloid(order.client_order_id.as_str(), venue_order_id);
+    let resolved_cloid = dispatch.resolve_live_order_cloid(
+        order.client_order_id.as_str(),
+        venue_order_id,
+        order.nonce,
+    );
 
     let identity = resolved_cloid.and_then(|cid| {
         dispatch
@@ -4511,7 +4742,7 @@ fn dispatch_lighter_trade(
             VenueOrderId::new,
         )
     };
-    let resolved_cloid = dispatch.resolve_live_cloid(raw_client_id.as_str(), venue_order_id);
+    let resolved_cloid = dispatch.resolve_live_trade_cloid(raw_client_id.as_str(), venue_order_id);
 
     let identity = resolved_cloid.and_then(|cid| {
         dispatch
@@ -4785,6 +5016,42 @@ mod tests {
     const TEST_API_KEY_INDEX: u8 = 5;
     const TEST_NEXT_NONCE: i64 = 42;
     const TEST_MARKET_INDEX: i16 = 0;
+
+    fn handle_send_tx_ack(
+        dispatch: &WsDispatchState,
+        account_index: Option<i64>,
+        code: i64,
+        tx_hash: Option<&str>,
+    ) -> Option<PendingSendTx> {
+        handle_send_tx_ack_for_connection(dispatch, account_index, 0, code, tx_hash)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "test wrapper preserves the established rejection call shape"
+    )]
+    fn handle_send_tx_rejection(
+        dispatch: &WsDispatchState,
+        emitter: &ExecutionEventEmitter,
+        account_index: Option<i64>,
+        now: UnixNanos,
+        source: SendTxRejectionSource,
+        code: Option<i64>,
+        message: &str,
+        tx_hash: Option<&str>,
+    ) -> bool {
+        handle_send_tx_rejection_for_connection(
+            dispatch,
+            emitter,
+            account_index,
+            0,
+            now,
+            source,
+            code,
+            message,
+            tx_hash,
+        )
+    }
 
     fn trader_id() -> TraderId {
         TraderId::from("TRADER-001")
@@ -7823,6 +8090,23 @@ mod tests {
                 client_order_index,
             ),
         );
+        rig.dispatch
+            .mark_order_submission(&rig.cloid, 9_182_390_020);
+    }
+
+    fn register_unowned_identity(rig: &DispatcherRig) {
+        let derived = rig.dispatch.derive_client_order_index(&rig.cloid);
+        let client_order_index = rig.dispatch.register_cloid(derived, rig.cloid).unwrap();
+        rig.dispatch.register_order_identity(
+            rig.cloid,
+            OrderIdentity::new(
+                rig.instrument_id,
+                strategy_id(),
+                OrderSide::Buy,
+                OrderType::Limit,
+                client_order_index,
+            ),
+        );
     }
 
     fn dispatcher_test_order(rig: &DispatcherRig, status: LighterOrderStatus) -> LighterOrder {
@@ -8360,6 +8644,105 @@ mod tests {
         assert!(
             !rig.dispatch
                 .accepted_was_emitted(&ClientOrderId::new("external-1"))
+        );
+    }
+
+    #[rstest]
+    fn same_index_external_order_waits_for_create_submission_ownership() {
+        let mut rig = dispatcher_rig("EPOCH-ORDER");
+        register_unowned_identity(&rig);
+        let order = dispatcher_test_order(&rig, LighterOrderStatus::Open);
+        let venue_order_id = VenueOrderId::new(order.order_id.as_str());
+
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(1),
+        );
+
+        let external = drain_events(&mut rig.rx);
+        assert_eq!(external.len(), 1);
+        match &external[0] {
+            ExecutionEvent::Report(EngineExecutionReport::Order(report)) => {
+                assert_eq!(report.venue_order_id, venue_order_id);
+                assert_eq!(
+                    report.client_order_id,
+                    Some(ClientOrderId::new(venue_order_id.as_str())),
+                );
+            }
+            other => panic!("expected one external order report, was {other:?}"),
+        }
+        assert!(!rig.dispatch.accepted_was_emitted(&rig.cloid));
+        assert!(!rig.dispatch.venue_id_map.contains_key(&rig.cloid));
+
+        rig.dispatch.mark_order_submission(&rig.cloid, order.nonce);
+        dispatch_lighter_order(
+            &order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(2),
+        );
+
+        let replayed_external = drain_events(&mut rig.rx);
+        assert_eq!(replayed_external.len(), 1);
+        match &replayed_external[0] {
+            ExecutionEvent::Report(EngineExecutionReport::Order(report)) => {
+                assert_eq!(report.venue_order_id, venue_order_id);
+                assert_eq!(
+                    report.client_order_id,
+                    Some(ClientOrderId::new(venue_order_id.as_str())),
+                );
+            }
+            other => panic!("expected replayed external order report, was {other:?}"),
+        }
+        assert!(!rig.dispatch.accepted_was_emitted(&rig.cloid));
+        assert!(!rig.dispatch.venue_id_map.contains_key(&rig.cloid));
+
+        let mut local_order = order.clone();
+        local_order.order_id = "281476929510111".to_string();
+        let local_venue_order_id = VenueOrderId::new(local_order.order_id.as_str());
+        dispatch_lighter_order(
+            &local_order,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(3),
+        );
+
+        let local = drain_events(&mut rig.rx);
+        assert_eq!(local.len(), 1);
+        match &local[0] {
+            ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+                assert_eq!(event.client_order_id, rig.cloid);
+                assert_eq!(event.venue_order_id, local_venue_order_id);
+                assert_eq!(event.account_id, account_id());
+            }
+            other => panic!("expected one local OrderAccepted, was {other:?}"),
+        }
+        assert_eq!(
+            rig.dispatch
+                .venue_id_map
+                .get(&rig.cloid)
+                .map(|entry| *entry),
+            Some(local_venue_order_id),
+        );
+        assert_eq!(
+            rig.dispatch.resolve_live_order_cloid(
+                order.client_order_id.as_str(),
+                local_venue_order_id,
+                order.nonce + 1,
+            ),
+            Some(rig.cloid),
+            "a bound identity remains stable across replay epochs",
         );
     }
 
@@ -8930,6 +9313,7 @@ mod tests {
         );
         let now = UnixNanos::from(1_000_000_000);
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order.clone()),
                 client_order_index,
@@ -8953,6 +9337,7 @@ mod tests {
 
     fn enqueue_other(client: &LighterExecutionClient, nonce: i64) {
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Other,
             submitted_at: UnixNanos::from(1_000_000_000),
             nonce,
@@ -8969,6 +9354,7 @@ mod tests {
         nonce: i64,
     ) {
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Cancel {
                 strategy_id: strategy_id(),
                 instrument_id,
@@ -8990,6 +9376,7 @@ mod tests {
         nonce: i64,
     ) {
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Modify {
                 strategy_id: strategy_id(),
                 instrument_id,
@@ -9038,6 +9425,52 @@ mod tests {
                 .await
                 .is_err(),
             "ack must not emit an event",
+        );
+    }
+
+    #[tokio::test]
+    async fn send_tx_responses_only_attribute_within_their_connection_epoch() {
+        let (client, _cache, mut rx) = create_execution_client();
+        for (connection_epoch, nonce) in [(4, 20), (5, 21)] {
+            client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+                connection_epoch,
+                kind: PendingSendTxKind::Other,
+                submitted_at: UnixNanos::from(1_000_000_000 + nonce as u64),
+                nonce,
+                api_key_index: TEST_API_KEY_INDEX,
+                tx_hash: "same-hash".to_string(),
+            });
+        }
+
+        let acked =
+            handle_send_tx_ack_for_connection(&client.dispatch, None, 5, 200, Some("same-hash"))
+                .expect("replacement epoch response should match");
+        assert_eq!(acked.connection_epoch, 5);
+        assert_eq!(acked.nonce, 21);
+        {
+            let queue = client.dispatch.pending_sendtx.lock().expect(MUTEX_POISONED);
+            assert_eq!(queue.len(), 1);
+            assert_eq!(queue[0].connection_epoch, 4);
+            assert_eq!(queue[0].nonce, 20);
+        }
+
+        assert!(!handle_send_tx_rejection_for_connection(
+            &client.dispatch,
+            &client.emitter,
+            None,
+            4,
+            UnixNanos::from(1_000_000_100),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            Some("same-hash"),
+        ));
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "non-order responses must not emit order events",
         );
     }
 
@@ -9115,6 +9548,7 @@ mod tests {
         );
 
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order),
                 client_order_index: prepared.client_order_index,
@@ -9342,6 +9776,7 @@ mod tests {
             .register_cloid(client_order_index, order.client_order_id())
             .unwrap();
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order.clone()),
                 client_order_index,
@@ -9423,6 +9858,7 @@ mod tests {
             .register_cloid(client_order_index, order.client_order_id())
             .unwrap();
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order.clone()),
                 client_order_index,
@@ -9486,6 +9922,149 @@ mod tests {
         });
 
         format!("http://{addr}")
+    }
+
+    async fn spawn_counting_next_nonce_server(nonce: i64) -> (String, Arc<AtomicUsize>) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let requests_for_route = Arc::clone(&requests);
+        let body = serde_json::to_string(&LighterNextNonce {
+            code: 200,
+            message: None,
+            nonce,
+        })
+        .unwrap();
+        let app = Router::new().route(
+            "/api/v1/nextNonce",
+            get(move || {
+                requests_for_route.fetch_add(1, Ordering::SeqCst);
+                let body = body.clone();
+                async move { body }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        (format!("http://{addr}"), requests)
+    }
+
+    #[tokio::test]
+    async fn hard_nonce_refresh_waits_for_submission_and_replaces_its_baseline() {
+        let (base_url_http, requests) = spawn_counting_next_nonce_server(100).await;
+        let mut config = test_config();
+        config.base_url_http = Some(base_url_http);
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        let credential = test_credential();
+        client
+            .dispatch
+            .nonce_manager
+            .refresh(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, 40);
+
+        let reserved = client.build_tx_context(&credential).unwrap();
+        assert_eq!(reserved.context.nonce, 40);
+        let mut refresh = Box::pin(client.refresh_nonce());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), refresh.as_mut())
+                .await
+                .is_err(),
+            "hard refresh must wait while a submission retains its nonce",
+        );
+        assert_eq!(requests.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            client.nonce_ready_connection_epoch.load(Ordering::Acquire),
+            NONCE_CONNECTION_EPOCH_UNAVAILABLE,
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(40),
+        );
+
+        drop(reserved);
+        refresh.await.unwrap();
+
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            client.nonce_ready_connection_epoch.load(Ordering::Acquire),
+            NONCE_CONNECTION_EPOCH_UNAVAILABLE,
+        );
+        client
+            .nonce_ready_connection_epoch
+            .store(client.ws_client.connection_epoch(), Ordering::Release);
+        let next = client.build_tx_context(&credential).unwrap();
+        assert_eq!(next.context.nonce, 100);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(100),
+        );
+    }
+
+    #[tokio::test]
+    async fn nonce_refresh_retry_reopens_submission_with_replacement_baseline() {
+        let (base_url_http, requests) = spawn_counting_next_nonce_server(100).await;
+        let mut config = test_config();
+        config.base_url_http = Some(base_url_http);
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        let credential = test_credential();
+        let connection_epoch = client.ws_client.connection_epoch();
+        client
+            .dispatch
+            .nonce_manager
+            .refresh(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, 40);
+        client
+            .nonce_ready_connection_epoch
+            .store(NONCE_CONNECTION_EPOCH_UNAVAILABLE, Ordering::Release);
+
+        NonceRefreshRetry {
+            http_client: client.http_client.clone(),
+            dispatch: client.dispatch.clone(),
+            credential: Some(credential.clone()),
+            submission_gate: Arc::clone(&client.nonce_submission_gate),
+            ready_connection_epoch: Arc::clone(&client.nonce_ready_connection_epoch),
+            ws_client: client.ws_client.clone(),
+            cancellation_token: client.cancellation_token.clone(),
+        }
+        .spawn(connection_epoch);
+
+        let err = client
+            .build_tx_context(&credential)
+            .expect_err("submission must stay closed until retry succeeds");
+        assert_eq!(
+            err.to_string(),
+            format!("Lighter nonce refresh is pending for connection epoch {connection_epoch}"),
+        );
+        wait_until_async(
+            || async {
+                client.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        let reserved = client.build_tx_context(&credential).unwrap();
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(reserved.context.nonce, 100);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .baseline(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(99),
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(100),
+        );
     }
 
     async fn spawn_integrator_approval_rejection_server() -> String {
@@ -9769,6 +10348,7 @@ mod tests {
             .unwrap();
 
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Cancel {
                 strategy_id: strategy_id(),
                 instrument_id,
@@ -9820,6 +10400,7 @@ mod tests {
             .unwrap();
 
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: 0,
             kind: PendingSendTxKind::Modify {
                 strategy_id: strategy_id(),
                 instrument_id,

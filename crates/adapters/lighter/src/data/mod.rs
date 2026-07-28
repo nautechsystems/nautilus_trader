@@ -417,7 +417,7 @@ impl LighterDataClient {
                                 | NautilusWsMessage::SendTxRejected { .. }
                                 | NautilusWsMessage::AccountStreamFirstFrame(_),
                             ) => {}
-                            Some(NautilusWsMessage::Reconnected) => {
+                            Some(NautilusWsMessage::Reconnected { .. }) => {
                                 log::debug!("Lighter WebSocket reconnected");
                             }
                             None => {

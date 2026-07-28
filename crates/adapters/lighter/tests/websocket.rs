@@ -1773,7 +1773,7 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
     // Drain events until Reconnected lands. The network layer reconnects
     // after `RECONNECT_BASE_BACKOFF` (250 ms) plus jitter, so a few seconds
     // is plenty of headroom.
-    let mut saw_reconnected = false;
+    let mut reconnect_epoch = None;
 
     for _ in 0..20 {
         let Some(event) = next_event_within(&mut harness.client, Duration::from_secs(3)).await
@@ -1781,14 +1781,15 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
             break;
         };
 
-        if matches!(event, NautilusWsMessage::Reconnected) {
-            saw_reconnected = true;
+        if let NautilusWsMessage::Reconnected { connection_epoch } = event {
+            reconnect_epoch = Some(connection_epoch);
             break;
         }
     }
-    assert!(
-        saw_reconnected,
-        "expected Reconnected after server-driven close"
+    assert_eq!(
+        reconnect_epoch,
+        Some(1),
+        "first replacement connection must own epoch 1",
     );
 
     // The spawn loop replays both topics from `subscription_args`. Order is
