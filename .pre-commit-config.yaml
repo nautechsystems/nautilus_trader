@@ -132,6 +132,19 @@ repos:
           )$
         pass_filenames: false
 
+      - id: test-cli-r2-upload-installer
+        name: test CLI R2 installer upload
+        description: Verifies installer uploads fail after retry exhaustion
+        entry: bash scripts/ci/test-publish-cli-r2-upload-installer.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.github/workflows/cli-binaries\.yml|
+            \.pre-commit-config\.yaml|
+            scripts/ci/(publish-cli-r2-upload-installer\.sh|test-publish-cli-r2-upload-installer\.bash)
+          )$
+        pass_filenames: false
+
       - id: check-hidden-chars
         name: check hidden unicode/control chars
         description: Fail on hidden control or zero-width unicode characters in source

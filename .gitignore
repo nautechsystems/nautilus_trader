@@ -110,6 +110,7 @@ env/
 !scripts/ci/publish-cargo-crates.sh
 !scripts/ci/publish-cli-r2-prune.sh
 !scripts/ci/publish-cli-r2-upload.sh
+!scripts/ci/publish-cli-r2-upload-installer.sh
 !scripts/ci/publish-cli-r2-verify.sh
 !scripts/ci/publish-release-attestation-siblings.sh
 !scripts/ci/publish-release-checksums.sh
