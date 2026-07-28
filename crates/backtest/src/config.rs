@@ -393,6 +393,16 @@ impl SimulatedVenueConfig {
             );
         }
 
+        for (instrument_id, leverage) in &self.leverages {
+            errors.check(
+                *leverage > Decimal::ZERO,
+                ConfigError::range(
+                    "leverages",
+                    format!("leverage for {instrument_id} must be positive, was {leverage}"),
+                ),
+            );
+        }
+
         errors.check(
             self.liquidation_trigger_ratio.is_finite() && self.liquidation_trigger_ratio > 0.0,
             ConfigError::range(
@@ -1184,6 +1194,17 @@ mod tests {
         };
     }
 
+    macro_rules! minimal_simulated_builder {
+        () => {
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("SIM"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+        };
+    }
+
     #[rstest]
     fn test_minimal_config_is_valid() {
         assert!(minimal_builder!().build().is_ok());
@@ -1229,6 +1250,24 @@ mod tests {
         leverages.insert(InstrumentId::from("ESZ21.GLBX"), Decimal::ZERO);
         let result = minimal_builder!().leverages(leverages).build();
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "leverages"));
+    }
+
+    #[rstest]
+    #[case(Decimal::ZERO)]
+    #[case(Decimal::from(-1))]
+    fn test_simulated_non_positive_instrument_leverage_rejected(#[case] leverage: Decimal) {
+        let mut leverages = AHashMap::new();
+        leverages.insert(InstrumentId::from("ESZ21.GLBX"), leverage);
+        let result = minimal_simulated_builder!().leverages(leverages).build();
+        assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "leverages"));
+    }
+
+    #[rstest]
+    fn test_simulated_positive_instrument_leverage_accepted() {
+        let mut leverages = AHashMap::new();
+        leverages.insert(InstrumentId::from("ESZ21.GLBX"), Decimal::from(10));
+        let result = minimal_simulated_builder!().leverages(leverages).build();
+        assert!(result.is_ok());
     }
 
     #[rstest]

@@ -262,19 +262,22 @@ impl BacktestEngine {
 
     /// # Errors
     ///
-    /// Returns an error if initializing the simulated exchange for the venue fails.
+    /// Returns an error if the venue is already registered, initializing the simulated exchange
+    /// fails, or registering its execution client fails.
     pub fn add_venue(&mut self, config: SimulatedVenueConfig) -> anyhow::Result<()> {
         // `routing` and `frozen_account` flow to the exec client, so capture
         // them before the config is consumed by the exchange constructor.
         let venue = config.venue;
+        if self.venues.contains_key(&venue) {
+            anyhow::bail!("Venue {venue} is already registered");
+        }
+
         let routing = Some(config.routing);
         let frozen_account = Some(config.frozen_account);
 
         let exchange =
             SimulatedExchange::new(config, self.kernel.cache.clone(), self.kernel.clock.clone())?;
         let exchange = Rc::new(RefCell::new(exchange));
-        SimulatedExchange::register_spread_quote_endpoint(&exchange);
-        self.venues.insert(venue, exchange.clone());
 
         let account_id = AccountId::from(format!("{venue}-001").as_str());
 
@@ -292,12 +295,14 @@ impl BacktestEngine {
             .borrow_mut()
             .register_client(Rc::new(exec_client.clone()));
 
-        self.exec_clients.push(exec_client.clone());
-
         self.kernel
             .exec_engine
             .borrow_mut()
-            .register_client(Box::new(exec_client))?;
+            .register_client(Box::new(exec_client.clone()))?;
+
+        SimulatedExchange::register_spread_quote_endpoint(&exchange);
+        self.venues.insert(venue, exchange);
+        self.exec_clients.push(exec_client);
 
         log::info!("Adding exchange {venue} to engine");
 
@@ -1873,18 +1878,18 @@ mod tests {
             execution::{SubmitOrder, TradingCommand},
         },
         msgbus::{
-            self, MessagingSwitchboard,
+            self, MessagingSwitchboard, TypedHandler,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
     };
-    use nautilus_execution::engine::SnapshotAnchorer;
+    use nautilus_execution::engine::{SnapshotAnchorer, stubs::StubExecutionClient};
     use nautilus_model::{
-        data::{Data, InstrumentStatus},
+        data::{Data, InstrumentStatus, QuoteTick},
         enums::{
             AccountType, BookType, MarketStatus, MarketStatusAction, OmsType, OrderSide,
             OrderStatus, OrderType, TriggerType,
         },
-        identifiers::{ClientId, PositionId, StrategyId, Venue},
+        identifiers::{AccountId, ClientId, PositionId, StrategyId, Venue},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
@@ -1980,6 +1985,160 @@ mod tests {
             .unwrap();
         engine.add_venue(venue_config).unwrap();
         engine
+    }
+
+    #[rstest]
+    fn test_add_duplicate_venue_preserves_original_exchange(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let venue = Venue::from("BINANCE");
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .build()
+            .unwrap();
+        engine.add_venue(venue_config).unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+
+        let initial_quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        msgbus::send_quote(
+            format!("SimulatedExchange.process_new_quote.{venue}").into(),
+            &initial_quote,
+        );
+
+        let best_bid_before = engine
+            .venues
+            .get(&venue)
+            .unwrap()
+            .borrow()
+            .best_bid_price(instrument_id);
+        let best_ask_before = engine
+            .venues
+            .get(&venue)
+            .unwrap()
+            .borrow()
+            .best_ask_price(instrument_id);
+        let original_exchange = Rc::downgrade(engine.venues.get(&venue).unwrap());
+        let venues_before = engine.list_venues();
+        let exec_clients_len_before = engine.exec_clients.len();
+        let client_ids_before = engine.kernel.exec_engine.borrow().client_ids();
+
+        let duplicate_config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .build()
+            .unwrap();
+        assert!(engine.add_venue(duplicate_config).is_err());
+
+        let original_exchange = original_exchange
+            .upgrade()
+            .expect("the original exchange must remain alive");
+        assert!(Rc::ptr_eq(
+            &original_exchange,
+            engine.venues.get(&venue).unwrap()
+        ));
+        assert_eq!(engine.list_venues(), venues_before);
+        assert_eq!(engine.exec_clients.len(), exec_clients_len_before);
+        assert_eq!(
+            engine.kernel.exec_engine.borrow().client_ids(),
+            client_ids_before
+        );
+
+        let distinct_quote = QuoteTick::new(
+            instrument_id,
+            Price::from("2000.00"),
+            Price::from("2001.00"),
+            Quantity::from("2.000"),
+            Quantity::from("2.000"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+        msgbus::send_quote(
+            format!("SimulatedExchange.process_new_quote.{venue}").into(),
+            &distinct_quote,
+        );
+
+        let original_exchange = original_exchange.borrow();
+        let best_bid_after = original_exchange.best_bid_price(instrument_id);
+        let best_ask_after = original_exchange.best_ask_price(instrument_id);
+        assert_ne!(best_bid_after, best_bid_before);
+        assert_ne!(best_ask_after, best_ask_before);
+        assert_eq!(best_bid_after, Some(Price::from("2000.00")));
+        assert_eq!(best_ask_after, Some(Price::from("2001.00")));
+    }
+
+    #[rstest]
+    fn test_add_venue_execution_registration_failure_publishes_nothing() {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let venue = Venue::from("SIM");
+        engine
+            .kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(StubExecutionClient::new(
+                ClientId::from(venue.as_str()),
+                AccountId::from("SIM-001"),
+                venue,
+                OmsType::Netting,
+                None,
+            )))
+            .unwrap();
+        let client_ids_before = engine.kernel.exec_engine.borrow().client_ids();
+
+        let endpoint = format!("SimulatedExchange.process_new_quote.{venue}");
+        let received_quotes = Rc::new(RefCell::new(Vec::new()));
+        let received_quotes_handler = Rc::clone(&received_quotes);
+        let sentinel = TypedHandler::from_with_id("venue-setup-sentinel", move |quote| {
+            received_quotes_handler.borrow_mut().push(*quote);
+        });
+        msgbus::register_quote_endpoint(endpoint.as_str().into(), sentinel);
+
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USD")])
+            .build()
+            .unwrap();
+        assert!(engine.add_venue(venue_config).is_err());
+
+        assert!(!engine.venues.contains_key(&venue));
+        assert!(engine.exec_clients.is_empty());
+        assert_eq!(
+            engine.kernel.exec_engine.borrow().client_ids(),
+            client_ids_before
+        );
+
+        let quote = QuoteTick::new(
+            InstrumentId::from("TEST.SIM"),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        msgbus::send_quote(endpoint.as_str().into(), &quote);
+        assert_eq!(received_quotes.borrow().as_slice(), &[quote]);
     }
 
     #[rstest]
