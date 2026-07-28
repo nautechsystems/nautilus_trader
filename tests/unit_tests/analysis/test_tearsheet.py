@@ -36,6 +36,7 @@ from nautilus_trader.analysis.tearsheet import _create_stats_table
 from nautilus_trader.analysis.tearsheet import _create_tearsheet_figure
 from nautilus_trader.analysis.tearsheet import _normalize_theme_config
 from nautilus_trader.analysis.tearsheet import _resolve_tearsheet_returns
+from nautilus_trader.analysis.tearsheet import _result_account_info
 from nautilus_trader.analysis.tearsheet import create_drawdown_chart
 from nautilus_trader.analysis.tearsheet import create_equity_curve
 from nautilus_trader.analysis.tearsheet import create_monthly_returns_heatmap
@@ -523,12 +524,12 @@ def test_create_tearsheet_accepts_pyo3_backtest_result(monkeypatch):
         run_finished=1_704_067_202_000_000_000,
         backtest_start=1_704_067_200_000_000_000,
         backtest_end=1_704_067_201_000_000_000,
-        elapsed_time_secs=2.0,
+        elapsed_time_secs=86_400.0,
         iterations=3,
         total_events=4,
         total_orders=5,
         total_positions=6,
-        stats_pnls={"USD": {"PnL (total)": 10.0}},
+        stats_pnls={"USD": {"PnL (total)": 10.0}, "AUD": {"PnL (total)": 1.0}},
         stats_returns={"Sharpe Ratio (252 days)": 1.5},
         stats_general={"Win Rate": 0.5},
         returns_series={
@@ -540,13 +541,18 @@ def test_create_tearsheet_accepts_pyo3_backtest_result(monkeypatch):
     cache = object()
     account_report = pd.DataFrame(
         {
-            "currency": ["USD", "USD"],
-            "total": ["1000.00", "1010.00"],
+            "currency": ["USD", "USD", "AUD", "AUD"],
+            "total": ["1000.00", "1010.00", "2000.00", "2020.00"],
         },
-        index=pd.to_datetime(["2024-01-01", "2024-01-02"], utc=True),
+        index=pd.to_datetime(
+            ["2024-01-01", "2024-01-02", "2024-01-01", "2024-01-02"],
+            utc=True,
+        ),
     )
 
     class MockNode:
+        configs = [SimpleNamespace(id="run-001", dispose_on_completion=False)]
+
         def get_engine_cache(self, run_config_id):
             assert run_config_id == "run-001"
             return cache
@@ -576,13 +582,15 @@ def test_create_tearsheet_accepts_pyo3_backtest_result(monkeypatch):
         result,
         output_path=None,
         node=MockNode(),
+        currency="USD",
         config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
     )
 
     # Assert
     assert html == "html"
-    assert captured["stats_pnls"] == result.stats_pnls
+    assert captured["stats_pnls"] == {"USD": {"PnL (total)": 10.0}}
     assert captured["run_info"]["Total orders"] == "5"
+    assert captured["run_info"]["Elapsed time"] == "0 days 00:00:02"
     assert captured["account_info"] == {
         "Starting balance (XCME, USD)": "1000.0",
         "Ending balance (XCME, USD)": "1010.0",
@@ -595,6 +603,44 @@ def test_create_tearsheet_accepts_pyo3_backtest_result(monkeypatch):
         pd.Timestamp("2024-01-01T00:00:00Z"): 0.01,
         pd.Timestamp("2024-01-02T00:00:00Z"): -0.02,
     }
+
+
+def test_create_tearsheet_rejects_disposed_pyo3_node_state():
+    # Arrange
+    result = SimpleNamespace(run_config_id="run-001", returns_series={}, stats_returns={})
+    node = SimpleNamespace(
+        configs=[SimpleNamespace(id="run-001", dispose_on_completion=True)],
+    )
+
+    # Act and assert
+    with pytest.raises(ValueError, match="dispose_on_completion=False"):
+        create_tearsheet(
+            result,
+            output_path=None,
+            node=node,
+            config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+        )
+
+
+def test_result_account_info_filters_summary_balance_by_currency():
+    # Arrange
+    result = SimpleNamespace(
+        summary={
+            "account.XCME.balance.USD.total": "1010.0",
+            "account.XCME.balance.AUD.total": "2020.0",
+        },
+    )
+
+    # Act
+    account_info = _result_account_info(
+        result,
+        node=None,
+        run_config_id=None,
+        currency="USD",
+    )
+
+    # Assert
+    assert account_info == {"Ending balance (XCME, USD)": "1010.0"}
 
 
 def test_resolve_tearsheet_returns_prefers_analyzer_portfolio_returns(monkeypatch):

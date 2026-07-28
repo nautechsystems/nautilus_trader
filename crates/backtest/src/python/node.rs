@@ -58,6 +58,13 @@ impl BacktestNode {
         Self::new(configs).map_err(to_pyruntime_err)
     }
 
+    /// Returns the run configurations.
+    #[getter]
+    #[pyo3(name = "configs")]
+    fn py_configs(&self) -> Vec<BacktestRunConfig> {
+        self.configs().to_vec()
+    }
+
     /// Builds backtest engines from the run configurations.
     ///
     /// For each config, creates a `BacktestEngine`, adds venues, and loads

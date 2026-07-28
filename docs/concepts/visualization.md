@@ -52,6 +52,36 @@ create_tearsheet(
 This produces an HTML file with all default charts, using the light theme and automatic
 layout. Open `backtest_results.html` in your browser to view the interactive tearsheet.
 
+### Backtest result input
+
+Let `result` be a `BacktestResult` returned by a completed backtest. Pass it without its node for a
+result‑only tearsheet:
+
+```python
+create_tearsheet(
+    engine=result,
+    output_path="backtest_results.html",
+)
+```
+
+To include starting account balances from node reports, retain the node state. The node is also
+required when the configured tearsheet includes a cache‑backed chart such as `bars_with_fills`.
+
+Follow the complete [`BacktestNode` setup](backtesting/apis-and-runs.md#high-level-api),
+setting `dispose_on_completion=False` on its `BacktestRunConfig`. Then pass the completed result and
+retained node:
+
+```python
+create_tearsheet(
+    engine=result,
+    node=node,
+    output_path="backtest_results.html",
+)
+```
+
+Passing a node whose matching run configuration enables disposal raises `ValueError` because its
+cache and reports are no longer available.
+
 ### Customization
 
 Control which charts appear and how they're styled:
@@ -99,6 +129,9 @@ When `currency` is `None` (default), statistics for all currencies are displayed
 separately in the tearsheet. Return-based charts are reconstructed from account
 reports only when the accounts share one currency; pass `currency` for multi-currency
 backtests so return charts use the selected currency.
+
+For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
+stored return series remains unchanged.
 
 ## Available charts
 
@@ -499,8 +532,8 @@ Recommended for most use cases:
 create_tearsheet(engine=engine, config=config)
 ```
 
-Automatically extracts data from the `BacktestEngine`, generates all configured charts,
-and produces a complete HTML tearsheet.
+Automatically extracts data from a `BacktestEngine` or `BacktestResult`, generates all configured
+charts, and produces a complete HTML tearsheet.
 
 ### Low-level API
 

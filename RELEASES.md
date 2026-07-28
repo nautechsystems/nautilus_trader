@@ -85,6 +85,7 @@ adapter set. The following limits remain deferred:
 - Added Python v2 `ExecutionAlgorithm.deny_order` with terminal denial of invalid TWAP inputs
 - Added Python v2 `ExecutionAlgorithm` portfolio, lifecycle, signals, and constructed live registration
 - Added Python v2 `BacktestNode` post-run cache, portfolio, statistics, and report inspection
+- Added v2 tearsheet support for `BacktestResult` input (#4563), thanks @faysou
 - Added Python v2 `LiveNode` cache and portfolio inspection with bounded host-loop polling
 - Added Python v2 `LiveNode.add_strategy` for constructed strategy instances (#4487), thanks @dfjmax
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
@@ -166,6 +167,9 @@ adapter set. The following limits remain deferred:
 - Fixed v2 clock `set_time_alert` and `set_timer` panicking on pre-epoch or out-of-range `DateTime` inputs
 - Fixed v2 clock past-alert warning logging the adjusted time instead of the original alert time
 - Fixed v2 PyO3 API coverage and Python exception handling
+- Fixed v2 result tearsheets to reject disposed node state
+- Fixed v2 result tearsheets reporting the backtest range instead of the wall‑clock run duration
+- Fixed v2 result tearsheets to filter PnL and account balances by currency
 - Fixed `nautilus database init` panicking instead of skipping existing schema objects on re-run
 - Fixed `nautilus database init` leaving schema objects owned by the bootstrap administrator
 - Fixed the v2 SQL schema loader splitting dollar-quoted (`$$`) statement bodies on their inner semicolons
@@ -446,6 +450,7 @@ adapter set. The following limits remain deferred:
 - Upgraded `pyarrow` to v25.0.0
 
 ### Documentation Updates
+- Added v2 `BacktestResult` tearsheet lifecycle and currency filter guidance
 - Updated Bybit v2 spot margin auto-repayment behavior and configuration
 - Added the v1-to-v2 property, method, and callback migration matrix
 - Added canonical references and doc comments for portfolio statistics
