@@ -113,6 +113,25 @@ repos:
   ##############################################################################
   - repo: local
     hooks:
+      - id: check-github-action-shas
+        name: check GitHub Action SHAs
+        description: Verifies action SHAs match their documented release tags
+        entry: bash scripts/ci/check-github-action-shas.sh
+        language: system
+        files: ^\.github/(actions/.+/action\.ya?ml|workflows/.+\.ya?ml)$
+
+      - id: test-github-action-shas
+        name: test GitHub Action SHA check
+        description: Verifies action SHA parsing, tag comments, and mismatch failures
+        entry: bash scripts/ci/test-github-action-shas.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            scripts/ci/(check-github-action-shas\.sh|test-github-action-shas\.bash)
+          )$
+        pass_filenames: false
+
       - id: check-hidden-chars
         name: check hidden unicode/control chars
         description: Fail on hidden control or zero-width unicode characters in source

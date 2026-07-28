@@ -155,7 +155,7 @@ jobs:
       # Run codspeed once only
       - name: Run benchmarks
         # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@9a94d4f4af407c62dfa28ecf6a32e8e914cef4cf # v4.18.5
+        uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
           mode: simulation

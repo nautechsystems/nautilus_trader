@@ -1,18 +1,22 @@
 #!/bin/bash
-# A script to verify that GitHub Action SHAs in staged changes match their expected release tags.
+# A script to verify that GitHub Action SHAs match their expected release tags.
 # It expects the format: uses: owner/repo/path@<sha> # <tag>
+
+if [ "$#" -eq 0 ]; then
+  echo "Usage: $0 <action-file>..." >&2
+  exit 2
+fi
 
 USES_LINES="$(mktemp)"
 trap 'rm -f "$USES_LINES"' EXIT
 
-git diff --staged |
-  grep '^+[[:space:]]*-*[[:space:]]*uses:[[:space:]]*' |
+grep -h '^[[:space:]]*-*[[:space:]]*uses:[[:space:]]*' "$@" |
   grep '@[0-9a-f]\{40\}' |
-  sed -e 's/^+[[:space:]]*-\?[[:space:]]*uses:[[:space:]]*//' |
+  sed -e 's/^[[:space:]]*-\{0,1\}[[:space:]]*uses:[[:space:]]*//' |
   sort -u > "$USES_LINES"
 
 if [ ! -s "$USES_LINES" ]; then
-  echo "No staged GitHub Action SHA updates found."
+  echo "No GitHub Action SHAs found."
   exit 0
 fi
 
@@ -22,12 +26,13 @@ while IFS= read -r line; do
   REPO_WITH_PATH=$(echo "$line" | cut -d'@' -f1)
   REPO=$(echo "$REPO_WITH_PATH" | cut -d'/' -f1,2)
   EXPECTED_SHA=$(echo "$line" | cut -d'@' -f2 | cut -d' ' -f1)
-  TAG=$(echo "$line" | cut -d'#' -f2 | tr -d ' ')
-
-  if [ -z "$TAG" ]; then
-    echo "WARNING: Could not parse tag from line (missing '# <tag>'): $line"
+  if ! echo "$line" | grep -q '#[[:space:]]*[^[:space:]]'; then
+    echo "FAILED (missing '# <tag>' comment): $line"
+    FAILED=1
     continue
   fi
+
+  TAG=$(echo "$line" | cut -d'#' -f2 | tr -d ' ')
 
   echo -n "Checking $REPO_WITH_PATH ($TAG)... "
 
