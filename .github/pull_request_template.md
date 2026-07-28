@@ -2,6 +2,9 @@
 
 **NautilusTrader prioritizes correctness and reliability, please follow existing patterns for validation and testing.**
 
+> External contributions must not modify files under `.github/workflows` or `.github/actions`;
+> workflow changes are maintainer‑only.
+
 <!-- PR title: use a capitalized, imperative subject naming the affected surface, for example
      "Fix Bybit post-only rejection flag". Do NOT use Conventional Commits (`feat:`, `fix:`) syntax.
      A squash merge turns this title into the commit subject. -->
