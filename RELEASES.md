@@ -275,6 +275,8 @@ adapter set. The following limits remain deferred:
 - Fixed live missing-order reconciliation to use monotonic receipt time (#4387), thanks @folknor
 - Fixed live execution engine position activity to stamp receipt time instead of venue `ts_event`
 - Fixed Rust v2 `log_trace!` rejecting the documented color and component argument forms
+- Fixed an edge case where same‑millisecond log rotation could delete the active log file
+- Fixed rotated log file names using a colon reserved on Windows, which could prevent log files being written
 - Fixed mixed-instrument backtest order-list fills using the wrong book (#4392), thanks for reporting @gtalknitin
 - Fixed nondeterministic event ordering in backtests (#4480), thanks @folknor
 - Fixed portfolio PnL and account-state resolution for broker-routed instruments (#4451), thanks @dfjmax
