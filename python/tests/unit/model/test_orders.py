@@ -22,6 +22,7 @@ from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitIfTouchedOrder
 from nautilus_trader.model import LimitOrder
@@ -83,6 +84,80 @@ def test_market_order_construction():
     assert order.is_reduce_only is False
     assert order.is_quote_quantity is False
     assert order.order_type == OrderType.MARKET
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {
+                "contingency_type": ContingencyType.OCO,
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {"exec_algorithm_id": ExecAlgorithmId("TWAP")},
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_direct_market_order_rejects_invalid_metadata(metadata, expected):
+    with pytest.raises(ValueError, match=expected):
+        _market_order(**metadata)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {"contingency_type": ContingencyType.OCO},
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {
+                "contingency_type": ContingencyType.OCO,
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {"exec_algorithm_id": ExecAlgorithmId("TWAP")},
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_direct_order_initialized_rejects_invalid_metadata(metadata, expected):
+    with pytest.raises(ValueError, match=expected):
+        _order_initialized(**metadata)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {
+                "contingency_type": "OCO",
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {
+                "exec_algorithm_id": "TWAP",
+                "exec_spawn_id": None,
+            },
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_market_order_reconstruction_rejects_invalid_metadata(metadata, expected):
+    values = _order_initialized().to_dict()
+    values.update(metadata)
+    event = OrderInitialized.from_dict(values)
+
+    with pytest.raises(ValueError, match=expected):
+        MarketOrder.create(event)
 
 
 def test_market_order_str_and_repr():
@@ -805,20 +880,45 @@ AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
 ACCOUNT_ID = AccountId("SIM-000")
 
 
-def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001"):
-    return MarketOrder(
-        trader_id=TRADER_ID,
-        strategy_id=STRATEGY_ID,
-        instrument_id=AUDUSD_SIM,
-        client_order_id=ClientOrderId(client_order_id),
-        order_side=side,
-        quantity=Quantity.from_int(qty),
-        init_id=UUID4(),
-        ts_init=0,
-        time_in_force=TimeInForce.GTC,
-        reduce_only=False,
-        quote_quantity=False,
-    )
+def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001", **metadata):
+    values = {
+        "trader_id": TRADER_ID,
+        "strategy_id": STRATEGY_ID,
+        "instrument_id": AUDUSD_SIM,
+        "client_order_id": ClientOrderId(client_order_id),
+        "order_side": side,
+        "quantity": Quantity.from_int(qty),
+        "init_id": UUID4(),
+        "ts_init": 0,
+        "time_in_force": TimeInForce.GTC,
+        "reduce_only": False,
+        "quote_quantity": False,
+    }
+    values.update(metadata)
+    return MarketOrder(**values)
+
+
+def _order_initialized(**metadata):
+    values = {
+        "trader_id": TRADER_ID,
+        "strategy_id": STRATEGY_ID,
+        "instrument_id": AUDUSD_SIM,
+        "client_order_id": ClientOrderId("O-001"),
+        "order_side": OrderSide.BUY,
+        "order_type": OrderType.MARKET,
+        "quantity": Quantity.from_int(100_000),
+        "time_in_force": TimeInForce.GTC,
+        "post_only": False,
+        "reduce_only": False,
+        "quote_quantity": False,
+        "reconciliation": False,
+        "event_id": UUID4(),
+        "ts_event": 0,
+        "ts_init": 0,
+        "contingency_type": ContingencyType.NO_CONTINGENCY,
+    }
+    values.update(metadata)
+    return OrderInitialized(**values)
 
 
 def _limit_order(client_order_id="O-002"):
@@ -988,6 +1088,43 @@ ORDER_FACTORIES = [
     _trailing_stop_market_order,
     _trailing_stop_limit_order,
 ]
+
+
+@pytest.mark.parametrize(
+    "order_factory",
+    [
+        _limit_if_touched_order,
+        _market_to_limit_order,
+        _stop_limit_order,
+        _stop_market_order,
+    ],
+)
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {
+                "contingency_type": "OCO",
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {
+                "exec_algorithm_id": "TWAP",
+                "exec_spawn_id": None,
+            },
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_order_from_dict_rejects_invalid_metadata(order_factory, metadata, expected):
+    order = order_factory()
+    values = order.to_dict()
+    values.update(metadata)
+
+    with pytest.raises(ValueError, match=expected):
+        type(order).from_dict(values)
 
 
 @pytest.mark.parametrize("order_factory", ORDER_FACTORIES)

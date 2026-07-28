@@ -2471,6 +2471,7 @@ mod tests {
     fn test_order_is_contingency() {
         let order: MarketOrder = OrderInitializedSpec::builder()
             .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![ClientOrderId::from("O-LINKED")])
             .build()
             .try_into()
             .unwrap();

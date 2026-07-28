@@ -5341,6 +5341,7 @@ mod tests {
         instrument_id: InstrumentId,
         client_order_id: &str,
         order_list_id: &str,
+        linked_order_id: &str,
     ) -> OrderAny {
         OrderAny::Limit(LimitOrder::new(
             trader_id(),
@@ -5360,7 +5361,7 @@ mod tests {
             None,
             Some(ContingencyType::Oco),
             Some(OrderListId::from(order_list_id)),
-            None,
+            Some(vec![ClientOrderId::from(linked_order_id)]),
             None,
             None,
             None,
@@ -6390,8 +6391,10 @@ mod tests {
     async fn submit_order_list_grouped_contingency_denies_all_without_dispatch() {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
-        let order_a = test_contingent_limit_order(instrument_id, "O-LIST-OCO-A", "OL-OCO");
-        let order_b = test_contingent_limit_order(instrument_id, "O-LIST-OCO-B", "OL-OCO");
+        let order_a_id = "O-LIST-OCO-A";
+        let order_b_id = "O-LIST-OCO-B";
+        let order_a = test_contingent_limit_order(instrument_id, order_a_id, "OL-OCO", order_b_id);
+        let order_b = test_contingent_limit_order(instrument_id, order_b_id, "OL-OCO", order_a_id);
         cache_order(&cache, order_a.clone());
         cache_order(&cache, order_b.clone());
 

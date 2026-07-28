@@ -1113,7 +1113,7 @@ impl ExecutionEngine {
         let trader_id = get_message_bus().borrow().trader_id;
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        let initialized = OrderInitialized::new(
+        let initialized = match OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             report.instrument_id,
@@ -1148,7 +1148,13 @@ impl ExecutionEngine {
             None, // exec_algorithm_params
             None, // exec_spawn_id
             None, // tags
-        );
+        ) {
+            Ok(initialized) => initialized,
+            Err(e) => {
+                log::error!("Failed to create external order from report: {e}");
+                return None;
+            }
+        };
 
         self.materialize_external_order(
             initialized,

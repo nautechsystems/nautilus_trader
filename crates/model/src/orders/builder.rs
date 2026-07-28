@@ -749,6 +749,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .price(Price::from("1"))
             .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![ClientOrderId::from("O-LINKED")])
             .build();
 
         assert_eq!(order.contingency_type(), Some(ContingencyType::Oto));

@@ -16,7 +16,7 @@
 use indexmap::IndexMap;
 use nautilus_core::{
     UUID4, UnixNanos,
-    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3, to_pyvalue_err},
 };
 use pyo3::{
     basic::CompareOp,
@@ -87,8 +87,8 @@ impl OrderInitialized {
         exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -124,6 +124,7 @@ impl OrderInitialized {
             exec_spawn_id,
             tags.map(|vec| vec.iter().map(|s| Ustr::from(s)).collect()),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

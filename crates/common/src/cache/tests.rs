@@ -4319,22 +4319,24 @@ fn test_purge_order_preserves_speculative_metadata_when_reverse_bucket_is_missin
 fn test_purge_order_preserves_exec_algorithm_when_reverse_bucket_is_missing() {
     let mut cache = Cache::default();
     let exec_algorithm_id = ExecAlgorithmId::new("TWAP");
+    let first_order_id = ClientOrderId::new("O-EXEC-FIRST");
     let first_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(InstrumentId::from("AUD/USD.SIM"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
-        .client_order_id(ClientOrderId::new("O-EXEC-FIRST"))
+        .client_order_id(first_order_id)
         .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(first_order_id)
         .build();
+    let second_order_id = ClientOrderId::new("O-EXEC-SECOND");
     let second_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(InstrumentId::from("AUD/USD.SIM"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
-        .client_order_id(ClientOrderId::new("O-EXEC-SECOND"))
+        .client_order_id(second_order_id)
         .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(second_order_id)
         .build();
-    let first_order_id = first_order.client_order_id();
-    let second_order_id = second_order.client_order_id();
     cache.add_order(first_order, None, None, false).unwrap();
     cache.add_order(second_order, None, None, false).unwrap();
     cache.index.exec_algorithm_orders.remove(&exec_algorithm_id);
@@ -4350,14 +4352,16 @@ fn test_purge_order_retires_last_strategy_and_exec_algorithm() {
     let mut cache = Cache::default();
     let strategy_id = StrategyId::new("S-PURGE");
     let exec_algorithm_id = ExecAlgorithmId::new("TWAP");
+    let client_order_id = ClientOrderId::new("O-EXEC-LAST");
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(InstrumentId::from("AUD/USD.SIM"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
+        .client_order_id(client_order_id)
         .strategy_id(strategy_id)
         .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(client_order_id)
         .build();
-    let client_order_id = order.client_order_id();
     cache.add_order(order, None, None, false).unwrap();
 
     cache.purge_order(client_order_id);
@@ -7642,7 +7646,9 @@ fn build_filter_order(
     }
 
     if let Some(exec_algorithm_id) = exec_algorithm_id {
-        builder.exec_algorithm_id(exec_algorithm_id);
+        builder
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(client_order_id);
     }
 
     builder.build()

@@ -470,7 +470,7 @@ impl LimitIfTouchedOrder {
             .map(|vec| vec.iter().map(|s| Ustr::from(s)).collect());
         let init_id = get_required_parsed(values, "init_id", |s| s.parse::<UUID4>())?;
         let ts_init = get_required::<u64>(values, "ts_init")?;
-        let order = Self::new(
+        let order = Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -498,7 +498,8 @@ impl LimitIfTouchedOrder {
             tags,
             init_id,
             ts_init.into(),
-        );
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(order)
     }
 

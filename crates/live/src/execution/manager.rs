@@ -3496,7 +3496,7 @@ impl ExecutionManager {
 
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        let initialized = OrderInitialized::new(
+        let initialized = match OrderInitialized::new_checked(
             self.config.trader_id,
             strategy_id,
             report.instrument_id,
@@ -3531,7 +3531,13 @@ impl ExecutionManager {
             None, // exec_algorithm_params
             None, // exec_spawn_id
             tags,
-        );
+        ) {
+            Ok(initialized) => initialized,
+            Err(e) => {
+                log::error!("Failed to create order from report: {e}");
+                return (Vec::new(), None);
+            }
+        };
 
         let initialized = OrderEventAny::Initialized(initialized);
         let order = match OrderAny::from_events(vec![initialized.clone()]) {

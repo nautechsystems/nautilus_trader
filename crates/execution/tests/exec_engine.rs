@@ -15697,6 +15697,7 @@ fn test_handle_order_fill_oto_links_position_to_contingent_children(
         .quantity(Quantity::from(100_000))
         .trigger_price(Price::from("0.95"))
         .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![parent_id])
         .parent_order_id(parent_id)
         .build();
 
