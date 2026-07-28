@@ -32,8 +32,10 @@ use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
     RECONNECTED,
     error::SendError,
+    ratelimiter::RateLimiter,
     websocket::{
-        AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_epoch_message_handler, channel_message_handler,
     },
 };
 use rstest::{fixture, rstest};
@@ -56,6 +58,7 @@ const NETWORK_PARTITION_SEED: u64 = 0x57EB_0003;
 const DISCONNECT_DURING_RECONNECT_SEED: u64 = 0x57EB_0004;
 const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
 const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
+const CONNECTION_EPOCH_RECONNECTION_SEED: u64 = 0x57EB_0007;
 const QUEUED_WRITE_DROP_SEED: u64 = 0x57EB_2001;
 const POST_RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
 const ALTERNATING_TEXT_BINARY_SEED: u64 = 0x57EB_2003;
@@ -102,6 +105,18 @@ async fn recv_application_text(
             {
                 return Some(text.to_string());
             }
+        }
+        tokio::time::sleep(POLL_STEP).await;
+    }
+    None
+}
+
+async fn recv_connection_message(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
+) -> Option<(u64, Message)> {
+    for _ in 0..POLL_ITERS {
+        if let Ok(message) = rx.try_recv() {
+            return Some(message);
         }
         tokio::time::sleep(POLL_STEP).await;
     }
@@ -317,6 +332,132 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
         );
 
         client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: WebSocketConfig) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = seeded_builder(CONNECTION_EPOCH_RECONNECTION_SEED).build();
+
+    sim.host("server", || async {
+        let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+        if let Ok((stream, _)) = listener.accept().await
+            && let Ok(mut ws) = accept_async(stream).await
+        {
+            ws.send(Message::Text("first".into())).await?;
+            ws.send(Message::Binary(vec![0x00, 0x7f, 0x80, 0xff].into()))
+                .await?;
+            let message = ws
+                .next()
+                .await
+                .expect("initial connection should receive a bound send")?;
+            assert_eq!(message, Message::Text("epoch-0".into()));
+            ws.send(message).await?;
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        if let Ok((stream, _)) = listener.accept().await
+            && let Ok(mut ws) = accept_async(stream).await
+        {
+            while let Some(message) = ws.next().await {
+                let message = message?;
+                if matches!(message, Message::Close(_)) {
+                    break;
+                }
+                let send_replacement_binary =
+                    matches!(&message, Message::Text(text) if text.as_str() == "epoch-1");
+                ws.send(message).await?;
+                if send_replacement_binary {
+                    ws.send(Message::Binary(vec![0xfe, 0xed, 0xfa, 0xce].into()))
+                        .await?;
+                }
+            }
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.client("client", async move {
+        let (handler, mut rx) = channel_epoch_message_handler();
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(None, vec![]));
+        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler(
+            websocket_config,
+            handler,
+            None,
+            None,
+            rate_limiter,
+        )
+        .await
+        .expect("epoch-aware client should connect");
+        let connection_epoch = client.connection_epoch_atomic();
+
+        assert_eq!(client.connection_epoch(), 0);
+        assert_eq!(connection_epoch.load(Ordering::Acquire), 0);
+        assert_eq!(
+            recv_connection_message(&mut rx).await,
+            Some((0, Message::Text("first".into()))),
+        );
+        assert_eq!(
+            recv_connection_message(&mut rx).await,
+            Some((0, Message::Binary(vec![0x00, 0x7f, 0x80, 0xff].into()),)),
+        );
+
+        client
+            .send_text_on_connection("epoch-0".to_string(), None, 0)
+            .await
+            .expect("initial epoch should own the initial writer");
+        assert_eq!(
+            recv_connection_message(&mut rx).await,
+            Some((0, Message::Text("epoch-0".into()))),
+        );
+        assert!(
+            wait_for(|| client.is_reconnecting()).await,
+            "client should enter reconnect before the replacement handshake"
+        );
+
+        let stale_result = client
+            .send_text_on_connection("stale".to_string(), None, 0)
+            .await;
+        assert!(matches!(stale_result, Err(SendError::ConnectionChanged),));
+        assert_eq!(
+            recv_connection_message(&mut rx).await,
+            Some((1, Message::Text(RECONNECTED.into()))),
+        );
+        assert_eq!(client.connection_epoch(), 1);
+        assert_eq!(connection_epoch.load(Ordering::Acquire), 1);
+
+        client
+            .send_text_on_connection("epoch-1".to_string(), None, 1)
+            .await
+            .expect("replacement epoch should own the replacement writer");
+        assert_eq!(
+            recv_connection_message(&mut rx).await,
+            Some((1, Message::Text("epoch-1".into()))),
+        );
+        assert_eq!(
+            recv_connection_message(&mut rx).await,
+            Some((1, Message::Binary(vec![0xfe, 0xed, 0xfa, 0xce].into()),)),
+        );
+        assert_eq!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty),
+            "stale bound send must not reach either connection",
+        );
+
+        client.disconnect().await;
+        assert!(client.is_disconnected());
 
         Ok(())
     });

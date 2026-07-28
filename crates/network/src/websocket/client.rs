@@ -13,15 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! WebSocket client implementation with automatic reconnection.
+//! Connection lifecycle and task coordination for [`WebSocketClient`].
 //!
-//! This module contains the core WebSocket client implementation including:
-//! - Connection management with automatic reconnection.
-//! - Split read/write architecture with separate tasks.
-//! - Unbounded channels on latency-sensitive paths.
-//! - Event-driven state notification via `Notify` for immediate wakeup on transitions.
-//! - Heartbeat support.
-//! - Rate limiting integration.
+//! # Execution model
+//!
+//! Handler mode runs a controller, reader, and writer task, plus an optional heartbeat task. The
+//! reader dispatches frames, the writer serializes all sink access, and the controller drives
+//! reconnect and shutdown from the shared [`ConnectionMode`]. Stream mode omits the managed
+//! reader task and automatic reconnect.
+//!
+//! A read failure ends the reader and wakes the controller; a write failure requests reconnect and
+//! also wakes it. The controller establishes a replacement transport with exponential backoff,
+//! hands its sink to the writer, replaces the reader, then publishes the reconnect notification.
+//! Terminal disconnect and close states stop all tasks instead of starting another reconnect.
+//!
+//! # Send semantics
+//!
+//! Ordinary sends return after entering the writer channel. Failed ordinary writes and ordinary
+//! messages encountered during reconnect enter a FIFO buffer for replay on an active replacement
+//! connection. Registered authentication state can hold or discard that replay before it reaches
+//! the replacement sink.
+//!
+//! Ownership‑bound sends wait for the writer result, require the expected connection epoch, and
+//! never enter the reconnect buffer. The writer advances the epoch only when it installs a
+//! replacement sink, so inbound attribution and bound sends share one transport ownership boundary.
 
 use std::{
     collections::VecDeque,
@@ -29,7 +44,7 @@ use std::{
     pin::pin,
     sync::{
         Arc, OnceLock, RwLock,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -67,7 +82,10 @@ use super::{
         CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
         GRACEFUL_SHUTDOWN_TIMEOUT_SECS,
     },
-    types::{MessageHandler, MessageReader, MessageWriter, PingHandler, WriterCommand},
+    types::{
+        EpochMessageHandler, MessageHandler, MessageReader, MessageWriter, PingHandler,
+        WriterCommand,
+    },
 };
 #[cfg(feature = "turmoil")]
 use crate::net::TcpConnector;
@@ -172,6 +190,7 @@ pub struct WebSocketClientInner {
     reconnect_headers: ReconnectHeaders,
     /// The function to handle incoming messages (stored separately from config).
     message_handler: Option<MessageHandler>,
+    epoch_handler: Option<EpochMessageHandler>,
     /// The handler for incoming pings (stored separately from config).
     ping_handler: Option<PingHandler>,
     read_task: Option<tokio::task::JoinHandle<()>>,
@@ -179,6 +198,7 @@ pub struct WebSocketClientInner {
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
+    connection_epoch: Arc<AtomicU64>,
     state_notify: Arc<tokio::sync::Notify>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
@@ -230,6 +250,7 @@ impl WebSocketClientInner {
         }
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
         let state_notify = Arc::new(tokio::sync::Notify::new());
 
         // Note: We don't spawn a read task here since the reader is handled externally
@@ -256,6 +277,7 @@ impl WebSocketClientInner {
             state_notify.clone(),
             writer,
             writer_rx,
+            Arc::clone(&connection_epoch),
             Arc::clone(&auth_tracker),
             Arc::clone(&reconnect_buffer_waits_for_auth),
         );
@@ -280,9 +302,11 @@ impl WebSocketClientInner {
             config,
             reconnect_headers,
             message_handler: None, // Stream mode has no handler
+            epoch_handler: None,
             ping_handler: None,
             writer_tx,
             connection_mode,
+            connection_epoch,
             state_notify,
             reconnect_timeout,
             heartbeat_task,
@@ -309,6 +333,15 @@ impl WebSocketClientInner {
         message_handler: Option<MessageHandler>,
         ping_handler: Option<PingHandler>,
     ) -> Result<Self, TransportError> {
+        Self::connect_url_with_handlers(config, message_handler, None, ping_handler).await
+    }
+
+    async fn connect_url_with_handlers(
+        config: WebSocketConfig,
+        message_handler: Option<MessageHandler>,
+        epoch_handler: Option<EpochMessageHandler>,
+        ping_handler: Option<PingHandler>,
+    ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
         if config.heartbeat == Some(0) {
@@ -326,7 +359,7 @@ impl WebSocketClientInner {
         }
 
         // Capture whether we're in stream mode before moving config
-        let is_stream_mode = message_handler.is_none();
+        let is_stream_mode = message_handler.is_none() && epoch_handler.is_none();
         let reconnect_max_attempts = config.reconnect_max_attempts;
 
         if !is_stream_mode && config.reconnect_timeout_ms == Some(0) {
@@ -377,19 +410,22 @@ impl WebSocketClientInner {
         })??;
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
         let state_notify = Arc::new(tokio::sync::Notify::new());
 
-        let read_task = if message_handler.is_some() {
+        let read_task = if is_stream_mode {
+            None
+        } else {
             Some(Self::spawn_message_handler_task(
                 connection_mode.clone(),
                 state_notify.clone(),
                 reader,
+                0,
                 message_handler.as_ref(),
+                epoch_handler.as_ref(),
                 ping_handler.as_ref(),
                 config.idle_timeout_ms,
             ))
-        } else {
-            None
         };
 
         let auth_tracker = Arc::new(OnceLock::new());
@@ -401,6 +437,7 @@ impl WebSocketClientInner {
             state_notify.clone(),
             writer,
             writer_rx,
+            Arc::clone(&connection_epoch),
             Arc::clone(&auth_tracker),
             Arc::clone(&reconnect_buffer_waits_for_auth),
         );
@@ -422,12 +459,14 @@ impl WebSocketClientInner {
             config,
             reconnect_headers,
             message_handler,
+            epoch_handler,
             ping_handler,
             read_task,
             write_task,
             writer_tx,
             heartbeat_task,
             connection_mode,
+            connection_epoch,
             state_notify,
             reconnect_timeout,
             backoff,
@@ -1002,13 +1041,10 @@ impl WebSocketClientInner {
         }
 
         // Wait for writer to confirm it accepted the new socket
-        match rx.await {
-            Ok(true) => log::debug!("Writer confirmed socket update"),
-            Ok(false) => {
-                log::warn!("Writer rejected socket update, aborting reconnect");
-                return Err(TransportError::Io(std::io::Error::other(
-                    "Failed to update reconnection writer",
-                )));
+        let connection_epoch = match rx.await {
+            Ok(connection_epoch) => {
+                log::debug!("Writer confirmed socket update: epoch={connection_epoch}");
+                connection_epoch
             }
             Err(e) => {
                 log::error!("Writer dropped update channel: {e}");
@@ -1017,7 +1053,7 @@ impl WebSocketClientInner {
                     "Writer task dropped response channel",
                 )));
             }
-        }
+        };
 
         // Delay before closing connection
         dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
@@ -1050,12 +1086,14 @@ impl WebSocketClientInner {
             return Ok(());
         }
 
-        self.read_task = if self.message_handler.is_some() {
+        self.read_task = if self.message_handler.is_some() || self.epoch_handler.is_some() {
             Some(Self::spawn_message_handler_task(
                 self.connection_mode.clone(),
                 self.state_notify.clone(),
                 reader,
+                connection_epoch,
                 self.message_handler.as_ref(),
+                self.epoch_handler.as_ref(),
                 self.ping_handler.as_ref(),
                 self.config.idle_timeout_ms,
             ))
@@ -1081,11 +1119,17 @@ impl WebSocketClientInner {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "both handler modes share the same reader lifecycle"
+    )]
     fn spawn_message_handler_task(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
         mut reader: MessageReader,
+        connection_epoch: u64,
         message_handler: Option<&MessageHandler>,
+        epoch_handler: Option<&EpochMessageHandler>,
         ping_handler: Option<&PingHandler>,
         idle_timeout_ms: Option<u64>,
     ) -> tokio::task::JoinHandle<()> {
@@ -1096,6 +1140,7 @@ impl WebSocketClientInner {
 
         // Clone Arc handlers for the async task
         let message_handler = message_handler.cloned();
+        let epoch_handler = epoch_handler.cloned();
         let ping_handler = ping_handler.cloned();
 
         tokio::task::spawn(async move {
@@ -1112,7 +1157,11 @@ impl WebSocketClientInner {
                         last_data_time = dst::time::Instant::now();
 
                         if let Some(ref handler) = message_handler {
-                            handler(Message::Binary(data));
+                            handler(Message::Binary(data.clone()));
+                        }
+
+                        if let Some(ref handler) = epoch_handler {
+                            handler(connection_epoch, Message::Binary(data));
                         }
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
@@ -1120,7 +1169,11 @@ impl WebSocketClientInner {
                         last_data_time = dst::time::Instant::now();
 
                         if let Some(ref handler) = message_handler {
-                            handler(Message::Text(data));
+                            handler(Message::Text(data.clone()));
+                        }
+
+                        if let Some(ref handler) = epoch_handler {
+                            handler(connection_epoch, Message::Text(data));
                         }
                     }
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
@@ -1257,6 +1310,7 @@ impl WebSocketClientInner {
         state_notify: Arc<tokio::sync::Notify>,
         writer: MessageWriter,
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
+        connection_epoch: Arc<AtomicU64>,
         auth_tracker: Arc<OnceLock<AuthTracker>>,
         reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
@@ -1366,9 +1420,10 @@ impl WebSocketClientInner {
                                 .await;
 
                                 active_writer = new_writer;
-                                log::debug!("Updated writer");
+                                let epoch = connection_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+                                log::debug!("Updated writer: epoch={epoch}");
 
-                                if let Err(e) = tx.send(true) {
+                                if let Err(e) = tx.send(epoch) {
                                     log::error!(
                                         "Failed to report writer update to controller: {e:?}"
                                     );
@@ -1381,6 +1436,45 @@ impl WebSocketClientInner {
                                     reconnect_buffer.len() + 1
                                 );
                                 reconnect_buffer.push_back(msg);
+                            }
+                            WriterCommand::SendOnConnection { response_tx, .. }
+                                if mode.is_reconnect() =>
+                            {
+                                _ = response_tx.send(Err(SendError::ConnectionChanged));
+                            }
+                            WriterCommand::SendOnConnection {
+                                message,
+                                connection_epoch: expected_epoch,
+                                response_tx,
+                            } => {
+                                let epoch = connection_epoch.load(Ordering::Acquire);
+                                if epoch != expected_epoch {
+                                    _ = response_tx.send(Err(SendError::ConnectionChanged));
+                                    continue;
+                                }
+                                let result = active_writer.send(message).await;
+                                if let Err(e) = &result {
+                                    if is_connection_drop_transport_error(e) {
+                                        log::warn!("Failed to send message: {e}");
+                                    } else {
+                                        log::error!("Failed to send message: {e}");
+                                    }
+                                }
+                                let result =
+                                    result.map_err(|e| SendError::BrokenPipe(e.to_string()));
+                                let send_failed = result.is_err();
+                                _ = response_tx.send(result);
+
+                                if send_failed
+                                    && ConnectionMode::request_reconnect(&connection_state)
+                                {
+                                    log::warn!("Writer triggering reconnect");
+
+                                    if let Some(tracker) = auth_tracker.get() {
+                                        tracker.invalidate();
+                                    }
+                                    state_notify.notify_one();
+                                }
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.send(msg.clone()).await {
@@ -1513,6 +1607,7 @@ impl CleanDrop for WebSocketClientInner {
 
         // Clear handlers to break potential reference cycles
         self.message_handler = None;
+        self.epoch_handler = None;
         self.ping_handler = None;
     }
 }
@@ -1550,6 +1645,7 @@ impl Debug for WebSocketClientInner {
 pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
+    pub(crate) connection_epoch: Arc<AtomicU64>,
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) reconnect_timeout: Duration,
     pub(crate) rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
@@ -1616,6 +1712,7 @@ impl WebSocketClient {
         let inner = WebSocketClientInner::new_with_writer(config, writer).await?;
 
         let connection_mode = inner.connection_mode.clone();
+        let connection_epoch = Arc::clone(&inner.connection_epoch);
         let state_notify = inner.state_notify.clone();
         let reconnect_timeout = inner.reconnect_timeout;
         let auth_tracker = Arc::clone(&inner.auth_tracker);
@@ -1641,6 +1738,7 @@ impl WebSocketClient {
             Self {
                 controller_task,
                 connection_mode,
+                connection_epoch,
                 state_notify,
                 reconnect_timeout,
                 rate_limiter,
@@ -1715,7 +1813,53 @@ impl WebSocketClient {
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
-        if message_handler.is_none() {
+        Self::connect_with_handlers(
+            config,
+            message_handler,
+            None,
+            ping_handler,
+            post_reconnection,
+            rate_limiter,
+        )
+        .await
+    }
+
+    /// Creates a handler-mode client whose incoming messages carry connection ownership.
+    ///
+    /// The initial connection has epoch `0`. Each replacement connection increments the epoch,
+    /// and both its incoming messages and `RECONNECTED` notification carry that new value. Use
+    /// [`Self::send_text_on_connection`] to bind an outgoing message to one of those epochs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established.
+    pub async fn connect_with_rate_limiter_and_epoch_handler(
+        config: WebSocketConfig,
+        epoch_handler: EpochMessageHandler,
+        ping_handler: Option<PingHandler>,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
+    ) -> Result<Self, TransportError> {
+        Self::connect_with_handlers(
+            config,
+            None,
+            Some(epoch_handler),
+            ping_handler,
+            post_reconnection,
+            rate_limiter,
+        )
+        .await
+    }
+
+    async fn connect_with_handlers(
+        config: WebSocketConfig,
+        message_handler: Option<MessageHandler>,
+        epoch_handler: Option<EpochMessageHandler>,
+        ping_handler: Option<PingHandler>,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
+    ) -> Result<Self, TransportError> {
+        if message_handler.is_none() && epoch_handler.is_none() {
             return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Handler mode requires message_handler to be set. Use connect_stream() for stream mode without a handler.",
@@ -1723,9 +1867,15 @@ impl WebSocketClient {
         }
 
         log::debug!("Connecting");
-        let inner =
-            WebSocketClientInner::connect_url(config, message_handler, ping_handler).await?;
+        let inner = WebSocketClientInner::connect_url_with_handlers(
+            config,
+            message_handler,
+            epoch_handler,
+            ping_handler,
+        )
+        .await?;
         let connection_mode = inner.connection_mode.clone();
+        let connection_epoch = Arc::clone(&inner.connection_epoch);
         let state_notify = inner.state_notify.clone();
         let writer_tx = inner.writer_tx.clone();
         let reconnect_timeout = inner.reconnect_timeout;
@@ -1744,6 +1894,7 @@ impl WebSocketClient {
         Ok(Self {
             controller_task,
             connection_mode,
+            connection_epoch,
             state_notify,
             reconnect_timeout,
             rate_limiter,
@@ -1766,6 +1917,15 @@ impl WebSocketClient {
         ConnectionMode::from_atomic(&self.connection_mode)
     }
 
+    /// Returns the ownership epoch of the current connection.
+    ///
+    /// A connection keeps one epoch for its lifetime. The value increments when the writer swaps
+    /// to a replacement connection.
+    #[must_use]
+    pub fn connection_epoch(&self) -> u64 {
+        self.connection_epoch.load(Ordering::Acquire)
+    }
+
     /// Returns a clone of the connection mode atomic for external state tracking.
     ///
     /// This allows adapter clients to track connection state across reconnections
@@ -1773,6 +1933,15 @@ impl WebSocketClient {
     #[must_use]
     pub fn connection_mode_atomic(&self) -> Arc<AtomicU8> {
         Arc::clone(&self.connection_mode)
+    }
+
+    /// Returns shared read access to the current connection epoch.
+    ///
+    /// Callers must treat the returned atomic as read-only. The WebSocket writer task exclusively
+    /// advances it when installing a replacement connection.
+    #[must_use]
+    pub fn connection_epoch_atomic(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.connection_epoch)
     }
 
     /// Check if the client connection is active.
@@ -2015,6 +2184,43 @@ impl WebSocketClient {
             .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
+    /// Sends text once if the active connection matches `connection_epoch`.
+    ///
+    /// The writer rejects the send if reconnection changes ownership before the write. The
+    /// message is never replayed on another connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - [`SendError::Closed`] if the client closes.
+    /// - [`SendError::Timeout`] if the active wait times out.
+    /// - [`SendError::ConnectionChanged`] if the expected connection no longer owns the writer.
+    /// - [`SendError::BrokenPipe`] if the command or transport write fails.
+    pub async fn send_text_on_connection(
+        &self,
+        data: String,
+        keys: Option<&[Ustr]>,
+        connection_epoch: u64,
+    ) -> Result<(), SendError> {
+        self.check_not_terminal()?;
+        self.await_rate_limit_or_closed(keys).await?;
+        self.wait_for_active().await?;
+
+        log::trace!("Sending text once: {data:?}");
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::Text(data.into()),
+                connection_epoch,
+                response_tx,
+            })
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))?;
+        response_rx
+            .await
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))?
+    }
+
     /// Sends a pong frame back to the server.
     ///
     /// # Errors
@@ -2215,6 +2421,18 @@ impl WebSocketClient {
                                         Message::Text(RECONNECTED.to_string().into());
                                     handler(reconnected_msg);
                                     log::debug!("Sent reconnected message to handler");
+                                }
+
+                                if let Some(ref handler) = inner.epoch_handler {
+                                    let connection_epoch =
+                                        inner.connection_epoch.load(Ordering::Acquire);
+                                    let reconnected_msg =
+                                        Message::Text(RECONNECTED.to_string().into());
+                                    handler(connection_epoch, reconnected_msg);
+                                    log::debug!(
+                                        "Sent reconnected message to epoch handler: \
+                                         epoch={connection_epoch}",
+                                    );
                                 }
 
                                 // TODO: Retain this legacy callback for use from Python
@@ -4591,6 +4809,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
         let write_task = WebSocketClientInner::spawn_write_task(
@@ -4598,6 +4817,7 @@ mod rust_tests {
             Arc::clone(&state_notify),
             writer,
             writer_rx,
+            connection_epoch,
             Arc::clone(&auth_tracker),
             Arc::clone(&reconnect_buffer_waits_for_auth),
         );
@@ -4634,6 +4854,221 @@ mod rust_tests {
     }
 
     #[tokio::test]
+    async fn send_on_connection_write_failure_reports_broken_pipe_and_reconnects() {
+        let state = Arc::new(BlockingFailState::default());
+        let transport: BoxedWsTransport = Box::pin(BlockingFailTransport {
+            state: Arc::clone(&state),
+        });
+        let (writer, _reader) = transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let connection_epoch = Arc::new(AtomicU64::new(0));
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            Arc::clone(&connection_epoch),
+            Arc::new(OnceLock::new()),
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("doomed"),
+                connection_epoch: 0,
+                response_tx,
+            })
+            .unwrap();
+        wait_until_async(
+            || {
+                let state = Arc::clone(&state);
+                async move { state.send_entered.load(Ordering::SeqCst) }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.trigger_failure();
+
+        match response_rx.await.unwrap().unwrap_err() {
+            SendError::BrokenPipe(message) => assert_eq!(message, "connection reset"),
+            other => panic!("expected broken-pipe send error, was {other:?}"),
+        }
+        wait_until_async(
+            || async {
+                ConnectionMode::from_atomic(&connection_state) == ConnectionMode::Reconnect
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect,
+        );
+        assert_eq!(connection_epoch.load(Ordering::Acquire), 0);
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_on_connection_rejects_stale_epoch_without_replay() {
+        let server = RecordingServer::setup().await;
+        let url = format!("ws://127.0.0.1:{}", server.port);
+        let (writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let auth_tracker = Arc::new(OnceLock::new());
+        let connection_epoch = Arc::new(AtomicU64::new(0));
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            Arc::clone(&connection_epoch),
+            auth_tracker,
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("epoch-0"),
+                connection_epoch: 0,
+                response_tx,
+            })
+            .unwrap();
+        response_rx.await.unwrap().unwrap();
+
+        connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("during-reconnect"),
+                connection_epoch: 0,
+                response_tx,
+            })
+            .unwrap();
+        assert!(matches!(
+            response_rx.await.unwrap(),
+            Err(SendError::ConnectionChanged),
+        ));
+
+        let (replacement, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
+        let (update_tx, update_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(replacement, update_tx))
+            .unwrap();
+        assert_eq!(update_rx.await.unwrap(), 1);
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("stale"),
+                connection_epoch: 0,
+                response_tx,
+            })
+            .unwrap();
+        assert!(matches!(
+            response_rx.await.unwrap(),
+            Err(SendError::ConnectionChanged),
+        ));
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("epoch-1"),
+                connection_epoch: 1,
+                response_tx,
+            })
+            .unwrap();
+        response_rx.await.unwrap().unwrap();
+
+        connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        let (second_replacement, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
+        let (update_tx, update_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(second_replacement, update_tx))
+            .unwrap();
+        assert_eq!(update_rx.await.unwrap(), 2);
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("stale-after-second-reconnect"),
+                connection_epoch: 1,
+                response_tx,
+            })
+            .unwrap();
+        assert!(matches!(
+            response_rx.await.unwrap(),
+            Err(SendError::ConnectionChanged),
+        ));
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("epoch-2"),
+                connection_epoch: 2,
+                response_tx,
+            })
+            .unwrap();
+        response_rx.await.unwrap().unwrap();
+
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&server.messages);
+                async move { messages.lock().await.len() == 3 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        assert_eq!(connection_epoch.load(Ordering::Acquire), 2);
+        assert_eq!(
+            server.messages().await,
+            vec![
+                "epoch-0".to_string(),
+                "epoch-1".to_string(),
+                "epoch-2".to_string(),
+            ],
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.abort();
+    }
+
+    #[tokio::test]
     async fn test_write_task_waits_for_auth_before_replaying_buffer() {
         use nautilus_common::testing::wait_until_async;
 
@@ -4652,6 +5087,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(true));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
         let tracker = AuthTracker::new();
         auth_tracker.set(tracker.clone()).unwrap();
 
@@ -4661,6 +5097,7 @@ mod rust_tests {
             Arc::clone(&state_notify),
             writer,
             writer_rx,
+            Arc::clone(&connection_epoch),
             Arc::clone(&auth_tracker),
             Arc::clone(&reconnect_buffer_waits_for_auth),
         );
@@ -4681,7 +5118,7 @@ mod rust_tests {
         writer_tx
             .send(WriterCommand::Update(new_writer, tx))
             .unwrap();
-        assert!(rx.await.unwrap());
+        assert_eq!(rx.await.unwrap(), 1);
 
         connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
@@ -4727,6 +5164,7 @@ mod rust_tests {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(true));
+        let connection_epoch = Arc::new(AtomicU64::new(0));
         let tracker = AuthTracker::new();
         auth_tracker.set(tracker.clone()).unwrap();
 
@@ -4736,6 +5174,7 @@ mod rust_tests {
             Arc::clone(&state_notify),
             writer,
             writer_rx,
+            Arc::clone(&connection_epoch),
             Arc::clone(&auth_tracker),
             Arc::clone(&reconnect_buffer_waits_for_auth),
         );
@@ -4756,7 +5195,7 @@ mod rust_tests {
         writer_tx
             .send(WriterCommand::Update(new_writer, tx))
             .unwrap();
-        assert!(rx.await.unwrap());
+        assert_eq!(rx.await.unwrap(), 1);
 
         connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
         tracker.fail("rejected");

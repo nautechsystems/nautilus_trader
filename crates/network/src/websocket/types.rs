@@ -13,13 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Type definitions for WebSocket operations.
+//! Shared transport halves, message handlers, and writer commands.
+//!
+//! [`MessageReader`] and the internal writer use [`BoxedWsTransport`], keeping lifecycle code
+//! independent of the selected transport backend. [`MessageHandler`] receives messages without
+//! connection identity, while [`EpochMessageHandler`] attaches the owning reader's connection epoch
+//! to application messages and reconnect notifications.
+//!
+//! The channel handlers convert neutral [`Message`] values to Tungstenite messages at the adapter
+//! compatibility boundary. `WriterCommand` remains internal so all sink access, connection swaps,
+//! and reconnect buffering stay serialized in the writer task.
 
 use std::{fmt::Debug, sync::Arc};
 
 use futures_util::stream::{SplitSink, SplitStream};
 
-use crate::transport::{BoxedWsTransport, Message};
+use crate::{
+    error::SendError,
+    transport::{BoxedWsTransport, Message},
+};
 
 /// Sink half of the active WebSocket transport.
 ///
@@ -43,6 +55,12 @@ pub type MessageReader = SplitStream<BoxedWsTransport>;
 /// the caller owns and reads from directly. This disables automatic reconnection because
 /// the reader cannot be replaced - the caller must manually reconnect.
 pub type MessageHandler = Arc<dyn Fn(Message) + Send + Sync>;
+
+/// Function type for handling WebSocket messages with connection ownership.
+///
+/// The initial connection has epoch `0`. Each replacement connection increments the epoch, and
+/// every application or reconnect-control message carries the epoch of its originating reader.
+pub type EpochMessageHandler = Arc<dyn Fn(u64, Message) + Send + Sync>;
 
 /// Function type for handling WebSocket ping messages.
 pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
@@ -75,12 +93,42 @@ pub fn channel_message_handler() -> (
     (handler, rx)
 }
 
+/// Creates a channel-based message handler carrying each reader's connection epoch.
+///
+/// The receiver preserves the handler's `(connection_epoch, message)` order.
+#[must_use]
+pub fn channel_epoch_message_handler() -> (
+    EpochMessageHandler,
+    tokio::sync::mpsc::UnboundedReceiver<(u64, tokio_tungstenite::tungstenite::Message)>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let handler: EpochMessageHandler =
+        Arc::new(
+            move |epoch, msg: Message| match tokio_tungstenite::tungstenite::Message::try_from(msg)
+            {
+                Ok(legacy) => {
+                    if let Err(e) = tx.send((epoch, legacy)) {
+                        log::debug!("Failed to send connection message to channel: {e}");
+                    }
+                }
+                Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
+            },
+        );
+    (handler, rx)
+}
+
 /// Represents a command for the writer task.
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
-    Update(MessageWriter, tokio::sync::oneshot::Sender<bool>),
+    Update(MessageWriter, tokio::sync::oneshot::Sender<u64>),
     /// Send message to the server.
     Send(Message),
+    /// Send once if the active connection still owns the message.
+    SendOnConnection {
+        message: Message,
+        connection_epoch: u64,
+        response_tx: tokio::sync::oneshot::Sender<Result<(), SendError>>,
+    },
 }
 
 impl Debug for WriterCommand {
@@ -88,6 +136,9 @@ impl Debug for WriterCommand {
         match self {
             Self::Update(_, _) => f.debug_tuple("Update").field(&"<writer>").finish(),
             Self::Send(msg) => f.debug_tuple("Send").field(msg).finish(),
+            Self::SendOnConnection { message, .. } => {
+                f.debug_tuple("SendOnConnection").field(message).finish()
+            }
         }
     }
 }
@@ -123,6 +174,19 @@ mod tests {
         let received = rx.try_recv().expect("text should arrive");
         match received {
             TgMessage::Text(t) => assert_eq!(t.as_str(), "hello"),
+            other => panic!("expected text, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn epoch_message_handler_forwards_epoch_and_text() {
+        let (handler, mut rx) = channel_epoch_message_handler();
+        handler(7, Message::text("hello"));
+
+        let (connection_epoch, received) = rx.try_recv().expect("text should arrive");
+        assert_eq!(connection_epoch, 7);
+        match received {
+            TgMessage::Text(text) => assert_eq!(text.as_str(), "hello"),
             other => panic!("expected text, was {other:?}"),
         }
     }

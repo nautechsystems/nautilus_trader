@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Configuration for WebSocket client connections.
+//! Static transport and lifecycle configuration for WebSocket connections.
 //!
-//! # Reconnection Strategy
+//! [`WebSocketConfig`] selects the endpoint, upgrade headers, heartbeat and idle detection,
+//! reconnect policy, transport backend, and optional proxy. Runtime handlers and rate limiting are
+//! supplied to the client constructors instead.
 //!
-//! The default configuration uses unlimited reconnection attempts (`reconnect_max_attempts: None`).
-//! This is intentional for trading systems because:
-//! - Venues may be down for extended periods but eventually recover.
-//! - Exponential backoff already prevents resource waste.
-//! - Automatic recovery can be useful when manual intervention is not desirable.
+//! # Reconnection strategy
 //!
-//! Use `Some(n)` primarily for testing, development, or non-critical connections.
+//! Reconnect settings apply only in handler mode; stream mode ignores them.
+//! `reconnect_max_attempts: None` permits unlimited attempts with exponential backoff, while
+//! `Some(n)` closes the client after `n` consecutive failed attempts.
 
 use std::fmt::Debug;
 

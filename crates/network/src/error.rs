@@ -28,6 +28,9 @@ pub enum SendError {
     /// Timed out waiting for the client to become active.
     #[error("send failed: timeout waiting for active state")]
     Timeout,
+    /// The connection changed before an ownership-bound message reached the writer.
+    #[error("send failed: connection changed before write")]
+    ConnectionChanged,
     /// Failed to send because the writer channel is closed.
     #[error("send failed: broken pipe ({0})")]
     BrokenPipe(String),

@@ -1699,7 +1699,7 @@ pub(crate) fn should_retry_lighter_ws_error(error: &LighterWsError) -> bool {
         // (wait_for_active) can recover if the connection comes up.
         LighterWsError::Transport(send_error) => match send_error {
             SendError::Timeout => true,
-            SendError::Closed | SendError::BrokenPipe(_) => false,
+            SendError::Closed | SendError::ConnectionChanged | SendError::BrokenPipe(_) => false,
         },
         LighterWsError::Authentication(_)
         | LighterWsError::Parse(_)

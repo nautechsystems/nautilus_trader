@@ -13,31 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Authentication state tracking for WebSocket clients.
+//! Adapter authentication state independent of the WebSocket transport state.
 //!
-//! This module provides a robust authentication tracker that coordinates login attempts
-//! and ensures each attempt produces a fresh success or failure signal before operations
-//! resume. It follows a proven pattern used in production.
+//! [`AuthTracker`] separates a specific authentication attempt from the shared session state.
+//! [`AuthTracker::begin`] returns a oneshot receiver for the attempt and fails any earlier pending
+//! attempt as superseded. [`AuthTracker::succeed`] and [`AuthTracker::fail`] resolve the active
+//! attempt and wake state waiters, while [`AuthTracker::invalidate`] returns the session to
+//! unauthenticated without resolving a pending attempt.
 //!
-//! # Key Features
+//! # Client integration
 //!
-//! - **Three-state model**: `Unauthenticated`, `Authenticated`, `Failed` via `AuthState` enum.
-//! - **Oneshot signaling**: Each auth attempt gets a dedicated channel for result notification.
-//! - **Superseding logic**: New authentication requests cancel pending ones.
-//! - **Timeout handling**: Configurable timeout for authentication responses.
-//! - **Generic error mapping**: Adapters can map to their specific error types.
-//! - **Auth-gated waiting**: `wait_for_authenticated()` blocks until auth completes or fails.
-//!
-//! # Recommended Integration Pattern
-//!
-//! Based on production usage, the recommended pattern is:
-//!
-//! 1. **Order operations**: Call `wait_for_authenticated()` before private operations.
-//!    This waits for re-auth after reconnection instead of rejecting immediately.
-//! 2. **Reconnection flow**: Authenticate BEFORE resubscribing to topics.
-//! 3. **Event propagation**: Send auth failures through event channels to consumers.
-//! 4. **State lifecycle**: Call `invalidate()` on reconnectable connection drops,
-//!    and `fail()` on terminal auth rejection or terminal client shutdown.
+//! Registering a tracker with the client invalidates it on reconnectable connection loss and fails
+//! it on terminal shutdown. When authentication‑gated replay is enabled, ordinary buffered sends
+//! wait for `Authenticated` and are discarded on `Failed`. The adapter remains responsible for
+//! sending authentication, interpreting the response, and ordering resubscription.
 
 use std::{
     pin::pin,

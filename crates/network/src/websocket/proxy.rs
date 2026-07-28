@@ -13,31 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Proxy support for outbound WebSocket connections.
+//! HTTP `CONNECT` tunneling for outbound WebSocket connections.
 //!
-//! Implements HTTP `CONNECT` tunneling so a `WebSocketClient` can be reached
-//! through an HTTP or HTTPS forward proxy. The same `proxy_url` field is used
-//! by the HTTP client (via `reqwest::Proxy::all`), keeping a single config
-//! field for both transports.
+//! HTTP and HTTPS proxy URLs are supported. An HTTPS proxy adds TLS to the proxy hop; a `wss`
+//! target adds a separate TLS session after the tunnel is established. URL user information
+//! becomes Basic proxy authentication, and credential‑bearing values are redacted from `Debug`
+//! output.
 //!
-//! `socks5://` / `socks5h://` URLs are recognized but not yet implemented
-//! for the WebSocket path. The dispatcher logs a warning and falls back to
-//! a direct connection so that REST configs that already point at a SOCKS
-//! proxy keep working unchanged. SOCKS support requires the optional
-//! `tokio-socks` crate, which is not yet a workspace dependency.
+//! The tunnel accepts only a `2xx` response and bounds response headers before parsing. It returns
+//! a stream positioned for the WebSocket handshake rather than performing that handshake itself.
 //!
-//! The tunnel is established as follows:
-//! 1. TCP connect to the proxy host / port.
-//! 2. If the proxy URL scheme is `https`, layer TLS using the proxy host as
-//!    the SNI and certificate domain.
-//! 3. Send `CONNECT target_host:target_port HTTP/1.1` plus the matching
-//!    `Host:` header (and optional `Proxy-Authorization:` derived from the
-//!    proxy URL user-info).
-//! 4. Read the response line and headers; require a `2xx` status.
-//! 5. If the upstream WebSocket scheme is `wss`, layer a second TLS session
-//!    using the upstream host name.
-//! 6. Hand the resulting stream to `tokio-tungstenite`'s `client_async` so the
-//!    WebSocket handshake completes over the tunnel.
+//! SOCKS URLs are recognized but not tunneled: the client logs a warning and connects directly.
+//! Selecting the Sockudo backend with a proxy instead routes the connection through Tungstenite.
 
 use std::fmt::Debug;
 

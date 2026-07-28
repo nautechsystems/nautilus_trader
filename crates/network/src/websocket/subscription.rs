@@ -13,26 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Generic subscription state tracking for WebSocket clients.
+//! Adapter‑managed subscription intent and acknowledgment tracking.
 //!
-//! This module provides a robust subscription tracker that maintains confirmed and pending
-//! subscription states with reference counting support. It follows a proven pattern used in
-//! production.
+//! [`SubscriptionState`] keeps confirmed, `pending_subscribe`, and `pending_unsubscribe` topics
+//! separate. Server acknowledgments move topics between those states; late subscribe
+//! acknowledgments do not revive a pending unsubscribe, and stale unsubscribe acknowledgments do
+//! not remove a later resubscription. [`SubscriptionState::all_topics`] returns confirmed and
+//! pending subscribe intent for recovery, excluding pending unsubscriptions.
 //!
-//! # Key Features
+//! Reference counts are independent of acknowledgment state. The first reference tells the caller
+//! to send a subscribe request, and removing the last tells it to send an unsubscribe request. The
+//! tracker records state but never sends protocol messages.
 //!
-//! - **Three-state tracking**: confirmed, `pending_subscribe`, `pending_unsubscribe`.
-//! - **Reference counting**: Prevents duplicate subscribe/unsubscribe messages.
-//! - **Reconnection support**: `all_topics()` returns topics to resubscribe after reconnect.
-//! - **Configurable delimiter**: Supports different topic formats (`.` or `:` etc.).
+//! # Topic format
 //!
-//! # Topic Format
-//!
-//! Topics are strings in the format `channel{delimiter}symbol`:
-//! - Dot delimiter: `tickers.BTCUSDT`
-//! - Colon delimiter: `trades:BTC-USDT`
-//!
-//! Channels without symbols are also supported (e.g., `execution` for all instruments).
+//! Topics use `channel{delimiter}symbol`; the first delimiter occurrence separates the channel
+//! from the optional symbol. A topic without a delimiter represents the whole channel.
 
 use std::{
     num::NonZeroUsize,
