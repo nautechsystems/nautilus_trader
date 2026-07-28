@@ -16,7 +16,7 @@
 use nautilus_bin::config::Config;
 use nautilus_bin::exchange::Exchange;
 use nautilus_bin::strategy::grid_mm::{config::GridMarketMakerConfig, strategy::GridMarketMaker};
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_model::types::Quantity;
 
 #[tokio::main]
@@ -29,7 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exchange: Exchange = cfg.exchange.parse()?;
     let trader_id = TraderId::from(cfg.trader_id.as_str());
 
-    let (mut node, instrument_id) = exchange.build_node(trader_id)?;
+    let mut node = exchange.build_node(trader_id)?;
+    let instrument_id = InstrumentId::from(cfg.instrument_id);
 
     let config = GridMarketMakerConfig::builder()
         .instrument_id(instrument_id)

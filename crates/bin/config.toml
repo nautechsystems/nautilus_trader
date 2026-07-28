@@ -14,8 +14,10 @@ on_cancel_resubmit = false
 [recorder]
 exchange = "bybit"
 trader_id = "TESTER-001"
-instrument_id = "OPUSDT-LINEAR.BYBIT"
+instrument_id = ["OPUSDT-LINEAR.BYBIT", "BTCUSDT-LINEAR.BYBIT", "ETHUSDT-LINEAR.BYBIT", "XAUTUSDT-LINEAR.BYBIT"]
 path = "/home/mattia/dev/nautilus_trader/data/"
+book_depth = 50
+interval_parquet_dump_seconds = 60
 
 [mmm]
 execution_environment = "backtest" # backtest, live, sandbox

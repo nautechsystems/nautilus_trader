@@ -43,9 +43,11 @@ pub struct GridMarketMakerTomlConfig {
 pub struct RecorderTomlConfig {
     pub exchange: String,
     pub trader_id: String,
-    pub instrument_id: String,
+    pub instrument_id: Vec<String>,
     #[serde(default = "default_recorder_path")]
     pub path: String,
+    pub book_depth: usize,
+    pub interval_parquet_dump_seconds: u64
 }
 
 

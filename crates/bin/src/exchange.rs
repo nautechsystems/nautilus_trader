@@ -15,13 +15,13 @@
 
 //! Exchange selection and node building.
 
-mod bybit;
-mod dydx;
+pub mod bybit;
+pub mod dydx;
 
 use std::str::FromStr;
 
 use nautilus_live::node::LiveNode;
-use nautilus_model::identifiers::{InstrumentId, TraderId};
+use nautilus_model::identifiers::TraderId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Exchange {
@@ -47,17 +47,15 @@ impl Exchange {
     pub fn build_node(
         self,
         trader_id: TraderId,
-    ) -> Result<(LiveNode, InstrumentId), Box<dyn std::error::Error>> {
+    ) -> Result<LiveNode, Box<dyn std::error::Error>> {
         match self {
             Self::Dydx => {
-                let instrument_id = InstrumentId::from(dydx::INSTRUMENT_ID);
                 let node = dydx::build_node(trader_id)?;
-                Ok((node, instrument_id))
+                Ok(node)
             }
             Self::Bybit => {
-                let instrument_id = InstrumentId::from(bybit::INSTRUMENT_ID);
                 let node = bybit::build_node(trader_id)?;
-                Ok((node, instrument_id))
+                Ok(node)
             }
         }
     }

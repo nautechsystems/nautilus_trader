@@ -25,11 +25,10 @@ use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{AccountId, TraderId};
 
-pub(crate) const ACCOUNT_ID: &str = "BYBIT-001";
-pub(crate) const NODE_NAME: &str = "BYBIT-GRID-MM-001";
-pub(crate) const INSTRUMENT_ID: &str = "OPUSDT-LINEAR.BYBIT";
+pub const ACCOUNT_ID: &str = "BYBIT-001";
+pub const NODE_NAME: &str = "BYBIT-GRID-MM-001";
 
-pub(crate) fn build_node(trader_id: TraderId) -> Result<LiveNode, Box<dyn std::error::Error>> {
+pub fn build_node(trader_id: TraderId) -> Result<LiveNode, Box<dyn std::error::Error>> {
     let bybit_env = BybitEnvironment::Mainnet;
     let environment = Environment::Live;
     let account_id = AccountId::from(ACCOUNT_ID);

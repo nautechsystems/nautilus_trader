@@ -7,8 +7,7 @@ use nautilus_bin::strategy::mmm::config::MattiasMarketMakerConfig;
 use nautilus_bin::strategy::mmm::strategy::MattiasMarketMaker;
 use nautilus_common::enums::Environment;
 use nautilus_model::{
-    enums::{AccountType, OmsType},
-    identifiers::TraderId,
+    enums::{AccountType, OmsType}, identifiers::{InstrumentId, TraderId},
 };
 
 use nautilus_backtest::config::{
@@ -27,7 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exchange: Exchange = config.exchange.parse()?;
     let trader_id = TraderId::from(config.trader_id.as_str());
 
-    let (mut node, instrument_id) = exchange.build_node(trader_id)?;
+    let mut node = exchange.build_node(trader_id)?;
+    let instrument_id = InstrumentId::from(config.instrument_id);
 
     let mmm_config = MattiasMarketMakerConfig::builder()
         .instrument_id(instrument_id)

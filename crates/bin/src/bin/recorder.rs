@@ -13,26 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_bin::config::Config;
+use nautilus_bin::config::{Config, RecorderTomlConfig};
 use nautilus_bin::exchange::Exchange;
 use nautilus_bin::strategy::recorder::{config::RecorderConfig, strategy::Recorder};
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     nautilus_common::logging::ensure_logging_initialized();
 
-    let cfg = Config::load()?.recorder.expect("config.toml missing [recorder] section");
+    let cfg: RecorderTomlConfig = Config::load()?.recorder.unwrap();
 
     let exchange: Exchange = cfg.exchange.parse()?;
     let trader_id = TraderId::from(cfg.trader_id.as_str());
 
-    let (mut node, instrument_id) = exchange.build_node(trader_id)?;
+    let mut node = exchange.build_node(trader_id)?;
+
+    let instrument_id: Vec<InstrumentId> = cfg.instrument_id.iter().map(|instrument_id|{
+        InstrumentId::from(instrument_id)
+    }).collect();
 
     let config = RecorderConfig::builder()
-        .instrument_id(instrument_id)
+        // .instrument_id(cfg.instrument_id)
         .path(cfg.path)
+        .instrument_id(instrument_id)
+        .interval_parquet_dump_seconds(cfg.interval_parquet_dump_seconds)
+        .book_depth(cfg.book_depth)
         .build();
 
     let strategy = Recorder::new(&config);

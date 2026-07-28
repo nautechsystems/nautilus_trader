@@ -27,7 +27,7 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 
 pub(crate) const ACCOUNT_ID: &str = "DYDX-001";
 pub(crate) const NODE_NAME: &str = "DYDX-GRID-MM-001";
-pub(crate) const INSTRUMENT_ID: &str = "BTC-USD-PERP.DYDX";
+// pub(crate) const INSTRUMENT_ID: &str = "BTC-USD-PERP.DYDX";
 
 pub(crate) fn build_node(trader_id: TraderId) -> Result<LiveNode, Box<dyn std::error::Error>> {
     let network = DydxNetwork::Mainnet;
