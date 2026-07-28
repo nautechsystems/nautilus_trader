@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from nautilus_trader.backtest import BacktestEngine
+    from nautilus_trader.backtest import BacktestNode
+    from nautilus_trader.backtest import BacktestResult
 
 
 def _require_pandas():
@@ -347,21 +349,23 @@ def list_charts() -> list[str]:
 
 
 def create_tearsheet(
-    engine: BacktestEngine,
+    engine: BacktestEngine | BacktestResult,
     output_path: str | None = "tearsheet.html",
     title: str = "NautilusTrader Backtest Results",
     currency=None,
     config=None,
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
+    node: BacktestNode | None = None,
+    run_config_id: str | None = None,
 ) -> str | None:
     """
     Generate an interactive HTML tearsheet from backtest results.
 
     Parameters
     ----------
-    engine : BacktestEngine
-        The backtest engine with completed run.
+    engine : BacktestEngine or BacktestResult
+        The completed backtest engine or result.
     output_path : str, optional
         Path to save the tearsheet. File extension selects the format:
         ``.html`` (interactive), or ``.png``, ``.jpg``, ``.webp``, ``.svg``, ``.pdf``
@@ -377,6 +381,11 @@ def create_tearsheet(
         on visualizations.
     benchmark_name : str, default "Benchmark"
         Display name for the benchmark.
+    node : BacktestNode, optional
+        The node which produced a ``BacktestResult``. Required only for charts
+        that read cached data, such as ``bars_with_fills``.
+    run_config_id : str, optional
+        The run configuration ID. Defaults to ``engine.run_config_id``.
 
     Returns
     -------
@@ -397,6 +406,18 @@ def create_tearsheet(
         raise ImportError(msg)
 
     _require_not_none(engine, "engine")
+
+    if not hasattr(engine, "get_result"):
+        return _create_tearsheet_from_result(
+            result=engine,
+            node=node,
+            run_config_id=run_config_id,
+            output_path=output_path,
+            title=title,
+            config=config,
+            benchmark_returns=benchmark_returns,
+            benchmark_name=benchmark_name,
+        )
 
     result = engine.get_result()
     stats_returns = dict(result.stats_returns)
@@ -446,6 +467,130 @@ def create_tearsheet(
         benchmark_name=benchmark_name,
         engine=engine,
     )
+
+
+class _BacktestNodeEngineView:
+    def __init__(self, node: BacktestNode, run_config_id: str) -> None:
+        self._node = node
+        self._run_config_id = run_config_id
+        self.cache = node.get_engine_cache(run_config_id)
+
+    def generate_fills_report(self) -> pd.DataFrame:
+        return self._node.generate_fills_report(self._run_config_id)
+
+
+def _create_tearsheet_from_result(
+    result: BacktestResult,
+    node: BacktestNode | None,
+    run_config_id: str | None,
+    output_path: str | None,
+    title: str,
+    config,
+    benchmark_returns: pd.Series | None,
+    benchmark_name: str,
+) -> str | None:
+    resolved_run_config_id = run_config_id or result.run_config_id
+    needs_engine = config is not None and "bars_with_fills" in config.chart_names
+    if needs_engine and node is None:
+        raise ValueError("A BacktestNode is required for the bars_with_fills chart")
+    if node is not None and resolved_run_config_id is None:
+        raise ValueError("run_config_id is required when a BacktestNode is provided")
+
+    engine_view = (
+        _BacktestNodeEngineView(node, resolved_run_config_id)
+        if node is not None and resolved_run_config_id is not None
+        else None
+    )
+    returns = _result_returns_series(result)
+    run_info = _result_run_info(result)
+    account_info = _result_account_info(result, node, resolved_run_config_id)
+
+    if title == "NautilusTrader Backtest Results":
+        run_started = _format_optional_iso8601(result.run_started)
+        title = f"<b>NautilusTrader</b> v{NAUTILUS_VERSION} - Backtest Results"
+        title += f"<br><sub>Run started: {run_started}</sub>"
+
+    return create_tearsheet_from_stats(
+        run_info=run_info,
+        account_info=account_info,
+        stats_pnls=result.stats_pnls,
+        stats_returns=result.stats_returns,
+        stats_general=result.stats_general,
+        returns=returns,
+        output_path=output_path,
+        title=title,
+        config=config,
+        benchmark_returns=benchmark_returns,
+        benchmark_name=benchmark_name,
+        engine=engine_view,
+    )
+
+
+def _result_returns_series(result: BacktestResult) -> pd.Series:
+    returns = pd.Series(dict(result.returns_series), dtype="float64")
+    returns.index = pd.to_datetime(returns.index, unit="ns", utc=True)
+    return returns.sort_index()
+
+
+def _result_run_info(result: BacktestResult) -> dict[str, str]:
+    return {
+        "Run ID": str(result.run_id) if result.run_id is not None else "N/A",
+        "Run started": _format_optional_iso8601(result.run_started),
+        "Run finished": _format_optional_iso8601(result.run_finished),
+        "Elapsed time": str(pd.Timedelta(seconds=result.elapsed_time_secs)),
+        "Backtest start": _format_optional_iso8601(result.backtest_start),
+        "Backtest end": _format_optional_iso8601(result.backtest_end),
+        "Backtest range": _format_optional_duration(result.backtest_start, result.backtest_end),
+        "Iterations": f"{result.iterations:_}",
+        "Total events": f"{result.total_events:_}",
+        "Total orders": f"{result.total_orders:_}",
+        "Total positions": f"{result.total_positions:_}",
+    }
+
+
+def _result_account_info(
+    result: BacktestResult,
+    node: BacktestNode | None,
+    run_config_id: str | None,
+) -> dict[str, str]:
+    summary = result.summary
+    account_ids = {
+        key.removeprefix("account.").removesuffix(".id"): value
+        for key, value in summary.items()
+        if key.startswith("account.") and key.endswith(".id")
+    }
+    account_info = {}
+
+    if node is not None and run_config_id is not None:
+        from nautilus_trader.model import AccountId
+
+        for venue, account_id in sorted(account_ids.items()):
+            report = node.generate_account_report(
+                run_config_id,
+                account_id=AccountId.from_str(account_id),
+            )
+
+            if report.empty:
+                continue
+
+            for currency, balances in report.groupby("currency", sort=True):
+                totals = pd.to_numeric(balances["total"], errors="coerce").dropna()
+                if totals.empty:
+                    continue
+                account_info[f"Starting balance ({venue}, {currency})"] = str(totals.iloc[0])
+                account_info[f"Ending balance ({venue}, {currency})"] = str(totals.iloc[-1])
+
+        return account_info
+
+    for key, value in sorted(summary.items()):
+        if ".balance." not in key or not key.endswith(".total"):
+            continue
+        prefix, currency_and_field = key.rsplit(".balance.", maxsplit=1)
+        venue = prefix.removeprefix("account.")
+        currency = currency_and_field.removesuffix(".total")
+        account_info[f"Ending balance ({venue}, {currency})"] = value
+
+    return account_info
 
 
 def _resolve_tearsheet_returns(

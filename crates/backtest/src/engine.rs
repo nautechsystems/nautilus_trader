@@ -1070,6 +1070,7 @@ impl BacktestEngine {
         let stats_pnls = stats.pnls;
         let stats_returns = stats.returns;
         let stats_general = stats.general;
+        let returns_series = stats.returns_series;
 
         BacktestResult {
             trader_id: self.config.trader_id().to_string(),
@@ -1090,6 +1091,7 @@ impl BacktestEngine {
             stats_pnls,
             stats_returns,
             stats_general,
+            returns_series,
         }
     }
 
