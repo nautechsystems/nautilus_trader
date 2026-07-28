@@ -17464,7 +17464,6 @@ fn test_request_join_two_phase_emits_parent_response(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
-    let _ = stub_msgbus;
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -17543,6 +17542,49 @@ fn test_request_join_two_phase_emits_parent_response(
         .copied()
         .expect("joined quote data must reach the cache");
     assert_eq!(cached.ts_init, UnixNanos::from(2_000));
+
+    for request_id in [leg_a, leg_b, join_id] {
+        assert!(
+            stub_msgbus
+                .borrow()
+                .get_response_handler(&request_id)
+                .is_none(),
+            "completed join response handler must be removed for {request_id}",
+        );
+    }
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 3_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 4_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        join_id,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 5_000)],
+        None,
+        None,
+    ));
+
+    assert_eq!(
+        parent_saver.get_messages().len(),
+        1,
+        "late leg and parent responses must not complete the join again",
+    );
+    assert_eq!(leg_a_saver.get_messages().len(), 1);
+    assert_eq!(leg_b_saver.get_messages().len(), 1);
 }
 
 #[rstest]
@@ -17950,7 +17992,6 @@ fn test_reset_clears_pipeline_and_join_state(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
-    let _ = stub_msgbus;
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -17979,11 +18020,24 @@ fn test_reset_clears_pipeline_and_join_state(
     let (parent_handler, parent_saver) =
         get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("reset-parent")));
     msgbus::register_response_handler(&join_id, parent_handler);
+    let (leg_b_handler, leg_b_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("reset-leg-b")));
+    msgbus::register_response_handler(&leg_b, leg_b_handler);
 
     data_engine.reset();
 
     assert_eq!(data_engine.request_pipeline_count(), 0);
     assert_eq!(data_engine.pending_join_request_count(), 0);
+
+    for request_id in [leg_b, join_id] {
+        assert!(
+            stub_msgbus
+                .borrow()
+                .get_response_handler(&request_id)
+                .is_some(),
+            "data engine reset must not clear message bus response handlers for {request_id}",
+        );
+    }
 
     data_engine.response(leg_quotes_response(
         leg_a,
@@ -18002,9 +18056,37 @@ fn test_reset_clears_pipeline_and_join_state(
         None,
     ));
 
+    assert_eq!(leg_b_saver.get_messages().len(), 1);
+    assert_eq!(leg_b_saver.get_messages()[0].correlation_id, leg_b);
+    assert!(
+        stub_msgbus.borrow().get_response_handler(&leg_b).is_none(),
+        "the first late leg response must consume its handler",
+    );
+
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 3_000)],
+        None,
+        None,
+    ));
+
+    assert_eq!(
+        leg_b_saver.get_messages().len(),
+        1,
+        "a duplicate late leg response must not invoke the handler again",
+    );
     assert!(
         parent_saver.get_messages().is_empty(),
         "reset must clear pipeline state so no rebuilt parent fires",
+    );
+    assert!(
+        stub_msgbus
+            .borrow()
+            .get_response_handler(&join_id)
+            .is_some(),
+        "reset must not clear unrelated message bus response handlers",
     );
 }
 
@@ -18277,7 +18359,6 @@ fn test_request_join_single_leg_fires_immediately(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
-    let _ = stub_msgbus;
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -18332,6 +18413,16 @@ fn test_request_join_single_leg_fires_immediately(
 
     assert_eq!(data_engine.request_pipeline_count(), 0);
     assert_eq!(data_engine.pending_join_request_count(), 0);
+
+    for request_id in [leg, join_id] {
+        assert!(
+            stub_msgbus
+                .borrow()
+                .get_response_handler(&request_id)
+                .is_none(),
+            "completed single-leg join handler must be removed for {request_id}",
+        );
+    }
 }
 
 #[rstest]

@@ -720,6 +720,14 @@ impl MessageBus {
         self.correlation_index.get(correlation_id)
     }
 
+    /// Removes and returns the handler for the `correlation_id`.
+    pub(crate) fn take_response_handler(
+        &mut self,
+        correlation_id: &UUID4,
+    ) -> Option<ShareableMessageHandler> {
+        self.correlation_index.remove(correlation_id)
+    }
+
     /// Finds the subscriptions with pattern matching the `topic`.
     pub(crate) fn find_topic_matches(&self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.subscriptions
@@ -1010,6 +1018,23 @@ mod tests {
 
         let handler = msgbus_ref.get_response_handler(&request_id).unwrap();
         assert_eq!(handler.id(), handler.id());
+    }
+
+    #[rstest]
+    fn test_take_response_handler_removes_registration_and_allows_reregistration() {
+        let mut msgbus = MessageBus::default();
+        let request_id = UUID4::new();
+        let handler = get_stub_shareable_handler(None);
+        let handler_id = handler.id();
+        msgbus
+            .register_response_handler(&request_id, handler)
+            .unwrap();
+
+        let taken = msgbus.take_response_handler(&request_id).unwrap();
+
+        assert_eq!(taken.id(), handler_id);
+        assert!(msgbus.get_response_handler(&request_id).is_none());
+        assert!(msgbus.register_response_handler(&request_id, taken).is_ok());
     }
 
     #[rstest]
