@@ -1623,6 +1623,7 @@ mod tests {
             taker_order_id: venue_order_id.as_str().to_string(),
             timestamp: "1700000000000".to_string(),
             trade_owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            transaction_hash: None,
             trader_side: PolymarketLiquiditySide::Taker,
             event_type: PolymarketEventType::Trade,
         }

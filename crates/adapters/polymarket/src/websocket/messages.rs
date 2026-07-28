@@ -15,6 +15,7 @@
 
 //! WebSocket message types for the Polymarket CLOB API.
 
+use nautilus_core::serialization::deserialize_empty_string_as_none;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -75,6 +76,12 @@ pub struct PolymarketUserTrade {
     pub taker_order_id: String,
     pub timestamp: String,
     pub trade_owner: Ustr,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_empty_string_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub transaction_hash: Option<String>,
     pub trader_side: PolymarketLiquiditySide,
     #[serde(rename = "type")]
     pub event_type: PolymarketEventType,
@@ -460,9 +467,27 @@ mod tests {
         assert_eq!(trade.bucket_index, 1);
         assert_eq!(trade.maker_orders.len(), 1);
         assert_eq!(
+            trade.transaction_hash.as_deref(),
+            Some("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")
+        );
+        assert_eq!(
             trade.taker_order_id,
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
         );
+    }
+
+    #[rstest]
+    fn test_user_trade_missing_transaction_hash() {
+        let mut value: serde_json::Value = load("ws_user_trade.json");
+        value
+            .as_object_mut()
+            .expect("trade fixture should be an object")
+            .remove("transaction_hash");
+
+        let trade: PolymarketUserTrade =
+            serde_json::from_value(value).expect("trade fixture should deserialize");
+
+        assert!(trade.transaction_hash.is_none());
     }
 
     #[rstest]
@@ -527,6 +552,7 @@ mod tests {
         if let UserWsMessage::Trade(trade) = msg {
             assert_eq!(trade.event_type, PolymarketEventType::Trade);
             assert_eq!(trade.status, PolymarketTradeStatus::Confirmed);
+            assert!(trade.transaction_hash.is_none());
         }
     }
 
