@@ -397,6 +397,7 @@ adapter set. The following limits remain deferred:
 - Fixed Interactive Brokers Rust adapter conflating socket connectivity with data-farm health (#4457), thanks @faysou
 - Fixed Interactive Brokers Rust data feeds waiting on every farm before restarting recovered services (#4469), thanks @faysou
 - Fixed Kraken Futures batch order `order_tag` serialization (#4459), thanks @Andreas197510
+- Fixed Kraken Futures fill parsing for all documented `fillType` values (#4591), thanks for reporting @Andreas197510
 - Fixed Kraken financial values losing precision through floating-point parsing and arithmetic
 - Fixed Lighter batch orders to use correlated sequential WebSocket transactions
 - Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity

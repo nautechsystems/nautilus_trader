@@ -35,9 +35,9 @@
       "fillTime": "2023-04-07T15:55:20.123Z",
       "size": 2500.0,
       "price": 28050.0,
-      "fillType": "maker",
-      "fee_paid": 0.00004456,
-      "fee_currency": "BTC"
+      "fillType": "assignee",
+      "fee_paid": 0.0,
+      "fee_currency": "USD"
     }
   ]
 }

@@ -23,8 +23,8 @@ use nautilus_model::{
         TradeTick,
     },
     enums::{
-        AggressorSide, BookAction, ContingencyType, LiquiditySide, OrderSide, OrderStatus,
-        OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+        AggressorSide, BookAction, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
@@ -37,7 +37,7 @@ use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::enums::{KrakenFillType, KrakenOrderSide};
+use crate::common::enums::KrakenOrderSide;
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -347,10 +347,7 @@ pub fn parse_futures_ws_fill_report(
     let last_px = Price::from_decimal_dp(fill.price, price_precision)
         .context("Failed to parse fill price")?;
 
-    let liquidity_side = match fill.fill_type {
-        KrakenFillType::Maker => LiquiditySide::Maker,
-        KrakenFillType::Taker => LiquiditySide::Taker,
-    };
+    let liquidity_side = fill.fill_type.into();
 
     let fee = fill.fee_paid.unwrap_or(Decimal::ZERO);
     let commission_currency = instrument.quote_currency();
@@ -437,7 +434,7 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::CurrencyType,
+        enums::{CurrencyType, LiquiditySide},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
         types::Currency,
@@ -446,7 +443,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{consts::KRAKEN_VENUE, enums::KrakenFuturesOrderType};
+    use crate::common::{
+        consts::KRAKEN_VENUE,
+        enums::{KrakenFillType, KrakenFuturesOrderType},
+    };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
@@ -715,11 +715,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_futures_ws_fill_report() {
+    #[case::taker(KrakenFillType::Taker, LiquiditySide::Taker)]
+    #[case::assignee(KrakenFillType::Assignee, LiquiditySide::NoLiquiditySide)]
+    fn test_parse_futures_ws_fill_report(
+        #[case] fill_type: KrakenFillType,
+        #[case] expected_liquidity_side: LiquiditySide,
+    ) {
         let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
         let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
             serde_json::from_str(json).unwrap();
-        let fill = &fills_delta.fills[0];
+        let mut fill = fills_delta.fills[0].clone();
+        fill.fill_type = fill_type;
 
         let instrument_id = InstrumentId::new(Symbol::new("PF_ETHUSD"), *KRAKEN_VENUE);
         let usd = Currency::new("USD", 6, 0, "USD", CurrencyType::Fiat);
@@ -753,13 +759,13 @@ mod tests {
         ));
 
         let account_id = AccountId::from("KRAKEN-001");
-        let report = parse_futures_ws_fill_report(fill, &instrument, account_id, TS).unwrap();
+        let report = parse_futures_ws_fill_report(&fill, &instrument, account_id, TS).unwrap();
 
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.last_px.as_decimal(), dec!(3162));
         assert_eq!(report.last_qty.as_decimal(), dec!(0.001));
-        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.liquidity_side, expected_liquidity_side);
         assert_eq!(report.commission.as_decimal(), dec!(0.001581));
     }
 }

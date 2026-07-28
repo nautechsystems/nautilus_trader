@@ -40,7 +40,7 @@ use crate::{
     common::{
         consts::KRAKEN_VENUE,
         enums::{
-            KrakenFillType, KrakenFuturesOrderEventType, KrakenInstrumentType, KrakenPositionSide,
+            KrakenFuturesOrderEventType, KrakenInstrumentType, KrakenPositionSide,
             KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
@@ -1061,10 +1061,7 @@ pub fn parse_futures_fill_report(
 
     let commission = Money::from_decimal(fill.fee_paid.unwrap_or(Decimal::ZERO), quote_currency)?;
 
-    let liquidity_side = match fill.fill_type {
-        KrakenFillType::Maker => LiquiditySide::Maker,
-        KrakenFillType::Taker => LiquiditySide::Taker,
-    };
+    let liquidity_side = fill.fill_type.into();
 
     let ts_event = parse_rfc3339_timestamp(&fill.fill_time, "fill.fill_time")?;
 
@@ -1237,7 +1234,7 @@ mod tests {
             KrakenOrderSide,
         },
         http::{
-            futures::models::{FuturesOpenOrder, FuturesOrderEvent},
+            futures::models::{FuturesFillsResponse, FuturesOpenOrder, FuturesOrderEvent},
             models::{AssetPairsResponse, KrakenResponse},
         },
     };
@@ -1710,6 +1707,41 @@ mod tests {
             TS,
             TS,
         ))
+    }
+
+    #[rstest]
+    fn test_parse_futures_assignee_fill_report() {
+        let json = load_test_json("http_futures_fills.json");
+        let response: FuturesFillsResponse = serde_json::from_str(&json).unwrap();
+        let fill = &response.fills[2];
+        let instrument = create_mock_perp();
+        let account_id = AccountId::new("KRAKEN-001");
+
+        let report = parse_futures_fill_report(fill, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::new("f8a7b6c5-d4e3-2f1a-0b9c-8d7e6f5a4b3c")
+        );
+        assert_eq!(
+            report.trade_id,
+            TradeId::new("d3f4e5a6-b7c8-9d0e-1f2a-3b4c5d6e7f8a")
+        );
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.last_qty, Quantity::from("2500"));
+        assert_eq!(report.last_px, Price::from("28050.0"));
+        assert_eq!(report.commission, Money::zero(Currency::USD()));
+        assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
+        assert_eq!(report.avg_px, None);
+        assert_eq!(
+            report.ts_event,
+            "2023-04-07T15:55:20.123Z".parse::<UnixNanos>().unwrap()
+        );
+        assert_eq!(report.ts_init, TS);
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_position_id, None);
     }
 
     #[rstest]
