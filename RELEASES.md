@@ -281,6 +281,7 @@ adapter set. The following limits remain deferred:
 - Fixed nondeterministic event ordering in backtests (#4480), thanks @folknor
 - Fixed portfolio PnL and account-state resolution for broker-routed instruments (#4451), thanks @dfjmax
 - Fixed reverse exchange rates using the wrong spread side and nondeterministic routes (#4568), thanks @folknor
+- Fixed FX session boundary drift across daylight‑saving transitions (#4584), thanks @folknor
 - Fixed routing-client position reconciliation tolerance lookup (#4490), thanks @folknor
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 - Fixed Rust RSI moving-average selection and max-value regression (#4382), thanks @bebop23

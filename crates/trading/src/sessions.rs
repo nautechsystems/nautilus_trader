@@ -93,6 +93,42 @@ pub fn fx_local_from_utc(session: ForexSession, time_now: DateTime<Utc>) -> Date
     session.timezone().from_utc_datetime(&time_now.naive_utc())
 }
 
+/// Returns the next session start time in UTC.
+#[must_use]
+pub fn fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+    let local_now = fx_local_from_utc(session, time_now);
+    let (start_time, _) = session.session_times();
+
+    fx_next_boundary(local_now, start_time)
+}
+
+/// Returns the previous session start time in UTC.
+#[must_use]
+pub fn fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+    let local_now = fx_local_from_utc(session, time_now);
+    let (start_time, _) = session.session_times();
+
+    fx_prev_boundary(local_now, start_time)
+}
+
+/// Returns the next session end time in UTC.
+#[must_use]
+pub fn fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+    let local_now = fx_local_from_utc(session, time_now);
+    let (_, end_time) = session.session_times();
+
+    fx_next_boundary(local_now, end_time)
+}
+
+/// Returns the previous session end time in UTC.
+#[must_use]
+pub fn fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+    let local_now = fx_local_from_utc(session, time_now);
+    let (_, end_time) = session.session_times();
+
+    fx_prev_boundary(local_now, end_time)
+}
+
 fn fx_next_boundary(local_now: DateTime<Tz>, session_time: NaiveTime) -> DateTime<Utc> {
     let timezone = local_now.timezone();
     let mut date = local_now.date_naive();
@@ -143,42 +179,6 @@ fn fx_prev_boundary(local_now: DateTime<Tz>, session_time: NaiveTime) -> DateTim
         .single()
         .expect("FX session boundary must be a unique local time")
         .with_timezone(&Utc)
-}
-
-/// Returns the next session start time in UTC.
-#[must_use]
-pub fn fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let local_now = fx_local_from_utc(session, time_now);
-    let (start_time, _) = session.session_times();
-
-    fx_next_boundary(local_now, start_time)
-}
-
-/// Returns the previous session start time in UTC.
-#[must_use]
-pub fn fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let local_now = fx_local_from_utc(session, time_now);
-    let (start_time, _) = session.session_times();
-
-    fx_prev_boundary(local_now, start_time)
-}
-
-/// Returns the next session end time in UTC.
-#[must_use]
-pub fn fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let local_now = fx_local_from_utc(session, time_now);
-    let (_, end_time) = session.session_times();
-
-    fx_next_boundary(local_now, end_time)
-}
-
-/// Returns the previous session end time in UTC.
-#[must_use]
-pub fn fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let local_now = fx_local_from_utc(session, time_now);
-    let (_, end_time) = session.session_times();
-
-    fx_prev_boundary(local_now, end_time)
 }
 
 #[cfg(test)]
