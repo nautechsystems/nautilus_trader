@@ -642,8 +642,13 @@ impl OrderBook {
     /// Maps bid prices to total public size per level, excluding own orders up to a depth limit.
     ///
     /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
-    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
-    /// nanoseconds before `now` (defaults to now).
+    /// When `now` is provided, only subtracts orders whose acceptance time plus
+    /// `accepted_buffer_ns` is at or before `now`. When `now` is `None`, acceptance-time
+    /// filtering is disabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `own_book` is `Some`, `accepted_buffer_ns` is positive, and `now` is `None`.
     #[must_use]
     pub fn bids_filtered_as_map(
         &self,
@@ -671,8 +676,13 @@ impl OrderBook {
     /// Maps ask prices to total public size per level, excluding own orders up to a depth limit.
     ///
     /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
-    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
-    /// nanoseconds before `now` (defaults to now).
+    /// When `now` is provided, only subtracts orders whose acceptance time plus
+    /// `accepted_buffer_ns` is at or before `now`. When `now` is `None`, acceptance-time
+    /// filtering is disabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `own_book` is `Some`, `accepted_buffer_ns` is positive, and `now` is `None`.
     #[must_use]
     pub fn asks_filtered_as_map(
         &self,
@@ -702,6 +712,7 @@ impl OrderBook {
     /// # Panics
     ///
     /// Panics if `self` and `own_book` have different instrument IDs.
+    /// Panics if `own_book` is `Some`, `accepted_buffer_ns` is positive, and `now` is `None`.
     ///
     /// [`Self::filtered_view_checked`] for fallible construction.
     #[must_use]
@@ -726,6 +737,7 @@ impl OrderBook {
     ///
     /// # Panics
     ///
+    /// Panics if `own_book` is `Some`, `accepted_buffer_ns` is positive, and `now` is `None`.
     /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when
     /// reconstructing filtered levels.
     pub fn filtered_view_checked(
@@ -795,8 +807,13 @@ impl OrderBook {
     /// Groups bid quantities into price buckets, truncating to a maximum depth, excluding own orders.
     ///
     /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
-    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
-    /// nanoseconds before `now` (defaults to now).
+    /// When `now` is provided, only subtracts orders whose acceptance time plus
+    /// `accepted_buffer_ns` is at or before `now`. When `now` is `None`, acceptance-time
+    /// filtering is disabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `own_book` is `Some`, `accepted_buffer_ns` is positive, and `now` is `None`.
     #[must_use]
     pub fn group_bids_filtered(
         &self,
@@ -822,8 +839,13 @@ impl OrderBook {
     /// Groups ask quantities into price buckets, truncating to a maximum depth, excluding own orders.
     ///
     /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
-    /// Uses `accepted_buffer_ns` to include only orders accepted at least that many
-    /// nanoseconds before `now` (defaults to now).
+    /// When `now` is provided, only subtracts orders whose acceptance time plus
+    /// `accepted_buffer_ns` is at or before `now`. When `now` is `None`, acceptance-time
+    /// filtering is disabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `own_book` is `Some`, `accepted_buffer_ns` is positive, and `now` is `None`.
     #[must_use]
     pub fn group_asks_filtered(
         &self,

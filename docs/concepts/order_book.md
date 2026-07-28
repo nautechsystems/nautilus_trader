@@ -221,8 +221,9 @@ let filtered = book.filtered_view(Some(&own_book), None, status, None, None);
 The `accepted_buffer_ns` parameter provides a grace period: when set, only orders
 where `ts_accepted + buffer <= now` are included. This excludes recently accepted
 orders that may not yet appear in the public book feed. The buffer applies to the
-`ts_accepted` field regardless of order status. Combine with a status filter to
-also exclude non-accepted orders.
+`ts_accepted` field regardless of order status. Omitting `ts_now` disables
+acceptance-time filtering, and a positive `accepted_buffer_ns` requires `ts_now`.
+Combine with a status filter to also exclude non-accepted orders.
 
 ```rust
 // Only subtract orders accepted at least 500ms ago
