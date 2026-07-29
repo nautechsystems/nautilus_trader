@@ -130,6 +130,7 @@ def test_exec_tester_config_readback() -> None:
         use_individual_cancels_on_stop=True,
         cancel_orders_on_stop=False,
         close_positions_on_stop=False,
+        close_positions_qty_precision=2,
         close_positions_time_in_force=TimeInForce.IOC,
         reduce_only_on_stop=False,
         dry_run=True,
@@ -166,6 +167,7 @@ def test_exec_tester_config_readback() -> None:
     assert config.use_individual_cancels_on_stop is True
     assert config.cancel_orders_on_stop is False
     assert config.close_positions_on_stop is False
+    assert config.close_positions_qty_precision == 2
     assert config.close_positions_time_in_force == TimeInForce.IOC
     assert config.reduce_only_on_stop is False
     assert config.dry_run is True

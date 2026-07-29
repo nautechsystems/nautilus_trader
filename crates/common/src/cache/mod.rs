@@ -1602,6 +1602,46 @@ impl<'a> CacheApi<'a> {
         self.cache().trade_count(instrument_id)
     }
 
+    /// Returns the mark price update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn mark_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().mark_price_count(instrument_id)
+    }
+
+    /// Returns the index price update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn index_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().index_price_count(instrument_id)
+    }
+
+    /// Returns the funding rate update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn funding_rate_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().funding_rate_count(instrument_id)
+    }
+
+    /// Returns the instrument status update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_status_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().instrument_status_count(instrument_id)
+    }
+
     /// Returns the bar count for the `bar_type`.
     ///
     /// # Panics
@@ -1640,6 +1680,46 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.cache().has_trade_ticks(instrument_id)
+    }
+
+    /// Returns whether the cache contains mark price updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_mark_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_mark_prices(instrument_id)
+    }
+
+    /// Returns whether the cache contains index price updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_index_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_index_prices(instrument_id)
+    }
+
+    /// Returns whether the cache contains funding rate updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_funding_rates(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_funding_rates(instrument_id)
+    }
+
+    /// Returns whether the cache contains instrument status updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_instrument_statuses(instrument_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.
@@ -7279,6 +7359,38 @@ impl Cache {
             .map_or(0, BoundedVecDeque::len)
     }
 
+    /// Gets the mark price update count for the `instrument_id`.
+    #[must_use]
+    pub fn mark_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.mark_prices
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
+    /// Gets the index price update count for the `instrument_id`.
+    #[must_use]
+    pub fn index_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.index_prices
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
+    /// Gets the funding rate update count for the `instrument_id`.
+    #[must_use]
+    pub fn funding_rate_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.funding_rates
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
+    /// Gets the instrument status update count for the `instrument_id`.
+    #[must_use]
+    pub fn instrument_status_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.instrument_statuses
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
     /// Gets the bar count for the `instrument_id`.
     #[must_use]
     pub fn bar_count(&self, bar_type: &BarType) -> usize {
@@ -7301,6 +7413,30 @@ impl Cache {
     #[must_use]
     pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.trade_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains mark price updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_mark_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.mark_price_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains index price updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_index_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.index_price_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains funding rate updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_funding_rates(&self, instrument_id: &InstrumentId) -> bool {
+        self.funding_rate_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains instrument status updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
+        self.instrument_status_count(instrument_id) > 0
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.

@@ -352,13 +352,12 @@ impl Position {
             self.realized_pnl = None;
         }
 
-        check_predicate_true(
-            !self.trade_ids.contains(&fill.trade_id),
-            "`fill.trade_id` already contained in `trade_ids",
-        )
-        .expect(FAILED);
-
         if record_replay {
+            check_predicate_true(
+                !self.trade_ids.contains(&fill.trade_id),
+                "`fill.trade_id` already contained in `trade_ids",
+            )
+            .expect(FAILED);
             self.replay_events
                 .push(PositionReplayEvent::Filled(fill.clone()));
         }
@@ -458,28 +457,47 @@ impl Position {
     }
 
     fn is_duplicate_replay_fill(&self, fill: &OrderFilled) -> bool {
-        let mut trade_seen = false;
-        let mut source_seen = false;
-        let mut continuation_seen = false;
+        let continues_latest_fill = fill.causation_id.is_some_and(|source_id| {
+            self.events.last().is_some_and(|latest| {
+                latest.trade_id == fill.trade_id && latest.event_id == source_id
+            })
+        });
 
-        for replay_event in &self.replay_events {
-            let PositionReplayEvent::Filled(replayed) = replay_event else {
-                continue;
-            };
-
-            if replayed.trade_id != fill.trade_id {
-                continue;
-            }
-
-            trade_seen = true;
-
-            if let Some(source_id) = fill.causation_id {
-                source_seen |= replayed.event_id == source_id;
-                continuation_seen |= replayed.causation_id == Some(source_id);
-            }
+        if self.trade_ids.contains(&fill.trade_id) {
+            return !continues_latest_fill
+                || self.replay_events.iter().any(|event| {
+                    matches!(
+                        event,
+                        PositionReplayEvent::Filled(replayed)
+                            if replayed.trade_id == fill.trade_id
+                                && replayed.causation_id == fill.causation_id
+                    )
+                });
         }
 
-        trade_seen && (!source_seen || continuation_seen)
+        let replay_starts_current_cycle = self.replay_events.is_empty()
+            || matches!(
+                (self.replay_events.first(), self.events.first()),
+                (
+                    Some(PositionReplayEvent::Filled(replayed)),
+                    Some(current),
+                ) if replayed.event_id == current.event_id
+            );
+        let corrected_trade = self
+            .fill_voids
+            .iter()
+            .any(|record| record.event.trade_id == fill.trade_id);
+        let current_cycle_only = replay_starts_current_cycle && !corrected_trade;
+        if current_cycle_only {
+            return false;
+        }
+
+        self.replay_events.iter().any(|event| {
+            matches!(
+                event,
+                PositionReplayEvent::Filled(replayed) if replayed.trade_id == fill.trade_id
+            )
+        })
     }
 
     fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
@@ -1499,7 +1517,10 @@ mod tests {
     }
 
     #[rstest]
+    #[case(false)]
+    #[case(true)]
     fn test_historical_duplicate_trade_id_does_not_poison_fill_void_replay(
+        #[case] causal_duplicate: bool,
         audusd_sim: CurrencyPair,
     ) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
@@ -1526,7 +1547,7 @@ mod tests {
             .position_id(position_id)
             .ts_event(UnixNanos::from(2))
             .build();
-        let fill_duplicate = OrderFilledSpec::builder()
+        let mut fill_duplicate = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
             .client_order_id(ClientOrderId::from("O-1"))
             .trade_id(TradeId::from("T-1"))
@@ -1537,6 +1558,10 @@ mod tests {
             .position_id(position_id)
             .ts_event(UnixNanos::from(3))
             .build();
+
+        if causal_duplicate {
+            fill_duplicate.causation_id = Some(fill_open.event_id);
+        }
         let fill_reopen = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
             .client_order_id(ClientOrderId::from("O-3"))
@@ -1573,7 +1598,7 @@ mod tests {
 
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.quantity, Quantity::from(0));
-        assert_eq!(position.events, vec![fill_open.clone(), fill_close]);
+        assert_eq!(position.events, vec![fill_open.clone(), fill_close.clone()]);
         assert_eq!(position.replay_events.len(), 2);
         assert_eq!(position.trade_ids.len(), 2);
         assert!(position.trade_ids.contains(&TradeId::from("T-1")));
@@ -1601,12 +1626,25 @@ mod tests {
         assert_eq!(position.avg_px_open, 1.0);
         assert_eq!(position.buy_qty, Quantity::from(15));
         assert_eq!(position.sell_qty, Quantity::from(0));
-        assert_eq!(position.events, vec![fill_open, fill_reopen]);
+        assert_eq!(
+            position.events,
+            vec![fill_open.clone(), fill_reopen.clone()]
+        );
         assert_eq!(position.replay_events.len(), 3);
         assert_eq!(position.fill_voids.len(), 1);
         assert_eq!(position.trade_ids.len(), 2);
         assert!(position.trade_ids.contains(&TradeId::from("T-1")));
         assert!(position.trade_ids.contains(&TradeId::from("T-3")));
+
+        let mut fill_close_duplicate = fill_close;
+        fill_close_duplicate.event_id = uuid4();
+        fill_close_duplicate.ts_event = UnixNanos::from(6);
+        position.apply(&fill_close_duplicate);
+
+        assert_eq!(position.side, PositionSide::Long);
+        assert_eq!(position.quantity, Quantity::from(15));
+        assert_eq!(position.events, vec![fill_open, fill_reopen]);
+        assert_eq!(position.replay_events.len(), 3);
     }
 
     #[rstest]
@@ -2551,6 +2589,7 @@ mod tests {
             .build();
         let mut position = Position::new(&instrument, opening);
         position.apply(&closing);
+        assert!(!position.is_duplicate_replay_fill(&reopening));
         position.apply(&reopening);
 
         position
@@ -2563,6 +2602,78 @@ mod tests {
         assert_eq!(position.sell_qty, Quantity::from(3));
         assert_eq!(position.replay_events.len(), 3);
         assert!(position.is_duplicate_replay_fill(&reopening));
+    }
+
+    #[rstest]
+    fn test_fill_void_replays_split_fragments_in_one_corrected_cycle(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-FLIP-CYCLE-VOID");
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SELL-1"))
+            .trade_id(TradeId::from("T-SELL-1"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(17))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .build();
+        let second_sell = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SELL-2"))
+            .trade_id(TradeId::from("T-SELL-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(17))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .build();
+        let closing = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-FLIP"))
+            .trade_id(TradeId::from("T-FLIP"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(34))
+            .last_px(Price::from("1.10000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .build();
+        let mut reopening = closing.clone();
+        reopening.last_qty = Quantity::from(591);
+        reopening.event_id = uuid4();
+        reopening.causation_id = Some(closing.event_id);
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .instrument_id(second_sell.instrument_id)
+            .client_order_id(second_sell.client_order_id)
+            .venue_order_id(second_sell.venue_order_id)
+            .account_id(second_sell.account_id)
+            .trade_id(second_sell.trade_id)
+            .voided_qty(Quantity::from(2))
+            .order_side(second_sell.order_side)
+            .order_type(second_sell.order_type)
+            .last_px(second_sell.last_px)
+            .currency(second_sell.currency)
+            .liquidity_side(second_sell.liquidity_side)
+            .position_id(position_id)
+            .build();
+        let mut position = Position::new(&instrument, opening);
+        position.apply(&second_sell);
+        position.apply(&closing);
+        position.apply(&reopening);
+
+        position
+            .apply_fill_void(fill_voided, Quantity::from(2), None)
+            .unwrap();
+
+        assert_eq!(position.side, PositionSide::Long);
+        assert_eq!(position.quantity, Quantity::from(593));
+        assert_eq!(position.buy_qty, Quantity::from(625));
+        assert_eq!(position.sell_qty, Quantity::from(32));
+        assert_eq!(position.events.len(), 4);
+        assert_eq!(position.replay_events.len(), 4);
+        assert_eq!(position.fill_voids.len(), 1);
+        assert_eq!(position.trade_ids.len(), 3);
+        assert!(position.trade_ids.contains(&TradeId::from("T-FLIP")));
     }
 
     #[rstest]

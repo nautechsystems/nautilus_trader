@@ -40,6 +40,8 @@ The maintained V2 examples are available in
 for Rust and
 [`python/examples/polymarket`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/polymarket)
 for Python.
+The exec tester configurations apply the
+[close precision](#exec-tester-close-residuals) needed for Polymarket market SELL orders.
 
 ## Binary options
 
@@ -642,6 +644,26 @@ The fill tracker is keyed by `venue_order_id` and registered on order
 accept, so fill reports for orders placed in another session pass through
 unchanged. `DUST_SNAP_THRESHOLD` is not configurable per-strategy; it lives
 in `nautilus_polymarket::common::consts`.
+
+### Exec tester close residuals
+
+`close_positions_qty_precision` is a general v2 `ExecTesterConfig` option. It defaults to
+`None`, which submits the full position quantity. The Rust and Python v2 Polymarket examples set it
+to `2` because [market order maker amounts allow two decimals](#precision-limits). Legacy v1
+testers are unchanged. The examples also set `close_positions_time_in_force=IOC`; custom
+configurations must use `IOC` or `FOK` because Polymarket rejects `GTC` market orders.
+
+On stop, the v2 tester truncates only the submitted market SELL quantity to the configured decimal
+precision and logs the exact difference at WARN level. It does not round the position state or
+create a synthetic fill.
+
+A 5 pUSD BUY that fills 5.1975 shares therefore submits a 5.19‑share close. After the venue fills
+that order, the position remains open at exactly 0.0075 shares. If the whole position is below 0.01
+shares, the tester warns and submits no zero‑quantity order. Treat close‑on‑stop as best‑effort and
+check the position and warning before assuming the account is flat. A non‑zero close must also meet
+the [1 pUSD marketable‑order minimum](#time-in-force-options); rejection leaves the full position
+open. See the [position reporting limitation](#limitations-and-considerations) for sub‑0.01‑share
+venue reports.
 
 ## WebSockets
 

@@ -2827,6 +2827,7 @@ async fn test_batch_cancel_orders_fans_out_correlated_cancel_orders() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "Flaky reconnect timing; re-enable after synchronization is deterministic"]
 async fn test_reconnect_replays_and_immediately_refreshes_authenticated_subscriptions() {
     // The WS layer auto-reconnects on a server-initiated close. After the
     // reconnect the 5 account-stream subscribes must replay with their

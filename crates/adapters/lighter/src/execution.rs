@@ -3924,6 +3924,8 @@ impl ExecutionClient for LighterExecutionClient {
 
             for order in &active.orders {
                 self.dispatch.note_active_market(order.market_index);
+                restore_reconciled_order(&self.core, &self.dispatch, order);
+
                 if let Some(report) =
                     parse_http_order_to_report(order, &self.registry, self.core.account_id, ts_init)
                 {
@@ -3981,6 +3983,8 @@ impl ExecutionClient for LighterExecutionClient {
                         Ok(inactive) => {
                             for order in &inactive.orders {
                                 self.dispatch.note_active_market(order.market_index);
+                                restore_reconciled_order(&self.core, &self.dispatch, order);
+
                                 if let Some(report) = parse_http_order_to_report(
                                     order,
                                     &self.registry,
@@ -4265,6 +4269,47 @@ impl ExecutionClient for LighterExecutionClient {
         );
 
         Ok(Some(mass_status))
+    }
+}
+
+fn restore_reconciled_order(
+    core: &ExecutionClientCore,
+    dispatch: &WsDispatchState,
+    raw: &crate::http::models::LighterOrder,
+) {
+    let venue_order_id = VenueOrderId::new(raw.order_id.as_str());
+    let cached_order = {
+        let cache = core.cache();
+        let Some(cloid) = cache.client_order_id(&venue_order_id).copied() else {
+            return;
+        };
+        let Some(order) = cache.order_owned(&cloid) else {
+            log::warn!(
+                "Ignoring reconciled Lighter order missing from cache: cloid={cloid}, venue_order_id={venue_order_id}",
+            );
+            return;
+        };
+        order
+    };
+
+    if cached_order.instrument_id().venue != core.venue
+        || cached_order.account_id() != Some(core.account_id)
+    {
+        log::warn!(
+            "Ignoring reconciled Lighter order outside this client: cloid={}, venue_order_id={venue_order_id}",
+            cached_order.client_order_id(),
+        );
+        return;
+    }
+
+    if let Err(e) =
+        dispatch.restore_reconciled_order(&cached_order, raw.client_order_index, venue_order_id)
+    {
+        log::warn!(
+            "Ignoring conflicting Lighter reconciliation identity: cloid={}, venue_order_id={venue_order_id}, client_order_index={}, error={e}",
+            cached_order.client_order_id(),
+            raw.client_order_index,
+        );
     }
 }
 
@@ -4991,8 +5036,8 @@ mod tests {
     };
     use nautilus_model::{
         data::QuoteTick,
-        enums::{OrderStatus, TimeInForce},
-        events::{OrderEventAny, OrderPendingCancel},
+        enums::{LiquiditySide, OrderStatus, TimeInForce},
+        events::{OrderCanceled, OrderEventAny, OrderPendingCancel, OrderTriggered},
         identifiers::{
             InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
         },
@@ -5265,10 +5310,14 @@ mod tests {
         cache: &Rc<RefCell<Cache>>,
         order: OrderAny,
         venue_order_id: VenueOrderId,
+        client_id: Option<ClientId>,
     ) -> (InstrumentId, ClientOrderId) {
         let instrument_id = order.instrument_id();
         let client_order_id = order.client_order_id();
-        cache_order(cache, order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, client_id, false)
+            .unwrap();
 
         let accepted = OrderEventAny::Accepted(OrderAccepted::new(
             trader_id(),
@@ -5292,7 +5341,8 @@ mod tests {
         order: OrderAny,
         venue_order_id: VenueOrderId,
     ) {
-        let (instrument_id, client_order_id) = cache_accepted_order(cache, order, venue_order_id);
+        let (instrument_id, client_order_id) =
+            cache_accepted_order(cache, order, venue_order_id, Some(client_id()));
 
         let pending_cancel = OrderEventAny::PendingCancel(OrderPendingCancel::new(
             trader_id(),
@@ -6628,7 +6678,7 @@ mod tests {
         let instrument_id = register_test_instrument(&client, &cache);
         let mut factory = test_order_factory();
         let order = test_limit_order(&mut factory, instrument_id, "O-CANCEL-ALL-NO-VOI");
-        cache_accepted_order(&cache, order, VenueOrderId::from("123"));
+        cache_accepted_order(&cache, order, VenueOrderId::from("123"), Some(client_id()));
 
         let command = CancelAllOrders::new(
             trader_id(),
@@ -9225,6 +9275,376 @@ mod tests {
             dispatch.cloid_map.get(&chosen).map(|e| *e.value()),
             Some(cloid),
         );
+    }
+
+    #[rstest]
+    fn reconciliation_restores_active_collision_probed_identity() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-RECON-ACTIVE");
+        let cloid = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("281476929510110");
+        cache_accepted_order(&cache, order, venue_order_id, None);
+        let (base_index, client_order_index) = forced_probed_index(cloid);
+        let raw =
+            reconciliation_raw_order(client_order_index, venue_order_id, LighterOrderStatus::Open);
+
+        restore_reconciled_order(&client.core, &client.dispatch, &raw);
+        let report =
+            parse_http_order_to_report(&raw, &client.registry, account_id(), UnixNanos::from(1))
+                .unwrap();
+        let translated = client.dispatch.translate_order_cloid(report);
+        let replacement = ClientOrderId::from("O-RECON-ACTIVE-REPLACEMENT");
+        let replacement_index = client
+            .dispatch
+            .register_cloid(client_order_index, replacement)
+            .unwrap();
+        let wrong_venue_order_id = VenueOrderId::from("281476929510111");
+        let wrong_raw = reconciliation_raw_order(
+            client_order_index,
+            wrong_venue_order_id,
+            LighterOrderStatus::Open,
+        );
+        let wrong_report = parse_http_order_to_report(
+            &wrong_raw,
+            &client.registry,
+            account_id(),
+            UnixNanos::from(2),
+        )
+        .unwrap();
+        let wrong_translated = client.dispatch.translate_order_cloid(wrong_report);
+
+        assert_ne!(client_order_index, base_index);
+        assert_eq!(
+            client.dispatch.client_order_index(&cloid),
+            Some(client_order_index),
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index(client_order_index),
+            Some(cloid),
+        );
+        assert_eq!(
+            client.dispatch.lookup_venue_order_id(&cloid),
+            Some(venue_order_id),
+        );
+        assert!(client.dispatch.order_identities.contains_key(&cloid));
+        assert!(client.dispatch.accepted_was_emitted(&cloid));
+        assert_eq!(translated.client_order_id, Some(cloid));
+        assert_eq!(translated.venue_order_id, venue_order_id);
+        assert_ne!(replacement_index, client_order_index);
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index(replacement_index),
+            Some(replacement),
+        );
+        assert_eq!(
+            wrong_translated.client_order_id,
+            Some(ClientOrderId::new(wrong_venue_order_id.as_str())),
+        );
+        assert_eq!(wrong_translated.venue_order_id, wrong_venue_order_id);
+    }
+
+    #[rstest]
+    fn reconciliation_restores_reused_retired_index_for_fill_translation() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let first_order = test_limit_order(&mut factory, instrument_id, "O-RECON-RETIRED-A");
+        let second_order = test_limit_order(&mut factory, instrument_id, "O-RECON-RETIRED-B");
+        let first_cloid = first_order.client_order_id();
+        let second_cloid = second_order.client_order_id();
+        let first_venue_order_id = VenueOrderId::from("281476929510120");
+        let second_venue_order_id = VenueOrderId::from("281476929510121");
+        cache_canceled_order(&cache, first_order, first_venue_order_id);
+        cache_canceled_order(&cache, second_order, second_venue_order_id);
+        let (_, client_order_index) = forced_probed_index(first_cloid);
+        let first_raw = reconciliation_raw_order(
+            client_order_index,
+            first_venue_order_id,
+            LighterOrderStatus::Canceled,
+        );
+        let second_raw = reconciliation_raw_order(
+            client_order_index,
+            second_venue_order_id,
+            LighterOrderStatus::Canceled,
+        );
+
+        restore_reconciled_order(&client.core, &client.dispatch, &first_raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &second_raw);
+        let first_fill = client
+            .dispatch
+            .translate_fill_cloid(reconciliation_fill_report(
+                instrument_id,
+                client_order_index,
+                first_venue_order_id,
+                "19209006920",
+            ));
+        let second_fill = client
+            .dispatch
+            .translate_fill_cloid(reconciliation_fill_report(
+                instrument_id,
+                client_order_index,
+                second_venue_order_id,
+                "19209006921",
+            ));
+        let replacement = ClientOrderId::from("O-RECON-RETIRED-REPLACEMENT");
+        let replacement_index = client
+            .dispatch
+            .register_cloid(client_order_index, replacement)
+            .unwrap();
+
+        assert!(!client.dispatch.cloid_map.contains_key(&client_order_index));
+        assert!(!client.dispatch.order_identities.contains_key(&first_cloid));
+        assert!(!client.dispatch.order_identities.contains_key(&second_cloid));
+        assert_eq!(
+            client.dispatch.client_order_index(&first_cloid),
+            Some(client_order_index),
+        );
+        assert_eq!(
+            client.dispatch.client_order_index(&second_cloid),
+            Some(client_order_index),
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index(client_order_index),
+            None,
+        );
+        assert_eq!(first_fill.client_order_id, Some(first_cloid));
+        assert_eq!(first_fill.venue_order_id, first_venue_order_id);
+        assert_eq!(second_fill.client_order_id, Some(second_cloid));
+        assert_eq!(second_fill.venue_order_id, second_venue_order_id);
+        assert_ne!(replacement_index, client_order_index);
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index(replacement_index),
+            Some(replacement),
+        );
+    }
+
+    #[rstest]
+    fn reconciliation_restores_triggered_marker() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = factory.stop_limit(
+            instrument_id,
+            OrderSide::Sell,
+            Quantity::from("0.1000"),
+            Price::from("2290.00"),
+            Price::from("2300.00"),
+            None,
+            Some(TimeInForce::Gtc),
+            None,
+            Some(false),
+            Some(false),
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(ClientOrderId::from("O-RECON-TRIGGERED")),
+        );
+        let cloid = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("281476929510124");
+        cache_accepted_order(&cache, order, venue_order_id, None);
+        let triggered = OrderEventAny::Triggered(OrderTriggered::new(
+            trader_id(),
+            strategy_id(),
+            instrument_id,
+            cloid,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            false,
+            Some(venue_order_id),
+            Some(account_id()),
+        ));
+        cache.borrow_mut().update_order(&triggered).unwrap();
+        let (_, client_order_index) = forced_probed_index(cloid);
+        let raw =
+            reconciliation_raw_order(client_order_index, venue_order_id, LighterOrderStatus::Open);
+
+        restore_reconciled_order(&client.core, &client.dispatch, &raw);
+
+        assert!(client.dispatch.order_identities.contains_key(&cloid));
+        assert!(client.dispatch.accepted_was_emitted(&cloid));
+        assert!(client.dispatch.triggered_was_emitted(&cloid));
+    }
+
+    #[rstest]
+    fn reconciliation_routes_reused_index_by_exact_venue_order_id() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let active_order = test_limit_order(&mut factory, instrument_id, "O-RECON-LIVE-ACTIVE");
+        let retired_order = test_limit_order(&mut factory, instrument_id, "O-RECON-LIVE-RETIRED");
+        let active_cloid = active_order.client_order_id();
+        let retired_cloid = retired_order.client_order_id();
+        let active_venue_order_id = VenueOrderId::from("281476929510125");
+        let retired_venue_order_id = VenueOrderId::from("281476929510126");
+        cache_accepted_order(
+            &cache,
+            active_order,
+            active_venue_order_id,
+            Some(client_id()),
+        );
+        cache_canceled_order(&cache, retired_order, retired_venue_order_id);
+        let (_, client_order_index) = forced_probed_index(active_cloid);
+        let active_raw = reconciliation_raw_order(
+            client_order_index,
+            active_venue_order_id,
+            LighterOrderStatus::Open,
+        );
+        let retired_raw = reconciliation_raw_order(
+            client_order_index,
+            retired_venue_order_id,
+            LighterOrderStatus::Canceled,
+        );
+        let raw_client_id = client_order_index.to_string();
+
+        restore_reconciled_order(&client.core, &client.dispatch, &active_raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &retired_raw);
+
+        assert_eq!(
+            client.dispatch.resolve_live_order_cloid(
+                &raw_client_id,
+                active_venue_order_id,
+                i64::MAX,
+            ),
+            Some(active_cloid),
+        );
+        assert_eq!(
+            client.dispatch.resolve_live_order_cloid(
+                &raw_client_id,
+                retired_venue_order_id,
+                i64::MAX,
+            ),
+            Some(retired_cloid),
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_live_trade_cloid(&raw_client_id, active_venue_order_id),
+            Some(active_cloid),
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_live_trade_cloid(&raw_client_id, retired_venue_order_id),
+            Some(retired_cloid),
+        );
+    }
+
+    #[rstest]
+    fn reconciliation_does_not_restore_from_numeric_client_index_alone() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-RECON-NUMERIC-ONLY");
+        let cloid = order.client_order_id();
+        let client_order_index = client.dispatch.derive_client_order_index(&cloid);
+        let venue_order_id = VenueOrderId::from("281476929510130");
+        cache_order(&cache, order);
+        let raw =
+            reconciliation_raw_order(client_order_index, venue_order_id, LighterOrderStatus::Open);
+
+        restore_reconciled_order(&client.core, &client.dispatch, &raw);
+        let report =
+            parse_http_order_to_report(&raw, &client.registry, account_id(), UnixNanos::from(1))
+                .unwrap();
+        let translated = client.dispatch.translate_order_cloid(report);
+
+        assert_eq!(client.dispatch.client_order_index(&cloid), None);
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index(client_order_index),
+            None,
+        );
+        assert!(!client.dispatch.order_identities.contains_key(&cloid));
+        assert_eq!(
+            translated.client_order_id,
+            Some(ClientOrderId::new(venue_order_id.as_str())),
+        );
+        assert_eq!(translated.venue_order_id, venue_order_id);
+    }
+
+    fn forced_probed_index(cloid: ClientOrderId) -> (i64, i64) {
+        let source = WsDispatchState::new();
+        let base_index = source.derive_client_order_index(&cloid);
+        source
+            .cloid_map
+            .insert(base_index, ClientOrderId::from("O-FORCED-COLLISION"));
+        let client_order_index = source.register_cloid(base_index, cloid).unwrap();
+        (base_index, client_order_index)
+    }
+
+    fn reconciliation_raw_order(
+        client_order_index: i64,
+        venue_order_id: VenueOrderId,
+        status: LighterOrderStatus,
+    ) -> LighterOrder {
+        let rig = dispatcher_rig("RECONCILIATION-RAW");
+        let mut raw = dispatcher_test_order(&rig, status);
+        raw.order_index = venue_order_id.as_str().parse().unwrap();
+        raw.order_id = venue_order_id.to_string();
+        raw.client_order_index = client_order_index;
+        raw.client_order_id = client_order_index.to_string();
+        raw
+    }
+
+    fn cache_canceled_order(
+        cache: &Rc<RefCell<Cache>>,
+        order: OrderAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let (instrument_id, client_order_id) =
+            cache_accepted_order(cache, order, venue_order_id, Some(client_id()));
+        let canceled = OrderEventAny::Canceled(OrderCanceled::new(
+            trader_id(),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            false,
+            Some(venue_order_id),
+            Some(account_id()),
+        ));
+        cache.borrow_mut().update_order(&canceled).unwrap();
+    }
+
+    fn reconciliation_fill_report(
+        instrument_id: InstrumentId,
+        client_order_index: i64,
+        venue_order_id: VenueOrderId,
+        trade_id: &str,
+    ) -> FillReport {
+        FillReport::new(
+            account_id(),
+            instrument_id,
+            venue_order_id,
+            TradeId::new(trade_id),
+            OrderSide::Buy,
+            Quantity::from("0.1336"),
+            Price::from("2352.73"),
+            Money::from("0.000196 USDC"),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::new(client_order_index.to_string())),
+            None,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            Some(UUID4::new()),
+        )
     }
 
     #[rstest]
