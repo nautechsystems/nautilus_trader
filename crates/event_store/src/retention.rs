@@ -144,7 +144,14 @@ pub fn list_redb_sealed_runs(
 #[must_use]
 pub fn plan_retention(mut sealed_runs: Vec<RetentionRun>, mode: RetentionMode) -> RetentionPlan {
     sealed_runs.retain(|run| run.manifest.is_sealed());
-    sealed_runs.sort_by_key(|run| run.manifest.start_ts_init);
+    // Match `list_runs` ordering: break start-time ties on the run id so the keep
+    // window and restore-point selection stay deterministic.
+    sealed_runs.sort_by(|a, b| {
+        a.manifest
+            .start_ts_init
+            .cmp(&b.manifest.start_ts_init)
+            .then_with(|| a.manifest.run_id.cmp(&b.manifest.run_id))
+    });
 
     let reclaim_candidates = match mode {
         RetentionMode::Full => Vec::new(),

@@ -19,8 +19,9 @@
 //! instance directory for crashed predecessors before a fresh run opens, seals each
 //! survivor, opens the new run, blocks `start()` until the writer acknowledges the
 //! `RunStarted` entry, and seals the manifest with a final `RunEnded` entry on graceful
-//! stop. The writer's halt callback is wrapped in a typed [`HaltSignal`] that the kernel
-//! caller polls to convert a fail-stop into kernel shutdown rather than a panic.
+//! stop. The writer's halt callback is wrapped in a typed [`HaltSignal`] that records
+//! the first fail-stop reason for supervision; no runtime component polls it to stop
+//! the trader.
 
 use std::{
     any::Any,
@@ -219,9 +220,10 @@ pub enum BootError {
 
 /// A thread-safe halt signal the kernel registers with the writer.
 ///
-/// The writer thread fires the callback once on the first unrecoverable condition;
-/// the kernel polls [`HaltSignal::is_halted`] and converts it into a typed kernel
-/// shutdown rather than letting the writer-thread error escape as a panic.
+/// Each fail-stop source fires the shared callback at most once: the submitting
+/// thread on a backpressure stall, the writer thread on a backend failure, and the
+/// capture adapter on a rejected submit. The signal records the first reason for
+/// supervision; no runtime component polls it to stop the trader.
 #[derive(Clone, Debug)]
 pub struct HaltSignal {
     halted: Arc<AtomicBool>,
@@ -248,8 +250,9 @@ impl HaltSignal {
     /// occurs.
     ///
     /// The callback records the [`HaltReason`] (preserving only the first one when
-    /// multiple submits race past the halt threshold) and then flips the halted flag,
-    /// so a poller that observes `is_halted()` never reads back an empty reason.
+    /// the writer and the capture adapter both signal) and then flips the halted
+    /// flag, so a poller that observes `is_halted()` never reads back an empty
+    /// reason.
     #[must_use]
     pub fn callback(&self) -> HaltCallback {
         let halted = Arc::clone(&self.halted);
@@ -838,6 +841,7 @@ pub fn recover_predecessors(
                 }
                 Err(
                     EventStoreError::HashMismatch { .. }
+                    | EventStoreError::SeqMismatch { .. }
                     | EventStoreError::Corrupted(_)
                     | EventStoreError::Gap { .. },
                 ) => RunStatus::Quarantined,
@@ -2165,6 +2169,81 @@ mod tests {
             .find(|m| m.run_id == run_id)
             .expect("manifest present");
         assert_eq!(manifest.status, RunStatus::Ended);
+    }
+
+    #[rstest]
+    fn recovery_quarantines_run_with_rows_swapped_between_keys() {
+        // A row moved under a different table key still hashes correctly; the sweep
+        // must quarantine rather than chain the next run through a tampered parent.
+        let tmp = TempDir::new().expect("tempdir");
+        let config = make_config(tmp.path().to_path_buf());
+        let run_id = "1700000000-swapped1";
+
+        let path = {
+            let mut backend = RedbBackend::new(config.base_dir.clone());
+            backend.open_run(manifest_for(run_id)).expect("open run");
+            backend
+                .append_batch(&[
+                    append_entry(
+                        1,
+                        "events.order.1",
+                        "OrderAccepted",
+                        Bytes::from_static(b"\x01"),
+                    ),
+                    append_entry(
+                        2,
+                        "events.order.2",
+                        "OrderFilled",
+                        Bytes::from_static(b"\x02"),
+                    ),
+                ])
+                .expect("append");
+            config
+                .base_dir
+                .join(INSTANCE_ID)
+                .join(format!("{run_id}.redb"))
+        };
+
+        {
+            let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+            let db = redb::Database::create(&path).expect("open redb");
+            let txn = db.begin_write().expect("begin write");
+            {
+                let mut table = txn.open_table(entries).expect("open table");
+                let bytes_1 = table
+                    .remove(1_u64)
+                    .expect("remove seq 1")
+                    .expect("seq 1 present")
+                    .value()
+                    .to_vec();
+                let bytes_2 = table
+                    .remove(2_u64)
+                    .expect("remove seq 2")
+                    .expect("seq 2 present")
+                    .value()
+                    .to_vec();
+                table
+                    .insert(1_u64, bytes_2.as_slice())
+                    .expect("insert under key 1");
+                table
+                    .insert(2_u64, bytes_1.as_slice())
+                    .expect("insert under key 2");
+            }
+            txn.commit().expect("commit swap");
+        }
+
+        let outcome = recover_predecessors(&config.base_dir, INSTANCE_ID).expect("recover sweep");
+
+        assert_eq!(outcome.recovered.len(), 1);
+        assert_eq!(outcome.recovered[0].run_id, run_id);
+        assert_eq!(outcome.recovered[0].status, RunStatus::Quarantined);
+        assert!(
+            outcome.parent_run_id.is_none(),
+            "quarantined runs must not become parents",
+        );
+
+        let manifests = RedbBackend::list_runs(&config.base_dir, INSTANCE_ID).expect("list");
+        assert_eq!(manifests[0].status, RunStatus::Quarantined);
     }
 
     #[rstest]

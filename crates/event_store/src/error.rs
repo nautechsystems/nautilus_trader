@@ -48,6 +48,17 @@ pub enum EventStoreError {
         /// The sequence number whose stored hash did not match.
         seq: u64,
     },
+    /// The row stored at `table_key` embeds an `entry.seq` that disagrees with the key.
+    ///
+    /// The entry hash covers the embedded seq rather than the key, so a moved or
+    /// duplicated row still hashes correctly. Quarantines the affected run.
+    #[error("seq mismatch at table key {table_key}: embedded seq was {embedded_seq}")]
+    SeqMismatch {
+        /// The redb table key (the slot the reader was reading).
+        table_key: u64,
+        /// The seq embedded inside the decoded entry value.
+        embedded_seq: u64,
+    },
     /// The writer received an entry whose sequence number is not contiguous after the
     /// current durable high-watermark.
     #[error(
