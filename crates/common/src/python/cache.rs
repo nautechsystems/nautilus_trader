@@ -231,6 +231,11 @@ impl PyCache {
         self.0.borrow().funding_rate(&instrument_id).copied()
     }
 
+    #[pyo3(name = "funding_rates")]
+    fn py_funding_rates(&self, instrument_id: InstrumentId) -> Option<Vec<FundingRateUpdate>> {
+        self.0.borrow().funding_rates(&instrument_id)
+    }
+
     #[pyo3(name = "instrument_status")]
     fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
         self.0.borrow().instrument_status(&instrument_id).copied()
@@ -271,6 +276,26 @@ impl PyCache {
         self.0.borrow().has_trade_ticks(&instrument_id)
     }
 
+    #[pyo3(name = "has_mark_prices")]
+    fn py_has_mark_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_mark_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "has_index_prices")]
+    fn py_has_index_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_index_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "has_funding_rates")]
+    fn py_has_funding_rates(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_funding_rates(&instrument_id)
+    }
+
+    #[pyo3(name = "has_instrument_statuses")]
+    fn py_has_instrument_statuses(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_instrument_statuses(&instrument_id)
+    }
+
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
         self.0.borrow().has_bars(&bar_type)
@@ -284,6 +309,26 @@ impl PyCache {
     #[pyo3(name = "trade_count")]
     fn py_trade_count(&self, instrument_id: InstrumentId) -> usize {
         self.0.borrow().trade_count(&instrument_id)
+    }
+
+    #[pyo3(name = "mark_price_count")]
+    fn py_mark_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().mark_price_count(&instrument_id)
+    }
+
+    #[pyo3(name = "index_price_count")]
+    fn py_index_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().index_price_count(&instrument_id)
+    }
+
+    #[pyo3(name = "funding_rate_count")]
+    fn py_funding_rate_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().funding_rate_count(&instrument_id)
+    }
+
+    #[pyo3(name = "instrument_status_count")]
+    fn py_instrument_status_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().instrument_status_count(&instrument_id)
     }
 
     #[pyo3(name = "bar_count")]
@@ -1872,6 +1917,30 @@ impl Cache {
         self.has_trade_ticks(&instrument_id)
     }
 
+    /// Returns whether the cache contains mark price updates for the `instrument_id`.
+    #[pyo3(name = "has_mark_prices")]
+    fn py_has_mark_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.has_mark_prices(&instrument_id)
+    }
+
+    /// Returns whether the cache contains index price updates for the `instrument_id`.
+    #[pyo3(name = "has_index_prices")]
+    fn py_has_index_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.has_index_prices(&instrument_id)
+    }
+
+    /// Returns whether the cache contains funding rate updates for the `instrument_id`.
+    #[pyo3(name = "has_funding_rates")]
+    fn py_has_funding_rates(&self, instrument_id: InstrumentId) -> bool {
+        self.has_funding_rates(&instrument_id)
+    }
+
+    /// Returns whether the cache contains instrument status updates for the `instrument_id`.
+    #[pyo3(name = "has_instrument_statuses")]
+    fn py_has_instrument_statuses(&self, instrument_id: InstrumentId) -> bool {
+        self.has_instrument_statuses(&instrument_id)
+    }
+
     /// Returns whether the cache contains bars for the `bar_type`.
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
@@ -1888,6 +1957,30 @@ impl Cache {
     #[pyo3(name = "trade_count")]
     fn py_trade_count(&self, instrument_id: InstrumentId) -> usize {
         self.trade_count(&instrument_id)
+    }
+
+    /// Gets the mark price update count for the `instrument_id`.
+    #[pyo3(name = "mark_price_count")]
+    fn py_mark_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.mark_price_count(&instrument_id)
+    }
+
+    /// Gets the index price update count for the `instrument_id`.
+    #[pyo3(name = "index_price_count")]
+    fn py_index_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.index_price_count(&instrument_id)
+    }
+
+    /// Gets the funding rate update count for the `instrument_id`.
+    #[pyo3(name = "funding_rate_count")]
+    fn py_funding_rate_count(&self, instrument_id: InstrumentId) -> usize {
+        self.funding_rate_count(&instrument_id)
+    }
+
+    /// Gets the instrument status update count for the `instrument_id`.
+    #[pyo3(name = "instrument_status_count")]
+    fn py_instrument_status_count(&self, instrument_id: InstrumentId) -> usize {
+        self.instrument_status_count(&instrument_id)
     }
 
     /// Gets the bar count for the `instrument_id`.
@@ -1924,6 +2017,12 @@ impl Cache {
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.funding_rate(&instrument_id).copied()
+    }
+
+    /// Gets all funding rate updates for the `instrument_id`.
+    #[pyo3(name = "funding_rates")]
+    fn py_funding_rates(&self, instrument_id: InstrumentId) -> Option<Vec<FundingRateUpdate>> {
+        self.funding_rates(&instrument_id)
     }
 
     /// Gets a reference to the latest instrument status update for the `instrument_id`.

@@ -72,6 +72,7 @@ CACHE_NONE_CASES = [
     ("exec_spawn_total_leaves_qty", (CLIENT_ORDER_ID, True)),
     ("exec_spawn_total_quantity", (CLIENT_ORDER_ID, True)),
     ("funding_rate", (INSTRUMENT_ID,)),
+    ("funding_rates", (INSTRUMENT_ID,)),
     ("get", ("missing",)),
     ("get_mark_xrate", (USD, EUR)),
     ("get_xrate", (VENUE, USD, EUR, PriceType.MID)),
@@ -160,6 +161,10 @@ CACHE_LIST_CASES = [
 
 CACHE_FALSE_CASES = [
     ("has_bars", (BAR_TYPE,)),
+    ("has_funding_rates", (INSTRUMENT_ID,)),
+    ("has_index_prices", (INSTRUMENT_ID,)),
+    ("has_instrument_statuses", (INSTRUMENT_ID,)),
+    ("has_mark_prices", (INSTRUMENT_ID,)),
     ("has_order_book", (INSTRUMENT_ID,)),
     ("has_quote_ticks", (INSTRUMENT_ID,)),
     ("has_trade_ticks", (INSTRUMENT_ID,)),
@@ -178,6 +183,10 @@ CACHE_FALSE_CASES = [
 CACHE_ZERO_CASES = [
     ("bar_count", (BAR_TYPE,)),
     ("book_update_count", (INSTRUMENT_ID,)),
+    ("funding_rate_count", (INSTRUMENT_ID,)),
+    ("index_price_count", (INSTRUMENT_ID,)),
+    ("instrument_status_count", (INSTRUMENT_ID,)),
+    ("mark_price_count", (INSTRUMENT_ID,)),
     ("orders_closed_count", ()),
     ("orders_closed_count", (VENUE, INSTRUMENT_ID, STRATEGY_ID, ACCOUNT_ID, ORDER_SIDE)),
     ("orders_emulated_count", ()),
