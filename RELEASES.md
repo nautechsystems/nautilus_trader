@@ -92,6 +92,7 @@ adapter set. The following limits remain deferred:
 - Added Python v2 `nautilus_trader.config` convenience imports for core configuration types
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
 - Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
+- Added v2 `ExecTesterConfig.close_positions_qty_precision` for venue‑fillable stop‑time closes
 - Added safe Python v2 adapter config readback for accepted fields while keeping credentials and nested configs private
 - Added Python v2 Portfolio snapshot access with base-currency equity and stale/unpriced metadata
 - Added Binance Futures and OKX trailing-stop activation prices to v2 execution reports
@@ -415,6 +416,7 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket Gamma pagination beyond the legacy offset cap
 - Fixed Polymarket v2 shutdown cancellation leaving accepted venue orders open
 - Fixed Polymarket v2 book delta atomicity and local price-range validation
+- Fixed Polymarket v2 exec tester close‑on‑stop requesting SELL quantities finer than venue signing permits
 - Fixed Polymarket v2 submission, finality, fill ID, and proxy funder validation races
 - Fixed Polymarket SELL sizing, IOC remainders, and sub-cent reconciliation synthetic fills
 - Fixed Tardis replay bars directory to `bars/` (#4378), thanks @AdvancedUno

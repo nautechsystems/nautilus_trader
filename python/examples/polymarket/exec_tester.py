@@ -122,6 +122,7 @@ def main() -> None:
             use_quote_quantity=args.live_orders,
             cancel_orders_on_stop=args.live_orders or args.limit_orders,
             close_positions_on_stop=args.live_orders,
+            close_positions_qty_precision=2,
             close_positions_time_in_force=TimeInForce.IOC,
             reduce_only_on_stop=False,
             dry_run=not args.live_orders and not args.limit_orders,

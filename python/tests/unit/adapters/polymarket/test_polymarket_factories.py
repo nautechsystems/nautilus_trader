@@ -172,6 +172,7 @@ def test_polymarket_exec_tester_selects_one_live_order_mode(
     assert kwargs["use_quote_quantity"] is expected_quote_quantity
     assert kwargs["cancel_orders_on_stop"] is not expected_dry_run
     assert kwargs["close_positions_on_stop"] is expected_quote_quantity
+    assert kwargs["close_positions_qty_precision"] == 2
     assert kwargs["close_positions_time_in_force"] == TimeInForce.IOC
     assert kwargs["enable_stop_buys"] is False
     assert kwargs["enable_stop_sells"] is False
@@ -221,6 +222,8 @@ def test_polymarket_updown_smoke_tester_live_orders_are_opt_in(
     assert exec_kwargs["open_position_on_first_quote"] is True
     assert exec_kwargs["cancel_orders_on_stop"] is True
     assert exec_kwargs["close_positions_on_stop"] is True
+    assert exec_kwargs["close_positions_qty_precision"] == 2
+    assert exec_kwargs["close_positions_time_in_force"] == TimeInForce.IOC
     assert "run_called" not in captured
 
 

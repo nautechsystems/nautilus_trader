@@ -146,6 +146,7 @@ class ExecTesterConfig:
         use_individual_cancels_on_stop: bool | None = None,
         cancel_orders_on_stop: bool | None = None,
         close_positions_on_stop: bool | None = None,
+        close_positions_qty_precision: int | None = None,
         close_positions_time_in_force: model.TimeInForce | None = None,
         reduce_only_on_stop: bool | None = None,
         dry_run: bool | None = None,
@@ -207,6 +208,8 @@ class ExecTesterConfig:
     def cancel_orders_on_stop(self) -> bool: ...
     @property
     def close_positions_on_stop(self) -> bool: ...
+    @property
+    def close_positions_qty_precision(self) -> int | None: ...
     @property
     def close_positions_time_in_force(self) -> model.TimeInForce | None: ...
     @property
