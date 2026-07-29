@@ -54,6 +54,12 @@ pub const LIGHTER_ERROR_CODE_INVALID_NONCE: i64 = 21_104;
 /// Venue error code for an idempotent duplicate WebSocket subscription.
 pub const LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED: u64 = 30_003;
 
+/// Venue error code for WebSocket request rate limiting.
+pub const LIGHTER_ERROR_CODE_WS_RATE_LIMITED: u64 = 30_009;
+
+/// Venue error code for a failed WebSocket subscription open.
+pub const LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED: u64 = 30_012;
+
 /// Venue error-code range for L2 transaction failures.
 ///
 /// Observed codes follow a domain split: `20xxx` request validation, `21xxx`
@@ -102,6 +108,12 @@ pub const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// Held below Lighter's 50-per-IP inflight cap; see the WebSocket rate-limit
 /// strategy in [`crate::common::rate_limit`].
 pub const SUBSCRIBE_INFLIGHT_MAX: usize = 35;
+
+/// Maximum venue-level retries for one WebSocket subscription request.
+pub const SUBSCRIBE_RETRY_MAX: u8 = 5;
+
+/// Initial backoff after a venue-level WebSocket subscription rejection.
+pub const SUBSCRIBE_RETRY_BASE_BACKOFF: Duration = Duration::from_millis(250);
 
 /// Outbound command queue depth before backpressure kicks in.
 pub const QUEUE_MAX: usize = 1000;
