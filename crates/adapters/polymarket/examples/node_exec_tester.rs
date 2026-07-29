@@ -106,7 +106,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_reconciliation(true)
         .with_reconciliation_lookback_mins(120)
         .with_timeout_reconciliation(60)
-        .with_delay_post_stop_secs(5)
+        .with_timeout_disconnection_secs(30)
+        .with_delay_post_stop_secs(30)
         .build()?;
 
     let order_qty = Quantity::from(ORDER_QTY);
@@ -129,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .use_quote_quantity(true)
         // .enable_limit_buys(false)
         .use_post_only(true)
-        .tob_offset_ticks(5) // 5 ticks = 0.005 offset (price range 0.001-0.999)
+        .tob_offset_ticks(5) // Offset = 5 * the instrument's current tick size
         .order_expire_time_delta_mins(3)
         .enable_limit_sells(false) // Can't sell without inventory on Polymarket
         .reduce_only_on_stop(false) // Polymarket does not support reduce-only orders

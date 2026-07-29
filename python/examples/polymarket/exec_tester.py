@@ -70,6 +70,8 @@ def main() -> None:
             ),
         )
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_timeout_disconnection_secs(30)
+        .with_delay_post_stop_secs(30)
         .add_data_client(
             None,
             PolymarketDataClientFactory(),

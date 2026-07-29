@@ -60,7 +60,7 @@ use crate::{
         order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
         parse::{
             build_maker_fill_report, compute_commission, determine_order_side,
-            instrument_taker_fee, parse_liquidity_side,
+            instrument_fee_exponent, instrument_taker_fee, parse_liquidity_side,
         },
         pending::PendingSubmitTracker,
     },
@@ -730,7 +730,13 @@ fn build_ws_taker_fill_report(
         .unwrap_or_else(|_| Price::zero(price_precision));
 
     let fee_rate = instrument_taker_fee(instrument);
-    let commission_value = compute_commission(fee_rate, size_dec, price_dec, liquidity_side);
+    let commission_value = compute_commission(
+        fee_rate,
+        instrument_fee_exponent(instrument),
+        size_dec,
+        price_dec,
+        liquidity_side,
+    );
     let pusd = crate::execution::get_pusd_currency();
 
     FillReport {

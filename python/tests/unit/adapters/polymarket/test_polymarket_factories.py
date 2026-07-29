@@ -162,6 +162,8 @@ def test_polymarket_exec_tester_selects_one_live_order_mode(
     )
     assert "open_check_interval_secs: Some(10.0)" in exec_engine_repr
     assert "position_check_interval_secs: Some(30.0)" in exec_engine_repr
+    assert captured["timeout_disconnection_secs"] == 30
+    assert captured["delay_post_stop_secs"] == 30
     assert kwargs["use_uuid_client_order_ids"] is True
     assert kwargs["dry_run"] is expected_dry_run
     assert kwargs["enable_limit_buys"] is expected_limit_buys

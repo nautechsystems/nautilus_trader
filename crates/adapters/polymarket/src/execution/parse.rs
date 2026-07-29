@@ -186,7 +186,7 @@ fn parse_expiration_nanos(value: &str) -> Option<u64> {
 ///
 /// Produces one fill report for the overall trade. The `trade_id` is
 /// derived from the Polymarket trade ID. Commission is computed from the
-/// instrument's effective taker fee rate and the fill notional.
+/// instrument's effective taker fee rate, fee exponent, and fill notional.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_fill_report(
     trade: &PolymarketTradeReport,
@@ -197,6 +197,7 @@ pub fn parse_fill_report(
     size_precision: u8,
     currency: Currency,
     taker_fee_rate: Decimal,
+    fee_exponent: f64,
     ts_init: UnixNanos,
 ) -> FillReport {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
@@ -208,8 +209,13 @@ pub fn parse_fill_report(
         .unwrap_or_else(|_| Price::zero(price_precision));
     let liquidity_side = parse_liquidity_side(trade.trader_side);
 
-    let commission_value =
-        compute_commission(taker_fee_rate, trade.size, trade.price, liquidity_side);
+    let commission_value = compute_commission(
+        taker_fee_rate,
+        fee_exponent,
+        trade.size,
+        trade.price,
+        liquidity_side,
+    );
     let commission = Money::new(commission_value, currency);
 
     let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
@@ -266,10 +272,13 @@ pub fn build_maker_fill_report(
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let last_px = Price::from_decimal_dp(mo.price, price_precision)
         .unwrap_or_else(|_| Price::zero(price_precision));
-    // Maker fills always pay zero commission per Polymarket docs:
-    // https://docs.polymarket.com/trading/fees
-    let commission_value =
-        compute_commission(Decimal::ZERO, mo.matched_amount, mo.price, liquidity_side);
+    let commission_value = compute_commission(
+        Decimal::ZERO,
+        1.0,
+        mo.matched_amount,
+        mo.price,
+        liquidity_side,
+    );
 
     FillReport {
         account_id,
@@ -357,10 +366,7 @@ pub fn adjust_market_buy_amount(
         );
     }
 
-    let base = price * (Decimal::ONE - price);
-    let base_f64: f64 = base.try_into().unwrap_or(0.0);
-    let curve = Decimal::try_from(base_f64.powf(fee_exponent)).unwrap_or(Decimal::ZERO);
-    let platform_fee_rate = fee_rate * curve;
+    let platform_fee_rate = fee_curve_rate(fee_rate, price, fee_exponent);
 
     let platform_fee = amount / price * platform_fee_rate;
     let total_cost = amount + platform_fee + amount * builder_taker_fee_rate;
@@ -382,12 +388,10 @@ pub fn adjust_market_buy_amount(
     Ok(adjusted)
 }
 
-/// Computes a pUSD commission using Polymarket's fee formula.
+/// Computes a pUSD commission using Polymarket's platform fee formula.
 ///
-/// `fee = C * feeRate * p * (1 - p)` where C is shares, feeRate is the effective
-/// taker rate from the market's `feeSchedule`, and p is the share price. Fees peak
-/// at p = 0.50 and decrease symmetrically toward the extremes. Only taker fills pay;
-/// maker fills always return zero. Rounded to 5 decimal places (0.00001 pUSD minimum).
+/// `fee = C * feeRate * (p * (1 - p))^exponent`, paid only by takers.
+/// The fee is rounded to 5 decimal places.
 ///
 /// The `fee_rate` here is the effective rate from `feeSchedule.rate` (e.g. 0.03 for
 /// 3%), not the `fee_rate_bps` field on a V2 trade response. The response field is
@@ -399,6 +403,7 @@ pub fn adjust_market_buy_amount(
 /// <https://docs.polymarket.com/trading/fees>
 pub fn compute_commission(
     fee_rate: Decimal,
+    fee_exponent: f64,
     size: Decimal,
     price: Decimal,
     liquidity_side: LiquiditySide,
@@ -407,9 +412,16 @@ pub fn compute_commission(
         return 0.0;
     }
 
-    let commission = size * fee_rate * price * (Decimal::ONE - price);
+    let commission = size * fee_curve_rate(fee_rate, price, fee_exponent);
     let rounded = commission.round_dp(5);
     rounded.to_string().parse().unwrap_or(0.0)
+}
+
+fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> Decimal {
+    let base = price * (Decimal::ONE - price);
+    let base_f64: f64 = base.try_into().unwrap_or(0.0);
+    let curve = Decimal::try_from(base_f64.powf(fee_exponent)).unwrap_or(Decimal::ZERO);
+    fee_rate * curve
 }
 
 /// Sums `last_qty` across fills as a decimal.
@@ -715,21 +727,18 @@ mod tests {
         assert_eq!(balance.free, balance.total);
     }
 
-    /// Polymarket fee formula: `fee = C * feeRate * p * (1 - p)`
-    /// Rates are the category-specific taker rates from `feeSchedule.rate`.
-    /// Reference: <https://docs.polymarket.com/trading/fees>
     #[rstest]
-    #[case::crypto_p50("0.072", "0.50", 1.8)]
-    #[case::crypto_p01("0.072", "0.01", 0.07128)]
-    #[case::crypto_p05("0.072", "0.05", 0.342)]
-    #[case::crypto_p10("0.072", "0.10", 0.648)]
-    #[case::crypto_p30("0.072", "0.30", 1.512)]
-    #[case::crypto_p70("0.072", "0.70", 1.512)]
-    #[case::crypto_p90("0.072", "0.90", 0.648)]
-    #[case::crypto_p99("0.072", "0.99", 0.07128)]
-    #[case::sports_p50("0.03", "0.50", 0.75)]
-    #[case::sports_p30("0.03", "0.30", 0.63)]
-    #[case::sports_p70("0.03", "0.70", 0.63)]
+    #[case::crypto_p50("0.07", "0.50", 1.75)]
+    #[case::crypto_p01("0.07", "0.01", 0.0693)]
+    #[case::crypto_p05("0.07", "0.05", 0.3325)]
+    #[case::crypto_p10("0.07", "0.10", 0.63)]
+    #[case::crypto_p30("0.07", "0.30", 1.47)]
+    #[case::crypto_p70("0.07", "0.70", 1.47)]
+    #[case::crypto_p90("0.07", "0.90", 0.63)]
+    #[case::crypto_p99("0.07", "0.99", 0.0693)]
+    #[case::sports_p50("0.05", "0.50", 1.25)]
+    #[case::sports_p30("0.05", "0.30", 1.05)]
+    #[case::sports_p70("0.05", "0.70", 1.05)]
     #[case::politics_p50("0.04", "0.50", 1.0)]
     #[case::politics_p30("0.04", "0.30", 0.84)]
     #[case::economics_p50("0.05", "0.50", 1.25)]
@@ -742,6 +751,7 @@ mod tests {
     ) {
         let commission = compute_commission(
             Decimal::from_str_exact(fee_rate).unwrap(),
+            1.0,
             dec!(100),
             Decimal::from_str_exact(price).unwrap(),
             LiquiditySide::Taker,
@@ -759,6 +769,7 @@ mod tests {
         // Expected: 15.4639 * 0.97 * 0.072 * (1 - 0.97) = 0.03240
         let commission = compute_commission(
             dec!(0.072),
+            1.0,
             Decimal::from_str_exact("15.463900").unwrap(),
             dec!(0.97),
             LiquiditySide::Taker,
@@ -777,6 +788,7 @@ mod tests {
         // Correct: 0.0334 * 0.98 * 0.072 * (1 - 0.98) = 0.00005
         let commission = compute_commission(
             dec!(0.072),
+            1.0,
             Decimal::from_str_exact("0.033400").unwrap(),
             dec!(0.98),
             LiquiditySide::Taker,
@@ -791,6 +803,7 @@ mod tests {
     fn test_compute_commission_maker_is_zero() {
         let commission = compute_commission(
             Decimal::from_str_exact("0.072").unwrap(),
+            1.0,
             dec!(100),
             Decimal::from_str_exact("0.50").unwrap(),
             LiquiditySide::Maker,
@@ -799,8 +812,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::crypto_taker("0.072", "0.970", LiquiditySide::Taker)]
-    #[case::sports_taker("0.03", "0.500", LiquiditySide::Taker)]
+    fn test_compute_commission_uses_fee_exponent() {
+        let commission =
+            compute_commission(dec!(0.04), 2.0, dec!(10), dec!(0.5), LiquiditySide::Taker);
+        assert_eq!(commission, 0.025);
+    }
+
+    #[rstest]
+    #[case::crypto_taker("0.07", "0.970", LiquiditySide::Taker)]
+    #[case::sports_taker("0.05", "0.500", LiquiditySide::Taker)]
     #[case::politics_taker("0.04", "0.300", LiquiditySide::Taker)]
     #[case::maker_zero("0.03", "0.500", LiquiditySide::Maker)]
     fn test_probability_price_fee_model_matches_polymarket_commission(
@@ -826,6 +846,7 @@ mod tests {
 
         let expected = compute_commission(
             Decimal::from_str_exact(taker_fee).unwrap(),
+            1.0,
             dec!(100),
             Decimal::from_str_exact(price).unwrap(),
             liquidity_side,
@@ -895,16 +916,16 @@ mod tests {
 
     #[rstest]
     fn test_adjust_market_buy_amount_crypto_fee_rate() {
-        // Polymarket "Crypto" tier uses fee_rate = 0.072.
-        // amount=100, balance=100, price=0.5, fee_rate=0.072, exp=1, builder=0
-        // platform_fee_rate = 0.072 * 0.25 = 0.018
-        // platform_fee = 100/0.5 * 0.018 = 3.6; total_cost = 103.6
-        // divisor = 1 + 0.018/0.5 = 1.036; raw = 100/1.036
+        // Polymarket "Crypto" tier uses fee_rate = 0.07.
+        // amount=100, balance=100, price=0.5, fee_rate=0.07, exp=1, builder=0
+        // platform_fee_rate = 0.07 * 0.25 = 0.0175
+        // platform_fee = 100/0.5 * 0.0175 = 3.5; total_cost = 103.5
+        // divisor = 1 + 0.0175/0.5 = 1.035; raw = 100/1.035
         let adjusted =
-            adjust_market_buy_amount(dec!(100), dec!(100), dec!(0.5), dec!(0.072), 1.0, dec!(0))
+            adjust_market_buy_amount(dec!(100), dec!(100), dec!(0.5), dec!(0.07), 1.0, dec!(0))
                 .unwrap();
-        // 100 / 1.036 == 96.5250965...; truncate to 6dp.
-        assert_eq!(adjusted, dec!(96.525096));
+        // 100 / 1.035 == 96.6183574...; truncate to 6dp.
+        assert_eq!(adjusted, dec!(96.618357));
     }
 
     #[rstest]
@@ -1415,6 +1436,7 @@ mod tests {
             6,
             currency,
             Decimal::ZERO,
+            1.0,
             UnixNanos::from(1_000_000_000u64),
         );
 
@@ -1426,7 +1448,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_fill_report_forwards_taker_fee_rate() {
+    fn test_parse_fill_report_forwards_fee_schedule() {
         let path = "test_data/http_trade_report.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         let trade: PolymarketTradeReport =
@@ -1436,7 +1458,7 @@ mod tests {
         let account_id = AccountId::from("POLYMARKET-001");
         let currency = Currency::pUSD();
 
-        // Sports rate: 25 shares * 0.03 * 0.5 * 0.5 = 0.1875 pUSD
+        // Expected: 25 * 0.03 * (0.5 * 0.5)^2 = 0.04688 pUSD after rounding.
         let report = parse_fill_report(
             &trade,
             instrument_id,
@@ -1446,11 +1468,12 @@ mod tests {
             6,
             currency,
             dec!(0.03),
+            2.0,
             UnixNanos::from(1_000_000_000u64),
         );
 
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert!((report.commission.as_f64() - 0.1875).abs() < 1e-10);
+        assert_eq!(report.commission.as_f64(), 0.04688);
     }
 
     #[rstest]
@@ -1465,6 +1488,7 @@ mod tests {
             create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
 
         assert_eq!(instrument_taker_fee(&instrument), dec!(0.03));
+        assert_eq!(instrument_fee_exponent(&instrument), 1.0);
     }
 
     #[rstest]

@@ -685,8 +685,10 @@ impl PolymarketExecutionClient {
         liquidity_side: LiquiditySide,
     ) -> Money {
         let fee_rate = instrument_taker_fee(instrument);
+        let fee_exponent = instrument_fee_exponent(instrument);
         let commission = compute_commission(
             fee_rate,
+            fee_exponent,
             last_qty.as_decimal(),
             last_px.as_decimal(),
             liquidity_side,

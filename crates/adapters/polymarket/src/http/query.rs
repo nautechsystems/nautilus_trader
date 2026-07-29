@@ -62,7 +62,7 @@ pub struct GetTradesParams {
     pub next_cursor: Option<String>,
 }
 
-/// Query parameters for `GET /balance-allowance`.
+/// Query parameters for `GET /balance-allowance` and `GET /balance-allowance/update`.
 #[derive(Clone, Debug, Default, Serialize, Builder)]
 #[builder(setter(into, strip_option), default)]
 pub struct GetBalanceAllowanceParams {
