@@ -110,8 +110,10 @@ harness = false
 name = "websocket_transport"
 path = "benches/websocket_transport.rs"
 harness = false
+required-features = ["transport-sockudo"]
 
 [[bench]]
 name = "websocket_latency"
 path = "benches/websocket_latency.rs"
 harness = false
+required-features = ["transport-sockudo"]
