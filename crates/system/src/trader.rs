@@ -2233,8 +2233,11 @@ mod tests {
             .quantity(Quantity::from(1));
 
         if let Some(exec_algorithm_id) = exec_algorithm_id {
-            builder.exec_algorithm_id(exec_algorithm_id);
+            builder
+                .exec_algorithm_id(exec_algorithm_id)
+                .exec_spawn_id(client_order_id);
         }
+
         let order = builder.build();
         cache
             .borrow_mut()
@@ -2854,6 +2857,7 @@ mod tests {
 
         trader.start_components().unwrap();
 
+        assert_eq!(order_a.exec_spawn_id(), Some(order_a.client_order_id()));
         {
             let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
             assert!(registered.core.is_strategy_subscribed(&strategy_a));
