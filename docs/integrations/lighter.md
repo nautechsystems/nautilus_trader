@@ -232,11 +232,16 @@ depth10 stream or `request_book_snapshot` for a REST `OrderBook` snapshot.
 ### Order identification
 
 Lighter uses a numeric venue order index and a caller-supplied `client_order_index`.
-The adapter derives the Lighter `client_order_index` from the Nautilus `ClientOrderId` and keeps a
-local map so private WebSocket reports can recover the original client order ID. Because numeric
-client indexes can be reused across historical venue orders, the adapter requires the mapped venue
-order ID to match before restoring a Nautilus client order ID. Unknown historical indexes use the
-unique venue order ID as their external client order ID.
+The adapter derives a 31‑bit index from the Nautilus `ClientOrderId` and probes forward on a
+collision. Because the collision‑probed value cannot be re‑derived after restart, order
+reconciliation resolves each raw venue order ID through the core cache and restores its actual
+`client_order_index` before translating order and fill reports. Open cached orders return to active
+tracking, while terminal orders use bounded replay tracking.
+
+Recovery never infers a client order ID from the integer alone: the cached venue order ID must
+match. It requires reconciliation to include the order and the core cache to retain its
+venue‑order‑ID mapping; otherwise reports use the unique venue order ID as their external client
+order ID.
 
 Query paths use the numeric venue order ID for active or terminal history. Before that ID is known,
 a Nautilus client order ID can query active orders by its derived client index. Client-index-only

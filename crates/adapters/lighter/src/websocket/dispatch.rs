@@ -123,6 +123,23 @@ impl OrderIdentity {
         }
     }
 
+    fn restored(order: &OrderAny, client_order_index: i64, venue_order_id: VenueOrderId) -> Self {
+        let identity = Self::new(
+            order.instrument_id(),
+            order.strategy_id(),
+            order.order_side(),
+            order.order_type(),
+            client_order_index,
+        );
+        identity
+            .binding
+            .lock()
+            .expect(MUTEX_POISONED)
+            .venue_order_id = Some(venue_order_id);
+        identity.accepted_emitted.store(true, Ordering::Release);
+        identity
+    }
+
     fn mark_submission(&self, nonce: i64) {
         self.binding.lock().expect(MUTEX_POISONED).submission_nonce = Some(nonce);
     }
@@ -163,6 +180,10 @@ impl OrderIdentity {
 
     fn matches_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
         self.binding.lock().expect(MUTEX_POISONED).venue_order_id == Some(venue_order_id)
+    }
+
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        self.binding.lock().expect(MUTEX_POISONED).venue_order_id
     }
 
     fn accepted_was_emitted(&self) -> bool {
@@ -228,6 +249,8 @@ pub(crate) enum PendingSendTxKind {
 /// degenerate seed never spins indefinitely while still leaving headroom.
 pub(crate) const CLOID_INDEX_PROBE_LIMIT: usize = 16;
 
+const CLOID_INDEX_MAX: u32 = 0x7FFF_FFFF;
+
 /// Maximum terminal orders and trade ids retained for reconnect replay.
 const REPLAY_CACHE_CAPACITY: usize = 100_000;
 
@@ -245,9 +268,9 @@ pub(crate) struct RetiredOrderCache {
 
 #[derive(Debug)]
 struct RetiredOrderCacheInner {
-    by_index: AHashMap<i64, (RetiredOrderIdentity, u64)>,
-    index_by_cloid: AHashMap<ClientOrderId, i64>,
-    queue: VecDeque<(i64, u64)>,
+    by_index: AHashMap<i64, AHashMap<Option<VenueOrderId>, (RetiredOrderIdentity, u64)>>,
+    by_cloid: AHashMap<ClientOrderId, (i64, Option<VenueOrderId>)>,
+    queue: VecDeque<(i64, Option<VenueOrderId>, u64)>,
     next_seq: u64,
 }
 
@@ -256,7 +279,7 @@ impl RetiredOrderCache {
         Self {
             inner: Mutex::new(RetiredOrderCacheInner {
                 by_index: AHashMap::with_capacity(capacity),
-                index_by_cloid: AHashMap::with_capacity(capacity),
+                by_cloid: AHashMap::with_capacity(capacity),
                 queue: VecDeque::with_capacity(capacity),
                 next_seq: 0,
             }),
@@ -266,45 +289,87 @@ impl RetiredOrderCache {
 
     fn insert(&self, cloid: ClientOrderId, identity: OrderIdentity) {
         let index = identity.client_order_index;
+        let venue_order_id = identity.venue_order_id();
+        let binding = (index, venue_order_id);
         let mut inner = self.inner.lock().expect(MUTEX_POISONED);
         let seq = inner.next_seq;
         inner.next_seq = inner.next_seq.wrapping_add(1);
-        inner.index_by_cloid.insert(cloid, index);
-        inner
-            .by_index
-            .insert(index, (RetiredOrderIdentity { cloid, identity }, seq));
-        inner.queue.push_back((index, seq));
+
+        if let Some((old_index, old_venue_order_id)) = inner.by_cloid.get(&cloid).copied()
+            && (old_index, old_venue_order_id) != binding
+        {
+            let remove_index = inner.by_index.get_mut(&old_index).is_some_and(|bindings| {
+                bindings.remove(&old_venue_order_id);
+                bindings.is_empty()
+            });
+
+            if remove_index {
+                inner.by_index.remove(&old_index);
+            }
+        }
+
+        let replaced = inner.by_index.entry(index).or_default().insert(
+            venue_order_id,
+            (RetiredOrderIdentity { cloid, identity }, seq),
+        );
+
+        if let Some((old, _)) = replaced
+            && old.cloid != cloid
+        {
+            inner.by_cloid.remove(&old.cloid);
+        }
+        inner.by_cloid.insert(cloid, binding);
+        inner.queue.push_back((index, venue_order_id, seq));
 
         while inner.queue.len() > self.capacity
-            && let Some((old_index, old_seq)) = inner.queue.pop_front()
+            && let Some((old_index, old_venue_order_id, old_seq)) = inner.queue.pop_front()
         {
-            if inner.by_index.get(&old_index).map(|(_, seq)| *seq) == Some(old_seq)
-                && let Some((old, _)) = inner.by_index.remove(&old_index)
-            {
-                inner.index_by_cloid.remove(&old.cloid);
+            let removed = inner.by_index.get_mut(&old_index).and_then(|bindings| {
+                if bindings.get(&old_venue_order_id).map(|(_, seq)| *seq) != Some(old_seq) {
+                    return None;
+                }
+                let (old, _) = bindings.remove(&old_venue_order_id)?;
+                Some((old.cloid, bindings.is_empty()))
+            });
+
+            if let Some((old_cloid, remove_index)) = removed {
+                inner.by_cloid.remove(&old_cloid);
+                if remove_index {
+                    inner.by_index.remove(&old_index);
+                }
                 log::warn!(
-                    "Evicting retired Lighter order identity at replay-cache capacity: cloid={}, client_order_index={old_index}",
-                    old.cloid,
+                    "Evicting retired Lighter order identity at replay-cache capacity: cloid={old_cloid}, client_order_index={old_index}",
                 );
             }
         }
     }
 
     fn cloid_for_index(&self, index: i64) -> Option<ClientOrderId> {
+        let inner = self.inner.lock().expect(MUTEX_POISONED);
+        let bindings = inner.by_index.get(&index)?;
+        if bindings.len() != 1 {
+            return None;
+        }
+        bindings.values().next().map(|(retired, _)| retired.cloid)
+    }
+
+    fn cloid_for_venue(&self, index: i64, venue_order_id: VenueOrderId) -> Option<ClientOrderId> {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
             .by_index
-            .get(&index)
+            .get(&index)?
+            .get(&Some(venue_order_id))
             .map(|(retired, _)| retired.cloid)
     }
 
     fn identity_for_cloid(&self, cloid: &ClientOrderId) -> Option<OrderIdentity> {
         let inner = self.inner.lock().expect(MUTEX_POISONED);
-        let index = inner.index_by_cloid.get(cloid)?;
+        let (index, venue_order_id) = inner.by_cloid.get(cloid)?;
         inner
             .by_index
             .get(index)
+            .and_then(|bindings| bindings.get(venue_order_id))
             .map(|(retired, _)| retired.identity.clone())
     }
 
@@ -1003,6 +1068,23 @@ impl WsDispatchState {
     pub(crate) fn register_cloid(&self, index: i64, cloid: ClientOrderId) -> anyhow::Result<i64> {
         let mut candidate = index;
         for attempt in 0..=CLOID_INDEX_PROBE_LIMIT {
+            if self.resolve_client_order_index(candidate).is_some() {
+                if self
+                    .cloid_map
+                    .get(&candidate)
+                    .is_some_and(|entry| *entry.value() == cloid)
+                {
+                    return Ok(candidate);
+                }
+                candidate = next_probe_index(candidate);
+                continue;
+            }
+
+            if self.retired_orders.contains_index(candidate) {
+                candidate = next_probe_index(candidate);
+                continue;
+            }
+
             match self.cloid_map.entry(candidate) {
                 dashmap::mapref::entry::Entry::Vacant(entry) => {
                     if self.retired_orders.contains_index(candidate) {
@@ -1033,6 +1115,95 @@ impl WsDispatchState {
         )
     }
 
+    /// Restore an exact order identity observed during reconciliation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cached order does not carry the same venue order ID, the client
+    /// index is outside the venue-safe range, or the binding conflicts with existing local state.
+    pub(crate) fn restore_reconciled_order(
+        &self,
+        order: &OrderAny,
+        client_order_index: i64,
+        venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        let cloid = order.client_order_id();
+        let terminal = order.is_closed();
+        anyhow::ensure!(
+            order.venue_order_id() == Some(venue_order_id),
+            "cached Lighter order {cloid} does not match venue order ID {venue_order_id}",
+        );
+        anyhow::ensure!(
+            (0..=i64::from(CLOID_INDEX_MAX)).contains(&client_order_index),
+            "Lighter client_order_index {client_order_index} is outside the venue-safe range",
+        );
+
+        if let Some(existing) = self
+            .order_identities
+            .get(&cloid)
+            .map(|entry| entry.value().clone())
+        {
+            anyhow::ensure!(
+                existing.client_order_index == client_order_index
+                    && existing.matches_venue_order_id(venue_order_id),
+                "active Lighter order {cloid} conflicts with reconciliation binding",
+            );
+
+            if terminal {
+                self.retire_order_identity(&cloid);
+            } else if order.is_triggered() == Some(true) {
+                self.mark_triggered_emitted(cloid);
+            }
+            return Ok(());
+        }
+
+        if let Some(existing) = self.retired_orders.identity_for_cloid(&cloid) {
+            anyhow::ensure!(
+                terminal
+                    && existing.client_order_index == client_order_index
+                    && existing.matches_venue_order_id(venue_order_id),
+                "retired Lighter order {cloid} conflicts with reconciliation binding",
+            );
+            return Ok(());
+        }
+
+        let identity = OrderIdentity::restored(order, client_order_index, venue_order_id);
+
+        if terminal {
+            anyhow::ensure!(
+                self.retired_orders
+                    .cloid_for_venue(client_order_index, venue_order_id)
+                    .is_none(),
+                "retired Lighter binding conflicts at client_order_index {client_order_index} and venue order ID {venue_order_id}",
+            );
+            self.retired_orders.insert(cloid, identity);
+        } else {
+            if let Some(existing) = self.venue_id_map.get(&cloid) {
+                anyhow::ensure!(
+                    *existing.value() == venue_order_id,
+                    "active Lighter order {cloid} conflicts with venue order ID {venue_order_id}",
+                );
+            }
+
+            match self.cloid_map.entry(client_order_index) {
+                dashmap::mapref::entry::Entry::Vacant(entry) => {
+                    self.venue_id_map.insert(cloid, venue_order_id);
+                    self.order_identities.insert(cloid, identity);
+                    entry.insert(cloid);
+                    if order.is_triggered() == Some(true) {
+                        self.mark_triggered_emitted(cloid);
+                    }
+                }
+                dashmap::mapref::entry::Entry::Occupied(_) => {
+                    anyhow::bail!(
+                        "active Lighter binding conflicts at client_order_index {client_order_index}",
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Drop a cloid registration (called from the spawn's error branch when
     /// the tx never reaches the wire).
     pub(crate) fn forget_cloid(&self, index: i64) {
@@ -1057,11 +1228,26 @@ impl WsDispatchState {
         if raw_client_id.is_empty() || raw_client_id == "0" {
             return None;
         }
+
         let index = raw_client_id.parse::<i64>().ok()?;
-        let cloid = self.resolve_client_order_index(index)?;
-        self.order_identity(&cloid)?
-            .bind_order_venue_id(venue_order_id, nonce)
-            .then_some(cloid)
+
+        if let Some(cloid) = self.cloid_map.get(&index).map(|entry| *entry.value())
+            && let Some(identity) = self.order_identity(&cloid)
+        {
+            if identity.matches_venue_order_id(venue_order_id) {
+                return Some(cloid);
+            }
+
+            if let Some(retired) = self.retired_orders.cloid_for_venue(index, venue_order_id) {
+                return Some(retired);
+            }
+
+            return identity
+                .bind_order_venue_id(venue_order_id, nonce)
+                .then_some(cloid);
+        }
+
+        self.retired_orders.cloid_for_venue(index, venue_order_id)
     }
 
     pub(crate) fn resolve_live_trade_cloid(
@@ -1073,10 +1259,24 @@ impl WsDispatchState {
             return None;
         }
         let index = raw_client_id.parse::<i64>().ok()?;
-        let cloid = self.resolve_client_order_index(index)?;
-        self.order_identity(&cloid)?
-            .bind_trade_venue_id(venue_order_id)
-            .then_some(cloid)
+
+        if let Some(cloid) = self.cloid_map.get(&index).map(|entry| *entry.value())
+            && let Some(identity) = self.order_identity(&cloid)
+        {
+            if identity.matches_venue_order_id(venue_order_id) {
+                return Some(cloid);
+            }
+
+            if let Some(retired) = self.retired_orders.cloid_for_venue(index, venue_order_id) {
+                return Some(retired);
+            }
+
+            return identity
+                .bind_trade_venue_id(venue_order_id)
+                .then_some(cloid);
+        }
+
+        self.retired_orders.cloid_for_venue(index, venue_order_id)
     }
 
     fn resolve_client_order_index_for_venue(
@@ -1084,10 +1284,15 @@ impl WsDispatchState {
         index: i64,
         venue_order_id: VenueOrderId,
     ) -> Option<ClientOrderId> {
-        let cloid = self.resolve_client_order_index(index)?;
-        self.order_identity(&cloid)?
-            .matches_venue_order_id(venue_order_id)
-            .then_some(cloid)
+        if let Some(cloid) = self.cloid_map.get(&index).map(|entry| *entry.value())
+            && self
+                .order_identity(&cloid)
+                .is_some_and(|identity| identity.matches_venue_order_id(venue_order_id))
+        {
+            return Some(cloid);
+        }
+
+        self.retired_orders.cloid_for_venue(index, venue_order_id)
     }
 
     /// Substitute a numeric venue cloid only when its venue order is bound.
@@ -1245,7 +1450,7 @@ pub(crate) fn derive_client_order_index_static(cloid: &ClientOrderId) -> i64 {
     // with `21727 invalid client order index`; the venue's accepted range
     // is not documented but observed empirically. Using a smaller window
     // also keeps collision risk negligible at session scale.
-    i64::from(h as u32 & 0x7FFF_FFFF)
+    i64::from(h as u32 & CLOID_INDEX_MAX)
 }
 
 /// Linear probe: advance the candidate index by 1, wrapping inside the
@@ -1253,7 +1458,7 @@ pub(crate) fn derive_client_order_index_static(cloid: &ClientOrderId) -> i64 {
 /// when the derived index collides with another in-flight cloid.
 fn next_probe_index(candidate: i64) -> i64 {
     let next = candidate.wrapping_add(1);
-    if (0..=0x7FFF_FFFF).contains(&next) {
+    if (0..=i64::from(CLOID_INDEX_MAX)).contains(&next) {
         next
     } else {
         0
