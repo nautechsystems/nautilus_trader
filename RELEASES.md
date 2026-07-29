@@ -352,6 +352,7 @@ adapter set. The following limits remain deferred:
 - Fixed Derive historical bar timestamps and forming-bucket filtering
 - Fixed Derive instrument loading for absent product types and malformed rows
 - Fixed Derive fill reconciliation dropping fills on retry
+- Fixed Derive mass status flattening held positions when quantity conversion fails
 - Fixed Derive null cancel acknowledgements being reported as failures
 - Fixed Derive cancel, replace, nonce failures, and non-positive `max_fee_per_contract` configs
 - Fixed Derive shared channel ownership, unsubscribe races, and stale quote caches

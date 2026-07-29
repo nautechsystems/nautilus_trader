@@ -4635,6 +4635,72 @@ async fn test_generate_mass_status_adds_flat_position_without_current_position()
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_mass_status_does_not_flatten_unconverted_position() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.open_orders_response.lock().await = json!({
+        "orders": [],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.order_history_response.lock().await = json!({
+        "orders": [
+            order_json_with(
+                "ord-held-eth", "L-HELD-ETH", "buy", "ETH-PERP", 1_700_000_003_000, "filled",
+            ),
+            order_json_with(
+                "ord-flat-btc", "L-FLAT-BTC", "sell", "BTC-PERP", 1_700_000_004_000, "filled",
+            ),
+        ],
+        "pagination": {"count": 2, "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.trade_history_response.lock().await = json!({
+        "trades": [],
+        "pagination": {"count": 0, "num_pages": 0},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.positions_response.lock().await = json!({
+        "positions": [
+            sample_position_json("ETH-PERP", "0.1234567890123456789012345678912345"),
+            sample_position_json("SOL-PERP", "2.5"),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_client(rest_state, ws_state).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let mass_status = tc
+        .client
+        .generate_mass_status(Some(10_000_000))
+        .await
+        .expect("mass status request succeeds")
+        .expect("Derive returns mass status");
+
+    let position_reports = mass_status.position_reports();
+    assert!(
+        !position_reports.contains_key(&InstrumentId::from("ETH-PERP.DERIVE")),
+        "unconverted held position must not be reported as flat",
+    );
+
+    let sol_reports = position_reports
+        .get(&InstrumentId::from("SOL-PERP.DERIVE"))
+        .expect("valid SOL-PERP position report");
+    assert_eq!(sol_reports.len(), 1);
+    assert_eq!(sol_reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(sol_reports[0].signed_decimal_qty, dec!(2.5));
+
+    let btc_reports = position_reports
+        .get(&InstrumentId::from("BTC-PERP.DERIVE"))
+        .expect("genuinely absent BTC-PERP position has a flat report");
+    assert_eq!(btc_reports.len(), 1);
+    assert_eq!(btc_reports[0].position_side, PositionSideSpecified::Flat);
+    assert_eq!(btc_reports[0].signed_decimal_qty, dec!(0));
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_mass_status_without_lookback_omits_time_window() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
