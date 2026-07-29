@@ -1299,10 +1299,14 @@ mod serial_tests {
 
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
-        let config = RedisMessageBusConfig::default();
+        let config = RedisMessageBusConfig {
+            connection_timeout: 1,
+            number_of_retries: 0,
+            ..Default::default()
+        };
         create_redis_connection(MSGBUS_STREAM, &config)
             .await
-            .unwrap()
+            .expect("A running Redis service is required for this test")
     }
 
     #[rstest]
