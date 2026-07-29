@@ -38,12 +38,14 @@ use crate::defi::{
         compare::{PoolProfilerComparison, compare_pool_profiler, compare_pool_profiler_detailed},
         profiler::PoolProfiler,
         quote::SwapQuote,
+        size_estimator::slippage_for_size_bps,
     },
     stubs::{arbitrum, uniswap_v3},
     tick_map::{
         liquidity_math::tick_spacing_to_max_liquidity_per_tick,
         sqrt_price_math::{
-            encode_sqrt_ratio_x96, expand_to_18_decimals, get_amounts_for_liquidity,
+            decode_sqrt_price_x96_to_price_tokens_adjusted, encode_sqrt_ratio_x96,
+            expand_to_18_decimals, get_amounts_for_liquidity,
         },
         tick::PoolTick,
         tick_math::{get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio},
@@ -3020,6 +3022,44 @@ fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
             );
         }
     }
+}
+
+#[rstest]
+fn test_slippage_for_size_bps_propagates_zero_spot_price_error() {
+    const TICK: i32 = 440_000;
+
+    let sqrt_price = get_sqrt_ratio_at_tick(TICK);
+    let mut pool_definition = pool_definition(Some(500), Some(10), Some(sqrt_price));
+    std::mem::swap(&mut pool_definition.token0, &mut pool_definition.token1);
+    let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
+    profiler.initialize(sqrt_price).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            PoolTick::get_min_tick(10),
+            PoolTick::get_max_tick(10),
+            expand_to_18_decimals(2),
+        )
+        .unwrap();
+
+    let invert =
+        profiler.pool.token0.get_token_priority() < profiler.pool.token1.get_token_priority();
+    let spot_price_before = decode_sqrt_price_x96_to_price_tokens_adjusted(
+        sqrt_price,
+        profiler.pool.token0.decimals,
+        profiler.pool.token1.decimals,
+        invert,
+    )
+    .unwrap();
+    assert!(spot_price_before.is_zero());
+
+    let error = slippage_for_size_bps(&profiler, U256::from(1_000_000), true).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Cannot calculate slippage, the spot price before is zero"
+    );
 }
 
 #[rstest]

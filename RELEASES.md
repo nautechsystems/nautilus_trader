@@ -161,6 +161,7 @@ adapter set. The following limits remain deferred:
 - Fixed cross-thread `RustLocal` callback access that could cause undefined behavior (#4496), thanks @folknor
 - Fixed time-event callback teardown aborting during thread-local destruction (#4516), thanks @folknor
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
+- Fixed DeFi `SwapTradeInfo` calculations panicking on a zero prior spot price
 
 ### Fixes
 - Fixed order book `NoOrderSide` deltas mutating the bid side when the ID is on both book sides
