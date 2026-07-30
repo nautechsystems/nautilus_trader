@@ -45,7 +45,7 @@ use nautilus_derive::{
     },
     http::{
         DeriveCredentials, DeriveHttpClient,
-        query::{DeriveOrderParams, DeriveSignedEnvelope},
+        query::{DeriveCancelByLabelParams, DeriveOrderParams, DeriveSignedEnvelope},
     },
     websocket::parse_candle_record,
 };
@@ -158,6 +158,14 @@ async fn handle_order(
     handle("/private/order", state, headers, body).await
 }
 
+async fn handle_cancel_by_label(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    handle("/private/cancel_by_label", state, headers, body).await
+}
+
 async fn handle_trade_history(
     State(state): State<TestServerState>,
     headers: HeaderMap,
@@ -212,6 +220,7 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
         )
         .route("/public/get_tickers", post(handle_tickers))
         .route("/private/order", post(handle_order))
+        .route("/private/cancel_by_label", post(handle_cancel_by_label))
         .route("/health", axum::routing::get(handle_health))
         .with_state(state);
 
@@ -393,6 +402,30 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
     assert_eq!(signature.len(), 2 + 130, "signature must be 65 bytes hex");
 
     assert_eq!(order.order_id, "abc-123");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_by_label_http_preserves_count() {
+    let state = TestServerState::with_success_response();
+    *state.response_body.lock().await = load_json("common/ws_cancel_by_label_nonzero.json");
+    let addr = start_mock_server(state.clone()).await;
+
+    let client =
+        DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
+            .unwrap();
+    let result = client
+        .cancel_by_label(&DeriveCancelByLabelParams::new(42, "CLIENT-ORDER-42"))
+        .await
+        .unwrap();
+
+    let captured = state.captured().await;
+    assert_eq!(captured.path, "/private/cancel_by_label");
+    assert_eq!(
+        captured.body,
+        json!({"subaccount_id": 42, "label": "CLIENT-ORDER-42"})
+    );
+    assert_eq!(result.cancelled_orders, 2);
 }
 
 #[rstest]

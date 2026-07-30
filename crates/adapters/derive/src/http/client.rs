@@ -54,11 +54,11 @@ use crate::{
     http::{
         error::{DeriveHttpError, Result},
         models::{
-            DeriveEmptyResult, DeriveInstrument, DeriveOpenOrdersResult, DeriveOrder,
-            DeriveOrderResult, DeriveOrdersResult, DerivePositionsResult, DerivePublicCandle,
-            DerivePublicFundingRateHistoryResult, DerivePublicTradesResult, DeriveReplaceResult,
-            DeriveSubaccount, DeriveTickerSnapshot, DeriveTickersResult, DeriveTradesResult,
-            JsonRpcResponse,
+            DeriveCancelByLabelResult, DeriveEmptyResult, DeriveInstrument, DeriveOpenOrdersResult,
+            DeriveOrder, DeriveOrderResult, DeriveOrdersResult, DerivePositionsResult,
+            DerivePublicCandle, DerivePublicFundingRateHistoryResult, DerivePublicTradesResult,
+            DeriveReplaceResult, DeriveSubaccount, DeriveTickerSnapshot, DeriveTickersResult,
+            DeriveTradesResult, JsonRpcResponse,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -504,7 +504,7 @@ impl DeriveHttpClient {
     pub async fn cancel_by_label(
         &self,
         params: &DeriveCancelByLabelParams,
-    ) -> Result<DeriveEmptyResult> {
+    ) -> Result<DeriveCancelByLabelResult> {
         self.send_private_once("private/cancel_by_label", params)
             .await
     }

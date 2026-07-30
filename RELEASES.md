@@ -356,6 +356,7 @@ adapter set. The following limits remain deferred:
 - Fixed Derive fill reconciliation dropping fills on retry
 - Fixed Derive mass status flattening held positions when quantity conversion fails
 - Fixed Derive null cancel acknowledgements being reported as failures
+- Fixed Derive zero‑match cancel‑by‑label requests not emitting `OrderCancelRejected`
 - Fixed Derive cancel, replace, nonce failures, and non-positive `max_fee_per_contract` configs
 - Fixed Derive shared channel ownership, unsubscribe races, and stale quote caches
 - Fixed Derive request pacing, write expiry, null IDs, and handler blocking during reconnects

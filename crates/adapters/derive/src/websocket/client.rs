@@ -73,8 +73,8 @@ use crate::{
     },
     http::{
         models::{
-            DeriveEmptyResult, DeriveOpenOrdersResult, DeriveOrder, DeriveOrderResult,
-            DeriveReplaceResult,
+            DeriveCancelByLabelResult, DeriveEmptyResult, DeriveOpenOrdersResult, DeriveOrder,
+            DeriveOrderResult, DeriveReplaceResult,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -1059,19 +1059,21 @@ impl DeriveWsExecutionHandle {
     /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
     /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
     /// outcome is ambiguous.
-    pub async fn cancel_by_label(&self, params: &DeriveCancelByLabelParams) -> Result<()> {
+    pub async fn cancel_by_label(
+        &self,
+        params: &DeriveCancelByLabelParams,
+    ) -> Result<DeriveCancelByLabelResult> {
         self.require_authenticated(methods::PRIVATE_CANCEL_BY_LABEL)
             .await?;
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: DeriveEmptyResult = send_request(
+        send_request_typed(
             &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_CANCEL_BY_LABEL,
             params,
             self.request_timeout,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     /// Returns currently untriggered trigger orders via

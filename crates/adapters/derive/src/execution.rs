@@ -1330,7 +1330,24 @@ impl ExecutionClient for DeriveExecutionClient {
                         client_order_id.as_str(),
                     ))
                     .await
-                    .map(|()| None),
+                    .map(|result| {
+                        if result.cancelled_orders == 0 {
+                            let reason = "no open order matched the client_order_id label";
+                            log::debug!(
+                                "Derive rejected cancel for {client_order_id}: {reason}"
+                            );
+                            let ts = clock.get_time_ns();
+                            emitter.emit_order_cancel_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                None,
+                                reason,
+                                ts,
+                            );
+                        }
+                        None
+                    }),
             };
 
             match outcome {

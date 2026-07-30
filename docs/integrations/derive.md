@@ -349,6 +349,11 @@ off the WebSocket request outcome. It emits a terminal rejection event (`OrderRe
   as `OrderRejected` with `due_post_only=true`.
 - Rate-limit responses (`-32000 Rate limit exceeded`), where the gateway rejects the request
   before the matching engine sees it.
+- A successful `private/cancel_by_label` response with `cancelled_orders == 0`, which means
+  no open order matched the client order ID label.
+
+For other `cancelled_orders` values, the adapter emits no terminal event and waits for the
+venue order notification or later reconciliation to settle the state.
 
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
 `11008` and message `Post only order cannot cross the market`. The adapter marks that
