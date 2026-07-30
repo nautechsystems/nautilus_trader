@@ -24,6 +24,9 @@ use nautilus_model::defi::DexType;
 /// and maintains the event signature encodings for efficient filtering.
 #[derive(Debug)]
 pub struct DefiDataSubscriptionManager {
+    block_demand_explicit: bool,
+    block_demand_pool_events: bool,
+    block_feed_backend: Option<BlockFeedBackend>,
     pool_swap_event_encoded: AHashMap<DexType, String>,
     pool_mint_event_encoded: AHashMap<DexType, String>,
     pool_burn_event_encoded: AHashMap<DexType, String>,
@@ -51,6 +54,9 @@ impl DefiDataSubscriptionManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            block_demand_explicit: false,
+            block_demand_pool_events: false,
+            block_feed_backend: None,
             pool_swap_event_encoded: AHashMap::new(),
             pool_burn_event_encoded: AHashMap::new(),
             pool_mint_event_encoded: AHashMap::new(),
@@ -66,6 +72,69 @@ impl DefiDataSubscriptionManager {
             subscribed_pool_fee_protocol_updates: AHashMap::new(),
             subscribed_pool_fee_protocol_collects: AHashMap::new(),
         }
+    }
+
+    pub(crate) fn add_block_demand(
+        &mut self,
+        owner: BlockFeedOwner,
+        preferred_backend: BlockFeedBackend,
+    ) -> Option<BlockFeedBackend> {
+        match owner {
+            BlockFeedOwner::Explicit => self.block_demand_explicit = true,
+            BlockFeedOwner::PoolEvents => self.block_demand_pool_events = true,
+        }
+
+        self.block_feed_backend
+            .is_none()
+            .then_some(preferred_backend)
+    }
+
+    pub(crate) fn block_feed_started(&mut self, backend: BlockFeedBackend) {
+        self.block_feed_backend = Some(backend);
+    }
+
+    pub(crate) fn remove_block_demand(
+        &mut self,
+        owner: BlockFeedOwner,
+    ) -> Option<BlockFeedBackend> {
+        match owner {
+            BlockFeedOwner::Explicit => self.block_demand_explicit = false,
+            BlockFeedOwner::PoolEvents => self.block_demand_pool_events = false,
+        }
+
+        if self.has_block_demand() {
+            None
+        } else {
+            self.block_feed_backend
+        }
+    }
+
+    pub(crate) fn block_feed_stopped(&mut self, backend: BlockFeedBackend) {
+        if self.block_feed_backend == Some(backend) {
+            self.block_feed_backend = None;
+        }
+    }
+
+    pub(crate) fn clear_block_demand(&mut self) {
+        self.block_demand_explicit = false;
+        self.block_demand_pool_events = false;
+        self.block_feed_backend = None;
+    }
+
+    pub(crate) fn has_pool_event_subscriptions(&self) -> bool {
+        self.subscribed_pool_swaps
+            .values()
+            .chain(self.subscribed_pool_mints.values())
+            .chain(self.subscribed_pool_burns.values())
+            .chain(self.subscribed_pool_collects.values())
+            .chain(self.subscribed_pool_flashes.values())
+            .chain(self.subscribed_pool_fee_protocol_updates.values())
+            .chain(self.subscribed_pool_fee_protocol_collects.values())
+            .any(|addresses| !addresses.is_empty())
+    }
+
+    fn has_block_demand(&self) -> bool {
+        self.block_demand_explicit || self.block_demand_pool_events
     }
 
     /// Gets all unique contract addresses subscribed for any event type for a given DEX.
@@ -543,6 +612,18 @@ impl DefiDataSubscriptionManager {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockFeedBackend {
+    Rpc,
+    HyperSync,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockFeedOwner {
+    Explicit,
+    PoolEvents,
+}
+
 #[cfg(test)]
 mod tests {
     use alloy::primitives::address;
@@ -567,6 +648,199 @@ mod tests {
             Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
         );
         manager
+    }
+
+    #[rstest]
+    #[case(BlockFeedBackend::Rpc)]
+    #[case(BlockFeedBackend::HyperSync)]
+    fn block_feed_pool_only_stops_with_final_owner(#[case] backend: BlockFeedBackend) {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            Some(backend)
+        );
+        manager.block_feed_started(backend);
+
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::PoolEvents),
+            Some(backend)
+        );
+        manager.block_feed_stopped(backend);
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            Some(backend)
+        );
+    }
+
+    #[rstest]
+    #[case(BlockFeedBackend::Rpc)]
+    #[case(BlockFeedBackend::HyperSync)]
+    fn block_feed_repeated_commands_are_idempotent(#[case] backend: BlockFeedBackend) {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, backend),
+            Some(backend)
+        );
+        manager.block_feed_started(backend);
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, backend),
+            None
+        );
+
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::Explicit),
+            Some(backend)
+        );
+        manager.block_feed_stopped(backend);
+        assert_eq!(manager.remove_block_demand(BlockFeedOwner::Explicit), None);
+    }
+
+    #[rstest]
+    #[case(BlockFeedBackend::Rpc)]
+    #[case(BlockFeedBackend::HyperSync)]
+    fn block_feed_explicit_demand_survives_pool_unsubscribe(#[case] backend: BlockFeedBackend) {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, backend),
+            Some(backend)
+        );
+        manager.block_feed_started(backend);
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            None
+        );
+
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::PoolEvents),
+            None
+        );
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::Explicit),
+            Some(backend)
+        );
+    }
+
+    #[rstest]
+    #[case(BlockFeedBackend::Rpc)]
+    #[case(BlockFeedBackend::HyperSync)]
+    fn block_feed_pool_demand_survives_explicit_unsubscribe(#[case] backend: BlockFeedBackend) {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            Some(backend)
+        );
+        manager.block_feed_started(backend);
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, backend),
+            None
+        );
+
+        assert_eq!(manager.remove_block_demand(BlockFeedOwner::Explicit), None);
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::PoolEvents),
+            Some(backend)
+        );
+    }
+
+    #[rstest]
+    #[case(BlockFeedBackend::Rpc)]
+    #[case(BlockFeedBackend::HyperSync)]
+    fn block_feed_pool_demand_spans_dexes_addresses_and_events(#[case] backend: BlockFeedBackend) {
+        let mut manager = DefiDataSubscriptionManager::new();
+        let pool1 = address!("1111111111111111111111111111111111111111");
+        let pool2 = address!("2222222222222222222222222222222222222222");
+        let pool3 = address!("3333333333333333333333333333333333333333");
+
+        for dex in [DexType::UniswapV3, DexType::PancakeSwapV3] {
+            manager.register_dex_for_subscriptions(
+                dex,
+                "Swap(address,address,int256,int256,uint160,uint128,int24)",
+                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+                "Burn(address,int24,int24,uint128,uint256,uint256)",
+                "Collect(address,address,int24,int24,uint128,uint128)",
+                Some("Flash(address,address,uint256,uint256,uint256,uint256)"),
+            );
+        }
+
+        manager.subscribe_swaps(DexType::UniswapV3, pool1);
+        manager.subscribe_mints(DexType::UniswapV3, pool2);
+        manager.subscribe_flashes(DexType::PancakeSwapV3, pool3);
+
+        assert!(manager.has_pool_event_subscriptions());
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            Some(backend)
+        );
+        manager.block_feed_started(backend);
+
+        manager.unsubscribe_swaps(DexType::UniswapV3, pool1);
+        assert!(manager.has_pool_event_subscriptions());
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            None
+        );
+
+        manager.unsubscribe_mints(DexType::UniswapV3, pool2);
+        assert!(manager.has_pool_event_subscriptions());
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            None
+        );
+
+        manager.unsubscribe_flashes(DexType::PancakeSwapV3, pool3);
+        assert!(!manager.has_pool_event_subscriptions());
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::PoolEvents),
+            Some(backend)
+        );
+    }
+
+    #[rstest]
+    #[case(BlockFeedBackend::Rpc)]
+    #[case(BlockFeedBackend::HyperSync)]
+    fn block_feed_disconnect_clears_owners_and_backend(#[case] backend: BlockFeedBackend) {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, backend),
+            Some(backend)
+        );
+        manager.block_feed_started(backend);
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::PoolEvents, backend),
+            None
+        );
+
+        manager.clear_block_demand();
+
+        assert!(!manager.block_demand_explicit);
+        assert!(!manager.block_demand_pool_events);
+        assert_eq!(manager.block_feed_backend, None);
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, backend),
+            Some(backend)
+        );
+    }
+
+    #[rstest]
+    fn block_feed_rpc_fallback_stops_hypersync_backend() {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        assert_eq!(
+            manager.add_block_demand(BlockFeedOwner::Explicit, BlockFeedBackend::Rpc),
+            Some(BlockFeedBackend::Rpc)
+        );
+        manager.block_feed_started(BlockFeedBackend::HyperSync);
+
+        assert_eq!(
+            manager.remove_block_demand(BlockFeedOwner::Explicit),
+            Some(BlockFeedBackend::HyperSync)
+        );
     }
 
     #[rstest]

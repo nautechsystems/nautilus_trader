@@ -352,6 +352,7 @@ adapter set. The following limits remain deferred:
 - Fixed BitMEX WebSocket authentication rejections waiting out the login timeout instead of failing (#4541), thanks @folknor
 - Fixed Blockchain `U256` price and quantity decoding losing exact raw units above the `f64` integer limit
 - Fixed Blockchain HyperSync live pool-event streams overreaching the tip window
+- Fixed Blockchain pool-event unsubscribe leaving internally owned block feeds active
 - Fixed Blockchain RPC pool snapshots panicking on incomplete topology
 - Fixed Bybit post-only rejections omitting the `due_post_only` flag (#4500), thanks @dxwil
 - Fixed Bybit spot instruments missing `min_notional` and the newer lot-size fields (#4527), thanks @dxwil

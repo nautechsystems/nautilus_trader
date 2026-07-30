@@ -2214,6 +2214,7 @@ impl BlockchainDataClientCore {
     /// This method should be called when shutting down the client to ensure
     /// proper cleanup of network connections and background tasks.
     pub async fn disconnect(&mut self) {
+        self.subscription_manager.clear_block_demand();
         self.hypersync_client.disconnect().await;
     }
 }
