@@ -170,6 +170,7 @@ adapter set. The following limits remain deferred:
 - Fixed time-event callback teardown aborting during thread-local destruction (#4516), thanks @folknor
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
 - Fixed DeFi `SwapTradeInfo` calculations panicking on a zero prior spot price
+- Fixed DeFi spot and execution prices panicking or silently wrapping on high ratios and unsupported token decimals
 - Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
 - Fixed Arrow batch encoders silently re-labeling mixed metadata and leading clear deltas
 - Fixed SBE `FundingRateUpdate` maximum optional values encoding as absent
