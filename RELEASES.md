@@ -79,6 +79,7 @@ adapter set. The following limits remain deferred:
 - Added v2 `MessageBusConfig.autotrim_maxlen` for Redis stream count retention (#4433), thanks for reporting @gtalknitin
 - Added v2 `OrderBookDepth10` subscriptions and callbacks for Rust and Python actors and strategies (#4439)
 - Added Python v2 historical book-delta and depth batch callbacks for actors and strategies
+- Added Python v2 `PositionSizer` and `FixedRiskSizer` bindings (#4573), thanks @dfjmax
 - Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, terminal voiding, and strategy and algorithm callbacks
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
@@ -138,6 +139,7 @@ adapter set. The following limits remain deferred:
 - Changed v2 order-event schemas to persist activation prices and fill `info`; old catalogs must be migrated
 - Changed v2 `Order.avg_px` and `Order.slippage` from `f64` to `Decimal` in Rust, and from `float` to `decimal.Decimal` in Python
 - Changed Rust `OrderStatusReport::with_avg_px` to take a `Decimal` and return `Self`; it no longer returns a `Result`
+- Changed Rust `calculate_fixed_risk_position_size` to return `Result<Quantity>`; callers must handle errors
 - Changed v2 SQL `order.avg_px` and `order.slippage` to `NUMERIC`; run `nautilus database init` before starting a Postgres-backed node, which now fails fast on the old column types
 - Changed the v2 `OrderSnapshot` Arrow schema to write `avg_px` and `slippage` as strings; the decoder also accepts the old `Float64` columns, but migrate an existing catalog rather than appending to it, since a directory holding both column types fails schema inference
 - Changed v2 instrument Arrow schemas to persist all constraints; old catalogs must be migrated
@@ -162,6 +164,7 @@ adapter set. The following limits remain deferred:
 - Fixed time-event callback teardown aborting during thread-local destruction (#4516), thanks @folknor
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
 - Fixed DeFi `SwapTradeInfo` calculations panicking on a zero prior spot price
+- Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
 
 ### Fixes
 - Fixed order book `NoOrderSide` deltas mutating the bid side when the ID is on both book sides

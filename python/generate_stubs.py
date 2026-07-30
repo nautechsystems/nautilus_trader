@@ -712,6 +712,14 @@ def _rust_default_to_python(rust_default: str) -> str | None:
     except ValueError:
         pass
 
+    decimal_default = {
+        "Decimal::ZERO": "decimal.Decimal(0)",
+        "Decimal::ONE": "decimal.Decimal(1)",
+    }.get(rust_default)
+
+    if decimal_default is not None:
+        return decimal_default
+
     # Enum variants: Type::Variant -> Type.Variant
     if "::" in rust_default and "(" not in rust_default:
         return rust_default.replace("::", ".")
