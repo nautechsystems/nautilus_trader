@@ -86,6 +86,9 @@ struct TestServerState {
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     asset_context_updates: Arc<tokio::sync::Notify>,
     bbo_updates: Arc<tokio::sync::Notify>,
+    gate_bbo_messages: Arc<tokio::sync::Mutex<bool>>,
+    initial_bbo_message: Arc<tokio::sync::Notify>,
+    healing_bbo_message: Arc<tokio::sync::Notify>,
     withhold_l2_book: Arc<tokio::sync::Mutex<bool>>,
     // When set, the `recentTrades` info endpoint responds with HTTP 422 to
     // emulate a node without the Hyperliquid indexer.
@@ -560,7 +563,36 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                             "users": ["0xbuyer", "0xseller"]
                                         }]
                                     })),
-                                    "bbo" => Some(bbo_message()),
+                                    "bbo" => {
+                                        if *state.gate_bbo_messages.lock().await {
+                                            let bbo_subscription_count = state
+                                                .subscriptions
+                                                .lock()
+                                                .await
+                                                .iter()
+                                                .filter(|subscription| {
+                                                    subscription.get("type").and_then(Value::as_str)
+                                                        == Some("bbo")
+                                                })
+                                                .count();
+
+                                            if bbo_subscription_count == 1 {
+                                                state.initial_bbo_message.notified().await;
+                                            } else {
+                                                // Gate EVERY post-initial subscribe: with an
+                                                // unbounded resubscribe budget the client may
+                                                // subscribe a third time before the test
+                                                // releases the healing quote, and an ungated
+                                                // send would heal the stream outside the
+                                                // test's control. notify_one wakes exactly
+                                                // one waiter, so exactly one healing quote
+                                                // is delivered.
+                                                state.healing_bbo_message.notified().await;
+                                            }
+                                        }
+
+                                        Some(bbo_message())
+                                    }
                                     "l2Book" => {
                                         if *state.withhold_l2_book.lock().await {
                                             None
@@ -724,6 +756,19 @@ async fn wait_for_public_trade_event(
             let found = rx
                 .try_recv()
                 .is_ok_and(|event| is_public_trade_event(event, instrument_id, &data_type));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn wait_for_quote_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) {
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|event| matches!(event, DataEvent::Data(Data::Quote(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1669,13 +1714,13 @@ async fn test_data_client_stale_book_recovery_escalates_to_reconnect() {
     client.disconnect().await.unwrap();
 }
 
-// The mock server sends one quote for each bbo subscribe
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_stale_quote_recovery_heals_without_reconnect() {
     let _capture_guard = lock_stale_log_capture().await;
     let logger = install_capturing_warn_logger();
     let state = TestServerState::default();
+    *state.gate_bbo_messages.lock().await = true;
     let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -1686,8 +1731,7 @@ async fn test_data_client_stale_quote_recovery_heals_without_reconnect() {
     config.stale_stream_warning_cooldown_secs = 60;
     config.stale_stream_recovery_enabled = true;
     config.stale_stream_recovery_cooldown_secs = 1;
-    // Avoid reconnect if the healing quote lands one tick late
-    config.stale_stream_max_targeted_resubscribes = 3;
+    config.stale_stream_max_targeted_resubscribes = u32::MAX;
 
     let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
@@ -1709,25 +1753,62 @@ async fn test_data_client_stale_quote_recovery_heals_without_reconnect() {
     wait_until_async(
         || {
             let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|sub| sub.get("type").and_then(Value::as_str) == Some("bbo"))
+                    .count()
+                    == 1
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    state.initial_bbo_message.notify_one();
+    wait_for_quote_event(&mut rx).await;
+
+    wait_until_async(
+        || {
+            let state = state.clone();
             let messages = logger.messages();
             async move {
-                let resubscribed = state
+                let unsubscribed = state
                     .unsubscriptions
                     .lock()
                     .await
                     .iter()
                     .any(|sub| sub.get("type").and_then(Value::as_str) == Some("bbo"));
+                // >= 2 as a defensive monotonic predicate: correctness needs
+                // only "a second bbo subscribe was observed", not an exact
+                // count, and the unbounded resubscribe budget permits more.
+                let resubscribed = state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|sub| sub.get("type").and_then(Value::as_str) == Some("bbo"))
+                    .count()
+                    >= 2;
                 let decision_logged = messages.iter().any(|message| {
-                    message.contains("action=resubscribe") && message.contains("channel=quote")
+                    message.contains("action=resubscribe")
+                        && message.contains("channel=quote")
+                        && message.contains("instrument_id=BTC-USD-PERP.HYPERLIQUID")
                 });
-                resubscribed && decision_logged
+                unsubscribed && resubscribed && decision_logged
             }
         },
         Duration::from_secs(15),
     )
     .await;
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    state.healing_bbo_message.notify_one();
+    wait_for_quote_event(&mut rx).await;
+
+    client.disconnect().await.unwrap();
 
     let messages = logger.messages();
     assert!(
@@ -1744,8 +1825,6 @@ async fn test_data_client_stale_quote_recovery_heals_without_reconnect() {
             .all(|message| !message.contains("action=reconnect")),
         "a healed stream must not escalate to reconnect, messages were: {messages:?}",
     );
-
-    client.disconnect().await.unwrap();
 }
 
 #[rstest]

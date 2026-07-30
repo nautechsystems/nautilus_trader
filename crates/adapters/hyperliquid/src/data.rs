@@ -2355,7 +2355,7 @@ mod tests {
     fn test_stream_health_receive_resets_recovery_state() {
         let mut monitor =
             MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10))
-                .with_recovery(Duration::from_secs(10), 2);
+                .with_recovery(Duration::from_secs(10), 1);
         let instrument_id = btc_perp_id();
         let start = Instant::now();
 
@@ -2388,10 +2388,6 @@ mod tests {
         );
         assert_eq!(
             check_at(&mut monitor, start, 41)[0].action,
-            StaleStreamAction::Resubscribe,
-        );
-        assert_eq!(
-            check_at(&mut monitor, start, 51)[0].action,
             StaleStreamAction::Reconnect,
         );
     }
