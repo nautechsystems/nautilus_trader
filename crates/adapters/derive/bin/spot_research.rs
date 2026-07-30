@@ -124,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
     let action_typehash: B256 = ACTION_TYPEHASH
         .parse()
         .map_err(|e| anyhow::anyhow!("failed to parse ACTION_TYPEHASH: {e}"))?;
-    let nonce_manager = NonceManager::default();
+    let nonce_manager = NonceManager;
 
     let instruments = client
         .get_instruments("ETH", DeriveInstrumentType::Erc20, false)
