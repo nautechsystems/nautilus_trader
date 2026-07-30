@@ -32,7 +32,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, secs_to_nanos},
 };
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
@@ -343,6 +343,20 @@ pub(crate) fn validate_non_negative_finite_f64(field: &str, value: f64) -> Confi
         field,
         value.is_finite() && value >= 0.0,
         format!("{value} (must be a non-negative finite number)"),
+    )
+}
+
+pub(crate) fn validate_positive_interval_secs(field: &str, value: f64) -> ConfigResult<()> {
+    check_range(
+        field,
+        value.is_finite() && value > 0.0,
+        format!("{value} (must be a positive finite number)"),
+    )?;
+    let nanos = secs_to_nanos(value).map_err(|e| ConfigError::range(field, e.to_string()))?;
+    check_range(
+        field,
+        nanos > 0,
+        format!("{value} (must be at least one nanosecond)"),
     )
 }
 
@@ -944,7 +958,7 @@ impl LiveRiskEngineConfig {
 }
 
 impl LiveExecEngineConfig {
-    fn validate_runtime_support(&self) -> ConfigResult<()> {
+    pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
         // `Duration::from_secs_f64` panics on negative, NaN, or infinite input, and the
@@ -954,6 +968,29 @@ impl LiveExecEngineConfig {
             "LiveExecEngineConfig.reconciliation_startup_delay_secs",
             self.reconciliation_startup_delay_secs,
         ));
+
+        for (field, value) in [
+            (
+                "LiveExecEngineConfig.snapshot_positions_interval_secs",
+                self.snapshot_positions_interval_secs,
+            ),
+            (
+                "LiveExecEngineConfig.open_check_interval_secs",
+                self.open_check_interval_secs,
+            ),
+            (
+                "LiveExecEngineConfig.position_check_interval_secs",
+                self.position_check_interval_secs,
+            ),
+            (
+                "LiveExecEngineConfig.own_books_audit_interval_secs",
+                self.own_books_audit_interval_secs,
+            ),
+        ] {
+            if let Some(value) = value {
+                collector.collect(validate_positive_interval_secs(field, value));
+            }
+        }
 
         if let Some(instrument_ids) = &self.reconciliation_instrument_ids {
             collector.collect(validate_instrument_id_strings(
@@ -1537,6 +1574,69 @@ mod tests {
 
         let error = config.validate_runtime_support().unwrap_err().to_string();
         assert!(error.contains("reconciliation_startup_delay_secs"));
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(0.5e-9)]
+    #[case(-1.0)]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    #[case(f64::MAX)]
+    fn test_validate_runtime_support_rejects_invalid_exec_intervals(#[case] value: f64) {
+        let configs = [
+            (
+                "LiveExecEngineConfig.snapshot_positions_interval_secs",
+                LiveExecEngineConfig {
+                    snapshot_positions_interval_secs: Some(value),
+                    ..Default::default()
+                },
+            ),
+            (
+                "LiveExecEngineConfig.open_check_interval_secs",
+                LiveExecEngineConfig {
+                    open_check_interval_secs: Some(value),
+                    ..Default::default()
+                },
+            ),
+            (
+                "LiveExecEngineConfig.position_check_interval_secs",
+                LiveExecEngineConfig {
+                    position_check_interval_secs: Some(value),
+                    ..Default::default()
+                },
+            ),
+            (
+                "LiveExecEngineConfig.own_books_audit_interval_secs",
+                LiveExecEngineConfig {
+                    own_books_audit_interval_secs: Some(value),
+                    ..Default::default()
+                },
+            ),
+        ];
+
+        for (expected_field, config) in configs {
+            let error = config.validate_runtime_support().unwrap_err();
+
+            assert!(matches!(
+                error,
+                ConfigError::Range { field, .. } if field == expected_field
+            ));
+        }
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_accepts_valid_exec_intervals() {
+        let config = LiveExecEngineConfig {
+            snapshot_positions_interval_secs: Some(1.25),
+            open_check_interval_secs: Some(2.5),
+            position_check_interval_secs: Some(3.75),
+            own_books_audit_interval_secs: Some(4.5),
+            ..Default::default()
+        };
+
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[cfg(feature = "python")]

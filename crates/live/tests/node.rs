@@ -41,8 +41,8 @@ use nautilus_common::{
     live::dst,
     messages::{
         execution::{
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            QueryOrder,
+            CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, QueryOrder,
         },
         system::ShutdownSystem,
     },
@@ -71,7 +71,7 @@ use nautilus_model::{
 use nautilus_trading::{
     ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_execution_algorithm,
     nautilus_strategy,
-    strategy::{StrategyConfig, StrategyCore},
+    strategy::{Strategy, StrategyConfig, StrategyCore},
 };
 use rstest::rstest;
 
@@ -129,6 +129,44 @@ impl DataActor for FailingStartStrategy {
 }
 
 nautilus_strategy!(FailingStartStrategy);
+
+#[derive(Debug)]
+struct StopOnStartStrategy {
+    core: StrategyCore,
+    handle: LiveNodeHandle,
+    instrument_id: InstrumentId,
+    stop_count: Arc<AtomicUsize>,
+}
+
+impl StopOnStartStrategy {
+    fn new(
+        config: StrategyConfig,
+        handle: LiveNodeHandle,
+        instrument_id: InstrumentId,
+        stop_count: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            core: StrategyCore::new(config),
+            handle,
+            instrument_id,
+            stop_count,
+        }
+    }
+}
+
+impl DataActor for StopOnStartStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.handle.stop();
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.stop_count.fetch_add(1, Ordering::Relaxed);
+        self.cancel_all_orders(self.instrument_id, None, None, None)
+    }
+}
+
+nautilus_strategy!(StopOnStartStrategy);
 
 #[derive(Debug)]
 struct ClaimingTestStrategy {
@@ -263,6 +301,8 @@ mod serial_tests {
         connected: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
         mass_status_requested: Arc<AtomicBool>,
+        cancel_all_orders_received: Arc<AtomicUsize>,
+        cancel_all_orders_while_connected: Arc<AtomicBool>,
     }
 
     #[derive(Clone, Debug, Default)]
@@ -682,6 +722,17 @@ mod serial_tests {
         }
 
         fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
+            self.state
+                .cancel_all_orders_received
+                .fetch_add(1, Ordering::Relaxed);
+            self.state.cancel_all_orders_while_connected.store(
+                self.state.connected.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
             Ok(())
         }
 
@@ -1329,6 +1380,33 @@ mod serial_tests {
     }
 
     #[rstest]
+    fn test_live_node_builds_reject_invalid_exec_interval() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                open_check_interval_secs: Some(f64::INFINITY),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let direct_error = LiveNode::build("DirectNode".to_string(), Some(config.clone()))
+            .expect_err("direct build should reject an invalid execution interval");
+        let builder_error = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .build()
+            .expect_err("builder should reject an invalid execution interval");
+
+        for error in [direct_error, builder_error] {
+            assert!(
+                error
+                    .to_string()
+                    .contains("LiveExecEngineConfig.open_check_interval_secs"),
+                "unexpected error: {error:#}"
+            );
+        }
+    }
+
+    #[rstest]
     fn test_add_actor() {
         let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
 
@@ -1887,7 +1965,6 @@ mod serial_tests {
         let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
 
-        // Must stop after node enters Running (stop flag is cleared on Running transition)
         let stop_handle = handle.clone();
 
         tokio::spawn(async move {
@@ -2138,6 +2215,100 @@ mod serial_tests {
         assert!(!state.connected.load(Ordering::Relaxed));
         assert!(node.kernel().trader().borrow().is_stopped());
         assert_eq!(node.kernel().trader().borrow().component_count(), 2);
+
+        node.dispose();
+
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_strategy_stop_request_during_start_aborts_running_transition(#[case] run: bool) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(10),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StrategyStopDuringStartNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+        let strategy_id = StrategyId::from("STOP-ON-START-001");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let account_id = AccountId::from("STARTUP-MASS-STATUS-001");
+        let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
+        let stop_count = Arc::new(AtomicUsize::new(0));
+
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-STOP-001"));
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+
+        node.add_strategy(StopOnStartStrategy::new(
+            StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            },
+            handle.clone(),
+            instrument_id,
+            stop_count.clone(),
+        ))
+        .unwrap();
+
+        let result = if run {
+            node.run().await
+        } else {
+            node.start().await
+        };
+
+        assert!(result.is_ok(), "unexpected error: {result:#?}");
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(handle.should_stop());
+        assert!(!state.connected.load(Ordering::Relaxed));
+        assert!(node.kernel().trader().borrow().is_stopped());
+        assert_eq!(stop_count.load(Ordering::Relaxed), 1);
+        assert_eq!(state.cancel_all_orders_received.load(Ordering::Relaxed), 1);
+        assert!(
+            state
+                .cancel_all_orders_while_connected
+                .load(Ordering::Relaxed)
+        );
 
         node.dispose();
 

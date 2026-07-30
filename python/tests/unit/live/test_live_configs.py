@@ -310,6 +310,24 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value):
         LiveExecEngineConfig(reconciliation_startup_delay_secs=value)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "snapshot_positions_interval_secs",
+        "open_check_interval_secs",
+        "position_check_interval_secs",
+        "own_books_audit_interval_secs",
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0.0, 0.5e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
+)
+def test_live_exec_engine_config_rejects_invalid_intervals(field, value):
+    with pytest.raises(ValueError, match=field):
+        LiveExecEngineConfig(**{field: value})
+
+
 def test_live_node_config_defaults():
     config = LiveNodeConfig()
 

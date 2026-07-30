@@ -34,9 +34,7 @@ use pyo3::{
 use crate::config::{
     InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
     LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, RoutingConfig,
-    duration_from_secs_f64, parse_rate_limit, validate_client_order_id_strings,
-    validate_instrument_id_strings, validate_max_notional_per_order,
-    validate_non_negative_finite_f64,
+    duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
 };
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
@@ -432,28 +430,7 @@ impl LiveExecEngineConfig {
     ) -> PyResult<Self> {
         let default = Self::default();
 
-        if let Some(delay) = reconciliation_startup_delay_secs {
-            validate_non_negative_finite_f64(
-                "LiveExecEngineConfig.reconciliation_startup_delay_secs",
-                delay,
-            )
-            .map_err(config_error_to_pyvalue_err)?;
-        }
-
-        if let Some(ids) = reconciliation_instrument_ids.as_ref() {
-            validate_instrument_id_strings(
-                "LiveExecEngineConfig.reconciliation_instrument_ids",
-                ids,
-            )
-            .map_err(config_error_to_pyvalue_err)?;
-        }
-
-        if let Some(ids) = filtered_client_order_ids.as_ref() {
-            validate_client_order_id_strings("LiveExecEngineConfig.filtered_client_order_ids", ids)
-                .map_err(config_error_to_pyvalue_err)?;
-        }
-
-        Ok(Self {
+        let config = Self {
             load_cache: load_cache.unwrap_or(default.load_cache),
             manage_own_order_books: manage_own_order_books
                 .unwrap_or(default.manage_own_order_books),
@@ -508,7 +485,11 @@ impl LiveExecEngineConfig {
             debug: debug.unwrap_or(default.debug),
             own_books_audit_interval_secs,
             qsize: default.qsize,
-        })
+        };
+        config
+            .validate_runtime_support()
+            .map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

@@ -274,6 +274,8 @@ adapter set. The following limits remain deferred:
 - Fixed Rust and Python v2 zero-duration waits to recognize already-ready engines
 - Fixed Rust v2 `LiveNode` startup to restore cache databases and honor `flush_on_start`
 - Fixed Rust v2 `LiveNode` startup continuing after execution reconciliation failures or timeouts (#4406), thanks @TheoBabilon
+- Fixed Rust and Python v2 `LiveNode` losing stop requests received during startup
+- Fixed v2 `LiveExecEngineConfig` accepting non‑positive, non‑finite, sub‑nanosecond, or overflowing interval seconds
 - Fixed Rust and Python v2 live node connect and disconnect awaits running outside the lifecycle timeouts (#4528), thanks @folknor
 - Fixed Rust and Python v2 live node connection timeouts reporting the node as running (#4528), thanks @folknor
 - Fixed Rust/PyO3 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
