@@ -17,7 +17,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use chrono_tz::US::Eastern;
 use nautilus_core::UnixNanos;
@@ -178,8 +178,22 @@ pub struct FXRolloverInterestModule {
     calculator: RolloverInterestCalculator,
     rollover_time_ns: Cell<u64>,
     rollover_applied: Cell<bool>,
-    day_number: Cell<u32>,
+    rollover_date: Cell<Option<NaiveDate>>,
     rollover_totals: RefCell<AHashMap<Currency, f64>>,
+    warned_failures: RefCell<AHashSet<(InstrumentId, RolloverFailureKind)>>,
+}
+
+enum RolloverCalculationOutcome {
+    Completed(Vec<Money>),
+    Retry,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum RolloverFailureKind {
+    Engine,
+    Price,
+    Rate,
+    Xrate,
 }
 
 impl FXRolloverInterestModule {
@@ -190,47 +204,51 @@ impl FXRolloverInterestModule {
             calculator: RolloverInterestCalculator::new(records),
             rollover_time_ns: Cell::new(0),
             rollover_applied: Cell::new(false),
-            day_number: Cell::new(0),
+            rollover_date: Cell::new(None),
             rollover_totals: RefCell::new(AHashMap::new()),
+            warned_failures: RefCell::new(AHashSet::new()),
         }
     }
 
-    fn apply_rollover_interest(
+    /// Logs a calculation failure at warn level once per (instrument, kind)
+    /// within the current rollover day, demoting repeats to debug: a `Retry`
+    /// outcome re-runs the calculation on every process call until it
+    /// completes, and repeating the identical warning per attempt would flood
+    /// the log. The set is cleared on a new day, on completion, and on reset.
+    fn log_calculation_failure(
+        &self,
+        instrument_id: InstrumentId,
+        kind: RolloverFailureKind,
+        message: &str,
+    ) {
+        if self
+            .warned_failures
+            .borrow_mut()
+            .insert((instrument_id, kind))
+        {
+            log::warn!("{message}");
+        } else {
+            log::debug!("{message}");
+        }
+    }
+
+    fn calculate_rollover_interest(
         &self,
         date: NaiveDate,
         iso_weekday: u32,
         ctx: &ExchangeContext,
-    ) -> Vec<Money> {
+    ) -> RolloverCalculationOutcome {
+        let mut instrument_ids = ctx.instruments.keys().copied().collect::<Vec<_>>();
+        instrument_ids.sort_unstable();
         let mut adjustments = Vec::new();
 
-        let mut mid_prices: AHashMap<InstrumentId, f64> = AHashMap::new();
+        for instrument_id in instrument_ids {
+            let instrument = &ctx.instruments[&instrument_id];
 
-        for (instrument_id, instrument) in ctx.instruments {
             if instrument.asset_class() != AssetClass::FX {
                 continue;
             }
 
-            let Some(matching_engine) = ctx.matching_engines.get(instrument_id) else {
-                continue;
-            };
-
-            let book = matching_engine.get_book();
-            let mid = if let Some(m) = book.midpoint() {
-                m
-            } else if let Some(p) = book.best_bid_price() {
-                p.as_f64()
-            } else if let Some(p) = book.best_ask_price() {
-                p.as_f64()
-            } else {
-                continue;
-            };
-            mid_prices.insert(*instrument_id, mid);
-        }
-
-        let mut mid_prices = mid_prices.into_iter().collect::<Vec<_>>();
-        mid_prices.sort_unstable_by_key(|(instrument_id, _)| *instrument_id);
-
-        for (instrument_id, mid) in mid_prices {
             let positions =
                 ctx.cache
                     .positions_open(Some(&ctx.venue), Some(&instrument_id), None, None, None);
@@ -239,11 +257,39 @@ impl FXRolloverInterestModule {
                 continue;
             }
 
+            let Some(matching_engine) = ctx.matching_engines.get(&instrument_id) else {
+                self.log_calculation_failure(
+                    instrument_id,
+                    RolloverFailureKind::Engine,
+                    &format!("Cannot calculate rollover for {instrument_id}: no matching engine"),
+                );
+                return RolloverCalculationOutcome::Retry;
+            };
+            let book = matching_engine.get_book();
+            let mid = if let Some(mid) = book.midpoint() {
+                mid
+            } else if let Some(price) = book.best_bid_price() {
+                price.as_f64()
+            } else if let Some(price) = book.best_ask_price() {
+                price.as_f64()
+            } else {
+                self.log_calculation_failure(
+                    instrument_id,
+                    RolloverFailureKind::Price,
+                    &format!("Cannot calculate rollover for {instrument_id}: no market price"),
+                );
+                return RolloverCalculationOutcome::Retry;
+            };
+
             let interest_rate = match self.calculator.calc_overnight_rate(instrument_id, date) {
                 Ok(rate) => rate,
                 Err(e) => {
-                    log::warn!("Skipping rollover for {instrument_id}: {e}");
-                    continue;
+                    self.log_calculation_failure(
+                        instrument_id,
+                        RolloverFailureKind::Rate,
+                        &format!("Cannot calculate rollover for {instrument_id}: {e}"),
+                    );
+                    return RolloverCalculationOutcome::Retry;
                 }
             };
 
@@ -256,30 +302,33 @@ impl FXRolloverInterestModule {
                 rollover *= 3.0;
             }
 
-            let instrument = &ctx.instruments[&instrument_id];
             let currency = if let Some(base) = ctx.base_currency {
                 // Rollover math is still f64; convert the Decimal rate at the boundary
-                let xrate = ctx
+                let Some(xrate) = ctx
                     .cache
                     .get_xrate(ctx.venue, instrument.quote_currency(), base, PriceType::Mid)
                     .and_then(|rate| rate.to_f64())
-                    .unwrap_or(0.0);
+                else {
+                    self.log_calculation_failure(
+                        instrument_id,
+                        RolloverFailureKind::Xrate,
+                        &format!(
+                            "Cannot calculate rollover for {instrument_id}: no exchange rate from {} to {base}",
+                            instrument.quote_currency()
+                        ),
+                    );
+                    return RolloverCalculationOutcome::Retry;
+                };
                 rollover *= xrate;
                 base
             } else {
                 instrument.quote_currency()
             };
 
-            {
-                let mut totals = self.rollover_totals.borrow_mut();
-                let total = totals.entry(currency).or_insert(0.0);
-                *total += rollover;
-            }
-
             adjustments.push(Money::new(rollover, currency));
         }
 
-        adjustments
+        RolloverCalculationOutcome::Completed(adjustments)
     }
 }
 
@@ -289,11 +338,12 @@ impl SimulationModule for FXRolloverInterestModule {
     fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> Vec<Money> {
         let utc_dt = nanos_to_utc_datetime(ts_now);
         let eastern_dt = Eastern.from_utc_datetime(&utc_dt);
-        let eastern_day = eastern_dt.ordinal();
+        let eastern_date = eastern_dt.date_naive();
 
-        if self.day_number.get() != eastern_day {
-            self.day_number.set(eastern_day);
+        if self.rollover_date.get() != Some(eastern_date) {
+            self.rollover_date.set(Some(eastern_date));
             self.rollover_applied.set(false);
+            self.warned_failures.borrow_mut().clear();
 
             let rollover_eastern = eastern_dt
                 .date_naive()
@@ -313,8 +363,19 @@ impl SimulationModule for FXRolloverInterestModule {
 
         if !self.rollover_applied.get() && ts_now.as_u64() >= self.rollover_time_ns.get() {
             let iso_weekday = eastern_dt.weekday().number_from_monday();
-            self.rollover_applied.set(true);
-            return self.apply_rollover_interest(eastern_dt.date_naive(), iso_weekday, ctx);
+
+            if let RolloverCalculationOutcome::Completed(adjustments) =
+                self.calculate_rollover_interest(eastern_date, iso_weekday, ctx)
+            {
+                let mut totals = self.rollover_totals.borrow_mut();
+                for adjustment in &adjustments {
+                    let total = totals.entry(adjustment.currency).or_insert(0.0);
+                    *total += adjustment.as_f64();
+                }
+                self.rollover_applied.set(true);
+                self.warned_failures.borrow_mut().clear();
+                return adjustments;
+            }
         }
 
         Vec::new()
@@ -335,8 +396,9 @@ impl SimulationModule for FXRolloverInterestModule {
     fn reset(&self) {
         self.rollover_time_ns.set(0);
         self.rollover_applied.set(false);
-        self.day_number.set(0);
+        self.rollover_date.set(None);
         self.rollover_totals.borrow_mut().clear();
+        self.warned_failures.borrow_mut().clear();
     }
 }
 
@@ -441,7 +503,9 @@ mod tests {
     #[rstest]
     fn test_module_reset() {
         let module = FXRolloverInterestModule::new(sample_records());
-        module.day_number.set(15);
+        module
+            .rollover_date
+            .set(NaiveDate::from_ymd_opt(2020, 1, 15));
         module.rollover_applied.set(true);
         module
             .rollover_totals
@@ -450,7 +514,7 @@ mod tests {
 
         module.reset();
 
-        assert_eq!(module.day_number.get(), 0);
+        assert_eq!(module.rollover_date.get(), None);
         assert!(!module.rollover_applied.get());
         assert!(module.rollover_totals.borrow().is_empty());
     }

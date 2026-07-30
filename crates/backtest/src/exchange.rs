@@ -1440,6 +1440,7 @@ impl SimulatedExchange {
         self.funding_settled_through.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
+        self.inflight_counter.clear();
 
         log::info!("Resetting exchange state");
     }
@@ -1561,8 +1562,6 @@ impl SimulatedExchange {
                     currency,
                 );
             }
-
-            break;
         }
     }
 
@@ -1773,13 +1772,17 @@ impl SimulatedExchange {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::execution::{QueryAccount, QueryOrder};
+    use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
     use nautilus_execution::models::latency::StaticLatencyModel;
     use nautilus_model::{
-        enums::{AccountType, BookType},
+        accounts::MarginAccount,
+        enums::{AccountType, BookType, OrderSide, OrderType},
+        events::AccountState,
         identifiers::{ClientOrderId, StrategyId, TraderId},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         stubs::TestDefault,
+        types::AccountBalance,
     };
     use rstest::rstest;
 
@@ -1888,5 +1891,74 @@ mod tests {
         assert!(exchange.instruments.is_empty());
         assert!(exchange.matching_engines.is_empty());
         assert_eq!(exchange.last_raw_id, u32::MAX);
+    }
+
+    #[rstest]
+    fn test_reset_clears_inflight_counter() {
+        let mut exchange = setup_exchange(Dispatch::Latency);
+        let account = MarginAccount::new(
+            AccountState::new(
+                AccountId::test_default(),
+                AccountType::Margin,
+                vec![AccountBalance::new(
+                    Money::from("1000 USD"),
+                    Money::from("0 USD"),
+                    Money::from("1000 USD"),
+                )],
+                vec![],
+                false,
+                UUID4::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            false,
+        );
+        exchange
+            .cache
+            .borrow_mut()
+            .add_account(AccountAny::Margin(account))
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .client_order_id(ClientOrderId::from("O-RESET"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("1.00000"))
+            .build();
+        exchange
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        exchange
+            .cache
+            .borrow_mut()
+            .update_order(&TestOrderEventStubs::submitted(
+                &order,
+                AccountId::test_default(),
+            ))
+            .unwrap();
+        exchange.send(TradingCommand::SubmitOrder(SubmitOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::from(100),
+            None,
+        )));
+
+        assert_eq!(exchange.inflight_counter.len(), 1);
+
+        exchange.reset();
+
+        assert!(exchange.inflight_counter.is_empty());
     }
 }
