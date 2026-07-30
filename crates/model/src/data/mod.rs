@@ -44,7 +44,10 @@ use std::{
 };
 
 use nautilus_core::{Params, UnixNanos};
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor},
+};
 use serde_json::Value as JsonValue;
 
 #[cfg(feature = "defi")]
@@ -612,7 +615,7 @@ fn params_to_topic_suffix(params: &Params) -> String {
 }
 
 /// Represents a data type including metadata.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
@@ -627,6 +630,141 @@ pub struct DataType {
     topic: String,
     hash: u64,
     identifier: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for DataType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &["type_name", "metadata", "topic", "hash", "identifier"];
+
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            TypeName,
+            Metadata,
+            Topic,
+            Hash,
+            Identifier,
+            #[serde(other)]
+            Other,
+        }
+
+        fn finish(
+            type_name: &str,
+            metadata: Option<Params>,
+            topic: Option<String>,
+            identifier: Option<String>,
+        ) -> DataType {
+            let mut data_type = DataType::new(type_name, metadata, identifier);
+
+            if let Some(topic) = topic {
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                topic.hash(&mut hasher);
+                data_type.topic = topic;
+                data_type.hash = hasher.finish();
+            }
+
+            data_type
+        }
+
+        struct DataTypeVisitor;
+
+        impl<'de> Visitor<'de> for DataTypeVisitor {
+            type Value = DataType;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct DataType")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let type_name: String = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                // A non-empty Params cannot be decoded here by a non-self-describing format:
+                // it stores serde_json::Value, whose Deserialize requires deserialize_any.
+                // That is a pre-existing Params limitation, not one this path introduces.
+                let metadata = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let topic = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let _hash: u64 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                let identifier = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+
+                Ok(finish(&type_name, metadata, Some(topic), identifier))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut type_name: Option<String> = None;
+                let mut metadata = None;
+                let mut topic = None;
+                let mut hash_seen = false;
+                let mut identifier = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::TypeName => {
+                            if type_name.is_some() {
+                                return Err(de::Error::duplicate_field("type_name"));
+                            }
+                            type_name = Some(map.next_value()?);
+                        }
+                        Field::Metadata => {
+                            if metadata.is_some() {
+                                return Err(de::Error::duplicate_field("metadata"));
+                            }
+                            metadata = Some(map.next_value()?);
+                        }
+                        Field::Topic => {
+                            if topic.is_some() {
+                                return Err(de::Error::duplicate_field("topic"));
+                            }
+                            topic = Some(map.next_value()?);
+                        }
+                        Field::Hash => {
+                            if hash_seen {
+                                return Err(de::Error::duplicate_field("hash"));
+                            }
+                            hash_seen = true;
+                            let _: Option<u64> = map.next_value()?;
+                        }
+                        Field::Identifier => {
+                            if identifier.is_some() {
+                                return Err(de::Error::duplicate_field("identifier"));
+                            }
+                            identifier = Some(map.next_value()?);
+                        }
+                        Field::Other => {
+                            let _: IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                let type_name = type_name.ok_or_else(|| de::Error::missing_field("type_name"))?;
+                Ok(finish(
+                    &type_name,
+                    metadata.unwrap_or(None),
+                    topic.unwrap_or(None),
+                    identifier.unwrap_or(None),
+                ))
+            }
+        }
+
+        deserializer.deserialize_struct("DataType", FIELDS, DataTypeVisitor)
+    }
 }
 
 impl DataType {
@@ -918,6 +1056,12 @@ mod tests {
         serde_json::from_value(value).expect("valid Params JSON")
     }
 
+    fn hash_data_type(data_type: &DataType) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        data_type.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[cfg(feature = "ffi")]
     #[rstest]
     fn test_funding_rate_update_does_not_convert_to_data_ffi() {
@@ -1038,6 +1182,171 @@ mod tests {
     }
 
     #[rstest]
+    fn test_data_type_deserialization_recomputes_hash_from_topic() {
+        let expected = DataType::from_parts(
+            "ExampleType",
+            "custom.topic",
+            Some(params_from_json(json!({"key": "value"}))),
+        );
+        let payload = json!({
+            "type_name": expected.type_name(),
+            "metadata": expected.metadata(),
+            "topic": expected.topic(),
+            "hash": expected.precomputed_hash() ^ u64::MAX,
+            "identifier": "catalog/path",
+        });
+
+        let deserialized: DataType = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(deserialized.topic(), expected.topic());
+        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
+    }
+
+    #[rstest]
+    fn test_data_type_deserialization_without_cache_fields_uses_constructor() {
+        let payload = json!({
+            "type_name": "ExampleType",
+            "metadata": {"z": 9, "a": 1},
+            "identifier": "catalog/path",
+        });
+        let expected = DataType::new(
+            "ExampleType",
+            Some(params_from_json(json!({"z": 9, "a": 1}))),
+            Some("catalog/path".to_string()),
+        );
+
+        let deserialized: DataType = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(deserialized.topic(), expected.topic());
+        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
+    }
+
+    #[rstest]
+    fn test_data_type_deserialization_preserves_topic_without_hash() {
+        let expected = DataType::from_parts("ExampleType", "custom.topic", None);
+        let payload = json!({
+            "type_name": "ExampleType",
+            "metadata": null,
+            "topic": "custom.topic",
+        });
+
+        let deserialized: DataType = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(deserialized.topic(), "custom.topic");
+        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
+    }
+
+    #[rstest]
+    fn test_data_type_deserialization_ignores_hash_without_topic() {
+        let expected = DataType::new("ExampleType", None, None);
+        let payload = json!({
+            "type_name": "ExampleType",
+            "metadata": null,
+            "hash": expected.precomputed_hash() ^ u64::MAX,
+        });
+
+        let deserialized: DataType = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(deserialized.topic(), expected.topic());
+        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
+    }
+
+    #[rstest]
+    fn test_data_type_deserialization_rejects_duplicate_map_key() {
+        let payload = r#"{"type_name":"ExampleType","topic":"first","topic":"second"}"#;
+
+        let error = serde_json::from_str::<DataType>(payload).unwrap_err();
+
+        assert!(error.to_string().contains("duplicate field `topic`"));
+    }
+
+    #[rstest]
+    #[case(
+        r#"{"type_name":"ExampleType","topic":null,"topic":"second"}"#,
+        "duplicate field `topic`"
+    )]
+    #[case(
+        r#"{"type_name":"ExampleType","hash":null,"hash":7}"#,
+        "duplicate field `hash`"
+    )]
+    #[case(
+        r#"{"type_name":"ExampleType","metadata":null,"metadata":{"a":1}}"#,
+        "duplicate field `metadata`"
+    )]
+    #[case(
+        r#"{"type_name":"ExampleType","identifier":null,"identifier":"second"}"#,
+        "duplicate field `identifier`"
+    )]
+    fn test_data_type_deserialization_rejects_duplicate_map_key_after_null(
+        #[case] payload: &str,
+        #[case] expected: &str,
+    ) {
+        // A null first occurrence must still count as "seen". A plain Option slot could not
+        // tell an absent key from an explicit null, and would silently accept the duplicate.
+        let error = serde_json::from_str::<DataType>(payload).unwrap_err();
+
+        assert!(error.to_string().contains(expected));
+    }
+
+    #[rstest]
+    fn test_data_type_serde_roundtrip_preserves_fields_and_repairs_hash() {
+        let expected = DataType::from_parts(
+            "ExampleType",
+            "custom.topic",
+            Some(params_from_json(json!({"key": "value"}))),
+        );
+        let payload = json!({
+            "type_name": expected.type_name(),
+            "metadata": expected.metadata(),
+            "topic": expected.topic(),
+            "hash": expected.precomputed_hash() ^ u64::MAX,
+            "identifier": "catalog/path",
+        });
+        let deserialized: DataType = serde_json::from_value(payload).unwrap();
+
+        let json = serde_json::to_string(&deserialized).unwrap();
+        let roundtripped: DataType = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtripped.type_name(), "ExampleType");
+        assert_eq!(roundtripped.metadata(), expected.metadata());
+        assert_eq!(roundtripped.identifier(), Some("catalog/path"));
+        assert_eq!(roundtripped.topic(), "custom.topic");
+        assert_eq!(roundtripped.precomputed_hash(), expected.precomputed_hash());
+    }
+
+    #[rstest]
+    fn test_data_type_serialized_cache_fields_remain_wire_compatible() {
+        #[derive(Deserialize)]
+        struct LegacyDataType {
+            type_name: String,
+            metadata: Option<Params>,
+            topic: String,
+            hash: u64,
+            identifier: Option<String>,
+        }
+
+        let expected = DataType::new(
+            "ExampleType",
+            Some(params_from_json(json!({"key": "value"}))),
+            Some("catalog/path".to_string()),
+        );
+        let mut payload = serde_json::to_value(&expected).unwrap();
+        payload["hash"] = json!(expected.precomputed_hash() ^ u64::MAX);
+        let repaired: DataType = serde_json::from_value(payload).unwrap();
+
+        let serialized = serde_json::to_value(&repaired).unwrap();
+        assert!(serialized.get("topic").is_some());
+        assert!(serialized.get("hash").is_some());
+
+        let legacy: LegacyDataType = serde_json::from_value(serialized).unwrap();
+        assert_eq!(legacy.type_name, expected.type_name());
+        assert_eq!(legacy.metadata.as_ref(), expected.metadata());
+        assert_eq!(legacy.topic, expected.topic());
+        assert_eq!(legacy.hash, expected.precomputed_hash());
+        assert_eq!(legacy.identifier.as_deref(), expected.identifier());
+    }
+
+    #[rstest]
     fn test_data_type_display() {
         let metadata = Some(params_from_json(json!({"key1": "value1"})));
         let data_type = DataType::new("ExampleType", metadata, None);
@@ -1139,6 +1448,30 @@ mod tests {
         let restored = DataType::from_persistence_json(json).unwrap();
 
         assert_eq!(restored.topic(), "ExampleType.a=1.z=9");
+    }
+
+    #[rstest]
+    fn test_data_type_persistence_result_hashes_like_equal_deserialized_value() {
+        let persistence_json = r#"{
+            "type_name": "ExampleType",
+            "topic": "ignored.legacy.topic",
+            "metadata": {"z": 9, "a": 1},
+            "identifier": "catalog/path"
+        }"#;
+        let persisted = DataType::from_persistence_json(persistence_json).unwrap();
+        let payload = json!({
+            "type_name": persisted.type_name(),
+            "metadata": persisted.metadata(),
+            "topic": persisted.topic(),
+            "hash": persisted.precomputed_hash() ^ u64::MAX,
+            "identifier": persisted.identifier(),
+        });
+        let deserialized: DataType = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(persisted.topic(), "ExampleType.a=1.z=9");
+        assert_eq!(persisted.identifier(), Some("catalog/path"));
+        assert_eq!(deserialized, persisted);
+        assert_eq!(hash_data_type(&deserialized), hash_data_type(&persisted));
     }
 
     #[rstest]

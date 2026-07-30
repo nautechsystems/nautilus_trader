@@ -415,6 +415,8 @@ pub fn get_rust_extractor(type_name: &str) -> Option<PyExtractor> {
 
 #[cfg(test)]
 mod tests {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
     use nautilus_core::UnixNanos;
     use rstest::rstest;
     use serde::{Deserialize, Serialize};
@@ -542,6 +544,50 @@ mod tests {
                 assert_eq!(a.data.ts_init(), b.data.ts_init());
             }
             _ => panic!("expected Custom variant"),
+        }
+    }
+
+    #[rstest]
+    fn data_type_registry_result_hashes_like_equal_values_from_all_routes() {
+        fn hash_data_type(data_type: &DataType) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            data_type.hash(&mut hasher);
+            hasher.finish()
+        }
+
+        let metadata = serde_json::json!({"key": "value"});
+        let constructed = DataType::new(
+            "ExampleType",
+            Some(serde_json::from_value(metadata.clone()).unwrap()),
+            Some("catalog/path".to_string()),
+        );
+        let persistence_json = serde_json::json!({
+            "type_name": constructed.type_name(),
+            "metadata": metadata,
+            "identifier": constructed.identifier(),
+        });
+        let persisted = DataType::from_persistence_json(&persistence_json.to_string()).unwrap();
+        let registry_envelope = serde_json::json!({"data_type": persistence_json});
+        let registered = parse_data_type_from_value(&registry_envelope).unwrap();
+        let deserialization_payload = serde_json::json!({
+            "type_name": constructed.type_name(),
+            "metadata": constructed.metadata(),
+            "topic": constructed.topic(),
+            "hash": constructed.precomputed_hash() ^ u64::MAX,
+            "identifier": constructed.identifier(),
+        });
+        let deserialized: DataType = serde_json::from_value(deserialization_payload).unwrap();
+
+        // Eq and Hash both observe `topic` alone, so they cannot detect a route that drops or
+        // rewrites the other fields. Assert those explicitly as well, or a registry regression
+        // that lost `identifier` would still satisfy this test.
+        for data_type in [&deserialized, &persisted, &registered] {
+            assert_eq!(data_type, &constructed);
+            assert_eq!(hash_data_type(data_type), hash_data_type(&constructed));
+            assert_eq!(data_type.type_name(), constructed.type_name());
+            assert_eq!(data_type.metadata(), constructed.metadata());
+            assert_eq!(data_type.identifier(), constructed.identifier());
+            assert_eq!(data_type.topic(), constructed.topic());
         }
     }
 
