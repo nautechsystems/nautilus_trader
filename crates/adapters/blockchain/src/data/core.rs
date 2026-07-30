@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use anyhow::Context;
@@ -34,7 +34,7 @@ use nautilus_model::defi::{
 use nautilus_network::websocket::TransportBackend;
 
 use crate::{
-    cache::BlockchainCache,
+    cache::{BlockchainCache, PoolEventSyncState},
     config::BlockchainDataClientConfig,
     contracts::{
         erc20::Erc20Contract,
@@ -65,8 +65,25 @@ use crate::{
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
 const POOL_EVENT_BLOCK_BATCH_SIZE: usize = 20_000;
+const POOL_EVENT_SYNC_VERSION_LEGACY: u32 = 0;
+const POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE: u32 = 1;
+// Give each added family a new introduction version, then advance this current version
+const POOL_EVENT_SYNC_VERSION: u32 = POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE;
 // Block-scoped RPC snapshots include the whole block, so same-block replay must skip every log.
 const BLOCK_SCOPED_SNAPSHOT_INDEX: u32 = i32::MAX as u32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PoolEventFamily {
+    name: &'static str,
+    signature: String,
+    introduced_version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PoolEventSyncRange {
+    from_block: u64,
+    families: Vec<PoolEventFamily>,
+}
 
 /// Core blockchain data client responsible for fetching, processing, and caching blockchain data.
 ///
@@ -466,16 +483,14 @@ impl BlockchainDataClientCore {
         // Extract address for blockchain queries
         let pool_address = &pool.address;
 
-        let (last_synced_block, effective_from_block) = if reset {
-            (None, from_block)
+        let dex_extended = self.get_dex_extended(dex)?.clone();
+        let event_families = Self::pool_event_families(&dex_extended);
+        let sync_state = if reset {
+            PoolEventSyncState::default()
         } else {
-            let last_synced_block = self
-                .cache
-                .get_pool_last_synced_block(dex, &pool_identifier)
-                .await?;
-            let effective_from_block = last_synced_block
-                .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
-            (last_synced_block, effective_from_block)
+            self.cache
+                .get_pool_event_sync_state(dex, &pool_identifier)
+                .await?
         };
 
         let to_block = match to_block {
@@ -483,16 +498,65 @@ impl BlockchainDataClientCore {
             None => self.hypersync_client.current_block().await,
         };
 
-        // Skip sync if we're already up to date
-        if effective_from_block > to_block {
+        if from_block > to_block {
             log::debug!(
-                "D {} already synced to block {} (current: {}), skipping sync",
+                "D {} Pool '{}' requested event range {} to {} is empty, skipping sync",
                 dex,
-                last_synced_block.unwrap_or(0).separate_with_commas(),
-                to_block.separate_with_commas()
+                pool_display,
+                from_block.separate_with_commas(),
+                to_block.separate_with_commas(),
             );
             return Ok(());
         }
+
+        let sync_ranges =
+            Self::pool_event_sync_ranges(&event_families, &sync_state, from_block, to_block);
+        let inherited_event_family_names = event_families
+            .iter()
+            .filter(|family| {
+                sync_state.version == POOL_EVENT_SYNC_VERSION_LEGACY
+                    && family.introduced_version == POOL_EVENT_SYNC_VERSION_LEGACY
+                    && !sync_state
+                        .family_blocks
+                        .iter()
+                        .any(|(name, _)| name == family.name)
+            })
+            .map(|family| family.name)
+            .collect::<Vec<_>>();
+
+        let Some(sync_range) = sync_ranges.first().cloned() else {
+            if sync_state.version < POOL_EVENT_SYNC_VERSION {
+                if let Some(last_full_sync_block) = sync_state.last_full_sync_block {
+                    self.cache
+                        .update_pool_event_sync(
+                            dex,
+                            &pool_identifier,
+                            &inherited_event_family_names,
+                            last_full_sync_block,
+                            None,
+                        )
+                        .await?;
+                }
+                self.cache
+                    .update_pool_event_sync(
+                        dex,
+                        &pool_identifier,
+                        &[],
+                        to_block,
+                        Some(POOL_EVENT_SYNC_VERSION),
+                    )
+                    .await?;
+            }
+
+            log::debug!(
+                "D {} Pool '{}' event families already synced to block {}, skipping sync",
+                dex,
+                pool_display,
+                to_block.separate_with_commas()
+            );
+            return Ok(());
+        };
+        let has_more_ranges = sync_ranges.len() > 1;
 
         // Query table max blocks to detect last blocks to use batch insert before that, then COPY command.
         let last_block_across_pool_events_table = self
@@ -500,21 +564,20 @@ impl BlockchainDataClientCore {
             .get_pool_event_tables_last_block(&pool_identifier)
             .await?;
 
+        let effective_from_block = sync_range.from_block;
+        let event_family_names = sync_range
+            .families
+            .iter()
+            .map(|family| family.name)
+            .collect::<Vec<_>>();
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
         log::debug!(
-            "Syncing Pool: '{}' events from {} to {} (total: {} blocks){}",
+            "Syncing Pool: '{}' event families {:?} from {} to {} (total: {} blocks)",
             pool_display,
+            event_family_names,
             effective_from_block.separate_with_commas(),
             to_block.separate_with_commas(),
             total_blocks.separate_with_commas(),
-            if let Some(last_synced) = last_synced_block {
-                format!(
-                    " - resuming from last synced block {}",
-                    last_synced.separate_with_commas()
-                )
-            } else {
-                String::new()
-            }
         );
 
         let mut metrics = BlockchainSyncReporter::new(
@@ -523,7 +586,6 @@ impl BlockchainDataClientCore {
             total_blocks,
             BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
-        let dex_extended = self.get_dex_extended(dex)?.clone();
         let swap_event_signature = dex_extended.swap_created_event.as_ref();
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
@@ -564,28 +626,11 @@ impl BlockchainDataClientCore {
         let initialize_sig_bytes = initialize_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
-        let mut event_signatures = vec![
-            swap_event_signature,
-            mint_event_signature,
-            burn_event_signature,
-            collect_event_signature,
-        ];
-
-        if let Some(event) = dex_extended.initialize_event.as_ref() {
-            event_signatures.push(event);
-        }
-
-        if let Some(event) = dex_extended.fee_protocol_update_event.as_ref() {
-            event_signatures.push(event);
-        }
-
-        if let Some(event) = dex_extended.fee_protocol_collect_event.as_ref() {
-            event_signatures.push(event);
-        }
-
-        if let Some(event) = dex_extended.flash_created_event.as_ref() {
-            event_signatures.push(event);
-        }
+        let event_signatures = sync_range
+            .families
+            .iter()
+            .map(|family| family.signature.as_str())
+            .collect();
 
         let pool_events_stream = self
             .hypersync_client
@@ -781,7 +826,13 @@ impl BlockchainDataClientCore {
                     Self::completed_pool_event_checkpoint(block_number, effective_from_block)
                 {
                     self.cache
-                        .update_pool_last_synced_block(dex, &pool_identifier, checkpoint_block)
+                        .update_pool_event_sync(
+                            dex,
+                            &pool_identifier,
+                            &event_family_names,
+                            checkpoint_block,
+                            None,
+                        )
                         .await?;
                 }
             }
@@ -803,20 +854,158 @@ impl BlockchainDataClientCore {
 
         metrics.log_final_stats();
         self.cache
-            .update_pool_last_synced_block(dex, &pool_identifier, to_block)
+            .update_pool_event_sync(
+                dex,
+                &pool_identifier,
+                &event_family_names,
+                to_block,
+                None,
+            )
             .await?;
 
         log::debug!(
-            "Successfully synced Dex '{}' Pool '{}' up to block {}",
+            "Successfully synced Dex '{}' Pool '{}' event families {:?} up to block {}",
             dex,
             pool_display,
+            event_family_names,
             to_block.separate_with_commas()
         );
                 Ok(())
             } => result
         };
 
-        sync_result
+        sync_result?;
+
+        if has_more_ranges {
+            return Box::pin(self.sync_pool_events(
+                dex,
+                pool_identifier,
+                Some(from_block),
+                Some(to_block),
+                false,
+            ))
+            .await;
+        }
+
+        if let Some(last_full_sync_block) = sync_state.last_full_sync_block {
+            self.cache
+                .update_pool_event_sync(
+                    dex,
+                    &pool_identifier,
+                    &inherited_event_family_names,
+                    last_full_sync_block,
+                    None,
+                )
+                .await?;
+        }
+        self.cache
+            .update_pool_event_sync(
+                dex,
+                &pool_identifier,
+                &[],
+                to_block,
+                Some(POOL_EVENT_SYNC_VERSION),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    fn pool_event_families(dex: &DexExtended) -> Vec<PoolEventFamily> {
+        let mut families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: dex.swap_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+            PoolEventFamily {
+                name: "mint",
+                signature: dex.mint_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+            PoolEventFamily {
+                name: "burn",
+                signature: dex.burn_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+            PoolEventFamily {
+                name: "collect",
+                signature: dex.collect_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+        ];
+
+        if let Some(signature) = &dex.initialize_event {
+            families.push(PoolEventFamily {
+                name: "initialize",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            });
+        }
+
+        if let Some(signature) = &dex.flash_created_event {
+            families.push(PoolEventFamily {
+                name: "flash",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            });
+        }
+
+        if let Some(signature) = &dex.fee_protocol_update_event {
+            families.push(PoolEventFamily {
+                name: "fee_protocol_update",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE,
+            });
+        }
+
+        if let Some(signature) = &dex.fee_protocol_collect_event {
+            families.push(PoolEventFamily {
+                name: "fee_protocol_collect",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE,
+            });
+        }
+
+        families
+    }
+
+    fn pool_event_sync_ranges(
+        families: &[PoolEventFamily],
+        state: &PoolEventSyncState,
+        from_block: u64,
+        to_block: u64,
+    ) -> Vec<PoolEventSyncRange> {
+        let mut grouped = BTreeMap::<u64, Vec<PoolEventFamily>>::new();
+
+        for family in families {
+            let explicit_checkpoint = state
+                .family_blocks
+                .iter()
+                .find_map(|(name, block)| (name == family.name).then_some(*block));
+            let legacy_checkpoint = (state.version == POOL_EVENT_SYNC_VERSION_LEGACY
+                && family.introduced_version == POOL_EVENT_SYNC_VERSION_LEGACY)
+                .then_some(state.last_full_sync_block)
+                .flatten();
+            let family_from_block = explicit_checkpoint
+                .or(legacy_checkpoint)
+                .map_or(from_block, |block| max(from_block, block.saturating_add(1)));
+
+            if family_from_block <= to_block {
+                grouped
+                    .entry(family_from_block)
+                    .or_default()
+                    .push(family.clone());
+            }
+        }
+
+        grouped
+            .into_iter()
+            .map(|(from_block, families)| PoolEventSyncRange {
+                from_block,
+                families,
+            })
+            .collect()
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -2443,6 +2632,125 @@ mod tests {
         );
 
         assert_eq!(checkpoint, expected);
+    }
+
+    #[rstest]
+    fn pool_event_sync_ranges_preserve_legacy_history_during_new_family_backfill() {
+        let families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: "swap".to_string(),
+                introduced_version: 0,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_update",
+                signature: "fee_protocol_update".to_string(),
+                introduced_version: 1,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_collect",
+                signature: "fee_protocol_collect".to_string(),
+                introduced_version: 1,
+            },
+        ];
+        let state = PoolEventSyncState {
+            version: 0,
+            last_full_sync_block: Some(100),
+            family_blocks: Vec::new(),
+        };
+
+        let ranges = BlockchainDataClientCore::pool_event_sync_ranges(&families, &state, 10, 110);
+
+        assert_eq!(
+            ranges,
+            vec![
+                PoolEventSyncRange {
+                    from_block: 10,
+                    families: vec![families[1].clone(), families[2].clone()],
+                },
+                PoolEventSyncRange {
+                    from_block: 101,
+                    families: vec![families[0].clone()],
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn pool_event_sync_ranges_group_families_by_checkpoint() {
+        let families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: "swap".to_string(),
+                introduced_version: 0,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_update",
+                signature: "fee_protocol_update".to_string(),
+                introduced_version: 1,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_collect",
+                signature: "fee_protocol_collect".to_string(),
+                introduced_version: 1,
+            },
+        ];
+        let state = PoolEventSyncState {
+            version: 1,
+            last_full_sync_block: Some(100),
+            family_blocks: vec![
+                ("fee_protocol_collect".to_string(), 75),
+                ("fee_protocol_update".to_string(), 50),
+                ("swap".to_string(), 100),
+            ],
+        };
+
+        let ranges = BlockchainDataClientCore::pool_event_sync_ranges(&families, &state, 10, 100);
+
+        assert_eq!(
+            ranges,
+            vec![
+                PoolEventSyncRange {
+                    from_block: 51,
+                    families: vec![families[1].clone()],
+                },
+                PoolEventSyncRange {
+                    from_block: 76,
+                    families: vec![families[2].clone()],
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn pool_event_sync_ranges_backfill_future_family_without_schema_migration() {
+        let families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: "swap".to_string(),
+                introduced_version: 0,
+            },
+            PoolEventFamily {
+                name: "future",
+                signature: "future".to_string(),
+                introduced_version: 2,
+            },
+        ];
+        let state = PoolEventSyncState {
+            version: 1,
+            last_full_sync_block: Some(100),
+            family_blocks: vec![("swap".to_string(), 100)],
+        };
+
+        let ranges = BlockchainDataClientCore::pool_event_sync_ranges(&families, &state, 10, 100);
+
+        assert_eq!(
+            ranges,
+            vec![PoolEventSyncRange {
+                from_block: 10,
+                families: vec![families[1].clone()],
+            }]
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

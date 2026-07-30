@@ -39,6 +39,7 @@ use sqlx::{AssertSqlSafe, PgPool, Row, postgres::PgConnectOptions};
 
 use crate::{
     cache::{
+        PoolEventSyncState,
         consistency::CachedBlocksConsistencyStatus,
         copy::PostgresCopyHandler,
         rows::{
@@ -1292,6 +1293,125 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to get pool last synced block: {e}"))?;
 
         Ok(result.and_then(|(block_number,)| block_number.map(|b| b as u64)))
+    }
+
+    pub(crate) async fn get_pool_event_sync_state(
+        &self,
+        chain_id: u32,
+        dex: &DexType,
+        pool_identifier: &PoolIdentifier,
+    ) -> anyhow::Result<PoolEventSyncState> {
+        let pool_state = sqlx::query_as::<_, (i32, Option<i64>)>(
+            "
+            SELECT event_sync_version, last_full_sync_block_number
+            FROM pool
+            WHERE chain_id = $1
+            AND dex_name = $2
+            AND pool_identifier = $3
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(dex.to_string())
+        .bind(pool_identifier.as_ref())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get pool event sync state: {e}"))?;
+
+        let Some((version, last_full_sync_block)) = pool_state else {
+            return Ok(PoolEventSyncState::default());
+        };
+
+        let family_blocks = sqlx::query_as::<_, (String, i64)>(
+            "
+            SELECT event_family, last_full_sync_block_number
+            FROM pool_event_sync
+            WHERE chain_id = $1
+            AND dex_name = $2
+            AND pool_identifier = $3
+            ORDER BY event_family
+            ",
+        )
+        .bind(chain_id as i32)
+        .bind(dex.to_string())
+        .bind(pool_identifier.as_ref())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get pool event-family checkpoints: {e}"))?
+        .into_iter()
+        .map(|(family, block)| (family, block as u64))
+        .collect();
+
+        Ok(PoolEventSyncState {
+            version: version as u32,
+            last_full_sync_block: last_full_sync_block.map(|block| block as u64),
+            family_blocks,
+        })
+    }
+
+    pub(crate) async fn update_pool_event_sync(
+        &self,
+        chain_id: u32,
+        dex: &DexType,
+        pool_identifier: &PoolIdentifier,
+        event_families: &[&str],
+        block_number: u64,
+        version: Option<u32>,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await?;
+
+        for event_family in event_families {
+            sqlx::query(
+                "
+                INSERT INTO pool_event_sync (
+                    chain_id, dex_name, pool_identifier, event_family,
+                    last_full_sync_block_number
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (chain_id, dex_name, pool_identifier, event_family)
+                DO UPDATE SET last_full_sync_block_number =
+                    GREATEST(
+                        pool_event_sync.last_full_sync_block_number,
+                        EXCLUDED.last_full_sync_block_number
+                    )
+                ",
+            )
+            .bind(chain_id as i32)
+            .bind(dex.to_string())
+            .bind(pool_identifier.as_ref())
+            .bind(event_family)
+            .bind(block_number as i64)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to update {event_family} pool event-family checkpoint: {e}")
+            })?;
+        }
+
+        if let Some(version) = version {
+            sqlx::query(
+                "
+                UPDATE pool
+                SET
+                    event_sync_version = GREATEST(event_sync_version, $4),
+                    last_full_sync_block_number =
+                        GREATEST(COALESCE(last_full_sync_block_number, $5), $5)
+                WHERE chain_id = $1
+                AND dex_name = $2
+                AND pool_identifier = $3
+                ",
+            )
+            .bind(chain_id as i32)
+            .bind(dex.to_string())
+            .bind(pool_identifier.as_ref())
+            .bind(version as i32)
+            .bind(block_number as i64)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to finalize pool event sync progress: {e}"))?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
     }
 
     /// Retrieves the maximum block number from a specific table for a given pool.

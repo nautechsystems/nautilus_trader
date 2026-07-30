@@ -49,6 +49,13 @@ pub mod database;
 pub mod rows;
 pub mod types;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PoolEventSyncState {
+    pub version: u32,
+    pub last_full_sync_block: Option<u64>,
+    pub family_blocks: Vec<(String, u64)>,
+}
+
 /// Provides caching functionality for various blockchain domain objects.
 #[derive(Debug)]
 pub struct BlockchainCache {
@@ -958,6 +965,44 @@ impl BlockchainCache {
         }
     }
 
+    pub(crate) async fn get_pool_event_sync_state(
+        &self,
+        dex: &DexType,
+        pool_identifier: &PoolIdentifier,
+    ) -> anyhow::Result<PoolEventSyncState> {
+        if let Some(database) = &self.database {
+            database
+                .get_pool_event_sync_state(self.chain.chain_id, dex, pool_identifier)
+                .await
+        } else {
+            Ok(PoolEventSyncState::default())
+        }
+    }
+
+    pub(crate) async fn update_pool_event_sync(
+        &self,
+        dex: &DexType,
+        pool_identifier: &PoolIdentifier,
+        event_families: &[&str],
+        block_number: u64,
+        version: Option<u32>,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .update_pool_event_sync(
+                    self.chain.chain_id,
+                    dex,
+                    pool_identifier,
+                    event_families,
+                    block_number,
+                    version,
+                )
+                .await
+        } else {
+            Ok(())
+        }
+    }
+
     /// Retrieves the maximum block number across all pool event tables for a given pool.
     ///
     /// # Errors
@@ -1014,7 +1059,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use alloy::primitives::{U160, U256, address};
+    use alloy::primitives::{I256, U160, U256, address};
     use futures_util::TryStreamExt;
     use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
@@ -1327,6 +1372,201 @@ mod tests {
             }
             other => anyhow::bail!("unexpected stream events: {other:?}"),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[expect(clippy::panic_in_result_fn)]
+    async fn pre_upgrade_pool_event_cache_backfills_protocol_families_idempotently()
+    -> anyhow::Result<()> {
+        let Some(mut clean) = pool_event_sync_fixture().await? else {
+            return Ok(());
+        };
+        let Some(mut migrated) = pool_event_sync_fixture().await? else {
+            clean.cache.database = None;
+            clean.schema.cleanup().await?;
+            return Ok(());
+        };
+        let target_block = 13;
+        let event_families = [
+            "swap",
+            "mint",
+            "burn",
+            "collect",
+            "initialize",
+            "flash",
+            "fee_protocol_update",
+            "fee_protocol_collect",
+        ];
+        let blocks = [
+            test_block(11, UnixNanos::from(1_700_000_011_000_000_000)),
+            test_block(12, UnixNanos::from(1_700_000_012_000_000_000)),
+            test_block(13, UnixNanos::from(1_700_000_013_000_000_000)),
+        ];
+
+        for fixture in [&mut clean, &mut migrated] {
+            fixture
+                .database()
+                .add_pool_event_blocks_batch(fixture.chain.chain_id, &blocks)
+                .await?;
+            insert_pool_swap_event(
+                &fixture.schema.admin_pool,
+                &fixture.schema.name,
+                fixture.chain.chain_id,
+                &fixture.pool.pool_identifier,
+                11,
+            )
+            .await?;
+        }
+
+        let (update, collect) = protocol_fee_events(&clean);
+        clean
+            .database()
+            .add_pool_fee_protocol_updates_batch(
+                clean.chain.chain_id,
+                std::slice::from_ref(&update),
+            )
+            .await?;
+        clean
+            .database()
+            .add_pool_fee_protocol_collect_batch(
+                clean.chain.chain_id,
+                std::slice::from_ref(&collect),
+            )
+            .await?;
+        clean
+            .cache
+            .update_pool_event_sync(
+                &DexType::UniswapV3,
+                &clean.pool.pool_identifier,
+                &event_families,
+                target_block,
+                Some(1),
+            )
+            .await?;
+
+        migrated
+            .cache
+            .update_pool_last_synced_block(
+                &DexType::UniswapV3,
+                &migrated.pool.pool_identifier,
+                target_block,
+            )
+            .await?;
+        let pre_upgrade_state = migrated
+            .cache
+            .get_pool_event_sync_state(&DexType::UniswapV3, &migrated.pool.pool_identifier)
+            .await?;
+
+        migrated
+            .database()
+            .add_pool_fee_protocol_updates_batch(
+                migrated.chain.chain_id,
+                std::slice::from_ref(&update),
+            )
+            .await?;
+        migrated
+            .cache
+            .update_pool_event_sync(
+                &DexType::UniswapV3,
+                &migrated.pool.pool_identifier,
+                &["fee_protocol_update"],
+                12,
+                None,
+            )
+            .await?;
+        let interrupted_state = migrated
+            .cache
+            .get_pool_event_sync_state(&DexType::UniswapV3, &migrated.pool.pool_identifier)
+            .await?;
+
+        migrated
+            .database()
+            .add_pool_fee_protocol_updates_batch(
+                migrated.chain.chain_id,
+                std::slice::from_ref(&update),
+            )
+            .await?;
+        migrated
+            .database()
+            .add_pool_fee_protocol_collect_batch(
+                migrated.chain.chain_id,
+                std::slice::from_ref(&collect),
+            )
+            .await?;
+        migrated
+            .cache
+            .update_pool_event_sync(
+                &DexType::UniswapV3,
+                &migrated.pool.pool_identifier,
+                &["fee_protocol_update", "fee_protocol_collect"],
+                target_block,
+                None,
+            )
+            .await?;
+        migrated
+            .cache
+            .update_pool_event_sync(
+                &DexType::UniswapV3,
+                &migrated.pool.pool_identifier,
+                &event_families,
+                target_block,
+                Some(1),
+            )
+            .await?;
+
+        let final_state = migrated
+            .cache
+            .get_pool_event_sync_state(&DexType::UniswapV3, &migrated.pool.pool_identifier)
+            .await?;
+        let clean_events = clean.events(target_block).await?;
+        let migrated_events = migrated.events(target_block).await?;
+        let expected_events = vec![
+            DexPoolData::Swap(expected_swap(&clean)),
+            DexPoolData::FeeProtocolUpdate(update),
+            DexPoolData::FeeProtocolCollect(collect),
+        ];
+
+        clean.cache.database = None;
+        migrated.cache.database = None;
+        clean.schema.cleanup().await?;
+        migrated.schema.cleanup().await?;
+
+        assert_eq!(
+            pre_upgrade_state,
+            PoolEventSyncState {
+                version: 0,
+                last_full_sync_block: Some(target_block),
+                family_blocks: Vec::new(),
+            }
+        );
+        assert_eq!(
+            interrupted_state,
+            PoolEventSyncState {
+                version: 0,
+                last_full_sync_block: Some(target_block),
+                family_blocks: vec![("fee_protocol_update".to_string(), 12)],
+            }
+        );
+        assert_eq!(
+            final_state,
+            PoolEventSyncState {
+                version: 1,
+                last_full_sync_block: Some(target_block),
+                family_blocks: vec![
+                    ("burn".to_string(), target_block),
+                    ("collect".to_string(), target_block),
+                    ("fee_protocol_collect".to_string(), target_block),
+                    ("fee_protocol_update".to_string(), target_block),
+                    ("flash".to_string(), target_block),
+                    ("initialize".to_string(), target_block),
+                    ("mint".to_string(), target_block),
+                    ("swap".to_string(), target_block),
+                ],
+            }
+        );
+        assert_eq!(clean_events, expected_events);
+        assert_eq!(migrated_events, clean_events);
         Ok(())
     }
 
@@ -1875,6 +2115,132 @@ mod tests {
         Ok(())
     }
 
+    struct PoolEventSyncFixture {
+        cache: BlockchainCache,
+        schema: TestSchema,
+        chain: SharedChain,
+        dex: SharedDex,
+        pool: Pool,
+    }
+
+    impl PoolEventSyncFixture {
+        fn database(&self) -> &BlockchainCacheDatabase {
+            self.cache
+                .database
+                .as_ref()
+                .expect("cache database must be set")
+        }
+
+        async fn events(&self, to_block: u64) -> anyhow::Result<Vec<DexPoolData>> {
+            self.database()
+                .stream_pool_events(
+                    self.chain.clone(),
+                    self.dex.clone(),
+                    self.pool.instrument_id,
+                    self.pool.pool_identifier,
+                    None,
+                    Some(to_block),
+                )
+                .try_collect()
+                .await
+        }
+    }
+
+    async fn pool_event_sync_fixture() -> anyhow::Result<Option<PoolEventSyncFixture>> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(None);
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            PoolIdentifier::from_address(pool_address),
+            10,
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let mut cache = BlockchainCache::new(chain.clone());
+        cache.database = Some(database);
+        cache.add_dex(dex.clone()).await?;
+        cache.add_token(token0).await?;
+        cache.add_token(token1).await?;
+        cache.add_pool(pool.clone()).await?;
+
+        Ok(Some(PoolEventSyncFixture {
+            cache,
+            schema,
+            chain,
+            dex,
+            pool,
+        }))
+    }
+
+    fn protocol_fee_events(
+        fixture: &PoolEventSyncFixture,
+    ) -> (PoolFeeProtocolUpdate, PoolFeeProtocolCollect) {
+        let update = PoolFeeProtocolUpdate::new(
+            fixture.chain.clone(),
+            fixture.dex.clone(),
+            fixture.pool.instrument_id,
+            fixture.pool.pool_identifier,
+            12,
+            "0x00000000000000000000000000000000000000000000000000000000000000ab".to_string(),
+            1,
+            1,
+            4,
+            6,
+            UnixNanos::from(1_700_000_012_000_000_000),
+            UnixNanos::from(1_700_000_012_000_000_000),
+        );
+        let collect = PoolFeeProtocolCollect::new(
+            fixture.chain.clone(),
+            fixture.dex.clone(),
+            fixture.pool.instrument_id,
+            fixture.pool.pool_identifier,
+            13,
+            "0x00000000000000000000000000000000000000000000000000000000000000cd".to_string(),
+            2,
+            2,
+            address!("0xc36442b4a4522e871399cd717abdd847ab11fe88"),
+            address!("0xa61da382c18d9d5beb905ea192bae25e4c15d512"),
+            111,
+            222,
+            UnixNanos::from(1_700_000_013_000_000_000),
+            UnixNanos::from(1_700_000_013_000_000_000),
+        );
+        (update, collect)
+    }
+
+    fn expected_swap(fixture: &PoolEventSyncFixture) -> PoolSwap {
+        PoolSwap::new(
+            fixture.chain.clone(),
+            fixture.dex.clone(),
+            fixture.pool.instrument_id,
+            fixture.pool.pool_identifier,
+            11,
+            "0x000000000000000000000000000000000000000000000000000000000000000c".to_string(),
+            0,
+            0,
+            UnixNanos::from(1_700_000_011_000_000_000),
+            UnixNanos::from(1_700_000_011_000_000_000),
+            address!("0x1111111111111111111111111111111111111111"),
+            address!("0x2222222222222222222222222222222222222222"),
+            I256::try_from(-1_000_000_000_000_000_000_i128).unwrap(),
+            I256::try_from(2_000_000_i128).unwrap(),
+            U160::from(79_228_162_514_264_337_593_543_950_336_u128),
+            1_000_000,
+            0,
+        )
+    }
+
     async fn connect_cache_test_database()
     -> anyhow::Result<Option<(BlockchainCacheDatabase, TestSchema)>> {
         let config = get_postgres_connect_options(None, None, None, None, None);
@@ -2071,7 +2437,20 @@ mod tests {
                     initial_sqrt_price_x96 TEXT,
                     hook_address TEXT,
                     last_full_sync_block_number BIGINT,
+                    event_sync_version INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (chain_id, dex_name, pool_identifier)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_event_sync" (
+                    chain_id INTEGER NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    event_family TEXT NOT NULL,
+                    last_full_sync_block_number BIGINT NOT NULL,
+                    PRIMARY KEY (chain_id, dex_name, pool_identifier, event_family)
                 )
                 "#
             ),

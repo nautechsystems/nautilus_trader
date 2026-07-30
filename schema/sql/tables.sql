@@ -424,6 +424,18 @@ CREATE TABLE IF NOT EXISTS "pool" (
     FOREIGN KEY (token1_chain, token1_address) REFERENCES token(chain_id, address),
     FOREIGN KEY (chain_id, dex_name) REFERENCES dex(chain_id, name)
 );
+ALTER TABLE "pool" ADD COLUMN IF NOT EXISTS event_sync_version INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS "pool_event_sync" (
+    chain_id INTEGER NOT NULL,
+    dex_name TEXT NOT NULL,
+    pool_identifier TEXT NOT NULL,
+    event_family TEXT NOT NULL,
+    last_full_sync_block_number BIGINT NOT NULL,
+    PRIMARY KEY (chain_id, dex_name, pool_identifier, event_family),
+    FOREIGN KEY (chain_id, dex_name, pool_identifier)
+        REFERENCES pool(chain_id, dex_name, pool_identifier) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     id BIGSERIAL PRIMARY KEY,
