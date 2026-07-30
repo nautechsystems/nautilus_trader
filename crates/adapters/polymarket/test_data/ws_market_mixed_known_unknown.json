@@ -1,0 +1,33 @@
+[
+  {
+    "event_type": "price_change",
+    "market": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "price_changes": [
+      {
+        "asset_id": "101",
+        "price": "0.37",
+        "side": "BUY",
+        "size": "12.5",
+        "hash": "price-change-hash",
+        "best_bid": "0.36",
+        "best_ask": "0.38"
+      }
+    ],
+    "timestamp": "1700000000001"
+  },
+  {
+    "event_type": "settlement_preview",
+    "sequence": 2
+  },
+  {
+    "event_type": "last_trade_price",
+    "market": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "asset_id": "202",
+    "fee_rate_bps": "17",
+    "price": "0.63",
+    "side": "SELL",
+    "size": "4.25",
+    "timestamp": "1700000000003",
+    "transaction_hash": "0xtrade-hash"
+  }
+]

@@ -378,6 +378,7 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket Gamma discovery to use keyset pagination beyond the legacy offset cap
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
+- Fixed Polymarket v2 market WebSocket batches dropped by unknown `event_type` (#4604), thanks for reporting @mystic-io
 - Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
 - Fixed Polymarket SELL sizing, terminal IOC remainders, and sub-cent reconciliation synthetic fills
 - Fixed Polymarket limit IOC/FOK BUY orders submitting invalid fractional-cent maker amounts
