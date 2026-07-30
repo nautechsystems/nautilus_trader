@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
     let domain_separator = parse_b256(domain_separator_for(environment), "domain_separator")?;
     let action_typehash_bytes = parse_b256(ACTION_TYPEHASH, "ACTION_TYPEHASH")?;
-    let nonce_manager = NonceManager::default();
+    let nonce_manager = NonceManager;
 
     cancel_all_orders(&client, subaccount_id).await?;
     verify_no_open_orders(&client, subaccount_id).await?;
