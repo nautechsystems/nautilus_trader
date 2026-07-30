@@ -141,9 +141,7 @@ impl OwnBookOrder {
 
 impl Ord for OwnBookOrder {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ts_init
-            .cmp(&other.ts_init)
-            .then_with(|| self.client_order_id.cmp(&other.client_order_id))
+        self.client_order_id.cmp(&other.client_order_id)
     }
 }
 

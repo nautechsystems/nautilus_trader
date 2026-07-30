@@ -125,7 +125,13 @@ impl PartialOrd for ScheduledTimeEvent {
 impl Ord for ScheduledTimeEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse order for max heap: earlier timestamps have higher priority
-        other.0.ts_event.cmp(&self.0.ts_event)
+        other
+            .0
+            .ts_event
+            .cmp(&self.0.ts_event)
+            .then_with(|| other.0.name.cmp(&self.0.name))
+            .then_with(|| other.0.ts_init.cmp(&self.0.ts_init))
+            .then_with(|| other.0.event_id.as_str().cmp(self.0.event_id.as_str()))
     }
 }
 
@@ -563,7 +569,7 @@ impl Iterator for TestTimer {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, num::NonZeroU64, rc::Rc};
+    use std::{cell::RefCell, collections::BinaryHeap, num::NonZeroU64, rc::Rc};
 
     use nautilus_core::{UUID4, UnixNanos};
     #[cfg(feature = "python")]
@@ -577,7 +583,10 @@ mod tests {
     use rstest::*;
     use ustr::Ustr;
 
-    use super::{TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval};
+    use super::{
+        ScheduledTimeEvent, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler,
+        create_valid_interval,
+    };
     use crate::msgbus::{
         BusTap, Endpoint, MStr, MessagingSwitchboard, Topic, clear_bus_tap, set_bus_tap,
     };
@@ -785,6 +794,97 @@ mod tests {
         assert!(earlier_name < later_init);
         assert!(earlier_name < later_id);
         assert_ne!(earlier_name, later_id);
+    }
+
+    #[rstest]
+    fn test_scheduled_time_event_ordering_laws() {
+        let base = ScheduledTimeEvent::new(TimeEvent::new(
+            Ustr::from("ALPHA"),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            100.into(),
+            10.into(),
+        ));
+        let variants = [
+            base.clone(),
+            ScheduledTimeEvent::new(TimeEvent::new(
+                Ustr::from("BETA"),
+                base.0.event_id,
+                base.0.ts_event,
+                base.0.ts_init,
+            )),
+            ScheduledTimeEvent::new(TimeEvent::new(
+                base.0.name,
+                UUID4::from("00000000-0000-4000-8000-000000000002"),
+                base.0.ts_event,
+                base.0.ts_init,
+            )),
+            ScheduledTimeEvent::new(TimeEvent::new(
+                base.0.name,
+                base.0.event_id,
+                101.into(),
+                base.0.ts_init,
+            )),
+            ScheduledTimeEvent::new(TimeEvent::new(
+                base.0.name,
+                base.0.event_id,
+                base.0.ts_event,
+                11.into(),
+            )),
+        ];
+
+        for a in &variants {
+            for b in &variants {
+                assert_eq!(a == b, a.cmp(b).is_eq());
+                assert_eq!(a.partial_cmp(b), Some(a.cmp(b)));
+                assert_eq!(a.cmp(b), b.cmp(a).reverse());
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_scheduled_time_event_heap_ordering() {
+        let expected = [
+            TimeEvent::new(
+                Ustr::from("ALPHA"),
+                UUID4::from("00000000-0000-4000-8000-000000000001"),
+                100.into(),
+                10.into(),
+            ),
+            TimeEvent::new(
+                Ustr::from("ALPHA"),
+                UUID4::from("00000000-0000-4000-8000-000000000002"),
+                100.into(),
+                10.into(),
+            ),
+            TimeEvent::new(
+                Ustr::from("ALPHA"),
+                UUID4::from("00000000-0000-4000-8000-000000000003"),
+                100.into(),
+                11.into(),
+            ),
+            TimeEvent::new(
+                Ustr::from("BETA"),
+                UUID4::from("00000000-0000-4000-8000-000000000004"),
+                100.into(),
+                10.into(),
+            ),
+            TimeEvent::new(
+                Ustr::from("ALPHA"),
+                UUID4::from("00000000-0000-4000-8000-000000000005"),
+                101.into(),
+                10.into(),
+            ),
+        ];
+        let insertion_order = [4, 1, 3, 0, 2];
+        let mut heap = BinaryHeap::new();
+
+        for index in insertion_order {
+            heap.push(ScheduledTimeEvent::new(expected[index].clone()));
+        }
+
+        let popped = std::iter::from_fn(|| heap.pop().map(ScheduledTimeEvent::into_inner))
+            .collect::<Vec<_>>();
+        assert_eq!(popped, expected);
     }
 
     #[cfg(feature = "python")]

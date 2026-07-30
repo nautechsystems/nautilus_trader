@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, hash_map::DefaultHasher},
+    hash::{Hash, Hasher},
+};
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
@@ -3888,6 +3891,50 @@ fn own_order() -> OwnBookOrder {
         ts_submitted,
         ts_init,
     )
+}
+
+#[rstest]
+fn test_own_order_ordering_laws(own_order: OwnBookOrder) {
+    let mut updated = own_order;
+    updated.price = Price::from("101.00");
+    updated.size = Quantity::from("5");
+    updated.status = OrderStatus::Accepted;
+    updated.ts_last = 20.into();
+    updated.ts_accepted = 15.into();
+    updated.ts_init = 10.into();
+
+    assert_eq!(own_order, updated);
+    assert_eq!(own_order.cmp(&updated), std::cmp::Ordering::Equal);
+
+    let mut original_hasher = DefaultHasher::new();
+    own_order.hash(&mut original_hasher);
+    let mut updated_hasher = DefaultHasher::new();
+    updated.hash(&mut updated_hasher);
+    assert_eq!(original_hasher.finish(), updated_hasher.finish());
+
+    let mut lower_id_later_timestamp = own_order;
+    lower_id_later_timestamp.client_order_id = ClientOrderId::from("O-100");
+    lower_id_later_timestamp.ts_init = 200.into();
+    let mut higher_id_earlier_timestamp = own_order;
+    higher_id_earlier_timestamp.client_order_id = ClientOrderId::from("O-200");
+    higher_id_earlier_timestamp.ts_init = 100.into();
+
+    assert!(lower_id_later_timestamp < higher_id_earlier_timestamp);
+
+    let variants = [
+        own_order,
+        updated,
+        lower_id_later_timestamp,
+        higher_id_earlier_timestamp,
+    ];
+
+    for a in &variants {
+        for b in &variants {
+            assert_eq!(a == b, a.cmp(b).is_eq());
+            assert_eq!(a.partial_cmp(b), Some(a.cmp(b)));
+            assert_eq!(a.cmp(b), b.cmp(a).reverse());
+        }
+    }
 }
 
 #[rstest]
