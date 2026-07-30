@@ -23,6 +23,7 @@ use nautilus_core::paths::get_test_data_path;
 use nautilus_model::{
     data::OrderBookDelta,
     instruments::{InstrumentAny, stubs::equity_aapl_itch},
+    types::fixed::PRECISION_BYTES,
 };
 use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -49,18 +50,11 @@ pub fn get_test_data_file_path(path: &str) -> String {
 ///
 /// Panics if the computed path cannot be represented as a valid UTF-8 string.
 #[must_use]
-#[allow(unused_mut)]
 pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
-    let mut path = get_test_data_path().join("nautilus");
-
-    #[cfg(feature = "high-precision")]
-    {
-        path = path.join("128-bit");
-    }
-    #[cfg(not(feature = "high-precision"))]
-    {
-        path = path.join("64-bit");
-    }
+    let precision_directory = format!("{}-bit", PRECISION_BYTES * 8);
+    let path = get_test_data_path()
+        .join("nautilus")
+        .join(precision_directory);
 
     path.join(filename).to_str().unwrap().to_string()
 }
