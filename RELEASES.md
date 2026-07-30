@@ -470,6 +470,7 @@ adapter set. The following limits remain deferred:
 - Upgraded `ed25519-dalek` crate to v3.0.0
 - Upgraded `futures` crate to v0.3.33
 - Upgraded `redis` crate to v1.4.1
+- Upgraded `rustls` crate to v0.23.43
 - Upgraded `sockudo-ws` crate to v2.0.1
 - Upgraded `tokio` crate to v1.53.1
 - Upgraded `tokio-tungstenite` crate to v0.30.0
