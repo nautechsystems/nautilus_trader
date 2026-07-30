@@ -964,7 +964,8 @@ impl LighterHttpClient {
     /// # Errors
     ///
     /// Returns an error if the instrument has not been registered, the bar
-    /// type is unsupported, the request fails, or a candle cannot be parsed.
+    /// type is unsupported, the request fails, the page cap leaves part of the
+    /// requested range uncovered, or a candle cannot be parsed.
     pub async fn request_bars(
         &self,
         instrument: &InstrumentAny,
@@ -1079,8 +1080,13 @@ impl LighterHttpClient {
             pages += 1;
         }
 
-        if pages >= MAX_BAR_REQUEST_PAGES {
-            log::warn!("Stopped Lighter bar request after {MAX_BAR_REQUEST_PAGES} pages");
+        let limit_satisfied =
+            !start_was_unspecified && requested_limit.is_some_and(|limit| bars.len() >= limit);
+        if pages >= MAX_BAR_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
+            return Err(LighterHttpError::HistoryIncomplete {
+                data_type: "bar",
+                pages,
+            });
         }
 
         if start_was_unspecified && bars.len() > target_limit {
@@ -1099,8 +1105,8 @@ impl LighterHttpClient {
     /// # Errors
     ///
     /// Returns an error if the instrument is not a perpetual, the instrument
-    /// has not been registered, the request range is invalid, or a row cannot
-    /// be parsed.
+    /// has not been registered, the request range is invalid, the page cap
+    /// leaves part of the requested range uncovered, or a row cannot be parsed.
     pub async fn request_funding_rates(
         &self,
         instrument: &InstrumentAny,
@@ -1226,8 +1232,13 @@ impl LighterHttpClient {
             pages += 1;
         }
 
-        if pages >= MAX_FUNDING_REQUEST_PAGES {
-            log::warn!("Stopped Lighter funding request after {MAX_FUNDING_REQUEST_PAGES} pages");
+        let limit_satisfied = !start_was_unspecified
+            && requested_limit.is_some_and(|limit| funding_rates.len() >= limit);
+        if pages >= MAX_FUNDING_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
+            return Err(LighterHttpError::HistoryIncomplete {
+                data_type: "funding rate",
+                pages,
+            });
         }
 
         if start_was_unspecified && funding_rates.len() > target_limit {

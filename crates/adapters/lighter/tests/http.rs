@@ -17,6 +17,7 @@
 
 use std::{
     collections::HashMap,
+    num::NonZeroU32,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -59,7 +60,7 @@ use nautilus_lighter::{
     },
 };
 use nautilus_model::{
-    data::{BarSpecification, BarType},
+    data::{Bar, BarSpecification, BarType, FundingRateUpdate},
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType,
         RecordFlag,
@@ -68,7 +69,10 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, Instrument, InstrumentAny},
     types::{Price, Quantity, currency::Currency},
 };
-use nautilus_network::retry::{RetryConfig, RetryManager};
+use nautilus_network::{
+    ratelimiter::quota::Quota,
+    retry::{RetryConfig, RetryManager},
+};
 use rust_decimal::Decimal;
 
 const HTTP_NEXT_NONCE: &str = include_str!("../test_data/http_next_nonce.json");
@@ -81,6 +85,7 @@ const HTTP_CANDLES: &str = include_str!("../test_data/http_candles.json");
 const HTTP_FUNDINGS: &str = include_str!("../test_data/http_fundings.json");
 const HTTP_ACCOUNT: &str = include_str!("../test_data/http_account.json");
 const MINUTE_MS: i64 = 60_000;
+const HISTORY_REQUEST_PAGE_CAP: usize = 500;
 
 #[derive(Clone)]
 struct IncompleteCandlesState {
@@ -108,6 +113,12 @@ struct PaginatedFundingsState {
 #[derive(Clone)]
 struct LatestFundingsState {
     end_ms: i64,
+}
+
+#[derive(Clone)]
+struct CappedHistoryState {
+    calls: Arc<AtomicUsize>,
+    row_page: Option<usize>,
 }
 
 #[tokio::test]
@@ -1106,6 +1117,53 @@ async fn domain_client_request_funding_rates_without_start_returns_latest_limit(
 }
 
 #[tokio::test]
+async fn domain_client_request_funding_rates_reports_incomplete_after_page_cap() {
+    let (result, calls) =
+        request_funding_history_pages(HISTORY_REQUEST_PAGE_CAP + 1, None, None).await;
+
+    match result.unwrap_err() {
+        LighterHttpError::HistoryIncomplete { data_type, pages } => {
+            assert_eq!(data_type, "funding rate");
+            assert_eq!(pages, HISTORY_REQUEST_PAGE_CAP);
+        }
+        e => panic!("expected incomplete funding-rate history error, was {e:?}"),
+    }
+    assert_eq!(calls, HISTORY_REQUEST_PAGE_CAP);
+}
+
+#[tokio::test]
+async fn domain_client_request_funding_rates_completes_exactly_at_page_cap() {
+    let (result, calls) = request_funding_history_pages(HISTORY_REQUEST_PAGE_CAP, None, None).await;
+    let funding_rates = result.unwrap();
+
+    assert_eq!(calls, HISTORY_REQUEST_PAGE_CAP);
+    assert_eq!(funding_rates.len(), 0);
+}
+
+#[tokio::test]
+async fn domain_client_request_funding_rates_accepts_limit_on_final_capped_page() {
+    let final_page = HISTORY_REQUEST_PAGE_CAP - 1;
+    let (result, calls) =
+        request_funding_history_pages(HISTORY_REQUEST_PAGE_CAP + 1, Some(final_page), Some(1))
+            .await;
+    let funding_rates = result.unwrap();
+    let interval_ms = LighterFundingResolution::OneHour.interval_millis();
+    let page_span_ms = i64::from(LIGHTER_FUNDINGS_MAX_LIMIT - 1) * interval_ms;
+    let expected_ts = millis_to_unix_nanos(i64::try_from(final_page).unwrap() * page_span_ms);
+
+    assert_eq!(calls, HISTORY_REQUEST_PAGE_CAP);
+    assert_eq!(funding_rates.len(), 1);
+    assert_eq!(
+        funding_rates[0].instrument_id,
+        create_test_instrument().id()
+    );
+    assert_eq!(funding_rates[0].rate, Decimal::new(12, 4));
+    assert_eq!(funding_rates[0].interval, Some(60));
+    assert_eq!(funding_rates[0].next_funding_ns, None);
+    assert_eq!(funding_rates[0].ts_event, expected_ts);
+}
+
+#[tokio::test]
 async fn domain_client_request_bars_filters_incomplete_candle() {
     let now_ms = Utc::now().timestamp_millis();
     let state = IncompleteCandlesState {
@@ -1230,6 +1288,52 @@ async fn domain_client_request_bars_paginates_range() {
 }
 
 #[tokio::test]
+async fn domain_client_request_bars_reports_incomplete_after_page_cap() {
+    let (result, calls) = request_bar_history_pages(HISTORY_REQUEST_PAGE_CAP + 1, None, None).await;
+
+    match result.unwrap_err() {
+        LighterHttpError::HistoryIncomplete { data_type, pages } => {
+            assert_eq!(data_type, "bar");
+            assert_eq!(pages, HISTORY_REQUEST_PAGE_CAP);
+        }
+        e => panic!("expected incomplete bar history error, was {e:?}"),
+    }
+    assert_eq!(calls, HISTORY_REQUEST_PAGE_CAP);
+}
+
+#[tokio::test]
+async fn domain_client_request_bars_completes_exactly_at_page_cap() {
+    let (result, calls) = request_bar_history_pages(HISTORY_REQUEST_PAGE_CAP, None, None).await;
+    let bars = result.unwrap();
+
+    assert_eq!(calls, HISTORY_REQUEST_PAGE_CAP);
+    assert_eq!(bars.len(), 0);
+}
+
+#[tokio::test]
+async fn domain_client_request_bars_accepts_limit_on_final_capped_page() {
+    let final_page = HISTORY_REQUEST_PAGE_CAP - 1;
+    let (result, calls) =
+        request_bar_history_pages(HISTORY_REQUEST_PAGE_CAP + 1, Some(final_page), Some(1)).await;
+    let bars = result.unwrap();
+    let page_span_ms = i64::from(LIGHTER_CANDLES_MAX_LIMIT) * MINUTE_MS;
+    let expected_ts = millis_to_unix_nanos(i64::try_from(final_page).unwrap() * page_span_ms);
+
+    assert_eq!(calls, HISTORY_REQUEST_PAGE_CAP);
+    assert_eq!(bars.len(), 1);
+    assert_eq!(
+        bars[0].bar_type,
+        one_minute_bar_type(create_test_instrument().id())
+    );
+    assert_eq!(bars[0].open, Price::from("1.00"));
+    assert_eq!(bars[0].high, Price::from("1.00"));
+    assert_eq!(bars[0].low, Price::from("1.00"));
+    assert_eq!(bars[0].close, Price::from("1.00"));
+    assert_eq!(bars[0].volume, Quantity::from("1.0000"));
+    assert_eq!(bars[0].ts_event, expected_ts);
+}
+
+#[tokio::test]
 async fn domain_client_request_bars_rejects_unsupported_bar_type() {
     let base_url = spawn_server(
         Router::new().route("/api/v1/orderBookDetails", get(handle_order_book_details)),
@@ -1310,6 +1414,95 @@ async fn domain_client_get_account_detail_errors_on_empty_accounts() {
         LighterHttpError::Parse(message)
             if message == "no account returned for index 123456"
     ));
+}
+
+async fn request_funding_history_pages(
+    page_count: usize,
+    row_page: Option<usize>,
+    limit: Option<usize>,
+) -> (Result<Vec<FundingRateUpdate>, LighterHttpError>, usize) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let state = CappedHistoryState {
+        calls: Arc::clone(&calls),
+        row_page,
+    };
+    let base_url = spawn_server(
+        Router::new()
+            .route("/api/v1/orderBookDetails", get(handle_order_book_details))
+            .route("/api/v1/fundings", get(handle_capped_fundings))
+            .with_state(state),
+    )
+    .await;
+    let client = history_http_client(base_url);
+    let instrument = create_test_instrument();
+    let start = Utc.timestamp_millis_opt(0).single().unwrap();
+    let interval_ms = LighterFundingResolution::OneHour.interval_millis();
+    let page_span_ms = i64::from(LIGHTER_FUNDINGS_MAX_LIMIT - 1) * interval_ms;
+    let end_ms = i64::try_from(page_count).unwrap() * page_span_ms;
+    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+
+    client
+        .get_order_book_details(&LighterOrderBookDetailsQuery::default())
+        .await
+        .unwrap();
+    let result = client
+        .request_funding_rates(&instrument, Some(start), Some(end), limit)
+        .await;
+
+    (result, calls.load(Ordering::SeqCst))
+}
+
+async fn request_bar_history_pages(
+    page_count: usize,
+    row_page: Option<usize>,
+    limit: Option<u32>,
+) -> (Result<Vec<Bar>, LighterHttpError>, usize) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let state = CappedHistoryState {
+        calls: Arc::clone(&calls),
+        row_page,
+    };
+    let base_url = spawn_server(
+        Router::new()
+            .route("/api/v1/orderBookDetails", get(handle_order_book_details))
+            .route("/api/v1/candles", get(handle_capped_candles))
+            .with_state(state),
+    )
+    .await;
+    let client = history_http_client(base_url);
+    let instrument = create_test_instrument();
+    let bar_type = one_minute_bar_type(instrument.id());
+    let start = Utc.timestamp_millis_opt(0).single().unwrap();
+    let page_span_ms = i64::from(LIGHTER_CANDLES_MAX_LIMIT) * MINUTE_MS;
+    let end_ms = i64::try_from(page_count).unwrap() * page_span_ms;
+    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+
+    client
+        .get_order_book_details(&LighterOrderBookDetailsQuery::default())
+        .await
+        .unwrap();
+    let result = client
+        .request_bars(&instrument, bar_type, Some(start), Some(end), limit)
+        .await;
+
+    (result, calls.load(Ordering::SeqCst))
+}
+
+fn history_http_client(base_url: String) -> LighterHttpClient {
+    let quota = Quota::per_second(NonZeroU32::new(10_000).unwrap())
+        .unwrap()
+        .allow_burst(NonZeroU32::new(10_000).unwrap());
+    let raw_client = LighterRawHttpClient::new_with_quotas(
+        LighterEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        quota,
+        None,
+    )
+    .unwrap();
+
+    LighterHttpClient::from_raw(raw_client)
 }
 
 async fn handle_next_nonce(Query(query): Query<LighterNextNonceQuery>) -> Response {
@@ -1582,6 +1775,29 @@ async fn handle_latest_fundings(
     (StatusCode::OK, body).into_response()
 }
 
+async fn handle_capped_fundings(
+    State(state): State<CappedHistoryState>,
+    Query(query): Query<LighterFundingsQuery>,
+) -> Response {
+    let page = state.calls.fetch_add(1, Ordering::SeqCst);
+    let interval_ms = LighterFundingResolution::OneHour.interval_millis();
+    let page_span_ms = i64::from(LIGHTER_FUNDINGS_MAX_LIMIT - 1) * interval_ms;
+    let expected_start_ms = i64::try_from(page).unwrap() * page_span_ms;
+
+    assert_eq!(query.market_id, 0);
+    assert_eq!(query.resolution, LighterFundingResolution::OneHour);
+    assert_eq!(query.start_timestamp, expected_start_ms);
+    assert_eq!(query.end_timestamp, expected_start_ms + page_span_ms);
+    assert_eq!(query.count_back, i64::from(LIGHTER_FUNDINGS_MAX_LIMIT));
+
+    let body = if state.row_page == Some(page) {
+        fundings_response(&[(expected_start_ms / 1000, "0.0012", "long")])
+    } else {
+        fundings_response(&[])
+    };
+    (StatusCode::OK, body).into_response()
+}
+
 async fn handle_domain_candles(Query(query): Query<LighterCandlesQuery>) -> Response {
     assert_eq!(query.market_id, 0);
     assert_eq!(query.resolution, LighterCandleResolution::OneMinute);
@@ -1590,6 +1806,29 @@ async fn handle_domain_candles(Query(query): Query<LighterCandlesQuery>) -> Resp
     assert_eq!(query.count_back, i64::from(LIGHTER_CANDLES_MAX_LIMIT));
     assert_eq!(query.set_timestamp_to_end, Some(false));
     (StatusCode::OK, HTTP_CANDLES).into_response()
+}
+
+async fn handle_capped_candles(
+    State(state): State<CappedHistoryState>,
+    Query(query): Query<LighterCandlesQuery>,
+) -> Response {
+    let page = state.calls.fetch_add(1, Ordering::SeqCst);
+    let page_span_ms = i64::from(LIGHTER_CANDLES_MAX_LIMIT) * MINUTE_MS;
+    let expected_start_ms = i64::try_from(page).unwrap() * page_span_ms;
+
+    assert_eq!(query.market_id, 0);
+    assert_eq!(query.resolution, LighterCandleResolution::OneMinute);
+    assert_eq!(query.start_timestamp, expected_start_ms);
+    assert_eq!(query.end_timestamp, expected_start_ms + page_span_ms);
+    assert_eq!(query.count_back, i64::from(LIGHTER_CANDLES_MAX_LIMIT));
+    assert_eq!(query.set_timestamp_to_end, Some(false));
+
+    let body = if state.row_page == Some(page) {
+        candles_response(&[(expected_start_ms, "1.00")])
+    } else {
+        candles_response(&[])
+    };
+    (StatusCode::OK, body).into_response()
 }
 
 async fn handle_domain_candles_with_gap(Query(query): Query<LighterCandlesQuery>) -> Response {

@@ -33,7 +33,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -41,7 +41,7 @@ use std::{
 use axum::{
     Router,
     extract::{
-        State,
+        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
@@ -68,7 +68,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_lighter::{
-    common::consts::LIGHTER_VENUE, config::LighterDataClientConfig, data::LighterDataClient,
+    common::{consts::LIGHTER_VENUE, enums::LighterFundingResolution},
+    config::LighterDataClientConfig,
+    data::LighterDataClient,
+    http::{client::LIGHTER_FUNDINGS_MAX_LIMIT, query::LighterFundingsQuery},
 };
 use nautilus_model::{
     data::{BarSpecification, BarType, Data, OrderBookDeltas_API},
@@ -81,6 +84,7 @@ use nautilus_model::{
 use rstest::rstest;
 use serde_json::{Value, json};
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
+const HISTORY_REQUEST_PAGE_CAP: usize = 500;
 
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -126,6 +130,8 @@ struct TestServerState {
     push_after_subscribe: Arc<tokio::sync::Mutex<Vec<String>>>,
     /// When set, the server closes the socket after sending the next subscribe ack.
     drop_after_next_subscribe: Arc<AtomicBool>,
+    funding_cap: Arc<AtomicBool>,
+    funding_calls: Arc<AtomicUsize>,
 }
 
 impl TestServerState {
@@ -191,7 +197,21 @@ async fn recent_trades() -> Response {
         .into_response()
 }
 
-async fn fundings() -> Response {
+async fn fundings(
+    State(state): State<Arc<TestServerState>>,
+    Query(query): Query<LighterFundingsQuery>,
+) -> Response {
+    if state.funding_cap.load(Ordering::SeqCst) {
+        assert_eq!(query.resolution, LighterFundingResolution::OneHour,);
+        assert_eq!(query.count_back, i64::from(LIGHTER_FUNDINGS_MAX_LIMIT));
+        state.funding_calls.fetch_add(1, Ordering::SeqCst);
+        return (
+            StatusCode::OK,
+            json!({"code": 200, "resolution": "1h", "fundings": []}).to_string(),
+        )
+            .into_response();
+    }
+
     (
         StatusCode::OK,
         std::fs::read_to_string(data_path().join("http_fundings.json")).unwrap(),
@@ -1855,6 +1875,59 @@ async fn test_request_funding_rates_emits_response() {
         assert_eq!(response.instrument_id, eth_perp_id());
         assert_eq!(response.data.len(), 2);
     }
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_does_not_emit_partial_response_at_page_cap() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.rest_quota_per_min = Some(600_000);
+    let (mut client, mut rx) = build_client(config);
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+    state.funding_cap.store(true, Ordering::SeqCst);
+
+    let start = Utc.timestamp_millis_opt(0).single().unwrap();
+    let interval_ms = LighterFundingResolution::OneHour.interval_millis();
+    let page_span_ms = i64::from(LIGHTER_FUNDINGS_MAX_LIMIT - 1) * interval_ms;
+    let end_ms = i64::try_from(HISTORY_REQUEST_PAGE_CAP + 1).unwrap() * page_span_ms;
+    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+
+    client
+        .request_funding_rates(RequestFundingRates::new(
+            eth_perp_id(),
+            Some(start),
+            Some(end),
+            None,
+            Some(client_id()),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_funding_rates");
+
+    wait_until_async(
+        || {
+            let state = Arc::clone(&state);
+            async move { state.funding_calls.load(Ordering::SeqCst) == HISTORY_REQUEST_PAGE_CAP }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    let response = next_event_matching(&mut rx, Duration::from_millis(100), |e| {
+        matches!(e, DataEvent::Response(DataResponse::FundingRates(_)))
+    })
+    .await;
+
+    assert_eq!(
+        state.funding_calls.load(Ordering::SeqCst),
+        HISTORY_REQUEST_PAGE_CAP,
+    );
+    assert!(response.is_none());
 
     client.disconnect().await.expect("disconnect");
 }

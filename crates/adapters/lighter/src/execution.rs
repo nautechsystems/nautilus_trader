@@ -3100,7 +3100,9 @@ fn lighter_http_error_is_definite_api_rejection(error: &LighterHttpError) -> boo
     match error {
         LighterHttpError::RateLimit(_) | LighterHttpError::Venue { .. } => true,
         LighterHttpError::Http { status, .. } => *status < 500,
-        LighterHttpError::Network(_) | LighterHttpError::Parse(_) => false,
+        LighterHttpError::Network(_)
+        | LighterHttpError::HistoryIncomplete { .. }
+        | LighterHttpError::Parse(_) => false,
     }
 }
 
