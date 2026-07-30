@@ -411,6 +411,7 @@ adapter set. The following limits remain deferred:
 - Fixed Kraken Futures fill parsing for all documented `fillType` values (#4591), thanks for reporting @Andreas197510
 - Fixed Kraken financial values losing precision through floating-point parsing and arithmetic
 - Fixed Lighter batch orders to use correlated sequential WebSocket transactions
+- Fixed Lighter live funding updates exposing `funding_timestamp` as `next_funding_ns`
 - Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
 - Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
 - Fixed Lighter modify validation, conditional acks, nonce recovery, auth refresh, and WS timeouts

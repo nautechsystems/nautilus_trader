@@ -3092,11 +3092,8 @@ mod tests {
         match &messages[2] {
             NautilusWsMessage::FundingRate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "ETH-PERP.LIGHTER");
-                assert_eq!(update.rate.to_string(), "0.000001");
-                assert_eq!(
-                    update.next_funding_ns,
-                    Some(UnixNanos::from(1_774_886_400_000_000_000))
-                );
+                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.next_funding_ns, None);
             }
             event => panic!("expected funding rate update, was {event:?}"),
         }
@@ -3114,12 +3111,21 @@ mod tests {
         assert!(matches!(&messages[0], NautilusWsMessage::MarkPrice(_)));
         assert!(matches!(&messages[1], NautilusWsMessage::IndexPrice(_)));
         assert!(matches!(&messages[2], NautilusWsMessage::FundingRate(_)));
+
         match &messages[0] {
             NautilusWsMessage::MarkPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "ETH-PERP.LIGHTER");
                 assert_eq!(update.value, Price::from("2064.47"));
             }
             event => panic!("expected mark price update, was {event:?}"),
+        }
+
+        match &messages[2] {
+            NautilusWsMessage::FundingRate(update) => {
+                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.next_funding_ns, None);
+            }
+            event => panic!("expected funding rate update, was {event:?}"),
         }
     }
 
