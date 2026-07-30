@@ -46,6 +46,11 @@ pub enum SbeEncodeError {
         /// The field name or description.
         field: &'static str,
     },
+    /// Value collides with a sentinel reserved by the wire encoding.
+    ReservedValue {
+        /// The field name or description.
+        field: &'static str,
+    },
 }
 
 impl Display for SbeEncodeError {
@@ -62,6 +67,9 @@ impl Display for SbeEncodeError {
             }
             Self::NumericOverflow { field } => {
                 write!(f, "Numeric value overflows encoded field {field}")
+            }
+            Self::ReservedValue { field } => {
+                write!(f, "Value for {field} is reserved by the wire encoding")
             }
         }
     }
@@ -196,6 +204,17 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Numeric value overflows encoded field BarSpecification.step"
+        );
+    }
+
+    #[rstest]
+    fn test_reserved_value_display() {
+        let err = SbeEncodeError::ReservedValue {
+            field: "FundingRateUpdate.interval",
+        };
+        assert_eq!(
+            err.to_string(),
+            "Value for FundingRateUpdate.interval is reserved by the wire encoding"
         );
     }
 

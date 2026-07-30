@@ -36,7 +36,7 @@ use nautilus_model::{
         MarketStatusAction, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, TradeId},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity, fixed::check_fixed_precision},
 };
 use nautilus_serialization::capnp::{
     FromCapnp, ToCapnp,
@@ -84,6 +84,36 @@ fn test_quote_tick_roundtrip() {
     assert_eq!(quote.ask_size, decoded.ask_size);
     assert_eq!(quote.ts_event, decoded.ts_event);
     assert_eq!(quote.ts_init, decoded.ts_init);
+}
+
+#[rstest]
+fn test_quote_tick_invalid_nested_price_precision_returns_error() {
+    let quote = QuoteTick {
+        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+        bid_price: Price::from("100.50"),
+        ask_price: Price::from("100.55"),
+        bid_size: Quantity::from("10.5"),
+        ask_size: Quantity::from("8.3"),
+        ts_event: 1234567890.into(),
+        ts_init: 1234567891.into(),
+    };
+
+    let mut message = capnp::message::Builder::new_default();
+    let mut builder = message.init_root::<market_capnp::quote_tick::Builder>();
+    quote.to_capnp(builder.reborrow());
+    builder
+        .reborrow()
+        .get_bid_price()
+        .unwrap()
+        .set_precision(u8::MAX);
+
+    let reader = message
+        .get_root_as_reader::<market_capnp::quote_tick::Reader>()
+        .unwrap();
+    let error = QuoteTick::from_capnp(reader).unwrap_err();
+    let expected_error = check_fixed_precision(u8::MAX).unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error.to_string());
 }
 
 #[rstest]
@@ -585,6 +615,22 @@ fn test_bar_specification_all_combinations(
     assert_eq!(spec.step, decoded.step);
     assert_eq!(spec.aggregation, decoded.aggregation);
     assert_eq!(spec.price_type, decoded.price_type);
+}
+
+#[rstest]
+fn test_bar_specification_max_step_roundtrip() {
+    let spec = BarSpecification::new(usize::MAX, BarAggregation::Tick, PriceType::Last);
+
+    let mut message = capnp::message::Builder::new_default();
+    let builder = message.init_root::<market_capnp::bar_spec::Builder>();
+    spec.to_capnp(builder);
+
+    let reader = message
+        .get_root_as_reader::<market_capnp::bar_spec::Reader>()
+        .unwrap();
+    let decoded = BarSpecification::from_capnp(reader).unwrap();
+
+    assert_eq!(decoded, spec);
 }
 
 #[rstest]

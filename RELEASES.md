@@ -130,6 +130,9 @@ adapter set. The following limits remain deferred:
 - Changed L3 books to move IDs re‑added at a new price on the same side, fixing ghost levels
 - Changed L3 books to derive price‑based order IDs for orders with a zero order ID
 - Changed Rust `BookIntegrityError` to add `AmbiguousOrderSide`; update exhaustive matches
+- Changed Rust `EncodingError` and `SbeEncodeError` to add `MixedMetadata` and `ReservedValue`;
+  update exhaustive matches
+- Changed unstable Cap'n Proto `BarSpec.step` from `UInt32` to `UInt64`
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
 - Changed Rust `Cache::snapshot_position` to return `()`; use `snapshot_position_encoded` when the encoded frame is needed
 - Changed Rust time-event channels to `TimeEventMessage`; callbacks are no longer `Send + Sync` (#4496), thanks @folknor
@@ -166,6 +169,10 @@ adapter set. The following limits remain deferred:
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
 - Fixed DeFi `SwapTradeInfo` calculations panicking on a zero prior spot price
 - Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
+- Fixed Arrow batch encoders silently re-labeling mixed metadata and leading clear deltas
+- Fixed SBE `FundingRateUpdate` maximum optional values encoding as absent
+- Fixed Cap'n Proto `Price` and `Quantity` decoding panicking on malformed precision
+- Fixed Cap'n Proto `BarSpec.step` truncating values above `u32::MAX`
 
 ### Fixes
 - Fixed order book `NoOrderSide` deltas mutating the bid side when the ID is on both book sides

@@ -477,7 +477,7 @@ impl<'a> FromCapnp<'a> for Price {
             "Price value overflows i64 in standard precision mode".into()
         })?;
 
-        Ok(Self::from_raw(raw, precision))
+        Ok(Self::from_raw_checked(raw, precision)?)
     }
 }
 
@@ -513,7 +513,7 @@ impl<'a> FromCapnp<'a> for Quantity {
             "Quantity value overflows u64 in standard precision mode".into()
         })?;
 
-        Ok(Self::from_raw(raw, precision))
+        Ok(Self::from_raw_checked(raw, precision)?)
     }
 }
 
@@ -2002,11 +2002,7 @@ impl<'a> ToCapnp<'a> for BarSpecification {
     type Builder = market_capnp::bar_spec::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
-        debug_assert!(
-            u32::try_from(self.step.get()).is_ok(),
-            "step exceeds u32 range for capnp encoding"
-        );
-        builder.set_step(u32::try_from(self.step.get()).unwrap_or(u32::MAX));
+        builder.set_step(self.step.get() as u64);
         builder.set_aggregation(bar_aggregation_to_capnp(self.aggregation));
         builder.set_price_type(price_type_to_capnp(self.price_type));
     }
@@ -2018,8 +2014,9 @@ impl<'a> FromCapnp<'a> for BarSpecification {
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         use std::num::NonZero;
 
-        let step = reader.get_step();
-        let step = NonZero::new(step as usize).ok_or("BarSpecification step must be non-zero")?;
+        let step = usize::try_from(reader.get_step())
+            .map_err(|_| "BarSpecification step exceeds usize range")?;
+        let step = NonZero::new(step).ok_or("BarSpecification step must be non-zero")?;
 
         let aggregation = bar_aggregation_from_capnp(reader.get_aggregation()?);
         let price_type = price_type_from_capnp(reader.get_price_type()?);

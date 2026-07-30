@@ -181,6 +181,18 @@ impl MarketSbeMessage for FundingRateUpdate {
     const BLOCK_LENGTH: u16 = DECIMAL_BLOCK_LENGTH + 26;
 
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        if self.interval == Some(u16::MAX) {
+            return Err(SbeEncodeError::ReservedValue {
+                field: "FundingRateUpdate.interval",
+            });
+        }
+
+        if self.next_funding_ns.is_some_and(|value| *value == u64::MAX) {
+            return Err(SbeEncodeError::ReservedValue {
+                field: "FundingRateUpdate.next_funding_ns",
+            });
+        }
+
         encode_decimal(writer, &self.rate);
         writer.write_u16_le(self.interval.unwrap_or(u16::MAX));
         writer.write_u64_le(self.next_funding_ns.map_or(u64::MAX, |value| *value));

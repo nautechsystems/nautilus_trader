@@ -174,6 +174,8 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Instrument IDs differ, or non-clear precision metadata differs:
+///   `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "book_deltas_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -194,6 +196,7 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -214,6 +217,7 @@ pub fn py_book_depth10_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "quotes_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -234,6 +238,7 @@ pub fn py_quotes_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "trades_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -254,6 +259,7 @@ pub fn py_trades_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "bars_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -271,6 +277,7 @@ pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResu
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "mark_prices_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -291,6 +298,7 @@ pub fn py_mark_prices_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "index_prices_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
@@ -404,6 +412,7 @@ pub fn py_instrument_status_from_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]

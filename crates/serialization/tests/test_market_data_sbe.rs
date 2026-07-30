@@ -278,6 +278,48 @@ fn test_funding_rate_update_zero_values_roundtrip() {
 }
 
 #[rstest]
+fn test_funding_rate_update_reserved_interval_returns_encode_error() {
+    let value = FundingRateUpdate::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        dec!(0.0001),
+        Some(u16::MAX),
+        None,
+        9876543210.into(),
+        9876543211.into(),
+    );
+
+    let result = value.to_sbe();
+
+    assert_eq!(
+        result,
+        Err(SbeEncodeError::ReservedValue {
+            field: "FundingRateUpdate.interval",
+        })
+    );
+}
+
+#[rstest]
+fn test_funding_rate_update_reserved_next_funding_returns_encode_error() {
+    let value = FundingRateUpdate::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        dec!(0.0001),
+        None,
+        Some(u64::MAX.into()),
+        9876543210.into(),
+        9876543211.into(),
+    );
+
+    let result = value.to_sbe();
+
+    assert_eq!(
+        result,
+        Err(SbeEncodeError::ReservedValue {
+            field: "FundingRateUpdate.next_funding_ns",
+        })
+    );
+}
+
+#[rstest]
 fn test_option_greeks_roundtrip_without_optional_fields() {
     let value = OptionGreeks {
         instrument_id: InstrumentId::from("ETH-30JUN23-2000-C.DERIBIT"),

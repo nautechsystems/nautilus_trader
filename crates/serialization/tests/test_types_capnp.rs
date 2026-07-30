@@ -17,7 +17,7 @@
 
 #![cfg(feature = "capnp")]
 
-use nautilus_model::types::{Price, Quantity};
+use nautilus_model::types::{Price, Quantity, fixed::check_fixed_precision};
 use nautilus_serialization::capnp::{FromCapnp, ToCapnp, types_capnp};
 use rstest::rstest;
 
@@ -63,6 +63,42 @@ fn test_quantity_roundtrip(#[case] qty: Quantity) {
     let decoded = Quantity::from_capnp(root).unwrap();
 
     assert_eq!(qty, decoded);
+}
+
+#[rstest]
+fn test_price_invalid_precision_returns_error() {
+    let mut message = capnp::message::Builder::new_default();
+    let mut builder = message.init_root::<types_capnp::price::Builder>();
+    let mut raw = builder.reborrow().init_raw();
+    raw.set_lo(0);
+    raw.set_hi(0);
+    builder.set_precision(u8::MAX);
+
+    let reader = message
+        .get_root_as_reader::<types_capnp::price::Reader>()
+        .unwrap();
+    let error = Price::from_capnp(reader).unwrap_err();
+    let expected_error = check_fixed_precision(u8::MAX).unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error.to_string());
+}
+
+#[rstest]
+fn test_quantity_invalid_precision_returns_error() {
+    let mut message = capnp::message::Builder::new_default();
+    let mut builder = message.init_root::<types_capnp::quantity::Builder>();
+    let mut raw = builder.reborrow().init_raw();
+    raw.set_lo(0);
+    raw.set_hi(0);
+    builder.set_precision(u8::MAX);
+
+    let reader = message
+        .get_root_as_reader::<types_capnp::quantity::Reader>()
+        .unwrap();
+    let error = Quantity::from_capnp(reader).unwrap_err();
+    let expected_error = check_fixed_precision(u8::MAX).unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error.to_string());
 }
 
 #[rstest]
