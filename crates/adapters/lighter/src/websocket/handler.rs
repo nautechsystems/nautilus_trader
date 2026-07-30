@@ -3954,6 +3954,55 @@ mod tests {
         assert_eq!(fresh_rx.await.unwrap(), Ok(()));
     }
 
+    #[rstest]
+    fn second_reconnect_folds_pending_auth_into_requeued_generation() {
+        let mut handler = make_handler_with_account();
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let (old_tx, mut old_rx) = tokio::sync::oneshot::channel();
+        let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
+
+        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.reset_subscription_attempts_after_reconnect();
+        let (_, replay_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, replay_generation);
+        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_eq!(attempt.auth.as_deref(), Some("old-token"));
+        assert_eq!(attempt.pending_auth.as_deref(), Some("fresh-token"));
+        assert_eq!(attempt.response_txs.len(), 1);
+        assert_eq!(attempt.pending_response_txs.len(), 1);
+
+        handler.reset_subscription_attempts_after_reconnect();
+
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_ne!(attempt.generation, replay_generation);
+        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert!(attempt.pending_auth.is_none());
+        assert_eq!(attempt.response_txs.len(), 2);
+        assert!(attempt.pending_response_txs.is_empty());
+        assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.pending_subs[0], (topic, attempt.generation));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(matches!(
+            old_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(matches!(
+            fresh_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+
+        let (_, generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, generation);
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+
+        assert_eq!(old_rx.try_recv(), Ok(Ok(())));
+        assert_eq!(fresh_rx.try_recv(), Ok(Ok(())));
+        assert!(handler.subscription_attempts.is_empty());
+    }
+
     #[tokio::test]
     async fn retry_folds_pending_auth_without_resetting_retry_budget() {
         let mut handler = make_handler_with_account();
