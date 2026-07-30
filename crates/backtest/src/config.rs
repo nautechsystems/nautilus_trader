@@ -119,10 +119,10 @@ pub struct BacktestEngineConfig {
     /// The trader ID for the node.
     #[builder(default)]
     pub trader_id: TraderId,
-    /// If trading strategy state should be loaded from the database on start.
+    /// If actor and strategy state should be loaded from the database on start.
     #[builder(default)]
     pub load_state: bool,
-    /// If trading strategy state should be saved to the database on stop.
+    /// If actor and strategy state should be saved to the database on stop.
     #[builder(default)]
     pub save_state: bool,
     /// If the system should request shutdown when an error log is emitted.

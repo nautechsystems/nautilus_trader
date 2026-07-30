@@ -6923,6 +6923,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",
+ "nautilus-testkit",
  "nautilus-trading",
  "pyo3",
  "pyo3-stub-gen",
@@ -6989,9 +6990,11 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "arrow 58.4.0",
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "bon",
+ "bytes",
  "chrono",
  "indexmap 2.14.0",
  "itchy",
@@ -7015,6 +7018,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "ustr",
 ]
 
 [[package]]

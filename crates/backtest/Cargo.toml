@@ -104,6 +104,7 @@ nautilus-indicators = { workspace = true }
 nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "datasets",
+  "testers",
 ] }
 nautilus-trading = { workspace = true, features = ["examples"] }
 

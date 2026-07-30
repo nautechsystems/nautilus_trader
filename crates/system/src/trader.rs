@@ -24,7 +24,10 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use ahash::AHashMap;
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
-use nautilus_common::{actor::data_actor::ImportableActorConfig, python::actor::PyDataActor};
+use nautilus_common::{
+    actor::data_actor::ImportableActorConfig,
+    python::actor::{PyDataActor, PyDataActorInner},
+};
 use nautilus_common::{
     actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
@@ -81,6 +84,15 @@ pub(crate) enum StrategyCommand {
 }
 
 type ExecAlgorithmSubscriptionFn = Box<dyn FnMut() -> anyhow::Result<()>>;
+type PersistedComponentState = IndexMap<String, Vec<u8>>;
+type ComponentStateLoadFn = fn(Ustr, PersistedComponentState) -> anyhow::Result<()>;
+type ComponentStateSaveFn = fn(Ustr) -> anyhow::Result<PersistedComponentState>;
+
+#[derive(Clone, Copy)]
+struct ComponentStateCallbacks {
+    load: ComponentStateLoadFn,
+    save: ComponentStateSaveFn,
+}
 
 /// Central orchestrator for managing trading components.
 ///
@@ -114,8 +126,12 @@ pub struct Trader {
     portfolio: Rc<RefCell<Portfolio>>,
     /// Registered actor IDs (actors stored in global registry).
     actor_ids: Vec<ActorId>,
+    /// Type-erased state callbacks for registered actors.
+    actor_state_callbacks: AHashMap<ActorId, ComponentStateCallbacks>,
     /// Registered strategy IDs (strategies stored in global registry).
     strategy_ids: Vec<StrategyId>,
+    /// Type-erased state callbacks for registered strategies.
+    strategy_state_callbacks: AHashMap<StrategyId, ComponentStateCallbacks>,
     /// Strategy stop functions for managed stop behavior.
     strategy_stop_fns: AHashMap<StrategyId, Box<dyn FnMut() -> bool>>,
     /// Msgbus handler IDs for strategy event subscriptions (order, position).
@@ -165,7 +181,9 @@ impl Trader {
             cache,
             portfolio,
             actor_ids: Vec::new(),
+            actor_state_callbacks: AHashMap::new(),
             strategy_ids: Vec::new(),
+            strategy_state_callbacks: AHashMap::new(),
             strategy_stop_fns: AHashMap::new(),
             strategy_handler_ids: AHashMap::new(),
             exec_algorithm_ids: Vec::new(),
@@ -389,7 +407,7 @@ impl Trader {
             Ok(())
         })?;
 
-        self.add_actor_id_for_lifecycle(actor_id)?;
+        self.add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)?;
 
         Ok(())
     }
@@ -445,6 +463,13 @@ impl Trader {
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
+        self.actor_state_callbacks.insert(
+            actor_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
 
         log::info!("Registered actor {actor_id} with trader {}", self.trader_id);
 
@@ -460,7 +485,10 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if the actor ID is already tracked by this trader.
-    pub fn add_actor_id_for_lifecycle(&mut self, actor_id: ActorId) -> anyhow::Result<()> {
+    pub fn add_actor_id_for_lifecycle<T>(&mut self, actor_id: ActorId) -> anyhow::Result<()>
+    where
+        T: DataActor + DataActorNative + Debug + 'static,
+    {
         // Check for duplicate registration
         if self.actor_ids.contains(&actor_id) {
             anyhow::bail!("Actor '{actor_id}' is already tracked by trader");
@@ -468,6 +496,13 @@ impl Trader {
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
+        self.actor_state_callbacks.insert(
+            actor_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
 
         log::debug!(
             "Added actor ID '{actor_id}' to trader {} for lifecycle management",
@@ -578,6 +613,13 @@ impl Trader {
             .register(strategy_control_endpoint(strategy_id), control_handler);
 
         self.strategy_ids.push(strategy_id);
+        self.strategy_state_callbacks.insert(
+            strategy_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
         self.strategy_handler_ids
             .insert(strategy_id, (order_handler_id, position_handler_id));
 
@@ -737,6 +779,13 @@ impl Trader {
             .register(strategy_control_endpoint(strategy_id), control_handler);
 
         self.strategy_ids.push(strategy_id);
+        self.strategy_state_callbacks.insert(
+            strategy_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
         self.strategy_handler_ids
             .insert(strategy_id, (order_handler_id, position_handler_id));
 
@@ -1452,7 +1501,9 @@ impl Trader {
         }
 
         self.actor_ids.clear();
+        self.actor_state_callbacks.clear();
         self.strategy_ids.clear();
+        self.strategy_state_callbacks.clear();
         self.strategy_stop_fns.clear();
         self.strategy_handler_ids.clear();
         self.exec_algorithm_ids.clear();
@@ -1493,6 +1544,7 @@ impl Trader {
         }
 
         self.strategy_ids.clear();
+        self.strategy_state_callbacks.clear();
         self.strategy_stop_fns.clear();
         self.strategy_handler_ids.clear();
 
@@ -1519,6 +1571,7 @@ impl Trader {
         }
 
         self.actor_ids.clear();
+        self.actor_state_callbacks.clear();
 
         Ok(())
     }
@@ -1597,6 +1650,7 @@ impl Trader {
         dispose_component(&actor_id.inner())?;
 
         self.actor_ids.swap_remove(pos);
+        self.actor_state_callbacks.remove(actor_id);
         let component_id = ComponentId::new(actor_id.inner().as_str());
         if let Some(clock) = self.clocks.get(&component_id) {
             clock.borrow_mut().cancel_timers();
@@ -1722,6 +1776,7 @@ impl Trader {
             .deregister(strategy_control_endpoint(*strategy_id));
 
         self.strategy_ids.swap_remove(pos);
+        self.strategy_state_callbacks.remove(strategy_id);
         self.strategy_stop_fns.remove(strategy_id);
         let component_id = ComponentId::new(strategy_id.inner().as_str());
         if let Some(clock) = self.clocks.get(&component_id) {
@@ -1737,6 +1792,165 @@ impl Trader {
     }
 
     // -- Lifecycle management ---------------------------------------------------
+
+    /// Loads persisted actor and strategy state in registration order.
+    ///
+    /// Empty state and a cache without database backing do not invoke component callbacks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if state cannot be loaded or a component callback fails.
+    pub(crate) fn load_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+        let (cache, actor_callbacks, strategy_callbacks) = {
+            let trader = trader.borrow();
+            let actor_callbacks = trader.actor_state_callbacks()?;
+            let strategy_callbacks = trader.strategy_state_callbacks()?;
+
+            (trader.cache.clone(), actor_callbacks, strategy_callbacks)
+        };
+
+        if !cache.borrow().has_backing() {
+            return Ok(());
+        }
+
+        for (actor_id, callbacks) in actor_callbacks {
+            let component_id = ComponentId::new(actor_id.inner().as_str());
+            let state = cache
+                .borrow()
+                .load_actor_state(&component_id)
+                .map_err(|e| anyhow::anyhow!("Failed to load actor {actor_id} state: {e:#}"))?;
+            let Some(state) = state.filter(|state| !state.is_empty()) else {
+                continue;
+            };
+
+            (callbacks.load)(actor_id.inner(), state)
+                .map_err(|e| anyhow::anyhow!("Failed to restore actor {actor_id} state: {e:#}"))?;
+        }
+
+        for (strategy_id, callbacks) in strategy_callbacks {
+            let state = cache
+                .borrow()
+                .load_strategy_state(&strategy_id)
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to load strategy {strategy_id} state: {e:#}")
+                })?;
+            let Some(state) = state.filter(|state| !state.is_empty()) else {
+                continue;
+            };
+
+            (callbacks.load)(strategy_id.inner(), state).map_err(|e| {
+                anyhow::anyhow!("Failed to restore strategy {strategy_id} state: {e:#}")
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Saves actor and strategy state in registration order.
+    ///
+    /// Empty state is persisted, while a cache without database backing does not invoke
+    /// component callbacks. All callbacks and updates receive an attempt before errors return.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error containing every component callback or persistence failure.
+    pub(crate) fn save_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+        let (cache, actor_callbacks, strategy_callbacks) = {
+            let trader = trader.borrow();
+            let actor_callbacks = trader.actor_state_callbacks()?;
+            let strategy_callbacks = trader.strategy_state_callbacks()?;
+
+            (trader.cache.clone(), actor_callbacks, strategy_callbacks)
+        };
+
+        if !cache.borrow().has_backing() {
+            return Ok(());
+        }
+
+        let mut errors = Vec::new();
+
+        for (actor_id, callbacks) in actor_callbacks {
+            match (callbacks.save)(actor_id.inner()) {
+                Ok(state) => {
+                    let component_id = ComponentId::new(actor_id.inner().as_str());
+                    if let Err(e) = cache.borrow().update_actor_state(&component_id, &state) {
+                        errors.push(format!("actor {actor_id} persistence: {e:#}"));
+                    }
+                }
+                Err(e) => errors.push(format!("actor {actor_id} callback: {e:#}")),
+            }
+        }
+
+        for (strategy_id, callbacks) in strategy_callbacks {
+            match (callbacks.save)(strategy_id.inner()) {
+                Ok(state) => {
+                    if let Err(e) = cache.borrow().update_strategy_state(&strategy_id, &state) {
+                        errors.push(format!("strategy {strategy_id} persistence: {e:#}"));
+                    }
+                }
+                Err(e) => errors.push(format!("strategy {strategy_id} callback: {e:#}")),
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("Failed to save component state: {}", errors.join("; "))
+        }
+    }
+
+    fn actor_state_callbacks(&self) -> anyhow::Result<Vec<(ActorId, ComponentStateCallbacks)>> {
+        self.actor_ids
+            .iter()
+            .map(|actor_id| {
+                self.actor_state_callbacks
+                    .get(actor_id)
+                    .copied()
+                    .map(|callbacks| (*actor_id, callbacks))
+                    .ok_or_else(|| anyhow::anyhow!("Actor {actor_id} state callback not found"))
+            })
+            .collect()
+    }
+
+    fn strategy_state_callbacks(
+        &self,
+    ) -> anyhow::Result<Vec<(StrategyId, ComponentStateCallbacks)>> {
+        self.strategy_ids
+            .iter()
+            .map(|strategy_id| {
+                self.strategy_state_callbacks
+                    .get(strategy_id)
+                    .copied()
+                    .map(|callbacks| (*strategy_id, callbacks))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Strategy {strategy_id} state callback not found")
+                    })
+            })
+            .collect()
+    }
+
+    fn load_component_state<T>(
+        component_id: Ustr,
+        state: PersistedComponentState,
+    ) -> anyhow::Result<()>
+    where
+        T: DataActor + DataActorNative + Debug + 'static,
+    {
+        let mut component = try_get_actor_unchecked::<T>(&component_id).ok_or_else(|| {
+            anyhow::anyhow!("Component {component_id} not found in actor registry")
+        })?;
+        component.on_load(state)
+    }
+
+    fn save_component_state<T>(component_id: Ustr) -> anyhow::Result<PersistedComponentState>
+    where
+        T: DataActor + DataActorNative + Debug + 'static,
+    {
+        let component = try_get_actor_unchecked::<T>(&component_id).ok_or_else(|| {
+            anyhow::anyhow!("Component {component_id} not found in actor registry")
+        })?;
+        component.on_save()
+    }
 
     /// Initializes the trader, transitioning from `PreInitialized` to `Ready` state.
     ///
@@ -2135,11 +2349,15 @@ mod tests {
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
+    #[cfg(feature = "python")]
+    use nautilus_testkit::cache::TestCacheDatabaseControl;
     use nautilus_trading::{
         ExecutionAlgorithmConfig, ExecutionAlgorithmCore, StrategyNative,
         nautilus_execution_algorithm, nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
+    #[cfg(feature = "python")]
+    use pyo3::ffi::c_str;
     use rstest::rstest;
 
     use super::*;
@@ -3492,6 +3710,166 @@ mod tests {
         let event = OrderEventAny::Accepted(OrderAccepted::test_default());
         msgbus::publish_order_event(order_topic, &event);
         assert_eq!(*ext_received.borrow(), 1);
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_python_actor_and_strategy_state_callbacks_use_registered_types() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class StateComponent:
+    def __init__(self, state):
+        self.state = state
+        self.loaded = None
+        self.calls = []
+
+    def on_load(self, state):
+        self.calls.append("on_load")
+        self.loaded = dict(state)
+
+    def on_save(self):
+        self.calls.append("on_save")
+        return self.state
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+
+            let component_class = py.eval(c_str!("StateComponent"), None, None).unwrap();
+            let actor_save =
+                IndexMap::from([("actor-save".to_string(), b"python-actor-saved".to_vec())]);
+            let strategy_save = IndexMap::from([(
+                "strategy-save".to_string(),
+                b"python-strategy-saved".to_vec(),
+            )]);
+            let py_actor_state = PyDict::new(py);
+            py_actor_state
+                .set_item("actor-save", b"python-actor-saved")
+                .unwrap();
+            let py_strategy_state = PyDict::new(py);
+            py_strategy_state
+                .set_item("strategy-save", b"python-strategy-saved")
+                .unwrap();
+            let py_actor = component_class.call1((py_actor_state,)).unwrap().unbind();
+            let py_strategy = component_class
+                .call1((py_strategy_state,))
+                .unwrap()
+                .unbind();
+
+            let actor_id = ActorId::from("PYTHON-STATE-ACTOR");
+            let strategy_id = StrategyId::from("PYTHON-STATE-STRATEGY-001");
+            let actor_load =
+                IndexMap::from([("actor-load".to_string(), b"python-actor-loaded".to_vec())]);
+            let strategy_load = IndexMap::from([(
+                "strategy-load".to_string(),
+                b"python-strategy-loaded".to_vec(),
+            )]);
+            let (database, control) = TestCacheDatabaseControl::create();
+            control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+            control.set_strategy_state(strategy_id, &strategy_load);
+
+            let (
+                _msgbus,
+                cache,
+                portfolio,
+                _data_engine,
+                _risk_engine,
+                _exec_engine,
+                clock_factory,
+            ) = create_trader_components();
+            cache.borrow_mut().set_database(Box::new(database));
+            let trader_id = TraderId::test_default();
+            let mut trader = Trader::new(
+                trader_id,
+                UUID4::new(),
+                Environment::Backtest,
+                clock_factory,
+                cache.clone(),
+                portfolio.clone(),
+            );
+
+            let mut actor = PyDataActor::new(Some(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            }));
+            actor.set_python_instance(py_actor.clone_ref(py));
+            let actor_clock = trader.create_component_clock(ComponentId::from(actor_id.as_str()));
+            actor
+                .register(trader_id, actor_clock, cache.clone())
+                .unwrap();
+            actor.register_in_global_registries();
+            trader
+                .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
+                .unwrap();
+
+            let mut strategy = PyStrategy::new(Some(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }));
+            strategy.set_python_instance(py_strategy.clone_ref(py));
+            let strategy_clock =
+                trader.create_component_clock(ComponentId::from(strategy_id.as_str()));
+            strategy
+                .register(trader_id, strategy_clock, cache, portfolio)
+                .unwrap();
+            strategy.register_in_global_registries();
+            trader
+                .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+                .unwrap();
+
+            let trader = Rc::new(RefCell::new(trader));
+            Trader::load_state(&trader).unwrap();
+            Trader::save_state(&trader).unwrap();
+
+            let actor_loaded = py_actor
+                .getattr(py, "loaded")
+                .unwrap()
+                .extract::<std::collections::HashMap<String, Vec<u8>>>(py)
+                .unwrap();
+            let strategy_loaded = py_strategy
+                .getattr(py, "loaded")
+                .unwrap()
+                .extract::<std::collections::HashMap<String, Vec<u8>>>(py)
+                .unwrap();
+            let actor_calls = py_actor
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<String>>(py)
+                .unwrap();
+            let strategy_calls = py_strategy
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<String>>(py)
+                .unwrap();
+
+            assert_eq!(
+                actor_loaded,
+                std::collections::HashMap::from([(
+                    "actor-load".to_string(),
+                    b"python-actor-loaded".to_vec(),
+                )])
+            );
+            assert_eq!(
+                strategy_loaded,
+                std::collections::HashMap::from([(
+                    "strategy-load".to_string(),
+                    b"python-strategy-loaded".to_vec(),
+                )])
+            );
+            assert_eq!(actor_calls, vec!["on_load", "on_save"]);
+            assert_eq!(strategy_calls, vec!["on_load", "on_save"]);
+            assert_eq!(
+                control.actor_state(&ComponentId::from(actor_id.as_str())),
+                Some(actor_save)
+            );
+            assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
+        });
     }
 
     #[rstest]

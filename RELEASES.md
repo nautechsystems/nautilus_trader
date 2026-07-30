@@ -92,6 +92,7 @@ adapter set. The following limits remain deferred:
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
 - Added Python v2 `nautilus_trader.config` convenience imports for core configuration types
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
+- Added v2 actor and strategy state persistence across live and backtest lifecycles
 - Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
 - Added v2 `ExecTesterConfig.close_positions_qty_precision` for venue‑fillable stop‑time closes
 - Added safe Python v2 adapter config readback for accepted fields while keeping credentials and nested configs private

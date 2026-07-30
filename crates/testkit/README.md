@@ -32,7 +32,7 @@ event-driven architecture, providing research-to-live semantic parity.
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `datasets` (enabled by default): Enables test dataset discovery, download, validation, parsing, and loading.
-- `testers` (enabled by default): Enables test actors and strategies for live testing and development.
+- `testers` (enabled by default): Enables test actors, strategies, and in-memory cache backing.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 - `extension-module`: Builds as a Python extension module.

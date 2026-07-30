@@ -424,8 +424,7 @@ fn stream_chunks<I: Iterator<Item = Data>>(
     chunk_size: usize,
 ) -> anyhow::Result<()> {
     if iter.peek().is_none() {
-        engine.end();
-        return Ok(());
+        return engine.end_with_result();
     }
 
     let mut next_start = config.start();
@@ -458,8 +457,7 @@ fn stream_chunks<I: Iterator<Item = Data>>(
         next_start = end;
     }
 
-    engine.end();
-    Ok(())
+    engine.end_with_result()
 }
 
 // Takes up to `chunk_size` items, then extends to include all remaining

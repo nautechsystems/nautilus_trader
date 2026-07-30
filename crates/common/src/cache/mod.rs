@@ -52,6 +52,7 @@ pub use error::{
     SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError, VenueOrderIdOwnershipError,
 };
 use index::CacheIndex;
+use indexmap::IndexMap;
 use nautilus_core::{
     SharedCell, UnixNanos,
     correctness::{
@@ -2733,6 +2734,88 @@ impl Cache {
     #[must_use]
     pub const fn has_backing(&self) -> bool {
         self.database.is_some()
+    }
+
+    /// Loads persisted actor state.
+    ///
+    /// Returns `None` when the cache has no backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading actor state fails.
+    pub fn load_actor_state(
+        &self,
+        component_id: &ComponentId,
+    ) -> anyhow::Result<Option<IndexMap<String, Vec<u8>>>> {
+        self.database
+            .as_ref()
+            .map(|database| database.load_actor(component_id))
+            .transpose()
+            .map(|state| state.map(Self::decode_component_state))
+    }
+
+    /// Loads persisted strategy state.
+    ///
+    /// Returns `None` when the cache has no backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading strategy state fails.
+    pub fn load_strategy_state(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<Option<IndexMap<String, Vec<u8>>>> {
+        self.database
+            .as_ref()
+            .map(|database| database.load_strategy(strategy_id))
+            .transpose()
+            .map(|state| state.map(Self::decode_component_state))
+    }
+
+    /// Persists actor state when the cache has a backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating actor state fails.
+    pub fn update_actor_state(
+        &self,
+        component_id: &ComponentId,
+        state: &IndexMap<String, Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.update_actor(component_id, &Self::encode_component_state(state))?;
+        }
+        Ok(())
+    }
+
+    /// Persists strategy state when the cache has a backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating strategy state fails.
+    pub fn update_strategy_state(
+        &self,
+        strategy_id: &StrategyId,
+        state: &IndexMap<String, Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.update_strategy(strategy_id, &Self::encode_component_state(state))?;
+        }
+        Ok(())
+    }
+
+    fn decode_component_state(state: AHashMap<String, Bytes>) -> IndexMap<String, Vec<u8>> {
+        state
+            .into_iter()
+            .map(|(key, value)| (key, value.to_vec()))
+            .collect()
+    }
+
+    fn encode_component_state(state: &IndexMap<String, Vec<u8>>) -> AHashMap<String, Bytes> {
+        state
+            .iter()
+            .map(|(key, value)| (key.clone(), Bytes::copy_from_slice(value)))
+            .collect()
     }
 
     // Calculate the unrealized profit and loss (PnL) for `position`.

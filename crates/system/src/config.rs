@@ -36,9 +36,9 @@ pub trait NautilusKernelConfig: Debug {
     fn environment(&self) -> Environment;
     /// Returns the trader ID for the node.
     fn trader_id(&self) -> TraderId;
-    /// Returns if trading strategy state should be loaded from the database on start.
+    /// Returns if actor and strategy state should be loaded from the database on start.
     fn load_state(&self) -> bool;
-    /// Returns if trading strategy state should be saved to the database on stop.
+    /// Returns if actor and strategy state should be saved to the database on stop.
     fn save_state(&self) -> bool;
     /// Returns if the system should request shutdown when an error log is emitted.
     ///
@@ -85,10 +85,10 @@ pub struct KernelConfig {
     /// The trader ID for the node (must be a name and ID tag separated by a hyphen).
     #[builder(default)]
     pub trader_id: TraderId,
-    /// If trading strategy state should be loaded from the database on start.
+    /// If actor and strategy state should be loaded from the database on start.
     #[builder(default)]
     pub load_state: bool,
-    /// If trading strategy state should be saved to the database on stop.
+    /// If actor and strategy state should be saved to the database on stop.
     #[builder(default)]
     pub save_state: bool,
     /// If the system should request shutdown when an error log is emitted.

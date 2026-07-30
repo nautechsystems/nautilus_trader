@@ -26,6 +26,8 @@ pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache
 mod serial_tests {
     use std::time::Duration;
 
+    use ahash::AHashMap;
+    use bytes::Bytes;
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
     use nautilus_core::UUID4;
     use nautilus_infrastructure::sql::{
@@ -358,11 +360,29 @@ mod serial_tests {
             .await;
         let actor_result = database.load_actor(&ComponentId::from("ACTOR-001"));
         let strategy_result = database.load_strategy(&StrategyId::from("STRATEGY-001"));
+        let state = AHashMap::from([("state".to_string(), Bytes::from_static(b"value"))]);
+        let actor_update_result = database.update_actor(&ComponentId::from("ACTOR-001"), &state);
+        let strategy_update_result =
+            database.update_strategy(&StrategyId::from("STRATEGY-001"), &state);
 
         assert!(loaded.synthetics.is_empty());
         assert!(synthetic_result.is_err());
-        assert!(actor_result.is_err());
-        assert!(strategy_result.is_err());
+        assert_eq!(
+            actor_result.unwrap_err().to_string(),
+            "load_actor not implemented for PostgreSQL cache adapter: ACTOR-001"
+        );
+        assert_eq!(
+            strategy_result.unwrap_err().to_string(),
+            "load_strategy not implemented for PostgreSQL cache adapter: STRATEGY-001"
+        );
+        assert_eq!(
+            actor_update_result.unwrap_err().to_string(),
+            "update_actor not implemented for PostgreSQL cache adapter: ACTOR-001"
+        );
+        assert_eq!(
+            strategy_update_result.unwrap_err().to_string(),
+            "update_strategy not implemented for PostgreSQL cache adapter: STRATEGY-001"
+        );
 
         database.close().unwrap();
     }
