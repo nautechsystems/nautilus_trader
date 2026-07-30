@@ -36,14 +36,17 @@
 //!
 //! # Feature Flags
 //!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! This crate provides feature flags to control source code inclusion during compilation.
 //!
+//! - `datasets` (enabled by default): Enables test dataset discovery, download, validation, parsing,
+//!   and loading.
+//! - `testers` (enabled by default): Enables test actors and strategies for live testing and
+//!   development.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 //! - `extension-module`: Builds the crate as a Python extension module.
+//!
+//! Event collection utilities remain available without enabling a feature.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -65,13 +68,20 @@
     )
 )]
 
-pub mod common;
 pub mod events;
+
+#[cfg(feature = "datasets")]
+pub mod common;
+#[cfg(feature = "datasets")]
 pub mod files;
+#[cfg(feature = "datasets")]
 pub mod itch;
+
+#[cfg(feature = "testers")]
 pub mod testers;
 
 // Re-export for convenience
+#[cfg(feature = "testers")]
 pub use testers::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 
 #[cfg(feature = "python")]

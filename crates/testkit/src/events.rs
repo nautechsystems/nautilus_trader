@@ -83,12 +83,12 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         identifiers::{ClientId, Venue},
+        instruments::{InstrumentAny, stubs::equity_aapl_itch},
         stubs::TestDefault,
     };
     use rstest::rstest;
 
     use super::*;
-    use crate::common::itch_aapl_equity;
 
     fn instruments_response(correlation_id: UUID4) -> DataEvent {
         DataEvent::Response(DataResponse::Instruments(InstrumentsResponse::new(
@@ -182,7 +182,10 @@ mod tests {
         let other_id = UUID4::new();
         let request_id = UUID4::new();
         let trailing_id = UUID4::new();
-        tx.send(DataEvent::Instrument(itch_aapl_equity())).unwrap();
+        tx.send(DataEvent::Instrument(InstrumentAny::Equity(
+            equity_aapl_itch(),
+        )))
+        .unwrap();
         tx.send(instruments_response(other_id)).unwrap();
         tx.send(instruments_response(request_id)).unwrap();
         tx.send(instruments_response(trailing_id)).unwrap();
