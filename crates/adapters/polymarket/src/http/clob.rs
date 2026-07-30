@@ -57,6 +57,7 @@ const CURSOR_END: &str = "LTE=";
 const PATH_ORDERS: &str = "/data/orders";
 const PATH_TRADES: &str = "/data/trades";
 const PATH_BALANCE_ALLOWANCE: &str = "/balance-allowance";
+const PATH_BALANCE_ALLOWANCE_UPDATE: &str = "/balance-allowance/update";
 const PATH_POST_ORDER: &str = "/order";
 const PATH_POST_ORDERS: &str = "/orders";
 const PATH_CANCEL_ALL: &str = "/cancel-all";
@@ -500,6 +501,17 @@ impl PolymarketClobHttpClient {
                 &response.body,
             ))
         }
+    }
+
+    /// Refreshes the CLOB backend's cached balance and allowance data.
+    pub async fn update_balance_allowance(&self, params: GetBalanceAllowanceParams) -> Result<()> {
+        self.send_get_optional::<_, serde_json::Value>(
+            PATH_BALANCE_ALLOWANCE_UPDATE,
+            Some(&params),
+            true,
+        )
+        .await?;
+        Ok(())
     }
 
     /// Submits a single signed order to the exchange.

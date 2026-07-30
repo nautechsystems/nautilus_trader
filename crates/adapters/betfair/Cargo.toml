@@ -93,7 +93,9 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true, features = ["node"] }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
-nautilus-testkit = { workspace = true }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "testers",
+] }
 nautilus-trading = { workspace = true }
 
 axum = { workspace = true }

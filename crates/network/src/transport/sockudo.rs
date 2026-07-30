@@ -66,7 +66,7 @@ const RESERVED_UPGRADE_HEADERS: &[&str] = &[
     "trailer",
 ];
 
-/// Mirror of `sockudo_ws::handshake::client_handshake` (1.7.4) with custom headers.
+/// Mirror of `sockudo_ws::handshake::client_handshake` (2.0.1) with custom headers.
 ///
 /// Caller pre-validates `extra_headers` via [`validate_extra_headers`].
 pub(crate) async fn client_handshake_with_headers<S>(
@@ -149,7 +149,7 @@ fn log_handshake_response(host: &str, path: &str, err: &SockudoError, buf: &Byte
     );
 }
 
-// Mirror of `sockudo_ws::handshake::build_request` (1.7.4) with `extra_headers`
+// Mirror of `sockudo_ws::handshake::build_request` (2.0.1) with `extra_headers`
 // appended; caller pre-validates.
 fn build_request_with_headers(
     host: &str,

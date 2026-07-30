@@ -495,8 +495,8 @@ def test_importable_strategy_routes_synthetic_bars_through_native_twap():
     engine.run()
     result = engine.get_result()
     orders = engine.cache.orders()
-    primary_orders = [order for order in orders if order.exec_spawn_id is None]
-    spawned_orders = [order for order in orders if order.exec_spawn_id is not None]
+    primary_orders = [order for order in orders if order.is_primary]
+    spawned_orders = [order for order in orders if order.is_spawned]
     open_positions = engine.cache.positions_open(instrument_id=instrument.id)
 
     assert result.iterations == len(closes)

@@ -40,6 +40,8 @@ The maintained V2 examples are available in
 for Rust and
 [`python/examples/polymarket`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/polymarket)
 for Python.
+The exec tester configurations apply the
+[close precision](#exec-tester-close-residuals) needed for Polymarket market SELL orders.
 
 ## Binary options
 
@@ -119,109 +121,54 @@ Ensure your wallet is funded with **pUSD**, otherwise you will encounter the "no
 or allowance" API error when submitting orders.
 :::
 
-### Setting allowances for Polymarket contracts
+### Setting EOA allowances
 
-Before you can start trading, you need to ensure that your wallet has allowances set for Polymarket's smart contracts.
-You can do this by running the provided script located at `nautilus_trader/adapters/polymarket/scripts/set_allowances.py`.
-
-This script is adapted from a [gist](https://gist.github.com/poly-rodr/44313920481de58d5a3f6d1f8226bd5e) created by @poly-rodr.
-
-:::note
-Run the relevant allowance command once per EOA wallet, then rerun it when Polymarket changes
-the required contracts.
-:::
-
-:::warning
-[Polymarket retires the CLOB v1 Neg Risk Adapter](https://docs.polymarket.com/changelog)
-on July 17, 2026 at 00:00 UTC (10:00 AEST).
-Existing wallets do not approve its v2 replacement automatically. For every existing wallet,
-run the Python script or Rust binary used by your deployment before the deadline. These commands
-do not revoke the old v1 approvals;
-handle revocation as a separate on-chain operation after reviewing any remaining legacy flows.
-Run only one allowance command at a time for a given wallet.
-:::
-
-This script automates the process of approving the necessary allowances for the Polymarket contracts.
-It sets approvals for the pUSD collateral token and Conditional Token Framework (CTF) contract to allow the
-Polymarket CLOB Exchange to interact with your funds.
-
-Before running the script, ensure the following prerequisites are met:
-
-- Install the web3 Python package: `uv pip install "web3==7.12.1"`.
-- Have a **Polygon**-compatible wallet funded with some POL (used for gas fees).
-- Set the following environment variables in your shell:
-  - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
-  - `POLYGON_PUBLIC_KEY`: Your public key for the **Polygon**-compatible wallet.
-
-Once you have these in place, the script will:
-
-- Approve the maximum possible amount of pUSD (using the `MAX_UINT256` value) for the Polymarket collateral token contract.
-- Set the approval for the CTF contract, allowing it to interact with your account for trading purposes.
-
-:::note
-You can also adjust the approval amount in the script instead of using `MAX_UINT256`,
-with the amount specified in *fractional units* of **pUSD**, though this has not been tested.
-:::
-
-Ensure that your private key and public key are correctly stored in the environment variables before running the script.
-Here's an example of how to set the variables in your terminal session:
-
-```bash
-export POLYGON_PRIVATE_KEY="YOUR_PRIVATE_KEY"
-export POLYGON_PUBLIC_KEY="YOUR_PUBLIC_KEY"
-```
-
-Run the script using:
-
-```bash
-python nautilus_trader/adapters/polymarket/scripts/set_allowances.py
-```
-
-For the Rust v2 adapter, set `POLYMARKET_PK` and run:
+The v2 crate includes a direct on‑chain allowance command for EOA accounts. Use it only when the
+funding wallet is the signer (`SignatureType::Eoa`). Fund the EOA with POL for gas, set
+`POLYMARKET_PK`, and run:
 
 ```bash
 cargo run -p nautilus-polymarket --bin polymarket-set-allowances
 ```
 
-Both commands approve the current Neg Risk Adapter at
-`0xadA2005600Dec949baf300f4C6120000bDB6eAab`. Both commands use
-`https://polygon.drpc.org` by default; set `POLYGON_RPC_URL` to use another Polygon RPC endpoint.
+The command grants maximum pUSD and CTF approvals to the CLOB Exchange, Neg Risk CTF Exchange, and
+current Neg Risk Adapter. It uses `https://polygon.drpc.org` by default; set `POLYGON_RPC_URL` to
+use another Polygon RPC endpoint. Run it again if Polymarket changes the required contracts.
 
-### Script breakdown
+### Setting smart-wallet allowances
 
-The script performs the following actions:
+Do not run the EOA command for a proxy, Safe, or Deposit Wallet funder. It signs transactions from
+the EOA key and cannot grant approvals from a smart contract wallet.
 
-- Connects to the Polygon network via an RPC URL (<https://polygon.drpc.org>).
-- Signs and sends a transaction to approve the maximum pUSD allowance for Polymarket contracts.
-- Sets approval for the CTF contract to manage Conditional Tokens on your behalf.
-- Repeats the approval process for the Polymarket CLOB Exchange, Neg Risk CTF Exchange, and current Neg Risk adapter.
+Use Polymarket's [wallet and authentication flow](https://docs.polymarket.com/trading/wallets-auth)
+to submit the approvals from the account wallet. Deposit Wallet approvals use an ordered `WALLET`
+batch authorized by the signer and submitted through the Relayer. Safe and Proxy Wallet approvals
+need their wallet‑specific SDK payloads.
 
-This allows Polymarket to interact with your funds when executing trades and ensures smooth integration with the CLOB Exchange.
+After the approval transaction confirms, refresh the CLOB cache. Rust callers can use
+`PolymarketClobHttpClient::update_balance_allowance` with `AssetType::Collateral` for pUSD. Use
+`AssetType::Conditional` with a conditional token ID for a conditional‑token allowance. Both forms
+also need the account's signature type. The authenticated request maps to
+`GET /balance-allowance/update`. Use `SignatureType::Poly1271` for a Deposit Wallet.
 
 ## API keys
 
-To trade with Polymarket, you'll need to generate API credentials. Follow these steps:
+The v2 execution client requires CLOB L2 credentials. Create or derive them with Polymarket's
+[API authentication flow](https://docs.polymarket.com/getting-started/api#authentication). The v2
+crate provides a command that reads `POLYMARKET_PK` and prints the created or derived credentials:
 
-1. Ensure the following environment variables are set:
-   - `POLYMARKET_PK`: Your private key for signing transactions.
-   - `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
+```bash
+cargo run -p nautilus-polymarket --bin polymarket-create-api-key
+```
 
-2. Run the script using:
-
-   ```bash
-   python nautilus_trader/adapters/polymarket/scripts/create_api_key.py
-   ```
-
-The script will generate and print API credentials, which you should save to the following environment variables:
+Set the returned values as:
 
 - `POLYMARKET_API_KEY`
 - `POLYMARKET_API_SECRET`
 - `POLYMARKET_PASSPHRASE`
 
-These can then be used for Polymarket client configurations:
-
-- `PolymarketDataClientConfig`
-- `PolymarketExecClientConfig`
+The credentials authenticate the private‑key signer, not a proxy or Deposit Wallet funder. The
+public v2 data client does not require these credentials.
 
 ## Configuration
 
@@ -257,6 +204,13 @@ published by bootstrap, configured refreshes, new-market discovery, and tick-siz
 ## Orders capability
 
 Polymarket operates as a prediction market with a more limited set of order types and instructions compared to traditional exchanges.
+
+:::tip
+For Polymarket live execution, set both the disconnection timeout and post‑stop delay to 30
+seconds with `with_timeout_disconnection_secs(30)` and `with_delay_post_stop_secs(30)`. The delay
+allows residual order and cancellation events to arrive before disconnection, while the timeout
+gives each client time to shut down cleanly.
+:::
 
 ### Order types
 
@@ -478,6 +432,7 @@ precision requirements**:
 | --------- | -------------- | ------------- | --------------- |
 | 0.1       | 1              | 2             | 3               |
 | 0.01      | 2              | 2             | 4               |
+| 0.0025    | 4              | 2             | 6               |
 | 0.001     | 3              | 2             | 5               |
 | 0.0001    | 4              | 2             | 6               |
 
@@ -550,14 +505,20 @@ For historical Data API trades, the loader uses
 
 ## Fees
 
-Polymarket uses the formula `fee = C * feeRate * p * (1 - p)` where C is shares
-traded and p is the share price. Fees peak at p = 0.50 and decrease symmetrically
-toward the extremes. Only takers pay fees; makers pay zero.
+The adapter reads each instrument's `fee_schedule` and applies its `rate` and `exponent` as:
+
+```text
+platform fee = shares * rate * (price * (1 - price)) ^ exponent
+```
+
+The current public schedule uses exponent `1`, which is Polymarket's published
+`C * feeRate * p * (1 - p)` formula. Platform fees peak at `p = 0.50`, decrease
+symmetrically toward the extremes, and apply only to taker fills.
 
 | Category        | Taker `feeRate` | Maker `feeRate` | Maker rebate |
 | --------------- | --------------- | --------------- | ------------ |
-| Crypto          | 0.072           | 0               | 20%          |
-| Sports          | 0.03            | 0               | 25%          |
+| Crypto          | 0.07            | 0               | 20%          |
+| Sports          | 0.05            | 0               | 15%          |
 | Finance         | 0.04            | 0               | 25%          |
 | Politics        | 0.04            | 0               | 25%          |
 | Economics       | 0.05            | 0               | 25%          |
@@ -568,38 +529,30 @@ toward the extremes. Only takers pay fees; makers pay zero.
 | Tech            | 0.04            | 0               | 25%          |
 | Geopolitics     | 0               | 0               | -            |
 
-Fees are calculated in USDC, rounded to 5 decimal places, and applied at match time
-by the protocol. The smallest fee charged is 0.00001 USDC; smaller fees round to zero.
+Every order signed by the adapter carries the hard‑coded Nautilus builder code. Its builder fee
+rate is fixed at zero and is not configurable.
+
+`FillReport.commission` is denominated in pUSD and rounds the platform fee to five decimal places.
 
 :::note
-For the latest rates, see Polymarket's [Fees](https://docs.polymarket.com/trading/fees) documentation.
+For the latest public schedule, see Polymarket's
+[Fees](https://docs.polymarket.com/trading/fees) documentation.
 :::
 
 ### Backtest fee model
 
-For backtests, the adapter ships `PolymarketFeeModel` (a
-`nautilus_trader.backtest.models.FeeModel` subclass) which applies the taker
-fee formula above and credits passive maker fills with a rebate inferred from
-the market category. Polymarket pays a 20% maker rebate on Crypto markets and
-25% on other fee-enabled categories (Sports, Finance, Politics, Economics,
-Culture, Weather, Tech, Mentions, Other), distributed daily from each market's
-rebate pool. Geopolitics markets are fee-free with no rebates and the model
-returns zero for them.
+Use `ProbabilityPriceFeeModel` for the current exponent `1` schedule. It reads maker and taker rates
+from the binary option instrument and applies the same probability‑price curve:
 
 ```python
-from nautilus_trader.adapters.polymarket.fee_model import PolymarketFeeModel
+from nautilus_trader.execution import ProbabilityPriceFeeModel
 
-# Default: maker rebates enabled
-fee_model = PolymarketFeeModel()
-
-# Or for taker-only strategies
-fee_model = PolymarketFeeModel(maker_rebates_enabled=False)
+fee_model = ProbabilityPriceFeeModel()
 ```
 
-The model can also be configured through `BacktestVenueConfig.fee_model` via
-`ImportableFeeModelConfig` and `PolymarketFeeModelConfig`. Maker rebate share
-inference uses the instrument's category labels first, then falls back to the
-documented per-category fee rate when labels are absent.
+Pass this object to `BacktestVenueConfig.fee_model`. It does not support other fee exponents or
+future maker‑rebate distributions, so state those assumptions explicitly in the backtest
+configuration.
 
 ## Reconciliation
 
@@ -692,6 +645,26 @@ accept, so fill reports for orders placed in another session pass through
 unchanged. `DUST_SNAP_THRESHOLD` is not configurable per-strategy; it lives
 in `nautilus_polymarket::common::consts`.
 
+### Exec tester close residuals
+
+`close_positions_qty_precision` is a general v2 `ExecTesterConfig` option. It defaults to
+`None`, which submits the full position quantity. The Rust and Python v2 Polymarket examples set it
+to `2` because [market order maker amounts allow two decimals](#precision-limits). Legacy v1
+testers are unchanged. The examples also set `close_positions_time_in_force=IOC`; custom
+configurations must use `IOC` or `FOK` because Polymarket rejects `GTC` market orders.
+
+On stop, the v2 tester truncates only the submitted market SELL quantity to the configured decimal
+precision and logs the exact difference at WARN level. It does not round the position state or
+create a synthetic fill.
+
+A 5 pUSD BUY that fills 5.1975 shares therefore submits a 5.19‑share close. After the venue fills
+that order, the position remains open at exactly 0.0075 shares. If the whole position is below 0.01
+shares, the tester warns and submits no zero‑quantity order. Treat close‑on‑stop as best‑effort and
+check the position and warning before assuming the account is flat. A non‑zero close must also meet
+the [1 pUSD marketable‑order minimum](#time-in-force-options); rejection leaves the full position
+open. See the [position reporting limitation](#limitations-and-considerations) for sub‑0.01‑share
+venue reports.
+
 ## WebSockets
 
 The `PolymarketWebSocketClient` is built on top of the high-performance Nautilus `WebSocketClient` base class, written in Rust.
@@ -707,6 +680,35 @@ replays only its own assets on reconnect.
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
 quote processing remains in the venue payload order.
+
+#### RTDS custom data
+
+The data client also supports Polymarket's real‑time data (RTDS) crypto and equity topics.
+Subscribe through generic custom data with a required, non‑empty `symbol` metadata value:
+
+```python
+from nautilus_trader.adapters.polymarket import POLYMARKET_CLIENT_ID
+from nautilus_trader.adapters.polymarket import PolymarketRtdsCryptoPrice
+from nautilus_trader.adapters.polymarket import PolymarketRtdsEquityPrice
+from nautilus_trader.model import DataType
+
+crypto_type = DataType(
+    PolymarketRtdsCryptoPrice.__name__,
+    metadata={"symbol": "btcusdt"},
+)
+equity_type = DataType(
+    PolymarketRtdsEquityPrice.__name__,
+    metadata={"symbol": "AAPL"},
+)
+
+strategy.subscribe_data(crypto_type, client_id=POLYMARKET_CLIENT_ID)
+strategy.subscribe_data(equity_type, client_id=POLYMARKET_CLIENT_ID)
+```
+
+Symbol matching is case‑insensitive, and published symbols are lowercase. Crypto RTDS uses the
+`crypto_prices` topic; equity RTDS uses `equity_prices`. Equity updates prefer
+`full_accuracy_value` when the venue supplies it and fall back to `value` for snapshots or updates
+that omit it.
 
 ### Runtime instrument loading
 

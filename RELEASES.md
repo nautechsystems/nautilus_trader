@@ -79,18 +79,22 @@ adapter set. The following limits remain deferred:
 - Added v2 `MessageBusConfig.autotrim_maxlen` for Redis stream count retention (#4433), thanks for reporting @gtalknitin
 - Added v2 `OrderBookDepth10` subscriptions and callbacks for Rust and Python actors and strategies (#4439)
 - Added Python v2 historical book-delta and depth batch callbacks for actors and strategies
+- Added Python v2 `PositionSizer` and `FixedRiskSizer` bindings (#4573), thanks @dfjmax
 - Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, terminal voiding, and strategy and algorithm callbacks
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
 - Added Python v2 `ExecutionAlgorithm.deny_order` with terminal denial of invalid TWAP inputs
 - Added Python v2 `ExecutionAlgorithm` portfolio, lifecycle, signals, and constructed live registration
 - Added Python v2 `BacktestNode` post-run cache, portfolio, statistics, and report inspection
+- Added v2 tearsheet support for `BacktestResult` input (#4563), thanks @faysou
 - Added Python v2 `LiveNode` cache and portfolio inspection with bounded host-loop polling
 - Added Python v2 `LiveNode.add_strategy` for constructed strategy instances (#4487), thanks @dfjmax
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
 - Added Python v2 `nautilus_trader.config` convenience imports for core configuration types
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
+- Added v2 actor and strategy state persistence across live and backtest lifecycles
 - Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
+- Added v2 `ExecTesterConfig.close_positions_qty_precision` for venue‑fillable stop‑time closes
 - Added safe Python v2 adapter config readback for accepted fields while keeping credentials and nested configs private
 - Added Python v2 Portfolio snapshot access with base-currency equity and stale/unpriced metadata
 - Added Binance Futures and OKX trailing-stop activation prices to v2 execution reports
@@ -123,6 +127,9 @@ adapter set. The following limits remain deferred:
 - Added v2 `Decimal` order fill pricing; `Order.avg_px` and `Order.slippage` no longer round through `f64`
 
 ### Breaking Changes
+- Changed L3 books to move IDs re‑added at a new price on the same side, fixing ghost levels
+- Changed L3 books to derive price‑based order IDs for orders with a zero order ID
+- Changed Rust `BookIntegrityError` to add `AmbiguousOrderSide`; update exhaustive matches
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
 - Changed Rust `Cache::snapshot_position` to return `()`; use `snapshot_position_encoded` when the encoded frame is needed
 - Changed Rust time-event channels to `TimeEventMessage`; callbacks are no longer `Send + Sync` (#4496), thanks @folknor
@@ -133,6 +140,7 @@ adapter set. The following limits remain deferred:
 - Changed v2 order-event schemas to persist activation prices and fill `info`; old catalogs must be migrated
 - Changed v2 `Order.avg_px` and `Order.slippage` from `f64` to `Decimal` in Rust, and from `float` to `decimal.Decimal` in Python
 - Changed Rust `OrderStatusReport::with_avg_px` to take a `Decimal` and return `Self`; it no longer returns a `Result`
+- Changed Rust `calculate_fixed_risk_position_size` to return `Result<Quantity>`; callers must handle errors
 - Changed v2 SQL `order.avg_px` and `order.slippage` to `NUMERIC`; run `nautilus database init` before starting a Postgres-backed node, which now fails fast on the old column types
 - Changed the v2 `OrderSnapshot` Arrow schema to write `avg_px` and `slippage` as strings; the decoder also accepts the old `Float64` columns, but migrate an existing catalog rather than appending to it, since a directory holding both column types fails schema inference
 - Changed v2 instrument Arrow schemas to persist all constraints; old catalogs must be migrated
@@ -156,11 +164,18 @@ adapter set. The following limits remain deferred:
 - Fixed cross-thread `RustLocal` callback access that could cause undefined behavior (#4496), thanks @folknor
 - Fixed time-event callback teardown aborting during thread-local destruction (#4516), thanks @folknor
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
+- Fixed DeFi `SwapTradeInfo` calculations panicking on a zero prior spot price
+- Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
 
 ### Fixes
+- Fixed order book `NoOrderSide` deltas mutating the bid side when the ID is on both book sides
+- Fixed Rust `OwnBookLevel::update` panicking on a missing order
 - Fixed v2 clock `set_time_alert` and `set_timer` panicking on pre-epoch or out-of-range `DateTime` inputs
 - Fixed v2 clock past-alert warning logging the adjusted time instead of the original alert time
 - Fixed v2 PyO3 API coverage and Python exception handling
+- Fixed v2 result tearsheets to reject disposed node state
+- Fixed v2 result tearsheets reporting the backtest range instead of the wall‑clock run duration
+- Fixed v2 result tearsheets to filter PnL and account balances by currency
 - Fixed `nautilus database init` panicking instead of skipping existing schema objects on re-run
 - Fixed `nautilus database init` leaving schema objects owned by the bootstrap administrator
 - Fixed the v2 SQL schema loader splitting dollar-quoted (`$$`) statement bodies on their inner semicolons
@@ -169,6 +184,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
 - Fixed v2 realized PnL counting only the newest snapshot for NETTING positions with three or more cycles (v1 parity)
 - Fixed v2 realized PnL miscounting archived NETTING cycles whose boundaries a prior-cycle fill void moved
+- Fixed v2 duplicate replayed fills reopening a flat position and panicking on a later fill void replay
 - Fixed v2 portfolio snapshots retaining stale-price flags after the affected position side closed
 - Fixed v2 portfolio snapshots dropping temporarily unpriced positions and hiding stale valuations
 - Fixed v2 equity curves omitting unrealized PnL between fills (#3899), thanks for reporting @q-learning-trader
@@ -342,7 +358,9 @@ adapter set. The following limits remain deferred:
 - Fixed Derive historical bar timestamps and forming-bucket filtering
 - Fixed Derive instrument loading for absent product types and malformed rows
 - Fixed Derive fill reconciliation dropping fills on retry
+- Fixed Derive mass status flattening held positions when quantity conversion fails
 - Fixed Derive null cancel acknowledgements being reported as failures
+- Fixed Derive zero‑match cancel‑by‑label requests not emitting `OrderCancelRejected`
 - Fixed Derive cancel, replace, nonce failures, and non-positive `max_fee_per_contract` configs
 - Fixed Derive shared channel ownership, unsubscribe races, and stale quote caches
 - Fixed Derive request pacing, write expiry, null IDs, and handler blocking during reconnects
@@ -359,10 +377,12 @@ adapter set. The following limits remain deferred:
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed Polymarket auto-loaded instruments not reaching WebSocket subscription (#4574), thanks for reporting @nietoga
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
+- Fixed Polymarket v2 fee schedules and RTDS equity snapshot handling
 - Fixed Polymarket Gamma market and event keyset filters, validation, and repeated query encoding
 - Fixed Polymarket Gamma discovery to use keyset pagination beyond the legacy offset cap
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
+- Fixed Polymarket v2 market WebSocket batches dropped by unknown `event_type` (#4604), thanks for reporting @mystic-io
 - Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
 - Fixed Polymarket SELL sizing, terminal IOC remainders, and sub-cent reconciliation synthetic fills
 - Fixed Polymarket limit IOC/FOK BUY orders submitting invalid fractional-cent maker amounts
@@ -388,8 +408,10 @@ adapter set. The following limits remain deferred:
 - Fixed Interactive Brokers Rust adapter conflating socket connectivity with data-farm health (#4457), thanks @faysou
 - Fixed Interactive Brokers Rust data feeds waiting on every farm before restarting recovered services (#4469), thanks @faysou
 - Fixed Kraken Futures batch order `order_tag` serialization (#4459), thanks @Andreas197510
+- Fixed Kraken Futures fill parsing for all documented `fillType` values (#4591), thanks for reporting @Andreas197510
 - Fixed Kraken financial values losing precision through floating-point parsing and arithmetic
 - Fixed Lighter batch orders to use correlated sequential WebSocket transactions
+- Fixed Lighter live funding updates exposing `funding_timestamp` as `next_funding_ns`
 - Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
 - Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
 - Fixed Lighter modify validation, conditional acks, nonce recovery, auth refresh, and WS timeouts
@@ -402,6 +424,7 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket Gamma pagination beyond the legacy offset cap
 - Fixed Polymarket v2 shutdown cancellation leaving accepted venue orders open
 - Fixed Polymarket v2 book delta atomicity and local price-range validation
+- Fixed Polymarket v2 exec tester close‑on‑stop requesting SELL quantities finer than venue signing permits
 - Fixed Polymarket v2 submission, finality, fill ID, and proxy funder validation races
 - Fixed Polymarket SELL sizing, IOC remainders, and sub-cent reconciliation synthetic fills
 - Fixed Tardis replay bars directory to `bars/` (#4378), thanks @AdvancedUno
@@ -427,7 +450,7 @@ adapter set. The following limits remain deferred:
 - Improved adapter test runtime for Architect AX (#4554), BitMEX (#4555), and Bybit (#4553), thanks @folknor
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)
 - Upgraded Rust (MSRV) to 1.97.1
-- Upgraded Cython to v3.2.8
+- Upgraded Cython to v3.2.9
 - Upgraded Cap'n Proto to v1.5.0
 - Upgraded `capnp` crate to v0.26.2
 - Upgraded `databento` crate to v0.55.0
@@ -435,11 +458,13 @@ adapter set. The following limits remain deferred:
 - Upgraded `ed25519-dalek` crate to v3.0.0
 - Upgraded `futures` crate to v0.3.33
 - Upgraded `redis` crate to v1.4.1
+- Upgraded `sockudo-ws` crate to v2.0.1
 - Upgraded `tokio` crate to v1.53.1
 - Upgraded `tokio-tungstenite` crate to v0.30.0
 - Upgraded `pyarrow` to v25.0.0
 
 ### Documentation Updates
+- Added v2 `BacktestResult` tearsheet lifecycle and currency filter guidance
 - Updated Bybit v2 spot margin auto-repayment behavior and configuration
 - Added the v1-to-v2 property, method, and callback migration matrix
 - Added canonical references and doc comments for portfolio statistics
@@ -634,6 +659,16 @@ This release includes many breaking changes across the user-facing Python and Ru
 - Fixed event-store capture duplicating order events, commands, and account states across dispatch hops (Rust)
 - Fixed event-store snapshot-anchor validation across the verifier, retention, and restore paths (Rust)
 - Fixed event-store replay, scan, marker, and halt-signal edge cases around skipped events, gaps, and reruns (Rust)
+- Fixed event-store capture duplicating `DataCommand` dispatches across the queue and execute endpoints (Rust)
+- Fixed event-store capture losing a message when its encoder failed before the last dispatch hop (Rust)
+- Fixed event-store `MemoryBackend` silently replacing a sealed run on a same-id reopen (Rust)
+- Fixed event-store reads accepting entries whose embedded `seq` disagreed with the redb table key (Rust)
+- Fixed event-store replay claiming a full apply when a fill's position could not open (Rust)
+- Fixed event-store replay fill guard to mirror live duplicate-fill semantics for flat positions (Rust)
+- Fixed event-store run listing and retention planning depending on filesystem order for equal start times (Rust)
+- Fixed event-store `verify` dropping entry findings when the marker sidecar scan failed (Rust)
+- Fixed event-store verifier aborting the whole scan on one undecodable entry instead of reporting it (Rust)
+- Fixed event-store writer halt firing twice across stall and backend failures and accepting post-halt submits (Rust)
 - Fixed HTTP client errors discarding the underlying cause from the reqwest source chain (Rust)
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed `Instrument` rejecting negative `min_price`, preventing spread instruments from loading in Python

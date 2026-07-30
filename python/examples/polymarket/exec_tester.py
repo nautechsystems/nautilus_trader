@@ -70,6 +70,8 @@ def main() -> None:
             ),
         )
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_timeout_disconnection_secs(30)
+        .with_delay_post_stop_secs(30)
         .add_data_client(
             None,
             PolymarketDataClientFactory(),
@@ -120,6 +122,7 @@ def main() -> None:
             use_quote_quantity=args.live_orders,
             cancel_orders_on_stop=args.live_orders or args.limit_orders,
             close_positions_on_stop=args.live_orders,
+            close_positions_qty_precision=2,
             close_positions_time_in_force=TimeInForce.IOC,
             reduce_only_on_stop=False,
             dry_run=not args.live_orders and not args.limit_orders,

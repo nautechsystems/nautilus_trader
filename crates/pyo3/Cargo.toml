@@ -136,7 +136,9 @@ nautilus-portfolio = { workspace = true, features = ["python"] }
 nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 nautilus-system = { workspace = true, features = ["python"] }
-nautilus-testkit = { workspace = true, features = ["python"] }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "python",
+] }
 nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters

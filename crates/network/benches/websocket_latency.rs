@@ -32,7 +32,7 @@ type BenchResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 #[derive(Debug)]
 struct LatencySummary {
     p50_ns: u64,
-    p90_ns: u64,
+    p95_ns: u64,
     p99_ns: u64,
     p999_ns: u64,
     max_ns: u64,
@@ -48,7 +48,7 @@ impl LatencySummary {
 
         Self {
             p50_ns: percentile(&samples, 0.50),
-            p90_ns: percentile(&samples, 0.90),
+            p95_ns: percentile(&samples, 0.95),
             p99_ns: percentile(&samples, 0.99),
             p999_ns: percentile(&samples, 0.999),
             max_ns: samples[samples.len() - 1],
@@ -73,6 +73,8 @@ async fn main() -> BenchResult {
         let tokio_summary =
             tokio_tungstenite_roundtrip_text_latency(payload_size, message_count).await?;
         print_row(payload_size, "tokio_tungstenite", &tokio_summary);
+        let sockudo_summary = sockudo_roundtrip_text_latency(payload_size, message_count).await?;
+        print_row(payload_size, "sockudo_ws", &sockudo_summary);
     }
 
     println!();
@@ -83,6 +85,8 @@ async fn main() -> BenchResult {
         let tokio_summary =
             tokio_tungstenite_one_way_binary_latency(payload_size, message_count).await?;
         print_row(payload_size, "tokio_tungstenite", &tokio_summary);
+        let sockudo_summary = sockudo_one_way_binary_latency(payload_size, message_count).await?;
+        print_row(payload_size, "sockudo_ws", &sockudo_summary);
     }
 
     Ok(())
@@ -180,6 +184,125 @@ async fn tokio_tungstenite_server(stream: DuplexStream) -> TokioWebSocketStream<
     TokioWebSocketStream::from_raw_socket(stream, Role::Server, None).await
 }
 
+macro_rules! define_sockudo_latency_benches {
+    (
+        $roundtrip:ident,
+        $one_way:ident,
+        $client:ident,
+        $server:ident,
+        $module:ident
+    ) => {
+        async fn $roundtrip(
+            payload_size: usize,
+            message_count: usize,
+        ) -> BenchResult<LatencySummary> {
+            let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+            let mut client = $client(client_io);
+            let mut server = $server(server_io);
+            let payload = "x".repeat(payload_size);
+            let total_messages = message_count + WARMUP_MESSAGES;
+            let mut samples = Vec::with_capacity(message_count);
+
+            let server_task = tokio::spawn(async move {
+                for _ in 0..total_messages {
+                    let message = server.next().await.transpose()?.unwrap();
+                    server.send(message).await?;
+                }
+
+                BenchResult::Ok(())
+            });
+
+            for index in 0..total_messages {
+                let started = Instant::now();
+                client
+                    .send($module::Message::Text(payload.clone().into()))
+                    .await?;
+
+                let message = client.next().await.transpose()?.unwrap();
+                let elapsed_ns = started.elapsed().as_nanos() as u64;
+
+                match message {
+                    $module::Message::Text(data) => {
+                        black_box(data);
+                    }
+                    other => panic!("unexpected message: {other:?}"),
+                }
+
+                if index >= WARMUP_MESSAGES {
+                    samples.push(elapsed_ns);
+                }
+            }
+
+            server_task.await??;
+            Ok(LatencySummary::from_samples(samples))
+        }
+
+        async fn $one_way(
+            payload_size: usize,
+            message_count: usize,
+        ) -> BenchResult<LatencySummary> {
+            let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+            let mut client = $client(client_io);
+            let mut server = $server(server_io);
+            let start = Instant::now();
+            let total_messages = message_count + WARMUP_MESSAGES;
+            let mut samples = Vec::with_capacity(message_count);
+
+            let server_task = tokio::spawn(async move {
+                for _ in 0..total_messages {
+                    let payload = timestamped_payload(payload_size, start);
+                    server
+                        .send($module::Message::Binary(payload.into()))
+                        .await?;
+                }
+
+                BenchResult::Ok(())
+            });
+
+            for index in 0..total_messages {
+                let message = client.next().await.transpose()?.unwrap();
+                let received_ns = start.elapsed().as_nanos() as u64;
+
+                match message {
+                    $module::Message::Binary(data) => {
+                        let sent_ns = payload_timestamp_ns(data.as_ref());
+                        if index >= WARMUP_MESSAGES {
+                            samples.push(received_ns.saturating_sub(sent_ns));
+                        }
+                    }
+                    other => panic!("unexpected message: {other:?}"),
+                }
+            }
+
+            server_task.await??;
+            Ok(LatencySummary::from_samples(samples))
+        }
+
+        fn $client(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
+            $module::WebSocketStream::client(stream, sockudo_config())
+        }
+
+        fn $server(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
+            $module::WebSocketStream::server(stream, sockudo_config())
+        }
+    };
+}
+
+define_sockudo_latency_benches!(
+    sockudo_roundtrip_text_latency,
+    sockudo_one_way_binary_latency,
+    sockudo_client,
+    sockudo_server,
+    sockudo_ws
+);
+
+fn sockudo_config() -> sockudo_ws::Config {
+    sockudo_ws::Config::builder()
+        .auto_ping(false)
+        .idle_timeout(0)
+        .build()
+}
+
 fn timestamped_payload(payload_size: usize, start: Instant) -> Vec<u8> {
     let mut payload = vec![b'x'; payload_size.max(size_of::<u64>())];
     let elapsed_ns = start.elapsed().as_nanos() as u64;
@@ -224,7 +347,7 @@ fn payload_sizes() -> Vec<usize> {
 fn print_header() {
     println!(
         "{:<8} {:<18} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
-        "payload", "library", "p50_us", "p90_us", "p99_us", "p99.9_us", "max_us", "mean_us"
+        "payload", "library", "p50_us", "p95_us", "p99_us", "p99.9_us", "max_us", "mean_us"
     );
 }
 
@@ -234,7 +357,7 @@ fn print_row(payload_size: usize, name: &str, summary: &LatencySummary) {
         payload_size,
         name,
         ns_to_us(summary.p50_ns),
-        ns_to_us(summary.p90_ns),
+        ns_to_us(summary.p95_ns),
         ns_to_us(summary.p99_ns),
         ns_to_us(summary.p999_ns),
         ns_to_us(summary.max_ns),

@@ -15,6 +15,8 @@
 
 //! Results from completed backtest runs.
 
+use std::collections::BTreeMap;
+
 use ahash::AHashMap;
 use nautilus_core::{UUID4, UnixNanos};
 use serde::Serialize;
@@ -51,6 +53,7 @@ pub struct BacktestResult {
     pub stats_pnls: AHashMap<String, AHashMap<String, f64>>,
     pub stats_returns: AHashMap<String, f64>,
     pub stats_general: AHashMap<String, f64>,
+    pub returns_series: BTreeMap<UnixNanos, f64>,
 }
 
 #[cfg(test)]
@@ -95,6 +98,7 @@ mod tests {
             stats_pnls,
             stats_returns,
             stats_general,
+            returns_series: BTreeMap::from([(UnixNanos::new(3), 0.25)]),
         };
 
         let value = serde_json::to_value(&result).unwrap();
@@ -117,5 +121,6 @@ mod tests {
             json!(0.75)
         );
         assert_eq!(value["stats_general"]["Long Ratio"], json!(1.0));
+        assert_eq!(value["returns_series"]["3"], json!(0.25));
     }
 }

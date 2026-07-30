@@ -395,6 +395,46 @@ class StrategyConfig:
     assert "log_events: bool = False" in updated
 
 
+def test_signature_defaults_translate_decimal_constants(tmp_path):
+    rust_file = tmp_path / "crates" / "risk" / "src" / "python" / "sizing.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl FixedRiskSizer {
+    #[pyo3(signature = (
+        risk,
+        commission_rate=Decimal::ZERO,
+        exchange_rate=Decimal::ONE,
+    ))]
+    fn calculate(
+        risk: Decimal,
+        commission_rate: Decimal,
+        exchange_rate: Decimal,
+    ) -> Quantity {
+        todo!()
+    }
+}
+""".strip(),
+    )
+    content = """
+class FixedRiskSizer:
+    def calculate(
+        self,
+        risk: decimal.Decimal,
+        commission_rate: decimal.Decimal = ...,
+        exchange_rate: decimal.Decimal = ...,
+    ) -> model.Quantity: ...
+""".strip()
+
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_signature_defaults(content, fixups)
+
+    assert "commission_rate: decimal.Decimal = decimal.Decimal(0)" in updated
+    assert "exchange_rate: decimal.Decimal = decimal.Decimal(1)" in updated
+
+
 def test_collect_rust_class_fixups_reads_custom_data_stub_module(tmp_path):
     # Arrange
     rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"

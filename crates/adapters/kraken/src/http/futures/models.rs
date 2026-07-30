@@ -898,6 +898,8 @@ mod tests {
         assert_eq!(fill.price, dec!(27937.5));
         assert_eq!(fill.fill_type, KrakenFillType::Maker);
         assert_eq!(fill.fee_currency, Some("BTC".to_string()));
+        assert_eq!(response.fills[1].fill_type, KrakenFillType::Taker);
+        assert_eq!(response.fills[2].fill_type, KrakenFillType::Assignee);
     }
 
     #[rstest]

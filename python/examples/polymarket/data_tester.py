@@ -59,6 +59,7 @@ def main() -> None:
                 event_slugs=[args.event_slug],
                 use_gamma_markets=True,
             ),
+            update_instruments_interval_mins=1,
         ),
     )
 
@@ -70,6 +71,7 @@ def main() -> None:
             instrument_ids=[instrument_id],
             subscribe_trades=True,
             subscribe_quotes=True,
+            subscribe_instrument=True,
             manage_book=True,
             log_data=True,
         ),

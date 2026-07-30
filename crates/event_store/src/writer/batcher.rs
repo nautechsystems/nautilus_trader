@@ -27,7 +27,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{Receiver, RecvTimeoutError, SyncSender},
     },
     time::Instant,
@@ -47,7 +47,7 @@ use crate::{
     snapshot::SnapshotAnchor,
     writer::{
         WriterConfig,
-        halt::{HaltCallback, HaltReason},
+        halt::{self, HaltCallback, HaltReason},
     },
 };
 
@@ -81,18 +81,37 @@ pub(super) enum WriterMessage {
     },
 }
 
+/// The writer thread's halt fire path: the shared callback plus the once-only latch
+/// that keeps the fire exactly once across every failure origin.
+#[cfg(not(madsim))]
+pub(super) struct HaltSink {
+    callback: HaltCallback,
+    halted: Arc<AtomicBool>,
+}
+
+#[cfg(not(madsim))]
+impl HaltSink {
+    pub(super) fn new(callback: HaltCallback, halted: Arc<AtomicBool>) -> Self {
+        Self { callback, halted }
+    }
+
+    fn fire(&self, reason: HaltReason) {
+        halt::fire_once(&self.callback, &self.halted, reason);
+    }
+}
+
 /// Runs the writer loop until the channel disconnects, a halt-worthy backend error fires,
 /// or a Close message is received.
 #[cfg(not(madsim))]
 #[expect(
     clippy::needless_pass_by_value,
-    reason = "writer thread owns the backend, config, halt callback, and clock"
+    reason = "writer thread owns the backend, config, halt sink, and clock"
 )]
 pub(super) fn run(
     mut backend: Box<dyn EventStore + Send>,
     rx: Receiver<WriterMessage>,
     config: WriterConfig,
-    halt: HaltCallback,
+    halt: HaltSink,
     high_watermark: Arc<AtomicU64>,
     clock: &'static AtomicTime,
 ) {
@@ -102,7 +121,7 @@ pub(super) fn run(
     let mut next_seq = match backend.high_watermark() {
         Ok(hwm) => hwm + 1,
         Err(e) => {
-            halt(HaltReason::from_backend_error(&e));
+            halt.fire(HaltReason::from_backend_error(&e));
             return;
         }
     };
@@ -159,7 +178,7 @@ pub(super) fn run(
                 let final_result = match seal_result {
                     Ok(()) => Ok(high_watermark.load(Ordering::Acquire)),
                     Err(e) => {
-                        halt(HaltReason::from_backend_error(&e));
+                        halt.fire(HaltReason::from_backend_error(&e));
                         Err(e)
                     }
                 };
@@ -207,7 +226,7 @@ pub(super) fn run(
 fn record_snapshot_anchor(
     backend: &mut dyn EventStore,
     batch: &mut Vec<AppendEntry>,
-    halt: &HaltCallback,
+    halt: &HaltSink,
     high_watermark: &AtomicU64,
     blob_ref: String,
     content_hash: String,
@@ -226,7 +245,7 @@ fn record_snapshot_anchor(
     let result = match backend.record_snapshot_anchor(anchor.clone()) {
         Ok(()) => Ok(anchor),
         Err(e) => {
-            halt(HaltReason::from_backend_error(&e));
+            halt.fire(HaltReason::from_backend_error(&e));
             Err(e)
         }
     };
@@ -269,7 +288,7 @@ fn drain_pending(rx: &Receiver<WriterMessage>, batch: &mut Vec<AppendEntry>, nex
 fn flush(
     backend: &mut dyn EventStore,
     batch: &mut Vec<AppendEntry>,
-    halt: &HaltCallback,
+    halt: &HaltSink,
     high_watermark: &AtomicU64,
 ) -> bool {
     if batch.is_empty() {
@@ -283,7 +302,7 @@ fn flush(
             true
         }
         Err(e) => {
-            halt(HaltReason::from_backend_error(&e));
+            halt.fire(HaltReason::from_backend_error(&e));
             batch.clear();
             false
         }

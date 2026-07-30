@@ -45,6 +45,14 @@ impl PortfolioStatistics {
         self.general.clone().into_iter().collect()
     }
 
+    #[getter]
+    fn returns_series(&self) -> HashMap<u64, f64> {
+        self.returns_series
+            .iter()
+            .map(|(timestamp, value)| (timestamp.as_u64(), *value))
+            .collect()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "PortfolioStatistics(currencies={}, returns={}, general={})",

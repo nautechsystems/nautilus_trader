@@ -33,20 +33,26 @@ use nautilus_model::{
         stubs::{OrderBookDeltaTestBuilder, stub_bar},
     },
     enums::{
-        AggressorSide, BookType, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        AggressorSide, BookType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderEventAny, OrderRejected,
-        order::spec::{OrderAcceptedSpec, OrderPendingCancelSpec, OrderRejectedSpec},
+        order::spec::{
+            OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderRejectedSpec,
+        },
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
     },
-    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    instruments::{
+        Instrument, InstrumentAny,
+        stubs::{binary_option, crypto_perpetual_ethusdt},
+    },
     orderbook::OrderBook,
     orders::{LimitOrder, Order, OrderAny},
+    position::Position,
     stubs::TestDefault,
     types::{Price, Quantity},
 };
@@ -145,6 +151,7 @@ fn test_config_default() {
     assert!(config.enable_limit_sells);
     assert!(config.cancel_orders_on_stop);
     assert!(config.close_positions_on_stop);
+    assert!(config.close_positions_qty_precision.is_none());
     assert!(config.close_positions_time_in_force.is_none());
     assert!(!config.use_batch_cancel_on_stop);
 }
@@ -739,6 +746,89 @@ fn test_on_stop_dry_run(mut config: ExecTesterConfig) {
     let result = tester.on_stop();
 
     assert!(result.is_ok());
+}
+
+#[rstest]
+#[case::partially_fillable("5.19750000", Some("5.19000000"), "0.00750000")]
+#[case::not_fillable("0.00750000", None, "0.00750000")]
+fn test_on_stop_preserves_non_fillable_position_residual(
+    mut config: ExecTesterConfig,
+    #[case] opening_quantity: &str,
+    #[case] expected_close_quantity: Option<&str>,
+    #[case] expected_residual: &str,
+) {
+    let mut binary = binary_option();
+    binary.size_precision = 6;
+    binary.size_increment = Quantity::from("0.000001");
+    let instrument = InstrumentAny::BinaryOption(binary);
+    let instrument_id = instrument.id();
+    let strategy_id = config.base.strategy_id.unwrap();
+    let position_id = PositionId::from("P-POLYMARKET-RESIDUAL");
+    let opening_fill = OrderFilledSpec::builder()
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-POLYMARKET-BUY"))
+        .position_id(position_id)
+        .trade_id(TradeId::from("T-POLYMARKET-BUY"))
+        .order_side(OrderSide::Buy)
+        .last_qty(Quantity::from(opening_quantity))
+        .last_px(Price::from("0.9620"))
+        .currency(instrument.quote_currency())
+        .build();
+    let mut position = Position::new(&instrument, opening_fill);
+    let cache = create_cache_with_instrument(&instrument);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    config.instrument_id = instrument_id;
+    config.cancel_orders_on_stop = false;
+    config.close_positions_qty_precision = Some(2);
+    config.close_positions_time_in_force = Some(TimeInForce::Ioc);
+    config.reduce_only_on_stop = false;
+    config.can_unsubscribe = false;
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    let risk_saver = capture_risk_commands();
+
+    tester.on_stop().unwrap();
+
+    let submits = submit_orders(&risk_saver);
+    if let Some(expected_close_quantity) = expected_close_quantity {
+        assert_eq!(submits.len(), 1);
+        let close = &submits[0];
+        assert_eq!(close.position_id, Some(position_id));
+        assert_eq!(close.order_init.order_side, OrderSide::Sell);
+        assert_eq!(
+            close.order_init.quantity,
+            Quantity::from(expected_close_quantity),
+        );
+        assert_eq!(close.order_init.time_in_force, TimeInForce::Ioc);
+        assert!(!close.order_init.quote_quantity);
+        assert!(!close.order_init.reduce_only);
+
+        let closing_fill = OrderFilledSpec::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(close.client_order_id)
+            .position_id(position_id)
+            .trade_id(TradeId::from("T-POLYMARKET-SELL"))
+            .order_side(OrderSide::Sell)
+            .last_qty(close.order_init.quantity)
+            .last_px(Price::from("0.9600"))
+            .currency(instrument.quote_currency())
+            .build();
+        position.apply(&closing_fill);
+    } else {
+        assert!(submits.is_empty());
+    }
+
+    assert_eq!(position.quantity, Quantity::from(expected_residual));
+    assert!(position.is_open());
+    assert!(!position.is_closed());
 }
 
 #[rstest]

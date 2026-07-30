@@ -41,7 +41,7 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
-const DERIVE_ENVIRONMENT: DeriveEnvironment = DeriveEnvironment::Testnet;
+const DERIVE_ENVIRONMENT: DeriveEnvironment = DeriveEnvironment::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "DERIVE-001";
 const NODE_NAME: &str = "DERIVE-EXEC-TESTER-001";

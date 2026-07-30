@@ -753,6 +753,157 @@ fn test_book_apply_depth(stub_depth10: OrderBookDepth10) {
 }
 
 #[rstest]
+fn test_l1_book_apply_depth_keeps_best_of_descending_levels() {
+    // Depth levels arrive best-first: L1 must keep the best price, not the
+    // last-processed (worst) level.
+    use crate::data::depth::DEPTH10_LEN;
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    let zero_bid = BookOrder::new(OrderSide::Buy, Price::from("0"), Quantity::zero(0), 0);
+    let zero_ask = BookOrder::new(OrderSide::Sell, Price::from("0"), Quantity::zero(0), 0);
+    let mut bids = [zero_bid; DEPTH10_LEN];
+    let mut asks = [zero_ask; DEPTH10_LEN];
+
+    for (i, price) in ["100.00", "99.00", "98.00"].iter().enumerate() {
+        bids[i] = BookOrder::new(OrderSide::Buy, Price::from(*price), Quantity::from("10"), 0);
+    }
+    asks[0] = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.00"),
+        Quantity::from("10"),
+        0,
+    );
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        RecordFlag::F_SNAPSHOT as u8,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_depth(&depth).unwrap();
+
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
+}
+
+#[rstest]
+#[case::no_flags(0)]
+#[case::snapshot(RecordFlag::F_SNAPSHOT as u8)]
+fn test_l3_zero_order_id_deltas_keep_all_levels(#[case] flags: u8) {
+    // MBP-style delta streams carry order_id=0 (e.g. Tardis L2 data): an L3 book
+    // must key them by price hash and keep every level, not collapse to one.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    let mut deltas = vec![OrderBookDelta::clear(instrument_id, 0, 0.into(), 0.into())];
+    for (i, price) in ["100.00", "99.00", "98.00"].iter().enumerate() {
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(OrderSide::Buy, Price::from(*price), Quantity::from("10"), 0),
+            flags,
+            (i + 1) as u64,
+            0.into(),
+            0.into(),
+        ));
+    }
+
+    for (i, price) in ["101.00", "102.00"].iter().enumerate() {
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from(*price),
+                Quantity::from("20"),
+                0,
+            ),
+            flags,
+            (i + 4) as u64,
+            0.into(),
+            0.into(),
+        ));
+    }
+    book.apply_deltas(&OrderBookDeltas::new(instrument_id, deltas))
+        .unwrap();
+
+    assert_eq!(
+        book.bids(None).count(),
+        3,
+        "L3 book must keep all bid levels"
+    );
+    assert_eq!(
+        book.asks(None).count(),
+        2,
+        "L3 book must keep all ask levels"
+    );
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
+}
+
+#[rstest]
+fn test_l3_book_apply_depth_keeps_all_levels() {
+    // Depth orders carry no venue order IDs (all zero): L3 books must still
+    // retain every level, keyed by price hash.
+    use crate::data::depth::DEPTH10_LEN;
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    let zero_bid = BookOrder::new(OrderSide::Buy, Price::from("0"), Quantity::zero(0), 0);
+    let zero_ask = BookOrder::new(OrderSide::Sell, Price::from("0"), Quantity::zero(0), 0);
+    let mut bids = [zero_bid; DEPTH10_LEN];
+    let mut asks = [zero_ask; DEPTH10_LEN];
+
+    for (i, price) in ["100.00", "99.00", "98.00"].iter().enumerate() {
+        bids[i] = BookOrder::new(OrderSide::Buy, Price::from(*price), Quantity::from("10"), 0);
+    }
+
+    for (i, price) in ["101.00", "102.00"].iter().enumerate() {
+        asks[i] = BookOrder::new(
+            OrderSide::Sell,
+            Price::from(*price),
+            Quantity::from("20"),
+            0,
+        );
+    }
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        RecordFlag::F_SNAPSHOT as u8,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_depth(&depth).unwrap();
+
+    assert_eq!(
+        book.bids(None).count(),
+        3,
+        "L3 book must keep all bid levels"
+    );
+    assert_eq!(
+        book.asks(None).count(),
+        2,
+        "L3 book must keep all ask levels"
+    );
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
+}
+
+#[rstest]
 fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
     let depth = stub_depth10;
     let instrument_id = InstrumentId::from("AAPL.XNAS");
@@ -4236,6 +4387,47 @@ fn test_own_book_level_add_update_delete() {
 }
 
 #[rstest]
+fn test_own_book_level_update_inserts_missing_order() {
+    let mut level = OwnBookLevel::new(BookPrice::new(
+        Price::from("100.00"),
+        OrderSideSpecified::Buy,
+    ));
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        1.into(),
+        2.into(),
+        3.into(),
+        4.into(),
+    );
+
+    level.update(order);
+
+    assert_eq!(level.len(), 1);
+    let inserted = level.first().unwrap();
+    assert_eq!(inserted.trader_id, order.trader_id);
+    assert_eq!(inserted.client_order_id, order.client_order_id);
+    assert_eq!(inserted.venue_order_id, order.venue_order_id);
+    assert_eq!(inserted.side, order.side);
+    assert_eq!(inserted.price, order.price);
+    assert_eq!(inserted.size, order.size);
+    assert_eq!(inserted.order_type, order.order_type);
+    assert_eq!(inserted.time_in_force, order.time_in_force);
+    assert_eq!(inserted.status, order.status);
+    assert_eq!(inserted.ts_last, order.ts_last);
+    assert_eq!(inserted.ts_accepted, order.ts_accepted);
+    assert_eq!(inserted.ts_submitted, order.ts_submitted);
+    assert_eq!(inserted.ts_init, order.ts_init);
+}
+
+#[rstest]
 fn test_own_book_level_delete_missing_order_errors() {
     let price = BookPrice::new(Price::from("100.00"), OrderSideSpecified::Buy);
     let mut level = OwnBookLevel::new(price);
@@ -7618,6 +7810,208 @@ fn test_apply_delta_skips_update_delete_when_order_not_found() {
     );
     let result2 = book.apply_delta(&delta2);
     assert!(result2.is_ok());
+}
+
+#[rstest]
+fn test_apply_delta_skips_ambiguous_no_side_update_on_locked_l2_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        0,
+    );
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("100.00"),
+        Quantity::from("20"),
+        0,
+    );
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        bid,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    ))
+    .unwrap();
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        ask,
+        0,
+        2,
+        0.into(),
+        0.into(),
+    ))
+    .unwrap();
+
+    // Recover the price-hash order ID shared by both sides via a snapshot round trip
+    let snapshot = book.to_deltas(3.into(), 3.into());
+    let hash_order_id = snapshot.deltas[1].order.order_id;
+
+    let noside_update = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("55"),
+        hash_order_id,
+    );
+    let result = book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Update,
+        noside_update,
+        0,
+        4,
+        0.into(),
+        0.into(),
+    ));
+
+    assert!(result.is_ok());
+    assert_eq!(
+        book.best_bid_size().unwrap(),
+        Quantity::from("10"),
+        "Ambiguous update must not mutate the bid side"
+    );
+    assert_eq!(
+        book.best_ask_size().unwrap(),
+        Quantity::from("20"),
+        "Ambiguous update must not mutate the ask side"
+    );
+
+    let noside_delete = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        hash_order_id,
+    );
+    let result = book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Delete,
+        noside_delete,
+        0,
+        5,
+        0.into(),
+        0.into(),
+    ));
+
+    assert!(result.is_ok());
+    assert_eq!(
+        book.best_bid_size().unwrap(),
+        Quantity::from("10"),
+        "Ambiguous delete must not mutate the bid side"
+    );
+    assert_eq!(
+        book.best_ask_size().unwrap(),
+        Quantity::from("20"),
+        "Ambiguous delete must not mutate the ask side"
+    );
+}
+
+#[rstest]
+fn test_apply_delta_errors_on_ambiguous_no_side_add_on_locked_l2_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    for side in [OrderSide::Buy, OrderSide::Sell] {
+        let order = BookOrder::new(side, Price::from("100.00"), Quantity::from("10"), 0);
+        book.apply_delta(&OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            order,
+            0,
+            1,
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    }
+
+    let snapshot = book.to_deltas(2.into(), 2.into());
+    let hash_order_id = snapshot.deltas[1].order.order_id;
+
+    let noside_add = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("55"),
+        hash_order_id,
+    );
+    let result = book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        noside_add,
+        0,
+        3,
+        0.into(),
+        0.into(),
+    ));
+
+    assert_eq!(
+        result.unwrap_err(),
+        BookIntegrityError::AmbiguousOrderSide(hash_order_id)
+    );
+}
+
+#[rstest]
+fn test_l3_ftob_add_only_flow_replaces_top_of_book() {
+    // F_TOB add-only top-of-book updates on an L3 book map to the side-constant
+    // order ID: each add must move that order (replace the top), not accumulate
+    // orphan levels that deletes can never reach.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let ftob = RecordFlag::F_TOB as u8;
+
+    for (i, price) in ["100.00", "101.00"].iter().enumerate() {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from(*price),
+            Quantity::from("10"),
+            (i + 1) as u64, // Venue order ID, normalized by pre_process_order
+        );
+        book.apply_delta(&OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            order,
+            ftob,
+            (i + 1) as u64,
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    }
+
+    assert_eq!(
+        book.bids(None).count(),
+        1,
+        "F_TOB add-only flow must replace the top, not accumulate levels"
+    );
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("101.00"));
+
+    let delete = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("101.00"),
+        Quantity::from("10"),
+        2,
+    );
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Delete,
+        delete,
+        ftob,
+        3,
+        0.into(),
+        0.into(),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        book.bids(None).count(),
+        0,
+        "Delete must not leave a ghost level at the stale price"
+    );
 }
 
 #[rstest]

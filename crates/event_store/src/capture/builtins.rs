@@ -368,8 +368,9 @@ fn register_default_headers(registry: &mut EncoderRegistry) {
 
 /// Attaches identity extractors for the types production dispatch pushes through more
 /// than one tap-visible boundary (portfolio endpoint send plus strategy topic publish,
-/// command hops through risk to execution, account states on both dispatch paths), so
-/// the adapter captures each logical message exactly once. The venue report types
+/// command hops through risk to execution, account states on both dispatch paths, data
+/// commands through the queue endpoint and the drained execute endpoint), so the
+/// adapter captures each logical message exactly once. The venue report types
 /// deliberately carry no extractor: the raw `reconciliation.raw.*` publish and the
 /// engine-bound dispatch are distinct capture boundaries.
 fn register_default_identities(registry: &mut EncoderRegistry) {
@@ -378,6 +379,23 @@ fn register_default_identities(registry: &mut EncoderRegistry) {
     registry.register_identity::<TradingCommand, _>(|c| Some(extract_trading_command_identity(c)));
     registry.register_identity::<OrderEventAny, _>(|e| Some(extract_order_event_any_identity(e)));
     registry.register_identity::<AccountState, _>(|state| Some(state.event_id));
+    registry.register_identity::<DataCommand, _>(extract_data_command_identity);
+}
+
+fn extract_data_command_identity(command: &DataCommand) -> Option<UUID4> {
+    match command {
+        DataCommand::Request(cmd) => Some(*cmd.request_id()),
+        DataCommand::Subscribe(cmd) => Some(cmd.command_id()),
+        DataCommand::Unsubscribe(cmd) => Some(cmd.command_id()),
+        #[cfg(feature = "defi")]
+        DataCommand::DefiRequest(cmd) => Some(*cmd.request_id()),
+        #[cfg(feature = "defi")]
+        DataCommand::DefiSubscribe(cmd) => Some(cmd.command_id()),
+        #[cfg(feature = "defi")]
+        DataCommand::DefiUnsubscribe(cmd) => Some(cmd.command_id()),
+        // `DataCommand` is `#[non_exhaustive]`; future variants capture per dispatch
+        _ => None,
+    }
 }
 
 fn extract_trading_command_identity(command: &TradingCommand) -> UUID4 {
@@ -1738,6 +1756,57 @@ mod tests {
 
         let decoded: SubmitOrder = rmp_serde::from_slice(&encoded.payload).expect("decode");
         assert_eq!(decoded, cmd);
+    }
+
+    #[rstest]
+    fn default_registry_data_command_identity_dedupes_dispatch_hops() {
+        // Production pushes every queued data command through two tapped sends
+        // (queue, then drained execute); the identity must key both hops to the
+        // same command.
+        let registry = default_registry();
+
+        let request = make_request_command();
+        let expected_request = *request.request_id();
+        let subscribe = make_subscribe_command();
+        let expected_subscribe = subscribe.command_id();
+        let unsubscribe = make_unsubscribe_command();
+        let expected_unsubscribe = unsubscribe.command_id();
+
+        let cases = [
+            (DataCommand::Request(request), expected_request),
+            (DataCommand::Subscribe(subscribe), expected_subscribe),
+            (DataCommand::Unsubscribe(unsubscribe), expected_unsubscribe),
+        ];
+
+        for (command, expected) in cases {
+            assert_eq!(registry.identity_for_any(&command), Some(expected));
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn default_registry_defi_data_command_identity_dedupes_dispatch_hops() {
+        let registry = default_registry();
+
+        let request = make_defi_request_command();
+        let expected_request = *request.request_id();
+        let subscribe = make_defi_subscribe_command();
+        let expected_subscribe = subscribe.command_id();
+        let unsubscribe = make_defi_unsubscribe_command();
+        let expected_unsubscribe = unsubscribe.command_id();
+
+        let cases = [
+            (DataCommand::DefiRequest(request), expected_request),
+            (DataCommand::DefiSubscribe(subscribe), expected_subscribe),
+            (
+                DataCommand::DefiUnsubscribe(unsubscribe),
+                expected_unsubscribe,
+            ),
+        ];
+
+        for (command, expected) in cases {
+            assert_eq!(registry.identity_for_any(&command), Some(expected));
+        }
     }
 
     #[rstest]

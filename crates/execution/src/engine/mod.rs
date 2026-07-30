@@ -1113,7 +1113,7 @@ impl ExecutionEngine {
         let trader_id = get_message_bus().borrow().trader_id;
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        let initialized = OrderInitialized::new(
+        let initialized = match OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             report.instrument_id,
@@ -1148,7 +1148,13 @@ impl ExecutionEngine {
             None, // exec_algorithm_params
             None, // exec_spawn_id
             None, // tags
-        );
+        ) {
+            Ok(initialized) => initialized,
+            Err(e) => {
+                log::error!("Failed to create external order from report: {e}");
+                return None;
+            }
+        };
 
         self.materialize_external_order(
             initialized,
@@ -1289,13 +1295,14 @@ impl ExecutionEngine {
 
         {
             let mut cache = self.cache.borrow_mut();
-            if let Err(e) = cache.add_order(order.clone(), None, None, false) {
-                log::error!("Failed to add external order to cache: {e}");
+            if let Err(e) = cache.add_venue_order_id(&client_order_id, &venue_order_id, false) {
+                log::warn!("Failed to claim venue order ID for external order: {e}");
                 return None;
             }
 
-            if let Err(e) = cache.add_venue_order_id(&client_order_id, &venue_order_id, false) {
-                log::warn!("Failed to add venue order ID index: {e}");
+            if let Err(e) = cache.add_order(order.clone(), None, None, false) {
+                log::error!("Failed to add external order to cache: {e}");
+                return None;
             }
         }
 
@@ -3705,11 +3712,11 @@ impl ExecutionEngine {
     }
 
     fn is_duplicate_closed_fill(position: &Position, fill: &OrderFilled) -> bool {
-        position.events.iter().any(|event| {
-            event.trade_id == fill.trade_id
-                && event.order_side == fill.order_side
-                && event.last_px == fill.last_px
-                && event.last_qty == fill.last_qty
+        position.replay_events.iter().any(|event| {
+            matches!(
+                event,
+                PositionReplayEvent::Filled(replayed) if replayed.trade_id == fill.trade_id
+            )
         })
     }
 
@@ -4019,11 +4026,13 @@ impl ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::clock::TestClock;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, PositionSideSpecified},
+        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
         events::order::spec::OrderFilledSpec,
         identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
+        orders::builder::OrderTestBuilder,
         types::Price,
     };
     use rstest::*;
@@ -4139,6 +4148,52 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[rstest]
+    fn materialize_external_order_rejects_venue_id_owned_by_another_order() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let venue_order_id = VenueOrderId::from("V-SHARED");
+        let owner_id = ClientOrderId::from("O-OWNER");
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&owner_id, &venue_order_id, false)
+            .unwrap();
+        let engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let claimant_id = ClientOrderId::from("O-CLAIMANT");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(claimant_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .build();
+        let OrderEventAny::Initialized(initialized) = order.last_event().clone() else {
+            panic!("Expected initialized order");
+        };
+
+        let result = engine.materialize_external_order(
+            initialized,
+            claimant_id,
+            venue_order_id,
+            instrument.id(),
+            order.strategy_id(),
+            UnixNanos::default(),
+            None,
+        );
+
+        assert!(result.is_none());
+        assert!(!cache.borrow().order_exists(&claimant_id));
+        assert_eq!(
+            cache.borrow().client_order_id(&venue_order_id),
+            Some(&owner_id)
+        );
+        assert_eq!(cache.borrow().venue_order_id(&claimant_id), None);
     }
 
     fn position_for_account(

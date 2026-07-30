@@ -17,6 +17,10 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.analysis import TearsheetStatsTableChart
+from nautilus_trader.analysis import create_tearsheet
+from nautilus_trader.analysis import tearsheet
 from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.backtest import BacktestDataConfig
 from nautilus_trader.backtest import BacktestEngineConfig
@@ -197,6 +201,34 @@ def test_node_post_run_inspection_retains_exact_engine_state(tmp_path):
         )
         assert account_report.equals(ReportProvider.generate_account_report(account))
         assert account_report_by_id.equals(account_report)
+    finally:
+        node.dispose()
+
+
+def test_result_tearsheet_rejects_default_disposed_node_state(tmp_path, monkeypatch):
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    catalog.write_instruments([instrument])
+    catalog.write_quote_ticks(_whipsaw_quotes(instrument, count=30))
+    node, config = _build_ema_cross_node(str(catalog_path), instrument, chunk_size=7)
+
+    try:
+        result = node.run()[0]
+        run_configs = node.configs
+
+        monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
+
+        assert [run_config.id for run_config in run_configs] == [config.id]
+        assert run_configs[0].dispose_on_completion is True
+        with pytest.raises(ValueError, match="dispose_on_completion=False"):
+            create_tearsheet(
+                result,
+                node=node,
+                output_path=None,
+                config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+            )
     finally:
         node.dispose()
 

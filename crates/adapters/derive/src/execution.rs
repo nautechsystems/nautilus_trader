@@ -760,9 +760,11 @@ impl ExecutionClient for DeriveExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        self.reconciliation_context()
-            .generate_position_status_reports(cmd)
-            .await
+        let snapshot = self
+            .reconciliation_context()
+            .generate_position_status_snapshot(cmd)
+            .await?;
+        Ok(snapshot.reports)
     }
 
     async fn generate_mass_status(
@@ -1328,7 +1330,24 @@ impl ExecutionClient for DeriveExecutionClient {
                         client_order_id.as_str(),
                     ))
                     .await
-                    .map(|()| None),
+                    .map(|result| {
+                        if result.cancelled_orders == 0 {
+                            let reason = "no open order matched the client_order_id label";
+                            log::debug!(
+                                "Derive rejected cancel for {client_order_id}: {reason}"
+                            );
+                            let ts = clock.get_time_ns();
+                            emitter.emit_order_cancel_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                None,
+                                reason,
+                                ts,
+                            );
+                        }
+                        None
+                    }),
             };
 
             match outcome {
@@ -2028,10 +2047,10 @@ impl DeriveReconciliationContext {
         Ok(reports)
     }
 
-    async fn generate_position_status_reports(
+    async fn generate_position_status_snapshot(
         &self,
         cmd: &GeneratePositionStatusReports,
-    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+    ) -> anyhow::Result<PositionStatusSnapshot> {
         let positions = self
             .http_client
             .get_positions(&DeriveGetPositionsParams::new(self.subaccount_id))
@@ -2039,22 +2058,26 @@ impl DeriveReconciliationContext {
             .positions;
         let ts_init = self.clock.get_time_ns();
         let mut reports = Vec::with_capacity(positions.len());
+        let mut instruments = AHashSet::with_capacity(positions.len());
         for position in positions {
+            let instrument_id = format_instrument_id(position.instrument_name.as_str());
             if let Some(target) = cmd.instrument_id
-                && InstrumentId::new(
-                    Symbol::new(position.instrument_name.as_str()),
-                    *DERIVE_VENUE,
-                ) != target
+                && instrument_id != target
             {
                 continue;
             }
+
+            instruments.insert(instrument_id);
 
             match parse_derive_position_to_report(&position, self.account_id, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => log::warn!("Skipping position in status report: {e}"),
             }
         }
-        Ok(reports)
+        Ok(PositionStatusSnapshot {
+            reports,
+            instruments,
+        })
     }
 
     async fn generate_mass_status(
@@ -2093,11 +2116,11 @@ impl DeriveReconciliationContext {
         let position_cmd =
             GeneratePositionStatusReports::new(UUID4::new(), ts_now, None, None, None, None, None);
 
-        let (history_order_reports, open_order_reports, fill_reports, position_reports) = tokio::try_join!(
+        let (history_order_reports, open_order_reports, fill_reports, position_snapshot) = tokio::try_join!(
             self.generate_order_status_reports(&history_order_cmd),
             self.generate_order_status_reports(&open_order_cmd),
             self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
+            self.generate_position_status_snapshot(&position_cmd),
         )?;
         log::info!(
             "Received {} historical OrderStatusReports",
@@ -2108,7 +2131,10 @@ impl DeriveReconciliationContext {
             open_order_reports.len()
         );
         log::info!("Received {} FillReports", fill_reports.len());
-        log::info!("Received {} PositionReports", position_reports.len());
+        log::info!(
+            "Received {} PositionReports",
+            position_snapshot.reports.len()
+        );
 
         let mut touched_instruments = AHashSet::new();
 
@@ -2123,6 +2149,10 @@ impl DeriveReconciliationContext {
             touched_instruments.insert(report.instrument_id);
         }
 
+        let PositionStatusSnapshot {
+            reports: position_reports,
+            instruments: position_instruments,
+        } = position_snapshot;
         let mut mass_status =
             ExecutionMassStatus::new(self.client_id, self.account_id, *DERIVE_VENUE, ts_now, None);
         mass_status.add_order_reports(history_order_reports);
@@ -2133,10 +2163,16 @@ impl DeriveReconciliationContext {
             &mut mass_status,
             self.account_id,
             touched_instruments,
+            &position_instruments,
             ts_now,
         );
         Ok(mass_status)
     }
+}
+
+struct PositionStatusSnapshot {
+    reports: Vec<PositionStatusReport>,
+    instruments: AHashSet<InstrumentId>,
 }
 
 // Reason text and post-only classification for a definitive WS write failure.
@@ -2155,14 +2191,13 @@ fn add_missing_flat_position_reports(
     mass_status: &mut ExecutionMassStatus,
     account_id: AccountId,
     touched_instruments: AHashSet<InstrumentId>,
+    position_instruments: &AHashSet<InstrumentId>,
     ts_init: UnixNanos,
 ) {
-    let active_position_instruments: AHashSet<InstrumentId> =
-        mass_status.position_reports().keys().copied().collect();
     let mut flat_reports = Vec::new();
 
     for instrument_id in touched_instruments {
-        if active_position_instruments.contains(&instrument_id) {
+        if position_instruments.contains(&instrument_id) {
             continue;
         }
 

@@ -83,7 +83,8 @@ use crate::{
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
         DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-        PARAMS_IS_PARENT, QuotesResponse, SubscribeCommand, TradesResponse, UnsubscribeCommand,
+        PARAMS_IS_PARENT, QuotesResponse, RequestCommand, SubscribeCommand, TradesResponse,
+        UnsubscribeCommand,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -2318,6 +2319,90 @@ fn test_request_quotes(
 
     assert_eq!(actor.received_quotes.len(), 1);
     assert_eq!(actor.received_quotes[0], quote);
+}
+
+#[rstest]
+fn test_request_quotes_accepts_equal_start_and_end(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    clock.borrow_mut().set_time(now_ns);
+    let point = clock.borrow().utc_now();
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    let client_id = Some(ClientId::new("POINT-CLIENT"));
+    let limit = NonZeroUsize::new(1);
+    let request_id = actor
+        .request_quotes(
+            audusd_sim.id,
+            Some(point),
+            Some(point),
+            limit,
+            client_id,
+            None,
+        )
+        .unwrap();
+
+    let commands = saver.get_messages();
+    let [DataCommand::Request(RequestCommand::Quotes(request))] = commands.as_slice() else {
+        panic!("expected one quotes request command, was {commands:?}");
+    };
+
+    assert_eq!(request.instrument_id, audusd_sim.id);
+    assert_eq!(request.start, Some(point));
+    assert_eq!(request.end, Some(point));
+    assert_eq!(request.limit, limit);
+    assert_eq!(request.client_id, client_id);
+    assert_eq!(request.request_id, request_id);
+    assert_eq!(request.ts_init, now_ns);
+    assert!(request.params.is_none());
+}
+
+#[rstest]
+#[case(Some(1), None, "start was > now")]
+#[case(None, Some(1), "end was > now")]
+#[case(Some(-1), Some(-2), "start was > end")]
+fn test_request_quotes_rejects_invalid_time_range(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    #[case] start_offset_secs: Option<i64>,
+    #[case] end_offset_secs: Option<i64>,
+    #[case] expected_error: &str,
+) {
+    let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    clock.borrow_mut().set_time(now_ns);
+    let now = clock.borrow().utc_now();
+    let start = start_offset_secs.map(|offset| now + chrono::Duration::seconds(offset));
+    let end = end_offset_secs.map(|offset| now + chrono::Duration::seconds(offset));
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    let error = actor
+        .request_quotes(audusd_sim.id, start, end, None, None, None)
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+    assert!(saver.get_messages().is_empty());
 }
 
 #[rstest]

@@ -582,8 +582,8 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         result = self.engine.get_result()
         orders = self.engine.cache.orders()
-        primary_orders = [o for o in orders if o.exec_spawn_id is None]
-        spawned_orders = [o for o in orders if o.exec_spawn_id is not None]
+        primary_orders = [o for o in orders if o.is_primary]
+        spawned_orders = [o for o in orders if o.is_spawned]
         assert result.iterations == len(bars)
         assert result.total_positions > 0
         assert primary_orders

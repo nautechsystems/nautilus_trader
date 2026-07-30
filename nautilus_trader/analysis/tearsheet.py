@@ -34,6 +34,7 @@ import pandas as pd
 from nautilus_trader.analysis import TearsheetChart
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import format_optional_iso8601
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.core.nautilus_pyo3 import NAUTILUS_VERSION
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -41,6 +42,8 @@ from nautilus_trader.model.data import BarType
 
 if TYPE_CHECKING:
     from nautilus_trader.backtest.engine import BacktestEngine
+    from nautilus_trader.core.nautilus_pyo3.backtest import BacktestNode
+    from nautilus_trader.core.nautilus_pyo3.backtest import BacktestResult
 
 
 try:
@@ -281,21 +284,23 @@ def list_charts() -> list[str]:
 
 
 def create_tearsheet(  # noqa: C901
-    engine: BacktestEngine,
+    engine: BacktestEngine | BacktestResult,
     output_path: str | None = "tearsheet.html",
     title: str = "NautilusTrader Backtest Results",
     currency=None,
     config=None,
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
+    node: BacktestNode | None = None,
+    run_config_id: str | None = None,
 ) -> str | None:
     """
     Generate an interactive HTML tearsheet from backtest results.
 
     Parameters
     ----------
-    engine : BacktestEngine
-        The backtest engine with completed run.
+    engine : BacktestEngine or BacktestResult
+        The completed v1 backtest engine or v2 backtest result.
     output_path : str, optional
         Path to save the tearsheet. File extension selects the format:
         ``.html`` (interactive), or ``.png``, ``.jpg``, ``.webp``, ``.svg``, ``.pdf``
@@ -303,7 +308,9 @@ def create_tearsheet(  # noqa: C901
     title : str, default "NautilusTrader Backtest Results"
         Title for the tearsheet.
     currency : Currency, optional
-        Currency for PnL statistics. If None, uses first available currency.
+        Currency filter for PnL statistics, account balances, and engine-derived returns.
+        For ``BacktestResult`` input, the stored return series remains unchanged. If
+        None, includes all available currencies.
     config : TearsheetConfig, optional
         Configuration for tearsheet customization. If None, uses default configuration.
     benchmark_returns : pd.Series, optional
@@ -313,6 +320,12 @@ def create_tearsheet(  # noqa: C901
         statistics when registered on the analyzer.
     benchmark_name : str, default "Benchmark"
         Display name for the benchmark.
+    node : BacktestNode, optional
+        The v2 backtest node which produced ``engine``. Provide it for starting balances
+        or charts that read cached data, such as ``bars_with_fills``. The matching run
+        configuration must set ``dispose_on_completion=False``.
+    run_config_id : str, optional
+        The v2 run configuration ID. Defaults to ``engine.run_config_id``.
 
     Returns
     -------
@@ -323,6 +336,10 @@ def create_tearsheet(  # noqa: C901
     ------
     ImportError
         If plotly is not installed.
+    ValueError
+        If ``bars_with_fills`` is configured without a node, a supplied node has no
+        run configuration ID, or the matching run configuration sets
+        ``dispose_on_completion=True``.
 
     """
     if not PLOTLY_AVAILABLE:
@@ -331,6 +348,19 @@ def create_tearsheet(  # noqa: C901
             "Install it with: pip install nautilus_trader[visualization]"
         )
         raise ImportError(msg)
+
+    if hasattr(engine, "returns_series") and hasattr(engine, "stats_returns"):
+        return _create_tearsheet_from_result(
+            result=engine,
+            node=node,
+            run_config_id=run_config_id,
+            currency=currency,
+            output_path=output_path,
+            title=title,
+            config=config,
+            benchmark_returns=benchmark_returns,
+            benchmark_name=benchmark_name,
+        )
 
     # Extract data from engine
     analyzer = engine.portfolio.analyzer
@@ -440,6 +470,180 @@ def create_tearsheet(  # noqa: C901
         benchmark_name=benchmark_name,
         engine=engine,
     )
+
+
+class _BacktestNodeEngineView:
+    def __init__(self, node: BacktestNode, run_config_id: str) -> None:
+        self._node = node
+        self._run_config_id = run_config_id
+        self.cache = node.get_engine_cache(run_config_id)
+
+    @staticmethod
+    def parse_bar_type(value: str):
+        from nautilus_trader.core.nautilus_pyo3.model import BarType as Pyo3BarType
+
+        return Pyo3BarType.from_str(value)
+
+    @staticmethod
+    def bar_to_dict(bar) -> dict:
+        return bar.to_dict()
+
+    def generate_fills_report(self) -> pd.DataFrame:
+        return self._node.generate_fills_report(self._run_config_id)
+
+
+def _create_tearsheet_from_result(
+    result: BacktestResult,
+    node: BacktestNode | None,
+    run_config_id: str | None,
+    currency,
+    output_path: str | None,
+    title: str,
+    config,
+    benchmark_returns: pd.Series | None,
+    benchmark_name: str,
+) -> str | None:
+    resolved_run_config_id = run_config_id or result.run_config_id
+    needs_engine = config is not None and "bars_with_fills" in config.chart_names
+    if needs_engine and node is None:
+        raise ValueError("A BacktestNode is required for the bars_with_fills chart")
+    if node is not None and resolved_run_config_id is None:
+        raise ValueError("run_config_id is required when a BacktestNode is provided")
+    if node is not None and resolved_run_config_id is not None:
+        _validate_result_node_state(node, resolved_run_config_id)
+
+    engine_view = (
+        _BacktestNodeEngineView(node, resolved_run_config_id)
+        if node is not None and resolved_run_config_id is not None
+        else None
+    )
+    returns = _result_returns_series(result)
+    run_info = _result_run_info(result)
+    account_info = _result_account_info(result, node, resolved_run_config_id, currency)
+
+    if title == "NautilusTrader Backtest Results":
+        run_started = _format_result_timestamp(result.run_started)
+        title = f"<b>NautilusTrader</b> v{NAUTILUS_VERSION} - Backtest Results"
+        title += f"<br><sub>Run started: {run_started}</sub>"
+
+    return create_tearsheet_from_stats(
+        run_info=run_info,
+        account_info=account_info,
+        stats_pnls=_filter_result_stats_pnls(result.stats_pnls, currency),
+        stats_returns=result.stats_returns,
+        stats_general=result.stats_general,
+        returns=returns,
+        output_path=output_path,
+        title=title,
+        config=config,
+        benchmark_returns=benchmark_returns,
+        benchmark_name=benchmark_name,
+        engine=engine_view,
+    )
+
+
+def _validate_result_node_state(node: BacktestNode, run_config_id: str) -> None:
+    for run_config in node.configs:
+        if run_config.id != run_config_id:
+            continue
+        if run_config.dispose_on_completion:
+            raise ValueError(
+                "BacktestNode state is unavailable when dispose_on_completion=True; "
+                "set dispose_on_completion=False before running the backtest",
+            )
+        return
+
+
+def _filter_result_stats_pnls(stats_pnls, currency) -> dict:
+    stats_pnls = dict(stats_pnls)
+    if currency is None:
+        return stats_pnls
+
+    currency_code = getattr(currency, "code", str(currency))
+    return {currency_code: stats_pnls[currency_code]} if currency_code in stats_pnls else {}
+
+
+def _result_returns_series(result: BacktestResult) -> pd.Series:
+    returns = pd.Series(dict(result.returns_series), dtype="float64")
+    returns.index = pd.to_datetime(returns.index, unit="ns", utc=True)
+    return returns.sort_index()
+
+
+def _result_run_info(result: BacktestResult) -> dict[str, str]:
+    return {
+        "Run ID": str(result.run_id) if result.run_id is not None else "N/A",
+        "Run started": _format_result_timestamp(result.run_started),
+        "Run finished": _format_result_timestamp(result.run_finished),
+        "Elapsed time": _format_result_duration(result.run_started, result.run_finished),
+        "Backtest start": _format_result_timestamp(result.backtest_start),
+        "Backtest end": _format_result_timestamp(result.backtest_end),
+        "Backtest range": _format_result_duration(result.backtest_start, result.backtest_end),
+        "Iterations": f"{result.iterations:_}",
+        "Total events": f"{result.total_events:_}",
+        "Total orders": f"{result.total_orders:_}",
+        "Total positions": f"{result.total_positions:_}",
+    }
+
+
+def _format_result_timestamp(timestamp: int | None) -> str:
+    return unix_nanos_to_iso8601(timestamp) if timestamp is not None else "N/A"
+
+
+def _format_result_duration(start: int | None, end: int | None) -> str:
+    if start is None or end is None:
+        return "N/A"
+    return str(pd.Timedelta(end - start, unit="ns"))
+
+
+def _result_account_info(
+    result: BacktestResult,
+    node: BacktestNode | None,
+    run_config_id: str | None,
+    currency=None,
+) -> dict[str, str]:
+    currency_code = getattr(currency, "code", str(currency)) if currency is not None else None
+    summary = result.summary
+    account_ids = {
+        key.removeprefix("account.").removesuffix(".id"): value
+        for key, value in summary.items()
+        if key.startswith("account.") and key.endswith(".id")
+    }
+    account_info = {}
+
+    if node is not None and run_config_id is not None:
+        from nautilus_trader.core.nautilus_pyo3.model import AccountId
+
+        for venue, account_id in sorted(account_ids.items()):
+            report = node.generate_account_report(
+                run_config_id,
+                account_id=AccountId.from_str(account_id),
+            )
+
+            if report.empty:
+                continue
+
+            for report_currency, balances in report.groupby("currency", sort=True):
+                if currency_code is not None and str(report_currency) != currency_code:
+                    continue
+                totals = pd.to_numeric(balances["total"], errors="coerce").dropna()
+                if totals.empty:
+                    continue
+                account_info[f"Starting balance ({venue}, {report_currency})"] = str(totals.iloc[0])
+                account_info[f"Ending balance ({venue}, {report_currency})"] = str(totals.iloc[-1])
+
+        return account_info
+
+    for key, value in sorted(summary.items()):
+        if ".balance." not in key or not key.endswith(".total"):
+            continue
+        prefix, currency_and_field = key.rsplit(".balance.", maxsplit=1)
+        venue = prefix.removeprefix("account.")
+        report_currency = currency_and_field.removesuffix(".total")
+        if currency_code is not None and report_currency != currency_code:
+            continue
+        account_info[f"Ending balance ({venue}, {report_currency})"] = value
+
+    return account_info
 
 
 def _resolve_tearsheet_returns(
@@ -1964,7 +2168,8 @@ def _render_bars_with_fills(  # noqa: C901
         bar_type = bar_types[0]
 
     if isinstance(bar_type, str):
-        bar_type = BarType.from_str(bar_type)
+        parse_bar_type = getattr(engine, "parse_bar_type", BarType.from_str)
+        bar_type = parse_bar_type(bar_type)
 
     PyCondition.not_none(engine, "engine")
     PyCondition.not_none(bar_type, "bar_type")
@@ -1975,7 +2180,8 @@ def _render_bars_with_fills(  # noqa: C901
         return
 
     # Convert bars to DataFrame
-    bars_df = pd.DataFrame(Bar.to_dict(bar) for bar in bars)
+    bar_to_dict = getattr(engine, "bar_to_dict", Bar.to_dict)
+    bars_df = pd.DataFrame(bar_to_dict(bar) for bar in bars)
     bars_df["ts_init"] = pd.to_datetime(bars_df["ts_init"])
 
     # Convert price columns to float
@@ -1983,7 +2189,12 @@ def _render_bars_with_fills(  # noqa: C901
         bars_df[column] = bars_df[column].astype(float)
 
     # Get order fills and filter by instrument_id
-    fills_df = engine.trader.generate_fills_report()
+    generate_fills_report = getattr(engine, "generate_fills_report", None)
+    fills_df = (
+        generate_fills_report()
+        if callable(generate_fills_report)
+        else engine.trader.generate_fills_report()
+    )
 
     if not fills_df.empty:
         # Filter fills by instrument_id from bar_type

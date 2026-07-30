@@ -2171,12 +2171,13 @@ mod tests {
         params.insert(ustr::Ustr::from("interval_secs"), ustr::Ustr::from("10"));
         let primary_tags = vec![ustr::Ustr::from("PRIMARY_TAG")];
         let linked_order_ids = vec![ClientOrderId::from("LINK-1")];
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             InstrumentId::from("BTC/USDT.BINANCE"),
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -2190,7 +2191,7 @@ mod tests {
             None, // parent_order_id
             Some(algo.id()),
             Some(params.clone()),
-            None, // exec_spawn_id
+            Some(client_order_id),
             Some(primary_tags.clone()),
         ));
 
@@ -2861,12 +2862,13 @@ mod tests {
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let exec_algorithm_id = algo.id();
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -2880,7 +2882,7 @@ mod tests {
             None,
             Some(exec_algorithm_id),
             None,
-            None,
+            Some(client_order_id),
             None,
         ));
 
@@ -2926,7 +2928,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Denied(denied));
 
-        let restored_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
+        let restored_primary = algo.cache().order(&client_order_id).unwrap();
         assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
     }
 
@@ -2937,12 +2939,13 @@ mod tests {
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let exec_algorithm_id = algo.id();
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -2956,7 +2959,7 @@ mod tests {
             None,
             Some(exec_algorithm_id),
             None,
-            None,
+            Some(client_order_id),
             None,
         ));
 
@@ -3005,7 +3008,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Rejected(rejected));
 
-        let restored_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
+        let restored_primary = algo.cache().order(&client_order_id).unwrap();
         assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
     }
 
@@ -3016,12 +3019,13 @@ mod tests {
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let exec_algorithm_id = algo.id();
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -3035,7 +3039,7 @@ mod tests {
             None,
             Some(exec_algorithm_id),
             None,
-            None,
+            Some(client_order_id),
             None,
         ));
 
@@ -3081,7 +3085,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Denied(denied));
 
-        let final_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
+        let final_primary = algo.cache().order(&client_order_id).unwrap();
         assert_eq!(final_primary.quantity(), Quantity::from("1.0"));
     }
 
@@ -3092,12 +3096,13 @@ mod tests {
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let exec_algorithm_id = algo.id();
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -3111,7 +3116,7 @@ mod tests {
             None,
             Some(exec_algorithm_id),
             None,
-            None,
+            Some(client_order_id),
             None,
         ));
 
@@ -3174,7 +3179,7 @@ mod tests {
         );
         let events = events.borrow();
 
-        let restored_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
+        let restored_primary = algo.cache().order(&client_order_id).unwrap();
         assert_eq!(restored_primary.quantity(), Quantity::from("0.7"));
         assert_eq!(events.len(), 1);
         assert!(matches!(
@@ -3190,12 +3195,13 @@ mod tests {
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let exec_algorithm_id = algo.id();
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -3209,7 +3215,7 @@ mod tests {
             None,
             Some(exec_algorithm_id),
             None,
-            None,
+            Some(client_order_id),
             None,
         ));
 
@@ -3258,7 +3264,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Accepted(accepted));
 
-        let primary_after_accept = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
+        let primary_after_accept = algo.cache().order(&client_order_id).unwrap();
         assert_eq!(primary_after_accept.quantity(), Quantity::from("0.5"));
 
         // Cancel after acceptance - no restoration should occur
@@ -3281,7 +3287,7 @@ mod tests {
 
         algo.handle_order_event(OrderEventAny::Canceled(canceled));
 
-        let final_primary = algo.cache().order(&ClientOrderId::from("O-001")).unwrap();
+        let final_primary = algo.cache().order(&client_order_id).unwrap();
         assert_eq!(final_primary.quantity(), Quantity::from("0.5"));
     }
 
@@ -3293,12 +3299,13 @@ mod tests {
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let exec_algorithm_id = algo.id();
+        let client_order_id = ClientOrderId::from("O-001");
 
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -3312,7 +3319,7 @@ mod tests {
             None,
             Some(exec_algorithm_id),
             None,
-            None,
+            Some(client_order_id),
             None,
         ));
 

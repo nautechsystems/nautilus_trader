@@ -7054,6 +7054,86 @@ mod tests {
         assert!(events.borrow().is_empty());
     }
 
+    fn collision_engine() -> (OrderMatchingEngine, Rc<RefCell<Cache>>, VenueOrderId) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let venue_order_id = VenueOrderId::from(format!("{}-1-1", instrument.id().venue));
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&ClientOrderId::from("O-OWNER"), &venue_order_id, false)
+            .unwrap();
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::clone(&cache),
+            Default::default(),
+        );
+
+        (engine, cache, venue_order_id)
+    }
+
+    #[rstest]
+    #[case(OrderType::Market)]
+    #[case(OrderType::MarketToLimit)]
+    fn test_market_collision_probes_and_fills_with_default_ack_config(
+        #[case] order_type: OrderType,
+    ) {
+        let (mut engine, cache, venue_order_id) = collision_engine();
+        assert!(!engine.config.use_market_order_acks);
+        let quote = QuoteTick::new(
+            engine.instrument.id(),
+            Price::from("1499.00"),
+            Price::from("1500.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        engine.process_quote_tick(&quote);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(engine.instrument.id())
+            .client_order_id(ClientOrderId::from("O-CLAIMANT"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+
+        assert!(
+            !events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Rejected(_)))
+        );
+        assert!(
+            events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_)))
+        );
+        assert!(cache.borrow().order_exists(&order.client_order_id()));
+        assert_eq!(
+            cache.borrow().client_order_id(&venue_order_id),
+            Some(&ClientOrderId::from("O-OWNER"))
+        );
+        assert_eq!(
+            cache.borrow().venue_order_id(&order.client_order_id()),
+            Some(&VenueOrderId::from(format!("{}-1-2", engine.venue)))
+        );
+    }
+
     struct RecordingFeeModel {
         calls: Rc<Cell<u32>>,
         commission: Money,

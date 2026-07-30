@@ -943,6 +943,101 @@ fn scan_seq_returns_gap_for_missing_in_watermark_row() {
 }
 
 #[rstest]
+fn list_runs_breaks_start_time_ties_by_run_id() {
+    // Every `manifest` helper run shares start_ts_init = 0, so the listing must
+    // fall back to the run id rather than `read_dir` order.
+    let tmp = TempDir::new().expect("tempdir");
+
+    for run_id in ["run-b", "run-a"] {
+        let mut backend = RedbBackend::new(tmp.path());
+        backend.open_run(manifest(run_id)).expect("open run");
+        backend.seal(RunStatus::Ended).expect("seal");
+    }
+
+    let manifests = RedbBackend::list_runs(tmp.path(), INSTANCE_ID).expect("list runs");
+    let run_ids: Vec<String> = manifests.into_iter().map(|m| m.run_id).collect();
+
+    assert_eq!(run_ids, vec!["run-a".to_string(), "run-b".to_string()]);
+}
+
+#[rstest]
+fn scan_surfaces_seq_mismatch_when_rows_are_swapped_between_keys() {
+    // Manufacture tampering: swap the stored values under keys 1 and 2 directly in
+    // redb. Each row still hashes correctly (the hash covers the embedded seq), so
+    // only the key cross-check can refuse the read.
+    let tmp = TempDir::new().expect("tempdir");
+    let path = {
+        let mut backend = RedbBackend::new(tmp.path());
+        backend
+            .open_run(manifest("run-seq-swap"))
+            .expect("open run");
+        backend
+            .append_batch(&[
+                append_with(1, 10, Vec::new()),
+                append_with(2, 11, Vec::new()),
+            ])
+            .expect("append");
+        backend.current_path().expect("path").to_path_buf()
+    };
+
+    {
+        let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+        let db = redb::Database::create(&path).expect("open redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            let mut table = txn.open_table(entries).expect("open table");
+            let bytes_1 = table
+                .remove(1_u64)
+                .expect("remove seq 1")
+                .expect("seq 1 present")
+                .value()
+                .to_vec();
+            let bytes_2 = table
+                .remove(2_u64)
+                .expect("remove seq 2")
+                .expect("seq 2 present")
+                .value()
+                .to_vec();
+            table
+                .insert(1_u64, bytes_2.as_slice())
+                .expect("insert under key 1");
+            table
+                .insert(2_u64, bytes_1.as_slice())
+                .expect("insert under key 2");
+        }
+        txn.commit().expect("commit swap");
+    }
+
+    let mut recovered = RedbBackend::new(tmp.path());
+    let err = recovered
+        .open_run(manifest("run-seq-swap"))
+        .expect_err("must flag crashed predecessor");
+    assert!(matches!(err, EventStoreError::CrashedPredecessor));
+
+    assert!(matches!(
+        recovered.scan_seq(1),
+        Err(EventStoreError::SeqMismatch {
+            table_key: 1,
+            embedded_seq: 2,
+        }),
+    ),);
+    assert!(matches!(
+        recovered.scan_range(1, 2, ScanDirection::Forward),
+        Err(EventStoreError::SeqMismatch {
+            table_key: 1,
+            embedded_seq: 2,
+        }),
+    ),);
+    assert!(matches!(
+        recovered.scan_seq(2),
+        Err(EventStoreError::SeqMismatch {
+            table_key: 2,
+            embedded_seq: 1,
+        }),
+    ),);
+}
+
+#[rstest]
 fn scan_range_reports_gap_at_tail_when_iter_ends_early() {
     // Tail gap branch: the iterator runs out of rows before reaching `hi`, but
     // `high_watermark` is still high because rows exist *beyond* the requested

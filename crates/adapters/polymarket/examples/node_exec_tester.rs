@@ -22,6 +22,7 @@
 //! Edit the constants below to change the target event, market token, and order size.
 //!
 //! Run with: `cargo run --example polymarket-exec-tester --package nautilus-polymarket --features examples`
+//! Add `-- --live-orders` to open a quote-denominated market BUY and close its position on stop.
 //!
 //! Required credential environment variables:
 //! - `POLYMARKET_PK` (EOA signer private key).
@@ -67,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_name = NODE_NAME.to_string();
     let client_id = *POLYMARKET_CLIENT_ID;
     let instrument_id = InstrumentId::from(INSTRUMENT_ID);
+    let live_orders = std::env::args().any(|arg| arg == "--live-orders");
 
     let data_config = PolymarketDataClientConfig {
         instrument_config: Some(PolymarketInstrumentProviderConfig {
@@ -106,12 +108,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_reconciliation(true)
         .with_reconciliation_lookback_mins(120)
         .with_timeout_reconciliation(60)
-        .with_delay_post_stop_secs(5)
+        .with_timeout_disconnection_secs(30)
+        .with_delay_post_stop_secs(30)
         .build()?;
 
     let order_qty = Quantity::from(ORDER_QTY);
 
-    let tester_config = ExecTesterConfig::builder()
+    let mut tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
@@ -121,21 +124,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
-        // Uncomment to exercise a quote-denominated market buy on start.
-        // Polymarket market BUY orders require quote quantity and IOC/FOK,
-        // and quote quantity does not apply to limit orders.
-        // .open_position_on_start_qty(order_qty.as_decimal())
-        // .open_position_time_in_force(TimeInForce::Ioc)
-        // .use_quote_quantity(true)
-        // .enable_limit_buys(false)
         .use_post_only(true)
-        .tob_offset_ticks(5) // 5 ticks = 0.005 offset (price range 0.001-0.999)
+        .tob_offset_ticks(5) // Offset = 5 * the instrument's current tick size
         .order_expire_time_delta_mins(3)
         .enable_limit_sells(false) // Can't sell without inventory on Polymarket
         .reduce_only_on_stop(false) // Polymarket does not support reduce-only orders
+        .close_positions_qty_precision(2)
         .close_positions_time_in_force(TimeInForce::Ioc)
         .log_data(false)
         .build()?;
+
+    if live_orders {
+        tester_config.open_position_on_start_qty = Some(order_qty.as_decimal());
+        tester_config.open_position_on_first_quote = true;
+        tester_config.open_position_time_in_force = TimeInForce::Ioc;
+        tester_config.use_quote_quantity = true;
+        tester_config.enable_limit_buys = false;
+        tester_config.use_post_only = false;
+    }
 
     let tester = ExecTester::new(tester_config);
 

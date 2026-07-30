@@ -138,3 +138,8 @@ harness = false
 name = "order_fills_criterion"
 path = "benches/order_fills_criterion.rs"
 harness = false
+
+[[bench]]
+name = "position_replay_criterion"
+path = "benches/position_replay_criterion.rs"
+harness = false

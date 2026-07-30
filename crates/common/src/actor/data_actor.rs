@@ -5050,7 +5050,7 @@ fn check_timestamps(
     }
 
     if let (Some(start), Some(end)) = (start, end) {
-        check_predicate_true(start < end, "start was >= end")?;
+        check_predicate_true(start <= end, "start was > end")?;
     }
 
     Ok(())

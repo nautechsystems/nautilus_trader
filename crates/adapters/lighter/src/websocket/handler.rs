@@ -25,6 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{identifiers::AccountId, instruments::InstrumentAny};
 use nautilus_network::{
@@ -56,8 +57,9 @@ use crate::{
     common::{
         consts::{
             LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED,
-            LIGHTER_ERROR_CODE_TX_RANGE, LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
-            SUBSCRIBE_INFLIGHT_MAX,
+            LIGHTER_ERROR_CODE_TX_RANGE, LIGHTER_ERROR_CODE_WS_RATE_LIMITED,
+            LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED, LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
+            SUBSCRIBE_INFLIGHT_MAX, SUBSCRIBE_RETRY_BASE_BACKOFF, SUBSCRIBE_RETRY_MAX,
         },
         enums::LighterCandleResolution,
         rate_limit::LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY,
@@ -76,6 +78,14 @@ const CTRL_TYPE_PONG: &str = "pong";
 const CTRL_TYPE_ERROR: &str = "error";
 const CTRL_TYPE_SEND_TX: &str = "jsonapi/sendtx";
 
+#[derive(serde::Deserialize)]
+struct LighterWsFrameHeader<'a> {
+    #[serde(rename = "type", borrow)]
+    kind: &'a str,
+    #[serde(borrow)]
+    channel: Option<&'a str>,
+}
+
 /// Commands sent from the outer client to the inner feed handler.
 #[expect(
     clippy::large_enum_variant,
@@ -92,7 +102,10 @@ pub enum HandlerCommand {
     Subscribe {
         channel: LighterWsChannel,
         auth: Option<String>,
+        response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     },
+    /// Requeue one subscription generation after venue-level backoff.
+    RetrySubscribe { topic: Ustr, generation: u64 },
     /// Unsubscribe from a channel.
     Unsubscribe { channel: LighterWsChannel },
     /// Resubscribe to the venue `order_book` stream after a continuity gap.
@@ -140,10 +153,15 @@ impl Debug for HandlerCommand {
         match self {
             Self::SetClient(_) => f.write_str("SetClient(<WebSocketClient>)"),
             Self::Disconnect => f.write_str("Disconnect"),
-            Self::Subscribe { channel, auth } => f
+            Self::Subscribe { channel, auth, .. } => f
                 .debug_struct(stringify!(Subscribe))
                 .field("channel", channel)
                 .field("authed", &auth.is_some())
+                .finish(),
+            Self::RetrySubscribe { topic, generation } => f
+                .debug_struct(stringify!(RetrySubscribe))
+                .field("topic", topic)
+                .field("generation", generation)
                 .finish(),
             Self::Unsubscribe { channel } => f
                 .debug_struct(stringify!(Unsubscribe))
@@ -211,8 +229,11 @@ pub(super) struct FeedHandler {
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<LighterWsError>,
     pending_messages: VecDeque<NautilusWsMessage>,
-    pending_subs: VecDeque<(LighterWsChannel, Option<String>)>,
-    inflight_subs: AHashSet<Ustr>,
+    pending_subs: VecDeque<(Ustr, u64)>,
+    inflight_subs: AHashMap<Ustr, u64>,
+    subscription_attempts: AHashMap<Ustr, SubscriptionAttempt>,
+    ignored_completions: AHashMap<Ustr, CompletionKind>,
+    next_subscription_generation: u64,
     instruments: AHashMap<i16, InstrumentAny>,
     book_delta_subs: AHashSet<i16>,
     book_depth_10_subs: AHashSet<i16>,
@@ -227,6 +248,41 @@ pub(super) struct FeedHandler {
 struct CachedOrderBook {
     book: LighterWsOrderBook,
     timestamp: u64,
+}
+
+struct SubscriptionAttempt {
+    channel: LighterWsChannel,
+    auth: Option<String>,
+    pending_auth: Option<String>,
+    generation: u64,
+    retries: u8,
+    response_txs: Vec<tokio::sync::oneshot::Sender<Result<(), String>>>,
+    pending_response_txs: Vec<tokio::sync::oneshot::Sender<Result<(), String>>>,
+}
+
+impl SubscriptionAttempt {
+    fn fold_pending_auth(&mut self) {
+        if let Some(auth) = self.pending_auth.take() {
+            self.auth = Some(auth);
+            self.response_txs.append(&mut self.pending_response_txs);
+        } else {
+            debug_assert!(self.pending_response_txs.is_empty());
+        }
+    }
+}
+
+/// Which venue frame produced a subscription completion.
+///
+/// The venue answers a subscribe with a generic control ack followed by a
+/// typed `subscribed/<channel>` snapshot, and both complete by topic. The kind
+/// lets `complete_subscription` swallow the predecessor's trailing frame so a
+/// same-topic generation dispatched between the two cannot be completed by a
+/// response that belongs to the earlier request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletionKind {
+    ControlAck,
+    Typed,
+    AlreadySubscribed,
 }
 
 impl FeedHandler {
@@ -249,7 +305,10 @@ impl FeedHandler {
             retry_manager: create_websocket_retry_manager(),
             pending_messages: VecDeque::new(),
             pending_subs: VecDeque::new(),
-            inflight_subs: AHashSet::new(),
+            inflight_subs: AHashMap::new(),
+            subscription_attempts: AHashMap::new(),
+            ignored_completions: AHashMap::new(),
+            next_subscription_generation: 1,
             instruments: AHashMap::new(),
             book_delta_subs: AHashSet::new(),
             book_depth_10_subs: AHashSet::new(),
@@ -330,10 +389,12 @@ impl FeedHandler {
         }
     }
 
-    // False when the send fails: no ack will arrive, so the caller frees the slot
-    async fn dispatch_subscribe(&self, channel: LighterWsChannel, auth: Option<String>) -> bool {
+    async fn dispatch_subscribe(
+        &self,
+        channel: LighterWsChannel,
+        auth: Option<String>,
+    ) -> Result<(), String> {
         let topic = channel.topic_key();
-        self.subscriptions.mark_subscribe(&topic);
 
         let authed = auth.is_some();
         let request = match auth {
@@ -348,16 +409,14 @@ impl FeedHandler {
                 log::debug!("Sending Lighter subscribe: topic={topic} authed={authed}");
                 if let Err(e) = self.send_with_retry(payload).await {
                     log::error!("Error subscribing to {topic}: {e}");
-                    self.subscriptions.mark_failure(&topic);
-                    false
+                    Err(e.to_string())
                 } else {
-                    true
+                    Ok(())
                 }
             }
             Err(e) => {
                 log::error!("Error serializing subscription for {topic}: {e}");
-                self.subscriptions.mark_failure(&topic);
-                false
+                Err(format!("failed to serialize subscription for {topic}: {e}"))
             }
         }
     }
@@ -438,14 +497,24 @@ impl FeedHandler {
                             self.signal.store(true, Ordering::SeqCst);
                             return None;
                         }
-                        HandlerCommand::Subscribe { channel, auth } => {
-                            self.pending_subs.push_back((channel, auth));
+                        HandlerCommand::Subscribe {
+                            channel,
+                            auth,
+                            response_tx,
+                        } => {
+                            self.queue_subscribe(channel, auth, response_tx);
+                        }
+                        HandlerCommand::RetrySubscribe { topic, generation } => {
+                            self.queue_subscription_retry(topic, generation);
                         }
                         HandlerCommand::Unsubscribe { channel } => {
                             // Drop a queued-but-unsent subscribe for this channel so a freed
                             // slot cannot resubscribe after the caller unsubscribed.
                             let topic = channel.topic_key();
-                            self.pending_subs.retain(|(queued, _)| queued.topic_key() != topic);
+                            self.cancel_subscription_attempt(
+                                &topic,
+                                "subscription cancelled before venue acknowledgement",
+                            );
 
                             if let LighterWsChannel::OrderBook(market_index) = &channel {
                                 self.book_snapshots_seen.remove(market_index);
@@ -520,9 +589,9 @@ impl FeedHandler {
                                 // Resubscribe replays a fresh `subscribed/candle`; pre-disconnect cache is stale.
                                 self.last_candles.clear();
                                 // The new socket starts with zero inflight and restore_subscriptions
-                                // re-queues every topic, so drop stale gate state to avoid leaking slots.
-                                self.pending_subs.clear();
-                                self.inflight_subs.clear();
+                                // re-queues every topic. Retire stale generations before accepting
+                                // replay commands so late work cannot complete a replacement attempt.
+                                self.reset_subscription_attempts_after_reconnect();
                                 self.account_state_reconciler.reset();
                                 return Some(NautilusWsMessage::Reconnected {
                                     connection_epoch,
@@ -532,6 +601,9 @@ impl FeedHandler {
                             let ts_init = self.clock.get_time_ns();
 
                             if let Ok(frame) = serde_json::from_str::<LighterWsFrame>(&text) {
+                                if let Some(topic) = typed_subscribe_topic(&text) {
+                                    self.complete_subscription(topic, CompletionKind::Typed);
+                                }
                                 let messages = self
                                     .handle_frame(frame, ts_init)
                                     .into_iter()
@@ -600,19 +672,305 @@ impl FeedHandler {
     // acks that free slots, so awaiting a permit here would deadlock.
     async fn pump_pending_subscribes(&mut self) {
         while self.inflight_subs.len() < SUBSCRIBE_INFLIGHT_MAX {
-            let Some((channel, auth)) = self.pending_subs.pop_front() else {
+            let Some((topic, generation)) = self.pending_subs.pop_front() else {
                 break;
             };
-            let topic = Ustr::from(channel.topic_key().as_str());
-            self.inflight_subs.insert(topic);
-            if !self.dispatch_subscribe(channel, auth).await {
-                self.inflight_subs.remove(&topic);
+
+            let Some(attempt) = self.subscription_attempts.get(&topic) else {
+                continue;
+            };
+
+            if attempt.generation != generation {
+                continue;
+            }
+
+            let channel = attempt.channel.clone();
+            let auth = attempt.auth.clone();
+            self.inflight_subs.insert(topic, generation);
+            if let Err(message) = self.dispatch_subscribe(channel, auth).await {
+                self.schedule_subscription_retry(topic, generation, &message);
             }
         }
     }
 
-    fn release_subscribe_inflight(&mut self, topic: &str) -> bool {
-        self.inflight_subs.remove(&Ustr::from(topic))
+    fn queue_subscribe(
+        &mut self,
+        channel: LighterWsChannel,
+        auth: Option<String>,
+        response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+    ) {
+        let topic = Ustr::from(channel.topic_key().as_str());
+        if let Some(attempt) = self.subscription_attempts.get_mut(&topic) {
+            attempt.channel = channel;
+            let effective_auth = attempt.pending_auth.as_ref().or(attempt.auth.as_ref());
+            let auth_changed = auth
+                .as_ref()
+                .is_some_and(|auth| Some(auth) != effective_auth);
+
+            if auth_changed {
+                let is_inflight = self.inflight_subs.get(&topic) == Some(&attempt.generation);
+                if is_inflight {
+                    attempt.pending_auth = auth;
+                    if let Some(response_tx) = response_tx {
+                        attempt.pending_response_txs.push(response_tx);
+                    }
+                } else {
+                    debug_assert!(attempt.pending_auth.is_none());
+                    debug_assert!(attempt.pending_response_txs.is_empty());
+                    attempt.auth = auth;
+                    if let Some(response_tx) = response_tx {
+                        attempt.response_txs.push(response_tx);
+                    }
+                }
+            } else if let Some(response_tx) = response_tx {
+                if auth.is_some() && attempt.pending_auth.is_some() {
+                    attempt.pending_response_txs.push(response_tx);
+                } else {
+                    attempt.response_txs.push(response_tx);
+                }
+            }
+            return;
+        }
+
+        let newly_pending = self.subscriptions.try_mark_subscribe(topic.as_str());
+        if !newly_pending
+            && auth.is_none()
+            && !self
+                .subscriptions
+                .pending_subscribe_topics()
+                .iter()
+                .any(|pending| pending == topic.as_str())
+        {
+            if let Some(response_tx) = response_tx {
+                let _ = response_tx.send(Ok(()));
+            }
+            return;
+        }
+
+        let generation = self.take_subscription_generation();
+        self.subscription_attempts.insert(
+            topic,
+            SubscriptionAttempt {
+                channel,
+                auth,
+                pending_auth: None,
+                generation,
+                retries: 0,
+                response_txs: response_tx.into_iter().collect(),
+                pending_response_txs: Vec::new(),
+            },
+        );
+        self.pending_subs.push_back((topic, generation));
+    }
+
+    fn queue_subscription_retry(&mut self, topic: Ustr, generation: u64) {
+        if self
+            .subscription_attempts
+            .get(&topic)
+            .is_some_and(|attempt| attempt.generation == generation)
+            && self.inflight_subs.get(&topic) != Some(&generation)
+            && !self
+                .pending_subs
+                .iter()
+                .any(|pending| *pending == (topic, generation))
+        {
+            self.pending_subs.push_back((topic, generation));
+        }
+    }
+
+    fn complete_subscription(&mut self, topic: &str, kind: CompletionKind) -> bool {
+        let topic = Ustr::from(topic);
+
+        // Swallow the predecessor's trailing frame before the inflight guard,
+        // so it cannot complete a same-topic generation dispatched between the
+        // venue's control ack and its typed snapshot - whether that generation
+        // is a serialized successor, a fresh attempt, queued, or in backoff.
+        if self.ignored_completions.get(&topic) == Some(&kind) {
+            self.ignored_completions.remove(&topic);
+            return false;
+        }
+
+        let Some(generation) = self.inflight_subs.get(&topic).copied() else {
+            return false;
+        };
+
+        if !self
+            .subscription_attempts
+            .get(&topic)
+            .is_some_and(|attempt| attempt.generation == generation)
+        {
+            return false;
+        }
+
+        self.inflight_subs.remove(&topic);
+        self.subscriptions.confirm_subscribe(topic.as_str());
+
+        // The venue contract is control ack first, typed snapshot second, so a
+        // control-ack completion owes one trailing typed frame. Typed and
+        // already-subscribed completions have no established trailing frame.
+        if kind == CompletionKind::ControlAck {
+            self.ignored_completions
+                .insert(topic, CompletionKind::Typed);
+        }
+        let mut attempt = self
+            .subscription_attempts
+            .remove(&topic)
+            .expect("matching subscription attempt disappeared");
+        for response_tx in std::mem::take(&mut attempt.response_txs) {
+            let _ = response_tx.send(Ok(()));
+        }
+
+        if let Some(auth) = attempt.pending_auth.take() {
+            let generation = self.take_subscription_generation();
+            attempt.auth = Some(auth);
+            attempt.generation = generation;
+            attempt.retries = 0;
+            attempt.response_txs = std::mem::take(&mut attempt.pending_response_txs);
+            self.subscription_attempts.insert(topic, attempt);
+            self.pending_subs.push_back((topic, generation));
+        } else {
+            debug_assert!(attempt.pending_response_txs.is_empty());
+        }
+        true
+    }
+
+    fn retry_inflight_subscriptions(&mut self, message: &str) {
+        let mut inflight: Vec<(Ustr, u64)> = self
+            .inflight_subs
+            .iter()
+            .map(|(topic, generation)| (*topic, *generation))
+            .collect();
+        inflight.sort_unstable_by_key(|(topic, _)| *topic);
+
+        for (topic, generation) in inflight {
+            self.schedule_subscription_retry(topic, generation, message);
+        }
+    }
+
+    fn fail_inflight_subscriptions(&mut self, message: &str) {
+        let mut topics: Vec<Ustr> = self.inflight_subs.keys().copied().collect();
+        topics.sort_unstable();
+
+        for topic in topics {
+            self.fail_subscription_attempt(topic, message);
+        }
+    }
+
+    fn schedule_subscription_retry(&mut self, topic: Ustr, generation: u64, message: &str) {
+        if self.inflight_subs.get(&topic) != Some(&generation) {
+            return;
+        }
+        self.inflight_subs.remove(&topic);
+        self.subscriptions.mark_failure(topic.as_str());
+
+        let Some(attempt) = self.subscription_attempts.get_mut(&topic) else {
+            return;
+        };
+
+        if attempt.generation != generation {
+            return;
+        }
+
+        attempt.fold_pending_auth();
+        if attempt.retries >= SUBSCRIBE_RETRY_MAX {
+            self.fail_subscription_attempt(topic, message);
+            return;
+        }
+
+        attempt.retries += 1;
+        let retry = attempt.retries;
+        let next_generation = self.take_subscription_generation();
+        let attempt = self
+            .subscription_attempts
+            .get_mut(&topic)
+            .expect("subscription attempt disappeared before retry");
+        attempt.generation = next_generation;
+
+        let Some(cmd_tx) = self.cmd_tx.clone() else {
+            self.fail_subscription_attempt(
+                topic,
+                &format!("{message}; subscription retry command channel unavailable"),
+            );
+            return;
+        };
+        let delay = SUBSCRIBE_RETRY_BASE_BACKOFF.saturating_mul(1_u32 << (retry - 1));
+        get_runtime().spawn(async move {
+            tokio::time::sleep(delay).await;
+
+            if let Err(e) = cmd_tx.send(HandlerCommand::RetrySubscribe {
+                topic,
+                generation: next_generation,
+            }) {
+                log::debug!("Dropping stale Lighter subscription retry: {e}");
+            }
+        });
+    }
+
+    fn fail_subscription_attempt(&mut self, topic: Ustr, message: &str) {
+        self.inflight_subs.remove(&topic);
+        self.pending_subs.retain(|(pending, _)| *pending != topic);
+        self.subscriptions.mark_unsubscribe(topic.as_str());
+        self.subscriptions.confirm_unsubscribe(topic.as_str());
+
+        if let Some(attempt) = self.subscription_attempts.remove(&topic) {
+            let attempts = attempt.retries + 1;
+            for response_tx in attempt
+                .response_txs
+                .into_iter()
+                .chain(attempt.pending_response_txs)
+            {
+                let _ = response_tx.send(Err(format!(
+                    "subscription {topic} failed after {attempts} attempts: {message}",
+                )));
+            }
+        }
+    }
+
+    fn cancel_subscription_attempt(&mut self, topic: &str, message: &str) {
+        let topic = Ustr::from(topic);
+        self.inflight_subs.remove(&topic);
+        self.pending_subs.retain(|(pending, _)| *pending != topic);
+        if let Some(attempt) = self.subscription_attempts.remove(&topic) {
+            for response_tx in attempt
+                .response_txs
+                .into_iter()
+                .chain(attempt.pending_response_txs)
+            {
+                let _ = response_tx.send(Err(format!("{message}: {topic}")));
+            }
+        }
+    }
+
+    fn reset_subscription_attempts_after_reconnect(&mut self) {
+        for topic in self.subscriptions.all_topics() {
+            self.subscriptions.mark_failure(&topic);
+        }
+        self.pending_subs.clear();
+        self.inflight_subs.clear();
+        // Completion frames from the old connection must not be applied to -
+        // or swallowed from - the new connection.
+        self.ignored_completions.clear();
+
+        let mut topics: Vec<Ustr> = self.subscription_attempts.keys().copied().collect();
+        topics.sort_unstable();
+        for topic in topics {
+            let generation = self.take_subscription_generation();
+            let attempt = self
+                .subscription_attempts
+                .get_mut(&topic)
+                .expect("subscription attempt disappeared during reconnect");
+            attempt.fold_pending_auth();
+            attempt.generation = generation;
+            attempt.retries = 0;
+            self.pending_subs.push_back((topic, generation));
+        }
+    }
+
+    fn take_subscription_generation(&mut self) -> u64 {
+        let generation = self.next_subscription_generation;
+        self.next_subscription_generation =
+            self.next_subscription_generation.wrapping_add(1).max(1);
+        generation
     }
 
     /// Returns `(matched, msg)` where `matched=true` means the frame's
@@ -625,6 +983,23 @@ impl FeedHandler {
     ) -> (bool, Option<NautilusWsMessage>) {
         if let Some(error) = already_subscribed_error(value) {
             self.confirm_already_subscribed(error);
+            return (true, None);
+        }
+        let subscription_code = subscription_error_code(value);
+
+        if subscription_code == Some(LIGHTER_ERROR_CODE_WS_RATE_LIMITED) {
+            self.retry_inflight_subscriptions(&format!(
+                "venue rejected the WebSocket subscribe with code \
+                 {LIGHTER_ERROR_CODE_WS_RATE_LIMITED}",
+            ));
+            return (true, None);
+        }
+
+        if subscription_code == Some(LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED) {
+            self.fail_inflight_subscriptions(&format!(
+                "venue rejected the WebSocket subscribe with code \
+                 {LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED}",
+            ));
             return (true, None);
         }
 
@@ -685,8 +1060,7 @@ impl FeedHandler {
             CTRL_TYPE_SUBSCRIBED | CTRL_TYPE_UNSUBSCRIBED => {
                 if let Some(topic) = value.get("channel").and_then(|v| v.as_str()) {
                     if kind == CTRL_TYPE_SUBSCRIBED {
-                        self.subscriptions.confirm_subscribe(topic);
-                        self.release_subscribe_inflight(topic);
+                        self.complete_subscription(topic, CompletionKind::ControlAck);
                     } else {
                         let was_pending_unsubscribe = self
                             .subscriptions
@@ -759,22 +1133,15 @@ impl FeedHandler {
             return;
         };
 
-        let Some(known_topic) = self
-            .inflight_subs
-            .iter()
-            .find(|known| known.as_str() == topic)
-            .copied()
-        else {
+        if !self.complete_subscription(topic, CompletionKind::AlreadySubscribed) {
             log::debug!(
                 "Lighter WebSocket subscription response: code={LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED}",
             );
             return;
-        };
+        }
 
-        self.inflight_subs.remove(&known_topic);
-        self.subscriptions.confirm_subscribe(known_topic.as_str());
         log::debug!(
-            "Lighter WebSocket subscription response: code={LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED}, topic={known_topic}",
+            "Lighter WebSocket subscription response: code={LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED}, topic={topic}",
         );
     }
 
@@ -783,11 +1150,6 @@ impl FeedHandler {
         frame: LighterWsFrame,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
-        let topic = frame_topic(&frame);
-        if self.inflight_subs.remove(topic) {
-            self.subscriptions.confirm_subscribe(topic.as_str());
-        }
-
         match frame {
             LighterWsFrame::OrderBookSnapshot {
                 channel,
@@ -1052,27 +1414,18 @@ impl FeedHandler {
         }
 
         let topic = Ustr::from(channel.topic_key().as_str());
-        let attempted = self.inflight_subs.len() < SUBSCRIBE_INFLIGHT_MAX;
-        if attempted {
-            self.inflight_subs.insert(topic);
-            let dispatched = self.dispatch_subscribe(channel.clone(), None).await;
-            if !dispatched {
-                self.inflight_subs.remove(&topic);
-            }
-        } else {
-            self.pending_subs.push_front((channel.clone(), None));
-        }
+        self.queue_subscribe(channel.clone(), None, None);
+        self.pump_pending_subscribes().await;
 
         if !self.order_book_stream_is_referenced(market_index) {
             log::debug!(
                 "Cancelling Lighter order_book resync subscribe after user unsubscribe: \
                  market_index={market_index}",
             );
-            self.pending_subs
-                .retain(|(queued, _)| queued.topic_key() != channel.topic_key());
+            let attempted = self.inflight_subs.contains_key(&topic);
+            self.cancel_subscription_attempt(topic.as_str(), "order book resubscription cancelled");
 
             if attempted {
-                self.inflight_subs.remove(&topic);
                 self.dispatch_unsubscribe(channel).await;
             }
         }
@@ -1619,6 +1972,26 @@ fn already_subscribed_error(value: &serde_json::Value) -> Option<&serde_json::Va
     }
 }
 
+fn subscription_error_code(value: &serde_json::Value) -> Option<u64> {
+    value
+        .get("code")
+        .and_then(|code| code.as_u64())
+        .or_else(|| {
+            value
+                .get("error")
+                .and_then(|e| e.get("code"))
+                .and_then(|code| code.as_u64())
+        })
+}
+
+fn typed_subscribe_topic(text: &str) -> Option<&str> {
+    let header = serde_json::from_str::<LighterWsFrameHeader<'_>>(text).ok()?;
+    header
+        .kind
+        .starts_with("subscribed/")
+        .then_some(header.channel?)
+}
+
 // SendTxRejected from a top-level `{code, message}` frame: non-200 sendTx
 // ACK or `{"type":"error",...}`.
 fn send_tx_rejected_from_value(
@@ -1672,29 +2045,6 @@ fn log_integrator_not_approved() {
          Tagged orders require Nautilus integrator approval. \
          See: {LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL}",
     );
-}
-
-fn frame_topic(frame: &LighterWsFrame) -> &Ustr {
-    match frame {
-        LighterWsFrame::OrderBookSnapshot { channel, .. }
-        | LighterWsFrame::OrderBook { channel, .. }
-        | LighterWsFrame::TickerSnapshot { channel, .. }
-        | LighterWsFrame::Ticker { channel, .. }
-        | LighterWsFrame::MarketStats { channel, .. }
-        | LighterWsFrame::SpotMarketStats { channel, .. }
-        | LighterWsFrame::TradeSnapshot { channel, .. }
-        | LighterWsFrame::Trade { channel, .. }
-        | LighterWsFrame::AccountOrders { channel, .. }
-        | LighterWsFrame::AccountAllOrders { channel, .. }
-        | LighterWsFrame::AccountAllTradesSnapshot { channel, .. }
-        | LighterWsFrame::AccountAllTrades { channel, .. }
-        | LighterWsFrame::AccountAllPositions { channel, .. }
-        | LighterWsFrame::AccountAllAssets { channel, .. }
-        | LighterWsFrame::UserStats { channel, .. }
-        | LighterWsFrame::Height { channel, .. }
-        | LighterWsFrame::CandleSnapshot { channel, .. }
-        | LighterWsFrame::Candle { channel, .. } => channel,
-    }
 }
 
 fn market_index_from_topic(topic: &str) -> Option<i16> {
@@ -1789,6 +2139,7 @@ mod tests {
         include_str!("../../test_data/ws_spot_market_stats_update_single.json");
     const WS_SPOT_MARKET_STATS_UPDATE_ALL: &str =
         include_str!("../../test_data/ws_spot_market_stats_update_all.json");
+    const WS_CANDLE_SUBSCRIBED: &str = include_str!("../../test_data/ws_candle_subscribed.json");
 
     fn handle_control_text(
         handler: &mut FeedHandler,
@@ -1872,6 +2223,28 @@ mod tests {
         handler.instruments.insert(0, stub_eth_perp_instrument());
         handler.exec_account = Some((AccountId::from("LIGHTER-1234"), 1234));
         handler
+    }
+
+    fn mark_subscription_inflight(
+        handler: &mut FeedHandler,
+        channel: LighterWsChannel,
+        response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+    ) -> (Ustr, u64) {
+        handler.queue_subscribe(channel, None, response_tx);
+        let (topic, generation) = handler
+            .pending_subs
+            .pop_front()
+            .expect("subscription was not queued");
+        handler.inflight_subs.insert(topic, generation);
+        (topic, generation)
+    }
+
+    fn saturate_subscription_gate(handler: &mut FeedHandler) {
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()), i as u64 + 1);
+        }
     }
 
     /// Strip the trailing `AccountStreamFirstFrame` marker from a handler
@@ -2719,11 +3092,8 @@ mod tests {
         match &messages[2] {
             NautilusWsMessage::FundingRate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "ETH-PERP.LIGHTER");
-                assert_eq!(update.rate.to_string(), "0.000001");
-                assert_eq!(
-                    update.next_funding_ns,
-                    Some(UnixNanos::from(1_774_886_400_000_000_000))
-                );
+                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.next_funding_ns, None);
             }
             event => panic!("expected funding rate update, was {event:?}"),
         }
@@ -2741,12 +3111,21 @@ mod tests {
         assert!(matches!(&messages[0], NautilusWsMessage::MarkPrice(_)));
         assert!(matches!(&messages[1], NautilusWsMessage::IndexPrice(_)));
         assert!(matches!(&messages[2], NautilusWsMessage::FundingRate(_)));
+
         match &messages[0] {
             NautilusWsMessage::MarkPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "ETH-PERP.LIGHTER");
                 assert_eq!(update.value, Price::from("2064.47"));
             }
             event => panic!("expected mark price update, was {event:?}"),
+        }
+
+        match &messages[2] {
+            NautilusWsMessage::FundingRate(update) => {
+                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.next_funding_ns, None);
+            }
+            event => panic!("expected funding rate update, was {event:?}"),
         }
     }
 
@@ -2866,6 +3245,7 @@ mod tests {
         let cmd = HandlerCommand::Subscribe {
             channel: LighterWsChannel::AccountAll(1234),
             auth: Some(token.to_string()),
+            response_tx: None,
         };
 
         let dbg = format!("{cmd:?}");
@@ -2954,18 +3334,17 @@ mod tests {
 
         let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, subscriptions);
         handler.book_delta_subs.insert(0);
-        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
-            handler
-                .inflight_subs
-                .insert(Ustr::from(format!("dummy:{i}").as_str()));
-        }
+        saturate_subscription_gate(&mut handler);
 
         handler.resubscribe_order_book_stream(0).await;
 
         assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
-        assert!(handler.pending_subs.iter().any(|(channel, _)| {
-            matches!(channel, LighterWsChannel::OrderBook(market_index) if *market_index == 0)
-        }));
+        assert!(
+            handler
+                .pending_subs
+                .iter()
+                .any(|(topic, _)| *topic == Ustr::from("order_book:0")),
+        );
     }
 
     fn stub_candle(
@@ -3211,11 +3590,7 @@ mod tests {
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
 
         // Saturate the gate so the pump cannot dispatch the queued subscribe
-        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
-            handler
-                .inflight_subs
-                .insert(Ustr::from(format!("dummy:{i}").as_str()));
-        }
+        saturate_subscription_gate(&mut handler);
 
         cmd_tx
             .send(HandlerCommand::Subscribe {
@@ -3224,6 +3599,7 @@ mod tests {
                     resolution: LighterCandleResolution::OneMinute,
                 },
                 auth: None,
+                response_tx: None,
             })
             .expect("queue subscribe");
         drop(cmd_tx);
@@ -3236,6 +3612,8 @@ mod tests {
         assert!(next.is_none());
         assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
         assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.subscription_attempts.len(), 1);
+        assert_eq!(handler.pending_subs[0].0, Ustr::from("candle:0:1m"));
     }
 
     #[tokio::test]
@@ -3248,16 +3626,13 @@ mod tests {
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
 
         // Saturate the gate so the queued subscribe cannot dispatch before the unsubscribe
-        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
-            handler
-                .inflight_subs
-                .insert(Ustr::from(format!("dummy:{i}").as_str()));
-        }
+        saturate_subscription_gate(&mut handler);
 
         cmd_tx
             .send(HandlerCommand::Subscribe {
                 channel: LighterWsChannel::Trade(0),
                 auth: None,
+                response_tx: None,
             })
             .expect("queue subscribe");
         cmd_tx
@@ -3274,10 +3649,11 @@ mod tests {
 
         assert!(next.is_none());
         assert!(handler.pending_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
     }
 
     #[tokio::test]
-    async fn reconnect_clears_gate_state() {
+    async fn reconnect_requeues_attempt_with_new_generation() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
@@ -3285,15 +3661,9 @@ mod tests {
         let mut handler =
             FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
 
-        // Gate saturated with a subscribe still queued, as during a reconnect storm
-        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
-            handler
-                .inflight_subs
-                .insert(Ustr::from(format!("dummy:{i}").as_str()));
-        }
-        handler
-            .pending_subs
-            .push_back((LighterWsChannel::Trade(0), None));
+        saturate_subscription_gate(&mut handler);
+        handler.queue_subscribe(LighterWsChannel::Trade(0), None, None);
+        let old_generation = handler.pending_subs[0].1;
 
         raw_tx
             .send((7, Message::Text(RECONNECTED.to_string().into())))
@@ -3305,7 +3675,13 @@ mod tests {
 
         assert!(matches!(next, Some(NautilusWsMessage::Reconnected { .. })));
         assert!(handler.inflight_subs.is_empty());
-        assert!(handler.pending_subs.is_empty());
+        assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.pending_subs[0].0, Ustr::from("trade:0"));
+        assert_ne!(handler.pending_subs[0].1, old_generation);
+        assert_eq!(
+            handler.subscription_attempts[&Ustr::from("trade:0")].generation,
+            handler.pending_subs[0].1,
+        );
     }
 
     #[tokio::test]
@@ -3319,21 +3695,27 @@ mod tests {
 
         // No active client, so every dispatch fails; the gate must not leak slots
         for market_index in 0..3 {
-            handler
-                .pending_subs
-                .push_back((LighterWsChannel::Trade(market_index), None));
+            handler.queue_subscribe(LighterWsChannel::Trade(market_index), None, None);
         }
 
         handler.pump_pending_subscribes().await;
 
         assert!(handler.pending_subs.is_empty());
         assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
     }
 
     #[rstest]
     fn subscribed_control_frame_releases_inflight_slot() {
         let mut handler = make_handler_with_account();
-        handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
+        mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::Candle {
+                market_index: 0,
+                resolution: LighterCandleResolution::OneMinute,
+            },
+            None,
+        );
 
         let (matched, msg) = handle_control_text(
             &mut handler,
@@ -3342,7 +3724,12 @@ mod tests {
 
         assert!(matched);
         assert!(msg.is_none());
-        assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
+        assert!(
+            !handler
+                .inflight_subs
+                .contains_key(&Ustr::from("candle:0:1m"))
+        );
+        assert!(handler.subscription_attempts.is_empty());
     }
 
     #[rstest]
@@ -3357,9 +3744,11 @@ mod tests {
     )]
     fn already_subscribed_confirms_matching_inflight_topic(#[case] payload: &str) {
         let mut handler = make_handler_with_account();
-        let topic = "account_all_orders:12345";
-        handler.inflight_subs.insert(Ustr::from(topic));
-        handler.subscriptions.mark_subscribe(topic);
+        mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::AccountAllOrders(12345),
+            None,
+        );
 
         let (matched, msg) = handle_control_text(&mut handler, payload);
 
@@ -3374,8 +3763,11 @@ mod tests {
     fn already_subscribed_does_not_confirm_unmatched_topic() {
         let mut handler = make_handler_with_account();
         let inflight = "account_all_orders:12345";
-        handler.inflight_subs.insert(Ustr::from(inflight));
-        handler.subscriptions.mark_subscribe(inflight);
+        mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::AccountAllOrders(12345),
+            None,
+        );
 
         let (matched, msg) = handle_control_text(
             &mut handler,
@@ -3384,7 +3776,7 @@ mod tests {
 
         assert!(matched);
         assert!(msg.is_none());
-        assert!(handler.inflight_subs.contains(&Ustr::from(inflight)));
+        assert!(handler.inflight_subs.contains_key(&Ustr::from(inflight)));
         assert_eq!(
             handler.subscriptions.pending_subscribe_topics(),
             vec![inflight]
@@ -3392,43 +3784,520 @@ mod tests {
         assert_eq!(handler.subscriptions.len(), 0);
     }
 
-    #[rstest]
-    fn typed_frame_releases_inflight_slot() {
+    #[tokio::test]
+    async fn duplicate_queued_and_inflight_topics_share_one_generation() {
         let mut handler = make_handler_with_account();
-        handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
-        handler.subscriptions.mark_subscribe("candle:0:1m");
+        let (response_tx_1, mut response_rx_1) = tokio::sync::oneshot::channel();
+        let (response_tx_2, mut response_rx_2) = tokio::sync::oneshot::channel();
+        let (response_tx_3, mut response_rx_3) = tokio::sync::oneshot::channel();
+        let channel = LighterWsChannel::Trade(7);
+
+        handler.queue_subscribe(channel.clone(), None, Some(response_tx_1));
+        let generation = handler.pending_subs[0].1;
+        handler.queue_subscribe(channel.clone(), None, Some(response_tx_2));
+
+        assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.subscription_attempts.len(), 1);
+        assert_eq!(
+            handler.subscription_attempts[&Ustr::from("trade:7")]
+                .response_txs
+                .len(),
+            2,
+        );
+
+        let (topic, queued_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, queued_generation);
+        handler.queue_subscribe(channel, None, Some(response_tx_3));
+
+        assert_eq!(queued_generation, generation);
+        assert!(handler.pending_subs.is_empty());
+        assert_eq!(handler.inflight_subs.len(), 1);
+        assert_eq!(
+            handler.subscription_attempts[&Ustr::from("trade:7")]
+                .response_txs
+                .len(),
+            3,
+        );
+        assert!(matches!(
+            response_rx_1.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(matches!(
+            response_rx_2.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(matches!(
+            response_rx_3.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+
+        handle_control_text(&mut handler, r#"{"type":"subscribed","channel":"trade:7"}"#);
+
+        assert_eq!(response_rx_1.await.unwrap(), Ok(()));
+        assert_eq!(response_rx_2.await.unwrap(), Ok(()));
+        assert_eq!(response_rx_3.await.unwrap(), Ok(()));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn changed_inflight_auth_waits_for_serialized_successor() {
+        let mut handler = make_handler_with_account();
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let (old_tx, old_rx) = tokio::sync::oneshot::channel();
+        let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
+
+        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        let (queued_topic, old_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(queued_topic, old_generation);
+        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_eq!(attempt.auth.as_deref(), Some("old-token"));
+        assert_eq!(attempt.pending_auth.as_deref(), Some("fresh-token"));
+        assert_eq!(attempt.response_txs.len(), 1);
+        assert_eq!(attempt.pending_response_txs.len(), 1);
+
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert_eq!(old_rx.await.unwrap(), Ok(()));
+        assert!(matches!(
+            fresh_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_ne!(attempt.generation, old_generation);
+        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert!(attempt.pending_auth.is_none());
+        assert_eq!(
+            handler.pending_subs.front(),
+            Some(&(topic, attempt.generation)),
+        );
+
+        let (_, fresh_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, fresh_generation);
+
+        // The predecessor's trailing typed snapshot must not complete the
+        // dispatched successor.
+        assert!(!handler.complete_subscription(topic.as_str(), CompletionKind::Typed));
+        assert!(matches!(
+            fresh_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert_eq!(
+            handler.subscription_attempts[&topic].generation,
+            fresh_generation,
+        );
+
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert_eq!(fresh_rx.await.unwrap(), Ok(()));
+        assert!(handler.subscription_attempts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stale_typed_frame_does_not_complete_fresh_attempt_after_predecessor_removed() {
+        let mut handler = make_handler_with_account();
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let (old_tx, old_rx) = tokio::sync::oneshot::channel();
+        let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
+
+        // Predecessor completes on its control ack and is removed before any
+        // pending auth exists.
+        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        let (queued_topic, old_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(queued_topic, old_generation);
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert_eq!(old_rx.await.unwrap(), Ok(()));
+        assert!(handler.subscription_attempts.is_empty());
+
+        // The fresh command then creates and dispatches a brand-new attempt.
+        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+        let (_, fresh_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, fresh_generation);
+
+        // The predecessor's trailing typed snapshot must not complete it.
+        assert!(!handler.complete_subscription(topic.as_str(), CompletionKind::Typed));
+        assert!(matches!(
+            fresh_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert_eq!(
+            handler.subscription_attempts[&topic].generation,
+            fresh_generation,
+        );
+
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert_eq!(fresh_rx.await.unwrap(), Ok(()));
+        assert!(handler.subscription_attempts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn changed_queued_auth_updates_existing_generation_before_dispatch() {
+        let mut handler = make_handler_with_account();
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let (old_tx, old_rx) = tokio::sync::oneshot::channel();
+        let (fresh_tx, fresh_rx) = tokio::sync::oneshot::channel();
+
+        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        let generation = handler.pending_subs[0].1;
+        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+
+        assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.pending_subs[0], (topic, generation));
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_eq!(attempt.generation, generation);
+        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert!(attempt.pending_auth.is_none());
+        assert_eq!(attempt.response_txs.len(), 2);
+        assert!(attempt.pending_response_txs.is_empty());
+
+        handler.pending_subs.pop_front();
+        handler.inflight_subs.insert(topic, generation);
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert_eq!(old_rx.await.unwrap(), Ok(()));
+        assert_eq!(fresh_rx.await.unwrap(), Ok(()));
+    }
+
+    #[rstest]
+    fn second_reconnect_folds_pending_auth_into_requeued_generation() {
+        let mut handler = make_handler_with_account();
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let (old_tx, mut old_rx) = tokio::sync::oneshot::channel();
+        let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
+
+        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.reset_subscription_attempts_after_reconnect();
+        let (_, replay_generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, replay_generation);
+        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_eq!(attempt.auth.as_deref(), Some("old-token"));
+        assert_eq!(attempt.pending_auth.as_deref(), Some("fresh-token"));
+        assert_eq!(attempt.response_txs.len(), 1);
+        assert_eq!(attempt.pending_response_txs.len(), 1);
+
+        handler.reset_subscription_attempts_after_reconnect();
+
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_ne!(attempt.generation, replay_generation);
+        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert!(attempt.pending_auth.is_none());
+        assert_eq!(attempt.response_txs.len(), 2);
+        assert!(attempt.pending_response_txs.is_empty());
+        assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.pending_subs[0], (topic, attempt.generation));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(matches!(
+            old_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(matches!(
+            fresh_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+
+        let (_, generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, generation);
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+
+        assert_eq!(old_rx.try_recv(), Ok(Ok(())));
+        assert_eq!(fresh_rx.try_recv(), Ok(Ok(())));
+        assert!(handler.subscription_attempts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn retry_folds_pending_auth_without_resetting_retry_budget() {
+        let mut handler = make_handler_with_account();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.set_command_sender(cmd_tx);
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let (old_tx, mut old_rx) = tokio::sync::oneshot::channel();
+        let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
+
+        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        let (_, generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, generation);
+        handler
+            .subscription_attempts
+            .get_mut(&topic)
+            .unwrap()
+            .retries = 2;
+        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+
+        handler.schedule_subscription_retry(topic, generation, "retry");
+
+        let attempt = &handler.subscription_attempts[&topic];
+        assert_eq!(attempt.retries, 3);
+        assert_ne!(attempt.generation, generation);
+        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert!(attempt.pending_auth.is_none());
+        assert_eq!(attempt.response_txs.len(), 2);
+        assert!(attempt.pending_response_txs.is_empty());
+        assert!(handler.pending_subs.is_empty());
+        assert!(handler.inflight_subs.is_empty());
+        assert!(matches!(
+            old_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(matches!(
+            fresh_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+    }
+
+    #[tokio::test]
+    async fn confirmed_authenticated_topic_opens_new_generation() {
+        let mut handler = make_handler_with_account();
+        let channel = LighterWsChannel::AccountAllOrders(12345);
+        let topic = channel.topic_key();
+        handler.subscriptions.mark_subscribe(&topic);
+        handler.subscriptions.confirm_subscribe(&topic);
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        handler.queue_subscribe(
+            channel,
+            Some("rotated-auth-token".to_string()),
+            Some(response_tx),
+        );
+
+        assert_eq!(handler.pending_subs.len(), 1);
+        assert_eq!(handler.subscription_attempts.len(), 1);
+        assert_eq!(handler.subscriptions.len(), 1);
+        assert!(handler.subscriptions.pending_subscribe_topics().is_empty());
+
+        let (topic, generation) = handler.pending_subs.pop_front().unwrap();
+        handler.inflight_subs.insert(topic, generation);
+        handle_control_text(
+            &mut handler,
+            r#"{"type":"subscribed","channel":"account_all_orders:12345"}"#,
+        );
+
+        assert_eq!(response_rx.await.unwrap(), Ok(()));
+        assert!(handler.subscription_attempts.is_empty());
+        assert_eq!(handler.subscriptions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn typed_update_before_ack_does_not_complete_subscription_generation() {
+        let mut handler = make_handler_with_account();
+        let (response_tx, mut response_rx) = tokio::sync::oneshot::channel();
+        let (topic, generation) = mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::Candle {
+                market_index: 0,
+                resolution: LighterCandleResolution::OneMinute,
+            },
+            Some(response_tx),
+        );
 
         handler.handle_frame(
             candle_frame(
                 "candle:0:1m",
                 stub_candle(1_000_000, 10_000, 10_000, 10_000, 10_000, 10_000),
-                true,
+                false,
             ),
             UnixNanos::from(1),
         );
 
-        assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
-        assert!(handler.subscriptions.pending_subscribe_topics().is_empty());
-        assert_eq!(handler.subscriptions.len(), 1);
-
-        handler.handle_frame(
-            candle_frame(
-                "candle:0:1m",
-                stub_candle(1_060_000, 10_000, 10_000, 10_000, 10_000, 10_000),
-                false,
-            ),
-            UnixNanos::from(2),
+        assert_eq!(
+            handler
+                .last_candles
+                .get(&(0, LighterCandleResolution::OneMinute))
+                .map(|candle| candle.t),
+            Some(1_000_000),
         );
+        assert_eq!(handler.inflight_subs.get(&topic), Some(&generation));
+        assert_eq!(
+            handler.subscriptions.pending_subscribe_topics(),
+            vec!["candle:0:1m"],
+        );
+        assert_eq!(handler.subscriptions.len(), 0);
+        assert!(matches!(
+            response_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+
+        handle_control_text(
+            &mut handler,
+            r#"{"type":"subscribed","channel":"candle:0:1m"}"#,
+        );
+
+        assert_eq!(response_rx.await.unwrap(), Ok(()));
         assert_eq!(handler.subscriptions.len(), 1);
     }
 
-    #[rstest]
-    fn release_subscribe_inflight_reports_first_ack_only() {
-        let mut handler = make_handler_with_account();
-        handler.inflight_subs.insert(Ustr::from("trade:7"));
+    #[tokio::test]
+    async fn typed_subscribed_frame_completes_subscription_generation() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+        handler.instruments.insert(0, stub_eth_perp_instrument());
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::Candle {
+                market_index: 0,
+                resolution: LighterCandleResolution::OneMinute,
+            },
+            Some(response_tx),
+        );
 
-        assert!(handler.release_subscribe_inflight("trade:7"));
-        assert!(!handler.release_subscribe_inflight("trade:7"));
-        assert!(!handler.release_subscribe_inflight("never:1"));
+        raw_tx
+            .send((7, Message::Text(WS_CANDLE_SUBSCRIBED.into())))
+            .expect("typed subscribed frame");
+        drop(raw_tx);
+        drop(cmd_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("handler did not process typed subscribed frame");
+
+        assert!(next.is_none());
+        assert_eq!(response_rx.await.unwrap(), Ok(()));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
+        assert_eq!(handler.subscriptions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_subscribe_error_fails_every_waiter_for_the_generation() {
+        let mut handler = make_handler_with_account();
+        let (response_tx_1, response_rx_1) = tokio::sync::oneshot::channel();
+        let (response_tx_2, response_rx_2) = tokio::sync::oneshot::channel();
+        let channel = LighterWsChannel::MarketStats(LighterMarketSelection::Market(0));
+        mark_subscription_inflight(&mut handler, channel.clone(), Some(response_tx_1));
+        handler.queue_subscribe(channel, None, Some(response_tx_2));
+
+        let (matched, msg) = handle_control_text(
+            &mut handler,
+            r#"{"type":"error","code":30012,"message":"failed to subscribe"}"#,
+        );
+
+        assert!(matched);
+        assert!(msg.is_none());
+        let error_1 = response_rx_1.await.unwrap().unwrap_err();
+        let error_2 = response_rx_2.await.unwrap().unwrap_err();
+        assert!(error_1.contains("market_stats:0"));
+        assert!(error_1.contains("30012"));
+        assert_eq!(error_1, error_2);
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
+        assert!(handler.subscriptions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rate_limit_retry_exhaustion_fails_waiter_and_clears_intent() {
+        let mut handler = make_handler_with_account();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let (topic, _) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::Trade(7), Some(response_tx));
+        handler
+            .subscription_attempts
+            .get_mut(&topic)
+            .expect("subscription attempt")
+            .retries = SUBSCRIBE_RETRY_MAX;
+
+        let (matched, msg) = handle_control_text(
+            &mut handler,
+            r#"{"type":"error","code":30009,"message":"rate limit exceeded"}"#,
+        );
+
+        assert!(matched);
+        assert!(msg.is_none());
+        assert_eq!(
+            response_rx.await.unwrap(),
+            Err(
+                "subscription trade:7 failed after 6 attempts: venue rejected the WebSocket \
+                 subscribe with code 30009"
+                    .to_string(),
+            ),
+        );
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
+        assert!(handler.subscriptions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rate_limit_error_retries_each_inflight_topic_with_new_generation() {
+        let mut handler = make_handler_with_account();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.set_command_sender(cmd_tx);
+        let (trade_tx, mut trade_rx) = tokio::sync::oneshot::channel();
+        let (candle_tx, mut candle_rx) = tokio::sync::oneshot::channel();
+        let (trade_topic, trade_generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::Trade(7), Some(trade_tx));
+        let (candle_topic, candle_generation) = mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::Candle {
+                market_index: 0,
+                resolution: LighterCandleResolution::OneMinute,
+            },
+            Some(candle_tx),
+        );
+
+        let (matched, msg) = handle_control_text(
+            &mut handler,
+            r#"{"type":"error","code":30009,"message":"rate limit exceeded"}"#,
+        );
+
+        assert!(matched);
+        assert!(msg.is_none());
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.pending_subs.is_empty());
+        let trade_retry = &handler.subscription_attempts[&trade_topic];
+        let candle_retry = &handler.subscription_attempts[&candle_topic];
+        assert_eq!(trade_retry.retries, 1);
+        assert_eq!(candle_retry.retries, 1);
+        assert_ne!(trade_retry.generation, trade_generation);
+        assert_ne!(candle_retry.generation, candle_generation);
+        assert!(matches!(
+            trade_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(matches!(
+            candle_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        ));
+
+        handle_control_text(&mut handler, r#"{"type":"subscribed","channel":"trade:7"}"#);
+        assert_eq!(handler.subscription_attempts.len(), 2);
+        assert_eq!(handler.subscriptions.len(), 0);
+
+        let retry_generations = [
+            (
+                trade_topic,
+                handler.subscription_attempts[&trade_topic].generation,
+            ),
+            (
+                candle_topic,
+                handler.subscription_attempts[&candle_topic].generation,
+            ),
+        ];
+
+        for (topic, generation) in retry_generations {
+            handler.queue_subscription_retry(topic, generation);
+            let queued = handler.pending_subs.pop_front().unwrap();
+            assert_eq!(queued, (topic, generation));
+            handler.inflight_subs.insert(topic, generation);
+        }
+
+        handle_control_text(&mut handler, r#"{"type":"subscribed","channel":"trade:7"}"#);
+        handle_control_text(
+            &mut handler,
+            r#"{"type":"subscribed","channel":"candle:0:1m"}"#,
+        );
+
+        assert_eq!(trade_rx.await.unwrap(), Ok(()));
+        assert_eq!(candle_rx.await.unwrap(), Ok(()));
+        assert!(handler.subscription_attempts.is_empty());
+        assert_eq!(handler.subscriptions.len(), 2);
     }
 }

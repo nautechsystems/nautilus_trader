@@ -19,7 +19,10 @@ use std::collections::HashMap;
 
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
-    python::{actor::PyDataActor, cache::PyCache},
+    python::{
+        actor::{PyDataActor, PyDataActorInner},
+        cache::PyCache,
+    },
 };
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
@@ -56,6 +59,13 @@ impl BacktestNode {
     #[new]
     fn py_new(configs: Vec<BacktestRunConfig>) -> PyResult<Self> {
         Self::new(configs).map_err(to_pyruntime_err)
+    }
+
+    /// Returns the run configurations.
+    #[getter]
+    #[pyo3(name = "configs")]
+    fn py_configs(&self) -> Vec<BacktestRunConfig> {
+        self.configs().to_vec()
     }
 
     /// Builds backtest engines from the run configurations.
@@ -340,7 +350,7 @@ impl BacktestNode {
             .kernel_mut()
             .trader
             .borrow_mut()
-            .add_actor_id_for_lifecycle(actor_id)
+            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python actor {actor_id}");

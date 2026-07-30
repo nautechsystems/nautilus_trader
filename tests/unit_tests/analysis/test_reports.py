@@ -108,6 +108,40 @@ class TestReportProvider:
         # Assert
         assert report.empty
 
+    def test_generate_account_report_accepts_pyo3_account_states(self):
+        # Arrange
+        class Pyo3AccountState:
+            def to_dict(self):
+                return {
+                    "type": "AccountState",
+                    "balances": [
+                        {
+                            "currency": "USD",
+                            "total": "1000.00",
+                            "free": "900.00",
+                            "locked": "100.00",
+                        },
+                    ],
+                    "event_id": "11111111-1111-4111-8111-111111111111",
+                    "ts_event": 1_000_000_000,
+                    "ts_init": 1_000_000_001,
+                }
+
+        account = type("Pyo3Account", (), {"events": [Pyo3AccountState()]})()
+
+        # Act
+        report = ReportProvider.generate_account_report(account)
+
+        # Assert
+        assert report.columns.tolist() == ["currency", "total", "free", "locked"]
+        assert report.index.tolist() == [pd.Timestamp("1970-01-01T00:00:01Z")]
+        assert report.iloc[0].to_dict() == {
+            "currency": "USD",
+            "total": "1000.00",
+            "free": "900.00",
+            "locked": "100.00",
+        }
+
     def test_generate_orders_report_with_no_order_returns_empty_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_orders_report([])

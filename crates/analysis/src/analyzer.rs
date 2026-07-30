@@ -297,6 +297,7 @@ impl PortfolioAnalyzer {
             pnls,
             returns: self.get_performance_stats_returns(),
             general: self.get_performance_stats_general(),
+            returns_series: self.returns.clone(),
         }
     }
 
@@ -2114,6 +2115,7 @@ mod tests {
             &snapshot.general,
             &analyzer.get_performance_stats_general()
         ));
+        assert_eq!(&snapshot.returns_series, analyzer.returns());
 
         for currency in analyzer.currencies() {
             let expected = analyzer

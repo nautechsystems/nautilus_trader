@@ -40,7 +40,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -176,6 +176,7 @@ struct TestServerState {
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
     close_after_next_frame: Arc<AtomicBool>,
+    subscribe_ack_delay_ms: Arc<AtomicU64>,
     tx_hash_seq: Arc<AtomicI64>,
     // Mirrors the real venue contract: after each `account_all_*` subscribe
     // ack the venue emits a typed `subscribed/account_all_*` frame so the
@@ -206,6 +207,7 @@ impl Default for TestServerState {
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
             inbox_tx,
             close_after_next_frame: Arc::new(AtomicBool::new(false)),
+            subscribe_ack_delay_ms: Arc::new(AtomicU64::new(0)),
             tx_hash_seq: Arc::new(AtomicI64::new(0)),
             auto_emit_account_subscribed_frames: Arc::new(AtomicBool::new(true)),
         }
@@ -442,6 +444,12 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                             .map(|s| s.replace('/', ":"))
                             .unwrap_or_default();
 
+                        let ack_delay_ms =
+                            state.subscribe_ack_delay_ms.load(Ordering::Relaxed);
+
+                        if ack_delay_ms > 0 {
+                            tokio::time::sleep(Duration::from_millis(ack_delay_ms)).await;
+                        }
                         let ack = json!({"type":"subscribed", "channel": channel});
                         if sink
                             .send(Message::Text(ack.to_string().into()))
@@ -2837,6 +2845,7 @@ async fn test_reconnect_replays_and_immediately_refreshes_authenticated_subscrip
     let (mut client, _rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
     await_subscribe_count(&state, 5).await;
+    state.subscribe_ack_delay_ms.store(100, Ordering::Relaxed);
 
     // Arm the server-side close. The next inbound frame from the client
     // closes the socket; we then send a no-op cancel to fire that frame.
@@ -2892,16 +2901,44 @@ async fn test_reconnect_replays_and_immediately_refreshes_authenticated_subscrip
     )
     .await;
 
-    // Sanity-check that every replayed subscribe still carries auth.
     let subs = state.subscribes().await;
-    for sub in &subs {
-        let channel = sub["channel"].as_str().unwrap_or("");
-        if channel.starts_with("account_all_") || channel.starts_with("user_stats") {
-            assert!(
-                sub.get("auth").and_then(Value::as_str).is_some(),
-                "account-stream subscribe missing auth: {sub:?}",
-            );
-        }
+
+    for prefix in [
+        "account_all_orders",
+        "account_all_trades",
+        "account_all_positions",
+        "account_all_assets",
+        "user_stats",
+    ] {
+        let channel_subs = subs
+            .iter()
+            .filter(|sub| {
+                sub["channel"]
+                    .as_str()
+                    .is_some_and(|channel| channel.starts_with(prefix))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            channel_subs.len() >= 3,
+            "expected three subscribes for {prefix}, received {channel_subs:?}",
+        );
+        let initial_auth = channel_subs[0]["auth"]
+            .as_str()
+            .expect("initial account subscribe must carry auth");
+        let replay_auth = channel_subs[1]["auth"]
+            .as_str()
+            .expect("replayed account subscribe must carry auth");
+        let refreshed_auth = channel_subs[2]["auth"]
+            .as_str()
+            .expect("refreshed account subscribe must carry auth");
+        assert_eq!(
+            replay_auth, initial_auth,
+            "{prefix} reconnect replay must use the stored token",
+        );
+        assert_ne!(
+            refreshed_auth, replay_auth,
+            "{prefix} auth refresh must be venue-visible",
+        );
     }
 
     client.disconnect().await.expect("disconnect");

@@ -25,7 +25,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::live::get_runtime;
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
@@ -59,6 +59,13 @@ use crate::{
 const RECONNECT_JITTER_MS: u64 = 200;
 const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
 
+#[derive(Clone)]
+struct SubscriptionArgs {
+    channel: LighterWsChannel,
+    auth: Option<String>,
+    generation: u64,
+}
+
 /// Outer Lighter WebSocket client.
 ///
 /// Orchestrates the connection lifecycle and subscription bookkeeping for the
@@ -80,7 +87,8 @@ pub struct LighterWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     subscriptions: SubscriptionState,
-    subscription_args: Arc<DashMap<String, (LighterWsChannel, Option<String>)>>,
+    subscription_args: Arc<DashMap<String, SubscriptionArgs>>,
+    next_subscription_generation: Arc<AtomicU64>,
     instruments: Arc<DashMap<i16, InstrumentAny>>,
     registry: Arc<MarketRegistry>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
@@ -100,12 +108,13 @@ impl Debug for LighterWebSocketClient {
             .subscription_args
             .iter()
             .map(|entry| {
-                let (channel, auth) = entry.value();
+                let args = entry.value();
                 format!(
-                    "topic={} channel={:?} authed={}",
+                    "topic={} channel={:?} authed={} generation={}",
                     entry.key(),
-                    channel,
-                    auth.is_some(),
+                    args.channel,
+                    args.auth.is_some(),
+                    args.generation,
                 )
             })
             .collect();
@@ -134,6 +143,7 @@ impl Clone for LighterWebSocketClient {
             out_rx: None,
             subscriptions: self.subscriptions.clone(),
             subscription_args: Arc::clone(&self.subscription_args),
+            next_subscription_generation: Arc::clone(&self.next_subscription_generation),
             instruments: Arc::clone(&self.instruments),
             registry: Arc::clone(&self.registry),
             task_handle: None,
@@ -174,6 +184,7 @@ impl LighterWebSocketClient {
             out_rx: None,
             subscriptions: SubscriptionState::new(':'),
             subscription_args: Arc::new(DashMap::new()),
+            next_subscription_generation: Arc::new(AtomicU64::new(1)),
             instruments: Arc::new(DashMap::new()),
             registry,
             task_handle: None,
@@ -367,10 +378,12 @@ impl LighterWebSocketClient {
 
                 // Replay first; the execution client replaces account tokens after reconnect
                 for entry in subscription_args.iter() {
-                    let (channel, auth) = entry.value().clone();
-                    if let Err(e) =
-                        cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { channel, auth })
-                    {
+                    let args = entry.value().clone();
+                    if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
+                        channel: args.channel,
+                        auth: args.auth,
+                        response_tx: None,
+                    }) {
                         log::error!("Failed to resend Lighter subscribe command: {e}");
                     }
                 }
@@ -483,8 +496,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the instrument is not registered or the command
-    /// cannot be queued.
+    /// Returns an error if the instrument is not registered, the command
+    /// cannot be queued, or the venue rejects the subscription.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
         self.send_cmd(HandlerCommand::SetBookDeltasSub {
@@ -530,8 +543,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the instrument is not registered or the command
-    /// cannot be queued.
+    /// Returns an error if the instrument is not registered, the command
+    /// cannot be queued, or the venue rejects the subscription.
     pub async fn subscribe_book_depth10(
         &self,
         instrument_id: InstrumentId,
@@ -583,8 +596,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the instrument is not registered or the command
-    /// cannot be queued.
+    /// Returns an error if the instrument is not registered, the command
+    /// cannot be queued, or the venue rejects the subscription.
     pub async fn subscribe_quotes(
         &self,
         instrument_id: InstrumentId,
@@ -613,8 +626,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the instrument is not registered or the command
-    /// cannot be queued.
+    /// Returns an error if the instrument is not registered, the command
+    /// cannot be queued, or the venue rejects the subscription.
     pub async fn subscribe_trades(
         &self,
         instrument_id: InstrumentId,
@@ -645,8 +658,8 @@ impl LighterWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the instrument is not registered, the resolution
-    /// is not offered on the WebSocket stream, or the command cannot be
-    /// queued.
+    /// is not offered on the WebSocket stream, the command cannot be queued,
+    /// or the venue rejects the subscription.
     pub async fn subscribe_candles(
         &self,
         instrument_id: InstrumentId,
@@ -692,7 +705,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the command cannot be queued.
+    /// Returns an error if the command cannot be queued or the venue rejects
+    /// the subscription.
     pub async fn subscribe_market_stats(
         &self,
         selection: LighterMarketSelection,
@@ -719,7 +733,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the command cannot be queued.
+    /// Returns an error if the command cannot be queued or the venue rejects
+    /// the subscription.
     pub async fn subscribe_spot_market_stats(
         &self,
         selection: LighterMarketSelection,
@@ -745,7 +760,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the command cannot be queued.
+    /// Returns an error if the command cannot be queued or the venue rejects
+    /// the subscription.
     pub async fn subscribe_height(&self) -> Result<(), LighterWsError> {
         self.send_subscribe(LighterWsChannel::Height, None).await
     }
@@ -794,7 +810,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the command cannot be queued.
+    /// Returns an error if the command cannot be queued or the venue rejects
+    /// the subscription.
     pub async fn subscribe_account(
         &self,
         channel: LighterWsChannel,
@@ -875,22 +892,75 @@ impl LighterWebSocketClient {
         auth: Option<String>,
     ) -> Result<(), LighterWsError> {
         let topic = channel.topic_key();
-        let previous = self
-            .subscription_args
-            .insert(topic.clone(), (channel.clone(), auth.clone()));
+        let generation = self
+            .next_subscription_generation
+            .fetch_add(1, Ordering::Relaxed);
+        let previous = self.subscription_args.insert(
+            topic.clone(),
+            SubscriptionArgs {
+                channel: channel.clone(),
+                auth: auth.clone(),
+                generation,
+            },
+        );
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
         if let Err(e) = self
-            .send_cmd(HandlerCommand::Subscribe { channel, auth })
+            .send_cmd(HandlerCommand::Subscribe {
+                channel,
+                auth,
+                response_tx: Some(response_tx),
+            })
             .await
         {
-            if let Some(previous) = previous {
-                self.subscription_args.insert(topic, previous);
-            } else {
-                self.subscription_args.remove(&topic);
-            }
+            self.restore_subscription_args(&topic, generation, previous);
             return Err(e);
         }
 
-        Ok(())
+        match response_rx.await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(message)) => {
+                self.remove_subscription_args(&topic, generation);
+                Err(LighterWsError::Client(message))
+            }
+            Err(e) => {
+                self.remove_subscription_args(&topic, generation);
+                Err(LighterWsError::Client(format!(
+                    "handler dropped subscription result for {topic}: {e}",
+                )))
+            }
+        }
+    }
+
+    fn restore_subscription_args(
+        &self,
+        topic: &str,
+        generation: u64,
+        previous: Option<SubscriptionArgs>,
+    ) {
+        let Entry::Occupied(mut entry) = self.subscription_args.entry(topic.to_string()) else {
+            return;
+        };
+
+        if entry.get().generation != generation {
+            return;
+        }
+
+        if let Some(previous) = previous {
+            entry.insert(previous);
+        } else {
+            entry.remove();
+        }
+    }
+
+    fn remove_subscription_args(&self, topic: &str, generation: u64) {
+        let Entry::Occupied(entry) = self.subscription_args.entry(topic.to_string()) else {
+            return;
+        };
+
+        if entry.get().generation == generation {
+            entry.remove();
+        }
     }
 
     async fn send_unsubscribe(&self, channel: LighterWsChannel) -> Result<(), LighterWsError> {
@@ -1061,6 +1131,110 @@ mod tests {
             .expect_err("dropped handler result must be ambiguous");
 
         assert!(matches!(error, LighterWsError::SendTxOutcomeUnknown(_)));
+    }
+
+    #[tokio::test]
+    async fn subscribe_waits_for_venue_result_and_removes_failed_generation() {
+        let client = LighterWebSocketClient::new(
+            Some("wss://example/test".to_string()),
+            LighterEnvironment::Testnet,
+            Arc::new(MarketRegistry::new()),
+            TransportBackend::default(),
+            30,
+            None,
+        );
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        let subscribe_client = client.clone();
+        let subscribe = get_runtime().spawn(async move {
+            subscribe_client
+                .subscribe_market_stats(LighterMarketSelection::Market(0))
+                .await
+        });
+
+        let command = cmd_rx.recv().await.expect("subscribe command");
+        let HandlerCommand::Subscribe {
+            response_tx: Some(response_tx),
+            ..
+        } = command
+        else {
+            panic!("expected subscribe command with venue result sender");
+        };
+
+        assert!(!subscribe.is_finished());
+        assert!(client.subscription_args.contains_key("market_stats:0"));
+
+        response_tx
+            .send(Err("venue rejected subscription".to_string()))
+            .expect("subscription result receiver");
+        let error = subscribe
+            .await
+            .expect("subscribe task")
+            .expect_err("failed venue open must fail the caller");
+
+        assert!(error.to_string().contains("venue rejected subscription"));
+        assert!(!client.subscription_args.contains_key("market_stats:0"));
+    }
+
+    #[tokio::test]
+    async fn failed_older_subscribe_does_not_remove_newer_generation() {
+        let client = LighterWebSocketClient::new(
+            Some("wss://example/test".to_string()),
+            LighterEnvironment::Testnet,
+            Arc::new(MarketRegistry::new()),
+            TransportBackend::default(),
+            30,
+            None,
+        );
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        let older_client = client.clone();
+        let older = get_runtime().spawn(async move {
+            older_client
+                .subscribe_market_stats(LighterMarketSelection::Market(0))
+                .await
+        });
+        let HandlerCommand::Subscribe {
+            response_tx: Some(older_response),
+            ..
+        } = cmd_rx.recv().await.expect("older subscribe command")
+        else {
+            panic!("expected older subscribe command with venue result sender");
+        };
+
+        let newer_client = client.clone();
+        let newer = get_runtime().spawn(async move {
+            newer_client
+                .subscribe_market_stats(LighterMarketSelection::Market(0))
+                .await
+        });
+        let HandlerCommand::Subscribe {
+            response_tx: Some(newer_response),
+            ..
+        } = cmd_rx.recv().await.expect("newer subscribe command")
+        else {
+            panic!("expected newer subscribe command with venue result sender");
+        };
+
+        older_response
+            .send(Err("older generation failed".to_string()))
+            .expect("older result receiver");
+        older
+            .await
+            .expect("older subscribe task")
+            .expect_err("older generation must fail");
+        assert!(client.subscription_args.contains_key("market_stats:0"));
+
+        newer_response
+            .send(Err("newer generation failed".to_string()))
+            .expect("newer result receiver");
+        newer
+            .await
+            .expect("newer subscribe task")
+            .expect_err("newer generation must fail");
+        assert!(!client.subscription_args.contains_key("market_stats:0"));
     }
 
     fn stub_instrument(id: InstrumentId) -> InstrumentAny {

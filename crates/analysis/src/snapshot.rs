@@ -15,6 +15,8 @@
 
 use ahash::AHashMap;
 
+use crate::Returns;
+
 /// An owned snapshot of computed portfolio performance statistics.
 ///
 /// `pnls` is keyed by currency code, each value mapping statistic name to value.
@@ -34,4 +36,5 @@ pub struct PortfolioStatistics {
     pub pnls: AHashMap<String, AHashMap<String, f64>>,
     pub returns: AHashMap<String, f64>,
     pub general: AHashMap<String, f64>,
+    pub returns_series: Returns,
 }

@@ -1144,18 +1144,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn update_actor(
         &self,
-        _component_id: &ComponentId,
+        component_id: &ComponentId,
         _state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        todo!()
+        anyhow::bail!("update_actor not implemented for PostgreSQL cache adapter: {component_id}")
     }
 
     fn update_strategy(
         &self,
-        _strategy_id: &StrategyId,
+        strategy_id: &StrategyId,
         _state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        todo!()
+        anyhow::bail!("update_strategy not implemented for PostgreSQL cache adapter: {strategy_id}")
     }
 
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {

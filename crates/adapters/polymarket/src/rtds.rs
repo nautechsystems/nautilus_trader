@@ -178,7 +178,8 @@ struct CryptoSubscribePayloadRaw {
 struct EquityPayloadRaw {
     symbol: String,
     value: Number,
-    full_accuracy_value: String,
+    #[serde(default)]
+    full_accuracy_value: Option<String>,
     timestamp: u64,
     #[serde(default)]
     received_at: Option<u64>,
@@ -909,14 +910,18 @@ impl PolymarketRtdsFeed {
             }
         };
 
-        let full_accuracy_value =
-            match price_from_str("full_accuracy_value", payload.full_accuracy_value.as_str()) {
-                Ok(value) => value,
-                Err(e) => {
-                    log::error!("Failed to parse RTDS equity full_accuracy_value: {e}");
-                    return;
+        let full_accuracy_value = match payload.full_accuracy_value {
+            Some(full_accuracy_value) => {
+                match price_from_str("full_accuracy_value", full_accuracy_value.as_str()) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        log::error!("Failed to parse RTDS equity full_accuracy_value: {e}");
+                        return;
+                    }
                 }
-            };
+            }
+            None => value,
+        };
 
         let ts_event = UnixNanos::from_millis(payload.timestamp);
         let ts_init = self.inner.clock.get_time_ns();
@@ -1612,6 +1617,34 @@ mod tests {
         assert_eq!(payload.full_accuracy_value, Price::from("198.4523"));
         assert_eq!(payload.received_at_ms, Some(1711382400005));
         assert!(!payload.is_carried_forward);
+    }
+
+    #[rstest]
+    fn test_handle_equity_price_update_falls_back_when_full_accuracy_value_is_absent() {
+        let (feed, mut rx) = make_feed();
+        let data_type = equity_data_type("AAPL");
+        feed.track_subscribe(data_type).expect("track subscribe");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_EQUITY_UPDATE_FIXTURE).expect("parse fixture");
+        update["payload"]
+            .as_object_mut()
+            .expect("payload object")
+            .remove("full_accuracy_value");
+
+        feed.handle_text_for_test(&update.to_string());
+
+        let event = rx.try_recv().expect("custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsEquityPrice>()
+            .expect("PolymarketRtdsEquityPrice");
+
+        assert_eq!(payload.value, Price::from("198.45"));
+        assert_eq!(payload.full_accuracy_value, Price::from("198.45"));
     }
 
     #[rstest]

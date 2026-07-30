@@ -363,7 +363,7 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Open position from TC-E01 or TC-E02.                                                        |
 | **Action**         | Stop the strategy; ExecTester closes position via market order.                             |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (closing order). |
-| **Pass criteria**  | Position closed (net quantity = 0), no open orders remaining.                               |
+| **Pass criteria**  | Position closed, or only the exact sub‑precision residual remains; no open orders remain.   |
 | **Skip when**      | Adapter does not support market orders.                                                     |
 
 **Considerations:**
@@ -371,6 +371,8 @@ ExecTesterConfig::builder()
 - This test naturally follows TC-E01 or TC-E02 as part of the same session.
 - `close_positions_on_stop=True` is the default.
 - The closing order should be on the opposite side of the position.
+- Set `close_positions_qty_precision` when the venue accepts fewer size decimals than the
+  instrument. The tester closes only that venue‑fillable quantity and logs any exact residual.
 
 **Python config:**
 
@@ -1871,7 +1873,7 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Open position from the strategy session.                                                   |
 | **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).                           |
 | **Event sequence** | Closing order: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | All strategy‑owned positions closed; net position = 0.                                     |
+| **Pass criteria**  | Positions closed, or only exact sub‑precision residuals remain; no open orders remain.     |
 | **Skip when**      | Adapter does not support market orders.                                                    |
 
 ### TC-E83: Unsubscribe on stop
@@ -2197,6 +2199,7 @@ the Rust builder uses equivalent defaults.
 | `emulation_trigger`                             | TriggerType? | None        | 2, 3           |
 | `cancel_orders_on_stop`                         | bool         | True        | 5, 9           |
 | `close_positions_on_stop`                       | bool         | True        | 9              |
+| `close_positions_qty_precision`                 | int?         | None        | 9              |
 | `close_positions_time_in_force`                 | TimeInForce? | None        | 9              |
 | `reduce_only_on_stop`                           | bool         | True        | 7, 9           |
 | `use_individual_cancels_on_stop`                | bool         | False       | 5              |

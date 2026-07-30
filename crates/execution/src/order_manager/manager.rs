@@ -772,13 +772,16 @@ mod tests {
         let (clock, cache) = create_test_components();
         let mut manager = OrderManager::new(clock, cache, true);
         let exec_algorithm_id = ExecAlgorithmId::from("ALG-001");
+        let client_order_id = ClientOrderId::from("O-001");
         let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
             .instrument_id(audusd_sim().id())
             .side(OrderSide::Buy)
             .price(Price::from("1.00000"))
             .quantity(Quantity::from(100_000))
             .emulation_trigger(TriggerType::NoTrigger)
             .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(client_order_id)
             .build();
 
         let actions = manager

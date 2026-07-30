@@ -777,6 +777,7 @@ fn test_process_order_when_invalid_contingent_orders(
         .side(OrderSide::Buy)
         .quantity(Quantity::from(1))
         .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![stop_loss_client_order_id])
         .client_order_id(entry_client_order_id)
         .submit(true)
         .build();
@@ -793,6 +794,7 @@ fn test_process_order_when_invalid_contingent_orders(
         .trigger_price(Price::from("0.95"))
         .quantity(Quantity::from(1))
         .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![entry_client_order_id])
         .client_order_id(stop_loss_client_order_id)
         .parent_order_id(entry_client_order_id)
         .submit(true)

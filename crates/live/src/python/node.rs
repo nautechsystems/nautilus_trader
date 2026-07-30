@@ -24,7 +24,7 @@ use nautilus_common::{
     live::get_runtime,
     logging::logger::LoggerConfig,
     python::{
-        actor::{PyDataActor, register_python_exec_algorithm_endpoint},
+        actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
         cache::PyCache,
     },
 };
@@ -433,7 +433,7 @@ impl LiveNode {
         self.kernel_mut()
             .trader
             .borrow_mut()
-            .add_actor_id_for_lifecycle(actor_id)
+            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python actor {actor_id}");

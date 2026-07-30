@@ -402,14 +402,15 @@ impl BacktestEngine {
         Ok(())
     }
 
-    /// Adds market data to the engine for replay during the backtest run.
+    /// Adds data to the engine for replay during the backtest run.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `data` is empty.
-    /// - `validate` is `true` and the instrument for the first element has not been
-    ///   added to the cache via [`add_instrument`](Self::add_instrument).
+    /// - `validate` is `true`, the first element is built-in market data (excluding
+    ///   custom and DeFi data), and its instrument has not been added to the cache via
+    ///   [`add_instrument`](Self::add_instrument).
     /// - `validate` is `true` and the first element is a [`Data::Bar`] whose
     ///   `aggregation_source` is not [`AggregationSource::External`].
     pub fn add_data(
@@ -440,7 +441,7 @@ impl BacktestEngine {
             #[cfg(not(feature = "defi"))]
             let first_is_defi = false;
 
-            if !first_is_defi {
+            if !first_is_defi && !matches!(first, Data::Custom(_)) {
                 let first_instrument_id = first.instrument_id();
                 anyhow::ensure!(
                     self.kernel
@@ -476,11 +477,17 @@ impl BacktestEngine {
         }
 
         for item in &to_add {
+            let ts = item.ts_init();
+            batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
+            batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
+
             #[cfg(feature = "defi")]
             if matches!(item, Data::Defi(_)) {
-                let ts = item.ts_init();
-                batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
-                batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
+                continue;
+            }
+
+            if matches!(item, Data::Custom(_)) {
+                // Custom data routes by DataType and is independent of market venue bookkeeping.
                 continue;
             }
 
@@ -492,10 +499,6 @@ impl BacktestEngine {
             }
 
             self.add_market_data_client_if_not_exists(instr_id.venue);
-
-            let ts = item.ts_init();
-            batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
-            batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
         }
 
         if let Some(ts) = batch_min_ts
@@ -659,7 +662,7 @@ impl BacktestEngine {
         // and flush callbacks that execute after the main data loop) so the
         // trader and engines actually stop.
         if !streaming || self.force_stop || self.kernel.is_shutdown_requested() {
-            self.end();
+            self.end_with_result()?;
         }
 
         Ok(())
@@ -873,6 +876,17 @@ impl BacktestEngine {
 
     /// Manually end the backtest.
     pub fn end(&mut self) {
+        if let Err(e) = self.end_with_result() {
+            log::error!("Error ending backtest: {e}");
+        }
+    }
+
+    /// Ends the backtest and reports lifecycle persistence failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if actor or strategy state cannot be saved.
+    pub(crate) fn end_with_result(&mut self) -> anyhow::Result<()> {
         // Flush remaining timer events to the backtest end boundary so that
         // tail alerts/expiries scheduled after the last data point still fire.
         // Must run before stopping engines since DataEngine::stop() cancels
@@ -911,6 +925,7 @@ impl BacktestEngine {
 
         self.settle_venues(ts_now);
 
+        let save_result = self.kernel.save_trader_state();
         self.kernel.portfolio.borrow_mut().finalize_equity_curve();
 
         // Stop engines
@@ -925,6 +940,7 @@ impl BacktestEngine {
         logging_clock_set_realtime_mode();
 
         self.log_post_run();
+        save_result
     }
 
     /// Reset the backtest engine.
@@ -1075,6 +1091,7 @@ impl BacktestEngine {
         let stats_pnls = stats.pnls;
         let stats_returns = stats.returns;
         let stats_general = stats.general;
+        let returns_series = stats.returns_series;
 
         BacktestResult {
             trader_id: self.config.trader_id().to_string(),
@@ -1095,6 +1112,7 @@ impl BacktestEngine {
             stats_pnls,
             stats_returns,
             stats_general,
+            returns_series,
         }
     }
 
@@ -1870,6 +1888,7 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
+    use indexmap::IndexMap;
     use nautilus_common::{
         actor::DataActor,
         enums::Environment,
@@ -1889,7 +1908,7 @@ mod tests {
             AccountType, BookType, MarketStatus, MarketStatusAction, OmsType, OrderSide,
             OrderStatus, OrderType, TriggerType,
         },
-        identifiers::{AccountId, ClientId, PositionId, StrategyId, Venue},
+        identifiers::{AccountId, ActorId, ClientId, ComponentId, PositionId, StrategyId, Venue},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
@@ -1897,6 +1916,10 @@ mod tests {
         types::{Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents};
+    use nautilus_testkit::{
+        cache::TestCacheDatabaseControl,
+        components::{StateActor, StateStrategy},
+    };
     use nautilus_trading::{
         nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
@@ -2305,6 +2328,139 @@ mod tests {
         assert!(engine.kernel.is_event_store_replay_configured());
         assert!(!engine.kernel.is_event_store_replay());
         assert!(!engine.kernel.trader.borrow().is_running());
+    }
+
+    #[rstest]
+    fn test_backtest_state_persistence_loads_before_start_and_saves_after_settle() {
+        let actor_id = ActorId::from("BACKTEST-STATE-ACTOR");
+        let strategy_id = StrategyId::from("BACKTEST-STATE-STRATEGY-001");
+        let actor_load = IndexMap::from([("actor-load".to_string(), b"actor-loaded".to_vec())]);
+        let strategy_load =
+            IndexMap::from([("strategy-load".to_string(), b"strategy-loaded".to_vec())]);
+        let actor_save = IndexMap::from([("actor-save".to_string(), b"actor-saved".to_vec())]);
+        let strategy_save =
+            IndexMap::from([("strategy-save".to_string(), b"strategy-saved".to_vec())]);
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+        control.set_strategy_state(strategy_id, &strategy_load);
+        let config = BacktestEngineConfig {
+            load_state: true,
+            save_state: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config).unwrap();
+        engine
+            .kernel
+            .cache
+            .borrow_mut()
+            .set_database(Box::new(database));
+        engine
+            .add_actor(StateActor::new(
+                actor_id,
+                control.clone(),
+                actor_save.clone(),
+            ))
+            .unwrap();
+        engine
+            .add_strategy(StateStrategy::new(
+                strategy_id,
+                control.clone(),
+                strategy_save.clone(),
+            ))
+            .unwrap();
+
+        engine
+            .run(
+                Some(UnixNanos::from(0)),
+                Some(UnixNanos::from(1)),
+                None,
+                false,
+            )
+            .unwrap();
+        engine.dispose();
+
+        assert_eq!(
+            control.events(),
+            vec![
+                "actor.load:BACKTEST-STATE-ACTOR",
+                "actor.on_load",
+                "strategy.load:BACKTEST-STATE-STRATEGY-001",
+                "strategy.on_load",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:BACKTEST-STATE-ACTOR",
+                "strategy.on_save",
+                "strategy.update:BACKTEST-STATE-STRATEGY-001",
+                "database.close",
+            ]
+        );
+        assert_eq!(
+            control.actor_state(&ComponentId::from(actor_id.as_str())),
+            Some(actor_save)
+        );
+        assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
+        assert_eq!(engine.backtest_end, Some(UnixNanos::from(0)));
+    }
+
+    #[rstest]
+    fn test_backtest_state_persistence_reports_callback_errors_after_shutdown() {
+        let actor_id = ActorId::from("BACKTEST-FAIL-SAVE-ACTOR");
+        let strategy_id = StrategyId::from("BACKTEST-FAIL-SAVE-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let config = BacktestEngineConfig {
+            save_state: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config).unwrap();
+        engine
+            .kernel
+            .cache
+            .borrow_mut()
+            .set_database(Box::new(database));
+        engine
+            .add_actor(StateActor::new(actor_id, control.clone(), IndexMap::new()).with_fail_save())
+            .unwrap();
+        engine
+            .add_strategy(
+                StateStrategy::new(strategy_id, control.clone(), IndexMap::new()).with_fail_save(),
+            )
+            .unwrap();
+
+        let error = engine
+            .run(
+                Some(UnixNanos::from(0)),
+                Some(UnixNanos::from(1)),
+                None,
+                false,
+            )
+            .unwrap_err();
+        engine.dispose();
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to save component state: actor BACKTEST-FAIL-SAVE-ACTOR callback: test actor \
+             on_save failure; strategy BACKTEST-FAIL-SAVE-STRATEGY-001 callback: test strategy \
+             on_save failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "strategy.on_save",
+                "database.close",
+            ]
+        );
+        assert!(!engine.kernel.trader.borrow().is_running());
+        assert_eq!(engine.backtest_end, Some(UnixNanos::from(0)));
     }
 
     #[rstest]

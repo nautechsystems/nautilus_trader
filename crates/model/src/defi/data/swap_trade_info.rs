@@ -85,9 +85,11 @@ impl SwapTradeInfo {
     /// Price impact in basis points (10000 = 100%)
     ///
     /// # Errors
-    /// Returns error if price calculations fail
+    ///
+    /// Returns an error if the spot price before the swap is not set or is zero.
     pub fn get_price_impact_bps(&self) -> anyhow::Result<u32> {
         if let Some(spot_price_before) = self.spot_price_before {
+            Self::check_spot_price_before(spot_price_before, PriceMetric::Impact)?;
             let price_change = self.spot_price - spot_price_before;
             let price_impact =
                 (price_change.as_decimal() / spot_price_before.as_decimal()).abs() * dec!(10_000);
@@ -108,9 +110,11 @@ impl SwapTradeInfo {
     /// Total slippage in basis points (10000 = 100%)
     ///
     /// # Errors
-    /// Returns error if price calculations fail
+    ///
+    /// Returns an error if the spot price before the swap is not set or is zero.
     pub fn get_slippage_bps(&self) -> anyhow::Result<u32> {
         if let Some(spot_price_before) = self.spot_price_before {
+            Self::check_spot_price_before(spot_price_before, PriceMetric::Slippage)?;
             let price_change = self.execution_price - spot_price_before;
             let slippage =
                 (price_change.as_decimal() / spot_price_before.as_decimal()).abs() * dec!(10_000);
@@ -118,6 +122,32 @@ impl SwapTradeInfo {
             Ok(slippage.round().to_u32().unwrap_or(0))
         } else {
             anyhow::bail!("Cannot calculate slippage, the spot price before is not set")
+        }
+    }
+
+    fn check_spot_price_before(
+        spot_price_before: Price,
+        metric: PriceMetric,
+    ) -> anyhow::Result<()> {
+        let metric = metric.name();
+        anyhow::ensure!(
+            !spot_price_before.is_zero(),
+            "Cannot calculate {metric}, the spot price before is zero"
+        );
+        Ok(())
+    }
+}
+
+enum PriceMetric {
+    Impact,
+    Slippage,
+}
+
+impl PriceMetric {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Impact => "price impact",
+            Self::Slippage => "slippage",
         }
     }
 }
@@ -413,7 +443,7 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::{I256, U160};
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
     use rust_decimal_macros::dec;
 
     use super::*;
@@ -421,6 +451,59 @@ mod tests {
         stubs::{usdc, weth},
         tick_map::tick_math::MAX_SQRT_RATIO,
     };
+
+    #[fixture]
+    fn swap_trade_info() -> SwapTradeInfo {
+        SwapTradeInfo {
+            order_side: OrderSide::Buy,
+            quantity_base: Quantity::from("1"),
+            quantity_quote: Quantity::from("2"),
+            spot_price: Price::from_raw(2, FIXED_PRECISION),
+            execution_price: Price::from_raw(3, FIXED_PRECISION),
+            is_inverted: true,
+            spot_price_before: Some(Price::from_raw(1, FIXED_PRECISION)),
+        }
+    }
+
+    #[rstest]
+    fn test_get_price_impact_bps_rejects_zero_spot_price_before(
+        mut swap_trade_info: SwapTradeInfo,
+    ) {
+        swap_trade_info.spot_price_before = Some(Price::zero(FIXED_PRECISION));
+
+        let error = swap_trade_info.get_price_impact_bps().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot calculate price impact, the spot price before is zero"
+        );
+    }
+
+    #[rstest]
+    fn test_get_slippage_bps_rejects_zero_spot_price_before(mut swap_trade_info: SwapTradeInfo) {
+        swap_trade_info.spot_price_before = Some(Price::zero(FIXED_PRECISION));
+
+        let error = swap_trade_info.get_slippage_bps().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot calculate slippage, the spot price before is zero"
+        );
+    }
+
+    #[rstest]
+    fn test_get_price_impact_bps_accepts_smallest_positive_spot_price_before(
+        swap_trade_info: SwapTradeInfo,
+    ) {
+        assert_eq!(swap_trade_info.get_price_impact_bps().unwrap(), 10_000);
+    }
+
+    #[rstest]
+    fn test_get_slippage_bps_accepts_smallest_positive_spot_price_before(
+        swap_trade_info: SwapTradeInfo,
+    ) {
+        assert_eq!(swap_trade_info.get_slippage_bps().unwrap(), 20_000);
+    }
 
     #[rstest]
     fn test_swap_trade_info_calculator_calculations_buy(weth: Token, usdc: Token) {

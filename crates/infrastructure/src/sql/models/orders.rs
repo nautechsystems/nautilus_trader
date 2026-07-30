@@ -267,7 +267,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             .ok()
             .and_then(|x| x.map(|x| serde_json::from_value::<Vec<String>>(x).unwrap()))
             .map(|x| x.into_iter().map(|x| Ustr::from(x.as_str())).collect());
-        let order_event = OrderInitialized::new(
+        let order_event = OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -302,7 +302,8 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        );
+        )
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         Ok(Self(order_event))
     }
 }

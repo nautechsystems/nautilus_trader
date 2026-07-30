@@ -535,11 +535,12 @@ mod tests {
         params: IndexMap<Ustr, Ustr>,
         quantity: Quantity,
     ) -> OrderAny {
+        let client_order_id = ClientOrderId::from("O-001");
         OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             quantity,
             TimeInForce::Gtc,
@@ -553,7 +554,7 @@ mod tests {
             None,
             Some(ExecAlgorithmId::new("TWAP")),
             Some(params),
-            None,
+            Some(client_order_id),
             None,
         ))
     }
@@ -1211,11 +1212,12 @@ mod tests {
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
         params.insert(Ustr::from("interval_secs"), Ustr::from("10"));
 
+        let client_order_id = ClientOrderId::from("O-002");
         let order = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-002"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("2"),
             TimeInForce::Gtc,
@@ -1229,7 +1231,7 @@ mod tests {
             None,
             Some(ExecAlgorithmId::new("TWAP")),
             Some(params),
-            None,
+            Some(client_order_id),
             None,
         ));
 

@@ -203,6 +203,130 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
     assert captured["run_info"]["Backtest range"] == "1 days 00:00:00"
 
 
+def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
+    captured = {}
+
+    class DummyResult:
+        run_config_id = "run-001"
+        run_id = "R-001"
+        run_started = 1_577_836_800_000_000_000
+        run_finished = 1_577_836_801_000_000_000
+        backtest_start = 1_577_836_800_000_000_000
+        backtest_end = 1_577_923_200_000_000_000
+        elapsed_time_secs = 86_400.0
+        iterations = 2
+        total_events = 3
+        total_orders = 4
+        total_positions = 5
+        stats_pnls = {"USD": {"PnL (total)": 12.5}, "AUD": {"PnL (total)": 1.0}}
+        stats_returns = {"Sharpe Ratio (252 days)": 1.23}
+        stats_general = {"Long Ratio": 0.5}
+        returns_series = {
+            1_577_836_800_000_000_000: 0.01,
+            1_577_923_200_000_000_000: -0.02,
+        }
+        summary = {"account.SIM.id": "SIM-001"}
+
+    class DummyConfig:
+        id = "run-001"
+        dispose_on_completion = False
+
+    class DummyNode:
+        configs = [DummyConfig()]
+
+        @staticmethod
+        def get_engine_cache(run_config_id):
+            assert run_config_id == "run-001"
+            return "cache"
+
+        @staticmethod
+        def generate_account_report(run_config_id, account_id):
+            assert run_config_id == "run-001"
+            assert str(account_id) == "SIM-001"
+            return pd.DataFrame(
+                {
+                    "currency": ["USD", "USD", "AUD", "AUD"],
+                    "total": ["100.0", "110.0", "200.0", "220.0"],
+                },
+                index=pd.to_datetime(
+                    ["2020-01-01", "2020-01-02", "2020-01-01", "2020-01-02"],
+                    utc=True,
+                ),
+            )
+
+        @staticmethod
+        def generate_fills_report(run_config_id):
+            assert run_config_id == "run-001"
+            return pd.DataFrame()
+
+    def capture_tearsheet_from_stats(**kwargs):
+        captured.update(kwargs)
+        return "<html></html>"
+
+    monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
+    monkeypatch.setattr(tearsheet, "create_tearsheet_from_stats", capture_tearsheet_from_stats)
+
+    html = create_tearsheet(
+        DummyResult(),
+        node=DummyNode(),
+        output_path=None,
+        currency="USD",
+        config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+    )
+
+    assert html == "<html></html>"
+    assert captured["stats_pnls"] == {"USD": {"PnL (total)": 12.5}}
+    assert captured["account_info"] == {
+        "Starting balance (SIM, USD)": "100.0",
+        "Ending balance (SIM, USD)": "110.0",
+    }
+    assert captured["run_info"]["Elapsed time"] == "0 days 00:00:01"
+    assert captured["returns"].to_dict() == {
+        pd.Timestamp("2020-01-01T00:00:00Z"): 0.01,
+        pd.Timestamp("2020-01-02T00:00:00Z"): -0.02,
+    }
+    assert captured["engine"].cache == "cache"
+
+
+def test_create_tearsheet_rejects_disposed_node_state(monkeypatch):
+    class DummyResult:
+        run_config_id = "run-001"
+
+    class DummyConfig:
+        id = "run-001"
+        dispose_on_completion = True
+
+    class DummyNode:
+        configs = [DummyConfig()]
+
+    monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
+
+    with pytest.raises(ValueError, match="dispose_on_completion=False"):
+        create_tearsheet(
+            DummyResult(),
+            node=DummyNode(),
+            output_path=None,
+            config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+        )
+
+
+def test_result_account_info_filters_summary_balance_by_currency():
+    class DummyResult:
+        summary = {
+            "account.SIM.balance.USD.total": "110.0",
+            "account.SIM.balance.AUD.total": "220.0",
+        }
+
+    account_info = tearsheet._result_account_info(
+        DummyResult(),
+        node=None,
+        run_config_id=None,
+        currency="USD",
+    )
+
+    assert account_info == {"Ending balance (SIM, USD)": "110.0"}
+
+
 def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filter(monkeypatch):
     captured = []
 

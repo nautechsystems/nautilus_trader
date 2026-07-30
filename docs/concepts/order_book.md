@@ -19,7 +19,10 @@ API reference for differences.
 `OrderBook` instances are maintained per instrument for both backtesting and live trading:
 
 - `L3_MBO`: Level 3 market-by-order (MBO) data. Tracks every order at every price
-  level, keyed by order ID.
+  level, keyed by order ID. On each book side, an order ID maps to exactly one price
+  level: re-adding an ID at a different price moves the order to the new level. A zero
+  order ID carries no identity (for example, aggregated depth or MBP‑style input), so
+  the book derives the ID from the order's price.
 - `L2_MBP`: Level 2 market-by-price (MBP) data. Aggregates orders by price level
   (one entry per price).
 - `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data, also known as best bid
@@ -108,6 +111,10 @@ with its type:
 These checks run internally during delta application. The instrument ID of incoming
 deltas is also validated against the book's instrument ID, returning
 `BookIntegrityError::InstrumentMismatch` on mismatch.
+
+A delta with `NoOrderSide` requires an unambiguous cached side. If its order ID exists
+on both sides, an `Add` returns `BookIntegrityError::AmbiguousOrderSide`, while an
+`Update` or `Delete` is skipped with a warning.
 
 ## Pretty printing
 

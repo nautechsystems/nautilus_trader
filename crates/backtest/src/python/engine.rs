@@ -22,7 +22,7 @@ use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     enums::ComponentState,
     python::{
-        actor::{PyDataActor, register_python_exec_algorithm_endpoint},
+        actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
         cache::PyCache,
         config_error_to_pyvalue_err,
     },
@@ -40,9 +40,9 @@ use nautilus_model::defi::DefiData;
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
-        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{
@@ -578,8 +578,8 @@ impl PyBacktestEngine {
 
     /// Ends the backtest run, finalizing results.
     #[pyo3(name = "end")]
-    fn py_end(&mut self) {
-        self.0.end();
+    fn py_end(&mut self) -> PyResult<()> {
+        self.0.end_with_result().map_err(to_pyruntime_err)
     }
 
     /// Resets the engine state for a new run.
@@ -1085,7 +1085,7 @@ impl PyBacktestEngine {
             .kernel_mut()
             .trader
             .borrow_mut()
-            .add_actor_id_for_lifecycle(actor_id)
+            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python actor {actor_id}");
@@ -1757,6 +1757,10 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::InstrumentClose(close));
     }
 
+    if let Ok(custom) = obj.extract::<CustomData>() {
+        return Ok(Data::Custom(custom));
+    }
+
     #[cfg(feature = "defi")]
     if let Ok(defi) = obj.extract::<DefiData>() {
         return Ok(Data::Defi(Box::new(defi)));
@@ -1811,6 +1815,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 mod model_tests {
     use nautilus_execution::python::{fee::PyFeeModel, fill::PyFillModel};
     use nautilus_model::{
+        data::{Data, stubs::stub_custom_data},
         enums::{AccountType, BookType, OmsType, OtoTriggerMode},
         identifiers::Venue,
         types::{Currency, Money},
@@ -1823,6 +1828,23 @@ mod model_tests {
     use rstest::rstest;
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    fn test_pyobject_to_data_accepts_custom_data() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let custom = stub_custom_data(2, 42, None, None);
+            let obj = custom.into_py_any(py).unwrap();
+            let converted = super::pyobject_to_data(py, obj.bind(py)).unwrap();
+
+            let Data::Custom(converted) = converted else {
+                panic!("Expected Data::Custom");
+            };
+            assert_eq!(converted.data_type.type_name(), "StubCustomData");
+            assert_eq!(converted.data.ts_init().as_u64(), 2);
+        });
+    }
 
     #[rstest]
     fn test_add_venue_accepts_python_defined_fee_and_fill_models() {
@@ -1909,5 +1931,71 @@ mod model_tests {
 
             assert_eq!(engine.0.list_venues(), vec![Venue::from("SIM")]);
         });
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use indexmap::IndexMap;
+    use nautilus_model::identifiers::ActorId;
+    use nautilus_testkit::{cache::TestCacheDatabaseControl, components::StateActor};
+    use pyo3::{Python, exceptions::PyRuntimeError};
+    use rstest::rstest;
+
+    use super::PyBacktestEngine;
+    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    fn test_end_reports_state_persistence_error() {
+        Python::initialize();
+
+        let actor_id = ActorId::from("PY-END-FAIL-SAVE-ACTOR");
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_fail_update_actor(true);
+        let config = BacktestEngineConfig {
+            save_state: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = PyBacktestEngine(BacktestEngine::new(config).unwrap());
+        engine
+            .0
+            .kernel_mut()
+            .cache
+            .borrow_mut()
+            .set_database(Box::new(database));
+        engine
+            .0
+            .add_actor(StateActor::new(
+                actor_id,
+                control.clone(),
+                IndexMap::from([("state".to_string(), b"value".to_vec())]),
+            ))
+            .unwrap();
+        engine.0.kernel_mut().start();
+        engine.0.kernel_mut().start_trader().unwrap();
+        engine.0.kernel_mut().stop_trader();
+
+        let error = engine.py_end().unwrap_err();
+        engine.0.dispose();
+
+        Python::attach(|py| {
+            assert!(error.is_instance_of::<PyRuntimeError>(py));
+        });
+        assert_eq!(
+            error.to_string(),
+            "RuntimeError: Failed to save component state: actor PY-END-FAIL-SAVE-ACTOR \
+             persistence: test actor update failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "actor.on_start",
+                "actor.on_stop",
+                "actor.on_save",
+                "actor.update:PY-END-FAIL-SAVE-ACTOR",
+                "database.close",
+            ]
+        );
     }
 }

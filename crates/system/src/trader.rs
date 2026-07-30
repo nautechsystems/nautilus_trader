@@ -24,7 +24,10 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use ahash::AHashMap;
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
-use nautilus_common::{actor::data_actor::ImportableActorConfig, python::actor::PyDataActor};
+use nautilus_common::{
+    actor::data_actor::ImportableActorConfig,
+    python::actor::{PyDataActor, PyDataActorInner},
+};
 use nautilus_common::{
     actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
@@ -48,6 +51,7 @@ use nautilus_model::{
     identifiers::{
         ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId, normalize_order_id_tag,
     },
+    orders::Order,
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::{
@@ -77,6 +81,17 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StrategyCommand {
     ExitMarket,
+}
+
+type ExecAlgorithmSubscriptionFn = Box<dyn FnMut() -> anyhow::Result<()>>;
+type PersistedComponentState = IndexMap<String, Vec<u8>>;
+type ComponentStateLoadFn = fn(Ustr, PersistedComponentState) -> anyhow::Result<()>;
+type ComponentStateSaveFn = fn(Ustr) -> anyhow::Result<PersistedComponentState>;
+
+#[derive(Clone, Copy)]
+struct ComponentStateCallbacks {
+    load: ComponentStateLoadFn,
+    save: ComponentStateSaveFn,
 }
 
 /// Central orchestrator for managing trading components.
@@ -111,14 +126,22 @@ pub struct Trader {
     portfolio: Rc<RefCell<Portfolio>>,
     /// Registered actor IDs (actors stored in global registry).
     actor_ids: Vec<ActorId>,
+    /// Type-erased state callbacks for registered actors.
+    actor_state_callbacks: AHashMap<ActorId, ComponentStateCallbacks>,
     /// Registered strategy IDs (strategies stored in global registry).
     strategy_ids: Vec<StrategyId>,
+    /// Type-erased state callbacks for registered strategies.
+    strategy_state_callbacks: AHashMap<StrategyId, ComponentStateCallbacks>,
     /// Strategy stop functions for managed stop behavior.
     strategy_stop_fns: AHashMap<StrategyId, Box<dyn FnMut() -> bool>>,
     /// Msgbus handler IDs for strategy event subscriptions (order, position).
     strategy_handler_ids: AHashMap<StrategyId, (Ustr, Ustr)>,
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     exec_algorithm_ids: Vec<ExecAlgorithmId>,
+    /// Restores strategy event subscriptions for concrete execution algorithms.
+    exec_algorithm_restore_fns: AHashMap<ExecAlgorithmId, ExecAlgorithmSubscriptionFn>,
+    /// Removes strategy event subscriptions for concrete execution algorithms.
+    exec_algorithm_cleanup_fns: AHashMap<ExecAlgorithmId, ExecAlgorithmSubscriptionFn>,
     /// Component clocks for individual components.
     clocks: IndexMap<ComponentId, Rc<RefCell<dyn Clock>>>,
     /// Timestamp when the trader was created.
@@ -158,10 +181,14 @@ impl Trader {
             cache,
             portfolio,
             actor_ids: Vec::new(),
+            actor_state_callbacks: AHashMap::new(),
             strategy_ids: Vec::new(),
+            strategy_state_callbacks: AHashMap::new(),
             strategy_stop_fns: AHashMap::new(),
             strategy_handler_ids: AHashMap::new(),
             exec_algorithm_ids: Vec::new(),
+            exec_algorithm_restore_fns: AHashMap::new(),
+            exec_algorithm_cleanup_fns: AHashMap::new(),
             clocks: IndexMap::new(),
             ts_created,
             ts_started: None,
@@ -380,7 +407,7 @@ impl Trader {
             Ok(())
         })?;
 
-        self.add_actor_id_for_lifecycle(actor_id)?;
+        self.add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)?;
 
         Ok(())
     }
@@ -436,6 +463,13 @@ impl Trader {
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
+        self.actor_state_callbacks.insert(
+            actor_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
 
         log::info!("Registered actor {actor_id} with trader {}", self.trader_id);
 
@@ -451,7 +485,10 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if the actor ID is already tracked by this trader.
-    pub fn add_actor_id_for_lifecycle(&mut self, actor_id: ActorId) -> anyhow::Result<()> {
+    pub fn add_actor_id_for_lifecycle<T>(&mut self, actor_id: ActorId) -> anyhow::Result<()>
+    where
+        T: DataActor + DataActorNative + Debug + 'static,
+    {
         // Check for duplicate registration
         if self.actor_ids.contains(&actor_id) {
             anyhow::bail!("Actor '{actor_id}' is already tracked by trader");
@@ -459,6 +496,13 @@ impl Trader {
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
+        self.actor_state_callbacks.insert(
+            actor_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
 
         log::debug!(
             "Added actor ID '{actor_id}' to trader {} for lifecycle management",
@@ -569,6 +613,13 @@ impl Trader {
             .register(strategy_control_endpoint(strategy_id), control_handler);
 
         self.strategy_ids.push(strategy_id);
+        self.strategy_state_callbacks.insert(
+            strategy_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
         self.strategy_handler_ids
             .insert(strategy_id, (order_handler_id, position_handler_id));
 
@@ -728,6 +779,13 @@ impl Trader {
             .register(strategy_control_endpoint(strategy_id), control_handler);
 
         self.strategy_ids.push(strategy_id);
+        self.strategy_state_callbacks.insert(
+            strategy_id,
+            ComponentStateCallbacks {
+                load: Self::load_component_state::<T>,
+                save: Self::save_component_state::<T>,
+            },
+        );
         self.strategy_handler_ids
             .insert(strategy_id, (order_handler_id, position_handler_id));
 
@@ -966,6 +1024,44 @@ impl Trader {
         // Register the {id}.execute endpoint so the order manager can
         // route TradingCommands to this algorithm via msgbus::send_any
         let actor_id = Ustr::from(exec_algorithm_id.inner().as_str());
+        let restore_actor_id = actor_id;
+        let restore_fn: ExecAlgorithmSubscriptionFn = Box::new(move || {
+            let Some(mut algo) = try_get_actor_unchecked::<T>(&restore_actor_id) else {
+                anyhow::bail!(
+                    "Execution algorithm {restore_actor_id} not found while restoring subscriptions"
+                );
+            };
+
+            let mut strategy_ids = {
+                let cache = algo.exec_algorithm_core_mut().cache_ref();
+                cache
+                    .orders_for_exec_algorithm(&exec_algorithm_id, None, None, None, None, None)
+                    .into_iter()
+                    .filter(|order| {
+                        !order.is_closed() && order.exec_algorithm_id() == Some(exec_algorithm_id)
+                    })
+                    .map(|order| order.strategy_id())
+                    .collect::<Vec<_>>()
+            };
+            strategy_ids.sort_unstable();
+            strategy_ids.dedup();
+
+            for strategy_id in strategy_ids {
+                algo.subscribe_to_strategy_events(strategy_id);
+            }
+
+            Ok(())
+        });
+        let cleanup_actor_id = actor_id;
+        let cleanup_fn: ExecAlgorithmSubscriptionFn = Box::new(move || {
+            let Some(mut algo) = try_get_actor_unchecked::<T>(&cleanup_actor_id) else {
+                anyhow::bail!(
+                    "Execution algorithm {cleanup_actor_id} not found while cleaning subscriptions"
+                );
+            };
+            algo.unsubscribe_all_strategy_events();
+            Ok(())
+        });
         let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
         let handler = ShareableMessageHandler::from_typed(move |command: &TradingCommand| {
             if let Some(mut algo) = try_get_actor_unchecked::<T>(&actor_id) {
@@ -979,6 +1075,10 @@ impl Trader {
         msgbus::register_any(endpoint.into(), handler);
 
         self.exec_algorithm_ids.push(exec_algorithm_id);
+        self.exec_algorithm_restore_fns
+            .insert(exec_algorithm_id, restore_fn);
+        self.exec_algorithm_cleanup_fns
+            .insert(exec_algorithm_id, cleanup_fn);
 
         log::info!(
             "Registered execution algorithm {exec_algorithm_id} with trader {}",
@@ -1046,9 +1146,21 @@ impl Trader {
             Self::start_component_if_not_running(strategy_id.inner())?;
         }
 
+        let mut restored_exec_algorithm_ids = Vec::new();
+
         for exec_algorithm_id in exec_algorithm_ids {
             log::debug!("Starting execution algorithm {exec_algorithm_id}");
-            Self::start_component_if_not_running(exec_algorithm_id.inner())?;
+            match self.start_exec_algorithm_if_not_running(exec_algorithm_id) {
+                Ok(true) => restored_exec_algorithm_ids.push(exec_algorithm_id),
+                Ok(false) => {}
+                Err(start_err) => {
+                    return Err(self.exec_algorithm_start_error_with_rollback(
+                        exec_algorithm_id,
+                        &restored_exec_algorithm_ids,
+                        start_err,
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -1083,9 +1195,53 @@ impl Trader {
             Self::start_component_if_not_running(strategy_id.inner())?;
         }
 
+        let mut restored_exec_algorithm_ids = Vec::new();
+
         for exec_algorithm_id in exec_algorithm_ids {
             log::debug!("Starting execution algorithm {exec_algorithm_id}");
-            Self::start_component_if_not_running(exec_algorithm_id.inner())?;
+            let component_state = match component_state(&exec_algorithm_id.inner()) {
+                Ok(state) => state,
+                Err(start_err) => {
+                    let e = trader
+                        .borrow_mut()
+                        .exec_algorithm_start_error_with_rollback(
+                            exec_algorithm_id,
+                            &restored_exec_algorithm_ids,
+                            start_err,
+                        );
+                    return Err(e);
+                }
+            };
+
+            if component_state == ComponentState::Running {
+                continue;
+            }
+
+            if let Err(start_err) = trader
+                .borrow_mut()
+                .restore_exec_algorithm_subscriptions(exec_algorithm_id)
+            {
+                let e = trader
+                    .borrow_mut()
+                    .exec_algorithm_start_error_with_rollback(
+                        exec_algorithm_id,
+                        &restored_exec_algorithm_ids,
+                        start_err,
+                    );
+                return Err(e);
+            }
+            restored_exec_algorithm_ids.push(exec_algorithm_id);
+
+            if let Err(start_err) = start_component(&exec_algorithm_id.inner()) {
+                let e = trader
+                    .borrow_mut()
+                    .exec_algorithm_start_error_with_rollback(
+                        exec_algorithm_id,
+                        &restored_exec_algorithm_ids,
+                        start_err,
+                    );
+                return Err(e);
+            }
         }
 
         let mut trader_ref = trader.borrow_mut();
@@ -1102,6 +1258,82 @@ impl Trader {
         }
 
         start_component(&component_id)
+    }
+
+    fn start_exec_algorithm_if_not_running(
+        &mut self,
+        exec_algorithm_id: ExecAlgorithmId,
+    ) -> anyhow::Result<bool> {
+        if component_state(&exec_algorithm_id.inner())? == ComponentState::Running {
+            return Ok(false);
+        }
+
+        self.restore_exec_algorithm_subscriptions(exec_algorithm_id)?;
+        if let Err(start_err) = start_component(&exec_algorithm_id.inner()) {
+            return match self.cleanup_exec_algorithm_subscriptions(exec_algorithm_id) {
+                Ok(()) => Err(start_err),
+                Err(cleanup_err) => anyhow::bail!(
+                    "Failed to start execution algorithm {exec_algorithm_id}: {start_err:#}; \
+                     failed to roll back subscriptions: {cleanup_err:#}"
+                ),
+            };
+        }
+
+        Ok(true)
+    }
+
+    fn restore_exec_algorithm_subscriptions(
+        &mut self,
+        exec_algorithm_id: ExecAlgorithmId,
+    ) -> anyhow::Result<()> {
+        if let Some(restore_fn) = self.exec_algorithm_restore_fns.get_mut(&exec_algorithm_id) {
+            restore_fn()?;
+        }
+        Ok(())
+    }
+
+    fn cleanup_exec_algorithm_subscriptions(
+        &mut self,
+        exec_algorithm_id: ExecAlgorithmId,
+    ) -> anyhow::Result<()> {
+        if let Some(cleanup_fn) = self.exec_algorithm_cleanup_fns.get_mut(&exec_algorithm_id) {
+            cleanup_fn()?;
+        }
+        Ok(())
+    }
+
+    fn cleanup_exec_algorithm_subscriptions_for(
+        &mut self,
+        exec_algorithm_ids: &[ExecAlgorithmId],
+    ) -> anyhow::Result<()> {
+        let mut errors = Vec::new();
+
+        for exec_algorithm_id in exec_algorithm_ids {
+            if let Err(e) = self.cleanup_exec_algorithm_subscriptions(*exec_algorithm_id) {
+                errors.push(format!("{exec_algorithm_id}: {e:#}"));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("{}", errors.join("; "))
+        }
+    }
+
+    fn exec_algorithm_start_error_with_rollback(
+        &mut self,
+        exec_algorithm_id: ExecAlgorithmId,
+        restored_exec_algorithm_ids: &[ExecAlgorithmId],
+        start_err: anyhow::Error,
+    ) -> anyhow::Error {
+        match self.cleanup_exec_algorithm_subscriptions_for(restored_exec_algorithm_ids) {
+            Ok(()) => start_err,
+            Err(cleanup_err) => anyhow::anyhow!(
+                "Failed while starting execution algorithm {exec_algorithm_id}: {start_err:#}; \
+                 failed to roll back restored subscriptions: {cleanup_err:#}"
+            ),
+        }
     }
 
     /// Stops all registered components.
@@ -1160,7 +1392,7 @@ impl Trader {
         }
     }
 
-    fn stop_components_after_start_failure(&self) -> anyhow::Result<()> {
+    fn stop_components_after_start_failure(&mut self) -> anyhow::Result<()> {
         let mut errors = Vec::new();
 
         for actor_id in &self.actor_ids {
@@ -1170,10 +1402,16 @@ impl Trader {
             }
         }
 
-        for exec_algorithm_id in &self.exec_algorithm_ids {
+        for exec_algorithm_id in self.exec_algorithm_ids.clone() {
             log::debug!("Stopping execution algorithm {exec_algorithm_id} after startup failure");
             if let Err(e) = Self::stop_component_if_active(exec_algorithm_id.inner()) {
                 errors.push(format!("execution algorithm {exec_algorithm_id}: {e:#}"));
+            }
+
+            if let Err(e) = self.cleanup_exec_algorithm_subscriptions(exec_algorithm_id) {
+                errors.push(format!(
+                    "execution algorithm {exec_algorithm_id} subscription cleanup: {e:#}"
+                ));
             }
         }
 
@@ -1221,8 +1459,9 @@ impl Trader {
             reset_component(&strategy_id.inner())?;
         }
 
-        for exec_algorithm_id in &self.exec_algorithm_ids {
+        for exec_algorithm_id in self.exec_algorithm_ids.clone() {
             log::debug!("Resetting execution algorithm {exec_algorithm_id}");
+            self.cleanup_exec_algorithm_subscriptions(exec_algorithm_id)?;
             reset_component(&exec_algorithm_id.inner())?;
         }
 
@@ -1249,8 +1488,9 @@ impl Trader {
                 .deregister(strategy_control_endpoint(*strategy_id));
         }
 
-        for exec_algorithm_id in &self.exec_algorithm_ids {
+        for exec_algorithm_id in self.exec_algorithm_ids.clone() {
             log::debug!("Disposing execution algorithm {exec_algorithm_id}");
+            self.cleanup_exec_algorithm_subscriptions(exec_algorithm_id)?;
             dispose_component(&exec_algorithm_id.inner())?;
             let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
             msgbus::deregister_any(endpoint.into());
@@ -1261,10 +1501,14 @@ impl Trader {
         }
 
         self.actor_ids.clear();
+        self.actor_state_callbacks.clear();
         self.strategy_ids.clear();
+        self.strategy_state_callbacks.clear();
         self.strategy_stop_fns.clear();
         self.strategy_handler_ids.clear();
         self.exec_algorithm_ids.clear();
+        self.exec_algorithm_restore_fns.clear();
+        self.exec_algorithm_cleanup_fns.clear();
         self.clocks.clear();
 
         Ok(())
@@ -1300,6 +1544,7 @@ impl Trader {
         }
 
         self.strategy_ids.clear();
+        self.strategy_state_callbacks.clear();
         self.strategy_stop_fns.clear();
         self.strategy_handler_ids.clear();
 
@@ -1326,6 +1571,7 @@ impl Trader {
         }
 
         self.actor_ids.clear();
+        self.actor_state_callbacks.clear();
 
         Ok(())
     }
@@ -1336,8 +1582,9 @@ impl Trader {
     ///
     /// Returns an error if any execution algorithm fails to dispose.
     pub fn clear_exec_algorithms(&mut self) -> anyhow::Result<()> {
-        for exec_algorithm_id in &self.exec_algorithm_ids {
+        for exec_algorithm_id in self.exec_algorithm_ids.clone() {
             log::debug!("Disposing execution algorithm {exec_algorithm_id}");
+            self.cleanup_exec_algorithm_subscriptions(exec_algorithm_id)?;
             dispose_component(&exec_algorithm_id.inner())?;
             let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
             msgbus::deregister_any(endpoint.into());
@@ -1346,9 +1593,13 @@ impl Trader {
                 clock.borrow_mut().cancel_timers();
             }
             self.clocks.shift_remove(&component_id);
+            self.exec_algorithm_restore_fns.remove(&exec_algorithm_id);
+            self.exec_algorithm_cleanup_fns.remove(&exec_algorithm_id);
         }
 
         self.exec_algorithm_ids.clear();
+        self.exec_algorithm_restore_fns.clear();
+        self.exec_algorithm_cleanup_fns.clear();
 
         Ok(())
     }
@@ -1399,6 +1650,7 @@ impl Trader {
         dispose_component(&actor_id.inner())?;
 
         self.actor_ids.swap_remove(pos);
+        self.actor_state_callbacks.remove(actor_id);
         let component_id = ComponentId::new(actor_id.inner().as_str());
         if let Some(clock) = self.clocks.get(&component_id) {
             clock.borrow_mut().cancel_timers();
@@ -1524,6 +1776,7 @@ impl Trader {
             .deregister(strategy_control_endpoint(*strategy_id));
 
         self.strategy_ids.swap_remove(pos);
+        self.strategy_state_callbacks.remove(strategy_id);
         self.strategy_stop_fns.remove(strategy_id);
         let component_id = ComponentId::new(strategy_id.inner().as_str());
         if let Some(clock) = self.clocks.get(&component_id) {
@@ -1539,6 +1792,165 @@ impl Trader {
     }
 
     // -- Lifecycle management ---------------------------------------------------
+
+    /// Loads persisted actor and strategy state in registration order.
+    ///
+    /// Empty state and a cache without database backing do not invoke component callbacks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if state cannot be loaded or a component callback fails.
+    pub(crate) fn load_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+        let (cache, actor_callbacks, strategy_callbacks) = {
+            let trader = trader.borrow();
+            let actor_callbacks = trader.actor_state_callbacks()?;
+            let strategy_callbacks = trader.strategy_state_callbacks()?;
+
+            (trader.cache.clone(), actor_callbacks, strategy_callbacks)
+        };
+
+        if !cache.borrow().has_backing() {
+            return Ok(());
+        }
+
+        for (actor_id, callbacks) in actor_callbacks {
+            let component_id = ComponentId::new(actor_id.inner().as_str());
+            let state = cache
+                .borrow()
+                .load_actor_state(&component_id)
+                .map_err(|e| anyhow::anyhow!("Failed to load actor {actor_id} state: {e:#}"))?;
+            let Some(state) = state.filter(|state| !state.is_empty()) else {
+                continue;
+            };
+
+            (callbacks.load)(actor_id.inner(), state)
+                .map_err(|e| anyhow::anyhow!("Failed to restore actor {actor_id} state: {e:#}"))?;
+        }
+
+        for (strategy_id, callbacks) in strategy_callbacks {
+            let state = cache
+                .borrow()
+                .load_strategy_state(&strategy_id)
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to load strategy {strategy_id} state: {e:#}")
+                })?;
+            let Some(state) = state.filter(|state| !state.is_empty()) else {
+                continue;
+            };
+
+            (callbacks.load)(strategy_id.inner(), state).map_err(|e| {
+                anyhow::anyhow!("Failed to restore strategy {strategy_id} state: {e:#}")
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Saves actor and strategy state in registration order.
+    ///
+    /// Empty state is persisted, while a cache without database backing does not invoke
+    /// component callbacks. All callbacks and updates receive an attempt before errors return.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error containing every component callback or persistence failure.
+    pub(crate) fn save_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+        let (cache, actor_callbacks, strategy_callbacks) = {
+            let trader = trader.borrow();
+            let actor_callbacks = trader.actor_state_callbacks()?;
+            let strategy_callbacks = trader.strategy_state_callbacks()?;
+
+            (trader.cache.clone(), actor_callbacks, strategy_callbacks)
+        };
+
+        if !cache.borrow().has_backing() {
+            return Ok(());
+        }
+
+        let mut errors = Vec::new();
+
+        for (actor_id, callbacks) in actor_callbacks {
+            match (callbacks.save)(actor_id.inner()) {
+                Ok(state) => {
+                    let component_id = ComponentId::new(actor_id.inner().as_str());
+                    if let Err(e) = cache.borrow().update_actor_state(&component_id, &state) {
+                        errors.push(format!("actor {actor_id} persistence: {e:#}"));
+                    }
+                }
+                Err(e) => errors.push(format!("actor {actor_id} callback: {e:#}")),
+            }
+        }
+
+        for (strategy_id, callbacks) in strategy_callbacks {
+            match (callbacks.save)(strategy_id.inner()) {
+                Ok(state) => {
+                    if let Err(e) = cache.borrow().update_strategy_state(&strategy_id, &state) {
+                        errors.push(format!("strategy {strategy_id} persistence: {e:#}"));
+                    }
+                }
+                Err(e) => errors.push(format!("strategy {strategy_id} callback: {e:#}")),
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("Failed to save component state: {}", errors.join("; "))
+        }
+    }
+
+    fn actor_state_callbacks(&self) -> anyhow::Result<Vec<(ActorId, ComponentStateCallbacks)>> {
+        self.actor_ids
+            .iter()
+            .map(|actor_id| {
+                self.actor_state_callbacks
+                    .get(actor_id)
+                    .copied()
+                    .map(|callbacks| (*actor_id, callbacks))
+                    .ok_or_else(|| anyhow::anyhow!("Actor {actor_id} state callback not found"))
+            })
+            .collect()
+    }
+
+    fn strategy_state_callbacks(
+        &self,
+    ) -> anyhow::Result<Vec<(StrategyId, ComponentStateCallbacks)>> {
+        self.strategy_ids
+            .iter()
+            .map(|strategy_id| {
+                self.strategy_state_callbacks
+                    .get(strategy_id)
+                    .copied()
+                    .map(|callbacks| (*strategy_id, callbacks))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Strategy {strategy_id} state callback not found")
+                    })
+            })
+            .collect()
+    }
+
+    fn load_component_state<T>(
+        component_id: Ustr,
+        state: PersistedComponentState,
+    ) -> anyhow::Result<()>
+    where
+        T: DataActor + DataActorNative + Debug + 'static,
+    {
+        let mut component = try_get_actor_unchecked::<T>(&component_id).ok_or_else(|| {
+            anyhow::anyhow!("Component {component_id} not found in actor registry")
+        })?;
+        component.on_load(state)
+    }
+
+    fn save_component_state<T>(component_id: Ustr) -> anyhow::Result<PersistedComponentState>
+    where
+        T: DataActor + DataActorNative + Debug + 'static,
+    {
+        let component = try_get_actor_unchecked::<T>(&component_id).ok_or_else(|| {
+            anyhow::anyhow!("Component {component_id} not found in actor registry")
+        })?;
+        component.on_save()
+    }
 
     /// Initializes the trader, transitioning from `PreInitialized` to `Ready` state.
     ///
@@ -1923,18 +2335,29 @@ mod tests {
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
-        events::OrderAccepted,
-        identifiers::{ActorId, ComponentId, TraderId},
-        orders::OrderAny,
+        enums::{OrderType, PositionAdjustmentType},
+        events::{
+            OrderAccepted, OrderFilled, OrderRejected, OrderUpdated, PositionAdjusted,
+            order::spec::{OrderFilledSpec, OrderRejectedSpec, OrderUpdatedSpec},
+        },
+        identifiers::{
+            AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, PositionId, TraderId,
+        },
+        orders::{OrderAny, OrderTestBuilder},
         stubs::TestDefault,
+        types::Quantity,
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
+    #[cfg(feature = "python")]
+    use nautilus_testkit::cache::TestCacheDatabaseControl;
     use nautilus_trading::{
         ExecutionAlgorithmConfig, ExecutionAlgorithmCore, StrategyNative,
         nautilus_execution_algorithm, nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
+    #[cfg(feature = "python")]
+    use pyo3::ffi::c_str;
     use rstest::rstest;
 
     use super::*;
@@ -1962,23 +2385,99 @@ mod tests {
     #[derive(Debug)]
     struct TestExecAlgorithm {
         core: ExecutionAlgorithmCore,
+        fail_start: bool,
+        rejected_events: usize,
+        updated_events: usize,
+        filled_events: usize,
+        position_events: usize,
     }
 
     impl TestExecAlgorithm {
         fn new(config: ExecutionAlgorithmConfig) -> Self {
             Self {
                 core: ExecutionAlgorithmCore::new(config),
+                fail_start: false,
+                rejected_events: 0,
+                updated_events: 0,
+                filled_events: 0,
+                position_events: 0,
             }
         }
     }
 
-    impl DataActor for TestExecAlgorithm {}
+    impl DataActor for TestExecAlgorithm {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            if self.fail_start {
+                anyhow::bail!("test execution algorithm start failure");
+            }
+            Ok(())
+        }
+    }
 
     nautilus_execution_algorithm!(TestExecAlgorithm, {
         fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
             Ok(())
         }
+
+        fn on_order_rejected(&mut self, _event: OrderRejected) {
+            self.rejected_events += 1;
+        }
+
+        fn on_order_updated(&mut self, _event: OrderUpdated) {
+            self.updated_events += 1;
+        }
+
+        fn on_algo_order_filled(&mut self, _event: OrderFilled) {
+            self.filled_events += 1;
+        }
+
+        fn on_position_event(&mut self, _event: PositionEvent) {
+            self.position_events += 1;
+        }
     });
+
+    fn add_cached_exec_order(
+        cache: &Rc<RefCell<Cache>>,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        is_terminal: bool,
+    ) -> OrderAny {
+        let mut builder = OrderTestBuilder::new(OrderType::Market);
+        builder
+            .client_order_id(client_order_id)
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::test_default())
+            .quantity(Quantity::from(1));
+
+        if let Some(exec_algorithm_id) = exec_algorithm_id {
+            builder
+                .exec_algorithm_id(exec_algorithm_id)
+                .exec_spawn_id(client_order_id);
+        }
+
+        let order = builder.build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+
+        if is_terminal {
+            let event = OrderEventAny::Rejected(
+                OrderRejectedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(AccountId::test_default())
+                    .reason("TEST_TERMINAL".into())
+                    .build(),
+            );
+            cache.borrow_mut().update_order(&event).unwrap();
+        }
+
+        order
+    }
 
     // Simple Strategy wrapper for testing
     #[derive(Debug)]
@@ -2502,6 +3001,297 @@ mod tests {
     }
 
     #[rstest]
+    fn test_exec_algorithm_restores_cached_strategy_subscriptions_on_start_and_restart() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+        let unique = UUID4::new();
+        let exec_algorithm_id = ExecAlgorithmId::from(format!("RECOVERY-{unique}"));
+        let other_algorithm_id = ExecAlgorithmId::from(format!("OTHER-{unique}"));
+        let strategy_a = StrategyId::from(format!("RecoveryA-{unique}"));
+        let strategy_b = StrategyId::from(format!("RecoveryB-{unique}"));
+        let terminal_strategy = StrategyId::from(format!("Terminal-{unique}"));
+        let external_strategy = StrategyId::external();
+
+        let order_a = add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-A1-{unique}")),
+            strategy_a,
+            Some(exec_algorithm_id),
+            false,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-A2-{unique}")),
+            strategy_a,
+            Some(exec_algorithm_id),
+            false,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-B-{unique}")),
+            strategy_b,
+            Some(exec_algorithm_id),
+            false,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-TERMINAL-{unique}")),
+            terminal_strategy,
+            Some(exec_algorithm_id),
+            true,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-OTHER-{unique}")),
+            StrategyId::from(format!("Other-{unique}")),
+            Some(other_algorithm_id),
+            false,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-EXTERNAL-{unique}")),
+            external_strategy,
+            None,
+            false,
+        );
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let config = ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(exec_algorithm_id),
+            ..Default::default()
+        };
+        trader
+            .add_exec_algorithm(TestExecAlgorithm::new(config))
+            .unwrap();
+
+        trader.start_components().unwrap();
+
+        assert_eq!(order_a.exec_spawn_id(), Some(order_a.client_order_id()));
+        {
+            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            assert!(registered.core.is_strategy_subscribed(&strategy_a));
+            assert!(registered.core.is_strategy_subscribed(&strategy_b));
+            assert!(!registered.core.is_strategy_subscribed(&terminal_strategy));
+            assert!(!registered.core.is_strategy_subscribed(&external_strategy));
+        }
+
+        let rejected = OrderEventAny::Rejected(
+            OrderRejectedSpec::builder()
+                .trader_id(order_a.trader_id())
+                .strategy_id(strategy_a)
+                .instrument_id(order_a.instrument_id())
+                .client_order_id(order_a.client_order_id())
+                .account_id(AccountId::test_default())
+                .reason("TEST_REJECTED".into())
+                .build(),
+        );
+        let updated = OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .trader_id(order_a.trader_id())
+                .strategy_id(strategy_a)
+                .instrument_id(order_a.instrument_id())
+                .client_order_id(order_a.client_order_id())
+                .build(),
+        );
+        let filled = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(order_a.trader_id())
+                .strategy_id(strategy_a)
+                .instrument_id(order_a.instrument_id())
+                .client_order_id(order_a.client_order_id())
+                .build(),
+        );
+        let position = PositionEvent::PositionAdjusted(PositionAdjusted::new(
+            trader_id,
+            strategy_a,
+            InstrumentId::test_default(),
+            PositionId::from(format!("P-{unique}")),
+            AccountId::test_default(),
+            PositionAdjustmentType::Funding,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        ));
+
+        let order_topic = format!("events.order.{strategy_a}");
+        msgbus::publish_order_event(order_topic.clone().into(), &rejected);
+        msgbus::publish_order_event(order_topic.clone().into(), &updated);
+        msgbus::publish_order_event(order_topic.into(), &filled);
+        msgbus::publish_position_event(format!("events.position.{strategy_a}").into(), &position);
+
+        {
+            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            assert_eq!(registered.rejected_events, 1);
+            assert_eq!(registered.updated_events, 1);
+            assert_eq!(registered.filled_events, 1);
+            assert_eq!(registered.position_events, 1);
+        }
+
+        trader.stop_components().unwrap();
+        trader.reset_components().unwrap();
+        {
+            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            assert!(!registered.core.is_strategy_subscribed(&strategy_a));
+            assert!(!registered.core.is_strategy_subscribed(&strategy_b));
+        }
+
+        trader.start_components().unwrap();
+        {
+            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            assert!(registered.core.is_strategy_subscribed(&strategy_a));
+            assert!(registered.core.is_strategy_subscribed(&strategy_b));
+        }
+
+        trader.stop_components().unwrap();
+        trader.clear_exec_algorithms().unwrap();
+        assert!(trader.exec_algorithm_restore_fns.is_empty());
+        assert!(trader.exec_algorithm_cleanup_fns.is_empty());
+    }
+
+    #[rstest]
+    fn test_exec_algorithm_start_failure_cleans_all_restored_subscriptions() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+        let unique = UUID4::new();
+        let running_algorithm_id = ExecAlgorithmId::from(format!("RUNNING-{unique}"));
+        let failing_algorithm_id = ExecAlgorithmId::from(format!("FAIL-{unique}"));
+        let running_strategy_id = StrategyId::from(format!("Running-{unique}"));
+        let failing_strategy_id = StrategyId::from(format!("Failing-{unique}"));
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-RUNNING-{unique}")),
+            running_strategy_id,
+            Some(running_algorithm_id),
+            false,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-FAILING-{unique}")),
+            failing_strategy_id,
+            Some(failing_algorithm_id),
+            false,
+        );
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let running_config = ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(running_algorithm_id),
+            ..Default::default()
+        };
+        trader
+            .add_exec_algorithm(TestExecAlgorithm::new(running_config))
+            .unwrap();
+        let failing_config = ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(failing_algorithm_id),
+            ..Default::default()
+        };
+        let mut failing_algorithm = TestExecAlgorithm::new(failing_config);
+        failing_algorithm.fail_start = true;
+        trader.add_exec_algorithm(failing_algorithm).unwrap();
+        trader.initialize().unwrap();
+        let trader = Rc::new(RefCell::new(trader));
+
+        let error = Trader::start_with_component_callbacks(&trader).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("test execution algorithm start failure")
+        );
+        {
+            let running = get_actor_unchecked::<TestExecAlgorithm>(&running_algorithm_id.inner());
+            let failing = get_actor_unchecked::<TestExecAlgorithm>(&failing_algorithm_id.inner());
+            assert!(!running.core.is_strategy_subscribed(&running_strategy_id));
+            assert!(!failing.core.is_strategy_subscribed(&failing_strategy_id));
+        }
+
+        trader.borrow_mut().stop_after_start_failure().unwrap();
+
+        let running = get_actor_unchecked::<TestExecAlgorithm>(&running_algorithm_id.inner());
+        assert!(!running.core.is_strategy_subscribed(&running_strategy_id));
+    }
+
+    #[rstest]
+    fn test_start_components_failure_cleans_previously_restored_subscriptions() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+        let unique = UUID4::new();
+        let running_algorithm_id = ExecAlgorithmId::from(format!("DIRECT-RUNNING-{unique}"));
+        let failing_algorithm_id = ExecAlgorithmId::from(format!("DIRECT-FAIL-{unique}"));
+        let running_strategy_id = StrategyId::from(format!("DirectRunning-{unique}"));
+        let failing_strategy_id = StrategyId::from(format!("DirectFailing-{unique}"));
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-DIRECT-RUNNING-{unique}")),
+            running_strategy_id,
+            Some(running_algorithm_id),
+            false,
+        );
+        add_cached_exec_order(
+            &cache,
+            ClientOrderId::from(format!("O-DIRECT-FAILING-{unique}")),
+            failing_strategy_id,
+            Some(failing_algorithm_id),
+            false,
+        );
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        trader
+            .add_exec_algorithm(TestExecAlgorithm::new(ExecutionAlgorithmConfig {
+                exec_algorithm_id: Some(running_algorithm_id),
+                ..Default::default()
+            }))
+            .unwrap();
+        let mut failing_algorithm = TestExecAlgorithm::new(ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(failing_algorithm_id),
+            ..Default::default()
+        });
+        failing_algorithm.fail_start = true;
+        trader.add_exec_algorithm(failing_algorithm).unwrap();
+
+        let error = trader.start_components().unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("test execution algorithm start failure")
+        );
+        let running = get_actor_unchecked::<TestExecAlgorithm>(&running_algorithm_id.inner());
+        let failing = get_actor_unchecked::<TestExecAlgorithm>(&failing_algorithm_id.inner());
+        assert!(!running.core.is_strategy_subscribed(&running_strategy_id));
+        assert!(!failing.core.is_strategy_subscribed(&failing_strategy_id));
+    }
+
+    #[rstest]
     fn test_cannot_add_exec_algorithm_while_running() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
@@ -2920,6 +3710,166 @@ mod tests {
         let event = OrderEventAny::Accepted(OrderAccepted::test_default());
         msgbus::publish_order_event(order_topic, &event);
         assert_eq!(*ext_received.borrow(), 1);
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_python_actor_and_strategy_state_callbacks_use_registered_types() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class StateComponent:
+    def __init__(self, state):
+        self.state = state
+        self.loaded = None
+        self.calls = []
+
+    def on_load(self, state):
+        self.calls.append("on_load")
+        self.loaded = dict(state)
+
+    def on_save(self):
+        self.calls.append("on_save")
+        return self.state
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+
+            let component_class = py.eval(c_str!("StateComponent"), None, None).unwrap();
+            let actor_save =
+                IndexMap::from([("actor-save".to_string(), b"python-actor-saved".to_vec())]);
+            let strategy_save = IndexMap::from([(
+                "strategy-save".to_string(),
+                b"python-strategy-saved".to_vec(),
+            )]);
+            let py_actor_state = PyDict::new(py);
+            py_actor_state
+                .set_item("actor-save", b"python-actor-saved")
+                .unwrap();
+            let py_strategy_state = PyDict::new(py);
+            py_strategy_state
+                .set_item("strategy-save", b"python-strategy-saved")
+                .unwrap();
+            let py_actor = component_class.call1((py_actor_state,)).unwrap().unbind();
+            let py_strategy = component_class
+                .call1((py_strategy_state,))
+                .unwrap()
+                .unbind();
+
+            let actor_id = ActorId::from("PYTHON-STATE-ACTOR");
+            let strategy_id = StrategyId::from("PYTHON-STATE-STRATEGY-001");
+            let actor_load =
+                IndexMap::from([("actor-load".to_string(), b"python-actor-loaded".to_vec())]);
+            let strategy_load = IndexMap::from([(
+                "strategy-load".to_string(),
+                b"python-strategy-loaded".to_vec(),
+            )]);
+            let (database, control) = TestCacheDatabaseControl::create();
+            control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+            control.set_strategy_state(strategy_id, &strategy_load);
+
+            let (
+                _msgbus,
+                cache,
+                portfolio,
+                _data_engine,
+                _risk_engine,
+                _exec_engine,
+                clock_factory,
+            ) = create_trader_components();
+            cache.borrow_mut().set_database(Box::new(database));
+            let trader_id = TraderId::test_default();
+            let mut trader = Trader::new(
+                trader_id,
+                UUID4::new(),
+                Environment::Backtest,
+                clock_factory,
+                cache.clone(),
+                portfolio.clone(),
+            );
+
+            let mut actor = PyDataActor::new(Some(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            }));
+            actor.set_python_instance(py_actor.clone_ref(py));
+            let actor_clock = trader.create_component_clock(ComponentId::from(actor_id.as_str()));
+            actor
+                .register(trader_id, actor_clock, cache.clone())
+                .unwrap();
+            actor.register_in_global_registries();
+            trader
+                .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
+                .unwrap();
+
+            let mut strategy = PyStrategy::new(Some(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }));
+            strategy.set_python_instance(py_strategy.clone_ref(py));
+            let strategy_clock =
+                trader.create_component_clock(ComponentId::from(strategy_id.as_str()));
+            strategy
+                .register(trader_id, strategy_clock, cache, portfolio)
+                .unwrap();
+            strategy.register_in_global_registries();
+            trader
+                .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+                .unwrap();
+
+            let trader = Rc::new(RefCell::new(trader));
+            Trader::load_state(&trader).unwrap();
+            Trader::save_state(&trader).unwrap();
+
+            let actor_loaded = py_actor
+                .getattr(py, "loaded")
+                .unwrap()
+                .extract::<std::collections::HashMap<String, Vec<u8>>>(py)
+                .unwrap();
+            let strategy_loaded = py_strategy
+                .getattr(py, "loaded")
+                .unwrap()
+                .extract::<std::collections::HashMap<String, Vec<u8>>>(py)
+                .unwrap();
+            let actor_calls = py_actor
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<String>>(py)
+                .unwrap();
+            let strategy_calls = py_strategy
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<String>>(py)
+                .unwrap();
+
+            assert_eq!(
+                actor_loaded,
+                std::collections::HashMap::from([(
+                    "actor-load".to_string(),
+                    b"python-actor-loaded".to_vec(),
+                )])
+            );
+            assert_eq!(
+                strategy_loaded,
+                std::collections::HashMap::from([(
+                    "strategy-load".to_string(),
+                    b"python-strategy-loaded".to_vec(),
+                )])
+            );
+            assert_eq!(actor_calls, vec!["on_load", "on_save"]);
+            assert_eq!(strategy_calls, vec!["on_load", "on_save"]);
+            assert_eq!(
+                control.actor_state(&ComponentId::from(actor_id.as_str())),
+                Some(actor_save)
+            );
+            assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
+        });
     }
 
     #[rstest]

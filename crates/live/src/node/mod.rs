@@ -1531,7 +1531,7 @@ impl LiveNode {
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
-        self.finalize_stop().await?;
+        let stop_result = self.finalize_stop().await;
 
         // Handle events that arrived during finalize_stop
         Self::drain_channels(
@@ -1544,7 +1544,7 @@ impl LiveNode {
 
         log::info!("Event loop stopped");
 
-        Ok(())
+        stop_result
     }
 
     #[expect(
@@ -1794,17 +1794,27 @@ impl LiveNode {
         }
 
         let readiness_result = self.await_engines_disconnected(deadline).await;
-        self.kernel.finalize_stop().await;
+        let kernel_result = self.kernel.finalize_stop().await;
 
         self.handle.set_state(NodeState::Stopped);
 
-        match (disconnect_result, readiness_result) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Err(disconnect_err), Ok(())) => Err(disconnect_err),
-            (Ok(()), Err(readiness_err)) => Err(readiness_err),
-            (Err(disconnect_err), Err(readiness_err)) => anyhow::bail!(
-                "{disconnect_err}; failed while awaiting engine disconnection: {readiness_err}"
-            ),
+        let mut errors = Vec::new();
+        if let Err(e) = disconnect_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = readiness_result {
+            errors.push(format!("failed while awaiting engine disconnection: {e}"));
+        }
+
+        if let Err(e) = kernel_result {
+            errors.push(format!("failed while finalizing kernel shutdown: {e}"));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("{}", errors.join("; "))
         }
     }
 
@@ -2874,6 +2884,7 @@ mod tests {
     };
 
     use bytes::Bytes;
+    use indexmap::IndexMap;
     #[cfg(feature = "python")]
     use nautilus_common::runner::{
         SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
@@ -2909,8 +2920,8 @@ mod tests {
             order::spec::{OrderAcceptedSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
         },
         identifiers::{
-            AccountId, ClientId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-            VenueOrderId,
+            AccountId, ActorId, ClientId, ComponentId, InstrumentId, PositionId, StrategyId,
+            TradeId, TraderId, VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2918,6 +2929,10 @@ mod tests {
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
+    use nautilus_testkit::{
+        cache::TestCacheDatabaseControl,
+        components::{StateActor, StateStrategy},
+    };
     use nautilus_trading::{
         nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
@@ -4264,6 +4279,137 @@ mod tests {
         );
 
         node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_live_state_persistence_loads_before_start_and_saves_after_stop() {
+        let actor_id = ActorId::from("LIVE-STATE-ACTOR");
+        let strategy_id = StrategyId::from("LIVE-STATE-STRATEGY-001");
+        let actor_load = IndexMap::from([("actor-load".to_string(), b"actor-loaded".to_vec())]);
+        let strategy_load =
+            IndexMap::from([("strategy-load".to_string(), b"strategy-loaded".to_vec())]);
+        let actor_save = IndexMap::from([("actor-save".to_string(), b"actor-saved".to_vec())]);
+        let strategy_save =
+            IndexMap::from([("strategy-save".to_string(), b"strategy-saved".to_vec())]);
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+        control.set_strategy_state(strategy_id, &strategy_load);
+        let config = LiveNodeConfig {
+            load_state: true,
+            save_state: true,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("StatePersistenceNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(database)).unwrap();
+        node.add_actor(StateActor::new(
+            actor_id,
+            control.clone(),
+            actor_save.clone(),
+        ))
+        .unwrap();
+        node.add_strategy(StateStrategy::new(
+            strategy_id,
+            control.clone(),
+            strategy_save.clone(),
+        ))
+        .unwrap();
+
+        node.start().await.unwrap();
+        node.stop().await.unwrap();
+        node.dispose();
+
+        assert_eq!(
+            control.events(),
+            vec![
+                "actor.load:LIVE-STATE-ACTOR",
+                "actor.on_load",
+                "strategy.load:LIVE-STATE-STRATEGY-001",
+                "strategy.on_load",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:LIVE-STATE-ACTOR",
+                "strategy.on_save",
+                "strategy.update:LIVE-STATE-STRATEGY-001",
+                "database.close",
+            ]
+        );
+        assert_eq!(
+            control.actor_state(&ComponentId::from(actor_id.as_str())),
+            Some(actor_save)
+        );
+        assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
+        assert_eq!(node.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_live_state_persistence_reports_callback_errors_after_shutdown() {
+        let actor_id = ActorId::from("LIVE-FAIL-SAVE-ACTOR");
+        let strategy_id = StrategyId::from("LIVE-FAIL-SAVE-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let config = LiveNodeConfig {
+            save_state: true,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("StatePersistenceErrorNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(database)).unwrap();
+        node.add_actor(
+            StateActor::new(actor_id, control.clone(), IndexMap::new()).with_fail_save(),
+        )
+        .unwrap();
+        node.add_strategy(
+            StateStrategy::new(strategy_id, control.clone(), IndexMap::new()).with_fail_save(),
+        )
+        .unwrap();
+
+        node.start().await.unwrap();
+        let error = node.stop().await.unwrap_err();
+        node.dispose();
+
+        assert_eq!(
+            error.to_string(),
+            "failed while finalizing kernel shutdown: Failed to save component state: actor \
+             LIVE-FAIL-SAVE-ACTOR callback: test actor on_save failure; strategy \
+             LIVE-FAIL-SAVE-STRATEGY-001 callback: test strategy on_save failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "strategy.on_save",
+                "database.close",
+            ]
+        );
+        assert_eq!(node.state(), NodeState::Stopped);
     }
 
     #[rstest]

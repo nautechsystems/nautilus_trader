@@ -121,6 +121,7 @@ struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     subscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    subscribe_errors: Arc<tokio::sync::Mutex<Vec<u64>>>,
     /// Frames queued by tests, drained one per `subscribe` ack in FIFO order.
     push_after_subscribe: Arc<tokio::sync::Mutex<Vec<String>>>,
     /// When set, the server closes the socket after sending the next subscribe ack.
@@ -141,6 +142,19 @@ impl TestServerState {
             .lock()
             .await
             .push(frame.to_string());
+    }
+
+    async fn enqueue_subscribe_error(&self, code: u64) {
+        self.subscribe_errors.lock().await.push(code);
+    }
+
+    async fn pop_subscribe_error(&self) -> Option<u64> {
+        let mut errors = self.subscribe_errors.lock().await;
+        if errors.is_empty() {
+            None
+        } else {
+            Some(errors.remove(0))
+        }
     }
 
     async fn pop_push(&self) -> Option<String> {
@@ -224,6 +238,23 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                 match kind {
                     "subscribe" => {
                         state.subscribes.lock().await.push(value.clone());
+
+                        if let Some(code) = state.pop_subscribe_error().await {
+                            let error = json!({
+                                "type": "error",
+                                "code": code,
+                                "message": "injected subscribe failure",
+                            });
+
+                            if sink
+                                .send(Message::Text(error.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        }
 
                         let channel = value
                             .get("channel")
@@ -1030,6 +1061,91 @@ async fn test_subscribe_mark_index_funding_share_one_ws_subscription() {
     assert!(saw_mark, "expected mark price event");
     assert!(saw_index, "expected index price event");
     assert!(saw_funding, "expected funding rate event");
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_market_stats_retry_preserves_kinds_piggybacked_on_failed_attempt() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    state.enqueue_subscribe_error(30_009).await;
+    state
+        .enqueue_push(load_json("ws_market_stats_update_single.json"))
+        .await;
+
+    let instrument_id = eth_perp_id();
+    client
+        .subscribe_mark_prices(SubscribeMarkPrices::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe_mark_prices");
+    client
+        .subscribe_index_prices(SubscribeIndexPrices::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe_index_prices");
+
+    await_subscribe_count(&state, 2).await;
+    let subscribes = state.subscribes().await;
+    assert_eq!(subscribes.len(), 2);
+    assert_eq!(subscribes[0]["channel"], "market_stats/0");
+    assert_eq!(subscribes[1]["channel"], "market_stats/0");
+
+    let mut saw_mark = false;
+    let mut saw_index = false;
+
+    for _ in 0..4 {
+        let Some(event) = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .ok()
+            .flatten()
+        else {
+            break;
+        };
+
+        match event {
+            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+                saw_mark = true;
+                assert_eq!(update.instrument_id, instrument_id);
+            }
+            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+                saw_index = true;
+                assert_eq!(update.instrument_id, instrument_id);
+            }
+            _ => {}
+        }
+
+        if saw_mark && saw_index {
+            break;
+        }
+    }
+
+    assert!(
+        saw_mark,
+        "mark-price request must survive the failed attempt"
+    );
+    assert!(
+        saw_index,
+        "piggybacked index-price request must survive the retry"
+    );
 
     client.disconnect().await.expect("disconnect");
 }

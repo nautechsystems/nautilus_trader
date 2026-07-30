@@ -554,7 +554,14 @@ pub struct DeriveReplaceResult {
     pub cancelled_order: Option<DeriveOrder>,
 }
 
-/// Empty result returned by state-changing cancel endpoints.
+/// Result returned by `private/cancel_by_label`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeriveCancelByLabelResult {
+    /// Number of open orders cancelled by the venue.
+    pub cancelled_orders: i64,
+}
+
+/// Empty result returned by state-changing endpoints without a typed payload.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct DeriveEmptyResult {}
 
@@ -1366,6 +1373,19 @@ mod tests {
         assert_eq!(object, DeriveEmptyResult {});
         assert_eq!(ok_string, DeriveEmptyResult {});
         assert_eq!(null_envelope.result, Some(DeriveEmptyResult {}));
+    }
+
+    #[rstest]
+    #[case("common/ws_cancel_by_label_zero.json", 0)]
+    #[case("common/ws_cancel_by_label_nonzero.json", 2)]
+    fn test_cancel_order_by_label_result_decodes_count(
+        #[case] filename: &str,
+        #[case] expected: i64,
+    ) {
+        let response: JsonRpcResponse<DeriveCancelByLabelResult> =
+            serde_json::from_value(load_json(filename)).expect("response decodes");
+
+        assert_eq!(response.result.unwrap().cancelled_orders, expected);
     }
 
     #[rstest]

@@ -140,6 +140,8 @@ def main() -> None:
                 use_post_only=True,
                 cancel_orders_on_stop=live_orders,
                 close_positions_on_stop=live_orders,
+                close_positions_qty_precision=2,
+                close_positions_time_in_force=TimeInForce.IOC,
                 reduce_only_on_stop=False,
                 dry_run=args.dry_run,
                 log_data=args.log_data,

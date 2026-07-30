@@ -234,6 +234,7 @@ fn bench_order_fill(c: &mut Criterion) {
                 sz_prec,
                 currency,
                 taker_fee,
+                1.0,
                 ts_init,
             );
             black_box(report);

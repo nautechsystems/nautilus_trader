@@ -420,7 +420,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-arith]]
@@ -428,7 +428,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-arith]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-array]]
@@ -436,7 +436,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-array]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-buffer]]
@@ -444,7 +444,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-buffer]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-cast]]
@@ -452,7 +452,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-cast]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-csv]]
@@ -460,7 +460,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-csv]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-data]]
@@ -468,7 +468,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-data]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ipc]]
@@ -476,7 +476,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ipc]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-json]]
@@ -484,7 +484,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-json]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ord]]
@@ -492,7 +492,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ord]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-row]]
@@ -500,7 +500,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-row]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-schema]]
@@ -508,7 +508,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-schema]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-select]]
@@ -516,7 +516,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-select]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-string]]
@@ -524,7 +524,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-string]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.asn1-rs]]
@@ -644,7 +644,7 @@ version = "0.12.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.blst]]
-version = "0.3.16"
+version = "0.3.17"
 criteria = "safe-to-deploy"
 
 [[exemptions.bollard]]
@@ -1952,7 +1952,7 @@ version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.parquet]]
-version = "58.3.0"
+version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.parse-zoneinfo]]
@@ -2137,10 +2137,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.quinn-udp]]
 version = "0.5.15"
-criteria = "safe-to-deploy"
-
-[[exemptions.quote]]
-version = "1.0.47"
 criteria = "safe-to-deploy"
 
 [[exemptions.r-efi]]
@@ -2568,7 +2564,7 @@ version = "0.6.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.sockudo-ws]]
-version = "1.7.4"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.spin]]

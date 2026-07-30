@@ -399,6 +399,7 @@ impl ExecTesterConfig {
         use_individual_cancels_on_stop = None,
         cancel_orders_on_stop = None,
         close_positions_on_stop = None,
+        close_positions_qty_precision = None,
         close_positions_time_in_force = None,
         reduce_only_on_stop = None,
         dry_run = None,
@@ -435,6 +436,7 @@ impl ExecTesterConfig {
         use_individual_cancels_on_stop: Option<bool>,
         cancel_orders_on_stop: Option<bool>,
         close_positions_on_stop: Option<bool>,
+        close_positions_qty_precision: Option<u8>,
         close_positions_time_in_force: Option<TimeInForce>,
         reduce_only_on_stop: Option<bool>,
         dry_run: Option<bool>,
@@ -508,6 +510,7 @@ impl ExecTesterConfig {
             cancel_orders_on_stop: cancel_orders_on_stop.unwrap_or(defaults.cancel_orders_on_stop),
             close_positions_on_stop: close_positions_on_stop
                 .unwrap_or(defaults.close_positions_on_stop),
+            close_positions_qty_precision,
             close_positions_time_in_force,
             reduce_only_on_stop: reduce_only_on_stop.unwrap_or(defaults.reduce_only_on_stop),
             use_batch_cancel_on_stop: defaults.use_batch_cancel_on_stop,
@@ -676,6 +679,12 @@ impl ExecTesterConfig {
     #[pyo3(name = "close_positions_on_stop")]
     const fn py_close_positions_on_stop(&self) -> bool {
         self.close_positions_on_stop
+    }
+
+    #[getter]
+    #[pyo3(name = "close_positions_qty_precision")]
+    const fn py_close_positions_qty_precision(&self) -> Option<u8> {
+        self.close_positions_qty_precision
     }
 
     #[getter]
