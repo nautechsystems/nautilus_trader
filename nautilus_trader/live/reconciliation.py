@@ -464,6 +464,14 @@ def create_inferred_order_filled_event(
     -------
     OrderFilled
 
+    Raises
+    ------
+    ValueError
+        If no usable (strictly positive) price is available from the report or the
+        order to price the inferred fill: booking a fill at 0.0 silently corrupts
+        the position's average price and realized PnL, whereas a failed
+        reconciliation is visible and retryable.
+
     """
     # Infer liquidity side
     liquidity_side: LiquiditySide = LiquiditySide.NO_LIQUIDITY_SIDE
@@ -481,25 +489,81 @@ def create_inferred_order_filled_event(
     last_qty: Quantity = instrument.make_qty(report.filled_qty - order.filled_qty)
 
     # Calculate last px
-    if order.avg_px is None:
-        # For the first fill, use the report's average price
-        if report.avg_px:
-            last_px: Price = instrument.make_price(report.avg_px)
-        elif report.price is not None:
-            # If no avg_px but we have a price (e.g., from LIMIT order), use that
-            last_px = report.price
-        else:
-            # Retain original fallback for now
-            last_px = instrument.make_price(0.0)
-    else:
-        report_cost: float = float(report.avg_px or 0.0) * float(report.filled_qty)
-        filled_cost = float(order.avg_px) * float(order.filled_qty)
-        incremental_cost = report_cost - filled_cost
+    #
+    # `Order.avg_px` is a C double (`cdef readonly double`, orders/base.pxd), so it is 0.0 —
+    # never None — before the first fill. The previous `if order.avg_px is None:` test was
+    # therefore dead, and with it the `report.price` fallback it guarded: a report carrying
+    # a price but no avg_px never reached that arm. Branch on "has the order booked
+    # anything yet", which is the condition the back-solve below actually requires.
+    order_has_fills: bool = float(order.filled_qty) > 0
 
-        if float(last_qty) > 0:
-            last_px = instrument.make_price(incremental_cost / float(last_qty))
-        else:
-            last_px = instrument.make_price(report.avg_px)
+    # A price is only usable if it is strictly positive. `avg_px is not None` is NOT the
+    # right test: a venue average of 0 is not a cheap fill, it is a missing value, and
+    # treating it as a price books the same corrupt 0.0-px fill this function exists to
+    # prevent. The superseded code got this right only by accident, via a truthiness check
+    # (`if report.avg_px:`) that also happened to reject 0. Making it explicit additionally
+    # rejects a negative average, which truthiness would have let through.
+    venue_px: float | None = (
+        float(report.avg_px) if report.avg_px is not None and float(report.avg_px) > 0.0 else None
+    )
+    order_px_usable: bool = order_has_fills and float(order.avg_px) > 0.0
+
+    if venue_px is not None and order_has_fills and float(last_qty) > 0:
+        # The order has fills, so the incremental price is the cost delta over the
+        # incremental quantity.
+        report_cost: float = venue_px * float(report.filled_qty)
+        filled_cost = float(order.avg_px) * float(order.filled_qty)
+        inferred_px = (report_cost - filled_cost) / float(last_qty)
+
+        if inferred_px <= 0.0:
+            # The back-solve goes non-positive when the report and cached fills disagree
+            # beyond the order's capacity (e.g. a duplicate venue order absorbed part of
+            # the reported quantity), which would inject a garbage price into PnL
+            # (observed in production as an inferred fill at a negative price). Clamp to
+            # the venue's own average, which is known present and strictly positive here.
+            inferred_px = venue_px
+
+        last_px: Price = instrument.make_price(inferred_px)
+    elif venue_px is not None:
+        # No local fills to difference against, or no incremental quantity: the venue's
+        # average is the price.
+        last_px = instrument.make_price(venue_px)
+    elif order_px_usable:
+        # The report carries no usable price but the order has booked fills at a positive
+        # average, so its own average is the best available estimate.
+        last_px = instrument.make_price(order.avg_px)
+    elif report.price is not None and float(report.price) > 0.0:
+        # No avg_px anywhere, but a resting price (e.g. from a LIMIT order) prices it.
+        # Same rule as every rung above: a price is usable only if strictly positive —
+        # `is not None` alone would admit a zero Price and book exactly the corrupt
+        # 0.0-px fill the terminal branch below exists to refuse.
+        last_px = report.price
+    else:
+        # Refuse to price a fill we have no price for.
+        #
+        # This case previously fell through to `make_price(0.0)`: with no local fills and
+        # a `None` report avg_px there is nothing to back-solve from. A 0.0-px fill is not
+        # a conservative default: it is accepted by the book without complaint and
+        # permanently corrupts the position's avg_px and realized PnL, with no error
+        # raised anywhere.
+        #
+        # It is reachable in production. The engine's position-reconciliation path has a
+        # "no price information, fall back to generated MARKET order" branch that mints a
+        # FILLED report with `avg_px=None` and no price, which is exactly this input;
+        # venues whose position reports carry no cost basis take it during startup and
+        # feed-outage windows.
+        #
+        # The caller (`_handle_fill_quantity_mismatch`) already treats ValueError as
+        # "reconciliation for this order failed" — it logs at ERROR and returns False,
+        # leaving the divergence visible and retryable. A wrong price is unrecoverable; a
+        # failed reconciliation is not.
+        raise ValueError(
+            f"cannot infer a fill price for {order.client_order_id!r}: report carries no "
+            f"usable avg_px and no price, and the order has no positive average to fall "
+            f"back on (report_avg_px={report.avg_px}, report_price={report.price}, "
+            f"report_filled_qty={report.filled_qty}, last_qty={last_qty}, "
+            f"order_avg_px={order.avg_px}, order_type={order.order_type})",
+        )
 
     commission: Money | None = None
     if client is not None:

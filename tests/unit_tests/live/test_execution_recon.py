@@ -6111,6 +6111,11 @@ class TestHedgeModeReconciliation:
         # Arrange
         self.exec_engine.generate_missing_orders = True
 
+        # Market data so the reconciliation fill can be priced: the report below carries
+        # no avg_px_open, and an unpriceable inferred fill is now refused rather than
+        # booked at 0.0 (which would silently corrupt the position's avg_px and PnL)
+        self.cache.add_quote_tick(TestDataStubs.quote_tick(instrument=AUDUSD_SIM))
+
         # No position in cache, but venue reports a position
         venue_position_id = PositionId(f"{AUDUSD_SIM.id}-LONG")
 
@@ -6139,6 +6144,7 @@ class TestHedgeModeReconciliation:
         created_position = self.cache.position(venue_position_id)
         assert created_position is not None
         assert created_position.quantity == Quantity.from_int(1000)
+        assert created_position.avg_px_open > 0  # Priced from the quote, never 0.0
 
     @pytest.mark.asyncio
     async def test_hedge_reconciliation_with_quantity_mismatch_fails_without_generate_orders(

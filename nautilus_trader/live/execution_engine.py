@@ -18,6 +18,7 @@ import math
 import os
 from asyncio import Queue
 from collections import Counter
+from collections import deque
 from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
@@ -98,6 +99,12 @@ from nautilus_trader.model.position import Position
 
 InstrumentAccountKey = tuple[InstrumentId, AccountId]
 
+# The maximum age of the pricing tick used to compute a position-resync divergence
+# notional. A tick older than this cannot price the divergence: a dead feed is the
+# broken-feed case the snap-count breaker exists for, and a stale tick prices the
+# tier decision off market state that no longer exists.
+_POSITION_RESYNC_MAX_TICK_AGE_NS: int = 60 * 1_000_000_000
+
 
 class LiveExecutionEngine(ExecutionEngine):
     """
@@ -153,6 +160,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._order_local_activity_ns: dict[ClientOrderId, int] = {}
         self._position_local_activity_ns: dict[InstrumentAccountKey, int] = {}
         self._position_recon_retries: Counter[InstrumentAccountKey] = Counter()
+        # Timestamps of auto-resync snaps per key, pruned to the rolling breaker
+        # window: a book that keeps needing snaps is chasing a broken feed, and the
+        # breaker halts it regardless of divergence magnitude.
+        self._position_resync_snap_ts: dict[InstrumentAccountKey, deque[int]] = {}
         self._recent_fills_cache: dict[TradeId, int] = {}  # TradeId -> timestamp_ns (TTL cache)
         self._inferred_fill_ts: dict[ClientOrderId, int] = {}
         self._fill_application_audit: dict[ClientOrderId, list[tuple[TradeId, str, int]]] = {}
@@ -207,6 +218,11 @@ class LiveExecutionEngine(ExecutionEngine):
         self.position_check_lookback_mins: int = config.position_check_lookback_mins
         self.position_check_threshold_ms: int = config.position_check_threshold_ms
         self.position_check_retries: int = config.position_check_retries
+        self.position_resync_auto_max_notional_usd: float | None = (
+            config.position_resync_auto_max_notional_usd
+        )
+        self.position_resync_snap_limit: int = config.position_resync_snap_limit
+        self.position_resync_snap_window_secs: float = config.position_resync_snap_window_secs
         self.reconciliation_startup_delay_secs: float = config.reconciliation_startup_delay_secs
         self.graceful_shutdown_on_exception: bool = config.graceful_shutdown_on_exception
 
@@ -231,6 +247,9 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.position_check_lookback_mins=}", LogColor.BLUE)
         self._log.info(f"{config.position_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.position_check_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.position_resync_auto_max_notional_usd=}", LogColor.BLUE)
+        self._log.info(f"{config.position_resync_snap_limit=}", LogColor.BLUE)
+        self._log.info(f"{config.position_resync_snap_window_secs=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_startup_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_buffer_mins=}", LogColor.BLUE)
@@ -479,6 +498,18 @@ class LiveExecutionEngine(ExecutionEngine):
 
         """
         self._record_local_activity(event)
+
+        if isinstance(event, OrderFilled):
+            # Stamp position-level activity at RECEIPT time: the position-check
+            # threshold gate reads this map to defer discrepancy handling while fills are
+            # actively landing. Without this stamp a live WS fill is invisible to the gate
+            # until the event queue drains and `_handle_event_with_tracking` stamps it —
+            # a window in which a position check could act on a divergence whose
+            # repairing fill is already in flight.
+            self._position_local_activity_ns[(event.instrument_id, event.account_id)] = (
+                self._clock.timestamp_ns()
+            )
+
         self._evt_enqueuer.enqueue(event)
 
     # -- QUEUE PROCESSING --------------------------------------------------------------------------
@@ -969,20 +1000,37 @@ class LiveExecutionEngine(ExecutionEngine):
                     account_id=cached_positions[0].account_id,
                 )
 
-                if (
-                    not had_fill_query_errors
-                    and self.generate_missing_orders
-                    and self._reconcile_position_report(reconciliation_report)
-                ):
-                    current_positions = self._cache.positions_open(
-                        instrument_id=instrument_id,
-                        account_id=account_id,
-                    )
-                    still_discrepant = self._check_position_discrepancy(
-                        current_positions,
-                        venue_report,
+                if not had_fill_query_errors and self.generate_missing_orders:
+                    # Tier the existing snap. "off" (threshold None) keeps the
+                    # unconditional snap; "auto" snaps and records the snap for
+                    # the breaker window; "halt" skips the snap (the book does not
+                    # move) and alerts NOW — otherwise a halted pass before the
+                    # retry latch trips would alert nobody.
+                    cached_qty_now = sum(p.signed_decimal_qty() for p in current_positions)
+                    decision = self._position_resync_decision(
                         instrument_id,
+                        account_id,
+                        venue_qty - cached_qty_now,
                     )
+                    if decision == "halt":
+                        self._alert_position_resync_halt(
+                            instrument_id=instrument_id,
+                            account_id=account_id,
+                            cached_qty=cached_qty_now,
+                            venue_qty=venue_qty,
+                        )
+                    elif self._reconcile_position_report(reconciliation_report):
+                        if decision == "auto":
+                            self._record_position_resync_snap(instrument_id, account_id)
+                        current_positions = self._cache.positions_open(
+                            instrument_id=instrument_id,
+                            account_id=account_id,
+                        )
+                        still_discrepant = self._check_position_discrepancy(
+                            current_positions,
+                            venue_report,
+                            instrument_id,
+                        )
 
                 if not still_discrepant:
                     self._position_recon_retries.pop((instrument_id, account_id), None)
@@ -1096,6 +1144,133 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return True
 
+    def _position_resync_decision(
+        self,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+        divergence_qty: Decimal,
+    ) -> str:
+        """
+        Decide the tier for a venue-truth position resync: "off", "auto", or "halt".
+
+        Policy: auto-resync (snap the cache to the venue report) while the divergence
+        notional is at or below ``position_resync_auto_max_notional_usd``; halt-and-alert
+        above it. ``None`` disables tiering entirely ("off"). A book that has already
+        needed ``position_resync_snap_limit`` snaps inside the rolling window halts
+        regardless of magnitude (snap-count circuit breaker), and a book with no market
+        data — or only a tick older than ``_POSITION_RESYNC_MAX_TICK_AGE_NS`` — halts
+        conservatively: never auto-snap what you cannot currently price.
+        """
+        threshold = self.position_resync_auto_max_notional_usd
+        if threshold is None:
+            return "off"
+
+        key = (instrument_id, account_id)
+        ts_now = self._clock.timestamp_ns()
+        window_ns = secs_to_nanos(self.position_resync_snap_window_secs)
+        snap_ts = self._position_resync_snap_ts.setdefault(key, deque())
+        while snap_ts and ts_now - snap_ts[0] > window_ns:
+            snap_ts.popleft()
+
+        if len(snap_ts) >= self.position_resync_snap_limit:
+            self._log.error(
+                f"Position resync HALT for {instrument_id} {account_id}: snap-count breaker "
+                f"tripped ({len(snap_ts)} snaps within "
+                f"{self.position_resync_snap_window_secs}s window, "
+                f"limit {self.position_resync_snap_limit}); a book that keeps needing snaps "
+                "is chasing a broken feed",
+            )
+            return "halt"
+
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Position resync HALT for {instrument_id} {account_id}: instrument not in "
+                "cache, cannot price the divergence (never auto-snap a book without "
+                "market data)",
+            )
+            return "halt"
+
+        price: Decimal | None = None
+        tick_ts_event: int | None = None
+        quote = self._cache.quote_tick(instrument_id)
+        if quote is not None:
+            price = (quote.bid_price.as_decimal() + quote.ask_price.as_decimal()) / 2
+            tick_ts_event = quote.ts_event
+        else:
+            trade = self._cache.trade_tick(instrument_id)
+            if trade is not None:
+                price = trade.price.as_decimal()
+                tick_ts_event = trade.ts_event
+
+        if price is None:
+            self._log.error(
+                f"Position resync HALT for {instrument_id} {account_id}: no quote or trade "
+                "tick in cache, cannot price the divergence (never auto-snap a book without "
+                "market data)",
+            )
+            return "halt"
+
+        tick_age_ns = ts_now - (tick_ts_event or 0)
+        if tick_age_ns > _POSITION_RESYNC_MAX_TICK_AGE_NS:
+            self._log.error(
+                f"Position resync HALT for {instrument_id} {account_id}: last tick is "
+                f"{tick_age_ns / 1_000_000_000:.0f}s old "
+                f"(cap {_POSITION_RESYNC_MAX_TICK_AGE_NS / 1_000_000_000:.0f}s), cannot "
+                "price the divergence (never auto-snap a book you cannot currently price)",
+            )
+            return "halt"
+
+        # Computed manually rather than via `instrument.notional_value(...)`: that API
+        # requires a `Quantity`, and `make_qty` raises `ValueError` for a non-zero value
+        # smaller than one size increment — exactly the sub-increment residual positions
+        # this tier must still be able to own. Linear form (qty * price * multiplier);
+        # inverse-instrument quote notionals differ, but the threshold is defined in
+        # quote-currency terms and the linear form is the conservative comparison here.
+        notional = abs(divergence_qty) * price * instrument.multiplier.as_decimal()
+        if notional <= Decimal(str(threshold)):
+            self._log.info(
+                f"Position resync AUTO tier for {instrument_id} {account_id}: "
+                f"divergence_qty={divergence_qty}, notional={notional} "
+                f"<= threshold={threshold}",
+                LogColor.BLUE,
+            )
+            return "auto"
+
+        self._log.error(
+            f"Position resync HALT for {instrument_id} {account_id}: "
+            f"divergence_qty={divergence_qty}, notional={notional} "
+            f"> threshold={threshold}; halting instead of snapping",
+        )
+        return "halt"
+
+    def _record_position_resync_snap(
+        self,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+    ) -> None:
+        self._position_resync_snap_ts.setdefault((instrument_id, account_id), deque()).append(
+            self._clock.timestamp_ns(),
+        )
+
+    def _alert_position_resync_halt(
+        self,
+        *,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+        cached_qty: Decimal,
+        venue_qty: Decimal,
+    ) -> None:
+        # Extension point: a deployment that wants strategies to react to a halted
+        # resync (e.g. suppress quoting on the affected book) can override this to
+        # publish a message on the bus; the engine itself alerts via the log.
+        self._log.error(
+            f"Position resync HALT for {instrument_id} {account_id}: divergence persists "
+            f"and will not be auto-resynced (cached_qty={cached_qty}, "
+            f"venue_qty={venue_qty}, divergence={venue_qty - cached_qty}); manual "
+            "intervention may be required",
+        )
+
     async def _process_venue_reported_positions(
         self,
         positions_by_key: dict[InstrumentAccountKey, list[Position]],
@@ -1160,6 +1335,52 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if still_discrepant:
                 cached_qty_now = sum(p.signed_decimal_qty() for p in cached_after)
+
+                # The fills query SUCCEEDED yet the book is still discrepant (never
+                # snap on query failure — a failed query proves nothing about the
+                # book). First-pass defer (`retries >= 1`): a venue-visible fill
+                # whose WS delivery is in flight gets one full check interval to
+                # book locally before any snap is considered, so an interleaved real
+                # fill can never be double-counted by a synthetic one.
+                if not had_fill_query_errors and self.generate_missing_orders and retries >= 1:
+                    decision = self._position_resync_decision(
+                        instrument_id,
+                        account_id,
+                        venue_qty - cached_qty_now,
+                    )
+                    if decision == "auto":
+                        if self._reconcile_position_report(venue_report):
+                            self._record_position_resync_snap(instrument_id, account_id)
+                            cached_after = self._cache.positions_open(
+                                instrument_id=instrument_id,
+                                account_id=account_id,
+                            )
+                            still_discrepant = self._check_position_discrepancy(
+                                cached_after,
+                                venue_report,
+                                instrument_id,
+                            )
+                            if not still_discrepant:
+                                self._position_recon_retries.pop((instrument_id, account_id), None)
+                                self._log.info(
+                                    f"Position resynced (auto tier) for {instrument_id} "
+                                    f"{account_id}: cache snapped from {cached_qty_now} to "
+                                    f"venue truth {venue_qty}",
+                                    LogColor.GREEN,
+                                )
+                                continue
+                            cached_qty_now = sum(p.signed_decimal_qty() for p in cached_after)
+                    elif decision == "halt":
+                        # This path never snaps when tiering is off; with tiering on,
+                        # an over-threshold divergence is alerted rather than left
+                        # only to the retry-exhaustion error below.
+                        self._alert_position_resync_halt(
+                            instrument_id=instrument_id,
+                            account_id=account_id,
+                            cached_qty=cached_qty_now,
+                            venue_qty=venue_qty,
+                        )
+
                 self._position_recon_retries[(instrument_id, account_id)] = retries + 1
                 if retries + 1 >= self.position_check_retries:
                     self._log.error(

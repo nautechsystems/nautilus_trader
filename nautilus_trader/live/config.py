@@ -162,6 +162,30 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         The maximum number of reconciliation attempts for a position discrepancy
         before the engine stops retrying for that instrument. Once exceeded, an
         error is logged and the discrepancy is no longer actively reconciled.
+    position_resync_auto_max_notional_usd : PositiveFloat, optional
+        The magnitude tier for venue-truth position resync: when missing-fill
+        reconciliation succeeds (or finds nothing) but the cached position still
+        diverges from the venue report, a divergence whose notional (in quote
+        currency) is at or below this threshold is auto-resynced by snapping the
+        cache to the venue report, while a divergence above it halts (logs an
+        error) instead of moving the book.
+        If ``None`` (the default) tiering is disabled and behavior is identical to
+        before this option existed: the venue-only (cache-flat) path never snaps,
+        and the cached-positions path keeps its unconditional snap.
+        Rationale: a cache missing a fill self-heals within one check interval
+        instead of staying wedged until restart — but an unconditional snap is how
+        you chase a broken feed, hence the magnitude tier plus the snap-count
+        circuit breaker below.
+    position_resync_snap_limit : PositiveInt, default 3
+        The maximum number of auto-resync snaps allowed per position (instrument,
+        account) within the rolling ``position_resync_snap_window_secs`` window.
+        A book needing more than this many snaps inside the window halts regardless
+        of divergence magnitude — repeated snaps mean the divergence keeps coming
+        back, which is the signature of a broken feed or account topology error,
+        and auto-snapping onto a broken feed just chases it.
+    position_resync_snap_window_secs : PositiveFloat, default 3600.0
+        The rolling window (seconds) over which ``position_resync_snap_limit``
+        auto-resync snaps are counted for the circuit breaker.
     reconciliation_startup_delay_secs : PositiveFloat, default 10.0
         The additional delay (seconds) applied AFTER startup reconciliation
         completes before starting the continuous reconciliation loop. This provides time
@@ -196,6 +220,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     position_check_lookback_mins: PositiveInt = 60
     position_check_threshold_ms: NonNegativeInt = 5_000
     position_check_retries: NonNegativeInt = 3
+    position_resync_auto_max_notional_usd: PositiveFloat | None = None
+    position_resync_snap_limit: PositiveInt = 3
+    position_resync_snap_window_secs: PositiveFloat = 3600.0
     reconciliation_startup_delay_secs: PositiveFloat = 10.0
     qsize: PositiveInt = 100_000
     graceful_shutdown_on_exception: bool = False
