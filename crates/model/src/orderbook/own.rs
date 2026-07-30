@@ -26,7 +26,7 @@ use std::{
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
+use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::{BookViewError, OwnBookError, display::pprint_own_book};
@@ -357,8 +357,13 @@ impl OwnOrderBook {
 
     /// Maps bid price levels to their own orders, excluding empty levels after filtering.
     ///
-    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
-    /// at least that many nanoseconds before `ts_now` (defaults to now).
+    /// Filters by `status` if provided. When `ts_now` is provided, only includes orders whose
+    /// acceptance time plus `accepted_buffer_ns` is at or before `ts_now`. When `ts_now` is
+    /// `None`, acceptance-time filtering is disabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `accepted_buffer_ns` is positive and `ts_now` is `None`.
     #[must_use]
     pub fn bids_as_map(
         &self,
@@ -371,8 +376,13 @@ impl OwnOrderBook {
 
     /// Maps ask price levels to their own orders, excluding empty levels after filtering.
     ///
-    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
-    /// at least that many nanoseconds before `ts_now` (defaults to now).
+    /// Filters by `status` if provided. When `ts_now` is provided, only includes orders whose
+    /// acceptance time plus `accepted_buffer_ns` is at or before `ts_now`. When `ts_now` is
+    /// `None`, acceptance-time filtering is disabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `accepted_buffer_ns` is positive and `ts_now` is `None`.
     #[must_use]
     pub fn asks_as_map(
         &self,
@@ -385,11 +395,16 @@ impl OwnOrderBook {
 
     /// Aggregates own bid quantities per price level, omitting zero-quantity levels.
     ///
-    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
-    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    /// Filters by `status` if provided, including only matching orders. When `ts_now` is provided,
+    /// only includes orders whose acceptance time plus `accepted_buffer_ns` is at or before
+    /// `ts_now`. When `ts_now` is `None`, acceptance-time filtering is disabled.
     ///
     /// If `group_size` is provided, groups quantities into price buckets.
     /// If `depth` is provided, limits the number of price levels returned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `accepted_buffer_ns` is positive and `ts_now` is `None`.
     #[must_use]
     pub fn bid_quantity(
         &self,
@@ -417,11 +432,16 @@ impl OwnOrderBook {
 
     /// Aggregates own ask quantities per price level, omitting zero-quantity levels.
     ///
-    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
-    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    /// Filters by `status` if provided, including only matching orders. When `ts_now` is provided,
+    /// only includes orders whose acceptance time plus `accepted_buffer_ns` is at or before
+    /// `ts_now`. When `ts_now` is `None`, acceptance-time filtering is disabled.
     ///
     /// If `group_size` is provided, groups quantities into price buckets.
     /// If `depth` is provided, limits the number of price levels returned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `accepted_buffer_ns` is positive and `ts_now` is `None`.
     #[must_use]
     pub fn ask_quantity(
         &self,
@@ -554,6 +574,22 @@ fn transform_opposite_order(order: OwnBookOrder, side: OrderSideSpecified) -> Ow
     )
 }
 
+/// Validates the acceptance-time filter arguments.
+///
+/// # Errors
+///
+/// Returns an error if `accepted_buffer_ns` is positive and `ts_now` is `None`.
+pub(crate) fn validate_accepted_buffer(
+    accepted_buffer_ns: Option<u64>,
+    ts_now: Option<u64>,
+) -> Result<(), &'static str> {
+    if accepted_buffer_ns.is_some_and(|buffer| buffer > 0) && ts_now.is_none() {
+        Err("ts_now must be provided when accepted_buffer_ns > 0")
+    } else {
+        Ok(())
+    }
+}
+
 /// Filters orders by status and accepted timestamp.
 ///
 /// `accepted_buffer_ns` acts as a grace period after `ts_accepted`. Orders whose
@@ -562,21 +598,33 @@ fn transform_opposite_order(order: OwnBookOrder, side: OrderSideSpecified) -> Ow
 /// they have not been venue-acknowledged yet. Callers that want to hide inflight
 /// orders must additionally filter by `OrderStatus` (for example, include only
 /// `ACCEPTED` / `PARTIALLY_FILLED`).
+///
+/// # Panics
+///
+/// Panics if `accepted_buffer_ns` is positive and `ts_now` is `None`.
 fn filter_orders<'a>(
     levels: impl Iterator<Item = &'a OwnBookLevel>,
     status: Option<&AHashSet<OrderStatus>>,
     accepted_buffer_ns: Option<u64>,
     ts_now: Option<u64>,
 ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
+    validate_accepted_buffer(accepted_buffer_ns, ts_now).unwrap_or_else(|e| panic!("{e}"));
     let accepted_buffer_ns = accepted_buffer_ns.unwrap_or(0);
-    let ts_now = ts_now.unwrap_or_else(nanos_since_unix_epoch);
+
     levels
         .map(|level| {
             let orders = level
                 .orders
                 .values()
                 .filter(|order| status.is_none_or(|f| f.contains(&order.status)))
-                .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
+                .filter(|order| {
+                    ts_now.is_none_or(|ts_now| {
+                        order
+                            .ts_accepted
+                            .checked_add(accepted_buffer_ns)
+                            .is_some_and(|eligible_at| eligible_at.as_u64() <= ts_now)
+                    })
+                })
                 .copied()
                 .collect::<Vec<OwnBookOrder>>();
 
