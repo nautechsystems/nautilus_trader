@@ -15,11 +15,12 @@
 
 //! Canonical exec pipeline benches.
 //!
-//! `exec_pipeline`: strategy intent (limit/market submit / cancel) ->
-//! per-request JSON body + L2 HMAC-SHA256 signature, the variable-cost
-//! portion of every authenticated CLOB call. Covers maker/taker amount math,
-//! EIP-712 order signing (submits only), JSON body serialization, and the
-//! HMAC body signature `auth_headers` attaches via `Credential::sign`.
+//! `exec_pipeline`: resolved order inputs (limit / market submit / cancel) ->
+//! per-request JSON body + L2 HMAC-SHA256 signature, the variable-cost portion
+//! of every authenticated CLOB call. Covers market-book crossing-price
+//! calculation, maker/taker amount math, EIP-712 order signing (submits only),
+//! JSON body serialization, and the HMAC body signature `auth_headers` attaches
+//! via `Credential::sign`.
 //!
 //! The fixed-cost work `auth_headers` does around the signature (formatting a
 //! timestamp string and constructing the five `POLY_*` header entries) is
@@ -31,15 +32,18 @@ mod common;
 
 use std::hint::black_box;
 
-use common::{API_KEY, YES_TOKEN_ID, bench_credential};
+use common::{API_KEY, YES_TOKEN_ID, bench_credential, fixtures};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_polymarket::{
     common::{
         credential::{Credential, EvmPrivateKey},
         enums::{PolymarketOrderSide, PolymarketOrderType, SignatureType},
     },
-    execution::order_builder::PolymarketOrderBuilder,
-    http::models::PolymarketOrder,
+    execution::{
+        order_builder::PolymarketOrderBuilder,
+        parse::{adjust_market_buy_amount, calculate_market_price},
+    },
+    http::models::{ClobBookResponse, PolymarketOrder},
     signing::eip712::OrderSigner,
 };
 use rust_decimal_macros::dec;
@@ -136,18 +140,33 @@ fn bench_submit_limit(c: &mut Criterion) {
 fn bench_submit_market(c: &mut Criterion) {
     let builder = order_builder();
     let credential = bench_credential();
+    let book: ClobBookResponse = serde_json::from_str(fixtures::HTTP_BOOK).unwrap();
 
     let mut group = c.benchmark_group("exec_pipeline");
     group.throughput(Throughput::Elements(1));
     group.bench_function("submit_market", |b| {
         b.iter(|| {
-            // Market BUY: amount is pUSD to spend.
+            let result = calculate_market_price(
+                black_box(book.asks.as_slice()),
+                dec!(50),
+                PolymarketOrderSide::Buy,
+            )
+            .unwrap();
+            let amount = adjust_market_buy_amount(
+                dec!(50),
+                dec!(50),
+                result.crossing_price,
+                dec!(0.03),
+                2.0,
+                dec!(0),
+            )
+            .unwrap();
             let order = builder
                 .build_market_order(
                     YES_TOKEN_ID,
                     PolymarketOrderSide::Buy,
-                    dec!(0.50),
-                    dec!(50),
+                    result.crossing_price,
+                    amount,
                     false,
                     TICK_DECIMALS,
                 )

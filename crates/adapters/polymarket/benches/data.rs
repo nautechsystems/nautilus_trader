@@ -28,9 +28,9 @@ use std::hint::black_box;
 use common::{fixtures, instrument_cache, instrument_precisions, yes_instrument};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::UnixNanos;
-use nautilus_model::{instruments::Instrument, types::Currency};
+use nautilus_model::{enums::LiquiditySide, instruments::Instrument, types::Currency};
 use nautilus_polymarket::{
-    execution::parse::{parse_fill_report, parse_order_status_report},
+    execution::parse::{build_maker_fill_report, parse_fill_report, parse_order_status_report},
     http::models::{PolymarketOpenOrder, PolymarketTradeReport},
     websocket::{
         messages::MarketWsMessage,
@@ -40,7 +40,7 @@ use nautilus_polymarket::{
         },
     },
 };
-use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 fn bench_book_deltas(c: &mut Criterion) {
     let instruments = instrument_cache();
@@ -216,7 +216,8 @@ fn bench_order_fill(c: &mut Criterion) {
     let (px_prec, sz_prec) = instrument_precisions();
     let account_id = common::account_id();
     let currency = Currency::pUSD();
-    let taker_fee = Decimal::ZERO;
+    let taker_fee = dec!(0.03);
+    let fee_exponent = 2.0;
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
@@ -234,10 +235,50 @@ fn bench_order_fill(c: &mut Criterion) {
                 sz_prec,
                 currency,
                 taker_fee,
-                1.0,
+                fee_exponent,
                 ts_init,
             );
             black_box(report);
+        });
+    });
+    group.finish();
+}
+
+fn bench_order_fill_maker(c: &mut Criterion) {
+    let instrument = yes_instrument();
+    let (px_prec, sz_prec) = instrument_precisions();
+    let account_id = common::account_id();
+    let currency = Currency::pUSD();
+    let ts_init = UnixNanos::default();
+
+    let mut group = c.benchmark_group("inbound_pipeline");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("order_fill_maker", |b| {
+        b.iter(|| {
+            let trade: PolymarketTradeReport =
+                serde_json::from_str(black_box(fixtures::HTTP_TRADE_REPORT)).unwrap();
+            let reports: Vec<_> = trade
+                .maker_orders
+                .iter()
+                .map(|order| {
+                    build_maker_fill_report(
+                        order,
+                        &trade.id,
+                        trade.trader_side,
+                        trade.side,
+                        trade.asset_id.as_str(),
+                        account_id,
+                        instrument.id(),
+                        px_prec,
+                        sz_prec,
+                        currency,
+                        LiquiditySide::Maker,
+                        ts_init,
+                        ts_init,
+                    )
+                })
+                .collect();
+            black_box(reports);
         });
     });
     group.finish();
@@ -252,5 +293,6 @@ criterion_group!(
     bench_trades,
     bench_order_event,
     bench_order_fill,
+    bench_order_fill_maker,
 );
 criterion_main!(benches);
