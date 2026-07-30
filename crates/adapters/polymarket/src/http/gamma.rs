@@ -27,6 +27,7 @@
 
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
+use ahash::AHashSet;
 use nautilus_core::{
     UnixNanos,
     consts::NAUTILUS_USER_AGENT,
@@ -493,6 +494,7 @@ impl PolymarketGammaHttpClient {
         let mut all_markets = Vec::new();
         let mut remaining_offset = base_params.offset.unwrap_or(0);
         let mut after_cursor = None;
+        let mut seen_cursors = AHashSet::new();
         let mut page_num = 0u32;
 
         loop {
@@ -528,6 +530,10 @@ impl PolymarketGammaHttpClient {
                 break;
             };
 
+            anyhow::ensure!(
+                seen_cursors.insert(next_cursor.clone()),
+                "Gamma market pagination repeated cursor {next_cursor:?}",
+            );
             after_cursor = Some(next_cursor);
         }
 
@@ -859,6 +865,7 @@ impl PolymarketGammaHttpClient {
         let mut all_events = Vec::new();
         let mut remaining_offset = base_params.offset.unwrap_or(0);
         let mut after_cursor = None;
+        let mut seen_cursors = AHashSet::new();
         let mut page_num = 0u32;
 
         loop {
@@ -895,6 +902,10 @@ impl PolymarketGammaHttpClient {
                 break;
             };
 
+            anyhow::ensure!(
+                seen_cursors.insert(next_cursor.clone()),
+                "Gamma event pagination repeated cursor {next_cursor:?}",
+            );
             after_cursor = Some(next_cursor);
         }
 

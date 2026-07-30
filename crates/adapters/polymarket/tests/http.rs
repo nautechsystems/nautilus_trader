@@ -2482,6 +2482,44 @@ async fn test_fetch_gamma_markets_stops_at_total_cap() {
 
 #[rstest]
 #[tokio::test]
+async fn test_fetch_gamma_markets_rejects_repeated_cursor() {
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "stuck-market",
+        "0xcondition_stuck_market",
+        ["97300000000000000001", "97300000000000000002"],
+    );
+    {
+        let mut pages = state.gamma_markets_pages.lock().await;
+        pages.push_back(json!({
+            "markets": [market.clone()],
+            "next_cursor": "stuck",
+        }));
+        pages.push_back(json!({
+            "markets": [market],
+            "next_cursor": "stuck",
+        }));
+    }
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let error = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Gamma market pagination repeated cursor \"stuck\""
+    );
+    assert_eq!(state.gamma_markets_query_log.lock().await.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_fetch_gamma_events_paginated_uses_next_cursor_and_500_limit() {
     let state = TestServerState::default();
     let market_a = gamma_market_with_slug(
@@ -2576,6 +2614,45 @@ async fn test_fetch_gamma_events_stops_at_total_cap() {
 
     assert_eq!(instruments.len(), 2);
     assert_eq!(state.gamma_events_query_log.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_gamma_events_rejects_repeated_cursor() {
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "stuck-event-market",
+        "0xcondition_stuck_event",
+        ["98300000000000000001", "98300000000000000002"],
+    );
+    let event = gamma_event_with_markets("stuck-event", &[market]);
+    {
+        let mut pages = state.gamma_events_pages.lock().await;
+        pages.push_back(json!({
+            "events": [event.clone()],
+            "next_cursor": "stuck",
+        }));
+        pages.push_back(json!({
+            "events": [event],
+            "next_cursor": "stuck",
+        }));
+    }
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let error = client
+        .request_events_by_params(GetGammaEventsParams {
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Gamma event pagination repeated cursor \"stuck\""
+    );
+    assert_eq!(state.gamma_events_query_log.lock().await.len(), 2);
 }
 
 #[rstest]

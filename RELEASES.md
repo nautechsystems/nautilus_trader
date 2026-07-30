@@ -380,6 +380,7 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket v2 fee schedules and RTDS equity snapshot handling
 - Fixed Polymarket Gamma market and event keyset filters, validation, and repeated query encoding
 - Fixed Polymarket Gamma discovery to use keyset pagination beyond the legacy offset cap
+- Fixed Polymarket Gamma pagination looping on repeated cursors (#4605), thanks for reporting @mystic-io
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
 - Fixed Polymarket v2 market WebSocket batches dropped by unknown `event_type` (#4604), thanks for reporting @mystic-io
