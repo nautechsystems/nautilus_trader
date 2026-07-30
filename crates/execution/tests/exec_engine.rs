@@ -221,6 +221,14 @@ fn build_order_canceled(
         .build()
 }
 
+fn cached_order_or(execution_engine: &ExecutionEngine, order: &OrderAny) -> OrderAny {
+    execution_engine
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .map_or_else(|| order.clone(), |cached| cached.clone())
+}
+
 fn build_order_expired(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -1713,7 +1721,7 @@ fn test_fill_void_position_validation_failure_leaves_order_unchanged(
         order.strategy_id(),
         instrument.id(),
         order.client_order_id(),
-        VenueOrderId::from("V-MISSING-FRAGMENT"),
+        VenueOrderId::from("V-001"),
         AccountId::test_default(),
         trade_id,
         order.order_side(),
@@ -1746,7 +1754,7 @@ fn test_fill_void_position_validation_failure_leaves_order_unchanged(
             .strategy_id(order.strategy_id())
             .instrument_id(instrument.id())
             .client_order_id(order.client_order_id())
-            .venue_order_id(VenueOrderId::from("V-MISSING-FRAGMENT"))
+            .venue_order_id(VenueOrderId::from("V-001"))
             .account_id(AccountId::test_default())
             .trade_id(trade_id)
             .voided_qty(order.quantity())
@@ -2936,6 +2944,7 @@ fn prepare_accepted_order_with_account(
     );
     execution_engine.process(&accepted);
 
+    let order = cached_order_or(execution_engine, &order);
     (instrument, order)
 }
 
@@ -3815,7 +3824,7 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
 
     // Try to fill order before it's been accepted (invalid state transition)
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001")),
         None,
@@ -3866,7 +3875,7 @@ fn test_order_filled_event_when_order_not_found_in_cache_logs(
         "Order should not exist in cache"
     );
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001")),
         None,
@@ -4756,7 +4765,7 @@ fn test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(
     execution_engine.process(&order_submitted_event);
 
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001")), // Provide unique trade_id
         None,                                            // position_id
@@ -5479,7 +5488,7 @@ fn test_handle_position_opening_with_position_id_none(mut execution_engine: Exec
     execution_engine.process(&order_accepted_event);
 
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001")),
         None,                            // position_id = None (let engine generate it)
@@ -5609,6 +5618,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
         .trader_id(trader_id)
         .strategy_id(strategy_id)
         .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-ADD-1"))
         .quantity(Quantity::from(100_000))
         .build();
 
@@ -5630,7 +5640,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
 
     // Fill first order to create a position
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,                            // Let system generate position ID
@@ -5660,6 +5670,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
         .trader_id(trader_id)
         .strategy_id(strategy_id)
         .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-ADD-2"))
         .quantity(Quantity::from(100_000))
         .build();
 
@@ -5680,7 +5691,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(expected_position_id),      // Specify existing position ID
@@ -5827,6 +5838,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
         .trader_id(trader_id)
         .strategy_id(strategy_id)
         .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-CLOSE-1"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
         .trigger_price(Price::from_str("1.00000").unwrap())
@@ -5853,7 +5865,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
 
     // Fill first order to open position
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -5886,6 +5898,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
         .trader_id(trader_id)
         .strategy_id(strategy_id)
         .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-CLOSE-2"))
         .side(OrderSide::Sell)
         .quantity(Quantity::from(100_000))
         .trigger_price(Price::from_str("1.00000").unwrap())
@@ -5908,7 +5921,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         None,
@@ -6062,7 +6075,7 @@ fn test_multiple_strategy_positions_opened(mut execution_engine: ExecutionEngine
     execution_engine.process(&order1_accepted_event);
 
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -6086,7 +6099,7 @@ fn test_multiple_strategy_positions_opened(mut execution_engine: ExecutionEngine
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         None,
@@ -6370,7 +6383,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
     execution_engine.process(&order1_accepted_event);
 
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
@@ -6414,7 +6427,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(position_id), // Fill against the same position
@@ -6624,7 +6637,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
     execution_engine.process(&order1_accepted_event);
 
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
@@ -6672,7 +6685,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(position_id), // Fill against the same position
@@ -6872,7 +6885,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
     execution_engine.process(&order1_accepted_event);
 
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
@@ -6920,7 +6933,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(position_id), // Fill against the same position
@@ -7034,7 +7047,7 @@ fn test_cached_position_id_used_for_netting_fill(mut execution_engine: Execution
 
     // Fill with position_id = None; engine should use cached value
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -7134,7 +7147,7 @@ fn test_cached_position_id_used_for_hedging_fill(mut execution_engine: Execution
 
     // Fill with position_id = None; engine should use cached value
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -7233,7 +7246,7 @@ fn test_cached_position_id_overrides_fill_position_id(mut execution_engine: Exec
     // Fill with a DIFFERENT position_id (venue-supplied); cached should take precedence
     let venue_position_id = PositionId::from("VENUE-POS");
     let order_filled_event = TestOrderEventStubs::filled(
-        &order,
+        &cached_order_or(&execution_engine, &order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(venue_position_id),
@@ -7353,7 +7366,7 @@ fn test_exec_algorithm_position_id_propagates_to_primary_order(
 
     // Fill the child order with no position_id; engine should generate one and propagate
     let child_filled_event = TestOrderEventStubs::filled(
-        &child_order,
+        &cached_order_or(&execution_engine, &child_order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -7493,7 +7506,7 @@ fn test_exec_algorithm_does_not_overwrite_primary_cached_position_id(
     execution_engine.process(&child_accepted_event);
 
     let child_filled_event = TestOrderEventStubs::filled(
-        &child_order,
+        &cached_order_or(&execution_engine, &child_order),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -7592,7 +7605,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
     execution_engine.process(&order1_accepted_event);
 
     let order1_filled_event = TestOrderEventStubs::filled(
-        &order1,
+        &cached_order_or(&execution_engine, &order1),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,
@@ -7640,7 +7653,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
     execution_engine.process(&order2_accepted_event);
 
     let order2_filled_event = TestOrderEventStubs::filled(
-        &order2,
+        &cached_order_or(&execution_engine, &order2),
         &instrument.into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         None,
@@ -7771,7 +7784,7 @@ fn test_reduce_only_netting_fill_does_not_open_opposite_position(
     execution_engine.process(&accepted_event);
 
     let filled_event = TestOrderEventStubs::filled(
-        &reduce_only_order,
+        &cached_order_or(&execution_engine, &reduce_only_order),
         &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-998-1")),
         None,
@@ -8194,7 +8207,8 @@ fn add_order_and_process_fill(
         TestOrderEventStubs::accepted(order, account_id, VenueOrderId::from(venue_order_id));
     execution_engine.process(&accepted_event);
 
-    let filled_event = OrderFilledTestBuilder::new(order, &instrument.clone().into())
+    let cached_order = cached_order_or(execution_engine, order);
+    let filled_event = OrderFilledTestBuilder::new(&cached_order, &instrument.clone().into())
         .trade_id(TradeId::new(trade_id))
         .account_id(account_id)
         .without_position_id()
@@ -11902,8 +11916,9 @@ fn process_filled_order(
     ));
 
     let instrument_any: InstrumentAny = instrument.clone().into();
+    let cached_order = cached_order_or(execution_engine, &order);
     execution_engine.process(&TestOrderEventStubs::filled(
-        &order,
+        &cached_order,
         &instrument_any,
         Some(TradeId::new(trade_id)),
         Some(position_id),

@@ -49,7 +49,7 @@ pub use error::{
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
     ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND, OrderBookLookupError, OrderListLookupError,
     OrderLookupError, OwnOrderBookLookupError, POSITION_NOT_FOUND, PositionLookupError,
-    SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError,
+    SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError, VenueOrderIdOwnershipError,
 };
 use index::CacheIndex;
 use nautilus_core::{
@@ -4313,13 +4313,34 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if the existing venue order ID conflicts and overwrite is false.
+    /// Returns an error if the client already has a different venue order ID and `overwrite` is
+    /// false, or if the venue order ID is owned by a different client order.
     pub fn add_venue_order_id(
         &mut self,
         client_order_id: &ClientOrderId,
         venue_order_id: &VenueOrderId,
         overwrite: bool,
     ) -> anyhow::Result<()> {
+        self.validate_venue_order_id_claim(client_order_id, venue_order_id, overwrite)?;
+
+        self.index
+            .client_order_ids
+            .insert(*client_order_id, *venue_order_id);
+        self.index
+            .venue_order_ids
+            .insert(*venue_order_id, *client_order_id);
+
+        Ok(())
+    }
+
+    fn validate_venue_order_id_claim(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+        overwrite: bool,
+    ) -> anyhow::Result<()> {
+        self.validate_venue_order_id_ownership(client_order_id, venue_order_id)?;
+
         if let Some(existing_venue_order_id) = self.index.client_order_ids.get(client_order_id)
             && !overwrite
             && existing_venue_order_id != venue_order_id
@@ -4332,12 +4353,24 @@ impl Cache {
             );
         }
 
-        self.index
-            .client_order_ids
-            .insert(*client_order_id, *venue_order_id);
-        self.index
-            .venue_order_ids
-            .insert(*venue_order_id, *client_order_id);
+        Ok(())
+    }
+
+    fn validate_venue_order_id_ownership(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+    ) -> anyhow::Result<()> {
+        if let Some(existing_client_order_id) = self.index.venue_order_ids.get(venue_order_id)
+            && existing_client_order_id != client_order_id
+        {
+            return Err(VenueOrderIdOwnershipError {
+                venue_order_id: *venue_order_id,
+                existing_client_order_id: *existing_client_order_id,
+                claimant_client_order_id: *client_order_id,
+            }
+            .into());
+        }
 
         Ok(())
     }
@@ -4825,6 +4858,14 @@ impl Cache {
         // post-event value back into the cell so subsequent reads see the new state.
         let mut snapshot = order_cell.borrow().clone();
         snapshot.apply(event.clone())?;
+
+        // Preflight only reverse ownership. A same-client forward mismatch remains a logged
+        // refresh inconsistency, while other refresh failures, such as a backing database error,
+        // remain logged after the canonical state is committed.
+        if let Some(venue_order_id) = snapshot.venue_order_id() {
+            self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
+        }
+
         *order_cell.borrow_mut() = snapshot.clone();
 
         if let Err(e) = self.refresh_order(&snapshot) {
@@ -4837,24 +4878,22 @@ impl Cache {
     fn refresh_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
 
+        // Claim the venue order ID before mutating any other derived state. An updated event may
+        // change the current ID for the same client order, while historical reverse aliases remain.
+        if let Some(venue_order_id) = order.venue_order_id() {
+            let overwrite = matches!(order.last_event(), OrderEventAny::Updated(_));
+            if let Err(e) = self.add_venue_order_id(&client_order_id, &venue_order_id, overwrite) {
+                if e.is::<VenueOrderIdOwnershipError>() {
+                    return Err(e);
+                }
+                log::error!("Error indexing venue order ID in cache: {e}");
+            }
+        }
+
         if order.is_active_local() {
             self.index.orders_active_local.insert(client_order_id);
         } else {
             self.index.orders_active_local.remove(&client_order_id);
-        }
-
-        // Update venue order ID
-        if let Some(venue_order_id) = order.venue_order_id() {
-            // If the order is being modified then we allow a changing `VenueOrderId` to accommodate
-            // venues which use a cancel+replace update strategy.
-            if !self.index.venue_order_ids.contains_key(&venue_order_id) {
-                let overwrite = matches!(order.last_event(), OrderEventAny::Updated(_));
-                if let Err(e) =
-                    self.add_venue_order_id(&order.client_order_id(), &venue_order_id, overwrite)
-                {
-                    log::error!("Error indexing venue order ID in cache: {e}");
-                }
-            }
         }
 
         // Update in-flight state

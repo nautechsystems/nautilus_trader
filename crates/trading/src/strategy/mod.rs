@@ -2579,7 +2579,9 @@ mod tests {
             .apply(TestOrderEventStubs::accepted(
                 &order,
                 account_id,
-                VenueOrderId::test_default(),
+                // Derived per order: a venue order ID has a single owning client order, so
+                // batch tests holding two accepted orders cannot share the default.
+                VenueOrderId::from(client_order_id),
             ))
             .unwrap();
         order
@@ -2621,7 +2623,8 @@ mod tests {
             .apply(TestOrderEventStubs::accepted(
                 &order,
                 account_id,
-                VenueOrderId::test_default(),
+                // Derived per order, as above.
+                VenueOrderId::from(client_order_id),
             ))
             .unwrap();
         order

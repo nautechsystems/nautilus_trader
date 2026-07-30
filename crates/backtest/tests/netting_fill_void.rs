@@ -237,9 +237,14 @@ fn process_filled_order(
         VenueOrderId::from(fill.venue_order_id),
     ));
 
+    let accepted_order = execution_engine
+        .cache()
+        .borrow()
+        .order_owned(&order.client_order_id())
+        .expect("accepted order");
     let instrument_any: InstrumentAny = instrument.clone().into();
     execution_engine.process(&TestOrderEventStubs::filled(
-        &order,
+        &accepted_order,
         &instrument_any,
         Some(TradeId::new(fill.trade_id)),
         Some(position_id),
