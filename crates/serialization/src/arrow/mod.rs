@@ -599,8 +599,10 @@ pub fn book_depth10_to_arrow_record_batch_bytes(
         .iter()
         .flat_map(|depth| depth.bids.iter().chain(&depth.asks))
         .find(|order| !order.price.is_undefined() && !order.size.is_undefined())
-        .map(|order| (order.price.precision, order.size.precision))
-        .unwrap_or((first.bids[0].price.precision, first.bids[0].size.precision));
+        .map_or(
+            (first.bids[0].price.precision, first.bids[0].size.precision),
+            |order| (order.price.precision, order.size.precision),
+        );
 
     if let Some(index) = data.iter().position(|depth| {
         depth.instrument_id != first.instrument_id || !depth_precision_is_uniform(depth, precision)

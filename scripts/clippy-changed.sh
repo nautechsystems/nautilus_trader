@@ -104,7 +104,13 @@ for p in data['packages']:
         break
 " 2> /dev/null || true)
 
-  for feat in "${DESIRED_FEATURES[@]}"; do
+  desired_features="${DESIRED_FEATURES[*]}"
+  if [ "$pkg" = "nautilus-serialization" ]; then
+    # The crate has no default features, so compile each core format when its source changes
+    desired_features="$desired_features arrow capnp display sbe"
+  fi
+
+  for feat in $desired_features; do
     case " $pkg_features " in
       *" $feat "*)
         case " $feat_seen " in
