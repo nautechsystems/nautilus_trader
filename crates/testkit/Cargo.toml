@@ -22,6 +22,15 @@ crate-type = ["rlib"]
 
 [features]
 default = ["datasets", "testers"]
+cache = [
+  "dep:ahash",
+  "dep:anyhow",
+  "dep:async-trait",
+  "dep:bytes",
+  "dep:indexmap",
+  "dep:nautilus-model",
+  "dep:ustr",
+]
 datasets = [
   "dep:ahash",
   "dep:anyhow",
@@ -36,19 +45,13 @@ datasets = [
   "dep:serde_json",
 ]
 testers = [
-  "dep:ahash",
-  "dep:anyhow",
-  "dep:async-trait",
+  "cache",
   "dep:bon",
-  "dep:bytes",
   "dep:jiff",
-  "dep:indexmap",
   "dep:log",
-  "dep:nautilus-model",
   "dep:nautilus-trading",
   "dep:rust_decimal",
   "dep:serde",
-  "dep:ustr",
 ]
 extension-module = [
   "nautilus-common/extension-module",

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_common::{
@@ -68,6 +68,11 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{Currency, Money, Price, Quantity},
 };
+use nautilus_testkit::cache::TestCacheDatabaseControl;
+use rstest::{fixture, rstest};
+use rust_decimal_macros::dec;
+use ustr::Ustr;
+use uuid::Uuid;
 
 fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
     Offset::UTC
@@ -78,9 +83,6 @@ fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8
         )
         .unwrap()
 }
-use rstest::{fixture, rstest};
-use rust_decimal_macros::dec;
-use ustr::Ustr;
 
 #[fixture]
 pub fn test_clock() -> Rc<RefCell<TestClock>> {
@@ -13016,6 +13018,66 @@ fn open_long_option_position(
     position
 }
 
+fn settlement_client_order_id(cache: &Rc<RefCell<Cache>>, tag: &str) -> ClientOrderId {
+    cache
+        .borrow()
+        .orders(None, None, None, None, None)
+        .into_iter()
+        .find_map(|order| {
+            order
+                .tags()
+                .is_some_and(|tags| tags.iter().any(|value| value.as_str() == tag))
+                .then(|| order.client_order_id())
+        })
+        .unwrap_or_else(|| panic!("Expected settlement order with tag {tag}"))
+}
+
+fn assert_full_width_independent_settlement_ids(
+    events: &[OrderEventAny],
+    client_order_id: ClientOrderId,
+) -> [String; 3] {
+    let accepted = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Accepted(accepted) if accepted.client_order_id == client_order_id => {
+                Some(accepted)
+            }
+            _ => None,
+        })
+        .expect("Expected settlement acceptance");
+    let fill = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(fill),
+            _ => None,
+        })
+        .expect("Expected settlement fill");
+
+    Uuid::parse_str(client_order_id.as_str()).expect("Client order ID must be a full UUID");
+    Uuid::parse_str(accepted.venue_order_id.as_str()).expect("Venue order ID must be a full UUID");
+    Uuid::parse_str(fill.trade_id.as_str()).expect("Trade ID must be a full UUID");
+    assert_ne!(
+        client_order_id.as_str(),
+        accepted.venue_order_id.as_str(),
+        "Client and venue order IDs must be independent",
+    );
+    assert_ne!(
+        client_order_id.as_str(),
+        fill.trade_id.as_str(),
+        "Client order and trade IDs must be independent",
+    );
+    assert_ne!(
+        accepted.venue_order_id.as_str(),
+        fill.trade_id.as_str(),
+        "Venue order and trade IDs must be independent",
+    );
+    [
+        client_order_id.to_string(),
+        accepted.venue_order_id.to_string(),
+        fill.trade_id.to_string(),
+    ]
+}
+
 #[rstest]
 fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
@@ -13068,13 +13130,16 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
-    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
+    assert_full_width_independent_settlement_ids(&events, client_order_id);
+    let fills: Vec<OrderFilled> = events
         .into_iter()
         .filter_map(|e| match e {
             OrderEventAny::Filled(f) => Some(f),
@@ -13084,11 +13149,7 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
 
     let settlement_fill = fills
         .iter()
-        .find(|f| {
-            f.client_order_id
-                .as_str()
-                .starts_with(&format!("{venue}-LEG-CASH-"))
-        })
+        .find(|f| f.client_order_id == client_order_id)
         .expect("Expected cash settlement fill");
 
     assert_eq!(settlement_fill.instrument_id, option.id());
@@ -13153,13 +13214,29 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
-    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let close_client_order_id =
+        settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_PHYSICAL_CLOSE"));
+    let open_client_order_id =
+        settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_PHYSICAL_OPEN"));
+    let close_ids = assert_full_width_independent_settlement_ids(&events, close_client_order_id);
+    let open_ids = assert_full_width_independent_settlement_ids(&events, open_client_order_id);
+    assert_eq!(
+        close_ids
+            .into_iter()
+            .chain(open_ids)
+            .collect::<HashSet<_>>()
+            .len(),
+        6,
+        "Physical settlement leg IDs must all be independent",
+    );
+    let fills: Vec<OrderFilled> = events
         .into_iter()
         .filter_map(|e| match e {
             OrderEventAny::Filled(f) => Some(f),
@@ -13169,21 +13246,11 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
 
     let close_fill = fills
         .iter()
-        .find(|f| {
-            f.client_order_id
-                .as_str()
-                .starts_with(&format!("{venue}-LEG-EX-"))
-                && f.client_order_id.as_str().ends_with("-CLOSE")
-        })
+        .find(|f| f.client_order_id == close_client_order_id)
         .expect("Expected option close fill");
     let underlying_fill = fills
         .iter()
-        .find(|f| {
-            f.client_order_id
-                .as_str()
-                .starts_with(&format!("{venue}-LEG-EX-"))
-                && f.client_order_id.as_str().ends_with("-OPEN")
-        })
+        .find(|f| f.client_order_id == open_client_order_id)
         .expect("Expected underlying open fill");
 
     // Option leg closes worthless on physical settlement (no custom price set).
@@ -13198,6 +13265,122 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
     assert_eq!(underlying_fill.order_side, OrderSide::Buy);
     assert_eq!(underlying_fill.last_px, Price::from("149.00"));
     assert_eq!(underlying_fill.position_id, None);
+}
+
+#[rstest]
+fn test_option_physical_settlement_second_registration_failure_dispatches_nothing(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let venue = "OPRA";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "AAPL",
+        venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let underlying = InstrumentAny::Equity(underlying_equity(venue));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_trade(TradeTick::new(
+            underlying.id(),
+            Price::from("160.00"),
+            Quantity::from(1),
+            AggressorSide::NoAggressor,
+            TradeId::from("U-FAIL"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let option_id = option.id();
+    let (database, database_control) = TestCacheDatabaseControl::create();
+    cache.borrow_mut().set_database(Box::new(database));
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    // Start one tick before expiry: `process_order` rejects orders on an
+    // already-expired instrument, so the resting order must be accepted first.
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(expiration_ns.as_u64() - 1));
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock.clone(),
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let event_handler = Rc::clone(&events);
+    engine.set_event_handler(Rc::new(move |event| {
+        event_handler.borrow_mut().push(event);
+    }));
+
+    let resting_client_order_id = ClientOrderId::from("O-RESTING-OPTION-1");
+    let mut resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(option_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from(1))
+        .client_order_id(resting_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut resting_order, account_id);
+    // Arm the fault only now: the resting order's own DB write must not
+    // consume the counter (it resets on set), so call 2 is the second
+    // settlement leg.
+    database_control.set_fail_add_order_on(Some(2));
+    events.borrow_mut().clear();
+
+    clock.borrow_mut().set_time(expiration_ns);
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    assert!(
+        events
+            .borrow()
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Accepted(_) | OrderEventAny::Filled(_))),
+        "Registration failure must dispatch no acceptance or fill for either leg",
+    );
+    assert!(
+        events.borrow().iter().any(|event| matches!(
+            event,
+            OrderEventAny::Canceled(canceled) if canceled.client_order_id == resting_client_order_id
+        )),
+        "Open orders must be canceled at the first expiration trigger even when settlement fails",
+    );
+    assert!(
+        !engine.is_expiration_processed(),
+        "Registration failure must not commit option expiration",
+    );
+
+    events.borrow_mut().clear();
+    database_control.set_fail_add_order_on(None);
+    engine.process_instrument_expiration(UnixNanos::from(expiration_ns.as_u64() + 1));
+    assert!(
+        events.borrow().is_empty(),
+        "Terminal settlement failure must block re-entry",
+    );
 }
 
 #[rstest]
@@ -13385,13 +13568,16 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
-    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_OTM"));
+    assert_full_width_independent_settlement_ids(&events, client_order_id);
+    let fills: Vec<OrderFilled> = events
         .into_iter()
         .filter_map(|e| match e {
             OrderEventAny::Filled(f) => Some(f),
@@ -13401,11 +13587,7 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
 
     let otm_fill = fills
         .iter()
-        .find(|f| {
-            f.client_order_id
-                .as_str()
-                .starts_with(&format!("{venue}-LEG-OTM-"))
-        })
+        .find(|f| f.client_order_id == client_order_id)
         .expect("Expected OTM expiry fill");
 
     assert_eq!(otm_fill.instrument_id, option.id());
@@ -13414,12 +13596,10 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
     assert_eq!(otm_fill.last_px, Price::from("0.00"));
     assert_eq!(otm_fill.position_id, Some(position.id));
 
-    assert!(
-        !fills
-            .iter()
-            .any(|f| f.client_order_id.as_str().contains("-LEG-CASH-")
-                || f.client_order_id.as_str().contains("-LEG-EX-")),
-        "OTM path must not emit cash or physical settlement fills"
+    assert_eq!(
+        fills.len(),
+        1,
+        "OTM path must emit exactly one settlement fill"
     );
 }
 
@@ -13486,22 +13666,17 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
     let settlement_fill = get_order_event_handler_messages(&order_event_handler)
         .into_iter()
         .find_map(|e| match e {
-            OrderEventAny::Filled(f)
-                if f.client_order_id
-                    .as_str()
-                    .starts_with(&format!("{venue}-LEG-CASH-")) =>
-            {
-                Some(f)
-            }
+            OrderEventAny::Filled(f) if f.client_order_id == client_order_id => Some(f),
             _ => None,
         })
         .expect("Expected cash settlement fill");
@@ -13568,12 +13743,14 @@ fn test_option_physical_settlement_put_flips_underlying_side(account_id: Account
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
+    let open_client_order_id =
+        settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_PHYSICAL_OPEN"));
     let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
         .into_iter()
         .filter_map(|e| match e {
@@ -13584,12 +13761,7 @@ fn test_option_physical_settlement_put_flips_underlying_side(account_id: Account
 
     let underlying_fill = fills
         .iter()
-        .find(|f| {
-            f.client_order_id
-                .as_str()
-                .starts_with(&format!("{venue}-LEG-EX-"))
-                && f.client_order_id.as_str().ends_with("-OPEN")
-        })
+        .find(|f| f.client_order_id == open_client_order_id)
         .expect("Expected underlying open fill");
 
     // Long Put exercise -> sell underlying at strike (flipped from Long position side).
@@ -13783,7 +13955,7 @@ fn test_process_option_expiry_no_positions_is_noop(account_id: AccountId) {
 }
 
 #[rstest]
-fn test_process_option_expiry_missing_underlying_instrument_is_noop(account_id: AccountId) {
+fn test_process_option_expiry_missing_underlying_instrument_defers(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -13825,24 +13997,22 @@ fn test_process_option_expiry_missing_underlying_instrument_is_noop(account_id: 
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
-    let settlement_fills = get_order_event_handler_messages(&order_event_handler)
-        .into_iter()
-        .filter(|e| {
-            matches!(
-                e,
-                OrderEventAny::Filled(f)
-                    if f.client_order_id.as_str().contains("-LEG-")
-            )
-        })
-        .count();
-    assert_eq!(
-        settlement_fills, 0,
-        "No settlement fills should be emitted when underlying instrument is absent"
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Accepted(_) | OrderEventAny::Filled(_))),
+        "No acceptance or settlement fill should be emitted when underlying instrument is absent"
+    );
+    assert!(
+        !engine.is_expiration_processed(),
+        "Missing underlying instrument must not commit option expiration"
     );
 }
 
 #[rstest]
-fn test_process_option_expiry_missing_underlying_price_is_noop(account_id: AccountId) {
+fn test_process_option_expiry_missing_underlying_price_retries_with_close_preserved(
+    account_id: AccountId,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -13854,10 +14024,14 @@ fn test_process_option_expiry_missing_underlying_price_is_noop(account_id: Accou
         expiration_ns,
         OptionKind::Call,
     ));
+    let option_id = option.id();
     let underlying = InstrumentAny::Equity(underlying_equity(venue));
 
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
-    cache.borrow_mut().add_instrument(underlying).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.clone())
+        .unwrap();
     // NB: no TradeTick added, so cache.price(LAST) is None.
 
     let _position = open_long_option_position(
@@ -13869,8 +14043,150 @@ fn test_process_option_expiry_missing_underlying_price_is_noop(account_id: Accou
     );
 
     let clock = Rc::new(RefCell::new(TestClock::new()));
-    clock.borrow_mut().set_time(expiration_ns);
+    // Start one tick before expiry: `process_order` rejects orders on an
+    // already-expired instrument, so the resting order must be accepted first.
+    // The instrument close below triggers expiration regardless of clock time.
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(expiration_ns.as_u64() - 1));
 
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig::default(),
+    );
+
+    let resting_client_order_id = ClientOrderId::from("O-RESTING-OPTION-2");
+    let mut resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(option_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from(1))
+        .client_order_id(resting_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut resting_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let close = InstrumentClose::new(
+        option_id,
+        Price::from("7.50"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_instrument_close(close);
+
+    assert!(
+        !engine.is_expiration_processed(),
+        "Missing price must not commit option expiration",
+    );
+    assert!(
+        get_order_event_handler_messages(&order_event_handler).iter().any(|event| matches!(
+            event,
+            OrderEventAny::Canceled(canceled) if canceled.client_order_id == resting_client_order_id
+        )),
+        "Open orders must be canceled at the first trigger even while settlement defers",
+    );
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "Missing price must not dispatch a settlement fill",
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+    cache
+        .borrow_mut()
+        .add_trade(TradeTick::new(
+            underlying.id(),
+            Price::from("160.00"),
+            Quantity::from(1),
+            AggressorSide::NoAggressor,
+            TradeId::from("U-LATE"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    engine.process_instrument_expiration(UnixNanos::from(2));
+
+    assert!(
+        engine.is_expiration_processed(),
+        "Option expiration must commit after the retry succeeds",
+    );
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let client_order_id =
+        settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_PHYSICAL_CLOSE"));
+    assert!(
+        events.iter().any(
+            |event| matches!(event, OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id)
+        ),
+        "Preserved instrument close must trigger settlement before timestamp expiration",
+    );
+}
+
+#[rstest]
+fn test_option_expiration_cancellation_latched_across_deferred_retries(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let venue = "OPRA";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "AAPL",
+        venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let option_id = option.id();
+    let underlying = InstrumentAny::Equity(underlying_equity(venue));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache.borrow_mut().add_instrument(underlying).unwrap();
+    // NB: no TradeTick added, so settlement defers on the missing price.
+
+    let _position = open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    // An Accepted (open) order in the cache whose status never advances: the
+    // collection-only handler below does not apply events back to the cache,
+    // modeling a queueing consumer that has not yet processed the
+    // cancellation when the next expiration retry scans the cache.
+    let resting_client_order_id = ClientOrderId::from("O-RESTING-OPTION-3");
+    let mut resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(option_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from(1))
+        .client_order_id(resting_client_order_id)
+        .submit(true)
+        .build();
+    resting_order
+        .apply(TestOrderEventStubs::accepted(
+            &resting_order,
+            account_id,
+            VenueOrderId::from("V-RESTING-3"),
+        ))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(resting_order, None, None, false)
+        .unwrap();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
     let mut engine = OrderMatchingEngine::new(
         option,
         1,
@@ -13883,22 +14199,30 @@ fn test_process_option_expiry_missing_underlying_price_is_noop(account_id: Accou
         cache,
         OrderMatchingEngineConfig::default(),
     );
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let event_handler = Rc::clone(&events);
+    engine.set_event_handler(Rc::new(move |event| {
+        event_handler.borrow_mut().push(event);
+    }));
 
-    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    engine.process_instrument_expiration(expiration_ns);
+    engine.process_instrument_expiration(UnixNanos::from(expiration_ns.as_u64() + 1));
 
-    let settlement_fills = get_order_event_handler_messages(&order_event_handler)
-        .into_iter()
-        .filter(|e| {
-            matches!(
-                e,
-                OrderEventAny::Filled(f)
-                    if f.client_order_id.as_str().contains("-LEG-")
-            )
-        })
+    assert!(
+        !engine.is_expiration_processed(),
+        "Missing price must keep deferring across both checks",
+    );
+    let canceled_count = events
+        .borrow()
+        .iter()
+        .filter(|event| matches!(
+            event,
+            OrderEventAny::Canceled(canceled) if canceled.client_order_id == resting_client_order_id
+        ))
         .count();
     assert_eq!(
-        settlement_fills, 0,
-        "No settlement fills should be emitted without an underlying last price"
+        canceled_count, 1,
+        "Expiration cancellation must dispatch exactly once across deferred retries",
     );
 }
 
@@ -14381,22 +14705,17 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
     let settlement_fill = get_order_event_handler_messages(&order_event_handler)
         .into_iter()
         .find_map(|e| match e {
-            OrderEventAny::Filled(f)
-                if f.client_order_id
-                    .as_str()
-                    .starts_with(&format!("{venue}-LEG-CASH-")) =>
-            {
-                Some(f)
-            }
+            OrderEventAny::Filled(f) if f.client_order_id == client_order_id => Some(f),
             _ => None,
         })
         .expect("Expected CryptoOption cash settlement fill");
@@ -14622,7 +14941,7 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
 
@@ -14632,16 +14951,11 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
 
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
 
+    let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
     let settlement_fill = get_order_event_handler_messages(&order_event_handler)
         .into_iter()
         .find_map(|e| match e {
-            OrderEventAny::Filled(f)
-                if f.client_order_id
-                    .as_str()
-                    .starts_with(&format!("{venue}-LEG-CASH-")) =>
-            {
-                Some(f)
-            }
+            OrderEventAny::Filled(f) if f.client_order_id == client_order_id => Some(f),
             _ => None,
         })
         .expect("Expected cash settlement fill");

@@ -57,6 +57,8 @@ struct TestCacheDatabaseState {
     fail_load_strategy: bool,
     fail_update_actor: bool,
     fail_update_strategy: bool,
+    fail_add_order_on: Option<usize>,
+    add_order_calls: usize,
 }
 
 /// Shared control and observation handle for [`TestCacheDatabase`].
@@ -153,6 +155,13 @@ impl TestCacheDatabaseControl {
     /// Configures strategy updates to fail.
     pub fn set_fail_update_strategy(&self, fail: bool) {
         self.state.lock().unwrap().fail_update_strategy = fail;
+    }
+
+    /// Configures the one-based `add_order` call which should fail.
+    pub fn set_fail_add_order_on(&self, call: Option<usize>) {
+        let mut state = self.state.lock().unwrap();
+        state.fail_add_order_on = call;
+        state.add_order_calls = 0;
     }
 }
 
@@ -330,6 +339,11 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     fn add_order(&self, _order: &OrderAny, _client_id: Option<ClientId>) -> anyhow::Result<()> {
+        let mut state = self.control.state.lock().unwrap();
+        state.add_order_calls += 1;
+        if state.fail_add_order_on == Some(state.add_order_calls) {
+            anyhow::bail!("test add order failure");
+        }
         Ok(())
     }
 
