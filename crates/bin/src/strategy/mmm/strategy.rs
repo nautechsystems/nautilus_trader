@@ -1,11 +1,18 @@
 use anyhow::Ok;
 use nautilus_common::actor::DataActor;
 use nautilus_model::{
-    enums::BookType::L2_MBP, identifiers::InstrumentId, instruments::InstrumentAny,
+    enums::{
+        BookType::L2_MBP,
+        OrderSide::{Buy, NoOrderSide, Sell},
+    },
+    identifiers::InstrumentId,
+    instruments::InstrumentAny,
+    types::Quantity,
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-use nautilus_trading::{StrategyCore, nautilus_strategy};
-use std::{fmt::Debug, num::NonZeroUsize, path::Path, time::Duration};
+use nautilus_trading::{Strategy, StrategyCore, nautilus_strategy};
+use rand::RngExt;
+use std::{fmt::Debug, num::NonZeroUsize, path::Path, str::FromStr, time::Duration};
 
 use crate::{strategy::mmm::config::MattiasMarketMakerConfig, utils::micro_price};
 
@@ -20,7 +27,13 @@ impl MattiasMarketMaker {
     pub fn new(config: &MattiasMarketMakerConfig) -> Self {
         Self {
             core: StrategyCore::new(config.base.clone()),
-            data_catalog: ParquetDataCatalog::new(Path::new(&config.path), None, None, None, None),
+            data_catalog: ParquetDataCatalog::new(
+                Path::new(&config.catalog_path),
+                None,
+                None,
+                None,
+                None,
+            ),
             instrument_id: config.instrument_id,
             instrument_precision: 0,
         }
@@ -50,7 +63,7 @@ impl DataActor for MattiasMarketMaker {
 
         self.clock().set_timer(
             "MMM_TIMER",
-            Duration::from_millis(100),
+            Duration::from_mins(10),
             None,
             None,
             None,
@@ -86,8 +99,54 @@ impl DataActor for MattiasMarketMaker {
         Ok(())
     }
 
-    fn on_time_event(&mut self, event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
-        log::info!("hello from mmm {event:#?}");
+    // fn on_stop(&mut self) -> anyhow::Result<()> {
+    //     let order = self.order().market(
+    //         self.instrument_id,
+    //         Sell,
+    //         Quantity::from_str("100.0").unwrap(),
+    //         None,
+    //         None,
+    //         None,
+    //         None,
+    //         None,
+    //         None,
+    //         None,
+    //     );
+    //     self.submit_order(order, None, None, None).unwrap();
+    //     Ok(())
+    // }
+
+    fn on_time_event(&mut self, _event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
+        // log::info!("hello from mmm {event:#?}");
+        let mut rng = rand::rng();
+
+        let start = 0;
+        let end = 10;
+        let oracle = rng.random_range(start..end);
+        let side = match oracle {
+            result if result == start => Buy,
+            result if result == end - 1 => Sell,
+            _ => NoOrderSide,
+        };
+
+        if side == NoOrderSide {
+            return Ok(());
+        }
+
+        let order = self.order().market(
+            self.instrument_id,
+            side,
+            Quantity::from_str("100.0").unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        self.submit_order(order, None, None, None).unwrap();
 
         if let Some(order_book) = self.cache().order_book(&self.instrument_id) {
             if let (Some(best_bid_price), Some(best_ask_price)) =
@@ -96,14 +155,14 @@ impl DataActor for MattiasMarketMaker {
                 let best_bid_size = order_book.best_bid_size().unwrap_or_default();
                 let best_ask_size = order_book.best_ask_size().unwrap_or_default();
 
-                let micro_price = micro_price(
+                let _micro_price = micro_price(
                     best_ask_price,
                     best_bid_price,
                     best_ask_size,
                     best_bid_size,
                     self.instrument_precision,
                 );
-                log::info!("μprice {micro_price}");
+                // log::info!("μprice {micro_price}");
             } else {
                 log::warn!(
                     "OrderBook trovato nella cache, ma è vuoto (nessun livello Bid/Ask popolare ancora)."

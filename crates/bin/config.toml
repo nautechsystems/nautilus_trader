@@ -24,4 +24,4 @@ execution_environment = "backtest" # backtest, live, sandbox
 exchange = "bybit"
 trader_id = "TESTER-001"
 instrument_id = "OPUSDT-LINEAR.BYBIT"
-path = "/home/mattia/dev/nautilus_trader/data/"
+path = "/var/lib/nautilus-trader/"

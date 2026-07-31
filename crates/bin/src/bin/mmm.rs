@@ -7,7 +7,8 @@ use nautilus_bin::strategy::mmm::config::MattiasMarketMakerConfig;
 use nautilus_bin::strategy::mmm::strategy::MattiasMarketMaker;
 use nautilus_common::enums::Environment;
 use nautilus_model::{
-    enums::{AccountType, OmsType}, identifiers::{InstrumentId, TraderId},
+    enums::{AccountType, OmsType},
+    identifiers::{AccountId, InstrumentId, TraderId},
 };
 
 use nautilus_backtest::config::{
@@ -15,12 +16,16 @@ use nautilus_backtest::config::{
 };
 use nautilus_model::enums::BookType;
 
+use chrono::{TimeZone, Utc};
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     nautilus_common::logging::ensure_logging_initialized();
 
-    let config = Config::load("config.toml".to_string())?.mmm.unwrap();
+    let config = Config::load("/etc/nautilus-trader/config.toml".to_string())?
+        .mmm
+        .unwrap();
     let parquet_path = config.path.clone();
 
     let exchange: Exchange = config.exchange.parse()?;
@@ -31,12 +36,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mmm_config = MattiasMarketMakerConfig::builder()
         .instrument_id(instrument_id)
-        .path(parquet_path.clone())
+        .catalog_path(parquet_path.clone())
         .build();
 
     let strategy = MattiasMarketMaker::new(&mmm_config);
 
-
+    let start_date = Utc.with_ymd_and_hms(2026, 7, 27, 0, 0, 0).single().unwrap();
+    let end_date = Utc
+        .with_ymd_and_hms(2026, 7, 31, 12, 0, 0)
+        .single()
+        .unwrap();
 
     match &config.execution_environment {
         Environment::Backtest => {
@@ -51,12 +60,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let order_book = BacktestDataConfig::builder()
                 .catalog_path(parquet_path.clone())
                 .instrument_id(instrument_id)
+                .start_time(start_date.into())
+                .end_time(end_date.into())
                 .data_type(NautilusDataType::OrderBookDelta)
                 .build()?;
 
             let trades = BacktestDataConfig::builder()
                 .catalog_path(parquet_path.clone())
                 .instrument_id(instrument_id)
+                .start_time(start_date.into())
+                .end_time(end_date.into())
                 .data_type(NautilusDataType::TradeTick)
                 .build()?;
 
@@ -64,27 +77,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .id("mmm-backtest".to_string())
                 .venues(vec![venue])
                 .data(vec![order_book, trades])
-                .chunk_size(100_000)
+                .chunk_size(100_000_000)
                 .build()?;
 
             let mut node = BacktestNode::new(vec![run])?;
 
             node.build()?;
+            {
+                let engine = node.get_engine_mut("mmm-backtest").unwrap();
+
+                let strategy = MattiasMarketMaker::new(&mmm_config);
+
+                engine.add_strategy(strategy)?;
+            }
+            node.run()?;
 
             let engine = node.get_engine_mut("mmm-backtest").unwrap();
 
-            let strategy = MattiasMarketMaker::new(&mmm_config);
+            let snapshots = engine
+                .kernel()
+                .portfolio
+                .borrow()
+                .snapshots(&AccountId::from("BYBIT-001"));
 
-            engine.add_strategy(strategy)?;
-
-            node.run()?;
+            log::info!("{snapshots:#?}");
         }
         Environment::Sandbox => todo!(),
-        Environment::Live => todo!(),
+        Environment::Live => {
+            node.add_strategy(strategy)?;
+            node.run().await?;
+        }
     }
-
-    node.add_strategy(strategy)?;
-    node.run().await?;
 
     Ok(())
 }

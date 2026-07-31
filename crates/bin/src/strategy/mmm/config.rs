@@ -11,5 +11,5 @@ pub struct MattiasMarketMakerConfig {
     })]
     pub base: StrategyConfig,
     pub instrument_id: InstrumentId,
-    pub path: String
+    pub catalog_path: String
 }
