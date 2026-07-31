@@ -490,6 +490,8 @@ deferrals.
 - Fixed v2 sandbox execution retaining matching engines and cache state for expired quote-only instruments
 - Fixed v2 quadratic NETTING backtest CPU and memory growth from position replay logs retained in snapshot blobs and per-fill account event-log clones (#4546), thanks @HungNgo4444
 - Fixed Rust `Throttler` stranding buffered messages after a rejected `try_reserve`, breaking drain order
+- Fixed v2 reconciliation booking negative back-solved inferred fill prices on instruments that disallow them
+- Fixed v2 reconciliation dropping inferred fills and voids when the venue average was unusable
 
 ### Internal Improvements
 - Standardized Rust adapter task‑handle storage with `TaskHandles` while retaining client‑local spawn and shutdown policies

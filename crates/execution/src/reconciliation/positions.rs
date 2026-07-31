@@ -476,7 +476,7 @@ pub(super) fn cap_price_at_instrument_max(px: Decimal, instrument: &InstrumentAn
 ///
 /// Populates `avg_px` from the fill's price so downstream reconciliation paths
 /// (e.g. [`crate::reconciliation::orders::create_inferred_fill`]) can resolve a
-/// fill price without falling back to the "no `avg_px` or price available" warning.
+/// fill price without falling back to the "no `avg_px`, report price, or order price" warning.
 ///
 /// # Errors
 ///

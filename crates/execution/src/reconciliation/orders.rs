@@ -602,6 +602,11 @@ fn create_reconciliation_fill_voids(
     corrections
 }
 
+/// Creates a fill void reversing the remaining leaves of a terminally voided order.
+///
+/// An unresolved price falls back to zero rather than `None`: the price is a placeholder that
+/// never reaches `Position::avg_px_open`, whereas suppressing the void would leave the order
+/// open locally against a venue that considers it gone.
 fn create_reconciliation_terminal_fill_void(
     order: &OrderAny,
     report: &OrderStatusReport,
@@ -613,14 +618,10 @@ fn create_reconciliation_terminal_fill_void(
         return None;
     }
     let instrument = instrument?;
-    let last_px = if let Some(avg_px) = report.avg_px {
-        Price::from_decimal_dp(avg_px, instrument.price_precision()).ok()?
-    } else {
-        report
-            .price
-            .or_else(|| order.price())
-            .unwrap_or_else(|| Price::zero(instrument.price_precision()))
-    };
+
+    let last_px = resolve_fill_price(order, report, instrument)
+        .unwrap_or_else(|| Price::zero(instrument.price_precision()));
+
     let mut event = OrderFillVoided::new(
         order.trader_id(),
         order.strategy_id(),
@@ -983,21 +984,12 @@ pub(super) fn create_inferred_fill(
         _ => LiquiditySide::NoLiquiditySide,
     };
 
-    let last_px = if let Some(avg_px) = report.avg_px {
-        match Price::from_decimal_dp(avg_px, instrument.price_precision()) {
-            Ok(px) => px,
-            Err(e) => {
-                log::warn!("Failed to create price from avg_px for inferred fill: {e}");
-                return None;
-            }
-        }
-    } else if let Some(price) = report.price {
-        price
-    } else {
+    let Some(last_px) = resolve_fill_price(order, report, instrument) else {
         log::warn!(
-            "Cannot create inferred fill for {}: no avg_px or price available",
+            "Cannot create inferred fill for {}: no avg_px, report price, or order price",
             order.client_order_id()
         );
+
         return None;
     };
     let last_px = clamp_inferred_fill_price(last_px, instrument);
@@ -1159,17 +1151,12 @@ pub fn create_inferred_fill_for_qty(
         _ => LiquiditySide::NoLiquiditySide,
     };
 
-    let last_px = if let Some(avg_px) = report.avg_px {
-        Price::from_decimal_dp(avg_px, instrument.price_precision()).ok()?
-    } else if let Some(price) = report.price {
-        price
-    } else if let Some(price) = order.price() {
-        price
-    } else {
+    let Some(last_px) = resolve_fill_price(order, report, instrument) else {
         log::warn!(
-            "Cannot determine fill price for {}: no avg_px or price available",
+            "Cannot determine fill price for {}: no avg_px, report price, or order price",
             order.client_order_id()
         );
+
         return None;
     };
     let last_px = clamp_inferred_fill_price(last_px, instrument);
@@ -1398,67 +1385,93 @@ fn calculate_incremental_fill_price(
         order.client_order_id(),
     );
 
-    // First fill - use avg_px from report or order price
+    // First fill - nothing booked locally to difference against
     if order_filled_qty.is_zero() {
-        if let Some(avg_px) = report.avg_px {
-            return Price::from_decimal_dp(avg_px, instrument.price_precision()).ok();
+        let last_px = resolve_fill_price(order, report, instrument);
+        if last_px.is_none() {
+            log::warn!(
+                "Cannot determine fill price for {}: no avg_px, report price, or order price",
+                order.client_order_id()
+            );
         }
 
-        if let Some(price) = report.price {
-            return Some(price);
-        }
-
-        if let Some(price) = order.price() {
-            return Some(price);
-        }
-        log::warn!(
-            "Cannot determine fill price for {}: no avg_px, report price, or order price",
-            order.client_order_id()
-        );
-        return None;
+        return last_px;
     }
 
     // Incremental fill - calculate price using weighted average
     if let Some(report_avg_px) = report.avg_px {
-        let Some(order_avg_px) = order.avg_px() else {
-            // No previous avg_px, use report avg_px
-            return Price::from_decimal_dp(report_avg_px, instrument.price_precision()).ok();
+        let last_px_decimal = match order.avg_px() {
+            // No previous average to difference against
+            None => report_avg_px,
+            Some(order_avg_px) => {
+                let report_filled_qty = report.filled_qty;
+                let last_qty = report_filled_qty - order_filled_qty;
+
+                let report_notional = report_avg_px * report_filled_qty.as_decimal();
+                let order_notional = order_avg_px * order_filled_qty.as_decimal();
+                let last_notional = report_notional - order_notional;
+                let back_solved = last_notional / last_qty.as_decimal();
+
+                if back_solved < Decimal::ZERO && !instrument.allows_negative_price() {
+                    if report_avg_px < Decimal::ZERO {
+                        log::warn!(
+                            "Cannot price inferred fill for {}: back-solved {back_solved} and venue average {report_avg_px} are both negative on an instrument that disallows negative prices",
+                            order.client_order_id(),
+                        );
+
+                        return None;
+                    }
+
+                    log::warn!(
+                        "Negative back-solved fill price {back_solved} for {}, using venue average {report_avg_px}",
+                        order.client_order_id(),
+                    );
+
+                    report_avg_px
+                } else {
+                    back_solved
+                }
+            }
         };
-        let report_filled_qty = report.filled_qty;
-        let last_qty = report_filled_qty - order_filled_qty;
 
-        let report_notional = report_avg_px * report_filled_qty.as_decimal();
-        let order_notional = order_avg_px * order_filled_qty.as_decimal();
-        let last_notional = report_notional - order_notional;
-        let last_px_decimal = last_notional / last_qty.as_decimal();
-
-        if last_px_decimal < Decimal::ZERO && !instrument.allows_negative_price() {
-            if report_avg_px < Decimal::ZERO {
+        return Price::from_decimal_dp(last_px_decimal, instrument.price_precision())
+            .inspect_err(|e| {
                 log::warn!(
-                    "Cannot price inferred fill for {}: back-solved {last_px_decimal} and venue average {report_avg_px} are both negative on an instrument that disallows negative prices",
+                    "Cannot price {} from incremental {last_px_decimal}, falling back: {e}",
                     order.client_order_id(),
                 );
-
-                return None;
-            }
-
-            log::warn!(
-                "Negative back-solved fill price {last_px_decimal} for {}, using venue average {report_avg_px}",
-                order.client_order_id(),
-            );
-
-            return Price::from_decimal_dp(report_avg_px, instrument.price_precision()).ok();
-        }
-
-        return Price::from_decimal_dp(last_px_decimal, instrument.price_precision()).ok();
+            })
+            .ok()
+            .or_else(|| resolve_fill_price(order, report, instrument));
     }
 
-    // Fallback to report price or order price
-    if let Some(price) = report.price {
-        return Some(price);
-    }
+    resolve_fill_price(order, report, instrument)
+}
 
-    order.price()
+/// Resolves a fill price from the venue report, falling back to the order.
+///
+/// Rungs run from most to least direct evidence of what executed. Callers decide what an
+/// unresolved price means: booking a fill at an invented price corrupts position averages,
+/// whereas a void event only needs a placeholder.
+fn resolve_fill_price(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: &InstrumentAny,
+) -> Option<Price> {
+    report
+        .avg_px
+        .and_then(|avg_px| {
+            Price::from_decimal_dp(avg_px, instrument.price_precision())
+                .inspect_err(|e| {
+                    log::warn!(
+                        "Cannot price {} from venue average {avg_px}, trying next source: {e}",
+                        order.client_order_id(),
+                    );
+                })
+                .ok()
+        })
+        .or(report.price)
+        .or_else(|| order.price())
 }
 
 /// Caps an inferred fill price at the instrument's maximum price.
