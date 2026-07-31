@@ -433,7 +433,7 @@ adapter set. The following limits remain deferred:
 - Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
 - Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
 - Fixed Lighter modify validation, conditional acks, nonce recovery, auth refresh, and WS timeouts
-- Fixed Lighter ambiguous sends, response attribution, order identity collisions, and GTD expiry
+- Fixed Lighter ambiguous sends, response attribution, live order identity binding, index collisions, and GTD expiry
 - Fixed Lighter zero‑quantity rows in `account_all_positions` snapshots remaining in cached position reports
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed OKX v2 yearly candle bar validation and round trips

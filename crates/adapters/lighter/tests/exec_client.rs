@@ -107,6 +107,7 @@ const ETH_PERP_SYMBOL: &str = "ETH-PERP";
 const ETH_SPOT_SYMBOL: &str = "ETH/USDC-SPOT";
 const TEST_MARKET_INDEX: i16 = 0;
 const TEST_NEXT_NONCE: i64 = 9_999;
+const TEST_ORDER_NONCE: i64 = 281_474_720_725_346;
 const INTEGRATOR_APPROVAL_MAX_TTL_MS: i64 = 5 * 365 * 24 * 60 * 60 * 1_000;
 
 fn data_path() -> PathBuf {
@@ -2525,7 +2526,8 @@ async fn seed_open_order(
     let client_order_index = info["ClientOrderIndex"]
         .as_i64()
         .expect("ClientOrderIndex in tx_info");
-    let nonce = info["Nonce"].as_i64().expect("Nonce in tx_info");
+    let submission_nonce = info["Nonce"].as_i64().expect("Nonce in tx_info");
+    assert_ne!(submission_nonce, TEST_ORDER_NONCE);
 
     // The optimistic OrderSubmitted is emitted synchronously by submit_order
     // and applied to the cache so the state matches what the engine would
@@ -2556,7 +2558,7 @@ async fn seed_open_order(
                 client_order_index,
                 voi.as_str(),
                 &client_order_index.to_string(),
-                nonce,
+                TEST_ORDER_NONCE,
             )]
         }
     }));

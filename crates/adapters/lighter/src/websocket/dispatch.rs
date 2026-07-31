@@ -144,31 +144,14 @@ impl OrderIdentity {
         self.binding.lock().expect(MUTEX_POISONED).submission_nonce = Some(nonce);
     }
 
-    fn bind_order_venue_id(&self, venue_order_id: VenueOrderId, nonce: i64) -> bool {
+    fn bind_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
         let mut binding = self.binding.lock().expect(MUTEX_POISONED);
         match binding.venue_order_id {
             Some(existing) => existing == venue_order_id,
             None => {
                 if binding.external_venue_ids.contains(&venue_order_id)
-                    || binding.submission_nonce != Some(nonce)
+                    || binding.submission_nonce.is_none()
                 {
-                    binding.external_venue_ids.insert(venue_order_id);
-                    return false;
-                }
-                binding.venue_order_id = Some(venue_order_id);
-                true
-            }
-        }
-    }
-
-    fn bind_trade_venue_id(&self, venue_order_id: VenueOrderId) -> bool {
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
-        match binding.venue_order_id {
-            Some(existing) => existing == venue_order_id,
-            None => {
-                let owned = !binding.external_venue_ids.contains(&venue_order_id)
-                    && binding.submission_nonce.is_some();
-                if !owned {
                     binding.external_venue_ids.insert(venue_order_id);
                     return false;
                 }
@@ -1223,7 +1206,6 @@ impl WsDispatchState {
         &self,
         raw_client_id: &str,
         venue_order_id: VenueOrderId,
-        nonce: i64,
     ) -> Option<ClientOrderId> {
         if raw_client_id.is_empty() || raw_client_id == "0" {
             return None;
@@ -1243,7 +1225,7 @@ impl WsDispatchState {
             }
 
             return identity
-                .bind_order_venue_id(venue_order_id, nonce)
+                .bind_venue_order_id(venue_order_id)
                 .then_some(cloid);
         }
 
@@ -1255,28 +1237,7 @@ impl WsDispatchState {
         raw_client_id: &str,
         venue_order_id: VenueOrderId,
     ) -> Option<ClientOrderId> {
-        if raw_client_id.is_empty() || raw_client_id == "0" {
-            return None;
-        }
-        let index = raw_client_id.parse::<i64>().ok()?;
-
-        if let Some(cloid) = self.cloid_map.get(&index).map(|entry| *entry.value())
-            && let Some(identity) = self.order_identity(&cloid)
-        {
-            if identity.matches_venue_order_id(venue_order_id) {
-                return Some(cloid);
-            }
-
-            if let Some(retired) = self.retired_orders.cloid_for_venue(index, venue_order_id) {
-                return Some(retired);
-            }
-
-            return identity
-                .bind_trade_venue_id(venue_order_id)
-                .then_some(cloid);
-        }
-
-        self.retired_orders.cloid_for_venue(index, venue_order_id)
+        self.resolve_live_order_cloid(raw_client_id, venue_order_id)
     }
 
     fn resolve_client_order_index_for_venue(
@@ -2599,7 +2560,7 @@ mod tests {
 
         let report = stub_open_order_status_report("42");
         assert_eq!(
-            state.resolve_live_order_cloid("42", report.venue_order_id, 9),
+            state.resolve_live_order_cloid("42", report.venue_order_id),
             Some(original),
         );
         let translated = state.translate_order_cloid(report);
@@ -2828,7 +2789,7 @@ mod tests {
         );
         state.mark_order_submission(&original, 9);
         assert_eq!(
-            state.resolve_live_order_cloid("42", VenueOrderId::new("281476929510109"), 9,),
+            state.resolve_live_order_cloid("42", VenueOrderId::new("281476929510109")),
             Some(original),
         );
 

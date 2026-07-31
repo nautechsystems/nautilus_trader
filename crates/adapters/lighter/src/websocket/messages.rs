@@ -1396,6 +1396,7 @@ mod tests {
                 let market_orders = orders.get(&Ustr::from("0")).unwrap();
                 assert_eq!(market_orders.len(), 1);
                 assert_eq!(market_orders[0].order_id, "281476929510110");
+                assert_eq!(market_orders[0].nonce, 281_474_720_725_346);
                 assert_eq!(
                     market_orders[0].filled_base_amount,
                     Decimal::from_str("0.0020").unwrap(),
