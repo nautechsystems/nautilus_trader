@@ -475,6 +475,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, DST, bui
 		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
 		&& $(MAKE) --no-print-directory build-debug \
 		&& $(MAKE) --no-print-directory pytest \
+		&& $(MAKE) --no-print-directory pytest-doctest \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)
 
@@ -1206,6 +1207,12 @@ pytest:  #-- Run Python tests with pytest in parallel with immediate failure rep
 	$(info $(M) Running Python tests in parallel with immediate failure reporting (workers=$(PYTEST_WORKERS))...)
 	uv run --active --no-sync pytest -qq -rfE --new-first --failed-first --tb=line -n $(PYTEST_WORKERS) --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
 
+.PHONY: pytest-doctest
+pytest-doctest:  #-- Build v1 and run its supported Python doctests
+	$(info $(M) Running supported v1 Python doctests...)
+	$Q VIRTUAL_ENV="$(CURDIR)/.venv" $(MAKE) --no-print-directory build-debug
+	$Q bash scripts/ci/test-python-doctests.bash v1 "$(CURDIR)"
+
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
 	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
@@ -1261,6 +1268,16 @@ pytest-v2: build-debug-v2  #-- Run v2 Python tests
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/ --ignore=tests/unit/test_live_node.py
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
 
+.PHONY: pytest-doctest-v2
+pytest-doctest-v2: build-debug-v2  #-- Run supported v2 Python doctests
+	$(info $(M) Running supported v2 Python doctests...)
+	$Q bash scripts/ci/test-python-doctests.bash v2 "$(CURDIR)/python"
+
+.PHONY: mypy-v2
+mypy-v2: build-debug-v2  #-- Type-check supported v2 Python authoring workflows
+	$(info $(M) Type-checking supported v2 Python authoring workflows...)
+	$Q cd python && VIRTUAL_ENV= uv run --no-sync mypy examples tests/type_checking/supported.py
+
 .PHONY: pre-flight-v2
 pre-flight-v2: export CARGO_TARGET_DIR=target-v2
 pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, DST, build, generated drift, audit)
@@ -1281,6 +1298,7 @@ pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, DST, build, generat
 		&& $(MAKE) --no-print-directory build-debug-v2 \
 		&& $(MAKE) --no-print-directory check-v2-generated-drift \
 		&& $(MAKE) --no-print-directory pytest-v2 \
+		&& $(MAKE) --no-print-directory pytest-doctest-v2 mypy-v2 \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)
 

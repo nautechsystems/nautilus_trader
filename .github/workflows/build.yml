@@ -476,6 +476,10 @@ jobs:
           uv run --no-sync pytest --ignore=tests/performance_tests \
             -n logical --dist=loadgroup --reruns 2 --reruns-delay 1
 
+      - name: Run supported Python doctests
+        if: matrix.python-version == '3.13'
+        run: bash scripts/ci/test-python-doctests.bash v1 .
+
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
         with:

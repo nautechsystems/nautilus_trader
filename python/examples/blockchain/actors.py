@@ -17,12 +17,14 @@ from dataclasses import dataclass
 
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import LogColor
+from nautilus_trader.common import TimeEvent
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import Block
 from nautilus_trader.model import Chain
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Pool
 from nautilus_trader.model import PoolFeeCollect
 from nautilus_trader.model import PoolFlash
 from nautilus_trader.model import PoolLiquidityUpdate
@@ -98,13 +100,13 @@ class BlockchainActor(DataActor):
             self.unsubscribe_pool_fee_collects(instrument_id, self.client_id)
             self.unsubscribe_pool_flash_events(instrument_id, self.client_id)
 
-    def on_time_event(self, event) -> None:
+    def on_time_event(self, event: TimeEvent) -> None:
         """
         Actions to be performed on receiving a time event.
         """
         self.log.info(repr(event), LogColor.BLUE)
 
-    def on_pool(self, pool) -> None:
+    def on_pool(self, pool: Pool) -> None:
         self.log.info(f"Received pool: {pool.instrument_id}", LogColor.GREEN)
 
     def on_block(self, block: Block) -> None:

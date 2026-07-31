@@ -205,7 +205,7 @@ def register_chart(name: str, func: Callable | None = None) -> Callable | None:
     ...     return fig
     >>>
     >>> # Or called directly
-    >>> register_chart("another_chart", my_chart_function)
+    >>> register_chart("another_chart", create_custom_chart)
 
     """
     PyCondition.not_none(name, "name")
@@ -867,11 +867,11 @@ def create_tearsheet_from_stats(
     Examples
     --------
     >>> # Offline analysis with precomputed stats
-    >>> stats_returns = {"Sharpe Ratio (252 days)": 1.5, ...}
-    >>> stats_general = {"Win Rate": 0.55, ...}
-    >>> stats_pnls = {"PnL (total)": 10000.0, ...}
-    >>> returns = pd.Series([0.01, -0.02, ...])
-    >>> html = create_tearsheet_from_stats(
+    >>> stats_returns = {"Sharpe Ratio (252 days)": 1.5}
+    >>> stats_general = {"Win Rate": 0.55}
+    >>> stats_pnls = {"PnL (total)": 10000.0}
+    >>> returns = pd.Series([0.01, -0.02])
+    >>> html = create_tearsheet_from_stats(  # doctest: +SKIP
     ...     stats_pnls,
     ...     stats_returns,
     ...     stats_general,
