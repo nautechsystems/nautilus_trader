@@ -1673,6 +1673,44 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
 }
 
 #[rstest]
+fn test_process_funding_rate_returns_instrument_boundary() {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let first_boundary = UnixNanos::from(3);
+    let second_boundary = UnixNanos::from(4);
+    let first_instrument = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let second_instrument = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let first_scheduled = exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            first_instrument,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(first_boundary),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+    let second_scheduled = exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            second_instrument,
+            Decimal::from_str("0.002").unwrap(),
+            Some(480),
+            Some(second_boundary),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+
+    assert_eq!(first_scheduled, Some(first_boundary));
+    assert_eq!(second_scheduled, Some(second_boundary));
+}
+
+#[rstest]
 fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
     let inverse = xbtusd_bitmex();
     let instrument = InstrumentAny::CryptoPerpetual(inverse.clone());
@@ -3418,7 +3456,7 @@ fn test_fx_rollover_retries_after_quote_arrives(audusd_sim: CurrencyPair) {
         .add_instrument(instrument.clone())
         .unwrap();
     let instruments = AHashMap::from([(instrument.id(), instrument.clone())]);
-    let module = FXRolloverInterestModule::new(rollover_records());
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
     let rollover = rollover_timestamp(2020, 1, 15);
 
     assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
@@ -3466,7 +3504,7 @@ fn test_fx_rollover_is_atomic_across_instruments(
         .add_instrument(second.clone())
         .unwrap();
     let instruments = AHashMap::from([(first.id(), first.clone()), (second.id(), second.clone())]);
-    let module = FXRolloverInterestModule::new(rollover_records());
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
     let rollover = rollover_timestamp(2020, 1, 15);
 
     add_fx_quote(&exchange, &cache, first.id(), "0.99990", "1.00010");
@@ -3503,7 +3541,7 @@ fn test_fx_rollover_distinguishes_same_ordinal_across_years(audusd_sim: Currency
         .unwrap();
     add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
     let instruments = AHashMap::from([(instrument.id(), instrument)]);
-    let module = FXRolloverInterestModule::new(rollover_records());
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
 
     assert_eq!(
         process_rollover(

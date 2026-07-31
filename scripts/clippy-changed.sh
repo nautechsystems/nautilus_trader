@@ -11,7 +11,7 @@ resolved_changed_base=0
 
 run_full() {
   echo "Running full workspace clippy"
-  exec cargo clippy --workspace --lib --tests \
+  exec cargo clippy --workspace --lib --bins --tests \
     --features "$(
       IFS=,
       echo "${DESIRED_FEATURES[*]}"
@@ -147,5 +147,5 @@ fi
 echo "Running clippy on: ${seen_list[*]}"
 # `${feat_args[@]+...}` guards the expansion: bash 3.2 (macOS default) treats an
 # empty array as unbound under `set -u`, which fires when no features are needed.
-cargo clippy "${pkg_args[@]}" --lib --tests ${feat_args[@]+"${feat_args[@]}"} \
+cargo clippy "${pkg_args[@]}" --lib --bins --tests ${feat_args[@]+"${feat_args[@]}"} \
   --profile "$PROFILE" -- -D warnings

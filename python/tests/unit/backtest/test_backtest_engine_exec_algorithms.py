@@ -62,6 +62,25 @@ class RequiredConfigBacktestExecAlgorithm(DataActor):
         type(self).received_exec_algorithm_id = config.exec_algorithm_id
 
 
+class CustomExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
+    def __init__(
+        self,
+        horizon_secs: str,
+        interval_secs: str,
+        **_kwargs,
+    ):
+        self.horizon_secs = horizon_secs
+        self.interval_secs = interval_secs
+
+
+class CustomExecutionAlgorithm(ExecutionAlgorithm):
+    received_config: CustomExecutionAlgorithmConfig | None = None
+
+    def __init__(self, config: CustomExecutionAlgorithmConfig):
+        super().__init__(config)
+        type(self).received_config = config
+
+
 class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
     pass
 
@@ -172,6 +191,7 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
         ("subscribe_signal", ["self", "name", "priority"]),
         ("unsubscribe_signal", ["self", "name"]),
         ("on_signal", ["self", "signal"]),
+        ("to_importable_config", ["self"]),
         ("is_ready", ["self"]),
         ("is_running", ["self"]),
         ("is_stopped", ["self"]),
@@ -257,6 +277,84 @@ def test_execution_algorithm_config_defaults():
     assert config.exec_algorithm_id is None
     assert config.log_events is True
     assert config.log_commands is True
+
+
+def test_execution_algorithm_config_supports_custom_fields():
+    config = CustomExecutionAlgorithmConfig(
+        horizon_secs="73.5",
+        interval_secs="2.25",
+        exec_algorithm_id=ExecAlgorithmId("CUSTOM-CONFIG"),
+        log_events=False,
+        log_commands=True,
+    )
+
+    assert config.exec_algorithm_id == ExecAlgorithmId("CUSTOM-CONFIG")
+    assert config.horizon_secs == "73.5"
+    assert config.interval_secs == "2.25"
+    assert config.log_events is False
+    assert config.log_commands is True
+
+
+def test_execution_algorithm_to_importable_config_round_trips_custom_config():
+    CustomExecutionAlgorithm.received_config = None
+    config = CustomExecutionAlgorithmConfig(
+        horizon_secs="91.5",
+        interval_secs="3.75",
+        exec_algorithm_id=ExecAlgorithmId("IMPORTABLE-CONFIG"),
+        log_events=False,
+        log_commands=True,
+    )
+    exec_algorithm = CustomExecutionAlgorithm(config)
+
+    importable = exec_algorithm.to_importable_config()
+
+    assert importable.exec_algorithm_path == (
+        "tests.unit.backtest.test_backtest_engine_exec_algorithms:CustomExecutionAlgorithm"
+    )
+    assert importable.config_path == (
+        "tests.unit.backtest.test_backtest_engine_exec_algorithms:CustomExecutionAlgorithmConfig"
+    )
+    assert importable.config == {
+        "exec_algorithm_id": "IMPORTABLE-CONFIG",
+        "horizon_secs": "91.5",
+        "interval_secs": "3.75",
+        "log_commands": True,
+        "log_events": False,
+    }
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_exec_algorithm_from_config(importable)
+
+    received = CustomExecutionAlgorithm.received_config
+    assert received is not None
+    assert received.exec_algorithm_id == ExecAlgorithmId("IMPORTABLE-CONFIG")
+    assert received.horizon_secs == "91.5"
+    assert received.interval_secs == "3.75"
+    assert received.log_events is False
+    assert received.log_commands is True
+    engine.dispose()
+
+
+def test_execution_algorithm_to_importable_config_round_trips_without_config():
+    exec_algorithm = FirstDefaultExecutionAlgorithm()
+
+    importable = exec_algorithm.to_importable_config()
+
+    assert importable.exec_algorithm_path == (
+        "tests.unit.backtest.test_backtest_engine_exec_algorithms:FirstDefaultExecutionAlgorithm"
+    )
+    assert importable.config_path == ""
+    assert importable.config == {}
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_exec_algorithm_from_config(importable)
+
+    with pytest.raises(
+        RuntimeError,
+        match="'FirstDefaultExecutionAlgorithm' is already registered",
+    ):
+        engine.add_exec_algorithm_from_config(importable)
+    engine.dispose()
 
 
 def test_execution_algorithm_config_with_explicit_values():

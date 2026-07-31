@@ -3767,8 +3767,12 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
 }
 
 #[rstest]
+#[case::empty_map(false)]
+#[case::zero_position_row(true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_report() {
+async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_report(
+    #[case] zero_position_row: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -3800,16 +3804,21 @@ async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_r
     )
     .await;
 
-    // Push an empty positions snapshot. The dispatcher must treat it as
-    // authoritative and flatten the prior cached position.
-    state.push_frame(&json!({
-        "type": "update/account_all_positions",
-        "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
-        "positions": {},
-        "shares": [],
-        "last_funding_round": null,
-        "last_funding_discount": null,
-    }));
+    let flat_snapshot = if zero_position_row {
+        let mut snapshot = load_json("ws_account_all_positions_update.json");
+        snapshot["positions"]["0"]["position"] = json!("0.0000");
+        snapshot
+    } else {
+        json!({
+            "type": "update/account_all_positions",
+            "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
+            "positions": {},
+            "shares": [],
+            "last_funding_round": null,
+            "last_funding_discount": null,
+        })
+    };
+    state.push_frame(&flat_snapshot);
 
     let flat_report = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
         matches!(
@@ -3826,11 +3835,31 @@ async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_r
     let ExecutionEvent::Report(ExecutionReport::Position(flat_report)) = flat_report else {
         unreachable!("predicate only accepts position reports");
     };
+    assert_eq!(flat_report.account_id, account_id());
     assert_eq!(flat_report.instrument_id, eth_perp_id());
     assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
-    assert!(flat_report.quantity.is_zero());
+    assert_eq!(flat_report.quantity, Quantity::zero(0));
+    assert!(flat_report.signed_decimal_qty.is_zero());
+    assert_eq!(flat_report.ts_last, flat_report.ts_init);
+    assert!(flat_report.ts_last > UnixNanos::default());
+    assert_eq!(flat_report.venue_position_id, None);
+    assert_eq!(flat_report.avg_px_open, None);
 
-    // The empty snapshot also clears the cached position used by status reports.
+    let duplicate_flat = next_event_matching(&mut rx, Duration::from_millis(250), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == PositionSideSpecified::Flat
+                    && report.quantity.is_zero()
+        )
+    })
+    .await;
+    assert!(
+        duplicate_flat.is_none(),
+        "flat snapshot must emit exactly one flat report: {duplicate_flat:?}",
+    );
+
     let positions = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
             UUID4::new(),
@@ -3845,7 +3874,7 @@ async fn test_account_all_positions_empty_snapshot_clears_cache_and_emits_flat_r
         .expect("position reports");
     assert!(
         positions.is_empty(),
-        "empty position snapshot must clear the prior cache, was {positions:?}",
+        "flat position snapshot must clear the prior cache, was {positions:?}",
     );
 
     client.disconnect().await.expect("disconnect");

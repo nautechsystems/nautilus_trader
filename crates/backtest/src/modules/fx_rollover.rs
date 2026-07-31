@@ -35,7 +35,7 @@ use super::{ExchangeContext, SimulationModule};
 
 const LOCATION_CURRENCY_MAP: &[(&str, &str)] = &[
     ("AUS", "AUD"),
-    ("CAD", "CAD"),
+    ("CAN", "CAD"),
     ("CHE", "CHF"),
     ("EA19", "EUR"),
     ("USA", "USD"),
@@ -46,7 +46,7 @@ const LOCATION_CURRENCY_MAP: &[(&str, &str)] = &[
     ("NOR", "NOK"),
     ("CHN", "CNY"),
     ("MEX", "MXN"),
-    ("ZAR", "ZAR"),
+    ("ZAF", "ZAR"),
 ];
 
 /// A single interest rate data entry.
@@ -60,12 +60,26 @@ const LOCATION_CURRENCY_MAP: &[(&str, &str)] = &[
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
 )]
 pub struct InterestRateRecord {
-    /// OECD location code (e.g., "AUS", "USA").
+    /// OECD location code using ISO 3166 alpha-3 (e.g., "AUS", "USA") or "EA19".
+    /// Records with unsupported codes are ignored.
     pub location: String,
     /// Time period key (e.g., "2024-01" for monthly, "2024-Q1" for quarterly).
     pub time: String,
-    /// Interest rate value as a percentage (e.g., 5.25 means 5.25%).
+    /// Interest rate value as a percentage (e.g., 5.25 means 5.25%). Must be finite.
     pub value: f64,
+}
+
+impl InterestRateRecord {
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.value.is_finite(),
+            "Interest rate for location '{}' at '{}' must be finite, was {}",
+            self.location,
+            self.time,
+            self.value
+        );
+        Ok(())
+    }
 }
 
 /// Calculates overnight rollover interest rates for FX currency pairs.
@@ -80,14 +94,22 @@ pub struct RolloverInterestCalculator {
 
 impl RolloverInterestCalculator {
     /// Creates a new calculator from interest rate records.
-    #[must_use]
-    pub fn new(records: Vec<InterestRateRecord>) -> Self {
+    ///
+    /// Records with unsupported location codes are ignored. "CHN" supplies both CNY and CNH;
+    /// later records replace earlier records for the same currency and time.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any interest rate is not finite.
+    pub fn new(records: Vec<InterestRateRecord>) -> anyhow::Result<Self> {
         let location_to_currency: AHashMap<&str, &str> =
             LOCATION_CURRENCY_MAP.iter().copied().collect();
 
         let mut rates: AHashMap<String, AHashMap<String, f64>> = AHashMap::new();
 
         for record in records {
+            record.validate()?;
+
             // CHN maps to both CNY and CNH
             if record.location == "CHN" {
                 rates
@@ -104,7 +126,7 @@ impl RolloverInterestCalculator {
             }
         }
 
-        Self { rates }
+        Ok(Self { rates })
     }
 
     /// Calculates the overnight interest rate differential for a currency pair.
@@ -198,16 +220,21 @@ enum RolloverFailureKind {
 
 impl FXRolloverInterestModule {
     /// Creates a new FX rollover interest module.
-    #[must_use]
-    pub fn new(records: Vec<InterestRateRecord>) -> Self {
-        Self {
-            calculator: RolloverInterestCalculator::new(records),
+    ///
+    /// Records with unsupported location codes are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any interest rate is not finite.
+    pub fn new(records: Vec<InterestRateRecord>) -> anyhow::Result<Self> {
+        Ok(Self {
+            calculator: RolloverInterestCalculator::new(records)?,
             rollover_time_ns: Cell::new(0),
             rollover_applied: Cell::new(false),
             rollover_date: Cell::new(None),
             rollover_totals: RefCell::new(AHashMap::new()),
             warned_failures: RefCell::new(AHashSet::new()),
-        }
+        })
     }
 
     /// Logs a calculation failure at warn level once per (instrument, kind)
@@ -325,11 +352,23 @@ impl FXRolloverInterestModule {
                 instrument.quote_currency()
             };
 
-            adjustments.push(Money::new(rollover, currency));
+            let Some(adjustment) = rollover_money(instrument_id, rollover, currency) else {
+                return RolloverCalculationOutcome::Retry;
+            };
+
+            adjustments.push(adjustment);
         }
 
         RolloverCalculationOutcome::Completed(adjustments)
     }
+}
+
+fn rollover_money(instrument_id: InstrumentId, value: f64, currency: Currency) -> Option<Money> {
+    Money::new_checked(value, currency)
+        .map_err(|e| {
+            log::error!("Skipping rollover for {instrument_id}: invalid adjustment: {e}");
+        })
+        .ok()
 }
 
 impl SimulationModule for FXRolloverInterestModule {
@@ -385,9 +424,13 @@ impl SimulationModule for FXRolloverInterestModule {
         let totals = self.rollover_totals.borrow();
         let parts: Vec<String> = totals
             .iter()
-            .map(|(currency, total)| {
-                let money = Money::new(*total, *currency);
-                money.to_string()
+            .filter_map(|(currency, total)| {
+                Money::new_checked(*total, *currency)
+                    .map(|money| money.to_string())
+                    .map_err(|e| {
+                        log::error!("Cannot report rollover total for {currency}: {e}");
+                    })
+                    .ok()
             })
             .collect();
         log::info!("Rollover interest (totals): {}", parts.join(", "));
@@ -466,7 +509,7 @@ mod tests {
 
     #[rstest]
     fn test_calculator_quarterly_lookup() {
-        let calc = RolloverInterestCalculator::new(sample_records());
+        let calc = RolloverInterestCalculator::new(sample_records()).unwrap();
         let date = NaiveDate::from_ymd_opt(2020, 2, 15).unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -479,7 +522,7 @@ mod tests {
 
     #[rstest]
     fn test_calculator_monthly_preferred_over_quarterly() {
-        let calc = RolloverInterestCalculator::new(sample_records());
+        let calc = RolloverInterestCalculator::new(sample_records()).unwrap();
         let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
         let instrument_id = InstrumentId::from("USDJPY.SIM");
 
@@ -492,7 +535,7 @@ mod tests {
 
     #[rstest]
     fn test_calculator_missing_currency() {
-        let calc = RolloverInterestCalculator::new(sample_records());
+        let calc = RolloverInterestCalculator::new(sample_records()).unwrap();
         let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
         let instrument_id = InstrumentId::from("EURGBP.SIM");
 
@@ -502,7 +545,7 @@ mod tests {
 
     #[rstest]
     fn test_module_reset() {
-        let module = FXRolloverInterestModule::new(sample_records());
+        let module = FXRolloverInterestModule::new(sample_records()).unwrap();
         module
             .rollover_date
             .set(NaiveDate::from_ymd_opt(2020, 1, 15));
@@ -517,5 +560,56 @@ mod tests {
         assert_eq!(module.rollover_date.get(), None);
         assert!(!module.rollover_applied.get());
         assert!(module.rollover_totals.borrow().is_empty());
+    }
+
+    #[rstest]
+    #[case("CAN", "CADUSD.SIM")]
+    #[case("ZAF", "ZARUSD.SIM")]
+    fn test_calculator_maps_oecd_location_code(#[case] location: &str, #[case] symbol: &str) {
+        let records = vec![
+            InterestRateRecord {
+                location: location.to_string(),
+                time: "2020-Q1".to_string(),
+                value: 2.0,
+            },
+            InterestRateRecord {
+                location: "USA".to_string(),
+                time: "2020-Q1".to_string(),
+                value: 1.5,
+            },
+        ];
+        let calc = RolloverInterestCalculator::new(records).unwrap();
+        let date = NaiveDate::from_ymd_opt(2020, 2, 15).unwrap();
+
+        let rate = calc
+            .calc_overnight_rate(InstrumentId::from(symbol), date)
+            .unwrap();
+        let expected = (2.0 - 1.5) / 365.0 / 100.0;
+
+        assert!((rate - expected).abs() < f64::EPSILON);
+    }
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn test_calculator_rejects_non_finite_rate(#[case] value: f64) {
+        let records = vec![InterestRateRecord {
+            location: "USA".to_string(),
+            time: "2020-Q1".to_string(),
+            value,
+        }];
+
+        let error = RolloverInterestCalculator::new(records).unwrap_err();
+
+        assert!(error.to_string().contains("must be finite"));
+    }
+
+    #[rstest]
+    fn test_rollover_money_rejects_unrepresentable_adjustment() {
+        let adjustment =
+            rollover_money(InstrumentId::from("AUDUSD.SIM"), f64::MAX, Currency::USD());
+
+        assert_eq!(adjustment, None);
     }
 }

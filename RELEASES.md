@@ -83,6 +83,7 @@ adapter set. The following limits remain deferred:
 - Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, terminal voiding, and strategy and algorithm callbacks
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
+- Added Python v2 execution algorithm config subclassing and importable config export
 - Added Python v2 `ExecutionAlgorithm.deny_order` with terminal denial of invalid TWAP inputs
 - Added Python v2 `ExecutionAlgorithm` portfolio, lifecycle, signals, and constructed live registration
 - Added Python v2 `BacktestNode` post-run cache, portfolio, statistics, and report inspection
@@ -428,6 +429,7 @@ adapter set. The following limits remain deferred:
 - Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
 - Fixed Lighter modify validation, conditional acks, nonce recovery, auth refresh, and WS timeouts
 - Fixed Lighter ambiguous sends, response attribution, order identity collisions, and GTD expiry
+- Fixed Lighter zero‑quantity rows in `account_all_positions` snapshots remaining in cached position reports
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed OKX v2 yearly candle bar validation and round trips
 - Fixed Polymarket v1 and v2 allowances for the current Neg Risk adapter
@@ -470,6 +472,7 @@ adapter set. The following limits remain deferred:
 - Upgraded `ed25519-dalek` crate to v3.0.0
 - Upgraded `futures` crate to v0.3.33
 - Upgraded `redis` crate to v1.4.1
+- Upgraded `rustls` crate to v0.23.43
 - Upgraded `sockudo-ws` crate to v2.0.1
 - Upgraded `tokio` crate to v1.53.1
 - Upgraded `tokio-tungstenite` crate to v0.30.0

@@ -32,8 +32,11 @@ use nautilus_backtest::{
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarSpecification, FundingRateUpdate, QuoteTick, TradeTick},
-    enums::{AccountType, AggressorSide, BarAggregation, BookType, OmsType, OrderSide, PriceType},
+    data::{BarSpecification, BookOrder, FundingRateUpdate, OrderBookDelta, QuoteTick, TradeTick},
+    enums::{
+        AccountType, AggressorSide, BarAggregation, BookAction, BookType, OmsType, OrderSide,
+        PriceType,
+    },
     identifiers::{InstrumentId, StrategyId, TradeId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
@@ -238,6 +241,37 @@ impl DataActor for CountingStrategy {
     }
 }
 
+struct FailingStartStrategy {
+    core: StrategyCore,
+}
+
+impl FailingStartStrategy {
+    fn new() -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("FAILING-START-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+        }
+    }
+}
+
+nautilus_strategy!(FailingStartStrategy);
+
+impl Debug for FailingStartStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(FailingStartStrategy)).finish()
+    }
+}
+
+impl DataActor for FailingStartStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("simulated backtest strategy start failure")
+    }
+}
+
 struct MarketOrderStrategy {
     core: StrategyCore,
     instrument_id: InstrumentId,
@@ -400,6 +434,109 @@ fn test_new_rejects_empty_configs() {
             .to_string()
             .contains("At least one run config")
     );
+}
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_build_respects_raise_exception(#[case] raise_exception: bool) {
+    let temp_dir = TempDir::new().unwrap();
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog_path(temp_dir.path().to_str().unwrap().to_string())
+        .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
+        .build()
+        .unwrap();
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data])
+        .raise_exception(raise_exception)
+        .build()
+        .unwrap();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    let result = node.build();
+
+    assert_eq!(result.is_err(), raise_exception);
+    if let Err(e) = result {
+        assert!(
+            e.to_string().contains("No instruments found"),
+            "unexpected error: {e:#}"
+        );
+    }
+    assert!(node.get_engines().is_empty());
+}
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_run_respects_raise_exception(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] raise_exception: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 1, 1_000_000_000);
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data_config(&catalog_path, instrument_id)])
+        .raise_exception(raise_exception)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(FailingStartStrategy::new())
+        .unwrap();
+
+    let result = node.run();
+
+    assert_eq!(result.is_err(), raise_exception);
+    match result {
+        Ok(results) => assert!(results.is_empty()),
+        Err(e) => assert!(
+            e.to_string()
+                .contains("simulated backtest strategy start failure"),
+            "unexpected error: {e:#}"
+        ),
+    }
+}
+
+#[rstest]
+fn test_run_clears_data_after_suppressed_error(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 1, 1_000_000_000);
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data_config(&catalog_path, instrument_id)])
+        .raise_exception(false)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(FailingStartStrategy::new())
+        .unwrap();
+
+    let failed_results = node.run().unwrap();
+
+    assert!(failed_results.is_empty());
+
+    let engine = node.get_engine_mut(&config_id).unwrap();
+    engine.reset();
+    engine.clear_strategies().unwrap();
+
+    let results = node.run().unwrap();
+    let [result] = results.as_slice() else {
+        panic!("expected one BacktestResult");
+    };
+
+    assert_eq!(result.iterations, 1);
 }
 
 #[rstest]
@@ -1207,6 +1344,80 @@ fn test_l2_venue_with_book_data_accepted() {
         .unwrap();
 
     assert!(BacktestNode::new(vec![config]).is_ok());
+}
+
+#[rstest]
+fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let temp_dir = TempDir::new().unwrap();
+    let catalog_path = temp_dir.path().to_str().unwrap().to_string();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let delta = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1000.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        0,
+        1,
+        UnixNanos::from(1_000_000_000),
+        UnixNanos::from(1_000_000_000),
+    );
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("1000.00"),
+        Price::from("1000.10"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(2_000_000_000),
+        UnixNanos::from(2_000_000_000),
+    );
+    catalog.write_instruments(vec![instrument]).unwrap();
+    catalog
+        .write_to_parquet(&[delta], None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(&[quote], None, None, None)
+        .unwrap();
+
+    let venue = BacktestVenueConfig::builder()
+        .name(Ustr::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L2_MBP)
+        .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .build()
+        .unwrap();
+    let book_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path.clone())
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+    let quote_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+    let config = BacktestRunConfig::builder()
+        .venues(vec![venue])
+        .data(vec![book_data, quote_data])
+        .chunk_size(1)
+        .build()
+        .unwrap();
+
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    let results = node.run().unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, 2);
 }
 
 #[rstest]

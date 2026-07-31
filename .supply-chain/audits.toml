@@ -902,11 +902,23 @@ criteria = "safe-to-deploy"
 delta = "0.4.15 -> 0.4.16"
 notes = "Fixes reverse suffix and inner-literal search optimizations with regression tests. No new unsafe, build script, filesystem, network, or process behavior."
 
+[[audits.ruint]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.19.0 -> 1.20.0"
+notes = "Fixes RUSTSEC-2026-0220 shift overflow handling plus parsing, conversion, and soundness defects. Runtime dependencies and build behavior are unchanged; new unsafe blocks use proven slice lengths and disjoint storage, and formerly unsound safe functions now require unsafe callers."
+
 [[audits.rustls]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.23.41 -> 0.23.42"
 notes = "Adds optional RFC 9149 TLS ticket requests with client and server controls. Both defaults preserve prior behavior; no new unsafe, dependencies, build script, filesystem, or network destination behavior."
+
+[[audits.rustls]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.23.42 -> 0.23.43"
+notes = "Fixes a pre-authentication AWS-LC ticket decryption panic and tightens QUIC version and cipher-suite validation with defensive arithmetic. No new dependencies, unsafe code, build script, filesystem, process, or network destination behavior."
 
 [[audits.rustls-native-certs]]
 who = "Nautech Systems <info@nautechsystems.io>"

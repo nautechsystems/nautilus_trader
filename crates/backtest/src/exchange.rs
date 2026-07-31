@@ -17,7 +17,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BinaryHeap, VecDeque},
+    collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     fmt::Debug,
     rc::Rc,
 };
@@ -138,8 +138,8 @@ pub struct SimulatedExchange {
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     last_raw_id: u32,
     settlement_prices: AHashMap<InstrumentId, Price>,
-    pending_funding_rates: AHashMap<InstrumentId, FundingRateUpdate>,
-    funding_settled_through: AHashMap<InstrumentId, UnixNanos>,
+    pending_funding_rates: BTreeMap<(UnixNanos, InstrumentId), FundingRateUpdate>,
+    funding_settlements: BTreeSet<(UnixNanos, InstrumentId)>,
     leverages: AHashMap<InstrumentId, Decimal>,
     margin_model: Option<MarginModelAny>,
     modules: Vec<Box<dyn SimulationModule>>,
@@ -224,8 +224,8 @@ impl SimulatedExchange {
             matching_engines: IndexMap::new(),
             last_raw_id: 0,
             settlement_prices: config.settlement_prices,
-            pending_funding_rates: AHashMap::new(),
-            funding_settled_through: AHashMap::new(),
+            pending_funding_rates: BTreeMap::new(),
+            funding_settlements: BTreeSet::new(),
             leverages: config.leverages,
             margin_model: config.margin_model,
             modules: config.modules,
@@ -1018,60 +1018,98 @@ impl SimulatedExchange {
     ///
     /// Returns the funding boundary timestamp when the engine should schedule a settlement.
     pub fn process_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> Option<UnixNanos> {
+        let replay_ts = self.clock.borrow().timestamp_ns();
+        let instrument_id = funding_rate.instrument_id;
+        let boundary = Self::funding_boundary(&funding_rate);
+        let next_boundary = self.queue_funding_rate(funding_rate);
+
+        if let Some(boundary) = boundary
+            && boundary <= replay_ts
+        {
+            self.process_funding_settlement(instrument_id, boundary);
+            return None;
+        }
+
+        next_boundary
+    }
+
+    pub(crate) fn process_funding_rate_deferred(
+        &mut self,
+        funding_rate: FundingRateUpdate,
+        replay_ts: UnixNanos,
+    ) -> Option<UnixNanos> {
+        self.queue_funding_rate(funding_rate);
+        self.next_funding_boundary()
+            .filter(|boundary| *boundary > replay_ts)
+    }
+
+    fn queue_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> Option<UnixNanos> {
         for module in &self.modules {
             module.pre_process(&Data::FundingRateUpdate(funding_rate));
         }
 
-        if let Some(next_funding_ns) = funding_rate.next_funding_ns {
-            if next_funding_ns <= self.clock.borrow().timestamp_ns() {
-                self.pending_funding_rates
-                    .remove(&funding_rate.instrument_id);
-                if !self.settle_funding_rate(&funding_rate, next_funding_ns) {
-                    self.pending_funding_rates
-                        .insert(funding_rate.instrument_id, funding_rate);
-                }
-                return None;
-            }
-
-            self.pending_funding_rates
-                .insert(funding_rate.instrument_id, funding_rate);
-            return Some(next_funding_ns);
-        }
-
-        if Self::is_interval_funding_boundary(&funding_rate) {
-            if !self.settle_funding_rate(&funding_rate, funding_rate.ts_event) {
-                self.pending_funding_rates
-                    .insert(funding_rate.instrument_id, funding_rate);
-            }
-        } else {
+        let Some(boundary) = Self::funding_boundary(&funding_rate) else {
             log::debug!(
                 "Funding rate update for {} does not define a settlement boundary",
                 funding_rate.instrument_id
             );
-        }
+            return None;
+        };
 
-        None
+        let key = (boundary, funding_rate.instrument_id);
+        if !self.funding_settlements.contains(&key) {
+            self.pending_funding_rates.insert(key, funding_rate);
+        }
+        Some(boundary)
     }
 
     /// Processes a scheduled funding settlement for the instrument.
     pub fn process_funding_settlement(&mut self, instrument_id: InstrumentId, ts_event: UnixNanos) {
-        let Some(funding_rate) = self.pending_funding_rates.remove(&instrument_id) else {
+        let key = (ts_event, instrument_id);
+        let Some(funding_rate) = self.pending_funding_rates.remove(&key) else {
             return;
         };
 
-        if funding_rate
-            .next_funding_ns
-            .is_some_and(|next_funding_ns| next_funding_ns > ts_event)
-        {
-            self.pending_funding_rates
-                .insert(funding_rate.instrument_id, funding_rate);
-            return;
-        }
-
         if !self.settle_funding_rate(&funding_rate, ts_event) {
-            self.pending_funding_rates
-                .insert(funding_rate.instrument_id, funding_rate);
+            self.pending_funding_rates.insert(key, funding_rate);
         }
+    }
+
+    #[must_use]
+    pub(crate) fn funding_boundaries_due(
+        &self,
+        replay_ts: UnixNanos,
+    ) -> Vec<(UnixNanos, InstrumentId)> {
+        self.pending_funding_rates
+            .keys()
+            .copied()
+            .take_while(|(boundary, _)| *boundary <= replay_ts)
+            .collect()
+    }
+
+    pub(crate) fn settle_funding_boundary(
+        &mut self,
+        boundary: UnixNanos,
+        instrument_id: InstrumentId,
+    ) -> bool {
+        let key = (boundary, instrument_id);
+        let Some(funding_rate) = self.pending_funding_rates.remove(&key) else {
+            return true;
+        };
+
+        if self.settle_funding_rate(&funding_rate, boundary) {
+            true
+        } else {
+            self.pending_funding_rates.insert(key, funding_rate);
+            false
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn next_funding_boundary(&self) -> Option<UnixNanos> {
+        self.pending_funding_rates
+            .first_key_value()
+            .map(|((boundary, _), _)| *boundary)
     }
 
     fn settle_funding_rate(
@@ -1079,11 +1117,8 @@ impl SimulatedExchange {
         funding_rate: &FundingRateUpdate,
         ts_event: UnixNanos,
     ) -> bool {
-        if self
-            .funding_settled_through
-            .get(&funding_rate.instrument_id)
-            .is_some_and(|settled_through| *settled_through >= ts_event)
-        {
+        let settlement_key = (ts_event, funding_rate.instrument_id);
+        if self.funding_settlements.contains(&settlement_key) {
             return true;
         }
 
@@ -1123,15 +1158,6 @@ impl SimulatedExchange {
             }
         }
 
-        let Some(settlement_price) = self.funding_settlement_price(funding_rate.instrument_id)
-        else {
-            log::warn!(
-                "Cannot settle funding for {}: no mark price or top-of-book price",
-                funding_rate.instrument_id
-            );
-            return false;
-        };
-
         let open_positions: Vec<Position> = {
             let cache = self.cache.borrow();
             cache
@@ -1148,15 +1174,32 @@ impl SimulatedExchange {
         };
 
         if open_positions.is_empty() {
-            self.funding_settled_through
-                .insert(funding_rate.instrument_id, ts_event);
+            self.funding_settlements.insert(settlement_key);
             return true;
         }
 
+        let Some(settlement_price) = self.funding_settlement_price(funding_rate.instrument_id)
+        else {
+            log::warn!(
+                "Cannot settle funding for {}: no mark price or top-of-book price",
+                funding_rate.instrument_id
+            );
+            return false;
+        };
+
+        let settlement_currency = open_positions[0].settlement_currency;
         let mut valued_positions = Vec::with_capacity(open_positions.len());
         let mut account_adjustments: AHashMap<Currency, Money> = AHashMap::new();
 
         for position in open_positions {
+            if position.settlement_currency != settlement_currency {
+                log::error!(
+                    "Cannot settle funding for {}: position settlement currencies differ",
+                    funding_rate.instrument_id
+                );
+                return false;
+            }
+
             let notional = match position.try_notional_value(settlement_price) {
                 Ok(notional) => notional,
                 Err(e) => {
@@ -1193,6 +1236,16 @@ impl SimulatedExchange {
                     return false;
                 }
             };
+
+            if pnl_change.currency != settlement_currency {
+                log::error!(
+                    "Cannot settle funding for position {}: settlement currency {} differs from funding currency {}",
+                    position.id,
+                    settlement_currency,
+                    pnl_change.currency
+                );
+                return false;
+            }
 
             if let Some(realized) = position.realized_pnl {
                 if realized.currency != pnl_change.currency {
@@ -1261,7 +1314,6 @@ impl SimulatedExchange {
             }
         }
 
-        let currency = valued_positions[0].0.settlement_currency;
         let ts_init = self.clock.borrow().timestamp_ns();
         let settlement = FundingSettlement::new(
             msgbus::get_message_bus().borrow().trader_id,
@@ -1269,7 +1321,7 @@ impl SimulatedExchange {
             account_id,
             funding_rate.rate,
             settlement_price,
-            currency,
+            settlement_currency,
             UUID4::new(),
             ts_event,
             ts_init,
@@ -1336,8 +1388,7 @@ impl SimulatedExchange {
             }
         }
 
-        self.funding_settled_through
-            .insert(funding_rate.instrument_id, ts_event);
+        self.funding_settlements.insert(settlement_key);
         let settlement_topic = switchboard::get_funding_settlement_topic(settlement.instrument_id);
         msgbus::publish_any(settlement_topic, &settlement);
 
@@ -1370,6 +1421,12 @@ impl SimulatedExchange {
         };
         let interval_ns = u64::from(interval_mins) * 60 * 1_000_000_000;
         interval_ns > 0 && funding_rate.ts_event.as_u64().is_multiple_of(interval_ns)
+    }
+
+    fn funding_boundary(funding_rate: &FundingRateUpdate) -> Option<UnixNanos> {
+        funding_rate.next_funding_ns.or_else(|| {
+            Self::is_interval_funding_boundary(funding_rate).then_some(funding_rate.ts_event)
+        })
     }
 
     /// Advances the exchange clock and processes all pending inflight and queued trading commands
@@ -1437,7 +1494,7 @@ impl SimulatedExchange {
         }
 
         self.pending_funding_rates.clear();
-        self.funding_settled_through.clear();
+        self.funding_settlements.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
         self.inflight_counter.clear();

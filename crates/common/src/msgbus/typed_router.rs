@@ -60,6 +60,14 @@ impl<T: 'static> TypedSubscription<T> {
             priority: priority.unwrap_or(0),
         }
     }
+
+    fn delivery_order(&self, other: &Self) -> Ordering {
+        other
+            .priority
+            .cmp(&self.priority)
+            .then_with(|| self.pattern.cmp(&other.pattern))
+            .then_with(|| self.handler_id.cmp(&other.handler_id))
+    }
 }
 
 impl<T: 'static> Debug for TypedSubscription<T> {
@@ -89,11 +97,8 @@ impl<T: 'static> PartialOrd for TypedSubscription<T> {
 
 impl<T: 'static> Ord for TypedSubscription<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Higher priority first (descending)
-        other
-            .priority
-            .cmp(&self.priority)
-            .then_with(|| self.pattern.cmp(&other.pattern))
+        self.pattern
+            .cmp(&other.pattern)
             .then_with(|| self.handler_id.cmp(&other.handler_id))
     }
 }
@@ -183,9 +188,10 @@ impl<T: 'static> TopicRouter<T> {
 
         self.subscriptions.push(sub);
 
-        // Re-sort by priority (descending), then clear index cache
-        // since sort can rearrange all indices
-        self.subscriptions.sort();
+        // Re-sort by priority descending, pattern ascending, then handler ID ascending.
+        // Clear the index cache since sorting can rearrange all indices.
+        self.subscriptions
+            .sort_by(TypedSubscription::delivery_order);
         self.topic_cache.clear();
     }
 
@@ -377,11 +383,57 @@ impl<T: 'static> TopicRouter<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+        rc::Rc,
+    };
 
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_typed_subscription_ordering_laws() {
+        let handler = TypedHandler::from_with_id("handler-b", |_: &i32| {});
+        let base = TypedSubscription::new("pattern-b".into(), handler.clone(), Some(1));
+        let different_priority = TypedSubscription::new("pattern-b".into(), handler, Some(2));
+        let different_pattern = TypedSubscription::new(
+            "pattern-a".into(),
+            TypedHandler::from_with_id("handler-b", |_: &i32| {}),
+            Some(1),
+        );
+        let different_handler = TypedSubscription::new(
+            "pattern-b".into(),
+            TypedHandler::from_with_id("handler-a", |_: &i32| {}),
+            Some(1),
+        );
+
+        assert_eq!(base, different_priority);
+        assert_eq!(base.cmp(&different_priority), Ordering::Equal);
+
+        let mut base_hasher = DefaultHasher::new();
+        base.hash(&mut base_hasher);
+        let mut different_priority_hasher = DefaultHasher::new();
+        different_priority.hash(&mut different_priority_hasher);
+        assert_eq!(base_hasher.finish(), different_priority_hasher.finish());
+
+        let variants = [
+            base,
+            different_priority,
+            different_pattern,
+            different_handler,
+        ];
+
+        for a in &variants {
+            for b in &variants {
+                assert_eq!(a == b, a.cmp(b).is_eq());
+                assert_eq!(a.partial_cmp(b), Some(a.cmp(b)));
+                assert_eq!(a.cmp(b), b.cmp(a).reverse());
+            }
+        }
+    }
 
     #[rstest]
     fn test_topic_router_subscribe_and_publish() {
@@ -403,29 +455,39 @@ mod tests {
     }
 
     #[rstest]
-    fn test_topic_router_priority_ordering() {
+    fn test_topic_router_publish_orders_by_full_delivery_key() {
         let mut router = TopicRouter::<i32>::new();
         let order = Rc::new(RefCell::new(Vec::new()));
 
-        let order1 = order.clone();
-        let handler1 = TypedHandler::from_with_id("low", move |_: &i32| {
-            order1.borrow_mut().push("low");
+        let low_order = order.clone();
+        let low = TypedHandler::from_with_id("handler-z", move |_: &i32| {
+            low_order.borrow_mut().push("low-z");
+        });
+        let exact_b_order = order.clone();
+        let exact_b = TypedHandler::from_with_id("handler-b", move |_: &i32| {
+            exact_b_order.borrow_mut().push("exact-b");
+        });
+        let exact_a_order = order.clone();
+        let exact_a = TypedHandler::from_with_id("handler-a", move |_: &i32| {
+            exact_a_order.borrow_mut().push("exact-a");
+        });
+        let wildcard_b_order = order.clone();
+        let wildcard_b = TypedHandler::from_with_id("handler-b", move |_: &i32| {
+            wildcard_b_order.borrow_mut().push("wildcard-b");
         });
 
-        let order2 = order.clone();
-        let handler2 = TypedHandler::from_with_id("high", move |_: &i32| {
-            order2.borrow_mut().push("high");
-        });
+        router.subscribe("delivery.*".into(), low, 1);
+        router.subscribe("delivery.topic".into(), exact_b, 10);
+        router.subscribe("delivery.topic".into(), exact_a, 10);
+        router.subscribe("delivery.*".into(), wildcard_b, 10);
 
-        // Subscribe low priority first, high priority second
-        router.subscribe("test.*".into(), handler1, 5);
-        router.subscribe("test.*".into(), handler2, 10);
-
-        let topic: MStr<Topic> = "test.topic".into();
+        let topic: MStr<Topic> = "delivery.topic".into();
         router.publish(topic, &42);
 
-        // High priority should be called first
-        assert_eq!(*order.borrow(), vec!["high", "low"]);
+        assert_eq!(
+            *order.borrow(),
+            vec!["wildcard-b", "exact-a", "exact-b", "low-z"]
+        );
     }
 
     #[rstest]
