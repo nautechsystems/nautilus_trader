@@ -85,123 +85,29 @@ impl BacktestNode {
     /// Builds backtest engines from the run configurations.
     ///
     /// For each config, creates a [`BacktestEngine`], adds venues, and loads
-    /// instruments from the catalog.
+    /// instruments from the catalog. If building a config fails with
+    /// [`BacktestRunConfig::raise_exception`] disabled, logs the error and skips that config;
+    /// successful return does not guarantee an engine for every config.
     ///
     /// # Errors
     ///
-    /// Returns an error if engine creation, venue setup, or instrument loading fails.
+    /// Returns an error if building an engine from a config fails and
+    /// [`BacktestRunConfig::raise_exception`] is enabled for that config.
     pub fn build(&mut self) -> anyhow::Result<()> {
         for config in &self.configs {
             if self.engines.contains_key(config.id()) {
                 continue;
             }
 
-            let engine_config = config.engine().clone();
-            let mut engine = BacktestEngine::new(engine_config)?;
-
-            for venue_config in config.venues() {
-                let starting_balances: Vec<Money> = venue_config
-                    .starting_balances()
-                    .iter()
-                    .map(|s| s.parse::<Money>())
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| anyhow::anyhow!("Invalid starting balance: {e}"))?;
-
-                let default_leverage = venue_config.default_leverage();
-                let leverages = venue_config.leverages().cloned().unwrap_or_default();
-                let margin_model = venue_config.margin_model().cloned();
-                let modules = venue_config
-                    .modules()
-                    .iter()
-                    .cloned()
-                    .map(Into::into)
-                    .collect();
-                let fill_model = venue_config
-                    .fill_model()
-                    .cloned()
-                    .unwrap_or_default()
-                    .into();
-                let fee_model = venue_config.fee_model().cloned().unwrap_or_default().into();
-                let latency_model = venue_config.latency_model().cloned().map(Into::into);
-                let sim_config = SimulatedVenueConfig::builder()
-                    .venue(Venue::from(venue_config.name().as_str()))
-                    .oms_type(venue_config.oms_type())
-                    .account_type(venue_config.account_type())
-                    .book_type(venue_config.book_type())
-                    .starting_balances(starting_balances)
-                    .maybe_base_currency(venue_config.base_currency())
-                    .default_leverage(default_leverage)
-                    .leverages(leverages)
-                    .maybe_margin_model(margin_model)
-                    .modules(modules)
-                    .fill_model(fill_model)
-                    .fee_model(fee_model)
-                    .maybe_latency_model(latency_model)
-                    .routing(venue_config.routing())
-                    .reject_stop_orders(venue_config.reject_stop_orders())
-                    .support_gtd_orders(venue_config.support_gtd_orders())
-                    .support_contingent_orders(venue_config.support_contingent_orders())
-                    .use_position_ids(venue_config.use_position_ids())
-                    .use_random_ids(venue_config.use_random_ids())
-                    .use_reduce_only(venue_config.use_reduce_only())
-                    .use_market_order_acks(venue_config.use_market_order_acks())
-                    .bar_execution(venue_config.bar_execution())
-                    .bar_adaptive_high_low_ordering(venue_config.bar_adaptive_high_low_ordering())
-                    .trade_execution(venue_config.trade_execution())
-                    .liquidity_consumption(venue_config.liquidity_consumption())
-                    .allow_cash_borrowing(venue_config.allow_cash_borrowing())
-                    .frozen_account(venue_config.frozen_account())
-                    .queue_position(venue_config.queue_position())
-                    .oto_full_trigger(venue_config.oto_trigger_mode() == OtoTriggerMode::Full)
-                    .price_protection_points(venue_config.price_protection_points())
-                    .liquidation_enabled(venue_config.liquidation_enabled())
-                    .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
-                    .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
-                    .build()?;
-                engine.add_venue(sim_config)?;
-            }
-
-            for data_config in config.data() {
-                let catalog = create_catalog(data_config)?;
-                let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
-                let filter: Option<Vec<String>> = if instr_ids.is_empty() {
-                    None
-                } else {
-                    Some(instr_ids.iter().map(ToString::to_string).collect())
-                };
-
-                let instruments = catalog.query_instruments(filter.as_deref())?;
-
-                if !instr_ids.is_empty() && instruments.is_empty() {
-                    let ids: Vec<String> = instr_ids.iter().map(ToString::to_string).collect();
-                    anyhow::bail!(
-                        "No instruments found in catalog for requested IDs: [{}]",
-                        ids.join(", ")
-                    );
+            match build_engine(config) {
+                Ok(engine) => {
+                    self.engines.insert(config.id().to_string(), engine);
                 }
-
-                for instrument in instruments {
-                    engine.add_instrument(&instrument)?;
+                Err(e) if config.raise_exception() => return Err(e),
+                Err(e) => {
+                    log::error!("Error building backtest '{}': {e:#}", config.id());
                 }
             }
-
-            for venue_config in config.venues() {
-                let Some(settlement_prices) = venue_config.settlement_prices() else {
-                    continue;
-                };
-                let venue = Venue::from(venue_config.name().as_str());
-
-                for (instrument_id, raw_price) in settlement_prices {
-                    let price = {
-                        let cache = engine.kernel().cache.borrow();
-                        let instrument = cache.try_instrument(instrument_id)?;
-                        instrument.make_price(*raw_price)
-                    };
-                    engine.set_settlement_price(venue, *instrument_id, price)?;
-                }
-            }
-
-            self.engines.insert(config.id().to_string(), engine);
         }
 
         Ok(())
@@ -230,10 +136,14 @@ impl BacktestNode {
     /// Automatically calls [`build()`](Self::build) if engines have not been created yet.
     /// For each run config, loads data from the catalog and runs the engine.
     /// Supports both oneshot (`chunk_size = None`) and streaming modes.
+    /// Configs without a built engine are skipped. If a run fails with
+    /// [`BacktestRunConfig::raise_exception`] disabled, logs the error, clears its loaded data,
+    /// leaves the engine undisposed, and omits its result.
     ///
     /// # Errors
     ///
-    /// Returns an error if building, data loading, or engine execution fails.
+    /// Returns an error if building, data loading, or engine execution fails and
+    /// [`BacktestRunConfig::raise_exception`] is enabled for the run config.
     pub fn run(&mut self) -> anyhow::Result<Vec<BacktestResult>> {
         // Auto-build if not already done
         if self.engines.is_empty() {
@@ -243,16 +153,23 @@ impl BacktestNode {
         let mut results = Vec::new();
 
         for config in &self.configs {
-            let engine = self.engines.get_mut(config.id()).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Engine not found for config '{}'. Call build() first.",
-                    config.id()
-                )
-            })?;
+            let Some(engine) = self.engines.get_mut(config.id()) else {
+                continue;
+            };
 
-            match config.chunk_size() {
-                None => run_oneshot(engine, config)?,
-                Some(chunk_size) => run_streaming(engine, config, chunk_size)?,
+            let run_result = match config.chunk_size() {
+                None => run_oneshot(engine, config),
+                Some(chunk_size) => run_streaming(engine, config, chunk_size),
+            };
+
+            if let Err(e) = run_result {
+                if config.raise_exception() {
+                    return Err(e);
+                }
+
+                log::error!("Error running backtest '{}': {e:#}", config.id());
+                engine.clear_data();
+                continue;
             }
 
             results.push(engine.get_result());
@@ -296,6 +213,115 @@ impl BacktestNode {
         }
         self.engines.clear();
     }
+}
+
+fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
+    let engine_config = config.engine().clone();
+    let mut engine = BacktestEngine::new(engine_config)?;
+
+    for venue_config in config.venues() {
+        let starting_balances: Vec<Money> = venue_config
+            .starting_balances()
+            .iter()
+            .map(|s| s.parse::<Money>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow::anyhow!("Invalid starting balance: {e}"))?;
+
+        let default_leverage = venue_config.default_leverage();
+        let leverages = venue_config.leverages().cloned().unwrap_or_default();
+        let margin_model = venue_config.margin_model().cloned();
+        let modules = venue_config
+            .modules()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+        let fill_model = venue_config
+            .fill_model()
+            .cloned()
+            .unwrap_or_default()
+            .into();
+        let fee_model = venue_config.fee_model().cloned().unwrap_or_default().into();
+        let latency_model = venue_config.latency_model().cloned().map(Into::into);
+        let sim_config = SimulatedVenueConfig::builder()
+            .venue(Venue::from(venue_config.name().as_str()))
+            .oms_type(venue_config.oms_type())
+            .account_type(venue_config.account_type())
+            .book_type(venue_config.book_type())
+            .starting_balances(starting_balances)
+            .maybe_base_currency(venue_config.base_currency())
+            .default_leverage(default_leverage)
+            .leverages(leverages)
+            .maybe_margin_model(margin_model)
+            .modules(modules)
+            .fill_model(fill_model)
+            .fee_model(fee_model)
+            .maybe_latency_model(latency_model)
+            .routing(venue_config.routing())
+            .reject_stop_orders(venue_config.reject_stop_orders())
+            .support_gtd_orders(venue_config.support_gtd_orders())
+            .support_contingent_orders(venue_config.support_contingent_orders())
+            .use_position_ids(venue_config.use_position_ids())
+            .use_random_ids(venue_config.use_random_ids())
+            .use_reduce_only(venue_config.use_reduce_only())
+            .use_market_order_acks(venue_config.use_market_order_acks())
+            .bar_execution(venue_config.bar_execution())
+            .bar_adaptive_high_low_ordering(venue_config.bar_adaptive_high_low_ordering())
+            .trade_execution(venue_config.trade_execution())
+            .liquidity_consumption(venue_config.liquidity_consumption())
+            .allow_cash_borrowing(venue_config.allow_cash_borrowing())
+            .frozen_account(venue_config.frozen_account())
+            .queue_position(venue_config.queue_position())
+            .oto_full_trigger(venue_config.oto_trigger_mode() == OtoTriggerMode::Full)
+            .price_protection_points(venue_config.price_protection_points())
+            .liquidation_enabled(venue_config.liquidation_enabled())
+            .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
+            .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
+            .build()?;
+        engine.add_venue(sim_config)?;
+    }
+
+    for data_config in config.data() {
+        let catalog = create_catalog(data_config)?;
+        let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
+        let filter: Option<Vec<String>> = if instr_ids.is_empty() {
+            None
+        } else {
+            Some(instr_ids.iter().map(ToString::to_string).collect())
+        };
+
+        let instruments = catalog.query_instruments(filter.as_deref())?;
+
+        if !instr_ids.is_empty() && instruments.is_empty() {
+            let ids: Vec<String> = instr_ids.iter().map(ToString::to_string).collect();
+            anyhow::bail!(
+                "No instruments found in catalog for requested IDs: [{}]",
+                ids.join(", ")
+            );
+        }
+
+        for instrument in instruments {
+            engine.add_instrument(&instrument)?;
+        }
+    }
+
+    for venue_config in config.venues() {
+        let Some(settlement_prices) = venue_config.settlement_prices() else {
+            continue;
+        };
+        let venue = Venue::from(venue_config.name().as_str());
+
+        for (instrument_id, raw_price) in settlement_prices {
+            let price = {
+                let cache = engine.kernel().cache.borrow();
+                let instrument = cache.try_instrument(instrument_id)?;
+                instrument.make_price(*raw_price)
+            };
+            engine.set_settlement_price(venue, *instrument_id, price)?;
+        }
+    }
+
+    Ok(engine)
 }
 
 fn validate_configs(configs: &[BacktestRunConfig]) -> anyhow::Result<()> {

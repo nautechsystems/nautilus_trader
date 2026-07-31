@@ -1511,6 +1511,44 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
 }
 
 #[rstest]
+fn test_process_funding_rate_returns_instrument_boundary() {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let first_boundary = UnixNanos::from(3);
+    let second_boundary = UnixNanos::from(4);
+    let first_instrument = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let second_instrument = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let first_scheduled = exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            first_instrument,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(first_boundary),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+    let second_scheduled = exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            second_instrument,
+            Decimal::from_str("0.002").unwrap(),
+            Some(480),
+            Some(second_boundary),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+
+    assert_eq!(first_scheduled, Some(first_boundary));
+    assert_eq!(second_scheduled, Some(second_boundary));
+}
+
+#[rstest]
 fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
     let inverse = xbtusd_bitmex();
     let instrument = InstrumentAny::CryptoPerpetual(inverse.clone());

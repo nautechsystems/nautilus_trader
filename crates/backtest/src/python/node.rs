@@ -71,11 +71,14 @@ impl BacktestNode {
     /// Builds backtest engines from the run configurations.
     ///
     /// For each config, creates a `BacktestEngine`, adds venues, and loads
-    /// instruments from the catalog.
+    /// instruments from the catalog. If building a config fails with
+    /// `BacktestRunConfig.raise_exception` disabled, logs the error and skips that config;
+    /// successful return does not guarantee an engine for every config.
     ///
     /// # Errors
     ///
-    /// Returns an error if engine creation, venue setup, or instrument loading fails.
+    /// Returns an error if building an engine from a config fails and
+    /// `BacktestRunConfig.raise_exception` is enabled for that config.
     #[pyo3(name = "build")]
     fn py_build(&mut self) -> PyResult<()> {
         self.build().map_err(to_pyruntime_err)
@@ -86,10 +89,14 @@ impl BacktestNode {
     /// Automatically calls `build()` if engines have not been created yet.
     /// For each run config, loads data from the catalog and runs the engine.
     /// Supports both oneshot (`chunk_size = None`) and streaming modes.
+    /// Configs without a built engine are skipped. If a run fails with
+    /// `BacktestRunConfig.raise_exception` disabled, logs the error, clears its loaded data,
+    /// leaves the engine undisposed, and omits its result.
     ///
     /// # Errors
     ///
-    /// Returns an error if building, data loading, or engine execution fails.
+    /// Returns an error if building, data loading, or engine execution fails and
+    /// `BacktestRunConfig.raise_exception` is enabled for the run config.
     #[pyo3(name = "run")]
     fn py_run(&mut self) -> PyResult<Vec<BacktestResult>> {
         self.run().map_err(to_pyruntime_err)

@@ -1669,6 +1669,298 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
 }
 
 #[rstest]
+fn test_run_settles_distinct_funding_boundaries() {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+    let first_boundary = UnixNanos::from(4_000_000_000);
+    let second_boundary = UnixNanos::from(4_500_000_000);
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(first_boundary),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.002".parse().unwrap(),
+            Some(480),
+            Some(second_boundary),
+            UnixNanos::from(3_500_000_000),
+            UnixNanos::from(3_500_000_000),
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 5_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    let [position] = positions.as_slice() else {
+        panic!("expected one open position");
+    };
+    let [first, second] = position.adjustments.as_slice() else {
+        panic!("expected two position adjustments");
+    };
+    assert_eq!(first.ts_event, first_boundary);
+    assert_eq!(first.pnl_change, Some(Money::from("-1 USDT")));
+    assert_eq!(second.ts_event, second_boundary);
+    assert_eq!(second.pnl_change, Some(Money::from("-2 USDT")));
+}
+
+#[rstest]
+fn test_run_retries_funding_after_same_timestamp_mark_price() {
+    let (mut engine, instrument_id) = create_inverse_funding_engine();
+    let boundary = UnixNanos::from(3_000_000_000);
+    let data = vec![
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
+        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("0.0"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(boundary),
+            boundary,
+            boundary,
+        )),
+        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("10000.0"),
+            boundary,
+            boundary,
+        )),
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 4_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    let [position] = positions.as_slice() else {
+        panic!("expected one open position");
+    };
+    let [adjustment] = position.adjustments.as_slice() else {
+        panic!("expected one position adjustment");
+    };
+    assert_eq!(adjustment.ts_event, boundary);
+    assert_eq!(adjustment.pnl_change, Some(Money::from("-0.01 BTC")));
+}
+
+#[rstest]
+fn test_run_stops_on_unpriced_funding_boundary() {
+    let (mut engine, instrument_id) = create_inverse_funding_engine();
+    let boundary = UnixNanos::from(3_000_000_000);
+    let data = vec![
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
+        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("0.0"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(boundary),
+            boundary,
+            boundary,
+        )),
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 4_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    let first_error = engine.run(None, None, None, false).unwrap_err();
+    let second_error = engine.run(None, None, None, false).unwrap_err();
+
+    assert!(
+        first_error
+            .to_string()
+            .contains("Funding settlement failed"),
+        "unexpected error: {first_error:#}"
+    );
+    assert_eq!(second_error.to_string(), first_error.to_string());
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert_eq!(engine.backtest_end(), Some(boundary));
+}
+
+#[rstest]
+fn test_end_stops_on_unpriced_funding_boundary() {
+    let (mut engine, instrument_id) = create_inverse_funding_engine();
+    let boundary = UnixNanos::from(4_000_000_000);
+    let data = vec![
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
+        quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
+        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("0.0"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(boundary),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine
+        .run(None, Some(UnixNanos::from(5_000_000_000)), None, true)
+        .unwrap();
+
+    engine.end();
+
+    let error = engine.run(None, None, None, false).unwrap_err();
+
+    assert!(
+        error.to_string().contains("Funding settlement failed"),
+        "unexpected error: {error:#}"
+    );
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert_eq!(engine.backtest_end(), Some(boundary));
+
+    engine.end();
+}
+
+#[rstest]
+fn test_run_rejects_late_funding_boundary() {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(UnixNanos::from(2_000_000_000)),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 4_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    let error = engine.run(None, None, None, false).unwrap_err();
+
+    assert!(
+        error.to_string().contains("Late funding boundary"),
+        "unexpected error: {error:#}"
+    );
+    assert_eq!(engine.backtest_end(), Some(UnixNanos::from(3_000_000_000)));
+}
+
+#[rstest]
+fn test_run_rejects_late_interval_funding_boundary() {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    let boundary = UnixNanos::from(60_000_000_000);
+    let replay_ts = UnixNanos::from(61_000_000_000);
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(1),
+            None,
+            boundary,
+            replay_ts,
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 62_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    let error = engine.run(None, None, None, false).unwrap_err();
+
+    assert!(
+        error.to_string().contains("Late funding boundary"),
+        "unexpected error: {error:#}"
+    );
+    assert_eq!(engine.backtest_end(), Some(replay_ts));
+}
+
+#[rstest]
+fn test_reset_cancels_funding_timer() {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    let data = vec![Data::FundingRateUpdate(FundingRateUpdate::new(
+        instrument_id,
+        "0.001".parse().unwrap(),
+        Some(480),
+        Some(UnixNanos::from(4_000_000_000)),
+        UnixNanos::from(1_000_000_000),
+        UnixNanos::from(1_000_000_000),
+    ))];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, true).unwrap();
+    let timer_name = Ustr::from("FUNDING-SETTLEMENT:BINANCE");
+    assert!(engine.kernel().clock.borrow().timer_exists(&timer_name));
+
+    engine.reset();
+
+    assert!(!engine.kernel().clock.borrow().timer_exists(&timer_name));
+}
+
+fn create_inverse_funding_engine() -> (BacktestEngine, InstrumentId) {
+    let instrument =
+        InstrumentAny::CryptoPerpetual(nautilus_model::instruments::stubs::xbtusd_bitmex());
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BITMEX"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("100 BTC")])
+        .build()
+        .unwrap();
+    engine.add_venue(venue).unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("100000"),
+        ))
+        .unwrap();
+    (engine, instrument_id)
+}
+
+#[rstest]
 fn test_simulated_venue_config_settlement_prices_used_on_instrument_close(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
@@ -2523,7 +2815,7 @@ impl DataActor for ShutdownFromTimer {
 struct ShutdownAndScheduleNewAlert {
     core: StrategyCore,
     instrument_id: InstrumentId,
-    shutdown_ts: u64,
+    submit_ts: u64,
     new_alert_ts: u64,
     shutdown_fired: std::rc::Rc<Cell<u32>>,
     new_alert_fired: std::rc::Rc<Cell<u32>>,
@@ -2532,7 +2824,7 @@ struct ShutdownAndScheduleNewAlert {
 impl ShutdownAndScheduleNewAlert {
     fn new(
         instrument_id: InstrumentId,
-        shutdown_ts: u64,
+        submit_ts: u64,
         new_alert_ts: u64,
         shutdown_fired: std::rc::Rc<Cell<u32>>,
         new_alert_fired: std::rc::Rc<Cell<u32>>,
@@ -2545,7 +2837,7 @@ impl ShutdownAndScheduleNewAlert {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            shutdown_ts,
+            submit_ts,
             new_alert_ts,
             shutdown_fired,
             new_alert_fired,
@@ -2553,7 +2845,13 @@ impl ShutdownAndScheduleNewAlert {
     }
 }
 
-nautilus_strategy!(ShutdownAndScheduleNewAlert);
+nautilus_strategy!(ShutdownAndScheduleNewAlert, {
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        self.clock()
+            .set_time_alert_ns("shutdown_timer", event.ts_event, None, None)
+            .expect("failed to schedule shutdown timer");
+    }
+});
 
 impl Debug for ShutdownAndScheduleNewAlert {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -2565,14 +2863,28 @@ impl Debug for ShutdownAndScheduleNewAlert {
 impl DataActor for ShutdownAndScheduleNewAlert {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.subscribe_quotes(self.instrument_id, None, None);
-        let shutdown_ts = self.shutdown_ts;
+        let submit_ts = self.submit_ts;
         self.clock()
-            .set_time_alert_ns("shutdown_timer", shutdown_ts.into(), None, None)?;
+            .set_time_alert_ns("submit_timer", submit_ts.into(), None, None)?;
         Ok(())
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        if event.name.as_str() == "shutdown_timer" {
+        if event.name.as_str() == "submit_timer" {
+            let order = self.order().market(
+                self.instrument_id,
+                OrderSide::Buy,
+                Quantity::from("1.000"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            self.submit_order(order, None, None, None)?;
+        } else if event.name.as_str() == "shutdown_timer" {
             self.shutdown_fired.set(self.shutdown_fired.get() + 1);
             let new_alert_ts = self.new_alert_ts;
             self.clock().set_time_alert_ns(
@@ -2605,7 +2917,7 @@ fn test_shutdown_handler_scheduling_new_alert_does_not_fire_it(
         .add_strategy(ShutdownAndScheduleNewAlert::new(
             instrument_id,
             2_500_000_000,
-            2_600_000_000,
+            2_400_000_000,
             shutdown_fired.clone(),
             new_alert_fired.clone(),
         ))

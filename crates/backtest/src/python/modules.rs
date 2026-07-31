@@ -15,6 +15,7 @@
 
 //! Python bindings for simulation module types.
 
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::prelude::*;
 
 use crate::modules::fx_rollover::{FXRolloverInterestModule, InterestRateRecord};
@@ -24,12 +25,14 @@ use crate::modules::fx_rollover::{FXRolloverInterestModule, InterestRateRecord};
 impl InterestRateRecord {
     /// A single interest rate data entry.
     #[new]
-    fn py_new(location: String, time: String, value: f64) -> Self {
-        Self {
+    fn py_new(location: String, time: String, value: f64) -> PyResult<Self> {
+        let record = Self {
             location,
             time,
             value,
-        }
+        };
+        record.validate().map_err(to_pyvalue_err)?;
+        Ok(record)
     }
 
     fn __repr__(&self) -> String {
@@ -46,8 +49,8 @@ impl FXRolloverInterestModule {
     /// between the two currencies is credited or debited. Wednesday and Friday
     /// rollovers are tripled (Wednesday for T+2 settlement, Friday for the weekend).
     #[new]
-    fn py_new(records: Vec<InterestRateRecord>) -> Self {
-        Self::new(records)
+    fn py_new(records: Vec<InterestRateRecord>) -> PyResult<Self> {
+        Self::new(records).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
