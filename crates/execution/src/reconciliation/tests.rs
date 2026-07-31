@@ -33,7 +33,7 @@ use nautilus_model::{
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{audusd_sim, binary_option, crypto_perpetual_ethusdt},
+        stubs::{audusd_sim, binary_option, crypto_perpetual_ethusdt, futures_spread_es},
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -1658,6 +1658,178 @@ fn test_inferred_fill_clamps_out_of_range_avg_px() {
         other => panic!("Expected Filled event, was {other:?}"),
     };
     assert_eq!(filled.last_px, instrument.max_price().unwrap());
+}
+
+#[rstest]
+fn test_incremental_fill_price_negative_back_solve_uses_venue_average() {
+    // Back-solve ((110 * 40) - (100 * 50)) / 10 = -60
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("TEST-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+
+    assert!(!instrument.allows_negative_price());
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("200.0"))
+        .price(Price::from("50.00"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    apply_fill(
+        &mut order,
+        &instrument,
+        TradeId::from("T-1"),
+        Quantity::from("100.0"),
+        Price::from("50.00"),
+    );
+
+    let report = OrderStatusReport::new(
+        account_id,
+        instrument.id(),
+        Some(order.client_order_id()),
+        venue_order_id,
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("200.0"),
+        Quantity::from("110.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_avg_px(dec!(40.00));
+
+    let fill = create_incremental_inferred_fill(
+        &order,
+        &report,
+        &account_id,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        None,
+    );
+
+    let filled = match fill.expect("expected an inferred fill") {
+        OrderEventAny::Filled(f) => f,
+        other => panic!("Expected Filled event, was {other:?}"),
+    };
+    assert_eq!(filled.last_px.as_decimal(), dec!(40.00));
+    assert_eq!(filled.last_qty, Quantity::from("10.0"));
+}
+
+#[rstest]
+fn test_incremental_fill_price_negative_venue_average_with_negative_back_solve_returns_none() {
+    // Back-solve ((110 * -1) - (100 * 5)) / 10 = -61, with a negative venue average too
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("TEST-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+
+    assert!(!instrument.allows_negative_price());
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("200.0"))
+        .price(Price::from("5.00"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    apply_fill(
+        &mut order,
+        &instrument,
+        TradeId::from("T-1"),
+        Quantity::from("100.0"),
+        Price::from("5.00"),
+    );
+
+    let report = OrderStatusReport::new(
+        account_id,
+        instrument.id(),
+        Some(order.client_order_id()),
+        venue_order_id,
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("200.0"),
+        Quantity::from("110.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_avg_px(dec!(-1.00));
+
+    let fill = create_incremental_inferred_fill(
+        &order,
+        &report,
+        &account_id,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        None,
+    );
+
+    assert!(fill.is_none());
+}
+
+#[rstest]
+fn test_incremental_fill_price_keeps_negative_back_solve_when_instrument_allows_it() {
+    // Back-solve ((110 * 1) - (100 * 5)) / 10 = -39
+    let instrument = InstrumentAny::FuturesSpread(futures_spread_es());
+    let account_id = AccountId::from("TEST-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+
+    assert!(instrument.allows_negative_price());
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("200"))
+        .price(Price::from("5.00"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    apply_fill(
+        &mut order,
+        &instrument,
+        TradeId::from("T-1"),
+        Quantity::from("100"),
+        Price::from("5.00"),
+    );
+
+    let report = OrderStatusReport::new(
+        account_id,
+        instrument.id(),
+        Some(order.client_order_id()),
+        venue_order_id,
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("200"),
+        Quantity::from("110"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_avg_px(dec!(1.00));
+
+    let fill = create_incremental_inferred_fill(
+        &order,
+        &report,
+        &account_id,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        None,
+    );
+
+    let filled = match fill.expect("expected an inferred fill") {
+        OrderEventAny::Filled(f) => f,
+        other => panic!("Expected Filled event, was {other:?}"),
+    };
+    assert_eq!(filled.last_px.as_decimal(), dec!(-39.00));
+    assert_eq!(filled.last_qty, Quantity::from("10"));
 }
 
 #[rstest]

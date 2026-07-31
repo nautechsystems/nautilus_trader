@@ -33,6 +33,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
@@ -1379,6 +1380,10 @@ fn reconcile_fill_quantity_mismatch(
 }
 
 /// Calculates the fill price for an incremental inferred fill.
+///
+/// The back-solve is guarded because nothing downstream rejects a negative price:
+/// [`Price`] admits negatives, [`clamp_inferred_fill_price`] caps only the upper bound,
+/// and `Position` takes `OrderFilled::last_px` straight into `avg_px_open` and PnL.
 fn calculate_incremental_fill_price(
     order: &OrderAny,
     report: &OrderStatusReport,
@@ -1426,6 +1431,24 @@ fn calculate_incremental_fill_price(
         let order_notional = order_avg_px * order_filled_qty.as_decimal();
         let last_notional = report_notional - order_notional;
         let last_px_decimal = last_notional / last_qty.as_decimal();
+
+        if last_px_decimal < Decimal::ZERO && !instrument.allows_negative_price() {
+            if report_avg_px < Decimal::ZERO {
+                log::warn!(
+                    "Cannot price inferred fill for {}: back-solved {last_px_decimal} and venue average {report_avg_px} are both negative on an instrument that disallows negative prices",
+                    order.client_order_id(),
+                );
+
+                return None;
+            }
+
+            log::warn!(
+                "Negative back-solved fill price {last_px_decimal} for {}, using venue average {report_avg_px}",
+                order.client_order_id(),
+            );
+
+            return Price::from_decimal_dp(report_avg_px, instrument.price_precision()).ok();
+        }
 
         return Price::from_decimal_dp(last_px_decimal, instrument.price_precision()).ok();
     }
