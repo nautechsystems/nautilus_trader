@@ -102,7 +102,7 @@ class NautilusKernel:
     """
     Provides the core Nautilus system kernel.
 
-    The kernel is common between ``backtest``, ``sandbox`` and ``live`` environment context types.
+    The kernel is common between ``backtest``, ``sandbox``, and ``live`` environment context types.
 
     Parameters
     ----------

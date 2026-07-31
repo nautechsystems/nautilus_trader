@@ -17,7 +17,7 @@
 //! [Derive](https://docs.derive.xyz).
 //!
 //! The `nautilus-derive` crate provides integration with the Derive self-custodial onchain
-//! options, perpetuals and spot exchange. Authentication uses an EVM smart-contract wallet
+//! options, perpetuals, and spot exchange. Authentication uses an EVM smart-contract wallet
 //! on the Derive Chain together with a session-key signer; orders are EIP-712 typed-data
 //! signed against the venue's per-action module contracts.
 //!

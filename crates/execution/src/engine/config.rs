@@ -48,7 +48,7 @@ pub struct ExecutionEngineConfig {
     #[builder(default)]
     pub snapshot_orders: bool,
     /// If position state snapshot lists are persisted to a backing database.
-    /// Snapshots will be taken at position opened, changed and closed (when events are applied).
+    /// Snapshots will be taken at position opened, changed, and closed (when events are applied).
     #[serde(default)]
     #[builder(default)]
     pub snapshot_positions: bool,

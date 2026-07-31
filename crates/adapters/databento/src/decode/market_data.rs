@@ -83,7 +83,7 @@ fn fnv1a_mix(hash: &mut u64, bytes: &[u8]) {
 /// Derives a deterministic [`TradeId`] for Databento schemas that do not
 /// publish a native trade identifier (e.g. CMBP1, TCBBO).
 ///
-/// The hash combines the instrument, timestamps, price, size and aggressor
+/// The hash combines the instrument, timestamps, price, size, and aggressor
 /// side so that replayed data yields the same identifier across runs.
 pub(super) fn derive_cmbp_trade_id(
     instrument_id: InstrumentId,

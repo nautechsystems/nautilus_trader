@@ -265,7 +265,7 @@ pub struct PostOrderParams {
     /// Time in force. Valid options: `Day`, `GoodTillCancel`, `ImmediateOrCancel`, `FillOrKill`. Defaults to `GoodTillCancel` for `Limit`, `StopLimit`, and `LimitIfTouched` orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<BitmexTimeInForce>,
-    /// Optional execution instructions. Valid options: `ParticipateDoNotInitiate`, `AllOrNone`, `MarkPrice`, `IndexPrice`, `LastPrice`, `Close`, `ReduceOnly`, Fixed. `AllOrNone` instruction requires `displayQty` to be 0. `MarkPrice`, `IndexPrice` or `LastPrice` instruction valid for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders.
+    /// Optional execution instructions. Valid options: `ParticipateDoNotInitiate`, `AllOrNone`, `MarkPrice`, `IndexPrice`, `LastPrice`, `Close`, `ReduceOnly`, Fixed. `AllOrNone` instruction requires `displayQty` to be 0. `MarkPrice`, `IndexPrice`, or `LastPrice` instruction valid for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders.
     #[serde(
         serialize_with = "serialize_exec_instructions_optional",
         skip_serializing_if = "is_exec_inst_empty"

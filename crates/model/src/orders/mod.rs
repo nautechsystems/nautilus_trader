@@ -1293,7 +1293,7 @@ impl OrderCore {
             self.venue_order_id.is_some()
                 && self.last_trade_id.is_some()
                 && !self.trade_ids.is_empty(),
-            "Invariant: venue_order_id, last_trade_id and trade_ids must be set after fill"
+            "Invariant: venue_order_id, last_trade_id, and trade_ids must be set after fill"
         );
         debug_assert!(
             self.filled_qty

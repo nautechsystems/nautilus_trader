@@ -1334,7 +1334,7 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
         let greeks = parse_option_summary_msg(&msg, instrument_id);
 
-        // Absent greeks default to 0.0; absent IVs, underlying and open interest stay None.
+        // Absent greeks default to 0.0; absent IVs, underlying, and open interest stay None.
         assert_eq!(greeks.greeks.delta, 0.0);
         assert_eq!(greeks.greeks.gamma, 0.0);
         assert_eq!(greeks.greeks.vega, 0.0);

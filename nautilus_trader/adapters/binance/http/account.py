@@ -300,7 +300,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
 
 class BinanceAllOrdersHttp(BinanceHttpEndpoint):
     """
-    Endpoint of all account orders, active, cancelled or filled.
+    Endpoint of all account orders, active, cancelled, or filled.
 
     `GET /api/v3/allOrders`
     `GET /fapi/v1/allOrders`

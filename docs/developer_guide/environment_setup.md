@@ -4,7 +4,7 @@ For development we recommend using the PyCharm *Professional* edition IDE, as it
 
 [uv](https://docs.astral.sh/uv) is the preferred tool for handling all Python virtual environments and dependencies.
 
-[prek](https://github.com/j178/prek) is used to automatically run various pre-commit checks, auto-formatters and linting tools at commit.
+[prek](https://github.com/j178/prek) is used to automatically run various pre-commit checks, auto-formatters, and linting tools at commit.
 
 NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust should be installed on your system as well
 ([installation guide](https://www.rust-lang.org/tools/install)).
@@ -268,7 +268,7 @@ To update the pinned uv version, change `required-version` in both `pyproject.to
 
 ## Builds
 
-Following any changes to `.rs`, `.pyx` or `.pxd` files, you can re-compile by running:
+Following any changes to `.rs`, `.pyx`, or `.pxd` files, you can re-compile by running:
 
 ```bash tab="uv"
 uv run --no-sync python build.py
@@ -328,7 +328,7 @@ an older version, install from source or see the
 
 ## Faster builds
 
-The cranelift backends reduces build time significantly for dev, testing and IDE checks. However, cranelift is available on the nightly toolchain and needs extra configuration. Install the nightly toolchain
+The cranelift backends reduces build time significantly for dev, testing, and IDE checks. However, cranelift is available on the nightly toolchain and needs extra configuration. Install the nightly toolchain
 
 ```
 rustup install nightly
@@ -398,7 +398,7 @@ docker-compose up -d postgres
 
 Used services are:
 
-- `postgres`: Postgres database with root user `POSTGRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`.
+- `postgres`: Postgres database with root user `POSTGRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass`, and `POSTGRES_DB` which defaults to `postgres`.
 - `redis`: Redis server.
 - `pgadmin`: PgAdmin4 for database management and administration.
 
@@ -483,8 +483,8 @@ POSTGRES_DATABASE=nautilus
 
 List of commands are:
 
-1. `nautilus database init`: Will bootstrap schema, roles and all sql files located in `schema` root directory (like `tables.sql`).
-2. `nautilus database drop`: Will drop all tables, roles and data in target Postgres database.
+1. `nautilus database init`: Will bootstrap schema, roles, and all sql files located in `schema` root directory (like `tables.sql`).
+2. `nautilus database drop`: Will drop all tables, roles, and data in target Postgres database.
 
 ## Rust analyzer settings
 

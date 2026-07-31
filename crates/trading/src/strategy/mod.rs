@@ -430,7 +430,7 @@ pub trait Strategy: DataActor {
 
         if !updating {
             log::error!(
-                "Cannot create command ModifyOrder: quantity, price and trigger were either None \
+                "Cannot create command ModifyOrder: quantity, price, and trigger were either None \
                 or the same as existing values"
             );
             return Ok(());
@@ -563,7 +563,7 @@ pub trait Strategy: DataActor {
 
             if !updating {
                 anyhow::bail!(
-                    "Cannot create command BatchModifyOrders: quantity, price and trigger were \
+                    "Cannot create command BatchModifyOrders: quantity, price, and trigger were \
                     either None or the same as existing values for {}",
                     order.client_order_id()
                 );

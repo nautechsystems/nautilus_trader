@@ -620,7 +620,7 @@ fn py_decode_record_batch_to_custom_data(
 /// The class must have:
 /// - `type_name_static()` class method or `__name__` (used as type name in storage)
 /// - `decode_record_batch_py(metadata, ipc_bytes)` class method
-/// - Instances must have `ts_event`, `ts_init` and `encode_record_batch_py(items)`.
+/// - Instances must have `ts_event`, `ts_init`, and `encode_record_batch_py(items)`.
 ///
 /// # Arguments
 ///

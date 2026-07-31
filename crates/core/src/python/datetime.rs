@@ -128,7 +128,7 @@ pub fn py_unix_nanos_to_iso8601(
     Ok(formatted)
 }
 
-/// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
+/// Calculates the last weekday (Mon-Fri) from the given `year`, `month`, and `day`.
 ///
 /// # Errors
 ///

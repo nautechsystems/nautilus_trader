@@ -465,7 +465,7 @@ If the order is already *closed* or already pending cancel, then a warning will 
 
 If the order is currently *open* then the status will become `PENDING_CANCEL`.
 
-The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command will flow to for execution depends on the following:
+The component a `CancelOrder`, `CancelAllOrders`, or `BatchCancelOrders` command will flow to for execution depends on the following:
 
 - If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecAlgorithm`.

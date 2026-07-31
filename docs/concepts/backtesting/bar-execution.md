@@ -41,7 +41,7 @@ For each applicable bar, the engine:
 
 1. Selects the most granular configured bar type for the instrument.
 1. Splits the bar volume across four synthetic updates.
-1. Processes the open, high and low in the configured order, then the close.
+1. Processes the open, high, and low in the configured order, then the close.
 1. Matches orders after each synthetic update.
 1. Dispatches the complete bar to actors and strategies.
 

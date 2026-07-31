@@ -123,7 +123,7 @@ pub fn logging_set_bypass() {
 
 /// Shuts down the logging subsystem.
 pub fn logging_shutdown() {
-    // Perform a graceful shutdown: prevent new logs, signal Close, drain and join.
+    // Perform a graceful shutdown: prevent new logs, signal Close, drain, and join.
     // Delegates to logger implementation which has access to the internals.
     crate::logging::logger::shutdown_graceful();
 }

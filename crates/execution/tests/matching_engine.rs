@@ -2148,7 +2148,7 @@ fn test_process_stop_limit_order_triggered_filled(
         .unwrap();
     engine_l2.process_order(&mut stop_order, account_id);
 
-    // Check we have received OrderAccepted, OrderTriggered and finally OrderFilled event
+    // Check we have received OrderAccepted, OrderTriggered, and finally OrderFilled event
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
     assert_eq!(saved_messages.len(), 3);
     let event1 = saved_messages.first().unwrap();
@@ -3940,7 +3940,7 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
     engine_l2.process_order(&mut limit_if_touched_order, account_id);
 
     // Check that order was filled immediately with correct price and quantity
-    // We should receive OrderAccepted, OrderTriggered and OrderFilled event
+    // We should receive OrderAccepted, OrderTriggered, and OrderFilled event
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
     assert_eq!(saved_messages.len(), 3);
     let event1 = saved_messages.first().unwrap();

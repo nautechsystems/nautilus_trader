@@ -668,7 +668,7 @@ cdef class Price:
 
     Parameters
     ----------
-    value : integer, float, string or Decimal
+    value : integer, float, string, or Decimal
         The value of the price.
     precision : uint8_t
         The precision for the price. Use a precision of 0 for whole numbers
@@ -1173,7 +1173,7 @@ cdef class Money:
 
     Parameters
     ----------
-    value : integer, float, string or Decimal
+    value : integer, float, string, or Decimal
         The amount of money in the currency denomination.
     currency : Currency
         The currency of the money.

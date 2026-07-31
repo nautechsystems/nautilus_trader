@@ -1416,7 +1416,7 @@ impl OrderSideSpecified {
 pub enum OrderStatus {
     /// The order is initialized (instantiated) within the Nautilus system.
     Initialized = 1,
-    /// The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
+    /// The order was denied by the Nautilus system, either for being invalid, unprocessable, or exceeding a risk limit.
     Denied = 2,
     /// The order became emulated by the Nautilus system in the `OrderEmulator` component.
     Emulated = 3,

@@ -17,7 +17,7 @@
 //!
 //! These generic boundaries follow the model's resolved raw aliases independently of this
 //! crate's `high-precision` forwarding feature. Keeping them generic is deliberate: the target
-//! width comes from `PriceRaw`, `QuantityRaw` and `MoneyRaw`, so codec code never needs to
+//! width comes from `PriceRaw`, `QuantityRaw`, and `MoneyRaw`, so codec code never needs to
 //! inspect a precision feature of its own to decide how wide a value may be. Inlining these
 //! conversions back into the codecs would reintroduce that coupling.
 

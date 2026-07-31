@@ -1084,7 +1084,7 @@ mod tests {
         );
     }
 
-    // The `betting` stub populates every bound, margin and fee, so this covers the whole struct
+    // The `betting` stub populates every bound, margin, and fee, so this covers the whole struct
     #[rstest]
     fn test_encode_decode_round_trip_betting_all_fields() {
         let instrument = betting();

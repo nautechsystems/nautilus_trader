@@ -1066,7 +1066,7 @@ cdef class Order:
         elif isinstance(event, OrderTriggered):
             Condition.is_true(
                 self.order_type in TRIGGERABLE_ORDER_TYPES,
-                "can only trigger STOP_LIMIT, TRAILING_STOP_LIMIT and LIMIT_IF_TOUCHED orders",
+                "can only trigger STOP_LIMIT, TRAILING_STOP_LIMIT, and LIMIT_IF_TOUCHED orders",
             )
             self._fsm.trigger(OrderStatus.TRIGGERED)
             self._triggered(event)

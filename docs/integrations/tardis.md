@@ -196,7 +196,7 @@ The end-to-end `run_tardis_machine_replay` data pipeline function uses a specifi
 - Connect to the Tardis Machine server.
 - Request and parse all necessary instrument definitions from the Tardis instruments metadata API.
 - Stream all requested instruments and data types for the specified time ranges from Tardis Machine.
-- For each instrument, data type and date (UTC), generate a catalog-compatible `.parquet` file.
+- For each instrument, data type, and date (UTC), generate a catalog-compatible `.parquet` file.
 - Disconnect from the Tardis Machine server, and terminate the program.
 
 **File naming convention**

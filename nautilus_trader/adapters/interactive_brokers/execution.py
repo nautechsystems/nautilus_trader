@@ -918,7 +918,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Parameters
         ----------
         lookback_mins : int, optional
-            The maximum lookback for querying closed orders, trades and positions.
+            The maximum lookback for querying closed orders, trades, and positions.
 
         Returns
         -------

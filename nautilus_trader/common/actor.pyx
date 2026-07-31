@@ -3946,7 +3946,7 @@ cdef class Actor(Component):
         """
         Request historical aggregated `Bar` data for multiple bar types.
         The first bar is used to determine which market data type will be queried.
-        This can either be quotes, trades or bars. If bars are queried,
+        This can either be quotes, trades, or bars. If bars are queried,
         the first bar type needs to have a composite bar that is external (i.e. not internal/aggregated).
         This external bar type will be queried.
 
@@ -3971,7 +3971,7 @@ cdef class Actor(Component):
             If `None` then will be replaced with the current UTC time.
             Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
-            The limit on the amount of data received (quote ticks, trade ticks or bars).
+            The limit on the amount of data received (quote ticks, trade ticks, or bars).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.

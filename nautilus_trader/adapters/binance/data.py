@@ -715,7 +715,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot get order book snapshots: "
                 f"invalid `limit`, was {request.limit}. "
-                "Valid limits are 5, 10, 20, 50, 100, 500 or 1000",
+                "Valid limits are 5, 10, 20, 50, 100, 500, or 1000",
             )
             return
         else:

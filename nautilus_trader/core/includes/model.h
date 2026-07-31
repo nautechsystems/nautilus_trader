@@ -651,7 +651,7 @@ typedef enum OrderStatus {
      */
     INITIALIZED = 1,
     /**
-     * The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
+     * The order was denied by the Nautilus system, either for being invalid, unprocessable, or exceeding a risk limit.
      */
     DENIED = 2,
     /**

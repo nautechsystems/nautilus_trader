@@ -44,7 +44,7 @@ class CSVTickDataLoader:
 
         Parameters
         ----------
-        file_path : str, path object or file-like object
+        file_path : str, path object, or file-like object
             The path to the CSV file.
         index_col : str or int, default 'timestamp'
             The column to use as the row labels of the DataFrame.
@@ -89,7 +89,7 @@ class CSVBarDataLoader:
 
         Parameters
         ----------
-        file_path : str, path object or file-like object
+        file_path : str, path object, or file-like object
             The path to the CSV file.
         index_col : str | int, default 'timestamp'
             The column to use as the row labels of the DataFrame.
@@ -130,7 +130,7 @@ class ParquetTickDataLoader:
 
         Parameters
         ----------
-        file_path : str, path object or file-like object
+        file_path : str, path object, or file-like object
             The path to the Parquet file.
         timestamp_column: str
             Name of the timestamp column in the parquet data
@@ -157,7 +157,7 @@ class ParquetBarDataLoader:
 
         Parameters
         ----------
-        file_path : str, path object or file-like object
+        file_path : str, path object, or file-like object
             The path to the Parquet file.
 
         Returns

@@ -759,7 +759,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         position_id: PositionId | None,
         exec_spawn_id: ClientOrderId | None,
     ) -> BinanceFuturesPositionSide | None:
-        # Position ID must end with either 'LONG', 'SHORT' or 'BOTH' for Binance Futures Hedge position mode
+        # Position ID must end with either 'LONG', 'SHORT', or 'BOTH' for Binance Futures Hedge position mode
 
         position_side = None
 

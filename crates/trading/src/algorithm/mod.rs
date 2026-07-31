@@ -812,7 +812,7 @@ pub trait ExecutionAlgorithm: DataActor {
         if !qty_changing && !price_changing && !trigger_changing {
             log::error!(
                 "Cannot create command ModifyOrder: \
-                quantity, price and trigger were either None \
+                quantity, price, and trigger were either None \
                 or the same as existing values"
             );
             return Ok(());

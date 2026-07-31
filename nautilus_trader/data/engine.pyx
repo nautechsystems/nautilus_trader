@@ -26,7 +26,7 @@ The engine employs a simple fan-in fan-out messaging pattern to execute
 objects.
 
 Alternative implementations can be written on top of the generic engine - which
-just need to override the `execute`, `process`, `send` and `receive` methods.
+just need to override the `execute`, `process`, `send`, and `receive` methods.
 """
 
 from dataclasses import dataclass

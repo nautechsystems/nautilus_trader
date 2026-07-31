@@ -504,7 +504,7 @@ pub const fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
     (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
 }
 
-/// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
+/// Calculates the last weekday (Mon-Fri) from the given `year`, `month`, and `day`.
 ///
 /// # Errors
 ///

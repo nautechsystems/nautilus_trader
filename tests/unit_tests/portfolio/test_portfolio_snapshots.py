@@ -1635,7 +1635,7 @@ def test_closed_position_new_cycle_not_in_snapshots_adds_sum_plus_realized(
 
     position_id = PositionId("NEW-CYCLE-001")
 
-    # Cycle 1: Create, close and snapshot
+    # Cycle 1: Create, close, and snapshot
     order1 = TestExecStubs.market_order(
         instrument=AUDUSD_SIM,
         order_side=OrderSide.BUY,
@@ -1752,7 +1752,7 @@ def test_hedging_closed_positions_with_snapshots_single_count_per_cycle(
     position_id1 = PositionId("HEDGE-001")
     position_id2 = PositionId("HEDGE-002")
 
-    # Position 1: Create, close and snapshot
+    # Position 1: Create, close, and snapshot
     order1 = TestExecStubs.market_order(
         instrument=AUDUSD_SIM,
         order_side=OrderSide.BUY,

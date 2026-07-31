@@ -118,7 +118,7 @@ where
 ///
 /// Tardis records do not always carry a venue-provided trade ID (some venues
 /// publish empty strings or omit the field entirely). This hash combines the
-/// symbol, timestamp, price, amount and side so replayed data yields the same
+/// symbol, timestamp, price, amount, and side so replayed data yields the same
 /// identifier across runs. FNV-1a is stable across architectures and crate
 /// versions; the 0x1f delimiter keeps variable-length fields from colliding.
 #[must_use]

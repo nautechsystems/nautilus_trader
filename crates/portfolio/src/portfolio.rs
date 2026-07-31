@@ -1225,7 +1225,7 @@ impl Portfolio {
             if !tracked.contains(&instrument_id) {
                 log::warn!(
                     "Cannot value open position {instrument_id}; ensure its notional inputs are \
-                    valid and subscribe to quotes, trades or bars for continuous mark-to-market \
+                    valid and subscribe to quotes, trades, or bars for continuous mark-to-market \
                     equity"
                 );
             }

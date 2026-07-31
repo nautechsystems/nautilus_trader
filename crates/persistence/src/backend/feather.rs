@@ -84,7 +84,7 @@ pub struct FeatherBuffer {
 }
 
 impl FeatherBuffer {
-    /// Creates a new [`FeatherBuffer`] using the given path, schema and maximum buffer size.
+    /// Creates a new [`FeatherBuffer`] using the given path, schema, and maximum buffer size.
     ///
     /// # Errors
     ///

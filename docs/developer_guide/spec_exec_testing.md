@@ -120,7 +120,7 @@ ExecTesterConfig::builder()
 3. Strategy idles for 30 seconds. Check logs for errors, rejected orders, or disconnections.
 4. On stop: open limit orders cancelled, position closed with a market order.
 
-**Pass criteria:** No errors in logs, position opened and closed cleanly, limit orders
+**Pass criteria:** No errors in logs, position opened and closed cleanly, and limit orders
 acknowledged by the venue.
 
 ---

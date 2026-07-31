@@ -53,7 +53,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class Trader(Component):
     """
-    Provides a trader for managing a fleet of actors, execution algorithms and trading
+    Provides a trader for managing a fleet of actors, execution algorithms, and trading
     strategies.
 
     Parameters

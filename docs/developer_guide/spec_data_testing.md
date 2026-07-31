@@ -388,13 +388,13 @@ DataTesterConfig::builder()
 
 ### TC-D21: Request historical quotes
 
-| Field              | Value                                                            |
-| ------------------ | ---------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                            |
-| **Action**         | DataTester requests historical quote ticks.                      |
-| **Event sequence** | Historical quotes received via `on_historical_data` callback.    |
-| **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices and sizes. |
-| **Skip when**      | Adapter does not support historical quote requests.              |
+| Field              | Value                                                             |
+| ------------------ | ----------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                             |
+| **Action**         | DataTester requests historical quote ticks.                       |
+| **Event sequence** | Historical quotes received via `on_historical_data` callback.     |
+| **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices, and sizes. |
+| **Skip when**      | Adapter does not support historical quote requests.               |
 
 **Python config:**
 

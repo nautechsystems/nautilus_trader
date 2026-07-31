@@ -1319,7 +1319,7 @@ cdef class ExecAlgorithm(Actor):
         if not updating:
             self.log.error(
                 "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None "
+                "quantity, price, and trigger were either None "
                 "or the same as existing values.",
             )
             return
@@ -1439,7 +1439,7 @@ cdef class ExecAlgorithm(Actor):
         if not updating:
             self.log.error(
                 "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None "
+                "quantity, price, and trigger were either None "
                 "or the same as existing values.",
             )
             return
