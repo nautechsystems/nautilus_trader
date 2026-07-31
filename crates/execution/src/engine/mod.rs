@@ -604,6 +604,10 @@ impl ExecutionEngine {
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
         if self.clients.shift_remove(&client_id).is_some() {
+            if self.default_client_id == Some(client_id) {
+                self.default_client_id = None;
+            }
+
             // Remove from routing map if present
             self.routing_map
                 .retain(|_, mapped_id| mapped_id != &client_id);

@@ -498,6 +498,79 @@ fn test_deregister_client_removes_client(
 }
 
 #[rstest]
+fn test_deregister_default_client_allows_replacement(mut execution_engine: ExecutionEngine) {
+    let original_id = ClientId::from("ORIGINAL");
+    let original = StubExecutionClient::new(
+        original_id,
+        AccountId::from("ORIGINAL-ACCOUNT"),
+        Venue::from("ORIGINAL"),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine.register_default_client(Box::new(original));
+    execution_engine.deregister_client(original_id).unwrap();
+    let replacement_id = ClientId::from("REPLACEMENT");
+    let replacement = StubExecutionClient::new(
+        replacement_id,
+        AccountId::from("REPLACEMENT-ACCOUNT"),
+        Venue::from("REPLACEMENT"),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(replacement))
+        .unwrap();
+    execution_engine.set_default_client(replacement_id).unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim().id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let clients = execution_engine.get_clients_for_orders(&[order]);
+
+    assert!(execution_engine.get_client(&original_id).is_none());
+    assert!(execution_engine.get_client(&replacement_id).is_some());
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].client_id(), replacement_id);
+}
+
+#[rstest]
+fn test_deregister_non_default_client_preserves_default(mut execution_engine: ExecutionEngine) {
+    let default_id = ClientId::from("DEFAULT");
+    let default = StubExecutionClient::new(
+        default_id,
+        AccountId::from("DEFAULT-ACCOUNT"),
+        Venue::from("DEFAULT"),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine.register_default_client(Box::new(default));
+    let other_id = ClientId::from("OTHER");
+    let other = StubExecutionClient::new(
+        other_id,
+        AccountId::from("OTHER-ACCOUNT"),
+        Venue::from("OTHER"),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine.register_client(Box::new(other)).unwrap();
+    execution_engine.deregister_client(other_id).unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim().id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let clients = execution_engine.get_clients_for_orders(&[order]);
+
+    assert!(execution_engine.get_client(&default_id).is_some());
+    assert!(execution_engine.get_client(&other_id).is_none());
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].client_id(), default_id);
+}
+
+#[rstest]
 fn test_check_connected_when_client_connected_returns_true(mut execution_engine: ExecutionEngine) {
     let mut stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),

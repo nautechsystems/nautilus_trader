@@ -51,6 +51,9 @@ arrives. See [order book immutability](fill-prices-and-matching.md#order-book-im
 The tier sizes are model constants expressed in instrument quantity units. Confirm that they suit
 the scale of the instrument before using a tiered model.
 
+`CompetitionAwareFillModel` accepts `liquidity_factor` values in `[0.0, 1.0]`, defaults to `0.3`,
+and clamps the calculated size to at least one instrument quantity unit.
+
 The current Python bindings do not expose the state setters for `VolumeSensitiveFillModel` or
 `MarketHoursFillModel`. From Python, they retain their initial values of 1,000 recent-volume units
 and normal-liquidity mode.

@@ -174,6 +174,7 @@ adapter set. The following limits remain deferred:
 - Fixed DeFi `SwapTradeInfo` calculations panicking on a zero prior spot price
 - Fixed DeFi spot and execution prices panicking or silently wrapping on high ratios and unsupported token decimals
 - Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
+- Fixed v2 `CompetitionAwareFillModel` and `VolumeSensitiveFillModel` panics on invalid or overflowing liquidity
 - Fixed Arrow batch encoders silently re-labeling mixed metadata and leading clear deltas
 - Fixed SBE `FundingRateUpdate` maximum optional values encoding as absent
 - Fixed Cap'n Proto `Price` and `Quantity` decoding panicking on malformed precision
@@ -230,6 +231,8 @@ adapter set. The following limits remain deferred:
 - Fixed v2 matching engine stop and touch orders to honor last-price triggers (#4481), thanks for reporting @mgd134
 - Fixed v2 matching engine quote-bar execution to honor `bar_adaptive_high_low_ordering` (v1 parity)
 - Fixed v2 matching engine `reset` to clear cached bid/ask bars, preventing stale pairs across runs
+- Fixed v2 order emulation leaving immediately matched submissions and modifications pending
+- Fixed v2 order emulation retaining stale trigger and limit prices after modification (v1 parity)
 - Fixed v2 volume aggregation step thresholds to use exact integer arithmetic instead of floating-point conversion
 - Fixed v2 `ValueBarAggregator` to accumulate value in `Decimal` matching the v1 implementation
 - Fixed v2 internal bar aggregation dropping the first tick in backtests
@@ -283,6 +286,7 @@ adapter set. The following limits remain deferred:
 - Fixed Rust and Python v2 live node connect and disconnect awaits running outside the lifecycle timeouts (#4528), thanks @folknor
 - Fixed Rust and Python v2 live node connection timeouts reporting the node as running (#4528), thanks @folknor
 - Fixed Rust/PyO3 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
+- Fixed v2 execution client deregistration blocking registration of a replacement default client (v1 parity)
 - Fixed `OrderFactory.bracket` `tp_post_only` docs (#4437), thanks for reporting @jh171717 and @chang-pro for the patch
 - Fixed `PerContractFeeModel` generic spread fees per leg ratio (#4360), thanks for reporting @pjlegato and @faysou for the patch
 - Fixed `HEDGING` reduce-only orders without cached position IDs (#4312), thanks for reporting @luckykefu

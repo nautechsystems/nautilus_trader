@@ -610,6 +610,8 @@ impl OrderEmulator {
             }
         }
 
+        self.check_monitoring(strategy_id, position_id);
+
         // Check if immediately marketable
         let match_info = RestingOrder::new(
             order.client_order_id(),
@@ -619,7 +621,10 @@ impl OrderEmulator {
             order.price(),
             true, // is_activated
         );
-        matching_core.match_order(&match_info);
+
+        if let Some(action) = matching_core.match_order(&match_info) {
+            self.dispatch_match_action(action);
+        }
 
         // Handle data subscriptions
         match emulation_trigger.unwrap() {
@@ -685,8 +690,6 @@ impl OrderEmulator {
             );
         }
 
-        self.check_monitoring(strategy_id, position_id);
-
         // Since we are cloning the matching core, we need to insert it back into the original hashmap
         self.matching_cores
             .insert(trigger_instrument_id, matching_core);
@@ -730,7 +733,13 @@ impl OrderEmulator {
     }
 
     fn handle_modify_order(&mut self, command: &ModifyOrder) {
-        if let Some(order) = self.cache.borrow().order(&command.client_order_id) {
+        let order = self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|order| order.clone());
+
+        if let Some(order) = order {
             let price = match command.price {
                 Some(price) => Some(price),
                 None => order.price(),
@@ -760,26 +769,62 @@ impl OrderEmulator {
                 order.is_quote_quantity(),
             );
 
-            self.send_exec_event(OrderEventAny::Updated(event));
+            let event = OrderEventAny::Updated(event);
+            self.send_exec_event(event.clone());
+
+            // A synchronous event handler may supersede this update before dispatch returns
+            let order = self
+                .cache
+                .borrow()
+                .order(&command.client_order_id)
+                .filter(|order| order.last_event() == &event)
+                .map(|order| order.clone());
+
+            let Some(order) = order else {
+                return;
+            };
+
+            if !self
+                .manager
+                .get_submit_order_commands()
+                .contains_key(&command.client_order_id)
+            {
+                return;
+            }
 
             let trigger_instrument_id = order
                 .trigger_instrument_id()
                 .unwrap_or_else(|| order.instrument_id());
 
-            if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
+            let action = if let Some(matching_core) =
+                self.matching_cores.get_mut(&trigger_instrument_id)
+            {
+                if let Err(e) = matching_core.delete_order(order.client_order_id()) {
+                    log::debug!("Cannot update order match info: {e:?}");
+                }
+
                 let match_info = RestingOrder::new(
                     order.client_order_id(),
                     order.order_side().as_specified(),
                     order.order_type(),
-                    trigger_price,
-                    price,
+                    order.trigger_price(),
+                    order.price(),
                     true, // is_activated
                 );
-                matching_core.match_order(&match_info);
+                let action = matching_core.match_order(&match_info);
+                if action.is_none() {
+                    matching_core.add_order(match_info);
+                }
+                action
             } else {
                 log::error!(
                     "Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}"
                 );
+                return;
+            };
+
+            if let Some(action) = action {
+                self.dispatch_match_action(action);
             }
         } else {
             log::error!("Cannot modify order: {} not found", command.client_order_id);
@@ -976,10 +1021,7 @@ impl OrderEmulator {
         };
 
         for action in bid_actions {
-            match action {
-                MatchAction::FillLimit(id) => self.fill_limit_order(id),
-                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
-            }
+            self.dispatch_match_action(action);
         }
 
         let ask_actions = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
@@ -989,10 +1031,7 @@ impl OrderEmulator {
         };
 
         for action in ask_actions {
-            match action {
-                MatchAction::FillLimit(id) => self.fill_limit_order(id),
-                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
-            }
+            self.dispatch_match_action(action);
         }
 
         // Re-snapshot orders after actions to avoid stale trailing stop updates
@@ -1025,6 +1064,13 @@ impl OrderEmulator {
             }
 
             self.update_trailing_stop_order(&mut order);
+        }
+    }
+
+    fn dispatch_match_action(&mut self, action: MatchAction) {
+        match action {
+            MatchAction::FillLimit(id) => self.fill_limit_order(id),
+            MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
         }
     }
 
@@ -1757,6 +1803,22 @@ mod tests {
         saving_handler
     }
 
+    fn register_exec_event_handler(
+        cache: Rc<RefCell<Cache>>,
+        id: &str,
+    ) -> TypedIntoMessageSavingHandler<OrderEventAny> {
+        let messages = Rc::new(RefCell::new(Vec::new()));
+        let messages_for_handler = messages.clone();
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                cache.borrow_mut().update_order(&event).unwrap();
+                messages_for_handler.borrow_mut().push(event);
+            }),
+        );
+        TypedIntoMessageSavingHandler::new_with_messages(Some(Ustr::from(id)), messages)
+    }
+
     fn register_portfolio_event_handler(id: &str) -> TypedIntoMessageSavingHandler<OrderEventAny> {
         let (handler, saving_handler) =
             get_typed_into_message_saving_handler::<OrderEventAny>(Some(Ustr::from(id)));
@@ -2433,6 +2495,224 @@ mod tests {
         assert!(emulator.subscribed_quotes().is_empty());
         assert!(emulator.subscribed_trades().is_empty());
         assert!(!commands.contains_key(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_submit_order_releases_when_immediately_triggered(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events =
+            register_risk_event_handler("RiskEngine.process.submit_immediately_triggered");
+        add_instrument_to_cache(&cache, &instrument);
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5099.00"));
+        core.set_ask_raw(Price::from("5101.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let matching_core = emulator.get_matching_core(&instrument.id()).unwrap();
+        let risk_events = risk_events.get_messages();
+        assert_eq!(cached_order.status(), OrderStatus::Released);
+        assert_eq!(cached_order.order_type(), OrderType::Market);
+        assert!(!matching_core.order_exists(client_order_id));
+        assert_eq!(emulator.subscribed_strategy_count(), 1);
+        assert!(
+            !emulator
+                .get_submit_order_commands()
+                .contains_key(&client_order_id)
+        );
+        assert_eq!(risk_events.len(), 1);
+        assert!(matches!(
+            &risk_events[0],
+            OrderEventAny::Released(event) if event.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_releases_when_immediately_fillable(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events =
+            register_risk_event_handler("RiskEngine.process.submit_immediately_fillable");
+        add_instrument_to_cache(&cache, &instrument);
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5099.00"));
+        core.set_ask_raw(Price::from("5101.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("5101.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let matching_core = emulator.get_matching_core(&instrument.id()).unwrap();
+        let risk_events = risk_events.get_messages();
+        assert_eq!(cached_order.status(), OrderStatus::Released);
+        assert_eq!(cached_order.order_type(), OrderType::Market);
+        assert!(!matching_core.order_exists(client_order_id));
+        assert!(
+            !emulator
+                .get_submit_order_commands()
+                .contains_key(&client_order_id)
+        );
+        assert_eq!(risk_events.len(), 1);
+        assert!(matches!(
+            &risk_events[0],
+            OrderEventAny::Released(event) if event.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    fn test_modify_order_reindexes_matching_state(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        emulator.borrow_mut().handle_submit_order(&command);
+        let exec_events =
+            register_exec_event_handler(cache.clone(), "ExecEngine.process.modify_reindex");
+        let new_trigger = Price::from("5200.00");
+        let modify = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            None,
+            None,
+            None,
+            Some(new_trigger),
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        emulator.borrow_mut().handle_modify_order(&modify);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let matching_core = emulator.get_matching_core(&instrument.id()).unwrap();
+        let match_info = matching_core.get_order(client_order_id).unwrap();
+        let exec_events = exec_events.get_messages();
+        assert_eq!(cached_order.trigger_price(), Some(new_trigger));
+        assert_eq!(match_info.trigger_price, Some(new_trigger));
+        assert_eq!(matching_core.get_orders().len(), 1);
+        assert_eq!(exec_events.len(), 1);
+        assert!(matches!(
+            &exec_events[0],
+            OrderEventAny::Updated(event) if event.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    fn test_modify_order_releases_when_updated_trigger_matches(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events =
+            register_risk_event_handler("RiskEngine.process.modify_immediately_triggered");
+        add_instrument_to_cache(&cache, &instrument);
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5099.00"));
+        core.set_ask_raw(Price::from("5101.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5200.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        emulator.borrow_mut().handle_submit_order(&command);
+        risk_events.clear();
+        let exec_events = register_exec_event_handler(
+            cache.clone(),
+            "ExecEngine.process.modify_immediately_triggered",
+        );
+        let modify = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            None,
+            None,
+            None,
+            Some(Price::from("5100.00")),
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        emulator.borrow_mut().handle_modify_order(&modify);
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let matching_core = emulator.get_matching_core(&instrument.id()).unwrap();
+        let exec_events = exec_events.get_messages();
+        let risk_events = risk_events.get_messages();
+        assert_eq!(cached_order.status(), OrderStatus::Released);
+        assert_eq!(cached_order.order_type(), OrderType::Market);
+        assert!(!matching_core.order_exists(client_order_id));
+        assert!(
+            !emulator
+                .get_submit_order_commands()
+                .contains_key(&client_order_id)
+        );
+        assert_eq!(exec_events.len(), 1);
+        assert!(matches!(
+            &exec_events[0],
+            OrderEventAny::Updated(event) if event.client_order_id == client_order_id
+        ));
+        assert_eq!(risk_events.len(), 1);
+        assert!(matches!(
+            &risk_events[0],
+            OrderEventAny::Released(event) if event.client_order_id == client_order_id
+        ));
     }
 
     #[rstest]
