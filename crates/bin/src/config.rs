@@ -81,8 +81,8 @@ impl Config {
         Ok(config)
     }
 
-    pub fn load() -> Result<Self> {
-        Self::from_file("config.toml")
+    pub fn load(path: String) -> Result<Self> {
+        Self::from_file(path)
     }
 }
 

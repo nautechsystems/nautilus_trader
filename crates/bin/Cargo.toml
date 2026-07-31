@@ -39,3 +39,4 @@ log.workspace = true
 rust_decimal.workspace = true
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+clap.workspace = true

@@ -7075,6 +7075,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bon",
+ "clap",
  "dotenvy",
  "futures-util",
  "log",

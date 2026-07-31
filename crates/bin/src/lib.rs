@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod cli;
 pub mod config;
 pub mod exchange;
 pub mod strategy;

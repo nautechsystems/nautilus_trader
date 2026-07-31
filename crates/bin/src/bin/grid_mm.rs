@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     nautilus_common::logging::ensure_logging_initialized();
 
-    let cfg = Config::load()?.grid_mm.expect("config.toml missing [grid_mm] section");
+    let cfg = Config::load("config.toml".to_string())?.grid_mm.expect("config.toml missing [grid_mm] section");
 
     let exchange: Exchange = cfg.exchange.parse()?;
     let trader_id = TraderId::from(cfg.trader_id.as_str());

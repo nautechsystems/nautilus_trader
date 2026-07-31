@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     nautilus_common::logging::ensure_logging_initialized();
 
-    let config = Config::load()?.mmm.unwrap();
+    let config = Config::load("config.toml".to_string())?.mmm.unwrap();
     let parquet_path = config.path.clone();
 
     let exchange: Exchange = config.exchange.parse()?;

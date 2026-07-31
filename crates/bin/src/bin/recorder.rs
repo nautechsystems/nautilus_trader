@@ -17,13 +17,17 @@ use nautilus_bin::config::{Config, RecorderTomlConfig};
 use nautilus_bin::exchange::Exchange;
 use nautilus_bin::strategy::recorder::{config::RecorderConfig, strategy::Recorder};
 use nautilus_model::identifiers::{InstrumentId, TraderId};
+use nautilus_bin::cli::Args;
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     nautilus_common::logging::ensure_logging_initialized();
 
-    let cfg: RecorderTomlConfig = Config::load()?.recorder.unwrap();
+    let args = Args::parse();
+
+    let cfg: RecorderTomlConfig = Config::load(args.config_path)?.recorder.unwrap();
 
     let exchange: Exchange = cfg.exchange.parse()?;
     let trader_id = TraderId::from(cfg.trader_id.as_str());
