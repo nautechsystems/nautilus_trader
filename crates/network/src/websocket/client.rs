@@ -985,7 +985,7 @@ impl WebSocketClientInner {
     /// - The reconnection attempt times out.
     /// - The connection to the server fails.
     pub async fn reconnect(&mut self) -> Result<(), TransportError> {
-        log::debug!("Reconnecting");
+        log::info!("Reconnecting");
 
         if self.handler.is_none() {
             log::warn!(
@@ -1112,7 +1112,7 @@ impl WebSocketClientInner {
             self.read_fence = None;
         }
 
-        log::debug!("Reconnect succeeded");
+        log::info!("Reconnect succeeded");
         Ok(())
     }
 
@@ -2422,7 +2422,7 @@ impl WebSocketClient {
                         } else if let Some(tracker) = auth_tracker.get() {
                             tracker.invalidate();
                         }
-                        log::debug!("Detected dead connection, transitioning to {target:?}");
+                        log::info!("Detected dead connection, transitioning to {target:?}");
                     }
                     mode = ConnectionMode::from_atomic(&connection_mode);
                 }
