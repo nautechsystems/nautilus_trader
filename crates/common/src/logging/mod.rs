@@ -121,6 +121,46 @@ pub fn logging_set_bypass() {
     LOGGING_BYPASSED.store(true, Ordering::Relaxed);
 }
 
+/// Sets the process-global runtime logging ceiling.
+///
+/// The runtime ceiling composes with the statically compiled maximum, configured sink levels,
+/// and component/module filters. Calling this before initialization stores the ceiling for the
+/// logger to apply during initialization. Calling it after terminal shutdown is a no-op.
+///
+/// Records already admitted to the logging channel may drain at the previous level.
+///
+/// # Errors
+///
+/// Returns an error for [`LevelFilter::Off`], which belongs to [`logging_shutdown`], or for
+/// [`LevelFilter::Trace`] when Trace logging was compiled out.
+pub fn logging_set_level(level: LevelFilter) -> anyhow::Result<()> {
+    validate_runtime_level(level, log::STATIC_MAX_LEVEL)?;
+    crate::logging::logger::set_runtime_level(level);
+    Ok(())
+}
+
+fn validate_runtime_level(
+    requested: LevelFilter,
+    static_max_level: LevelFilter,
+) -> anyhow::Result<()> {
+    if requested == LevelFilter::Off {
+        anyhow::bail!(
+            "Runtime log level Off is not supported; use logging_shutdown instead. Disabling the \
+             log macro fast path would prevent Logger::log, and therefore shutdown-on-error \
+             detection, from seeing error records"
+        );
+    }
+
+    if requested == LevelFilter::Trace && static_max_level < LevelFilter::Trace {
+        anyhow::bail!(
+            "Runtime log level Trace is unavailable because release_max_level_debug compiled \
+             Trace out (STATIC_MAX_LEVEL={static_max_level})"
+        );
+    }
+
+    Ok(())
+}
+
 /// Shuts down the logging subsystem.
 pub fn logging_shutdown() {
     // Perform a graceful shutdown: prevent new logs, signal Close, drain, and join.
@@ -415,6 +455,14 @@ mod tests {
     fn test_logging_set_bypass() {
         logging_set_bypass();
         assert!(LOGGING_BYPASSED.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_validate_runtime_level_rejects_unavailable_trace() {
+        let error = validate_runtime_level(LevelFilter::Trace, LevelFilter::Debug)
+            .expect_err("Trace must be rejected when compiled out");
+        assert!(error.to_string().contains("release_max_level_debug"));
+        assert!(validate_runtime_level(LevelFilter::Trace, LevelFilter::Trace).is_ok());
     }
 
     #[rstest]

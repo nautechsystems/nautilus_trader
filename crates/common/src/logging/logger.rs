@@ -116,6 +116,9 @@ enum LoggerLifecycle {
 /// Process-global logger lifecycle serialization.
 static LOGGER_LIFECYCLE: Mutex<LoggerLifecycle> = Mutex::new(LoggerLifecycle::Uninitialized);
 
+/// Runtime ceiling stored before initialization or applied while the logger is running.
+static RUNTIME_LEVEL_OVERRIDE: Mutex<Option<LevelFilter>> = Mutex::new(None);
+
 #[cfg(all(test, not(all(feature = "simulation", madsim))))]
 struct InitPublishHook {
     reached: std::sync::mpsc::Sender<()>,
@@ -1051,7 +1054,10 @@ impl Logger {
             super::logging_set_bypass();
         }
 
-        let max_level = log::LevelFilter::Trace;
+        let max_level = RUNTIME_LEVEL_OVERRIDE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .unwrap_or(LevelFilter::Trace);
         set_max_level(max_level);
 
         if print_config {
@@ -1317,6 +1323,22 @@ pub(crate) fn is_running() -> bool {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         == LoggerLifecycle::Running
+}
+
+pub(crate) fn set_runtime_level(level: LevelFilter) {
+    let lifecycle = LOGGER_LIFECYCLE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+
+    match *lifecycle {
+        LoggerLifecycle::Uninitialized => {
+            *RUNTIME_LEVEL_OVERRIDE
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(level);
+        }
+        LoggerLifecycle::Running => set_max_level(level),
+        LoggerLifecycle::Terminated => {}
+    }
 }
 
 /// Flushes and syncs file logs to disk through the logging thread.
@@ -2075,10 +2097,152 @@ mod tests {
         use crate::{
             logging::{
                 LOGGING_BYPASSED, logging_clock_set_static_mode, logging_clock_set_static_time,
-                logging_is_initialized, logging_set_bypass, logging_sync_to_disk,
+                logging_is_initialized, logging_set_bypass, logging_set_level,
+                logging_sync_to_disk,
             },
             testing::wait_until,
         };
+
+        fn read_log_file(temp_dir: &tempfile::TempDir) -> String {
+            let log_path = std::fs::read_dir(temp_dir)
+                .expect("log directory must be readable")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("logger must create a log file")
+                .path();
+            std::fs::read_to_string(log_path).expect("log file must be readable")
+        }
+
+        #[rstest]
+        fn test_runtime_level_rejects_off_without_applying_or_storing() {
+            let original_level = log::max_level();
+            let error = logging_set_level(LevelFilter::Off).expect_err("Off must be rejected");
+            assert!(error.to_string().contains("logging_shutdown"));
+            assert!(error.to_string().contains("shutdown-on-error"));
+            assert_eq!(log::max_level(), original_level);
+
+            let _guard = Logger::init_with_config(
+                TraderId::from("TRADER-OFF-REFUSAL"),
+                UUID4::new(),
+                LoggerConfig {
+                    stdout_level: LevelFilter::Off,
+                    ..Default::default()
+                },
+                FileWriterConfig::default(),
+            )
+            .expect("logger initialization must succeed");
+            assert_eq!(log::max_level(), LevelFilter::Trace);
+        }
+
+        #[rstest]
+        fn test_runtime_level_trace_matches_static_max_level() {
+            let result = logging_set_level(LevelFilter::Trace);
+
+            if STATIC_MAX_LEVEL >= LevelFilter::Trace {
+                assert!(result.is_ok());
+            } else {
+                let error = result.expect_err("compiled-out Trace must be rejected");
+                assert!(error.to_string().contains("release_max_level_debug"));
+            }
+        }
+
+        #[rstest]
+        fn test_runtime_level_raises_and_lowers_ceiling() {
+            let temp_dir = tempdir().expect("temporary directory must be created");
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Debug,
+                ..Default::default()
+            };
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+            let _guard = Logger::init_with_config(
+                TraderId::from("TRADER-RUNTIME"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("logger initialization must succeed");
+
+            logging_set_level(LevelFilter::Info).expect("Info must be accepted");
+            log::info!(component = "RuntimeLevel"; "runtime initial info marker");
+            log::debug!(component = "RuntimeLevel"; "runtime initial debug marker");
+
+            logging_set_level(LevelFilter::Debug).expect("Debug must be accepted");
+            log::debug!(component = "RuntimeLevel"; "runtime raised debug marker");
+
+            logging_set_level(LevelFilter::Warn).expect("Warn must be accepted");
+            log::info!(component = "RuntimeLevel"; "runtime lowered info marker");
+            log::warn!(component = "RuntimeLevel"; "runtime lowered warn marker");
+
+            logging_sync_to_disk().expect("logging sync must succeed");
+            let contents = read_log_file(&temp_dir);
+            assert!(contents.contains("runtime initial info marker"));
+            assert!(!contents.contains("runtime initial debug marker"));
+            assert!(contents.contains("runtime raised debug marker"));
+            assert!(!contents.contains("runtime lowered info marker"));
+            assert!(contents.contains("runtime lowered warn marker"));
+        }
+
+        #[rstest]
+        fn test_runtime_level_set_before_init_is_honored() {
+            logging_set_level(LevelFilter::Warn).expect("Warn must be accepted before init");
+
+            let temp_dir = tempdir().expect("temporary directory must be created");
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Debug,
+                ..Default::default()
+            };
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+            let _guard = Logger::init_with_config(
+                TraderId::from("TRADER-PREINIT"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("logger initialization must succeed");
+
+            log::info!(component = "RuntimeLevel"; "pre-init info marker");
+            log::warn!(component = "RuntimeLevel"; "pre-init warn marker");
+            logging_sync_to_disk().expect("logging sync must succeed");
+
+            let contents = read_log_file(&temp_dir);
+            assert!(!contents.contains("pre-init info marker"));
+            assert!(contents.contains("pre-init warn marker"));
+        }
+
+        #[rstest]
+        fn test_runtime_level_composes_with_component_filter() {
+            let temp_dir = tempdir().expect("temporary directory must be created");
+            let config =
+                LoggerConfig::from_spec("stdout=Off;fileout=Debug;CappedComponent=Info").unwrap();
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+            let _guard = Logger::init_with_config(
+                TraderId::from("TRADER-COMPOSITION"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("logger initialization must succeed");
+
+            logging_set_level(LevelFilter::Debug).expect("Debug must be accepted");
+            log::debug!(component = "CappedComponent"; "component-capped debug marker");
+            log::debug!(component = "UnfilteredComponent"; "unfiltered debug marker");
+            logging_sync_to_disk().expect("logging sync must succeed");
+
+            let contents = read_log_file(&temp_dir);
+            assert!(!contents.contains("component-capped debug marker"));
+            assert!(contents.contains("unfiltered debug marker"));
+        }
 
         #[rstest]
         fn test_shutdown_on_error_records_once_then_rearms() {
@@ -2849,7 +3013,9 @@ mod tests {
         };
 
         use super::*;
-        use crate::logging::{logging_is_initialized, logging_shutdown, logging_sync_to_disk};
+        use crate::logging::{
+            logging_is_initialized, logging_set_level, logging_shutdown, logging_sync_to_disk,
+        };
 
         const LIFECYCLE_CHILD_ENV: &str = "NAUTILUS_LOGGER_LIFECYCLE_CHILD";
 
@@ -3046,6 +3212,34 @@ mod tests {
                 error.to_string(),
                 "Logging has been shut down and cannot be re-initialized"
             );
+        }
+
+        #[rstest]
+        fn test_runtime_level_after_shutdown_is_noop() {
+            const MARKER: &str = "runtime-level-after-shutdown";
+            if !in_lifecycle_child(MARKER) {
+                run_lifecycle_child("test_runtime_level_after_shutdown_is_noop", MARKER);
+                return;
+            }
+
+            let _guard = Logger::init_with_config(
+                TraderId::from("TRADER-TERMINAL-LEVEL"),
+                UUID4::new(),
+                LoggerConfig {
+                    stdout_level: LevelFilter::Off,
+                    ..Default::default()
+                },
+                FileWriterConfig::default(),
+            )
+            .expect("logger initialization must succeed");
+            logging_shutdown();
+            assert_eq!(log::max_level(), LevelFilter::Off);
+
+            logging_set_level(LevelFilter::Debug)
+                .expect("valid post-shutdown level must be a no-op");
+            assert_eq!(log::max_level(), LevelFilter::Off);
+            assert!(logging_set_level(LevelFilter::Off).is_err());
+            assert_eq!(log::max_level(), LevelFilter::Off);
         }
     }
 
