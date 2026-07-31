@@ -120,8 +120,8 @@ The contract holds only when all of the following are true:
 - Wall-clock time reads route through `nautilus_core::time::duration_since_unix_epoch`.
 - Randomness routes through `madsim::rand`. `rand::thread_rng`, `rand::rng()`, `fastrand`,
   `getrandom`, and `OsRng` are not intercepted.
-- Iteration-order-sensitive collections use `IndexMap` or `IndexSet`, not `AHashMap` or
-  `AHashSet`.
+- Iteration-order-sensitive collections either use `IndexMap` or `IndexSet`, or sort at the
+  point of use.
 - `tokio::task::LocalSet` construction is cfg-gated out under simulation. `madsim` does not
   provide `LocalSet`; `spawn_local` works without it.
 - `tokio::task::spawn_blocking` call sites are cfg-gated or removed. A blocking call escapes
@@ -257,6 +257,16 @@ the iteration order is observable on the DST path:
 - **Cache API** (`crates/common/src/cache/mod.rs`): `get_orders_for_ids` and
   `get_positions_for_ids` sort their `Vec` returns by `client_order_id` / `position_id`
   before returning. Storage stays on `AHashSet` (set semantics).
+- **Instrument store** (`crates/common/src/providers.rs`): `InstrumentStore.instruments`,
+  because the Betfair, Derive, and Polymarket adapters publish one `DataEvent::Instrument`
+  per entry straight from `get_all()` / `list_all()`. Keeps the `ahash` hasher.
+- **Order emulator** (`crates/execution/src/order_emulator/emulator.rs`): `on_reset` sorts
+  the drained `subscribed_quotes`, `subscribed_trades`, and `subscribed_strategies` before
+  the `msgbus::unsubscribe_*` fan-out. The quote and trade paths also advance the seeded
+  `UUID4::new` draw sequence. Storage stays on `AHashSet`.
+- **WebSocket subscriptions** (`crates/network/src/websocket/subscription.rs`):
+  `topics_from_map` sorts its `Vec` return, which fixes the reconnect replay order behind
+  `all_topics()`. Storage stays on `DashMap` with `AHashSet` values.
 
 Remaining `AHashMap` / `AHashSet` sites in the in-scope crates are lookup-only, behind
 concurrent shared-ownership wrappers (`Arc<DashMap>`, `AtomicMap`), or feed into

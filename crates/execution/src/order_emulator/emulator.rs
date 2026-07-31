@@ -390,12 +390,18 @@ impl OrderEmulator {
     }
 
     fn unsubscribe_all_market_data(&mut self) {
-        let quote_instrument_ids: Vec<_> = self.subscribed_quotes.drain().collect();
+        // Sort so the emitted unsubscribe commands, and the UUID4 draws they consume,
+        // follow the same sequence across runs; the drained sets are AHash-backed.
+        let mut quote_instrument_ids: Vec<_> = self.subscribed_quotes.drain().collect();
+        quote_instrument_ids.sort();
+
         for instrument_id in quote_instrument_ids {
             self.unsubscribe_quotes_for_instrument(instrument_id);
         }
 
-        let trade_instrument_ids: Vec<_> = self.subscribed_trades.drain().collect();
+        let mut trade_instrument_ids: Vec<_> = self.subscribed_trades.drain().collect();
+        trade_instrument_ids.sort();
+
         for instrument_id in trade_instrument_ids {
             self.unsubscribe_trades_for_instrument(instrument_id);
         }
@@ -440,7 +446,8 @@ impl OrderEmulator {
     }
 
     fn unsubscribe_strategy_order_events(&mut self) {
-        let strategy_ids: Vec<_> = self.subscribed_strategies.drain().collect();
+        let mut strategy_ids: Vec<_> = self.subscribed_strategies.drain().collect();
+        strategy_ids.sort();
         let Some(handler) = &self.on_event_handler else {
             return;
         };
@@ -2337,6 +2344,66 @@ mod tests {
         assert_eq!(core.bid, None);
         assert_eq!(core.ask, None);
         assert_eq!(core.last, None);
+    }
+
+    #[rstest]
+    fn test_reset_unsubscribes_in_sorted_instrument_order(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.reset_order");
+
+        // Registered in an order that is neither sorted nor reverse sorted, and five
+        // entries leave a 1-in-120 chance that AHash order coincides with the expectation.
+        let ids = [
+            "SOLUSDT-PERP.BINANCE",
+            "ADAUSDT-PERP.BINANCE",
+            "XRPUSDT-PERP.BINANCE",
+            "BTCUSDT-PERP.BINANCE",
+            "DOTUSDT-PERP.BINANCE",
+        ];
+
+        for (i, id) in ids.iter().enumerate() {
+            let mut variant = instrument.clone();
+            variant.id = InstrumentId::from(*id);
+            add_instrument_to_cache(&cache, &variant);
+
+            let order = OrderTestBuilder::new(OrderType::StopMarket)
+                .instrument_id(variant.id)
+                .client_order_id(ClientOrderId::from(format!("O-RESET-{i}").as_str()))
+                .side(OrderSide::Buy)
+                .trigger_price(Price::from("5100.00"))
+                .quantity(Quantity::from(1))
+                .emulation_trigger(TriggerType::BidAsk)
+                .build();
+            let command = create_submit_order(&variant, &order);
+            cache
+                .borrow_mut()
+                .add_order(order, None, None, false)
+                .unwrap();
+            emulator
+                .borrow_mut()
+                .cache_submit_order_command(command.clone());
+            emulator.borrow_mut().handle_submit_order(&command);
+        }
+        data_commands.clear();
+
+        emulator.borrow_mut().reset();
+
+        let unsubscribed: Vec<InstrumentId> = data_commands
+            .get_messages()
+            .iter()
+            .filter_map(|command| match command {
+                DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => {
+                    Some(command.instrument_id)
+                }
+                _ => None,
+            })
+            .collect();
+
+        let mut expected: Vec<InstrumentId> =
+            ids.iter().map(|id| InstrumentId::from(*id)).collect();
+        expected.sort();
+
+        assert_eq!(unsubscribed, expected);
     }
 
     #[rstest]

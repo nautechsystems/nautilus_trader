@@ -335,12 +335,18 @@ Choose a hash collection by iteration semantics and trust boundary:
 | ---------------------------------------------- | ------------------------- |
 | Observable insertion‑order iteration.          | `IndexMap` or `IndexSet`. |
 | Hot lookup with no observable iteration order. | `AHashMap` or `AHashSet`. |
-| Untrusted keys or a network‑facing boundary.   | `HashMap` or `HashSet`.   |
+| Keys chosen by an untrusted third party.       | `HashMap` or `HashSet`.   |
 | External API requires a standard collection.   | `HashMap` or `HashSet`.   |
 
-`AHash` iteration varies between processes. Use `IndexMap` or `IndexSet` when iteration affects
-emitted events, returned sequences, random number consumption, or other observable state. Use
-`shift_remove` when removal must preserve insertion order and `swap_remove` when it need not.
+`AHash` iteration varies between processes. Fix the order when it leaves the process or advances the
+seeded RNG: emitted events, commands and traffic sent to a venue, persisted output, and random number
+consumption. A sequence that no production caller consumes does not need it.
+
+Either mechanism satisfies this: hold the collection in `IndexMap` or `IndexSet`, or keep the hash
+collection and sort at the point of use. Prefer sorting when the collection is hot on lookup or
+removal, since `shift_remove` is O(n); prefer `IndexMap` when insertion order is itself the
+meaningful sequence. Use `shift_remove` when removal must preserve insertion order and `swap_remove`
+when it need not.
 
 `AHashMap` and `AHashSet` use a non‑cryptographic hasher. Do not use them where untrusted keys make
 hash‑flooding resistance part of the security boundary.

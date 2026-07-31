@@ -20,8 +20,9 @@
 
 use std::collections::HashMap;
 
-use ahash::AHashMap;
+use ahash::RandomState;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -32,9 +33,13 @@ use nautilus_model::{
 /// Provides `add`/`find`/`get_all` operations for instrument caching.
 /// Not thread-safe by itself; wrap in `Arc<RwLock<InstrumentStore>>` when
 /// sharing across async tasks or WebSocket handlers.
+///
+/// Storage preserves insertion order because adapters publish instruments to the data
+/// engine straight from this store, and that emission sequence must hold across runs.
+/// The map keeps the `ahash` hasher so ordered iteration costs nothing on lookup.
 #[derive(Debug, Default)]
 pub struct InstrumentStore {
-    instruments: AHashMap<InstrumentId, InstrumentAny>,
+    instruments: IndexMap<InstrumentId, InstrumentAny, RandomState>,
     initialized: bool,
 }
 
@@ -71,7 +76,7 @@ impl InstrumentStore {
 
     /// Returns all instruments as a map keyed by instrument ID.
     #[must_use]
-    pub fn get_all(&self) -> &AHashMap<InstrumentId, InstrumentAny> {
+    pub fn get_all(&self) -> &IndexMap<InstrumentId, InstrumentAny, RandomState> {
         &self.instruments
     }
 
@@ -230,6 +235,36 @@ mod tests {
 
         let list = store.list_all();
         assert_eq!(list.len(), 1);
+    }
+
+    #[rstest]
+    fn test_instrument_store_iterates_in_insertion_order() {
+        let mut store = InstrumentStore::new();
+        let base = crypto_perpetual_ethusdt();
+
+        // Insertion order is neither sorted nor reverse sorted, and six entries leave a
+        // 1-in-720 chance that hash-ordered iteration coincides with it.
+        let ids = [
+            "SOLUSDT-PERP.BINANCE",
+            "ADAUSDT-PERP.BINANCE",
+            "XRPUSDT-PERP.BINANCE",
+            "BTCUSDT-PERP.BINANCE",
+            "DOTUSDT-PERP.BINANCE",
+            "AVAXUSDT-PERP.BINANCE",
+        ];
+        let expected: Vec<InstrumentId> = ids.iter().map(|id| InstrumentId::from(*id)).collect();
+
+        for id in ids {
+            let mut variant = base.clone();
+            variant.id = InstrumentId::from(id);
+            store.add(InstrumentAny::CryptoPerpetual(variant));
+        }
+
+        let keys: Vec<InstrumentId> = store.get_all().keys().copied().collect();
+        let listed: Vec<InstrumentId> = store.list_all().into_iter().map(Instrument::id).collect();
+
+        assert_eq!(keys, expected);
+        assert_eq!(listed, expected);
     }
 
     #[rstest]

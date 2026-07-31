@@ -315,6 +315,9 @@ impl SubscriptionState {
             }
         }
 
+        // Sort so resubscription after a reconnect replays topics in the same sequence
+        // across runs; both the outer DashMap and the inner symbol sets are unordered.
+        topics.sort();
         topics
     }
 
@@ -793,6 +796,38 @@ mod tests {
         let topics = state.all_topics();
         assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
         assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+    }
+
+    #[rstest]
+    fn test_all_topics_is_sorted_within_each_group() {
+        let state = SubscriptionState::new('.');
+
+        // Insert scrambled across channels and symbols so hash order cannot pass.
+        for topic in [
+            "trades.SOLUSDT",
+            "tickers.ETHUSDT",
+            "trades.BTCUSDT",
+            "tickers.BTCUSDT",
+        ] {
+            state.mark_subscribe(topic);
+            state.confirm_subscribe(topic);
+        }
+
+        state.mark_subscribe("orders.XRPUSDT");
+        state.mark_subscribe("orders.ADAUSDT");
+
+        // Confirmed topics sort among themselves, then pending ones do the same.
+        assert_eq!(
+            state.all_topics(),
+            vec![
+                "tickers.BTCUSDT",
+                "tickers.ETHUSDT",
+                "trades.BTCUSDT",
+                "trades.SOLUSDT",
+                "orders.ADAUSDT",
+                "orders.XRPUSDT",
+            ]
+        );
     }
 
     #[rstest]
