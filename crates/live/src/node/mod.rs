@@ -101,6 +101,7 @@ use nautilus_core::{
     UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
 };
+use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::{
     events::OrderEventAny,
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
@@ -2303,6 +2304,9 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
+    /// - The strategy configures external order claims and the request repeats an
+    ///   instrument, either tier already contains a requested claim, or the
+    ///   execution engine is already borrowed.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
@@ -2320,30 +2324,88 @@ impl LiveNode {
             .borrow()
             .prepare_strategy_for_registration(&mut strategy)?;
         let oms_type = StrategyNative::strategy_core(&strategy).config.oms_type;
-        if let Some(claims) = strategy
-            .external_order_claims()
-            .filter(|claims| !claims.is_empty())
-        {
-            self.register_external_order_claims(strategy_id, &claims)?;
-        }
+        let claims = strategy.external_order_claims().unwrap_or_default();
+
+        // The engine borrow is only needed for claims or an OMS override; a
+        // strategy requiring neither must not fail on an unavailable borrow.
+        let mut exec_engine = if claims.is_empty() && oms_type.is_none() {
+            None
+        } else {
+            Some(
+                self.kernel
+                    .exec_engine
+                    .try_borrow_mut()
+                    .map_err(|e| anyhow::anyhow!("Cannot register external order claims: {e}"))?,
+            )
+        };
+        let instrument_ids = match &exec_engine {
+            Some(exec_engine) => Self::preflight_external_order_claims(
+                &self.exec_manager,
+                exec_engine,
+                strategy_id,
+                &claims,
+            )?,
+            None => HashSet::new(),
+        };
 
         self.kernel.trader.borrow_mut().add_strategy(strategy)?;
 
-        if let Some(oms_type) = oms_type {
-            self.kernel
-                .exec_engine
-                .borrow_mut()
-                .register_oms_type(strategy_id, oms_type);
+        // No fallible operation may follow the trader addition: the commits
+        // below are infallible against the preflighted request.
+        if let Some(exec_engine) = &mut exec_engine {
+            exec_engine.commit_external_order_claims(strategy_id, &instrument_ids);
+            self.exec_manager
+                .register_external_order_claims(strategy_id, &instrument_ids);
+
+            if let Some(oms_type) = oms_type {
+                exec_engine.register_oms_type(strategy_id, oms_type);
+            }
         }
 
         Ok(())
     }
 
-    pub(crate) fn register_external_order_claims(
+    /// Registers external order claims on both live execution tiers.
+    ///
+    /// The operation is synchronous and atomic across the reconciliation manager and execution
+    /// engine. It can be called while the node is idle, between [`poll`](Self::poll) calls after
+    /// manual [`start`](Self::start), or after the node stops. It cannot be called while
+    /// [`run`](Self::run) owns the node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without changing either tier if the execution engine is already borrowed,
+    /// the request repeats an instrument, or either tier already contains any requested claim.
+    pub fn register_external_order_claims(
         &mut self,
         strategy_id: StrategyId,
         claims: &[InstrumentId],
     ) -> anyhow::Result<()> {
+        let mut exec_engine = self
+            .kernel
+            .exec_engine
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot register external order claims: {e}"))?;
+        let instrument_ids = Self::preflight_external_order_claims(
+            &self.exec_manager,
+            &exec_engine,
+            strategy_id,
+            claims,
+        )?;
+
+        exec_engine.commit_external_order_claims(strategy_id, &instrument_ids);
+        self.exec_manager
+            .register_external_order_claims(strategy_id, &instrument_ids);
+
+        Ok(())
+    }
+
+    fn preflight_external_order_claims(
+        exec_manager: &ExecutionManager,
+        exec_engine: &ExecutionEngine,
+        strategy_id: StrategyId,
+        claims: &[InstrumentId],
+    ) -> anyhow::Result<HashSet<InstrumentId>> {
         let mut instrument_ids = HashSet::new();
 
         for instrument_id in claims {
@@ -2354,33 +2416,59 @@ impl LiveNode {
             }
         }
 
-        {
-            let exec_engine = self.kernel.exec_engine.borrow();
+        for instrument_id in &instrument_ids {
+            if let Some(existing) = exec_manager.get_external_order_claim(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
 
-            for instrument_id in &instrument_ids {
-                if let Some(existing) = self.exec_manager.get_external_order_claim(instrument_id) {
-                    anyhow::bail!(
-                        "External order claim for {instrument_id} already exists for {existing}"
-                    );
-                }
-
-                if let Some(existing) = exec_engine.get_external_order_claim(instrument_id) {
-                    anyhow::bail!(
-                        "External order claim for {instrument_id} already exists for {existing}"
-                    );
-                }
+            if let Some(existing) = exec_engine.get_external_order_claim(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
             }
         }
 
-        for instrument_id in &instrument_ids {
-            self.exec_manager
-                .claim_external_orders(*instrument_id, strategy_id)?;
+        Ok(instrument_ids)
+    }
+
+    /// Deregisters all external order claims owned by `strategy_id` from both execution tiers.
+    ///
+    /// Remove the strategy through the trader or controller first, then call this method before
+    /// registering a successor. The operation is synchronous and can be called while the node is
+    /// idle, between [`poll`](Self::poll) calls after manual [`start`](Self::start), or after the
+    /// node stops. It cannot be called while [`run`](Self::run) owns the node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without changing either tier if the execution engine is already borrowed
+    /// or the two tiers do not contain identical claim sets for the strategy.
+    pub fn deregister_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+    ) -> anyhow::Result<()> {
+        let mut exec_engine = self
+            .kernel
+            .exec_engine
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot deregister external order claims: {e}"))?;
+        let manager_instruments = self
+            .exec_manager
+            .get_external_order_claims_for_strategy(strategy_id);
+        let engine_instruments = exec_engine.get_external_order_claims_for_strategy(strategy_id);
+
+        if manager_instruments != engine_instruments {
+            anyhow::bail!(
+                "External order claims for {strategy_id} differ between the execution manager and engine"
+            );
         }
 
-        self.kernel
-            .exec_engine
-            .borrow_mut()
-            .register_external_order_claims(strategy_id, &instrument_ids)
+        exec_engine.deregister_external_order_claims(strategy_id);
+        self.exec_manager
+            .deregister_external_order_claims(strategy_id);
+
+        Ok(())
     }
 
     /// Adds an execution algorithm to the trader.
@@ -4025,6 +4113,233 @@ mod tests {
     }
 
     #[rstest]
+    fn test_register_external_order_claims_after_build_reaches_both_tiers() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_register_external_order_claims_while_running_reaches_both_tiers() {
+        let mut node = live_node_with_replay_store(false);
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.start().await.unwrap();
+        assert_eq!(node.state(), NodeState::Running);
+
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    fn test_register_external_order_claims_conflicting_batch_leaves_new_claims_absent() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let existing_instrument = InstrumentId::from("AUDUSD.SIM");
+        let new_instruments = [
+            InstrumentId::from("EURUSD.SIM"),
+            InstrumentId::from("GBPUSD.SIM"),
+        ];
+        let existing_strategy_id = StrategyId::from("CLAIMS-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-002");
+        node.register_external_order_claims(existing_strategy_id, &[existing_instrument])
+            .unwrap();
+
+        let result = node.register_external_order_claims(
+            new_strategy_id,
+            &[new_instruments[0], existing_instrument, new_instruments[1]],
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&existing_instrument),
+            Some(existing_strategy_id)
+        );
+
+        for instrument_id in new_instruments {
+            assert_eq!(
+                node.exec_manager.get_external_order_claim(&instrument_id),
+                None
+            );
+            assert_eq!(
+                node.kernel
+                    .exec_engine
+                    .borrow()
+                    .get_external_order_claim(&instrument_id),
+                None
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_register_external_order_claims_one_tier_conflict_changes_neither_tier() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let conflicting_instrument = InstrumentId::from("AUDUSD.SIM");
+        let new_instrument = InstrumentId::from("EURUSD.SIM");
+        let existing_strategy_id = StrategyId::from("CLAIMS-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-002");
+        node.exec_manager
+            .claim_external_orders(conflicting_instrument, existing_strategy_id)
+            .unwrap();
+
+        let result = node.register_external_order_claims(
+            new_strategy_id,
+            &[new_instrument, conflicting_instrument],
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&conflicting_instrument),
+            Some(existing_strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&conflicting_instrument),
+            None
+        );
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&new_instrument),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&new_instrument),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_deregister_external_order_claims_allows_successor_to_claim() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let instruments = [
+            InstrumentId::from("AUDUSD.SIM"),
+            InstrumentId::from("EURUSD.SIM"),
+        ];
+        let first_strategy_id = StrategyId::from("CLAIMS-001");
+        let successor_strategy_id = StrategyId::from("CLAIMS-002");
+        node.register_external_order_claims(first_strategy_id, &instruments)
+            .unwrap();
+
+        node.deregister_external_order_claims(first_strategy_id)
+            .unwrap();
+        node.register_external_order_claims(successor_strategy_id, &instruments)
+            .unwrap();
+
+        for instrument_id in instruments {
+            assert_eq!(
+                node.exec_manager.get_external_order_claim(&instrument_id),
+                Some(successor_strategy_id)
+            );
+            assert_eq!(
+                node.kernel
+                    .exec_engine
+                    .borrow()
+                    .get_external_order_claim(&instrument_id),
+                Some(successor_strategy_id)
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_deregister_external_order_claims_divergence_changes_neither_tier() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let manager_instrument = InstrumentId::from("AUDUSD.SIM");
+        let engine_instrument = InstrumentId::from("EURUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        node.exec_manager
+            .claim_external_orders(manager_instrument, strategy_id)
+            .unwrap();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &HashSet::from([engine_instrument]))
+            .unwrap();
+
+        let result = node.deregister_external_order_claims(strategy_id);
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&manager_instrument),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&engine_instrument),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    fn test_deregister_external_order_claims_without_claims_is_idempotent() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.deregister_external_order_claims(strategy_id).unwrap();
+        node.deregister_external_order_claims(strategy_id).unwrap();
+    }
+
+    #[rstest]
     fn test_add_strategy_rejects_duplicate_external_order_claim_without_overwriting() {
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
@@ -4105,6 +4420,72 @@ mod tests {
             let exec_engine = node.kernel().exec_engine.borrow();
             assert_eq!(exec_engine.get_external_order_claim(&instrument_id), None);
         }
+    }
+
+    #[rstest]
+    fn test_add_strategy_failure_does_not_register_external_order_claims() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        });
+
+        strategy
+            .core
+            .register(
+                node.trader_id(),
+                node.kernel.clock(),
+                node.kernel.cache.clone(),
+                node.kernel.portfolio.clone(),
+            )
+            .unwrap();
+
+        let result = node.add_strategy(strategy);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("already registered with trader")
+        );
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_add_strategy_without_claims_does_not_require_engine_borrow() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let exec_engine = node.kernel.exec_engine.clone();
+        let _engine_borrow = exec_engine.borrow_mut();
+
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("NOCLAIMS-001")),
+            ..Default::default()
+        }))
+        .unwrap();
     }
 
     #[rstest]

@@ -452,6 +452,9 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
+    /// - The strategy configures external order claims and the request repeats an
+    ///   instrument, either tier already contains a requested claim, or the
+    ///   execution engine is already borrowed.
     #[allow(
         unsafe_code,
         reason = "Required for Python strategy component registration"

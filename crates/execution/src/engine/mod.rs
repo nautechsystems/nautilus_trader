@@ -346,6 +346,18 @@ impl ExecutionEngine {
         self.external_order_claims.get(instrument_id).copied()
     }
 
+    /// Returns the instruments with external order claims owned by `strategy_id`.
+    #[must_use]
+    pub fn get_external_order_claims_for_strategy(
+        &self,
+        strategy_id: StrategyId,
+    ) -> HashSet<InstrumentId> {
+        self.external_order_claims
+            .iter()
+            .filter_map(|(instrument_id, owner)| (*owner == strategy_id).then_some(*instrument_id))
+            .collect()
+    }
+
     /// Registers a new execution client.
     ///
     /// # Errors
@@ -602,6 +614,41 @@ impl ExecutionEngine {
         }
 
         Ok(())
+    }
+
+    /// Commits external order claims for `strategy_id` without validation.
+    ///
+    /// The caller must have preflighted every instrument against
+    /// [`Self::get_external_order_claim`]: an existing claim is overwritten
+    /// without error. Coordinated live-node callers should use
+    /// `LiveNode::register_external_order_claims`, which preflights both the
+    /// execution engine and the reconciliation manager before committing;
+    /// ordinary callers should use
+    /// [`Self::register_external_order_claims`] instead.
+    pub fn commit_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &HashSet<InstrumentId>,
+    ) {
+        self.external_order_claims.extend(
+            instrument_ids
+                .iter()
+                .map(|instrument_id| (*instrument_id, strategy_id)),
+        );
+
+        if !instrument_ids.is_empty() {
+            log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
+        }
+    }
+
+    /// Deregisters all external order claims owned by `strategy_id`.
+    ///
+    /// Coordinated live-node callers should use
+    /// `LiveNode::deregister_external_order_claims` so the execution engine and
+    /// reconciliation manager remain consistent.
+    pub fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
+        self.external_order_claims
+            .retain(|_, owner| *owner != strategy_id);
     }
 
     /// # Errors
