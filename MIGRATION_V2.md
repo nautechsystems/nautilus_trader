@@ -354,12 +354,20 @@ Python v2 `ExecutionAlgorithm` remains a routed-order component rather than inhe
 `Actor` authoring surface. Supported override points include:
 
 - `on_order`
+- `on_order_list`
 - Order and position callbacks
 - Lifecycle callbacks
 - `on_signal`
 
 The runtime owns command routing and calls `execute`; do not call or override `execute` as the
 algorithm entrypoint.
+
+V2 `OrderList` stores client order IDs instead of order objects. The runtime resolves those IDs
+through the cache and calls `on_order_list(order_list, orders)`, where `orders` follows the client
+order ID order. If the subclass overrides `on_order_list`, it receives one list callback and the
+runtime does not also call `on_order`. Without an override, the default implementation calls
+`on_order` once for each resolved order. Change v1 one‑argument overrides to accept `orders`; the
+v1 default did not fan out order lists.
 
 The supported authoring surface has these v1 dispositions:
 
@@ -403,10 +411,55 @@ class RoutedAlgorithm(ExecutionAlgorithm):
         self.log.info(f"Routing {instrument.id}; portfolio ready={portfolio_ready}")
 ```
 
+Order `exec_algorithm_params` keys and values remain string‑only across the v2 model and Python
+bindings. Encode each value as a string when constructing the order, then parse it in the algorithm.
+For example, pass `exec_algorithm_params={"horizon_secs": "300", "interval_secs": "10"}`, not
+numeric values. This keeps Python authoring aligned with the Rust `IndexMap<Ustr, Ustr>` contract.
+
+`ExecutionAlgorithmConfig` supports Python subclasses with custom fields. The inherited
+`__new__` applies the base fields before the Python `__init__` runs, so the subclass initializes
+only its custom attributes. Keep `**_kwargs` so the subclass accepts the base keywords. The base
+constructor ignores other unmatched keywords, so validate optional custom inputs in `__init__`.
+
+```python
+from nautilus_trader.model import ExecAlgorithmId
+from nautilus_trader.trading import ExecutionAlgorithmConfig
+
+
+class RoutedAlgorithmConfig(ExecutionAlgorithmConfig):
+    def __init__(
+        self,
+        horizon_secs: str,
+        interval_secs: str,
+        **_kwargs,
+    ) -> None:
+        self.horizon_secs = horizon_secs
+        self.interval_secs = interval_secs
+
+
+config = RoutedAlgorithmConfig(
+    exec_algorithm_id=ExecAlgorithmId("ROUTED"),
+    horizon_secs="300",
+    interval_secs="10",
+    log_events=False,
+)
+algorithm = RoutedAlgorithm(config)
+```
+
+If an algorithm subclass defines `__init__`, call `super().__init__(config)` to retain its Python
+instance and config for export.
+
+Define the algorithm and config classes at module scope so the exported import paths resolve.
+
 Constructed instances and importable configs work in backtest and live workflows:
 
-- Register v2 `ExecutionAlgorithm` instances with `LiveNode.add_exec_algorithm`.
-- Register DataActor-based compatibility algorithms with `add_exec_algorithm_from_config`.
+- Register v2 `ExecutionAlgorithm` instances with `BacktestEngine.add_exec_algorithm` or
+  `LiveNode.add_exec_algorithm`.
+- Call `algorithm.to_importable_config()` to export the algorithm path, config path, and config
+  values.
+- Register the result with `BacktestEngine.add_exec_algorithm_from_config` or
+  `LiveNode.add_exec_algorithm_from_config`.
+- Register DataActor‑based compatibility algorithms with `add_exec_algorithm_from_config`.
 
 Nodes normally drive lifecycle transitions. Direct lifecycle methods remain available for
 control-plane integrations and dispatch the same Python callbacks.
@@ -426,8 +479,9 @@ The cutover accepts these differences from v1:
 - `PortfolioConfig.use_mark_prices` defaults to `true`; v1 defaulted to `false`. Set it to `false` to
   skip mark prices.
 - v2 `OrderList` stores client order IDs instead of order objects:
-  - Replace `order_list.orders` with `order_list.client_order_ids()`, then resolve each ID through
-    `cache.order(client_order_id)`.
+  - Use the resolved `orders` argument in `ExecutionAlgorithm.on_order_list(order_list, orders)`.
+  - Elsewhere, replace `order_list.orders` with `order_list.client_order_ids()`, then resolve each
+    ID through `cache.order(client_order_id)`.
   - Replace `order_list.first` with `cache.order(order_list.first_client_order_id)` after checking
     the ID is not `None`.
 - Catalog order-event data written before `activation_price` and `OrderFilled.info` were added cannot

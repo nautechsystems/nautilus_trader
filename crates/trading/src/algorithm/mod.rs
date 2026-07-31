@@ -1477,8 +1477,7 @@ mod tests {
     #[derive(Debug)]
     struct TestAlgorithm {
         core: ExecutionAlgorithmCore,
-        on_order_called: bool,
-        last_order_client_id: Option<ClientOrderId>,
+        order_client_ids: Vec<ClientOrderId>,
     }
 
     #[derive(Debug)]
@@ -1537,8 +1536,7 @@ mod tests {
         fn new(config: ExecutionAlgorithmConfig) -> Self {
             Self {
                 core: ExecutionAlgorithmCore::new(config),
-                on_order_called: false,
-                last_order_client_id: None,
+                order_client_ids: Vec::new(),
             }
         }
     }
@@ -1547,8 +1545,7 @@ mod tests {
 
     nautilus_execution_algorithm!(TestAlgorithm, {
         fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
-            self.on_order_called = true;
-            self.last_order_client_id = Some(order.client_order_id());
+            self.order_client_ids.push(order.client_order_id());
             Ok(())
         }
     });
@@ -1599,8 +1596,7 @@ mod tests {
     fn test_algorithm_creation() {
         let algo = create_test_algorithm();
         assert!(algo.id().inner().starts_with("TEST-"));
-        assert!(!algo.on_order_called);
-        assert!(algo.last_order_client_id.is_none());
+        assert!(algo.order_client_ids.is_empty());
     }
 
     #[rstest]
@@ -2637,6 +2633,14 @@ mod tests {
         );
         algo.execute(TradingCommand::SubmitOrderList(command))
             .unwrap();
+
+        assert_eq!(
+            algo.order_client_ids,
+            [
+                ClientOrderId::from("O-LIST-001"),
+                ClientOrderId::from("O-LIST-002"),
+            ],
+        );
 
         for id in ["O-LIST-001", "O-LIST-002"] {
             assert_eq!(

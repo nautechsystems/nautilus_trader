@@ -633,6 +633,33 @@ impl PyExecutionAlgorithm {
             .map(|config| config.clone_ref(py))
     }
 
+    /// Returns an importable configuration for this execution algorithm.
+    #[pyo3(name = "to_importable_config")]
+    fn py_to_importable_config(&self, py: Python<'_>) -> PyResult<ImportableExecAlgorithmConfig> {
+        let py_self = self
+            .inner()
+            .py_self
+            .as_ref()
+            .ok_or_else(|| to_pyruntime_err("Python execution algorithm instance is not set"))?
+            .bind(py);
+        let exec_algorithm_path = py_type_path(py_self)?;
+
+        let Some(config) = self.inner().config.as_ref() else {
+            return Ok(ImportableExecAlgorithmConfig {
+                exec_algorithm_path,
+                config_path: String::new(),
+                config: HashMap::new(),
+            });
+        };
+        let config = config.bind(py);
+
+        Ok(ImportableExecAlgorithmConfig {
+            exec_algorithm_path,
+            config_path: py_type_path(config)?,
+            config: py_config_to_json(config)?,
+        })
+    }
+
     #[getter]
     #[pyo3(name = "clock")]
     fn py_clock(&self) -> Option<PyClock> {
@@ -1172,17 +1199,35 @@ impl PyExecutionAlgorithm {
 impl ExecutionAlgorithmConfig {
     /// Configuration for an execution algorithm.
     #[new]
-    #[pyo3(signature = (exec_algorithm_id=None, log_events=true, log_commands=true))]
+    #[pyo3(signature = (
+        exec_algorithm_id=None,
+        log_events=true,
+        log_commands=true,
+        **_kwargs
+    ))]
     fn py_new(
-        exec_algorithm_id: Option<ExecAlgorithmId>,
+        #[gen_stub(override_type(type_repr = "model.ExecAlgorithmId | str | None"))]
+        exec_algorithm_id: Option<&Bound<'_, PyAny>>,
         log_events: bool,
         log_commands: bool,
-    ) -> Self {
-        Self {
+        _kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let exec_algorithm_id = exec_algorithm_id
+            .map(|value| -> PyResult<ExecAlgorithmId> {
+                if let Ok(exec_algorithm_id) = value.extract::<ExecAlgorithmId>() {
+                    Ok(exec_algorithm_id)
+                } else {
+                    let value: String = value.extract()?;
+                    ExecAlgorithmId::new_checked(&value).map_err(to_pyvalue_err)
+                }
+            })
+            .transpose()?;
+
+        Ok(Self {
             exec_algorithm_id,
             log_events,
             log_commands,
-        }
+        })
     }
 
     #[getter]
@@ -1212,22 +1257,7 @@ impl ImportableExecAlgorithmConfig {
         config_path: String,
         config: Py<PyDict>,
     ) -> PyResult<Self> {
-        let json_config = Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("default", py.eval(pyo3::ffi::c_str!("str"), None, None)?)?;
-            let json_str: String = PyModule::import(py, "json")?
-                .call_method("dumps", (config.bind(py),), Some(&kwargs))?
-                .extract()?;
-
-            let json_value: serde_json::Value =
-                serde_json::from_str(&json_str).map_err(to_pyvalue_err)?;
-
-            if let serde_json::Value::Object(map) = json_value {
-                Ok(map.into_iter().collect())
-            } else {
-                Err(to_pyvalue_err("Config must be a dictionary"))
-            }
-        })?;
+        let json_config = Python::attach(|py| py_dict_to_json(config.bind(py)))?;
 
         Ok(Self {
             exec_algorithm_path,
@@ -1256,5 +1286,158 @@ impl ImportableExecAlgorithmConfig {
             py_dict.set_item(key, py_value)?;
         }
         Ok(py_dict.unbind())
+    }
+}
+
+fn py_type_path(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    let value_type = value.get_type();
+    let module: String = value_type.getattr("__module__")?.extract()?;
+    let qualname: String = value_type.getattr("__qualname__")?.extract()?;
+    Ok(format!("{module}:{qualname}"))
+}
+
+fn py_config_to_json(config: &Bound<'_, PyAny>) -> PyResult<HashMap<String, serde_json::Value>> {
+    let py = config.py();
+    let config_dict = PyDict::new(py);
+
+    if let Ok(attributes) = config.getattr("__dict__")
+        && let Ok(attributes) = attributes.cast::<PyDict>()
+    {
+        for (key, value) in attributes.iter() {
+            config_dict.set_item(key, value)?;
+        }
+    }
+
+    for field in [
+        "exec_algorithm_id",
+        "actor_id",
+        "log_events",
+        "log_commands",
+    ] {
+        if let Ok(value) = config.getattr(field) {
+            config_dict.set_item(field, value)?;
+        }
+    }
+
+    py_dict_to_json(&config_dict)
+}
+
+fn py_dict_to_json(config: &Bound<'_, PyDict>) -> PyResult<HashMap<String, serde_json::Value>> {
+    let py = config.py();
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("default", py.eval(pyo3::ffi::c_str!("str"), None, None)?)?;
+    let json_str: String = PyModule::import(py, "json")?
+        .call_method("dumps", (config,), Some(&kwargs))?
+        .extract()?;
+
+    let json_value: serde_json::Value = serde_json::from_str(&json_str).map_err(to_pyvalue_err)?;
+
+    if let serde_json::Value::Object(map) = json_value {
+        Ok(map.into_iter().collect())
+    } else {
+        Err(to_pyvalue_err("Config must be a dictionary"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        enums::OrderType,
+        identifiers::{ClientOrderId, InstrumentId, OrderListId, StrategyId},
+        orders::OrderTestBuilder,
+    };
+    use pyo3::ffi::c_str;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_python_order_list_override_receives_resolved_orders_without_fanout() {
+        Python::initialize();
+
+        let tracker = Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class OrderListTracker:
+    def __init__(self):
+        self.list_calls = 0
+        self.list_ids = []
+        self.resolved_ids = []
+        self.order_ids = []
+
+    def on_order_list(self, order_list, orders):
+        self.list_calls += 1
+        self.list_ids = [str(value) for value in order_list.client_order_ids()]
+        self.resolved_ids = [str(order.client_order_id) for order in orders]
+
+    def on_order(self, order):
+        self.order_ids.append(str(order.client_order_id))
+
+    def observations(self):
+        return self.list_calls, self.list_ids, self.resolved_ids, self.order_ids
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+            py.eval(c_str!("OrderListTracker()"), None, None)
+                .unwrap()
+                .unbind()
+        });
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        algorithm.set_python_instance(tracker);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let strategy_id = StrategyId::from("STRAT-LIST-OVERRIDE");
+        let first = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-LIST-OVERRIDE-001"))
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let second = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-LIST-OVERRIDE-002"))
+            .quantity(Quantity::from("2.0"))
+            .build();
+        let order_list = OrderList::new(
+            OrderListId::from("OL-OVERRIDE-001"),
+            instrument_id,
+            strategy_id,
+            vec![first.client_order_id(), second.client_order_id()],
+            0.into(),
+        );
+
+        ExecutionAlgorithm::on_order_list(&mut algorithm, order_list, vec![first, second]).unwrap();
+
+        let observations = Python::attach(|py| {
+            algorithm
+                .inner()
+                .py_self
+                .as_ref()
+                .unwrap()
+                .call_method0(py, "observations")
+                .unwrap()
+                .extract::<(usize, Vec<String>, Vec<String>, Vec<String>)>(py)
+                .unwrap()
+        });
+        assert_eq!(
+            observations,
+            (
+                1,
+                vec![
+                    "O-LIST-OVERRIDE-001".to_string(),
+                    "O-LIST-OVERRIDE-002".to_string(),
+                ],
+                vec![
+                    "O-LIST-OVERRIDE-001".to_string(),
+                    "O-LIST-OVERRIDE-002".to_string(),
+                ],
+                Vec::new(),
+            ),
+        );
     }
 }

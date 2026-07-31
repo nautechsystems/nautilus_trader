@@ -555,8 +555,8 @@ def test_add_exec_algorithm_from_config_registers(live_node):
 
 def test_add_exec_algorithm_from_config_registers_v2_instance(live_node):
     config = ImportableExecAlgorithmConfig(
-        exec_algorithm_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithm",
-        config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+        exec_algorithm_path="tests.unit.test_live_node:LifecycleExecutionAlgorithm",
+        config_path="nautilus_trader.trading:ExecutionAlgorithmConfig",
         config={"exec_algorithm_id": "PY-LIVE-CONFIG"},
     )
 

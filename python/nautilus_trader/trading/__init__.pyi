@@ -192,13 +192,13 @@ class EmaCrossConfig:
     @property
     def slow_period(self) -> int: ...
 
-@typing.final
 class ExecutionAlgorithmConfig:
     def __init__(
         self,
-        exec_algorithm_id: model.ExecAlgorithmId | None = None,
+        exec_algorithm_id: model.ExecAlgorithmId | str | None = None,
         log_events: bool = True,
         log_commands: bool = True,
+        _kwargs: dict | None = ...,
     ) -> None: ...
     @property
     def exec_algorithm_id(self) -> model.ExecAlgorithmId | None: ...
@@ -326,6 +326,7 @@ class ExecutionAlgorithm:
     def exec_algorithm_id(self) -> model.ExecAlgorithmId: ...
     @property
     def config(self) -> typing.Any | None: ...
+    def to_importable_config(self) -> ImportableExecAlgorithmConfig: ...
     @property
     def clock(self) -> common.Clock | None: ...
     @property
