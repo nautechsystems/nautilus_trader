@@ -1801,6 +1801,10 @@ impl FeedHandler {
         let mut skipped_market_ids = Vec::new();
 
         for position in positions.values() {
+            if position.position.is_zero() {
+                continue;
+            }
+
             let Some(instrument) = self.instruments.get(&position.market_id) else {
                 log::debug!(
                     "No instrument cached for Lighter position market_id={}",
@@ -2381,6 +2385,29 @@ mod tests {
             } => {
                 assert!(skipped_market_ids.is_empty());
                 assert!(reports.is_empty());
+            }
+            other => panic!("expected empty position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_routes_zero_account_position_to_empty_snapshot() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["position"] = json!("0.0000");
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(reports.is_empty());
+                assert!(skipped_market_ids.is_empty());
             }
             other => panic!("expected empty position snapshot, was {other:?}"),
         }

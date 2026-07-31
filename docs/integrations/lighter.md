@@ -403,9 +403,10 @@ nonce refresh are mandatory. A client can be constructed without credentials, bu
 will not connect until `private_key`, `account_index`, and `api_key_index` resolve.
 
 Perpetual positions use netting mode with one position per market; spot balances use account asset
-state. Each `account_all_positions` frame is a snapshot: omitted cached markets flatten, and an
-empty `positions` map flattens all cached positions. Unmapped or unparsable rows remain keyed by
-market ID so they do not cause false flat reports.
+state. Each `account_all_positions` frame is a snapshot: cached markets omitted from the frame, or
+present with a zero `position` value, flatten. An empty `positions` map flattens all cached
+positions. Unmapped or unparsable rows with a non‑zero position remain keyed by market ID so they do
+not cause false flat reports.
 
 | Feature                 | Perpetuals | Spot | Notes                                                        |
 | ----------------------- | ---------- | ---- | ------------------------------------------------------------ |
