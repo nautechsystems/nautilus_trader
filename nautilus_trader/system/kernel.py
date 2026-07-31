@@ -27,9 +27,9 @@ from pathlib import Path
 
 import msgspec
 
+from nautilus_trader.cache.adapter import CachePostgresAdapter
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.adapter import CachePostgresAdapter
 from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
