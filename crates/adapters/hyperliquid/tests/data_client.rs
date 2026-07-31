@@ -579,14 +579,8 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                             if bbo_subscription_count == 1 {
                                                 state.initial_bbo_message.notified().await;
                                             } else {
-                                                // Gate EVERY post-initial subscribe: with an
-                                                // unbounded resubscribe budget the client may
-                                                // subscribe a third time before the test
-                                                // releases the healing quote, and an ungated
-                                                // send would heal the stream outside the
-                                                // test's control. notify_one wakes exactly
-                                                // one waiter, so exactly one healing quote
-                                                // is delivered.
+                                                // Gate every post-initial BBO message so later
+                                                // resubscriptions cannot heal the stream early.
                                                 state.healing_bbo_message.notified().await;
                                             }
                                         }
