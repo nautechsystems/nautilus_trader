@@ -109,6 +109,7 @@ adapter set. The following limits remain deferred:
 - Added Bybit spot `margin_trading` instrument info field (#4540), thanks @dxwil
 - Added Bybit v2 automatic SPOT margin borrow repayment (#4543), thanks @dxwil
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
+- Added DeFi pool `CurrencyPair` caching and publication with pool IDs, token‑derived precision, and `taker_fee`
 - Added Architect AX dated futures parsing and configurable WebSocket heartbeat and disconnect cancellation
 - Added Architect AX funding-slot schedule requests via `GET /funding-slots`
 - Added Architect AX Python v2 data and execution client factory bindings
@@ -128,6 +129,7 @@ adapter set. The following limits remain deferred:
 - Added v2 `Decimal` order fill pricing; `Order.avg_px` and `Order.slippage` no longer round through `f64`
 
 ### Breaking Changes
+- Changed DeFi `Pool` instrument conversion to preserve pool IDs; update callers keyed by token‑pair symbols
 - Changed L3 books to move IDs re‑added at a new price on the same side, fixing ghost levels
 - Changed L3 books to derive price‑based order IDs for orders with a zero order ID
 - Changed Rust `BookIntegrityError` to add `AmbiguousOrderSide`; update exhaustive matches

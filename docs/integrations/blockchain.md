@@ -45,8 +45,15 @@ DEX integrations register:
 - Event signatures and parser functions.
 - AMM type.
 
-Pool definitions bind the chain, DEX, pool contract, token pair, fee tier, tick spacing, and creation
-block into a stable Nautilus instrument ID.
+Pool definitions bind the chain and DEX to a pool contract address or protocol pool ID to form a
+stable Nautilus instrument ID. The token pair, fee tier, tick spacing, and creation block remain
+pool metadata.
+
+When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under
+the same pool instrument ID. The instrument keeps the raw pool `token0`/`token1` order as base/quote,
+derives price and size precision from token decimals up to `FIXED_PRECISION`, and exposes the fee
+tier divided by 1,000,000 as `taker_fee`. Distinct pool identifiers let same‑token pools coexist in
+the cache and on the message bus.
 
 Uniswap V3 and compatible concentrated-liquidity pools also use:
 

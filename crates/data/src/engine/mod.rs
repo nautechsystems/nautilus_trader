@@ -2387,7 +2387,7 @@ impl DataEngine {
         !self.config.disable_historical_cache
     }
 
-    fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+    pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
         log::debug!("Handling instrument: {}", instrument.id());
 
         if let Err(e) = self
