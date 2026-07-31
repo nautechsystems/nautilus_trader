@@ -35,7 +35,6 @@ unset MYPYPATH
 cd "$neutral_dir"
 uv run --project "$project_dir" --no-sync python -c "$distribution_probe"
 uv run --project "$project_dir" --no-sync pytest \
-  --import-mode=importlib \
   --rootdir="$project_dir" \
   --doctest-modules \
   --pyargs "$@"
