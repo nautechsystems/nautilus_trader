@@ -258,7 +258,7 @@ pub fn subscribe_any(
     for (topic, subs) in &mut msgbus_ref_mut.topics {
         if is_matching_backtracking(*topic, sub.pattern) {
             subs.push(sub.clone());
-            subs.sort();
+            subs.sort_by(Subscription::delivery_order);
             log::debug!("Added subscription for '{topic}'");
         }
     }

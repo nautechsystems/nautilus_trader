@@ -165,6 +165,14 @@ impl Subscription {
             priority: priority.unwrap_or(0),
         }
     }
+
+    pub(crate) fn delivery_order(&self, other: &Self) -> std::cmp::Ordering {
+        other
+            .priority
+            .cmp(&self.priority)
+            .then_with(|| self.pattern.cmp(&other.pattern))
+            .then_with(|| self.handler_id.cmp(&other.handler_id))
+    }
 }
 
 impl PartialEq<Self> for Subscription {
@@ -183,10 +191,8 @@ impl PartialOrd for Subscription {
 
 impl Ord for Subscription {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other
-            .priority
-            .cmp(&self.priority)
-            .then_with(|| self.pattern.cmp(&other.pattern))
+        self.pattern
+            .cmp(&other.pattern)
             .then_with(|| self.handler_id.cmp(&other.handler_id))
     }
 }
@@ -752,7 +758,7 @@ impl MessageBus {
     pub(crate) fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.topics.get(&topic).cloned().unwrap_or_else(|| {
             let mut matches = self.find_topic_matches(topic);
-            matches.sort();
+            matches.sort_by(Subscription::delivery_order);
             self.topics.insert(topic, matches.clone());
             matches
         })
@@ -770,7 +776,7 @@ impl MessageBus {
             }
         } else {
             let mut matches = self.find_topic_matches(topic);
-            matches.sort();
+            matches.sort_by(Subscription::delivery_order);
 
             for sub in &matches {
                 buf.push(sub.handler.clone());
@@ -802,17 +808,97 @@ impl MessageBus {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        any::Any,
+        cell::RefCell,
+        collections::hash_map::DefaultHasher,
+        fmt::Debug,
+        hash::{Hash, Hasher},
+        rc::Rc,
+    };
+
     use rand::{RngExt, SeedableRng, rngs::StdRng};
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
     use crate::msgbus::{
-        self, ShareableMessageHandler, get_message_bus,
+        self, Handler, ShareableMessageHandler, get_message_bus,
         matching::is_matching_backtracking,
         stubs::{get_any_saving_handler, get_call_check_handler, get_stub_shareable_handler},
         subscriptions_count_any,
+        typed_handler::shareable_handler,
     };
+
+    #[derive(Debug)]
+    struct RecordingAnyHandler {
+        id: Ustr,
+        label: &'static str,
+        order: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl Handler<dyn Any> for RecordingAnyHandler {
+        fn id(&self) -> Ustr {
+            self.id
+        }
+
+        fn handle(&self, _message: &dyn Any) {
+            self.order.borrow_mut().push(self.label);
+        }
+    }
+
+    fn recording_any_handler(
+        id: &'static str,
+        label: &'static str,
+        order: Rc<RefCell<Vec<&'static str>>>,
+    ) -> ShareableMessageHandler {
+        shareable_handler(Rc::new(RecordingAnyHandler {
+            id: Ustr::from(id),
+            label,
+            order,
+        }))
+    }
+
+    #[rstest]
+    fn test_subscription_ordering_laws() {
+        let handler = get_stub_shareable_handler(Some(Ustr::from("handler-b")));
+        let base = Subscription::new("pattern-b".into(), handler.clone(), Some(1));
+        let different_priority = Subscription::new("pattern-b".into(), handler, Some(2));
+        let different_pattern = Subscription::new(
+            "pattern-a".into(),
+            get_stub_shareable_handler(Some(Ustr::from("handler-b"))),
+            Some(1),
+        );
+        let different_handler = Subscription::new(
+            "pattern-b".into(),
+            get_stub_shareable_handler(Some(Ustr::from("handler-a"))),
+            Some(1),
+        );
+
+        assert_eq!(base, different_priority);
+        assert_eq!(base.cmp(&different_priority), std::cmp::Ordering::Equal);
+
+        let mut base_hasher = DefaultHasher::new();
+        base.hash(&mut base_hasher);
+        let mut different_priority_hasher = DefaultHasher::new();
+        different_priority.hash(&mut different_priority_hasher);
+        assert_eq!(base_hasher.finish(), different_priority_hasher.finish());
+
+        let variants = [
+            base,
+            different_priority,
+            different_pattern,
+            different_handler,
+        ];
+
+        for a in &variants {
+            for b in &variants {
+                assert_eq!(a == b, a.cmp(b).is_eq());
+                assert_eq!(a.partial_cmp(b), Some(a.cmp(b)));
+                assert_eq!(a.cmp(b), b.cmp(a).reverse());
+            }
+        }
+    }
 
     #[rstest]
     fn test_new() {
@@ -1212,6 +1298,121 @@ mod tests {
         assert_eq!(subs[1].handler_id, handler_id3);
         assert_eq!(subs[2].handler_id, handler_id1);
         assert_eq!(subs[3].handler_id, handler_id2);
+    }
+
+    #[rstest]
+    fn test_matching_subscriptions_orders_by_full_delivery_key_on_cache_miss() {
+        MessageBus::default().register_message_bus();
+        let order = Rc::new(RefCell::new(Vec::new()));
+
+        msgbus::subscribe_any(
+            "delivery.*".into(),
+            recording_any_handler("handler-z", "low-z", order.clone()),
+            Some(1),
+        );
+        msgbus::subscribe_any(
+            "delivery.topic".into(),
+            recording_any_handler("handler-b", "exact-b", order.clone()),
+            Some(10),
+        );
+        msgbus::subscribe_any(
+            "delivery.topic".into(),
+            recording_any_handler("handler-a", "exact-a", order.clone()),
+            Some(10),
+        );
+        msgbus::subscribe_any(
+            "delivery.*".into(),
+            recording_any_handler("handler-b", "wildcard-b", order),
+            Some(10),
+        );
+
+        let subscriptions = get_message_bus()
+            .borrow_mut()
+            .matching_subscriptions("delivery.topic");
+        let actual = subscriptions
+            .iter()
+            .map(|sub| (sub.priority, sub.pattern.as_str(), sub.handler_id.as_str()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            actual,
+            vec![
+                (10, "delivery.*", "handler-b"),
+                (10, "delivery.topic", "handler-a"),
+                (10, "delivery.topic", "handler-b"),
+                (1, "delivery.*", "handler-z"),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_first_uncached_publish_any_orders_by_full_delivery_key() {
+        MessageBus::default().register_message_bus();
+        let order = Rc::new(RefCell::new(Vec::new()));
+
+        msgbus::subscribe_any(
+            "delivery.*".into(),
+            recording_any_handler("handler-z", "low-z", order.clone()),
+            Some(1),
+        );
+        msgbus::subscribe_any(
+            "delivery.topic".into(),
+            recording_any_handler("handler-b", "exact-b", order.clone()),
+            Some(10),
+        );
+        msgbus::subscribe_any(
+            "delivery.topic".into(),
+            recording_any_handler("handler-a", "exact-a", order.clone()),
+            Some(10),
+        );
+        msgbus::subscribe_any(
+            "delivery.*".into(),
+            recording_any_handler("handler-b", "wildcard-b", order.clone()),
+            Some(10),
+        );
+
+        msgbus::publish_any("delivery.topic".into(), &());
+
+        assert_eq!(
+            *order.borrow(),
+            vec!["wildcard-b", "exact-a", "exact-b", "low-z"]
+        );
+    }
+
+    #[rstest]
+    fn test_late_subscription_orders_cached_any_topic_by_full_delivery_key() {
+        MessageBus::default().register_message_bus();
+        let order = Rc::new(RefCell::new(Vec::new()));
+
+        msgbus::subscribe_any(
+            "delivery.*".into(),
+            recording_any_handler("handler-z", "low-z", order.clone()),
+            Some(1),
+        );
+        msgbus::subscribe_any(
+            "delivery.topic".into(),
+            recording_any_handler("handler-b", "exact-b", order.clone()),
+            Some(10),
+        );
+        msgbus::subscribe_any(
+            "delivery.topic".into(),
+            recording_any_handler("handler-a", "exact-a", order.clone()),
+            Some(10),
+        );
+        msgbus::publish_any("delivery.topic".into(), &());
+        order.borrow_mut().clear();
+
+        msgbus::subscribe_any(
+            "delivery.*".into(),
+            recording_any_handler("handler-b", "wildcard-b", order.clone()),
+            Some(10),
+        );
+        msgbus::publish_any("delivery.topic".into(), &());
+
+        assert_eq!(
+            *order.borrow(),
+            vec!["wildcard-b", "exact-a", "exact-b", "low-z"]
+        );
     }
 
     #[rstest]
