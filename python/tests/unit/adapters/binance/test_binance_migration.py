@@ -203,7 +203,7 @@ def test_load_binance_order_book_deltas_rejects_malformed_row(tmp_path: Path) ->
 def test_load_binance_instruments_uses_provider_config() -> None:
     payload = (
         WORKSPACE_ROOT
-        / "crates/adapters/binance/test_data/futures/http_json/exchange_info_delivery_usdm.json"
+        / "crates/adapters/binance/test_data/futures/http_json/exchange_info_usdm.json"
     ).read_bytes()
 
     with _serve_exchange_info(payload, "/fapi/v1/exchangeInfo") as (base_url, requests):

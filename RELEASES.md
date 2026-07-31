@@ -136,6 +136,7 @@ deferrals.
 - Added Binance GTD expiry support for USD-M and local expiry mapping for Spot and COIN-M
 - Added Binance v2 extended bars, bounded history, snapshots, tickers, estimated settlement prices, and L1 books
 - Added Binance USD-M (monthly and quarterly) and COIN-M (quarterly) delivery futures support
+- Added Binance v2 USD-M TradFi perpetual instrument support (#4488), thanks @M4n5ter
 - Added Binance v2 instrument filters, fees, scheduled refresh, proxy, and receive-window configuration
 - Added Binance US Spot JSON data and HMAC execution to the Rust-backed v2 adapter
 - Added Binance Python v2 constants, instrument loading, order book CSV loading, and client-order-ID decoders

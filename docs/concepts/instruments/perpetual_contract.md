@@ -123,6 +123,7 @@ eurusd_perp = PerpetualContract(
 Representative adapters that create or consume `PerpetualContract` instruments include:
 
 - [Architect AX](../../integrations/architect_ax.md) for venue-defined perpetual contracts.
+- [Binance](../../integrations/binance.md) for USD-M TradFi perpetual contracts.
 
 ## Related guides
 

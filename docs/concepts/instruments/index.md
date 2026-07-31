@@ -22,7 +22,7 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model.instru
 | [`CryptoFuture`](crypto_future.md)                | Crypto future      | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
 | [`CryptoFuturesSpread`](crypto_futures_spread.md) | Crypto spread      | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
 | [`CryptoPerpetual`](crypto_perpetual.md)          | Swap               | Crypto perpetual futures contract.                   | Binance, BitMEX, Bybit, dYdX.   |
-| [`PerpetualContract`](perpetual_contract.md)      | Generic swap       | Perpetual futures contract across asset classes.     | Architect AX.                   |
+| [`PerpetualContract`](perpetual_contract.md)      | Generic swap       | Perpetual futures contract across asset classes.     | Architect AX, Binance.          |
 | [`OptionContract`](option_contract.md)            | Option             | Exchange traded put or call option.                  | Databento, Interactive Brokers. |
 | [`OptionSpread`](option_spread.md)                | Option spread      | Exchange defined options strategy with several legs. | Databento, Interactive Brokers. |
 | [`CryptoOption`](crypto_option.md)                | Crypto option      | Option on a crypto underlying.                       | Bybit, Deribit, OKX, Tardis.    |

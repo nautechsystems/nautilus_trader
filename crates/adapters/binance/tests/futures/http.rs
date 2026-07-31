@@ -47,7 +47,7 @@ use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     data::BarType,
-    enums::MarketStatusAction,
+    enums::{AssetClass, MarketStatusAction},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     types::Quantity,
@@ -140,7 +140,7 @@ async fn handle_time() -> Response {
 }
 
 async fn handle_exchange_info() -> Response {
-    json_response(&load_fixture("exchange_info_delivery_usdm.json"))
+    json_response(&load_fixture("exchange_info_usdm.json"))
 }
 
 async fn handle_coinm_exchange_info() -> Response {
@@ -677,6 +677,50 @@ async fn test_request_instruments_applies_filters_exact_fees_and_cache_replaceme
             .instruments_cache()
             .contains_key(&Ustr::from("BTCUSDT_260925"))
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_parses_tradifi_perpetual_exchange_info() {
+    let addr = start_test_server(TestServerState::default()).await.unwrap();
+    let client = BinanceFuturesHttpClient::new(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Live,
+        get_atomic_clock_realtime(),
+        None,
+        None,
+        Some(format!("http://{addr}")),
+        None,
+        Some(60),
+        None,
+        false,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    let btc_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let btc = instruments
+        .iter()
+        .find(|instrument| instrument.id() == btc_id)
+        .expect("Missing crypto perpetual instrument");
+    assert!(matches!(btc, InstrumentAny::CryptoPerpetual(_)));
+
+    let xau_id = InstrumentId::from("XAUUSDT-PERP.BINANCE");
+    let xau = instruments
+        .iter()
+        .find(|instrument| instrument.id() == xau_id)
+        .expect("Missing TradFi perpetual instrument");
+    let InstrumentAny::PerpetualContract(tradifi) = xau else {
+        panic!("Expected XAU to parse as a PerpetualContract, was {xau:?}");
+    };
+
+    assert_eq!(tradifi.id.to_string(), "XAUUSDT-PERP.BINANCE");
+    assert_eq!(tradifi.raw_symbol.as_str(), "XAUUSDT");
+    assert_eq!(tradifi.underlying.as_str(), "XAU");
+    assert_eq!(tradifi.asset_class, AssetClass::Commodity);
+    assert_eq!(tradifi.base_currency, None);
+    assert_eq!(tradifi.maker_fee, dec!(0.0002));
+    assert_eq!(tradifi.taker_fee, dec!(0.0005));
 }
 
 #[rstest]

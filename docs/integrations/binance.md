@@ -11,7 +11,8 @@ features (noted inline). The Python adapter supports the same product types.
 Supported products:
 
 - **Binance Spot** (including Binance US)
-- **Binance USDT-Margined Futures** (perpetuals and current or next monthly and quarterly delivery contracts)
+- **Binance USDT-Margined Futures** (crypto and TradFi perpetuals; current and next monthly and
+  quarterly delivery contracts)
 - **Binance Coin-Margined Futures** (perpetuals and current or next quarterly delivery contracts)
 
 ## Examples
@@ -143,8 +144,21 @@ Because NautilusTrader supports multi-venue trading, it must distinguish between
 uses the same symbol for both).
 
 Nautilus appends `-PERP` to USD-M perpetual symbols. For example, the Binance
-USD-M `BTCUSDT` perpetual becomes `BTCUSDT-PERP`. Binance already names COIN-M
-perpetuals with `_PERP`, so `BTCUSD_PERP` remains unchanged.
+USD-M `BTCUSDT` perpetual becomes `BTCUSDT-PERP`. USD-M `TRADIFI_PERPETUAL`
+listings use the same suffix, so `XAUUSDT` becomes `XAUUSDT-PERP`.
+
+The Rust-backed v2 adapter maps `TRADIFI_PERPETUAL` listings to
+`PerpetualContract` and derives their asset class from Binance's `underlyingType`:
+
+| Binance `underlyingType`                        | Nautilus asset class |
+| ----------------------------------------------- | -------------------- |
+| `EQUITY`, `KR_EQUITY`, `HK_EQUITY`, `PREMARKET` | Equity               |
+| `COMMODITY`                                     | Commodity            |
+
+Listings with other or missing values are skipped with a warning.
+
+The Rust-backed v2 adapter preserves Binance's native `_PERP` suffix for COIN-M
+perpetuals, so `BTCUSD_PERP` remains unchanged.
 
 Delivery symbols keep Binance's `_YYMMDD` suffix. For example,
 `BTCUSDT_260925` and `BTCUSD_260925` remain unchanged within Nautilus. USD-M
