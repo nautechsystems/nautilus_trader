@@ -60,7 +60,10 @@ use ustr::Ustr;
 
 use crate::{
     config::SimulatedVenueConfig,
-    modules::{ExchangeContext, SimulationModule},
+    modules::{
+        AccountAdjustmentError, AccountAdjustmentOutcome, ExchangeContext, SimulationModule,
+        SimulationModuleResult,
+    },
 };
 
 /// Represents commands with simulated network latency in a min-heap priority queue.
@@ -561,26 +564,44 @@ impl SimulatedExchange {
         }
 
         if let Some(exec_client) = &self.exec_client {
+            log::debug!("Adjusting account for venue {}", exec_client.venue());
+        }
+
+        match self.try_adjust_account(adjustment) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("{e}");
+                false
+            }
+        }
+    }
+
+    /// Tries to adjust the account balance by the given amount without logging failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account or currency balance is unavailable, the
+    /// resulting balance exceeds [`Money`] bounds, or account state generation fails.
+    pub fn try_adjust_account(&mut self, adjustment: Money) -> Result<(), AccountAdjustmentError> {
+        if self.frozen_account {
+            // Nothing to adjust
+            return Ok(());
+        }
+
+        if let Some(exec_client) = &self.exec_client {
             let venue = exec_client.venue();
-            log::debug!("Adjusting account for venue {venue}");
             let account_state = {
                 let cache = self.cache.borrow();
                 if let Some(account) = cache.account_for_venue(&venue) {
                     if let Some(balance) = account.balance(Some(adjustment.currency)) {
                         let mut current_balance = *balance;
                         let Some(total) = current_balance.total.checked_add(adjustment) else {
-                            log::error!(
-                                "Cannot adjust account: {} total exceeds Money bounds",
-                                adjustment.currency
-                            );
-                            return false;
+                            return Err(AccountAdjustmentError::TotalOverflow(adjustment.currency));
                         };
                         let Some(free) = current_balance.free.checked_add(adjustment) else {
-                            log::error!(
-                                "Cannot adjust account: {} free balance exceeds Money bounds",
-                                adjustment.currency
-                            );
-                            return false;
+                            return Err(AccountAdjustmentError::FreeBalanceOverflow(
+                                adjustment.currency,
+                            ));
                         };
                         current_balance.total = total;
                         current_balance.free = free;
@@ -596,30 +617,20 @@ impl SimulatedExchange {
                             self.clock.borrow().timestamp_ns(),
                         ))
                     } else {
-                        log::error!(
-                            "Cannot adjust account: no balance for currency {}",
-                            adjustment.currency
-                        );
-                        None
+                        return Err(AccountAdjustmentError::MissingBalance(adjustment.currency));
                     }
                 } else {
-                    log::error!("Cannot adjust account: no account for venue {venue}");
-                    None
+                    return Err(AccountAdjustmentError::MissingAccount(venue));
                 }
             };
 
             if let Some((balances, margins, ts_event)) = account_state {
-                if let Err(e) =
-                    exec_client.generate_account_state(balances, margins, true, ts_event)
-                {
-                    log::error!("Cannot adjust account: failed to generate account state: {e}");
-                    return false;
-                }
-            } else {
-                return false;
+                exec_client
+                    .generate_account_state(balances, margins, true, ts_event)
+                    .map_err(|e| AccountAdjustmentError::AccountStateGeneration(e.to_string()))?;
             }
         }
-        true
+        Ok(())
     }
 
     /// Returns whether there are pending commands at or before `ts_now`.
@@ -1459,7 +1470,7 @@ impl SimulatedExchange {
     /// Must be called once per time step after all command queues have fully
     /// settled, not inside the settle loop.
     pub fn process_modules(&mut self, ts_now: UnixNanos) {
-        let adjustments = {
+        let results = {
             let cache = self.cache.borrow();
             let ctx = ExchangeContext {
                 venue: self.id,
@@ -1470,12 +1481,22 @@ impl SimulatedExchange {
             };
             self.modules
                 .iter()
-                .flat_map(|m| m.process(ts_now, &ctx))
-                .collect::<Vec<Money>>()
+                .enumerate()
+                .map(|(module_index, module)| (module_index, module.process(ts_now, &ctx)))
+                .collect::<Vec<_>>()
         };
 
-        for adjustment in adjustments {
-            self.adjust_account(adjustment);
+        for (module_index, result) in results {
+            if let SimulationModuleResult::Completed(adjustments) = result {
+                let outcomes = adjustments
+                    .into_iter()
+                    .map(|adjustment| match self.try_adjust_account(adjustment) {
+                        Ok(()) => AccountAdjustmentOutcome::Applied,
+                        Err(e) => AccountAdjustmentOutcome::Failed(e),
+                    })
+                    .collect::<Vec<_>>();
+                self.modules[module_index].acknowledge(&outcomes);
+            }
         }
     }
 

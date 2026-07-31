@@ -17,17 +17,20 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     str::FromStr,
+    sync::Mutex,
 };
 
 use ahash::AHashMap;
 use chrono::TimeZone;
 use chrono_tz::US::Eastern;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_backtest::{
     config::SimulatedVenueConfig,
     exchange::SimulatedExchange,
     execution_client::BacktestExecutionClient,
     modules::{
-        ExchangeContext, FXRolloverInterestModule, SimulationModule,
+        AccountAdjustmentError, AccountAdjustmentOutcome, ExchangeContext,
+        FXRolloverInterestModule, SimulationModule, SimulationModuleResult,
         fx_rollover::InterestRateRecord,
     },
 };
@@ -41,6 +44,7 @@ use nautilus_common::{
             TypedIntoMessageSavingHandler, get_any_saving_handler,
             get_typed_into_message_saving_handler, get_typed_message_saving_handler,
         },
+        typed_handler::TypedHandler,
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -3184,6 +3188,69 @@ struct MockSimulationModule {
     counts: MockModuleCounts,
 }
 
+#[derive(Default)]
+struct CapturingLogger {
+    messages: Mutex<Vec<(Level, String)>>,
+}
+
+impl CapturingLogger {
+    fn clear(&self) {
+        self.messages.lock().unwrap().clear();
+    }
+
+    fn messages(&self) -> Vec<(Level, String)> {
+        self.messages.lock().unwrap().clone()
+    }
+}
+
+impl Log for CapturingLogger {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Warn
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.messages
+                .lock()
+                .unwrap()
+                .push((record.level(), record.args().to_string()));
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static CAPTURING_LOGGER: CapturingLogger = CapturingLogger {
+    messages: Mutex::new(Vec::new()),
+};
+
+struct AdjustmentSimulationModule {
+    label: &'static str,
+    adjustments: Vec<Money>,
+    outcomes: Rc<RefCell<Vec<AccountAdjustmentOutcome>>>,
+    sequence: Rc<RefCell<Vec<String>>>,
+}
+
+impl SimulationModule for AdjustmentSimulationModule {
+    fn pre_process(&self, _data: &Data) {}
+
+    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
+        self.sequence
+            .borrow_mut()
+            .push(format!("process-{}", self.label));
+
+        SimulationModuleResult::Completed(self.adjustments.clone())
+    }
+
+    fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]) {
+        self.outcomes.borrow_mut().extend_from_slice(outcomes);
+    }
+
+    fn log_diagnostics(&self) {}
+
+    fn reset(&self) {}
+}
+
 impl MockSimulationModule {
     fn new(counts: MockModuleCounts) -> Self {
         Self { counts }
@@ -3197,10 +3264,12 @@ impl SimulationModule for MockSimulationModule {
             .set(self.counts.pre_process.get() + 1);
     }
 
-    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> Vec<Money> {
+    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
         self.counts.process.set(self.counts.process.get() + 1);
-        Vec::new()
+        SimulationModuleResult::Completed(Vec::new())
     }
+
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) {}
 
     fn log_diagnostics(&self) {
         self.counts
@@ -3217,14 +3286,19 @@ fn get_exchange_with_module(
     venue: Venue,
     counts: MockModuleCounts,
 ) -> Rc<RefCell<SimulatedExchange>> {
+    get_exchange_with_modules(venue, vec![Box::new(MockSimulationModule::new(counts))])
+}
+
+fn get_exchange_with_modules(
+    venue: Venue,
+    modules: Vec<Box<dyn SimulationModule>>,
+) -> Rc<RefCell<SimulatedExchange>> {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(TestClock::new()));
 
     // Register msgbus handler so generate_account_state works during reset
     let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
     msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
-
-    let modules: Vec<Box<dyn SimulationModule>> = vec![Box::new(MockSimulationModule::new(counts))];
 
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
@@ -3329,6 +3403,65 @@ fn test_module_process_called_by_process_modules(crypto_perpetual_ethusdt: Crypt
     assert_eq!(counts.process.get(), 1);
 }
 
+#[rstest]
+fn test_process_modules_forwards_real_outcomes_after_shared_snapshot() {
+    let first_outcomes = Rc::new(RefCell::new(Vec::new()));
+    let second_outcomes = Rc::new(RefCell::new(Vec::new()));
+    let sequence = Rc::new(RefCell::new(Vec::new()));
+    let modules: Vec<Box<dyn SimulationModule>> = vec![
+        Box::new(AdjustmentSimulationModule {
+            label: "first",
+            adjustments: vec![Money::from("1 USD"), Money::from("1 AUD")],
+            outcomes: first_outcomes.clone(),
+            sequence: sequence.clone(),
+        }),
+        Box::new(AdjustmentSimulationModule {
+            label: "second",
+            adjustments: Vec::new(),
+            outcomes: second_outcomes.clone(),
+            sequence: sequence.clone(),
+        }),
+    ];
+    let exchange = get_exchange_with_modules(Venue::new("SIM"), modules);
+    let cache = exchange.borrow().cache().clone();
+    pre_populate_margin_account(&mut cache.borrow_mut(), "SIM-001");
+
+    // The saving handler registered by the fixture never applies account
+    // state back to the cache, so a balance probe cannot distinguish the
+    // processing orders. Record the account-state EMISSION instead: the
+    // successful USD adjustment emits exactly one AccountState, and under
+    // the shared-snapshot contract it must come after every module's
+    // process call, not between them.
+    let handler_sequence = sequence.clone();
+    msgbus::register_account_state_endpoint(
+        "Portfolio.update_account".into(),
+        TypedHandler::from(move |_: &AccountState| {
+            handler_sequence
+                .borrow_mut()
+                .push("account-state".to_string());
+        }),
+    );
+
+    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+
+    assert_eq!(
+        *first_outcomes.borrow(),
+        vec![
+            AccountAdjustmentOutcome::Applied,
+            AccountAdjustmentOutcome::Failed(AccountAdjustmentError::MissingBalance(
+                Currency::AUD()
+            )),
+        ]
+    );
+    assert!(second_outcomes.borrow().is_empty());
+    assert_eq!(
+        *sequence.borrow(),
+        vec!["process-first", "process-second", "account-state"],
+        "all modules must process against the same pre-adjustment snapshot, \
+         with adjustments applied only after the read-only phase"
+    );
+}
+
 fn rollover_records() -> Vec<InterestRateRecord> {
     ["2020-01", "2021-01"]
         .into_iter()
@@ -3410,7 +3543,14 @@ fn process_rollover(
         matching_engines: exchange.get_matching_engines(),
         cache: &cache,
     };
-    module.process(ts_now, &ctx)
+
+    match module.process(ts_now, &ctx) {
+        SimulationModuleResult::NotReady => Vec::new(),
+        SimulationModuleResult::Completed(adjustments) => {
+            module.acknowledge(&vec![AccountAdjustmentOutcome::Applied; adjustments.len()]);
+            adjustments
+        }
+    }
 }
 
 fn add_fx_quote(
@@ -3467,6 +3607,162 @@ fn test_fx_rollover_retries_after_quote_arrives(audusd_sim: CurrencyPair) {
         1
     );
     assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover + 2).is_empty());
+}
+
+#[rstest]
+fn test_fx_rollover_retry_keeps_prior_economic_day(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-CROSS-DAY",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let instruments = AHashMap::from([(instrument.id(), instrument.clone())]);
+    let records = [
+        ("AUS", "2024-01", 1.0),
+        ("USA", "2024-01", 2.0),
+        ("AUS", "2024-02", 5.0),
+        ("USA", "2024-02", 1.0),
+    ]
+    .into_iter()
+    .map(|(location, time, value)| InterestRateRecord {
+        location: location.to_string(),
+        time: time.to_string(),
+        value,
+    })
+    .collect();
+    let module = FXRolloverInterestModule::new(records).unwrap();
+
+    // Wednesday's rollover is not ready because the quote is absent.
+    assert!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 1, 31),
+        )
+        .is_empty()
+    );
+
+    // The quote arrives on Thursday. The pending Wednesday remains first and
+    // uses January's rates plus the Wednesday triple multiplier.
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 2, 1),
+        ),
+        vec![Money::from("-8.22 USD")]
+    );
+
+    // Once Wednesday is acknowledged, Thursday initializes and is immediately due.
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 2, 1) + 1,
+        ),
+        vec![Money::from("10.96 USD")]
+    );
+}
+
+#[rstest]
+fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
+    audusd_sim: CurrencyPair,
+) {
+    log::set_logger(&CAPTURING_LOGGER).unwrap();
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-XRATE",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.99990"),
+        Price::from("1.00010"),
+        Quantity::from("1000000"),
+        Quantity::from("1000000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    exchange.borrow_mut().process_quote_tick(&quote);
+    let instruments = AHashMap::from([(instrument.id(), instrument)]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let ts_now = rollover_timestamp(2020, 1, 15);
+
+    for _ in 0..2 {
+        let exchange = exchange.borrow();
+        let cache = cache.borrow();
+        let ctx = ExchangeContext {
+            venue: Venue::new("SIM"),
+            base_currency: Some(Currency::GBP()),
+            instruments: &instruments,
+            matching_engines: exchange.get_matching_engines(),
+            cache: &cache,
+        };
+        assert_eq!(
+            module.process(ts_now, &ctx),
+            SimulationModuleResult::NotReady
+        );
+    }
+
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message.contains(
+                        "Cannot calculate rollover for AUD/USD.SIM: exchange rate from USD to GBP",
+                    )
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .all(|(_, message)| !message.contains("Failed to calculate xrate"))
+    );
 }
 
 #[rstest]
