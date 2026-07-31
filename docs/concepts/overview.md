@@ -106,8 +106,9 @@ demo, paper, and real accounts. The Rust‑native node, including its PyO3 inter
 event loop on the calling thread, while asynchronous I/O and background tasks use a shared
 multi‑threaded Tokio runtime. The legacy Python `TradingNode` coordinates asynchronous clients
 through an [asyncio event loop](https://docs.python.org/3/library/asyncio-eventloop.html) and can use
-[uvloop](https://github.com/MagicStack/uvloop) on Linux and macOS. See [Live Trading](live.md) for
-lifecycle, reconciliation, and risk considerations.
+[uvloop](https://github.com/MagicStack/uvloop) on Linux and macOS. See [Live trading](live.md) for
+the node lifecycle and risk considerations, and
+[Execution reconciliation](reconciliation.md) for state recovery.
 
 ## Domain model
 

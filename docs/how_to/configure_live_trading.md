@@ -1,8 +1,9 @@
 # Configure a Live Trading Node
 
-Set up a `TradingNode` for live market connectivity. For background on live
-trading architecture and reconciliation, see the
-[Live trading](../concepts/live.md) concept guide.
+Set up a `TradingNode` for live market connectivity. For the node lifecycle, see
+[Live trading](../concepts/live.md). For command outcomes, see
+[Execution](../concepts/execution.md#command-outcomes). For state recovery, see
+[Execution reconciliation](../concepts/reconciliation.md).
 
 :::danger[Jupyter notebooks not recommended for live trading]
 Do not run live trading nodes in Jupyter notebooks. Event loop conflicts and
@@ -214,7 +215,7 @@ Recovers missed order and position events to keep system state consistent with t
 | `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                  |
 | `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue‑side duplicates).   |
 
-See [Execution reconciliation](../concepts/live.md#execution-reconciliation) for details.
+See [Execution reconciliation](../concepts/reconciliation.md) for details.
 
 ### Order filtering
 
@@ -241,7 +242,7 @@ When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders a
 Continuous reconciliation keeps runtime execution state aligned after startup by checking
 in-flight orders, polling open orders, checking position status, and auditing own order books.
 Configure the loop with these settings. For runtime state-transition rules, retry coordination,
-and caveats, see [Runtime checks](../concepts/live.md#runtime-checks).
+and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
 
 | Setting                              | Default        | Description                                                                                                                                                                                    |
 | ------------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

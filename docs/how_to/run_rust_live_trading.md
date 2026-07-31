@@ -3,10 +3,10 @@
 The `LiveNode` connects to real venues and data sources through adapter clients. This guide
 walks through a complete live trading setup using OKX as an example.
 
-For background on live trading architecture and reconciliation, see the
-[Live trading](../concepts/live.md) concept guide. For project setup and
-feature flags, see the [Rust](../concepts/rust.md#project-setup) concept
-guide.
+For the node lifecycle, see [Live trading](../concepts/live.md). For command outcomes, see
+[Execution](../concepts/execution.md#command-outcomes). For state recovery, see
+[Execution reconciliation](../concepts/reconciliation.md). For project setup and feature flags,
+see the [Rust](../concepts/rust.md#project-setup) concept guide.
 
 ## Dependencies
 
@@ -82,7 +82,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 :::warning
 This example disables reconciliation for simplicity. In production, remove
 `.with_reconciliation(false)` so the engine aligns cached state with the
-venue on startup. See [Execution reconciliation](../concepts/live.md#execution-reconciliation).
+venue on startup. See [Execution reconciliation](../concepts/reconciliation.md).
 :::
 
 ## Add strategies and run

@@ -76,6 +76,52 @@ flowchart LR
 Execution paths branch by emulation and algorithm routing before reaching the execution engine and
 client.
 
+## Command outcomes
+
+Execution commands resolve according to the evidence available:
+
+| Evidence                 | Meaning                                                         | Result                                                                                          |
+| ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Definitive local failure | Validation proves that the command was not sent.                | Denies a submit or rejects a modify or cancel when the failure is attributable to that command. |
+| Definitive result        | The matching engine or venue explicitly confirms the outcome.   | Applies the corresponding accepted, updated, canceled, or rejected event.                       |
+| Unknown live outcome     | The command may have reached the venue, but no result is known. | Keeps the command in flight without inventing a rejection.                                      |
+
+The failure event depends on the command and when the failure becomes definitive:
+
+| Command                             | Event                 | Meaning                                                                |
+| ----------------------------------- | --------------------- | ---------------------------------------------------------------------- |
+| Submit or submit order list         | `OrderDenied`         | Local checks prevent submission; no `OrderSubmitted` event is emitted. |
+| Submit or submit order list         | `OrderRejected`       | The submit entered execution and was later proven unsuccessful.        |
+| Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
+| Cancel, cancel‑all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
+
+For modify or cancel preparation, Nautilus emits the matching rejection only when the failure is
+attributable to that command and proves it was not sent. Otherwise, it logs the failure without
+inventing an outcome.
+
+A successful batch response can still contain definitive per‑order failures. A whole‑request
+failure without per‑order evidence does not prove that every child command failed.
+
+:::note[Unknown live outcomes]
+Transport errors, timeouts, disconnects, task cancellation, exhausted adapter request retries,
+missing acknowledgements, and parse failures after transmission usually leave the venue outcome
+unknown. HTTP status codes and rate limits are definitive only when venue‑specific semantics prove
+that the command was not accepted.
+
+The live engine initially keeps an unknown outcome in flight while stream updates, polling, queries,
+or reconciliation determine the venue state. A later in‑flight check can apply a terminal
+reconciliation event after the configured retry limit.
+:::
+
+An **in‑flight order** is awaiting resolution:
+
+- `SUBMITTED`: initial submission awaiting acceptance or rejection.
+- `PENDING_UPDATE`: modification awaiting confirmation.
+- `PENDING_CANCEL`: cancellation awaiting confirmation.
+
+See [Runtime checks](reconciliation.md#runtime-checks) for how live reconciliation monitors and
+resolves these states.
+
 ## Order denied reasons
 
 A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by
@@ -453,7 +499,7 @@ config = LiveExecEngineConfig(
 Choose this setting from the venue's execution contract. The default `False` protects local state
 but can leave a discrepancy after a legitimate venue overfill. `True` applies the excess quantity
 and is not a substitute for duplicate-fill detection. Use
-[execution reconciliation](live.md#execution-reconciliation) to detect discrepancies.
+[execution reconciliation](reconciliation.md) to detect discrepancies.
 :::
 
 ## Fill corrections
@@ -489,7 +535,7 @@ single correction.
 A break reaches the client differently by venue. FIX venues signal one through
 [`ExecType <150>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_150.html) values `H` (trade
 cancel) and `G` (trade correct). Venues that notify out of band leave the break to surface through
-[execution reconciliation](live.md#execution-reconciliation).
+[execution reconciliation](reconciliation.md).
 
 ### Venue references
 
@@ -549,6 +595,7 @@ Positions then update through the normal event pipeline.
 ## Related guides
 
 - [Events](events/): Order and position event types and dispatch.
+- [Execution reconciliation](reconciliation.md): Live state recovery and runtime consistency checks.
 - [Order book](order_book.md): Public and own order book behavior.
 - [Orders](orders/): Order types and management.
 - [Positions](positions.md): Position tracking from executions.
