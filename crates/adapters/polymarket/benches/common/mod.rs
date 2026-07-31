@@ -196,7 +196,12 @@ pub(crate) mod fixtures {
 
     pub(crate) const USER_ORDER: &str = include_str!("../../test_data/ws_user_order_msg.json");
 
+    pub(crate) const USER_ORDER_CAPTURED: &str =
+        include_str!("../../test_data/ws_user_order_fok_killed.json");
+
     pub(crate) const USER_TRADE: &str = include_str!("../../test_data/ws_user_trade_msg.json");
+
+    pub(crate) const USER_BATCH: &str = include_str!("../../test_data/ws_user_batch_msg.json");
 
     /// HTTP REST `GET /book` response used by the market-submit pipeline.
     pub(crate) const HTTP_BOOK: &str = include_str!("../../test_data/clob_book_response.json");

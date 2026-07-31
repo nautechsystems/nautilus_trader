@@ -16,7 +16,13 @@
 //! WebSocket message types for the Polymarket CLOB API.
 
 use nautilus_core::serialization::deserialize_empty_string_as_none;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    de::{
+        DeserializeSeed, MapAccess, Visitor,
+        value::{BorrowedStrDeserializer, MapAccessDeserializer},
+    },
+};
 use ustr::Ustr;
 
 use crate::common::{
@@ -235,6 +241,167 @@ pub enum MarketWsMessage {
     BestBidAsk(PolymarketBestBidAsk),
 }
 
+struct PayloadMapAccess<A> {
+    inner: A,
+}
+
+impl<A> PayloadMapAccess<A> {
+    const fn new(inner: A) -> Self {
+        Self { inner }
+    }
+}
+
+impl<'de, A> MapAccess<'de> for PayloadMapAccess<A>
+where
+    A: MapAccess<'de>,
+{
+    type Error = A::Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        let Some(key) = self.inner.next_key::<&'de str>()? else {
+            return Ok(None);
+        };
+
+        if key == "event_type" {
+            return Err(serde::de::Error::duplicate_field("event_type"));
+        }
+
+        seed.deserialize(BorrowedStrDeserializer::new(key))
+            .map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        self.inner.next_value_seed(seed)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.inner.size_hint()
+    }
+}
+
+struct MarketWsMessageVisitor;
+
+impl<'de> Visitor<'de> for MarketWsMessageVisitor {
+    type Value = MarketWsMessage;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a Polymarket market-channel message with event_type first")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let Some(key) = map.next_key::<&str>()? else {
+            return Err(serde::de::Error::custom("expected event_type field"));
+        };
+
+        if key != "event_type" {
+            return Err(serde::de::Error::custom(
+                "event_type was not the first field",
+            ));
+        }
+
+        let event_type = map.next_value::<&str>()?;
+        let remaining = MapAccessDeserializer::new(PayloadMapAccess::new(map));
+        match event_type {
+            "book" => PolymarketBookSnapshot::deserialize(remaining).map(Self::Value::Book),
+            "price_change" => {
+                PolymarketQuotes::deserialize(remaining).map(Self::Value::PriceChange)
+            }
+            "last_trade_price" => {
+                PolymarketTrade::deserialize(remaining).map(Self::Value::LastTradePrice)
+            }
+            "tick_size_change" => {
+                PolymarketTickSizeChange::deserialize(remaining).map(Self::Value::TickSizeChange)
+            }
+            "new_market" => PolymarketNewMarket::deserialize(remaining)
+                .map(Box::new)
+                .map(Self::Value::NewMarket),
+            "market_resolved" => {
+                PolymarketMarketResolved::deserialize(remaining).map(Self::Value::MarketResolved)
+            }
+            "best_bid_ask" => {
+                PolymarketBestBidAsk::deserialize(remaining).map(Self::Value::BestBidAsk)
+            }
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &[
+                    "book",
+                    "price_change",
+                    "last_trade_price",
+                    "tick_size_change",
+                    "new_market",
+                    "market_resolved",
+                    "best_bid_ask",
+                ],
+            )),
+        }
+    }
+}
+
+impl MarketWsMessage {
+    /// Parses a market-channel JSON message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`serde_json::Error`] when `text` is not a valid market message.
+    pub fn parse(text: &str) -> serde_json::Result<Self> {
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        serde::Deserializer::deserialize_map(&mut deserializer, MarketWsMessageVisitor)
+            .and_then(|message| {
+                deserializer.end()?;
+                Ok(message)
+            })
+            .or_else(|_| Self::parse_reordered(text))
+            .or_else(|_| serde_json::from_str(text))
+    }
+
+    fn parse_reordered(text: &str) -> serde_json::Result<Self> {
+        let tag = serde_json::from_str::<MarketWsTag>(text)?;
+        match tag.event_type {
+            MarketWsEventTag::Book => serde_json::from_str(text).map(Self::Book),
+            MarketWsEventTag::PriceChange => serde_json::from_str(text).map(Self::PriceChange),
+            MarketWsEventTag::LastTradePrice => {
+                serde_json::from_str(text).map(Self::LastTradePrice)
+            }
+            MarketWsEventTag::TickSizeChange => {
+                serde_json::from_str(text).map(Self::TickSizeChange)
+            }
+            MarketWsEventTag::NewMarket => serde_json::from_str(text)
+                .map(Box::new)
+                .map(Self::NewMarket),
+            MarketWsEventTag::MarketResolved => {
+                serde_json::from_str(text).map(Self::MarketResolved)
+            }
+            MarketWsEventTag::BestBidAsk => serde_json::from_str(text).map(Self::BestBidAsk),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MarketWsEventTag {
+    Book,
+    PriceChange,
+    LastTradePrice,
+    TickSizeChange,
+    NewMarket,
+    MarketResolved,
+    BestBidAsk,
+}
+
+#[derive(Deserialize)]
+struct MarketWsTag {
+    event_type: MarketWsEventTag,
+}
+
 /// An envelope for tagged WebSocket user channel messages.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type")]
@@ -243,6 +410,89 @@ pub enum UserWsMessage {
     Order(PolymarketUserOrder),
     #[serde(rename = "trade")]
     Trade(PolymarketUserTrade),
+}
+
+struct UserWsMessageVisitor;
+
+impl<'de> Visitor<'de> for UserWsMessageVisitor {
+    type Value = UserWsMessage;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a Polymarket user-channel message with event_type first")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let Some(key) = map.next_key::<&str>()? else {
+            return Err(serde::de::Error::custom("expected event_type field"));
+        };
+
+        if key != "event_type" {
+            return Err(serde::de::Error::custom(
+                "event_type was not the first field",
+            ));
+        }
+
+        let event_type = map.next_value::<&str>()?;
+        let remaining = MapAccessDeserializer::new(PayloadMapAccess::new(map));
+        match event_type {
+            "order" => PolymarketUserOrder::deserialize(remaining).map(Self::Value::Order),
+            "trade" => PolymarketUserTrade::deserialize(remaining).map(Self::Value::Trade),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["order", "trade"],
+            )),
+        }
+    }
+}
+
+impl UserWsMessage {
+    /// Parses a user-channel JSON message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`serde_json::Error`] when `text` is not a valid user message.
+    pub fn parse(text: &str) -> serde_json::Result<Self> {
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        serde::Deserializer::deserialize_map(&mut deserializer, UserWsMessageVisitor)
+            .and_then(|message| {
+                deserializer.end()?;
+                Ok(message)
+            })
+            .or_else(|_| Self::parse_reordered(text))
+            .or_else(|_| serde_json::from_str(text))
+    }
+
+    /// Parses a batch of user-channel JSON messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`serde_json::Error`] when `text` is not a valid user-message batch.
+    pub fn parse_batch(text: &str) -> serde_json::Result<Vec<Self>> {
+        serde_json::from_str(text)
+    }
+
+    fn parse_reordered(text: &str) -> serde_json::Result<Self> {
+        let tag = serde_json::from_str::<UserWsTag>(text)?;
+        match tag.event_type {
+            UserWsEventTag::Order => serde_json::from_str(text).map(Self::Order),
+            UserWsEventTag::Trade => serde_json::from_str(text).map(Self::Trade),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UserWsEventTag {
+    Order,
+    Trade,
+}
+
+#[derive(Deserialize)]
+struct UserWsTag {
+    event_type: UserWsEventTag,
 }
 
 /// Output message type from the Polymarket WebSocket handler.
@@ -323,6 +573,11 @@ mod tests {
         let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    fn load_text(filename: &str) -> String {
+        let path = format!("test_data/{filename}");
+        std::fs::read_to_string(path).expect("Failed to read test data")
     }
 
     #[rstest]
@@ -503,6 +758,59 @@ mod tests {
     }
 
     #[rstest]
+    #[case("ws_market_book_msg.json")]
+    #[case("ws_market_price_change_msg.json")]
+    #[case("ws_market_last_trade_msg.json")]
+    #[case("ws_market_tick_size_msg.json")]
+    #[case("ws_market_new_market_msg.json")]
+    #[case("ws_market_resolved_msg.json")]
+    #[case("ws_market_best_bid_ask_msg.json")]
+    fn test_market_ws_message_parse(#[case] filename: &str) {
+        let text = load_text(filename);
+        let expected: MarketWsMessage =
+            serde_json::from_str(&text).expect("market fixture should deserialize");
+
+        let actual = MarketWsMessage::parse(&text).expect("market fixture should parse");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_market_ws_message_parse_with_reordered_event_type() {
+        let expected: MarketWsMessage = load("ws_market_book_msg.json");
+        let mut value: serde_json::Value = load("ws_market_book_msg.json");
+        let object = value
+            .as_object_mut()
+            .expect("market fixture should be an object");
+        let event_type = object
+            .remove("event_type")
+            .expect("market fixture should contain event_type");
+        object.insert("event_type".to_string(), event_type);
+        let text = serde_json::to_string(&value).expect("market fixture should serialize");
+
+        assert!(!text.starts_with(r#"{"event_type":"#));
+        assert_eq!(
+            MarketWsMessage::parse(&text).expect("reordered market fixture should parse"),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_market_ws_message_parse_rejects_duplicate_event_type() {
+        let text = load_text("ws_market_book_msg.json").replacen(
+            r#""event_type": "book","#,
+            r#""event_type": "book", "event_type": "book","#,
+            1,
+        );
+        let expected = serde_json::from_str::<MarketWsMessage>(&text)
+            .expect_err("derived parser should reject a duplicate event_type");
+        let actual = MarketWsMessage::parse(&text)
+            .expect_err("optimized parser should reject a duplicate event_type");
+
+        assert_eq!(actual.to_string(), expected.to_string());
+    }
+
+    #[rstest]
     fn test_market_ws_message_price_change() {
         let msg: MarketWsMessage = load("ws_market_price_change_msg.json");
 
@@ -554,6 +862,101 @@ mod tests {
             assert_eq!(trade.status, PolymarketTradeStatus::Confirmed);
             assert!(trade.transaction_hash.is_none());
         }
+    }
+
+    #[rstest]
+    #[case("ws_user_order_msg.json")]
+    #[case("ws_user_order_fok_killed.json")]
+    #[case("ws_user_trade_msg.json")]
+    fn test_user_ws_message_parse(#[case] filename: &str) {
+        let text = load_text(filename);
+        let expected: UserWsMessage =
+            serde_json::from_str(&text).expect("user fixture should deserialize");
+
+        let actual = UserWsMessage::parse(&text).expect("user fixture should parse");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_user_ws_message_parse_with_reordered_event_type() {
+        let expected: UserWsMessage = load("ws_user_trade_msg.json");
+        let mut value: serde_json::Value = load("ws_user_trade_msg.json");
+        let object = value
+            .as_object_mut()
+            .expect("user fixture should be an object");
+        let event_type = object
+            .remove("event_type")
+            .expect("user fixture should contain event_type");
+        object.insert("event_type".to_string(), event_type);
+        let text = serde_json::to_string(&value).expect("user fixture should serialize");
+
+        assert!(!text.starts_with(r#"{"event_type":"#));
+        assert_eq!(
+            UserWsMessage::parse(&text).expect("reordered user fixture should parse"),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_user_ws_message_parse_rejects_duplicate_event_type() {
+        let text = load_text("ws_user_order_msg.json").replacen(
+            r#""event_type": "order","#,
+            r#""event_type": "order", "event_type": "order","#,
+            1,
+        );
+        let expected = serde_json::from_str::<UserWsMessage>(&text)
+            .expect_err("derived parser should reject a duplicate event_type");
+        let actual = UserWsMessage::parse(&text)
+            .expect_err("optimized parser should reject a duplicate event_type");
+
+        assert_eq!(actual.to_string(), expected.to_string());
+    }
+
+    #[rstest]
+    fn test_user_ws_message_parse_batch() {
+        let text = load_text("ws_user_batch_msg.json");
+        let expected: Vec<UserWsMessage> =
+            serde_json::from_str(&text).expect("user batch fixture should deserialize");
+
+        let actual = UserWsMessage::parse_batch(&text).expect("user batch fixture should parse");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_user_ws_message_parse_batch_with_reordered_event_type() {
+        let expected: Vec<UserWsMessage> = load("ws_user_batch_msg.json");
+        let mut value: serde_json::Value = load("ws_user_batch_msg.json");
+        let first = value
+            .as_array_mut()
+            .expect("user batch fixture should be an array")[0]
+            .as_object_mut()
+            .expect("user batch element should be an object");
+        let event_type = first
+            .remove("event_type")
+            .expect("user batch element should contain event_type");
+        first.insert("event_type".to_string(), event_type);
+        let text = serde_json::to_string(&value).expect("user batch fixture should serialize");
+
+        assert_eq!(
+            UserWsMessage::parse_batch(&text).expect("reordered user batch should parse"),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_user_ws_message_parse_batch_rejects_invalid_element() {
+        let mut value: serde_json::Value = load("ws_user_batch_msg.json");
+        value
+            .as_array_mut()
+            .expect("user batch fixture should be an array")[1]
+            .as_object_mut()
+            .expect("user batch element should be an object")
+            .remove("event_type");
+        let text = serde_json::to_string(&value).expect("user batch fixture should serialize");
+
+        assert!(UserWsMessage::parse_batch(&text).is_err());
     }
 
     #[rstest]

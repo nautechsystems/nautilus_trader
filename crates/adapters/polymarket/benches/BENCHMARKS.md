@@ -37,11 +37,11 @@ the dispatch loop; both paths share the string‑decimal + status logic.
 
 | Bench                                      | Median  | Throughput |
 | ------------------------------------------ | ------- | ---------- |
-| `inbound_pipeline/book_deltas`             | 684 ns  | 1.46 M/s   |
-| `inbound_pipeline/book_snapshot`           | 2.06 µs | 486 k/s    |
-| `inbound_pipeline/quote_from_snapshot`     | 1.78 µs | 561 k/s    |
-| `inbound_pipeline/quote_from_price_change` | 748 ns  | 1.34 M/s   |
-| `inbound_pipeline/trades`                  | 581 ns  | 1.72 M/s   |
+| `inbound_pipeline/book_deltas`             | 471 ns  | 2.12 M/s   |
+| `inbound_pipeline/book_snapshot`           | 1.48 µs | 678 k/s    |
+| `inbound_pipeline/quote_from_snapshot`     | 1.15 µs | 868 k/s    |
+| `inbound_pipeline/quote_from_price_change` | 514 ns  | 1.95 M/s   |
+| `inbound_pipeline/trades`                  | 429 ns  | 2.33 M/s   |
 | `inbound_pipeline/order_event`             | 615 ns  | 1.63 M/s   |
 | `inbound_pipeline/order_fill`              | 1.29 µs | 777 k/s    |
 | `inbound_pipeline/order_fill_maker`        | 1.15 µs | 873 k/s    |
@@ -64,7 +64,7 @@ independent ops), so there is no `modify` row.
 | `exec_pipeline/submit_limit`          | 48.9 µs | 20.5 k/s   |
 | `exec_pipeline/submit_market`         | 49.1 µs | 20.4 k/s   |
 | `exec_pipeline/submit_limit_neg_risk` | 48.3 µs | 20.7 k/s   |
-| `exec_pipeline/cancel`                | 404 ns  | 2.48 M/s   |
+| `exec_pipeline/cancel`                | 236 ns  | 4.24 M/s   |
 
 ## Crypto path (`signing.rs`)
 
@@ -79,41 +79,50 @@ covers the L2 HMAC path used by every authenticated REST call.
 | `order_hash`           | 2.62 µs |
 | `signer_construction`  | 33.1 µs |
 | `sign_clob_auth`       | 79.0 µs |
-| `hmac_l2_sign`         | 335 ns  |
+| `hmac_l2_sign`         | 201 ns  |
 
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these
 to localise where time goes when a pipeline bench regresses.
 
-| Bench                           | Median  |
-| ------------------------------- | ------- |
-| `decode_only/trade`             | 424 ns  |
-| `decode_only/book`              | 1.62 µs |
-| `decode_only/price_change`      | 657 ns  |
-| `decode_only/user_order`        | 969 ns  |
-| `decode_only/user_trade`        | 1.07 µs |
-| `parse_only/trade`              | 154 ns  |
-| `parse_only/book_snapshot`      | 373 ns  |
-| `parse_only/book_deltas`        | 51.8 ns |
-| `atom/decimal_from_str`         | 7.39 ns |
-| `atom/price_from_decimal_dp`    | 11.5 ns |
-| `atom/quantity_from_decimal_dp` | 7.99 ns |
-| `atom/price_combined`           | 18.0 ns |
-| `atom/compute_commission`       | 147 ns  |
-| `atom/adjust_market_buy_amount` | 206 ns  |
-| `atom/trade_id_determine`       | 107 ns  |
-| `atom/uuid4_new`                | 13.9 ns |
-| `atom/event_filled_construct`   | 19.3 ns |
-| `atom/event_accepted_construct` | 15.2 ns |
+| Bench                             | Median  |
+| --------------------------------- | ------- |
+| `decode_only/trade`               | 282 ns  |
+| `decode_only/book`                | 892 ns  |
+| `decode_only/price_change`        | 392 ns  |
+| `decode_only/user_order`          | 530 ns  |
+| `decode_only/user_order_captured` | 882 ns  |
+| `decode_only/user_order_dispatch` | 956 ns  |
+| `decode_only/user_trade`          | 619 ns  |
+| `decode_only/user_batch`          | 1.95 µs |
+| `parse_only/trade`                | 154 ns  |
+| `parse_only/book_snapshot`        | 373 ns  |
+| `parse_only/book_deltas`          | 51.8 ns |
+| `atom/decimal_from_str`           | 7.39 ns |
+| `atom/price_from_decimal_dp`      | 11.5 ns |
+| `atom/quantity_from_decimal_dp`   | 7.99 ns |
+| `atom/price_combined`             | 18.0 ns |
+| `atom/compute_commission`         | 147 ns  |
+| `atom/adjust_market_buy_amount`   | 206 ns  |
+| `atom/trade_id_determine`         | 107 ns  |
+| `atom/uuid4_new`                  | 13.9 ns |
+| `atom/event_filled_construct`     | 19.3 ns |
+| `atom/event_accepted_construct`   | 15.2 ns |
 
 ## Notes
 
-- **Inbound is JSON‑decode dominated.** Decode accounts for most of the book,
-  price‑change, and trade pipelines. The new user‑channel rows also put raw
-  order and trade decoding near 1 µs before dispatch, tracking, metadata, and
-  event construction begin. Decimal, Price, Quantity, UUID, and TradeId
-  construction are not meaningful in the absolute pipeline numbers.
+- **Inbound decode avoids Serde's tagged content buffer.** Field order varies:
+  the market fixtures and synthetic user fixtures put `event_type` first,
+  while the captured FOK order puts it last. The production parser decodes
+  tag‑first messages in one pass and uses a tag scan plus direct typed decode
+  for reordered single messages. The LTO market pipelines improve by 26% to
+  36%. Against same‑session baselines, the tag‑first user order and trade
+  fixtures improve by about 39% to 40%; the captured tag‑last order improves
+  by 9.5%, and its handler dispatch path improves by 16.7%. The user batch
+  row uses tag‑last elements and the generic derived batch parser. Decimal,
+  Price, Quantity, UUID, and TradeId construction remain small in the absolute
+  pipeline numbers.
 - **String -> Price / Quantity is Decimal‑direct.** `parse_price` and
   `parse_quantity` in `websocket::parse` route through `Decimal::from_str`
   then `Price::from_decimal_dp` (matches hyperliquid). All Decimal‑typed
@@ -136,9 +145,10 @@ to localise where time goes when a pipeline bench regresses.
   adds little beside the shared secp256k1 cost.
 - **`cancel` is HMAC‑bound.** REST cancels do not need an EIP‑712 signature,
   so the client‑side cost is the JSON body serialization plus the L2
-  HMAC‑SHA256 signature `auth_headers` attaches via `Credential::sign`. The
-  HMAC alone is most of this row; the network round trip dominates wall time in
-  production.
+  HMAC‑SHA256 signature `auth_headers` attaches via `Credential::sign`.
+  `Credential` initializes the HMAC key once and streams the four message
+  segments without allocating a combined string. The network round trip still
+  dominates wall time in production.
 - **`sign_clob_auth` carries hidden signer construction.** The function
   builds a fresh `PrivateKeySigner` from the hex key on every call
   (~33 µs of overhead, exactly the `signer_construction` cost) before

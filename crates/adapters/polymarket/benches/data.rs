@@ -51,8 +51,7 @@ fn bench_book_deltas(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("book_deltas", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_PRICE_CHANGE)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_PRICE_CHANGE)).unwrap();
             let MarketWsMessage::PriceChange(quotes) = msg else {
                 unreachable!()
             };
@@ -75,8 +74,7 @@ fn bench_book_snapshot(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("book_snapshot", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_BOOK)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_BOOK)).unwrap();
             let MarketWsMessage::Book(snap) = msg else {
                 unreachable!()
             };
@@ -98,8 +96,7 @@ fn bench_quote_from_snapshot(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("quote_from_snapshot", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_BOOK)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_BOOK)).unwrap();
             let MarketWsMessage::Book(snap) = msg else {
                 unreachable!()
             };
@@ -129,8 +126,7 @@ fn bench_quote_from_price_change(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("quote_from_price_change", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_PRICE_CHANGE)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_PRICE_CHANGE)).unwrap();
             let MarketWsMessage::PriceChange(quotes) = msg else {
                 unreachable!()
             };
@@ -164,8 +160,7 @@ fn bench_trades(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("trades", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_LAST_TRADE)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_LAST_TRADE)).unwrap();
             let MarketWsMessage::LastTradePrice(trade) = msg else {
                 unreachable!()
             };

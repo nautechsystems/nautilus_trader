@@ -134,8 +134,7 @@ adapter set. The following limits remain deferred:
 - Changed L3 books to move IDs re‑added at a new price on the same side, fixing ghost levels
 - Changed L3 books to derive price‑based order IDs for orders with a zero order ID
 - Changed Rust `BookIntegrityError` to add `AmbiguousOrderSide`; update exhaustive matches
-- Changed Rust `EncodingError` and `SbeEncodeError` to add `MixedMetadata` and `ReservedValue`;
-  update exhaustive matches
+- Changed Rust `EncodingError` and `SbeEncodeError` to add `MixedMetadata` and `ReservedValue`; update exhaustive matches
 - Changed Rust `LighterHttpError` to add `HistoryIncomplete`; update exhaustive matches
 - Changed unstable Cap'n Proto `BarSpec.step` from `UInt32` to `UInt64`
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
@@ -468,6 +467,7 @@ adapter set. The following limits remain deferred:
 - Improved Lighter signing and execution coverage for conditional, IOC, cancel-all, and leverage transactions
 - Improved adapter test runtime by replacing fixed waits in the Betfair, dYdX, Polymarket, and OKX suites (#4531, #4532, #4539, #4547), thanks @folknor
 - Improved adapter test runtime for Architect AX (#4554), BitMEX (#4555), and Bybit (#4553), thanks @folknor
+- Optimized Polymarket WebSocket parsing and authenticated request signing
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)
 - Upgraded Rust (MSRV) to 1.97.1
 - Upgraded Cython to v3.2.9

@@ -258,17 +258,15 @@ impl FeedHandler {
             WsChannel::Market => {
                 if let Ok(msgs) = serde_json::from_str::<Vec<&RawValue>>(text) {
                     msgs.into_iter()
-                        .filter_map(|raw| {
-                            match serde_json::from_str::<MarketWsMessage>(raw.get()) {
-                                Ok(msg) => Some(PolymarketWsMessage::Market(msg)),
-                                Err(e) => {
-                                    log::warn!("Failed to parse market WS batch element: {e}");
-                                    None
-                                }
+                        .filter_map(|raw| match MarketWsMessage::parse(raw.get()) {
+                            Ok(msg) => Some(PolymarketWsMessage::Market(msg)),
+                            Err(e) => {
+                                log::warn!("Failed to parse market WS batch element: {e}");
+                                None
                             }
                         })
                         .collect()
-                } else if let Ok(msg) = serde_json::from_str::<MarketWsMessage>(text) {
+                } else if let Ok(msg) = MarketWsMessage::parse(text) {
                     vec![PolymarketWsMessage::Market(msg)]
                 } else {
                     log::warn!("Failed to parse market WS message: {text}");
@@ -276,9 +274,9 @@ impl FeedHandler {
                 }
             }
             WsChannel::User => {
-                if let Ok(msgs) = serde_json::from_str::<Vec<UserWsMessage>>(text) {
+                if let Ok(msgs) = UserWsMessage::parse_batch(text) {
                     msgs.into_iter().map(PolymarketWsMessage::User).collect()
-                } else if let Ok(msg) = serde_json::from_str::<UserWsMessage>(text) {
+                } else if let Ok(msg) = UserWsMessage::parse(text) {
                     vec![PolymarketWsMessage::User(msg)]
                 } else {
                     log::warn!("Failed to parse user WS message: {text}");
@@ -381,13 +379,22 @@ mod tests {
 
     #[fixture]
     fn market_handler() -> FeedHandler {
+        feed_handler(WsChannel::Market)
+    }
+
+    #[fixture]
+    fn user_handler() -> FeedHandler {
+        feed_handler(WsChannel::User)
+    }
+
+    fn feed_handler(channel: WsChannel) -> FeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
 
         FeedHandler::new(
             Arc::new(AtomicBool::new(false)),
-            WsChannel::Market,
+            channel,
             cmd_rx,
             raw_rx,
             out_tx,
@@ -469,5 +476,23 @@ mod tests {
         assert_eq!(trade.size, "25.0");
         assert_eq!(trade.timestamp, "1703875202000");
         assert!(trade.transaction_hash.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_user_batch(user_handler: FeedHandler) {
+        let messages =
+            user_handler.parse_messages(include_str!("../../test_data/ws_user_batch_msg.json"));
+        let actual: Vec<UserWsMessage> = messages
+            .into_iter()
+            .map(|message| match message {
+                PolymarketWsMessage::User(message) => message,
+                other => panic!("Expected user message, received {other:?}"),
+            })
+            .collect();
+        let expected: Vec<UserWsMessage> =
+            serde_json::from_str(include_str!("../../test_data/ws_user_batch_msg.json"))
+                .expect("user batch fixture should deserialize");
+
+        assert_eq!(actual, expected);
     }
 }
