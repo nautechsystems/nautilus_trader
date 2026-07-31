@@ -77,7 +77,7 @@ pub struct GetPositionTiersParams {
     pub tier: Option<String>,
 }
 
-/// Parameters for the GET /api/v5/public/instruments endpoint.
+/// Parameters for the public and account instrument endpoints.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]
 #[builder(setter(into, strip_option))]
@@ -480,6 +480,19 @@ pub struct GetIndexTickerParams {
 #[serde(rename_all = "camelCase")]
 pub struct GetOrderBookParams {
     /// Instrument ID, e.g. "BTC-USDT-SWAP".
+    pub inst_id: String,
+    /// Order book depth per side. Maximum 400, default 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sz: Option<u32>,
+}
+
+/// Parameters for the GET /api/v5/market/books-rpi endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetRpiOrderBookParams {
+    /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: String,
     /// Order book depth per side. Maximum 400, default 1.
     #[serde(skip_serializing_if = "Option::is_none")]

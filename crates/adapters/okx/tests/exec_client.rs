@@ -46,7 +46,7 @@ use nautilus_model::{
     },
     instruments::{
         CryptoFuturesSpread, InstrumentAny,
-        stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt},
+        stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
@@ -1346,12 +1346,96 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
     );
 }
 
+#[rstest]
+fn test_dispatch_rpi_canceled_first_emits_rejection_without_acceptance() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data")
+        .join("ws_orders_rpi_canceled_first.json");
+    let content = std::fs::read_to_string(path).unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected private RPI order data frame");
+    };
+    let order_msgs: Vec<OKXOrderMsg> = serde_json::from_value(data).unwrap();
+    let message = &order_msgs[0];
+    let client_order_id = ClientOrderId::new("ORPICANCEL001");
+    let instrument_id = InstrumentId::from("OMI-USD.OKX");
+
+    assert_eq!(arg.channel, OKXWsChannel::Orders);
+    assert_eq!(arg.inst_type, Some(OKXInstrumentType::Spot));
+    assert_eq!(order_msgs.len(), 1);
+    assert_eq!(message.inst_id, Ustr::from("OMI-USD"));
+    assert_eq!(message.inst_type, OKXInstrumentType::Spot);
+    assert_eq!(message.ord_type, OKXOrderType::Rpi);
+    assert_eq!(message.state, OKXOrderStatus::Canceled);
+    assert_eq!(message.acc_fill_sz.as_deref(), Some("0"));
+    assert_eq!(message.fill_sz, "0");
+    assert_eq!(message.cancel_source.as_deref(), Some(""));
+    assert_eq!(message.cancel_source_reason.as_deref(), Some(""));
+    assert_eq!(message.cl_ord_id, client_order_id.as_str());
+    assert_eq!(message.ord_id, Ustr::from("2500000000000000001"));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = state_with_order_identity(client_order_id, instrument_id);
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("OMI-USD"),
+        order_instrument(OKXInstrumentType::Spot, instrument_id, "OMI-USD"),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) => {
+            assert_eq!(rejected.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(rejected.strategy_id, StrategyId::from("STRATEGY-001"));
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert_eq!(rejected.account_id, AccountId::from("OKX-001"));
+            assert_eq!(
+                rejected.reason,
+                Ustr::from("RPI order canceled before acceptance")
+            );
+            assert!(!rejected.reconciliation);
+            assert!(rejected.due_post_only);
+        }
+        other => panic!("Expected one OrderRejected, was {other:?}"),
+    }
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        ExecutionEvent::Order(OrderEventAny::Accepted(_) | OrderEventAny::Canceled(_))
+    )));
+    assert!(!state.emitted_accepted.contains(&client_order_id));
+    assert!(!state.order_identities.contains_key(&client_order_id));
+}
+
 fn order_instrument(
     instrument_type: OKXInstrumentType,
     instrument_id: InstrumentId,
     raw_symbol: &str,
 ) -> InstrumentAny {
     match instrument_type {
+        OKXInstrumentType::Spot => {
+            let mut instrument = currency_pair_btcusdt();
+            instrument.id = instrument_id;
+            instrument.raw_symbol = Symbol::from(raw_symbol);
+            InstrumentAny::CurrencyPair(instrument)
+        }
         OKXInstrumentType::Swap => {
             let mut instrument = crypto_perpetual_ethusdt();
             instrument.id = instrument_id;

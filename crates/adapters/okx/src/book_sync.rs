@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{AtomicMap, MUTEX_POISONED};
 use nautilus_model::identifiers::InstrumentId;
 
@@ -34,6 +34,8 @@ pub(crate) struct BookSyncTracker {
 #[derive(Debug, Default)]
 struct BookSyncState {
     last_book_ts: AHashMap<InstrumentId, Instant>,
+    last_sequences: AHashMap<InstrumentId, u64>,
+    recovering: AHashSet<InstrumentId>,
     pending_snapshots: AHashMap<InstrumentId, Instant>,
 }
 
@@ -55,10 +57,23 @@ pub(crate) struct BookSyncSignal {
     pub(crate) kind: BookSyncSignalKind,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BookSequenceOutcome {
+    Accept,
+    Suppress,
+    Recover {
+        last_seq_id: Option<u64>,
+        prev_seq_id: Option<i64>,
+        seq_id: u64,
+    },
+}
+
 impl BookSyncTracker {
     pub(crate) fn record_subscription(&self, instrument_id: InstrumentId, now: Instant) {
         let mut state = self.state.lock().expect(MUTEX_POISONED);
         state.last_book_ts.insert(instrument_id, now);
+        state.last_sequences.remove(&instrument_id);
+        state.recovering.remove(&instrument_id);
         state.pending_snapshots.remove(&instrument_id);
     }
 
@@ -74,6 +89,92 @@ impl BookSyncTracker {
         }
     }
 
+    pub(crate) fn validate_sequence_if_subscribed(
+        &self,
+        book_channels: &AtomicMap<InstrumentId, OKXBookChannel>,
+        instrument_id: InstrumentId,
+        is_snapshot: bool,
+        sequences: &[(Option<i64>, u64)],
+        timeout: Duration,
+        now: Instant,
+    ) -> BookSequenceOutcome {
+        if !book_channels.contains_key(&instrument_id) || sequences.is_empty() {
+            return BookSequenceOutcome::Suppress;
+        }
+
+        self.validate_sequence(instrument_id, is_snapshot, sequences, timeout, now)
+    }
+
+    pub(crate) fn validate_sequence(
+        &self,
+        instrument_id: InstrumentId,
+        is_snapshot: bool,
+        sequences: &[(Option<i64>, u64)],
+        timeout: Duration,
+        now: Instant,
+    ) -> BookSequenceOutcome {
+        if sequences.is_empty() {
+            return BookSequenceOutcome::Suppress;
+        }
+
+        let mut state = self.state.lock().expect(MUTEX_POISONED);
+
+        if is_snapshot {
+            let invalid = sequences
+                .iter()
+                .find(|(prev_seq_id, _)| prev_seq_id.is_some_and(|value| value != -1));
+
+            if let Some((prev_seq_id, seq_id)) = invalid {
+                return begin_recovery(
+                    &mut state,
+                    instrument_id,
+                    *prev_seq_id,
+                    *seq_id,
+                    timeout,
+                    now,
+                );
+            }
+
+            let seq_id = sequences.last().expect("sequences are non-empty").1;
+            state.last_sequences.insert(instrument_id, seq_id);
+            state.recovering.remove(&instrument_id);
+            state.pending_snapshots.remove(&instrument_id);
+            state.last_book_ts.insert(instrument_id, now);
+            return BookSequenceOutcome::Accept;
+        }
+
+        if state.recovering.contains(&instrument_id) {
+            return BookSequenceOutcome::Suppress;
+        }
+
+        let mut expected = state.last_sequences.get(&instrument_id).copied();
+        for (prev_seq_id, seq_id) in sequences {
+            let linked = match (expected, prev_seq_id) {
+                (Some(expected), Some(previous)) => *previous >= 0 && *previous as u64 == expected,
+                _ => false,
+            };
+
+            if !linked {
+                return begin_recovery(
+                    &mut state,
+                    instrument_id,
+                    *prev_seq_id,
+                    *seq_id,
+                    timeout,
+                    now,
+                );
+            }
+            expected = Some(*seq_id);
+        }
+
+        state.last_sequences.insert(
+            instrument_id,
+            expected.expect("an accepted sequence batch has a final sequence"),
+        );
+        state.last_book_ts.insert(instrument_id, now);
+        BookSequenceOutcome::Accept
+    }
+
     fn record_update(&self, instrument_id: InstrumentId, is_snapshot: bool, now: Instant) {
         let mut state = self.state.lock().expect(MUTEX_POISONED);
         state.last_book_ts.insert(instrument_id, now);
@@ -86,13 +187,37 @@ impl BookSyncTracker {
     pub(crate) fn remove(&self, instrument_id: InstrumentId) {
         let mut state = self.state.lock().expect(MUTEX_POISONED);
         state.last_book_ts.remove(&instrument_id);
+        state.last_sequences.remove(&instrument_id);
+        state.recovering.remove(&instrument_id);
         state.pending_snapshots.remove(&instrument_id);
     }
 
     pub(crate) fn clear(&self) {
         let mut state = self.state.lock().expect(MUTEX_POISONED);
         state.last_book_ts.clear();
+        state.last_sequences.clear();
+        state.recovering.clear();
         state.pending_snapshots.clear();
+    }
+
+    pub(crate) fn reset_sequences(
+        &self,
+        book_channels: &AtomicMap<InstrumentId, OKXBookChannel>,
+        scope: BookChannelScope,
+    ) {
+        let instrument_ids = book_channels
+            .load()
+            .iter()
+            .filter_map(|(instrument_id, channel)| {
+                book_channel_matches_scope(*channel, scope).then_some(*instrument_id)
+            })
+            .collect::<Vec<_>>();
+        let mut state = self.state.lock().expect(MUTEX_POISONED);
+
+        for instrument_id in instrument_ids {
+            state.last_sequences.remove(&instrument_id);
+            state.recovering.insert(instrument_id);
+        }
     }
 
     pub(crate) fn seed_pending_snapshots(
@@ -166,11 +291,38 @@ impl BookSyncTracker {
     }
 }
 
+fn begin_recovery(
+    state: &mut BookSyncState,
+    instrument_id: InstrumentId,
+    prev_seq_id: Option<i64>,
+    seq_id: u64,
+    timeout: Duration,
+    now: Instant,
+) -> BookSequenceOutcome {
+    let last_seq_id = state.last_sequences.remove(&instrument_id);
+    if !timeout.is_zero() {
+        state.pending_snapshots.insert(instrument_id, now + timeout);
+    }
+
+    if state.recovering.insert(instrument_id) {
+        BookSequenceOutcome::Recover {
+            last_seq_id,
+            prev_seq_id,
+            seq_id,
+        }
+    } else {
+        BookSequenceOutcome::Suppress
+    }
+}
+
 fn book_channel_matches_scope(channel: OKXBookChannel, scope: BookChannelScope) -> bool {
     match scope {
         BookChannelScope::Public => matches!(
             channel,
-            OKXBookChannel::Book | OKXBookChannel::BookL2Tbt | OKXBookChannel::Books50L2Tbt
+            OKXBookChannel::Book
+                | OKXBookChannel::BookL2Tbt
+                | OKXBookChannel::Books50L2Tbt
+                | OKXBookChannel::BooksRpi
         ),
         BookChannelScope::Business => matches!(channel, OKXBookChannel::SprdBooks5),
     }
@@ -184,7 +336,7 @@ mod tests {
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
-    use super::{BookChannelScope, BookSyncSignalKind, BookSyncTracker};
+    use super::{BookChannelScope, BookSequenceOutcome, BookSyncSignalKind, BookSyncTracker};
     use crate::common::enums::OKXBookChannel;
 
     #[rstest]
@@ -356,6 +508,194 @@ mod tests {
         assert!(is_empty(&tracker));
     }
 
+    #[rstest]
+    fn sequence_accepts_snapshot_and_linked_update_with_skipped_sequence_ids() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+
+        book_channels.insert(instrument_id, OKXBookChannel::BooksRpi);
+        tracker.record_subscription(instrument_id, now);
+
+        let snapshot = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            true,
+            &[(Some(-1), 1_226)],
+            Duration::from_secs(3),
+            now,
+        );
+        let update = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(Some(1_226), 1_230)],
+            Duration::from_secs(3),
+            now,
+        );
+
+        assert_eq!(snapshot, BookSequenceOutcome::Accept);
+        assert_eq!(update, BookSequenceOutcome::Accept);
+        assert_eq!(last_sequence(&tracker, instrument_id), Some(1_230));
+    }
+
+    #[rstest]
+    fn sequence_gap_requests_one_recovery_and_waits_for_snapshot() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+        let timeout = Duration::from_secs(3);
+
+        book_channels.insert(instrument_id, OKXBookChannel::BooksRpi);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(
+            tracker.validate_sequence_if_subscribed(
+                &book_channels,
+                instrument_id,
+                true,
+                &[(Some(-1), 1_226)],
+                timeout,
+                now,
+            ),
+            BookSequenceOutcome::Accept
+        );
+
+        let gap = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(Some(1_225), 1_230)],
+            timeout,
+            now,
+        );
+        let repeated = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(Some(1_230), 1_231)],
+            timeout,
+            now,
+        );
+        let snapshot = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            true,
+            &[(Some(-1), 2_000)],
+            timeout,
+            now,
+        );
+        let linked = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(Some(2_000), 2_004)],
+            timeout,
+            now,
+        );
+
+        assert_eq!(
+            gap,
+            BookSequenceOutcome::Recover {
+                last_seq_id: Some(1_226),
+                prev_seq_id: Some(1_225),
+                seq_id: 1_230,
+            }
+        );
+        assert_eq!(repeated, BookSequenceOutcome::Suppress);
+        assert_eq!(snapshot, BookSequenceOutcome::Accept);
+        assert_eq!(linked, BookSequenceOutcome::Accept);
+        assert_eq!(last_sequence(&tracker, instrument_id), Some(2_004));
+        assert!(!has_pending_snapshot(&tracker, instrument_id));
+    }
+
+    #[rstest]
+    fn sequence_reset_suppresses_updates_until_fresh_snapshot() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+        let timeout = Duration::from_secs(3);
+
+        book_channels.insert(instrument_id, OKXBookChannel::Book);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(
+            tracker.validate_sequence_if_subscribed(
+                &book_channels,
+                instrument_id,
+                true,
+                &[(Some(-1), 100)],
+                timeout,
+                now,
+            ),
+            BookSequenceOutcome::Accept
+        );
+
+        tracker.reset_sequences(&book_channels, BookChannelScope::Public);
+        let update = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(Some(100), 101)],
+            timeout,
+            now,
+        );
+        let snapshot = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            true,
+            &[(Some(-1), 200)],
+            timeout,
+            now,
+        );
+
+        assert_eq!(update, BookSequenceOutcome::Suppress);
+        assert_eq!(snapshot, BookSequenceOutcome::Accept);
+        assert_eq!(last_sequence(&tracker, instrument_id), Some(200));
+    }
+
+    #[rstest]
+    fn sequence_missing_previous_id_requests_recovery() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+        let timeout = Duration::from_secs(3);
+
+        book_channels.insert(instrument_id, OKXBookChannel::Book);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(
+            tracker.validate_sequence_if_subscribed(
+                &book_channels,
+                instrument_id,
+                true,
+                &[(Some(-1), 100)],
+                timeout,
+                now,
+            ),
+            BookSequenceOutcome::Accept
+        );
+
+        let update = tracker.validate_sequence_if_subscribed(
+            &book_channels,
+            instrument_id,
+            false,
+            &[(None, 101)],
+            timeout,
+            now,
+        );
+
+        assert_eq!(
+            update,
+            BookSequenceOutcome::Recover {
+                last_seq_id: Some(100),
+                prev_seq_id: None,
+                seq_id: 101,
+            }
+        );
+    }
+
     fn has_last_book_ts(tracker: &BookSyncTracker, instrument_id: InstrumentId) -> bool {
         tracker
             .state
@@ -374,8 +714,21 @@ mod tests {
             .contains_key(&instrument_id)
     }
 
+    fn last_sequence(tracker: &BookSyncTracker, instrument_id: InstrumentId) -> Option<u64> {
+        tracker
+            .state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .last_sequences
+            .get(&instrument_id)
+            .copied()
+    }
+
     fn is_empty(tracker: &BookSyncTracker) -> bool {
         let state = tracker.state.lock().expect(MUTEX_POISONED);
-        state.last_book_ts.is_empty() && state.pending_snapshots.is_empty()
+        state.last_book_ts.is_empty()
+            && state.last_sequences.is_empty()
+            && state.recovering.is_empty()
+            && state.pending_snapshots.is_empty()
     }
 }

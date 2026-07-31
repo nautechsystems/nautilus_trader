@@ -83,14 +83,15 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAttachAlgoOrdRequest,
-        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXCancelAllSpreadOrdersRequest,
-        OKXCancelOrderRequest, OKXCancelOrderResponse, OKXCancelSpreadOrderRequest,
-        OKXEventContractEvent, OKXEventContractMarket, OKXEventContractSeries, OKXFeeRate,
-        OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice, OKXOptionSummary, OKXOrderAlgo,
-        OKXOrderBookSnapshot, OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse,
-        OKXPlaceOrderRequest, OKXPlaceOrderResponse, OKXPlaceSpreadOrderRequest, OKXPosition,
-        OKXPositionHistory, OKXPositionTier, OKXPriceLimit, OKXServerTime, OKXSpread,
+        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAmendOrderRequest,
+        OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse,
+        OKXCancelAllSpreadOrdersRequest, OKXCancelOrderRequest, OKXCancelOrderResponse,
+        OKXCancelSpreadOrderRequest, OKXEventContractEvent, OKXEventContractMarket,
+        OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice,
+        OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
+        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
+        OKXPlaceOrderResponse, OKXPlaceSpreadOrderRequest, OKXPosition, OKXPositionHistory,
+        OKXPositionTier, OKXPriceLimit, OKXRpiOrderBookSnapshot, OKXServerTime, OKXSpread,
         OKXSpreadOrder, OKXSpreadTrade, OKXTransactionDetail,
     },
     query::{
@@ -102,11 +103,11 @@ use super::{
         GetOrderHistoryParams, GetOrderHistoryParamsBuilder, GetOrderListParams,
         GetOrderListParamsBuilder, GetPositionTiersParams, GetPositionsHistoryParams,
         GetPositionsParams, GetPositionsParamsBuilder, GetPriceLimitParams,
-        GetPriceLimitParamsBuilder, GetSpreadOrderParams, GetSpreadOrdersParams,
-        GetSpreadOrdersParamsBuilder, GetSpreadTradesParams, GetSpreadTradesParamsBuilder,
-        GetSpreadsParams, GetTradeFeeParams, GetTradesParams, GetTradesParamsBuilder,
-        GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder, SetPositionModeParams,
-        SetPositionModeParamsBuilder,
+        GetPriceLimitParamsBuilder, GetRpiOrderBookParams, GetSpreadOrderParams,
+        GetSpreadOrdersParams, GetSpreadOrdersParamsBuilder, GetSpreadTradesParams,
+        GetSpreadTradesParamsBuilder, GetSpreadsParams, GetTradeFeeParams, GetTradesParams,
+        GetTradesParamsBuilder, GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder,
+        SetPositionModeParams, SetPositionModeParamsBuilder,
     },
 };
 use crate::{
@@ -131,6 +132,7 @@ use crate::{
             parse_order_status_report, parse_position_status_report, parse_price, parse_quantity,
             parse_spot_margin_position_from_balance, parse_spread_fill_report,
             parse_spread_instrument, parse_spread_order_status_report, parse_trade_tick,
+            prefer_rpi_response_fields,
         },
     },
     http::{
@@ -141,6 +143,7 @@ use crate::{
 };
 
 const OKX_SUCCESS_CODE: &str = "0";
+const OKX_PARTIAL_SUCCESS_CODE: &str = "2";
 
 #[derive(Debug, Error)]
 #[error("Failed to parse instrument {symbol}: {source}")]
@@ -212,15 +215,33 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
 fn deserialize_okx_response<T: DeserializeOwned>(
     response_body: &[u8],
 ) -> Result<OKXResponse<T>, serde_json::Error> {
-    serde_json::from_slice(response_body)
+    let contains_legacy_rpi_name = [br#""elp""#.as_slice(), br#""elpMaker""#.as_slice()]
+        .iter()
+        .any(|name| {
+            response_body
+                .windows(name.len())
+                .any(|window| window == *name)
+        });
+
+    if !contains_legacy_rpi_name {
+        return serde_json::from_slice(response_body);
+    }
+
+    let mut value: serde_json::Value = serde_json::from_slice(response_body)?;
+    prefer_rpi_response_fields(&mut value);
+    serde_json::from_value(value)
 }
 
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
-    use super::{OKXInstrumentDefinitionError, resolve_okx_error_message};
+    use super::{
+        OKXInstrumentDefinitionError, deserialize_okx_response, resolve_okx_error_message,
+    };
+    use crate::http::models::OKXFeeRate;
 
     #[rstest]
     fn test_instrument_definition_error_survives_anyhow_context_downcast() {
@@ -252,6 +273,31 @@ mod tests {
             resolve_okx_error_message(body, "All operations failed"),
             "Test detailed failure",
         );
+    }
+
+    #[rstest]
+    fn test_rpi_response_fields_prefer_current_names_over_transition_aliases() {
+        let response = br#"{
+            "code": "0",
+            "msg": "",
+            "data": [{
+                "level": "VIP1",
+                "taker": "-0.0005",
+                "maker": "-0.0002",
+                "takerU": "-0.0005",
+                "makerU": "-0.0002",
+                "rpiMaker": "-0.00015",
+                "elpMaker": "-0.00016",
+                "instType": "SPOT",
+                "category": "1",
+                "ts": "1785406500000"
+            }]
+        }"#;
+
+        let parsed = deserialize_okx_response::<OKXFeeRate>(response).unwrap();
+
+        assert_eq!(parsed.data.len(), 1);
+        assert_eq!(parsed.data[0].rpi_maker, Some(Decimal::new(-15, 5)));
     }
 
     #[rstest]
@@ -376,6 +422,10 @@ impl OKXRawHttpClient {
                 Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant"),
             ),
             (
+                "okx:/api/v5/account/instruments".to_string(),
+                Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant"),
+            ),
+            (
                 "okx:/api/v5/account/positions".to_string(),
                 Quota::per_second(NonZeroU32::new(5).expect("non-zero")).expect("valid constant"),
             ),
@@ -456,6 +506,10 @@ impl OKXRawHttpClient {
                 Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant"),
             ),
             (
+                "okx:/api/v5/market/books-rpi".to_string(),
+                Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant"),
+            ),
+            (
                 "okx:/api/v5/market/candles".to_string(),
                 Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant"),
             ),
@@ -474,6 +528,18 @@ impl OKXRawHttpClient {
             (
                 "okx:/api/v5/trade/order".to_string(),
                 Quota::per_second(NonZeroU32::new(30).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/trade/batch-orders".to_string(),
+                Quota::per_second(NonZeroU32::new(7).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/trade/amend-order".to_string(),
+                Quota::per_second(NonZeroU32::new(30).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/trade/amend-batch-orders".to_string(),
+                Quota::per_second(NonZeroU32::new(7).expect("non-zero")).expect("valid constant"),
             ),
             (
                 "okx:/api/v5/trade/cancel-batch-orders".to_string(),
@@ -709,6 +775,12 @@ impl OKXRawHttpClient {
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
         let url = format!("{}{path}", self.base_url);
+        let accepts_partial_success = matches!(
+            path,
+            "/api/v5/trade/batch-orders"
+                | "/api/v5/trade/amend-batch-orders"
+                | "/api/v5/trade/cancel-batch-orders"
+        );
 
         // Pre-compute rate limit keys once outside the retry closure
         let rate_keys: Vec<String> = Self::rate_limit_keys(path)
@@ -772,7 +844,10 @@ impl OKXRawHttpClient {
                             OKXHttpError::JsonError(e.to_string())
                         })?;
 
-                    if okx_response.code != OKX_SUCCESS_CODE {
+                    if okx_response.code != OKX_SUCCESS_CODE
+                        && !(accepts_partial_success
+                            && okx_response.code == OKX_PARTIAL_SUCCESS_CODE)
+                    {
                         return Err(OKXHttpError::OkxError {
                             error_code: okx_response.code,
                             message: resolve_okx_error_message(&resp.body, &okx_response.msg),
@@ -911,6 +986,30 @@ impl OKXRawHttpClient {
             Some(&params),
             None,
             false,
+        )
+        .await
+    }
+
+    /// Requests account instrument configuration and trading permissions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if authentication fails, the HTTP request fails, or the
+    /// response cannot be deserialized.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-instruments>
+    pub async fn get_account_instruments(
+        &self,
+        params: GetInstrumentsParams,
+    ) -> Result<Vec<OKXInstrument>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/account/instruments",
+            Some(&params),
+            None,
+            true,
         )
         .await
     }
@@ -1331,6 +1430,29 @@ impl OKXRawHttpClient {
         self.send_request(
             Method::GET,
             "/api/v5/market/books",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests a Retail Price Improvement order book snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-rpi-order-book>
+    pub async fn get_rpi_order_book(
+        &self,
+        params: GetRpiOrderBookParams,
+    ) -> Result<Vec<OKXRpiOrderBookSnapshot>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/market/books-rpi",
             Some(&params),
             None,
             false,
@@ -2624,6 +2746,60 @@ impl OKXHttpClient {
 
         log::debug!(
             "Fetched order book for {} with {} bids and {} asks",
+            instrument_id,
+            snapshot.bids.len(),
+            snapshot.asks.len(),
+        );
+
+        Ok(book)
+    }
+
+    /// Requests an RPI order book snapshot for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or book parsing fails.
+    pub async fn request_rpi_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> anyhow::Result<OrderBook> {
+        let inst = self.instrument_from_cache_by_id(instrument_id)?;
+        let price_precision = inst.price_precision();
+        let size_precision = inst.size_precision();
+        let params = GetRpiOrderBookParams {
+            inst_id: instrument_id.symbol.to_string(),
+            sz: depth,
+        };
+        let resp = self
+            .inner
+            .get_rpi_order_book(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let snapshot = resp
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No RPI order book returned from OKX"))?;
+        let ts_event = UnixNanos::from(snapshot.ts * NANOSECONDS_IN_MILLISECOND);
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        for (i, level) in snapshot.bids.iter().enumerate() {
+            let price = Price::from_decimal_dp(level.0, price_precision)?;
+            let size = Quantity::from_decimal_dp(level.1, size_precision)?;
+            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+            book.add(order, 0, i as u64, ts_event);
+        }
+
+        let bids_len = snapshot.bids.len();
+        for (i, level) in snapshot.asks.iter().enumerate() {
+            let price = Price::from_decimal_dp(level.0, price_precision)?;
+            let size = Quantity::from_decimal_dp(level.1, size_precision)?;
+            let index = (bids_len + i) as u64;
+            let order = BookOrder::new(OrderSide::Sell, price, size, index);
+            book.add(order, 0, index, ts_event);
+        }
+
+        log::debug!(
+            "Fetched RPI order book for {} with {} bids and {} asks",
             instrument_id,
             snapshot.bids.len(),
             snapshot.asks.len(),
@@ -4853,6 +5029,85 @@ impl OKXHttpClient {
             .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
     }
 
+    /// Places multiple regular orders via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn place_orders(
+        &self,
+        requests: Vec<OKXPlaceOrderRequest>,
+    ) -> Result<Vec<OKXPlaceOrderResponse>, OKXHttpError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let body =
+            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        self.inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/batch-orders",
+                None,
+                Some(body),
+                true,
+            )
+            .await
+    }
+
+    /// Amends a regular order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn amend_order(
+        &self,
+        request: OKXAmendOrderRequest,
+    ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
+        let body =
+            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let resp: Vec<OKXPlaceOrderResponse> = self
+            .inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/amend-order",
+                None,
+                Some(body),
+                true,
+            )
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Amends multiple regular orders via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn amend_orders(
+        &self,
+        requests: Vec<OKXAmendOrderRequest>,
+    ) -> Result<Vec<OKXPlaceOrderResponse>, OKXHttpError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let body =
+            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        self.inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/amend-batch-orders",
+                None,
+                Some(body),
+                true,
+            )
+            .await
+    }
+
     /// Places a spread order via HTTP.
     ///
     /// # Errors
@@ -5377,7 +5632,12 @@ impl OKXHttpClient {
         speed_bump: Option<String>,
         outcome: Option<String>,
         slippage_pct: Option<String>,
+        rpi: Option<bool>,
+        rpi_taker_access: Option<bool>,
+        rpi_px_round: Option<bool>,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
+        let rpi = rpi.unwrap_or(false);
+
         if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
             if reduce_only.unwrap_or(false)
                 || quote_quantity.unwrap_or(false)
@@ -5389,6 +5649,9 @@ impl OKXHttpClient {
                 || speed_bump.is_some()
                 || outcome.is_some()
                 || slippage_pct.is_some()
+                || rpi
+                || rpi_taker_access.is_some()
+                || rpi_px_round.is_some()
             {
                 return Err(OKXHttpError::ValidationError(
                     "OKX spread orders do not support regular order extensions".to_string(),
@@ -5483,7 +5746,15 @@ impl OKXHttpClient {
             None
         };
 
-        let (ord_type, px) = if post_only.unwrap_or(false) {
+        if rpi && order_type != OrderType::Limit {
+            return Err(OKXHttpError::ValidationError(
+                "OKX RPI orders require a limit order".to_string(),
+            ));
+        }
+
+        let (ord_type, px) = if rpi {
+            (OKXOrderType::Rpi, price)
+        } else if post_only.unwrap_or(false) {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
             match (order_type, tif) {
@@ -5569,6 +5840,8 @@ impl OKXHttpClient {
             speed_bump,
             outcome,
             slippage_pct,
+            rpi_taker_access,
+            rpi_px_round,
         };
 
         self.place_order(request).await

@@ -344,6 +344,9 @@ impl OKXExecutionClient {
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
         let slippage_pct = get_param_as_string(&cmd.params, "slippage_pct");
+        let rpi = get_param_as_bool(&cmd.params, "rpi");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         self.spawn_task("submit_order", async move {
             let result = ws_private
@@ -369,6 +372,9 @@ impl OKXExecutionClient {
                     speed_bump,
                     outcome,
                     slippage_pct,
+                    rpi,
+                    rpi_taker_access,
+                    rpi_px_round,
                 )
                 .await;
 
@@ -426,6 +432,9 @@ impl OKXExecutionClient {
         let time_in_force = order.time_in_force();
         let price = order.price();
         let is_post_only = order.is_post_only();
+        let rpi = get_param_as_bool(&cmd.params, "rpi");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         self.spawn_task("submit_order_http", async move {
             let result = http_client
@@ -448,6 +457,9 @@ impl OKXExecutionClient {
                     None,
                     None,
                     None,
+                    rpi,
+                    rpi_taker_access,
+                    rpi_px_round,
                 )
                 .await;
 
@@ -1908,6 +1920,9 @@ impl ExecutionClient for OKXExecutionClient {
         let mut batch_orders = Vec::new();
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
+        let rpi = get_param_as_bool(&cmd.params, "rpi");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         for client_order_id in &cmd.order_list.client_order_ids {
             let order = cache.order(client_order_id).expect("validated above");
@@ -1927,6 +1942,9 @@ impl ExecutionClient for OKXExecutionClient {
                 Some(order.is_reduce_only()),
                 speed_bump.clone(),
                 outcome.clone(),
+                rpi,
+                rpi_taker_access,
+                rpi_px_round,
             ));
 
             self.ws_dispatch_state.order_identities.insert(
@@ -2009,6 +2027,8 @@ impl ExecutionClient for OKXExecutionClient {
         let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
         let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -2026,6 +2046,8 @@ impl ExecutionClient for OKXExecutionClient {
                     new_px_usd,
                     new_px_vol,
                     speed_bump,
+                    rpi_taker_access,
+                    rpi_px_round,
                 )
                 .await;
 
@@ -2429,6 +2451,10 @@ fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
                 .or_else(|| v.as_f64().map(|n| n.to_string()))
         })
     })
+}
+
+fn get_param_as_bool(params: &Option<Params>, key: &str) -> Option<bool> {
+    params.as_ref().and_then(|params| params.get_bool(key))
 }
 
 fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {

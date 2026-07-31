@@ -1079,6 +1079,9 @@ impl OKXHttpClient {
                     speed_bump,
                     outcome,
                     slippage_pct,
+                    None,
+                    None,
+                    None,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

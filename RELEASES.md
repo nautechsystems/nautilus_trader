@@ -118,6 +118,7 @@ adapter set. The following limits remain deferred:
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
 - Added Hyperliquid persistable `HyperliquidPublicTrade` custom data (#4468), thanks @graceyangfan
 - Added Interactive Brokers PyO3 type stub annotations (#4350), thanks @dfjmax
+- Added OKX RPI market data and order execution support
 - Added PancakeSwap V3 protocol-fee replay accounting; run `make init-db` for schema changes
 - Added Polymarket v2 opt-in authenticated order-safety heartbeats
 - Added Polymarket v2 fill `info` metadata carrying the raw venue trade fields

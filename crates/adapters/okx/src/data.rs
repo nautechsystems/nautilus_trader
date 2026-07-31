@@ -62,11 +62,13 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    book_sync::{BookChannelScope, BookSyncSignal, BookSyncSignalKind, BookSyncTracker},
+    book_sync::{
+        BookChannelScope, BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind, BookSyncTracker,
+    },
     common::{
         consts::{
             OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
-            should_retry_error_code,
+            select_book_channel, should_retry_error_code,
         },
         enums::{
             OKXBookAction, OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus,
@@ -89,7 +91,7 @@ use crate::{
         messages::{NautilusWsMessage, OKXBookMsg, OKXOptionSummaryMsg, OKXWsMessage},
         parse::{
             extract_fees_from_cached_instrument, parse_book_msg_vec, parse_index_price_msg_vec,
-            parse_option_summary_greeks, parse_ws_message_data,
+            parse_option_summary_greeks, parse_rpi_book_msg_vec, parse_ws_message_data,
         },
     },
 };
@@ -336,6 +338,7 @@ impl OKXDataClient {
         instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
         book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
         book_sync: &BookSyncTracker,
+        recovery_ws: Option<&OKXWebSocketClient>,
         quote_cache: &mut QuoteCache,
         funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
         index_ticker_map: &Arc<AtomicMap<Ustr, AHashSet<Ustr>>>,
@@ -356,6 +359,10 @@ impl OKXDataClient {
                     return;
                 };
                 let ts_init = clock.get_time_ns();
+                let sequences = data
+                    .iter()
+                    .map(|msg| (msg.prev_seq_id, msg.seq_id))
+                    .collect::<Vec<_>>();
 
                 match parse_book_msg_vec(
                     data,
@@ -366,18 +373,84 @@ impl OKXDataClient {
                     ts_init,
                 ) {
                     Ok(data_vec) => {
-                        book_sync.record_update_if_subscribed(
+                        let outcome = book_sync.validate_sequence_if_subscribed(
                             book_channels,
                             instrument.id(),
                             action == OKXBookAction::Snapshot,
+                            &sequences,
+                            snapshot_timeout,
                             Instant::now(),
                         );
+
+                        if !handle_book_sequence_outcome(
+                            outcome,
+                            instrument.id(),
+                            book_channels,
+                            book_sync,
+                            recovery_ws,
+                            snapshot_timeout,
+                            cancel,
+                        ) {
+                            return;
+                        }
 
                         for data in data_vec {
                             Self::send_data(data_sender, data);
                         }
                     }
                     Err(e) => log::error!("Failed to parse book data: {e}"),
+                }
+            }
+            OKXWsMessage::RpiBookData { arg, action, data } => {
+                let Some(inst_id) = arg.inst_id else {
+                    log::warn!("RPI book data without inst_id");
+                    return;
+                };
+                let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+                    log::warn!("No cached instrument for RPI book data: {inst_id}");
+                    return;
+                };
+                let ts_init = clock.get_time_ns();
+                let sequences = data
+                    .iter()
+                    .map(|msg| (Some(msg.prev_seq_id), msg.seq_id))
+                    .collect::<Vec<_>>();
+
+                match parse_rpi_book_msg_vec(
+                    data,
+                    &instrument.id(),
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    action,
+                    ts_init,
+                ) {
+                    Ok(data_vec) => {
+                        let outcome = book_sync.validate_sequence_if_subscribed(
+                            book_channels,
+                            instrument.id(),
+                            action == OKXBookAction::Snapshot,
+                            &sequences,
+                            snapshot_timeout,
+                            Instant::now(),
+                        );
+
+                        if !handle_book_sequence_outcome(
+                            outcome,
+                            instrument.id(),
+                            book_channels,
+                            book_sync,
+                            recovery_ws,
+                            snapshot_timeout,
+                            cancel,
+                        ) {
+                            return;
+                        }
+
+                        for data in data_vec {
+                            Self::send_data(data_sender, data);
+                        }
+                    }
+                    Err(e) => log::error!("Failed to parse RPI book data: {e}"),
                 }
             }
             OKXWsMessage::ChannelData {
@@ -667,6 +740,10 @@ impl OKXDataClient {
             OKXWsMessage::Reconnected => {
                 log::info!("Websocket reconnected");
 
+                if book_channel_scope == BookChannelScope::Public {
+                    book_sync.reset_sequences(book_channels, book_channel_scope);
+                }
+
                 if !snapshot_timeout.is_zero() {
                     let pending_count = book_sync.seed_pending_snapshots(
                         book_channels,
@@ -687,6 +764,59 @@ impl OKXDataClient {
             OKXWsMessage::Authenticated => {
                 log::debug!("Websocket authenticated");
             }
+        }
+    }
+}
+
+fn handle_book_sequence_outcome(
+    outcome: BookSequenceOutcome,
+    instrument_id: InstrumentId,
+    book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
+    book_sync: &BookSyncTracker,
+    recovery_ws: Option<&OKXWebSocketClient>,
+    snapshot_timeout: Duration,
+    cancel: &CancellationToken,
+) -> bool {
+    match outcome {
+        BookSequenceOutcome::Accept => true,
+        BookSequenceOutcome::Suppress => false,
+        BookSequenceOutcome::Recover {
+            last_seq_id,
+            prev_seq_id,
+            seq_id,
+        } => {
+            log::warn!(
+                "Book sequence gap for {instrument_id}: last_seq_id={last_seq_id:?}, \
+                 prev_seq_id={prev_seq_id:?}, seq_id={seq_id}; requesting a fresh snapshot"
+            );
+
+            let Some(channel) = book_channels.get_cloned(&instrument_id) else {
+                log::warn!("Cannot recover book sequence for unsubscribed {instrument_id}");
+                return false;
+            };
+            let Some(ws) = recovery_ws.cloned() else {
+                log::error!("No public websocket available to recover book for {instrument_id}");
+                return false;
+            };
+            let channels = Arc::clone(book_channels);
+            let recovery_cancel = cancel.clone();
+
+            get_runtime().spawn(async move {
+                if recovery_cancel.is_cancelled()
+                    || channels.get_cloned(&instrument_id) != Some(channel)
+                {
+                    return;
+                }
+
+                if let Err(e) = ws.resubscribe_book_channel(instrument_id, channel).await {
+                    log::error!("Failed to recover book sequence for {instrument_id}: {e}");
+                }
+            });
+
+            if !snapshot_timeout.is_zero() {
+                spawn_snapshot_health_monitor(book_sync.clone(), cancel.clone(), snapshot_timeout);
+            }
+            false
         }
     }
 }
@@ -795,7 +925,7 @@ fn handle_book_sync_signals(signals: Vec<BookSyncSignal>) {
             }
             BookSyncSignalKind::SnapshotMissing => {
                 log::warn!(
-                    "Book snapshot not received for {} after reconnect",
+                    "Book snapshot not received for {} after recovery request",
                     signal.instrument_id
                 );
             }
@@ -1000,6 +1130,7 @@ impl DataClient for OKXDataClient {
             let insts = self.instruments.clone();
             let book_channels = self.book_channels.clone();
             let book_sync = self.book_sync.clone();
+            let recovery_ws = ws.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
             let cancel = self.cancellation_token.clone();
@@ -1027,6 +1158,7 @@ impl DataClient for OKXDataClient {
                                 &mut instruments_by_symbol,
                                 &book_channels,
                                 &book_sync,
+                                Some(&recovery_ws),
                                 &mut quote_cache,
                                 &mut funding_cache,
                                 &idx_map,
@@ -1099,6 +1231,7 @@ impl DataClient for OKXDataClient {
                                 &mut instruments_by_symbol,
                                 &book_channels,
                                 &book_sync,
+                                None,
                                 &mut quote_cache,
                                 &mut funding_cache,
                                 &idx_map,
@@ -1252,26 +1385,22 @@ impl DataClient for OKXDataClient {
             log::debug!("Clamped book depth {raw_depth} to {depth} (OKX supports 50 or 400)");
         }
 
+        let rpi = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("rpi"))
+            .unwrap_or(false);
         let vip = self.vip_level().unwrap_or(OKXVipLevel::Vip0);
-        let channel = match depth {
-            50 => {
-                if vip < OKXVipLevel::Vip4 {
-                    log::debug!(
-                        "VIP level {vip} insufficient for 50-depth channel, falling back to default"
-                    );
-                    OKXBookChannel::Book
-                } else {
-                    OKXBookChannel::Books50L2Tbt
-                }
+        let channel = if rpi {
+            OKXBookChannel::BooksRpi
+        } else {
+            let channel = select_book_channel(depth, vip);
+            if depth == 50 && channel == OKXBookChannel::Book {
+                log::debug!(
+                    "VIP level {vip} insufficient for 50-depth channel, falling back to default"
+                );
             }
-            0 | 400 => {
-                if vip >= OKXVipLevel::Vip5 {
-                    OKXBookChannel::BookL2Tbt
-                } else {
-                    OKXBookChannel::Book
-                }
-            }
-            _ => unreachable!(),
+            channel
         };
 
         let instrument_id = cmd.instrument_id;
@@ -1294,6 +1423,10 @@ impl DataClient for OKXDataClient {
                         .subscribe_books_channel(instrument_id)
                         .await
                         .context("books subscription")?,
+                    OKXBookChannel::BooksRpi => ws
+                        .subscribe_book_rpi(instrument_id)
+                        .await
+                        .context("books-rpi subscription")?,
                     OKXBookChannel::SprdBooks5 => unreachable!(),
                 }
                 book_channels.insert(instrument_id, channel);
@@ -1549,6 +1682,10 @@ impl DataClient for OKXDataClient {
                         .unsubscribe_book(instrument_id)
                         .await
                         .context("book unsubscribe")?,
+                    Some(OKXBookChannel::BooksRpi) => ws
+                        .unsubscribe_book_rpi(instrument_id)
+                        .await
+                        .context("books-rpi unsubscribe")?,
                     Some(OKXBookChannel::SprdBooks5) => ws
                         .unsubscribe_book(instrument_id)
                         .await
@@ -1867,6 +2004,8 @@ impl DataClient for OKXDataClient {
                 }
             }
 
+            http.cache_instruments(&all_instruments);
+
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
                 client_id,
@@ -1975,14 +2114,20 @@ impl DataClient for OKXDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let params = request.params;
+        let rpi = params
+            .as_ref()
+            .and_then(|params| params.get_bool("rpi"))
+            .unwrap_or(false);
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            match http
-                .request_book_snapshot(instrument_id, depth)
-                .await
-                .context("failed to request book snapshot from OKX")
-            {
+            let result = if rpi {
+                http.request_rpi_book_snapshot(instrument_id, depth).await
+            } else {
+                http.request_book_snapshot(instrument_id, depth).await
+            };
+
+            match result.context("failed to request book snapshot from OKX") {
                 Ok(book) => {
                     let response = DataResponse::Book(BookResponse::new(
                         request_id,
@@ -2192,10 +2337,16 @@ impl DataClient for OKXDataClient {
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_model::{
+        identifiers::Symbol,
+        instruments::stubs::currency_pair_btcusdt,
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+    use crate::{common::testing::load_test_json, websocket::messages::OKXWsFrame};
 
     fn both() -> AHashSet<OKXGreeksType> {
         [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect()
@@ -2235,6 +2386,87 @@ mod tests {
         }
         assert!(instruments_by_symbol.is_empty());
         assert!(instruments.load().is_empty());
+    }
+
+    #[rstest]
+    fn rpi_sequence_gap_suppresses_updates_until_fresh_snapshot() {
+        let instrument_id = InstrumentId::from("OMI-USD.OKX");
+        let mut pair = currency_pair_btcusdt();
+        pair.id = instrument_id;
+        pair.raw_symbol = Symbol::from("OMI-USD");
+        pair.price_precision = 7;
+        pair.size_precision = 3;
+        pair.price_increment = Price::from("0.0000001");
+        pair.size_increment = Quantity::from("0.001");
+        let instrument = InstrumentAny::CurrencyPair(pair);
+
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.insert(instrument_id, instrument.clone());
+        let mut instruments_by_symbol = AHashMap::from([(Ustr::from("OMI-USD"), instrument)]);
+        let book_channels = Arc::new(AtomicMap::new());
+        book_channels.insert(instrument_id, OKXBookChannel::BooksRpi);
+        let book_sync = BookSyncTracker::default();
+        book_sync.record_subscription(instrument_id, Instant::now());
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let index_ticker_map = Arc::new(AtomicMap::new());
+        let option_greeks_subs = Arc::new(AtomicMap::new());
+        let cancel = CancellationToken::new();
+        let mut quote_cache = QuoteCache::new();
+        let mut funding_cache = AHashMap::new();
+
+        let snapshot = rpi_book_message("ws_books_rpi_snapshot.json");
+        let update = rpi_book_message("ws_books_rpi_update.json");
+        let mut gap = rpi_book_message("ws_books_rpi_update.json");
+        let OKXWsMessage::RpiBookData { data, .. } = &mut gap else {
+            unreachable!()
+        };
+        data[0].prev_seq_id -= 1;
+
+        let mut handle = |message| {
+            OKXDataClient::handle_ws_message(
+                message,
+                &sender,
+                &instruments,
+                &mut instruments_by_symbol,
+                &book_channels,
+                &book_sync,
+                None,
+                &mut quote_cache,
+                &mut funding_cache,
+                &index_ticker_map,
+                &option_greeks_subs,
+                BookChannelScope::Public,
+                Duration::ZERO,
+                &cancel,
+                get_atomic_clock_realtime(),
+            );
+        };
+
+        handle(snapshot);
+        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Data(_))));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        handle(gap);
+        handle(update);
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        let mut recovered_snapshot = rpi_book_message("ws_books_rpi_snapshot.json");
+        let OKXWsMessage::RpiBookData { data, .. } = &mut recovered_snapshot else {
+            unreachable!()
+        };
+        data[0].seq_id = 2_000;
+        handle(recovered_snapshot);
+        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Data(_))));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 
     #[rstest]
@@ -2330,5 +2562,13 @@ mod tests {
         params.insert("greeks_convention".to_string(), json!("BOGUS"));
         let result = parse_greeks_conventions_from_params(&Some(params));
         assert_eq!(result, both());
+    }
+
+    fn rpi_book_message(filename: &str) -> OKXWsMessage {
+        let frame: OKXWsFrame = serde_json::from_str(&load_test_json(filename)).unwrap();
+        let OKXWsFrame::RpiBookData { arg, action, data } = frame else {
+            panic!("expected RPI book data");
+        };
+        OKXWsMessage::RpiBookData { arg, action, data }
     }
 }

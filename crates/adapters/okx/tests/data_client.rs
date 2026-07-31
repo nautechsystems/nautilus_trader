@@ -15,7 +15,10 @@
 
 //! Integration tests for `OKXDataClient`.
 
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap, net::SocketAddr, num::NonZeroUsize, path::PathBuf, sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -29,11 +32,18 @@ use nautilus_common::{
     live::runner::replace_data_event_sender,
     messages::{
         DataEvent, DataResponse,
-        data::{InstrumentResponse, InstrumentsResponse, RequestInstrument, RequestInstruments},
+        data::{
+            BookResponse, InstrumentResponse, InstrumentsResponse, RequestBookSnapshot,
+            RequestInstrument, RequestInstruments,
+        },
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
+};
 use nautilus_okx::{
     common::{
         consts::{OKX_CLIENT_ID, resolve_book_depth},
@@ -49,6 +59,7 @@ use serde_json::{Value, json};
 #[derive(Clone, Default)]
 struct TestServerState {
     instrument_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    rpi_book_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     spread_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     fail_spreads: bool,
 }
@@ -78,6 +89,7 @@ fn spread_response(params: &HashMap<String, String>) -> Value {
 
 fn create_router(state: TestServerState) -> Router {
     let instruments_state = state.clone();
+    let rpi_book_state = state.clone();
     let spreads_state = state;
 
     Router::new()
@@ -88,6 +100,16 @@ fn create_router(state: TestServerState) -> Router {
                 async move {
                     state.instrument_queries.lock().await.push(params);
                     Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/market/books-rpi",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = rpi_book_state.clone();
+                async move {
+                    state.rpi_book_queries.lock().await.push(params);
+                    Json(load_test_data("http_get_rpi_order_book.json")).into_response()
                 }
             }),
         )
@@ -196,6 +218,13 @@ fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
     })
 }
 
+fn book_response(events: &[DataEvent]) -> Option<&BookResponse> {
+    events.iter().find_map(|event| match event {
+        DataEvent::Response(DataResponse::Book(response)) => Some(response),
+        _ => None,
+    })
+}
+
 #[rstest]
 #[case::depth_0_passes_through(0, 0)]
 #[case::depth_400_passes_through(400, 400)]
@@ -230,6 +259,15 @@ async fn test_request_instruments_includes_spreads_when_enabled() {
     let events =
         collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
     let response = instruments_response(&events);
+    let rpi_instrument = response
+        .data
+        .iter()
+        .find(|instrument| instrument.id() == InstrumentId::from("BTC-USD.OKX"))
+        .expect("BTC-USD instrument");
+    let InstrumentAny::CurrencyPair(rpi_pair) = rpi_instrument else {
+        panic!("expected BTC-USD currency pair");
+    };
+    let rpi_info = rpi_pair.info.as_ref().expect("RPI spacing info");
     let spread_ids = response
         .data
         .iter()
@@ -242,6 +280,8 @@ async fn test_request_instruments_includes_spreads_when_enabled() {
     let spread_queries = state.spread_queries.lock().await;
 
     assert_eq!(spread_ids.len(), 2);
+    assert_eq!(rpi_info.get_u64("okx_rpi_min_level"), Some(5));
+    assert_eq!(rpi_info.get_str("okx_rpi_min_px_band"), Some("20"));
     assert!(spread_ids.contains(&"ETH-USD-SWAP_ETH-USD-231229.OKX".to_string()));
     assert!(spread_ids.contains(&"BTC-USDT_BTC-USDT-SWAP.OKX".to_string()));
     assert_eq!(instrument_queries.len(), 1);
@@ -342,4 +382,64 @@ async fn test_request_instrument_emits_no_spread_when_disabled() {
 
     assert!(instrument_response(&events).is_none());
     assert_eq!(spread_queries.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rpi_request_book_snapshot_routes_to_rpi_endpoint() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+
+    let instruments_request = request_instruments();
+    let instruments_request_id = instruments_request.request_id;
+    client
+        .request_instruments(instruments_request)
+        .expect("request instruments");
+    let _ =
+        collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+            .await;
+
+    let mut params = Params::new();
+    params.insert("rpi".to_string(), json!(true));
+    let request = RequestBookSnapshot::new(
+        InstrumentId::from("BTC-USD.OKX"),
+        NonZeroUsize::new(2),
+        Some(*OKX_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    );
+    let request_id = request.request_id;
+    client
+        .request_book_snapshot(request)
+        .expect("request RPI book snapshot");
+
+    let events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
+    let response = book_response(&events).expect("RPI book response");
+    let queries = state.rpi_book_queries.lock().await;
+
+    assert_eq!(response.instrument_id, InstrumentId::from("BTC-USD.OKX"));
+    assert_eq!(response.data.bids(None).count(), 2);
+    assert_eq!(response.data.asks(None).count(), 2);
+    assert_eq!(response.data.best_bid_price(), Some(Price::from("64619.9")));
+    assert_eq!(response.data.best_ask_price(), Some(Price::from("64620")));
+    assert_eq!(
+        response.data.best_bid_size().expect("best bid quantity"),
+        Quantity::from("3.48451281")
+    );
+    assert_eq!(
+        response
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("rpi")),
+        Some(true)
+    );
+    assert_eq!(queries.len(), 1);
+    assert_eq!(
+        queries[0].get("instId").map(String::as_str),
+        Some("BTC-USD")
+    );
+    assert_eq!(queries[0].get("sz").map(String::as_str), Some("2"));
 }

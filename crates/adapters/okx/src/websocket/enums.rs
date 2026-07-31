@@ -144,6 +144,8 @@ pub enum OKXWsChannel {
     Books50Tbt,
     #[serde(rename = "books-l2-tbt")]
     BooksTbt,
+    #[serde(rename = "books-rpi")]
+    BooksRpi,
     #[serde(rename = "bbo-tbt")]
     BboTbt,
     #[serde(rename = "opt-summary")]

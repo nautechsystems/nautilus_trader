@@ -49,7 +49,7 @@ use crate::{
             OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUCCESS_CODE,
         },
-        enums::OKXOrderStatus,
+        enums::{OKXOrderStatus, OKXOrderType},
         parse::{
             is_market_price, parse_client_order_id, parse_millisecond_timestamp, parse_price,
             parse_quantity,
@@ -59,7 +59,7 @@ use crate::{
     websocket::{
         client::PendingOrderInfo,
         enums::OKXWsOperation,
-        handler::is_post_only_auto_cancel,
+        handler::{is_post_only_auto_cancel, is_unfilled_rpi_cancel},
         messages::{ExecutionReport, OKXOrderMsg, OKXWsMessage},
         parse::{
             OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg, parse_order_event,
@@ -518,7 +518,9 @@ pub fn dispatch_ws_message(
         OKXWsMessage::ChannelData { channel, .. } => {
             log::debug!("Ignoring data channel message on execution client: {channel:?}");
         }
-        OKXWsMessage::BookData { .. } | OKXWsMessage::Instruments(_) => {
+        OKXWsMessage::BookData { .. }
+        | OKXWsMessage::RpiBookData { .. }
+        | OKXWsMessage::Instruments(_) => {
             log::debug!("Ignoring data message on execution client");
         }
         OKXWsMessage::Error(e) => {
@@ -606,15 +608,26 @@ fn dispatch_order_messages(
         };
 
         if let Some(ident) = identity {
-            if is_post_only_auto_cancel(msg) {
+            if is_post_only_auto_cancel(msg)
+                || (!state.emitted_accepted.contains(&client_order_id)
+                    && is_unfilled_rpi_cancel(msg))
+            {
                 let ts_event = parse_millisecond_timestamp(msg.u_time);
+                let reason = if msg.ord_type == OKXOrderType::Rpi {
+                    msg.cancel_source_reason
+                        .as_deref()
+                        .filter(|reason| !reason.is_empty())
+                        .unwrap_or("RPI order canceled before acceptance")
+                } else {
+                    "Post-only order would have taken liquidity"
+                };
                 let rejected = OrderRejected::new(
                     emitter.trader_id(),
                     ident.strategy_id,
                     instrument.id(),
                     client_order_id,
                     account_id,
-                    Ustr::from("Post-only order would have taken liquidity"),
+                    Ustr::from(reason),
                     UUID4::new(),
                     ts_event,
                     ts_init,

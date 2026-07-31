@@ -41,7 +41,7 @@
 //! - Always clone before async blocks for lifetime requirements.
 //! - RwLock is preferred over Mutex (many reads, few writes).
 
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use futures_util::StreamExt;
@@ -73,6 +73,7 @@ use ustr::Ustr;
 
 use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
+    book_sync::{BookSequenceOutcome, BookSyncTracker},
     common::{
         consts::{OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE},
         enums::{
@@ -92,13 +93,13 @@ use crate::{
         enums::{OKXWsChannel, OKXWsOperation},
         messages::{
             ExecutionReport, NautilusWsMessage, OKXAlgoOrderMsg, OKXBookMsg, OKXOptionSummaryMsg,
-            OKXOrderMsg, OKXWebSocketError, OKXWsMessage, WsAttachAlgoOrdParams,
+            OKXOrderMsg, OKXRpiBookMsg, OKXWebSocketError, OKXWsMessage, WsAttachAlgoOrdParams,
             WsAttachAlgoOrdParamsBuilder,
         },
         parse::{
             extract_fees_from_cached_instrument, parse_algo_order_msg, parse_book_msg_vec,
             parse_index_price_msg_vec, parse_option_summary_greeks, parse_order_msg_vec,
-            parse_spread_order_msg, parse_ws_message_data,
+            parse_rpi_book_msg_vec, parse_spread_order_msg, parse_ws_message_data,
         },
     },
 };
@@ -139,7 +140,7 @@ type PyBatchModifyOrder = (
     String,
     InstrumentId,
     ClientOrderId,
-    ClientOrderId,
+    Option<String>,
     Option<Price>,
     Option<Quantity>,
     Option<String>,
@@ -149,7 +150,7 @@ type PyLegacyBatchModifyOrder = (
     String,
     InstrumentId,
     ClientOrderId,
-    ClientOrderId,
+    Option<String>,
     Option<Price>,
     Option<Quantity>,
 );
@@ -503,21 +504,85 @@ impl OKXWebSocketClient {
                 let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
                 let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
                 let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+                let mut book_sync_by_channel: AHashMap<OKXWsChannel, BookSyncTracker> =
+                    AHashMap::new();
                 let option_greeks_subs_arc = client.option_greeks_subs().clone();
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
                     match msg {
                         OKXWsMessage::BookData { arg, action, data } => {
-                            handle_book_data(
-                                arg.inst_id,
+                            let Some(inst_id) = arg.inst_id else {
+                                continue;
+                            };
+                            let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+                                log::warn!("No cached instrument for book data: {inst_id}");
+                                continue;
+                            };
+                            let instrument_id = instrument.id();
+                            let sequences = data
+                                .iter()
+                                .map(|message| (message.prev_seq_id, message.seq_id))
+                                .collect::<Vec<_>>();
+                            let Some(data_vec) = parse_book_data(instrument, action, data, clock)
+                            else {
+                                continue;
+                            };
+                            let outcome = validate_python_book_sequence(
+                                &mut book_sync_by_channel,
+                                arg.channel.clone(),
+                                instrument_id,
                                 action,
-                                data,
-                                &instruments_by_symbol,
-                                clock,
-                                &call_soon,
-                                &callback,
+                                &sequences,
                             );
+
+                            if handle_python_book_sequence(
+                                &client,
+                                instrument_id,
+                                arg.channel,
+                                outcome,
+                            )
+                            .await
+                            {
+                                emit_book_data(data_vec, &call_soon, &callback);
+                            }
+                        }
+                        OKXWsMessage::RpiBookData { arg, action, data } => {
+                            let Some(inst_id) = arg.inst_id else {
+                                continue;
+                            };
+                            let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+                                log::warn!("No cached instrument for RPI book data: {inst_id}");
+                                continue;
+                            };
+                            let instrument_id = instrument.id();
+                            let sequences = data
+                                .iter()
+                                .map(|message| (Some(message.prev_seq_id), message.seq_id))
+                                .collect::<Vec<_>>();
+                            let Some(data_vec) =
+                                parse_rpi_book_data(instrument, action, data, clock)
+                            else {
+                                continue;
+                            };
+                            let outcome = validate_python_book_sequence(
+                                &mut book_sync_by_channel,
+                                arg.channel.clone(),
+                                instrument_id,
+                                action,
+                                &sequences,
+                            );
+
+                            if handle_python_book_sequence(
+                                &client,
+                                instrument_id,
+                                arg.channel,
+                                outcome,
+                            )
+                            .await
+                            {
+                                emit_book_data(data_vec, &call_soon, &callback);
+                            }
                         }
                         OKXWsMessage::ChannelData {
                             channel,
@@ -636,6 +701,7 @@ impl OKXWebSocketClient {
                         }
                         OKXWsMessage::Reconnected => {
                             quote_cache.clear();
+                            book_sync_by_channel.clear();
                         }
                         OKXWsMessage::Authenticated => {}
                     }
@@ -1755,6 +1821,9 @@ impl OKXWebSocketClient {
                     speed_bump,
                     outcome,
                     slippage_pct,
+                    None,
+                    None,
+                    None,
                 )
                 .await
                 .map_err(to_pyvalue_err)
@@ -1861,6 +1930,8 @@ impl OKXWebSocketClient {
                     new_px_usd,
                     new_px_vol,
                     speed_bump,
+                    None,
+                    None,
                 )
                 .await
                 .map_err(to_pyvalue_err)
@@ -1914,6 +1985,9 @@ impl OKXWebSocketClient {
                 reduce_only,
                 speed_bump,
                 outcome,
+                None,
+                None,
+                None,
             ));
         }
 
@@ -1988,7 +2062,7 @@ impl OKXWebSocketClient {
                 instrument_type,
                 instrument_id,
                 client_order_id,
-                new_client_order_id,
+                request_id,
                 price,
                 quantity,
                 speed_bump,
@@ -1999,7 +2073,7 @@ impl OKXWebSocketClient {
                     instrument_type,
                     instrument_id,
                     client_order_id,
-                    new_client_order_id,
+                    request_id,
                     price,
                     quantity,
                 ): PyLegacyBatchModifyOrder = obj.extract(py).map_err(to_pyruntime_err)?;
@@ -2008,7 +2082,7 @@ impl OKXWebSocketClient {
                     instrument_type,
                     instrument_id,
                     client_order_id,
-                    new_client_order_id,
+                    request_id,
                     price,
                     quantity,
                     None,
@@ -2020,10 +2094,12 @@ impl OKXWebSocketClient {
                 inst_type,
                 instrument_id,
                 client_order_id,
-                new_client_order_id,
+                request_id,
                 price,
                 quantity,
                 speed_bump,
+                None,
+                None,
             ));
         }
 
@@ -2096,20 +2172,61 @@ impl OKXWebSocketClient {
     }
 }
 
-fn handle_book_data(
-    inst_id: Option<Ustr>,
+fn validate_python_book_sequence(
+    book_sync_by_channel: &mut AHashMap<OKXWsChannel, BookSyncTracker>,
+    channel: OKXWsChannel,
+    instrument_id: InstrumentId,
+    action: OKXBookAction,
+    sequences: &[(Option<i64>, u64)],
+) -> BookSequenceOutcome {
+    book_sync_by_channel
+        .entry(channel)
+        .or_default()
+        .validate_sequence(
+            instrument_id,
+            action == OKXBookAction::Snapshot,
+            sequences,
+            Duration::ZERO,
+            std::time::Instant::now(),
+        )
+}
+
+async fn handle_python_book_sequence(
+    client: &OKXWebSocketClient,
+    instrument_id: InstrumentId,
+    channel: OKXWsChannel,
+    outcome: BookSequenceOutcome,
+) -> bool {
+    match outcome {
+        BookSequenceOutcome::Accept => true,
+        BookSequenceOutcome::Suppress => false,
+        BookSequenceOutcome::Recover {
+            last_seq_id,
+            prev_seq_id,
+            seq_id,
+        } => {
+            log::warn!(
+                "{channel} sequence gap for {instrument_id}: last_seq_id={last_seq_id:?}, \
+                 prev_seq_id={prev_seq_id:?}, seq_id={seq_id}; requesting a fresh snapshot"
+            );
+
+            if let Err(e) = client
+                .resubscribe_ws_channel(instrument_id, channel.clone())
+                .await
+            {
+                log::error!("Failed to recover {channel} sequence for {instrument_id}: {e}");
+            }
+            false
+        }
+    }
+}
+
+fn parse_book_data(
+    instrument: &InstrumentAny,
     action: OKXBookAction,
     data: Vec<OKXBookMsg>,
-    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
     clock: &AtomicTime,
-    call_soon: &Py<PyAny>,
-    callback: &Py<PyAny>,
-) {
-    let Some(inst_id) = inst_id else { return };
-    let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
-        log::warn!("No cached instrument for book data: {inst_id}");
-        return;
-    };
+) -> Option<Vec<Data>> {
     let ts_init = clock.get_time_ns();
 
     match parse_book_msg_vec(
@@ -2120,14 +2237,45 @@ fn handle_book_data(
         action,
         ts_init,
     ) {
-        Ok(data_vec) => Python::attach(|py| {
-            for d in data_vec {
-                let py_obj = data_to_pycapsule(py, d);
-                call_python_threadsafe(py, call_soon, callback, py_obj);
-            }
-        }),
-        Err(e) => log::error!("Failed to parse book data: {e}"),
+        Ok(data) => Some(data),
+        Err(e) => {
+            log::error!("Failed to parse book data: {e}");
+            None
+        }
     }
+}
+
+fn parse_rpi_book_data(
+    instrument: &InstrumentAny,
+    action: OKXBookAction,
+    data: Vec<OKXRpiBookMsg>,
+    clock: &AtomicTime,
+) -> Option<Vec<Data>> {
+    let ts_init = clock.get_time_ns();
+
+    match parse_rpi_book_msg_vec(
+        data,
+        &instrument.id(),
+        instrument.price_precision(),
+        instrument.size_precision(),
+        action,
+        ts_init,
+    ) {
+        Ok(data) => Some(data),
+        Err(e) => {
+            log::error!("Failed to parse RPI book data: {e}");
+            None
+        }
+    }
+}
+
+fn emit_book_data(data: Vec<Data>, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    Python::attach(|py| {
+        for data in data {
+            let py_obj = data_to_pycapsule(py, data);
+            call_python_threadsafe(py, call_soon, callback, py_obj);
+        }
+    });
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -2862,5 +3010,52 @@ fn dispatch_execution_reports_to_python(
                 call_python_with_data(call_soon, callback, |py| report.into_py_any(py));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn python_book_sequence_state_is_isolated_per_channel() {
+        let mut trackers = AHashMap::new();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let books_snapshot = validate_python_book_sequence(
+            &mut trackers,
+            OKXWsChannel::Books,
+            instrument_id,
+            OKXBookAction::Snapshot,
+            &[(Some(-1), 100)],
+        );
+        let rpi_snapshot = validate_python_book_sequence(
+            &mut trackers,
+            OKXWsChannel::BooksRpi,
+            instrument_id,
+            OKXBookAction::Snapshot,
+            &[(Some(-1), 200)],
+        );
+        let books_update = validate_python_book_sequence(
+            &mut trackers,
+            OKXWsChannel::Books,
+            instrument_id,
+            OKXBookAction::Update,
+            &[(Some(100), 101)],
+        );
+        let rpi_update = validate_python_book_sequence(
+            &mut trackers,
+            OKXWsChannel::BooksRpi,
+            instrument_id,
+            OKXBookAction::Update,
+            &[(Some(200), 201)],
+        );
+
+        assert_eq!(books_snapshot, BookSequenceOutcome::Accept);
+        assert_eq!(rpi_snapshot, BookSequenceOutcome::Accept);
+        assert_eq!(books_update, BookSequenceOutcome::Accept);
+        assert_eq!(rpi_update, BookSequenceOutcome::Accept);
     }
 }

@@ -204,6 +204,149 @@ A: Check the `contract_types` parameter in the configuration:
 A: Use `OKXInstrumentType.EVENTS`. To scope loading, pass OKX `seriesId` values such as
 `BTC-ABOVE-DAILY` through `instrument_families`.
 
+## Retail price improvement (RPI)
+
+Use Retail Price Improvement (RPI) to consume OKX's consolidated organic and RPI depth, place RPI
+maker orders, or let standard orders take RPI liquidity. The adapter maps these features to existing
+Nautilus order book, order, and lifecycle types. RPI routing is opt‑in, so standard subscriptions and
+orders remain unchanged.
+
+### RPI market data
+
+Pass `params={"rpi": True}` to `subscribe_order_book_deltas` or
+`request_order_book_snapshot` to use the public `books-rpi` channel or
+`GET /api/v5/market/books-rpi`. The feed combines organic quantity with RPI quantity that is
+available for execution.
+
+Each raw depth level has the wire shape `[price, totalQty, nonRpiQty, count]`:
+
+| Wire field  | Rust type | Meaning                                      |
+| ----------- | --------- | -------------------------------------------- |
+| `price`     | `Decimal` | Price level.                                 |
+| `totalQty`  | `Decimal` | Organic and available RPI quantity.          |
+| `nonRpiQty` | `Decimal` | Quantity available without RPI taker access. |
+| `count`     | `u64`     | Aggregated order count at the price level.   |
+
+Nautilus `OrderBookDeltas` and `OrderBook` use `totalQty` as the level quantity. The typed raw
+model retains `nonRpiQty`; the difference between the two quantities is the available RPI
+liquidity.
+
+WebSocket snapshots and updates retain `seqId` and `prevSeqId`. Emitted deltas carry `seqId` as
+their sequence. The data client checks each update's `prevSeqId` against the last accepted `seqId`;
+the values do not need to increase by one. On a mismatch, the client:
+
+- Drops the mismatched frame.
+- Suppresses later updates for that instrument.
+- Replaces the subscription once to request a fresh snapshot.
+- Resumes emission after a snapshot with `prevSeqId: -1`.
+
+If the snapshot does not arrive before the configured snapshot timeout, the book monitor logs a
+warning and the client remains fail‑closed. The adapter applies the same linkage rule to standard
+incremental OKX book channels when `prevSeqId` is present. `books-rpi` has no checksum.
+
+For WebSocket subscriptions, `rpi=True` selects `books-rpi` instead of depth or VIP channel
+selection. For REST snapshots, the requested depth becomes `sz`; OKX defaults to one level per side
+and accepts up to 400.
+
+The low‑level Rust clients expose:
+
+- WebSocket: `OKXWebSocketClient.subscribe_book_rpi` and `unsubscribe_book_rpi`.
+- REST: `OKXRawHttpClient.get_rpi_order_book` and
+  `OKXHttpClient.request_rpi_book_snapshot`.
+
+Public instrument responses expose the venue's RPI spacing thresholds:
+
+| Wire field     | Rust type         | Instrument `info` key |
+| -------------- | ----------------- | --------------------- |
+| `rpiMinLevel`  | `Option<u64>`     | `okx_rpi_min_level`   |
+| `rpiMinPxBand` | `Option<Decimal>` | `okx_rpi_min_px_band` |
+
+`rpiMinLevel` counts organic price levels, while `rpiMinPxBand` measures basis points from the
+opposite‑side organic best price. The `info` map stores the price band as its exact decimal string.
+The adapter does not reject or round an order from these values because OKX applies the
+authoritative instrument and account rules. Use `rpi_px_round` or handle the venue rejection.
+
+### RPI execution
+
+Pass RPI controls through the `submit_order`, `submit_order_list`, or `modify_order` command
+`params`. These controls work with HTTP and private WebSocket execution:
+
+| Parameter          | Type   | Operations                    | Behavior                                                        |
+| ------------------ | ------ | ----------------------------- | --------------------------------------------------------------- |
+| `rpi`              | `bool` | Place and batch place         | Sends `ordType: rpi`; the Nautilus order must be `LIMIT`.       |
+| `rpi_taker_access` | `bool` | Place and amend, single/batch | Lets a standard order take RPI liquidity.                       |
+| `rpi_px_round`     | `bool` | Place and amend, single/batch | Lets OKX round an RPI maker price outward to an eligible level. |
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=instrument_id,
+    order_side=OrderSide.SELL,
+    quantity=instrument.make_qty("250000"),
+    price=instrument.make_price("0.0001600"),
+)
+strategy.submit_order(
+    order,
+    params={
+        "rpi": True,
+        "rpi_px_round": True,
+    },
+)
+```
+
+Set `rpi_taker_access` only on standard taker orders and `rpi_px_round` only on RPI maker orders.
+Omit inapplicable controls instead of passing `False`, because OKX can reject unsupported
+combinations. Both controls default to `false`, and `rpi_taker_access` is not inherited during an
+amendment. Repeat `rpi_taker_access=True` on every amendment that must retain access.
+
+The low‑level Rust clients expose the same single and batch matrix:
+
+| Operation   | REST method    | WebSocket method      |
+| ----------- | -------------- | --------------------- |
+| Place       | `place_order`  | `submit_order`        |
+| Batch place | `place_orders` | `batch_submit_orders` |
+| Amend       | `amend_order`  | `modify_order`        |
+| Batch amend | `amend_orders` | `batch_modify_orders` |
+
+The WebSocket batch amend tuple accepts an optional request ID and serializes it as `reqId`; it
+does not replace the order's client ID.
+
+### RPI responses and lifecycle
+
+Private order messages parse both `ordType: rpi` and the migration alias `ordType: elp`. If an
+unfilled RPI placement first appears on the private order channel as `state: canceled`, with
+`accFillSz` zero or empty, the adapter emits a post‑only order rejection without first emitting
+acceptance. The fallback reason is `RPI order canceled before acceptance`. OKX can use this path
+when an RPI price fails its spacing rule and `rpiPxRound` is false. Order reports represent RPI
+orders as Nautilus `LIMIT` orders with `post_only=True`.
+
+Use `get_account_instruments` to read the typed `OKXRpiPermission` value:
+
+- `Disabled` maps to `rpi: "0"`.
+- `Enabled` maps to `rpi: "1"` and does not grant permission to place RPI orders.
+- `Permitted` maps to `rpi: "2"` and grants permission to place RPI orders.
+
+The public instrument endpoint does not return account permissions. Raw fee responses expose
+`rpiMaker` as an optional `Decimal`; an empty value means RPI is not applicable.
+
+Responses may contain both RPI and ELP field names during the transition. The adapter prefers `rpi`
+and `rpiMaker`, reads `elp` and `elpMaker` as response aliases, and sends only RPI names. Raw trade
+messages describe `source: "1"` as an RPI order.
+
+### RPI exclusions
+
+The adapter deliberately excludes:
+
+- It does not expose obsolete `books-elp` subscriptions or emit `ordType: elp`.
+- It does not treat the published RPI spacing thresholds as authoritative client‑side validation.
+- It does not apply RPI controls to algo orders. The regular HTTP order path rejects RPI controls
+  for spread orders.
+- It does not add generic post‑only replay deduplication as part of RPI support.
+
+OKX ignores `rpiPxRound` for options and event contracts.
+
+See the [OKX RPI migration changelog](https://www.okx.com/docs-v5/log_en/#2026-07-28)
+and [RPI program guide](https://www.okx.com/help/okx-retail-price-improvement-program-rpi).
+
 ## Orders capability
 
 Below are the order types, execution instructions, and time-in-force options supported
@@ -993,6 +1136,7 @@ responses and temporary throttling on that key.
 | `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down.     |
 | `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                  |
 | `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down.     |
+| `/api/v5/account/instruments`           | 10              | OKX 20 requests / 2 seconds.                  |
 | `/api/v5/account/positions`             | 5               | OKX 10 requests / 2 seconds.                  |
 | `/api/v5/account/positions-history`     | 5               | OKX 10 requests / 2 seconds.                  |
 | `/api/v5/public/instruments`            | 10              | OKX 20 requests / 2 seconds.                  |
@@ -1007,6 +1151,7 @@ responses and temporary throttling on that key.
 | `/api/v5/public/funding-rate-history`   | 5               | OKX 10 requests / 2 seconds.                  |
 | `/api/v5/market/index-tickers`          | 10              | OKX 20 requests / 2 seconds.                  |
 | `/api/v5/market/books`                  | 20              | OKX 40 requests / 2 seconds.                  |
+| `/api/v5/market/books-rpi`              | 20              | OKX 40 requests / 2 seconds.                  |
 | `/api/v5/market/candles`                | 20              | OKX 40 requests / 2 seconds.                  |
 | `/api/v5/market/history-candles`        | 10              | OKX 20 requests / 2 seconds.                  |
 | `/api/v5/market/history-trades`         | 10              | OKX 20 requests / 2 seconds.                  |
@@ -1018,6 +1163,9 @@ responses and temporary throttling on that key.
 | `/api/v5/sprd/orders-history`           | 10              | OKX 20 requests / 2 seconds.                  |
 | `/api/v5/sprd/trades`                   | 10              | OKX 20 requests / 2 seconds.                  |
 | `/api/v5/trade/order`                   | 30              | OKX 60 requests / 2 seconds.                  |
+| `/api/v5/trade/batch-orders`            | 7               | OKX 300 orders / 2 seconds, rounded down.     |
+| `/api/v5/trade/amend-order`             | 30              | OKX 60 requests / 2 seconds.                  |
+| `/api/v5/trade/amend-batch-orders`      | 7               | OKX 300 orders / 2 seconds, rounded down.     |
 | `/api/v5/trade/cancel-batch-orders`     | 7               | OKX 300 orders / 2 seconds, rounded down.     |
 | `/api/v5/trade/orders-pending`          | 30              | OKX 60 requests / 2 seconds.                  |
 | `/api/v5/trade/orders-history`          | 20              | OKX 40 requests / 2 seconds.                  |
@@ -1032,9 +1180,9 @@ responses and temporary throttling on that key.
 All keys include the `okx:global` bucket. URLs are normalized with query strings removed
 before rate limiting, so requests with different filters share the same quota.
 
-For order-based cancel quotas, the adapter uses request-level buckets that assume full
-batch sizes: 20 orders per request for regular batch cancels and 10 orders per request
-for algo cancels. OKX's current public docs no longer list a rate limit for
+For order‑based batch quotas, the adapter uses request‑level buckets that assume full
+batch sizes: 20 orders per request for regular batch operations and 10 orders per
+request for algo cancels. OKX's public docs do not list a rate limit for
 `/api/v5/trade/cancel-advance-algos`, but the adapter still has an endpoint-specific
 bucket because the HTTP client can call that legacy path.
 

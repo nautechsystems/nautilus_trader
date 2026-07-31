@@ -50,25 +50,29 @@ use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
         enums::{
-            OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXPositionMode,
-            OKXTradeMode, OKXTriggerType,
+            OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
+            OKXPositionMode, OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType,
         },
         models::OKXInstrument,
     },
     http::{
         client::{OKXHttpClient, OKXRawHttpClient, OKXResponse},
         error::OKXHttpError,
-        models::{OKXAttachAlgoOrdRequest, OKXCancelOrderRequest},
+        models::{
+            OKXAmendOrderRequest, OKXAttachAlgoOrdRequest, OKXCancelOrderRequest,
+            OKXPlaceOrderRequest,
+        },
         query::{
             GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOptionSummaryParamsBuilder,
             GetOrderHistoryParams, GetOrderListParams, GetOrderParamsBuilder,
             GetPositionTiersParamsBuilder, GetPositionsParamsBuilder, GetPriceLimitParamsBuilder,
-            GetSpreadsParamsBuilder, GetTradeFeeParamsBuilder, GetTransactionDetailsParamsBuilder,
-            SetPositionModeParamsBuilder,
+            GetRpiOrderBookParams, GetSpreadsParamsBuilder, GetTradeFeeParamsBuilder,
+            GetTransactionDetailsParamsBuilder, SetPositionModeParamsBuilder,
         },
     },
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
@@ -1200,8 +1204,10 @@ async fn test_http_get_instruments_returns_data() {
 
     let instruments = client.get_instruments(params).await.unwrap();
 
-    assert!(!instruments.is_empty());
+    assert_eq!(instruments.len(), 5);
     assert_eq!(instruments[0].inst_type, OKXInstrumentType::Spot);
+    assert_eq!(instruments[0].rpi_min_level, Some(5));
+    assert_eq!(instruments[0].rpi_min_px_band, Some(Decimal::from(20)));
 }
 
 #[rstest]
@@ -1341,6 +1347,9 @@ async fn test_http_place_order_with_domain_types_routes_spread_request() {
             Quantity::from("10"),
             Some(TimeInForce::Gtc),
             Some(Price::from("1.25")),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -1517,6 +1526,9 @@ async fn test_http_place_order_with_domain_types_rejects_invalid_spread_inputs(
             Quantity::from("10"),
             time_in_force,
             price,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -3979,6 +3991,9 @@ async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -5038,6 +5053,463 @@ async fn test_request_book_snapshot() {
 
     assert_eq!(book.bids(None).count(), 3);
     assert_eq!(book.asks(None).count(), 3);
+}
+
+#[tokio::test]
+async fn test_rpi_rest_book_fixture_and_reachable_client_paths() {
+    let queries = Arc::new(tokio::sync::Mutex::new(
+        Vec::<HashMap<String, String>>::new(),
+    ));
+    let captured_queries = queries.clone();
+    let router = Router::new().route(
+        "/api/v5/market/books-rpi",
+        get(move |Query(params): Query<HashMap<String, String>>| {
+            let queries = captured_queries.clone();
+            async move {
+                queries.lock().await.push(params);
+                Json(load_test_data("http_get_rpi_order_book.json")).into_response()
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    wait_for_server(addr, "/api/v5/market/books-rpi?instId=BTC-USD&sz=2").await;
+
+    let base_url = format!("http://{addr}");
+    let raw = OKXRawHttpClient::new(
+        Some(base_url.clone()),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let snapshots = raw
+        .get_rpi_order_book(GetRpiOrderBookParams {
+            inst_id: "BTC-USD".to_string(),
+            sz: Some(2),
+        })
+        .await
+        .unwrap();
+    let snapshot = &snapshots[0];
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshot.asks.len(), 2);
+    assert_eq!(snapshot.bids.len(), 2);
+    assert_eq!(snapshot.asks[0].0.to_string(), "64620");
+    assert_eq!(snapshot.asks[0].1.to_string(), "0.1652224");
+    assert_eq!(snapshot.asks[0].2.to_string(), "0.1652224");
+    assert_eq!(snapshot.asks[0].3, 5);
+    assert_eq!(snapshot.bids[0].0.to_string(), "64619.9");
+    assert_eq!(snapshot.bids[0].1.to_string(), "3.48451281");
+    assert_eq!(snapshot.bids[0].2.to_string(), "3.48451281");
+    assert_eq!(snapshot.bids[0].3, 26);
+    assert_eq!(snapshot.ts, 1_785_406_077_001);
+    assert_eq!(snapshot.seq_id, 79_377_292_848);
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    client.cache_instrument(load_instruments_any().remove(0));
+    let book = client
+        .request_rpi_book_snapshot(InstrumentId::from("BTC-USD.OKX"), Some(2))
+        .await
+        .unwrap();
+    let queries = queries.lock().await;
+
+    assert_eq!(book.bids(None).count(), 2);
+    assert_eq!(book.asks(None).count(), 2);
+    assert_eq!(book.best_bid_price(), Some(Price::from("64619.9")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("64620")));
+    assert_eq!(queries.len(), 3);
+    assert_eq!(
+        queries[1].get("instId").map(String::as_str),
+        Some("BTC-USD")
+    );
+    assert_eq!(queries[1].get("sz").map(String::as_str), Some("2"));
+    assert_eq!(
+        queries[2].get("instId").map(String::as_str),
+        Some("BTC-USD")
+    );
+    assert_eq!(queries[2].get("sz").map(String::as_str), Some("2"));
+}
+
+#[tokio::test]
+async fn test_rpi_rest_single_batch_place_and_amend_client_paths() {
+    let bodies = Arc::new(tokio::sync::Mutex::new(HashMap::<String, Value>::new()));
+    let response = || {
+        Json(json!({
+            "code": "0",
+            "msg": "",
+            "data": [{
+                "ordId": "2500000000000000001",
+                "clOrdId": "ORPI001",
+                "ordType": "rpi",
+                "sCode": "0",
+                "sMsg": ""
+            }]
+        }))
+    };
+    let place_bodies = bodies.clone();
+    let batch_place_bodies = bodies.clone();
+    let amend_bodies = bodies.clone();
+    let batch_amend_bodies = bodies.clone();
+    let router = Router::new()
+        .route(
+            "/api/v5/trade/order",
+            post(move |Json(body): Json<Value>| {
+                let bodies = place_bodies.clone();
+                async move {
+                    bodies.lock().await.insert("place".to_string(), body);
+                    response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/batch-orders",
+            post(move |Json(body): Json<Value>| {
+                let bodies = batch_place_bodies.clone();
+                async move {
+                    bodies.lock().await.insert("batch-place".to_string(), body);
+                    response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/amend-order",
+            post(move |Json(body): Json<Value>| {
+                let bodies = amend_bodies.clone();
+                async move {
+                    bodies.lock().await.insert("amend".to_string(), body);
+                    response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/amend-batch-orders",
+            post(move |Json(body): Json<Value>| {
+                let bodies = batch_amend_bodies.clone();
+                async move {
+                    bodies.lock().await.insert("batch-amend".to_string(), body);
+                    response()
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    client.cache_instrument(load_instruments_any().remove(0));
+
+    let error = client
+        .place_order_with_domain_types(
+            InstrumentId::from("BTC-USD.OKX"),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("ORPI-MARKET"),
+            OrderSide::Sell,
+            OrderType::Market,
+            Quantity::from("0.25"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OKXHttpError::ValidationError(message) => {
+            assert_eq!(message, "OKX RPI orders require a limit order");
+        }
+        other => panic!("Expected RPI validation error, was {other:?}"),
+    }
+
+    let place = OKXPlaceOrderRequest {
+        inst_id: "OMI-USD".to_string(),
+        td_mode: OKXTradeMode::Cash,
+        ccy: None,
+        cl_ord_id: Some("ORPI001".to_string()),
+        tag: None,
+        side: OKXSide::Sell,
+        pos_side: None,
+        ord_type: OKXOrderType::Rpi,
+        sz: "250000".to_string(),
+        px: Some("0.0001600".to_string()),
+        px_usd: None,
+        px_vol: None,
+        reduce_only: None,
+        tgt_ccy: None,
+        attach_algo_ords: None,
+        speed_bump: None,
+        outcome: None,
+        slippage_pct: None,
+        rpi_taker_access: Some(true),
+        rpi_px_round: Some(false),
+    };
+    let amend = OKXAmendOrderRequest {
+        inst_id: "OMI-USD".to_string(),
+        ord_id: Some("2500000000000000001".to_string()),
+        cl_ord_id: None,
+        req_id: Some("RPI-AMEND-1".to_string()),
+        new_sz: Some("275000".to_string()),
+        new_px: Some("0.0001599".to_string()),
+        rpi_taker_access: Some(false),
+        rpi_px_round: Some(true),
+    };
+
+    let single_place = client.place_order(place.clone()).await.unwrap();
+    let batch_place = client.place_orders(vec![place]).await.unwrap();
+    let single_amend = client.amend_order(amend.clone()).await.unwrap();
+    let batch_amend = client.amend_orders(vec![amend]).await.unwrap();
+    let bodies = bodies.lock().await;
+
+    assert_eq!(single_place.ord_type, Some(OKXOrderType::Rpi));
+    assert_eq!(batch_place[0].ord_type, Some(OKXOrderType::Rpi));
+    assert_eq!(single_amend.ord_type, Some(OKXOrderType::Rpi));
+    assert_eq!(batch_amend[0].ord_type, Some(OKXOrderType::Rpi));
+    assert_eq!(bodies["place"]["ordType"], "rpi");
+    assert_eq!(bodies["place"]["rpiTakerAccess"], true);
+    assert_eq!(bodies["place"]["rpiPxRound"], false);
+    assert_eq!(bodies["batch-place"][0], bodies["place"]);
+    assert_eq!(bodies["amend"]["rpiTakerAccess"], false);
+    assert_eq!(bodies["amend"]["rpiPxRound"], true);
+    assert_eq!(bodies["batch-amend"][0], bodies["amend"]);
+}
+
+#[tokio::test]
+async fn test_rpi_rest_batch_preserves_partial_success_items() {
+    let router = Router::new()
+        .route(
+            "/api/v5/trade/batch-orders",
+            post(|| async {
+                Json(json!({
+                    "code": "2",
+                    "msg": "Bulk operation partially successful",
+                    "data": [
+                        {
+                            "ordId": "2500000000000000001",
+                            "clOrdId": "ORPI001",
+                            "sCode": "0",
+                            "sMsg": "Order placed"
+                        },
+                        {
+                            "ordId": "",
+                            "clOrdId": "ORPI002",
+                            "sCode": "51000",
+                            "sMsg": "Parameter rpiPxRound error"
+                        }
+                    ]
+                }))
+            }),
+        )
+        .route(
+            "/api/v5/trade/amend-batch-orders",
+            post(|| async {
+                Json(json!({
+                    "code": "2",
+                    "msg": "Bulk operation partially successful",
+                    "data": [
+                        {
+                            "ordId": "2500000000000000001",
+                            "clOrdId": "ORPI001",
+                            "reqId": "RPI-AMEND-1",
+                            "sCode": "0",
+                            "sMsg": "Order amended"
+                        },
+                        {
+                            "ordId": "2500000000000000002",
+                            "clOrdId": "ORPI002",
+                            "reqId": "RPI-AMEND-2",
+                            "sCode": "51000",
+                            "sMsg": "Parameter rpiPxRound error"
+                        }
+                    ]
+                }))
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let place = |client_order_id: &str| OKXPlaceOrderRequest {
+        inst_id: "OMI-USD".to_string(),
+        td_mode: OKXTradeMode::Cash,
+        ccy: None,
+        cl_ord_id: Some(client_order_id.to_string()),
+        tag: None,
+        side: OKXSide::Sell,
+        pos_side: None,
+        ord_type: OKXOrderType::Rpi,
+        sz: "250000".to_string(),
+        px: Some("0.0001600".to_string()),
+        px_usd: None,
+        px_vol: None,
+        reduce_only: None,
+        tgt_ccy: None,
+        attach_algo_ords: None,
+        speed_bump: None,
+        outcome: None,
+        slippage_pct: None,
+        rpi_taker_access: Some(false),
+        rpi_px_round: Some(true),
+    };
+    let amend = |client_order_id: &str, request_id: &str| OKXAmendOrderRequest {
+        inst_id: "OMI-USD".to_string(),
+        ord_id: None,
+        cl_ord_id: Some(client_order_id.to_string()),
+        req_id: Some(request_id.to_string()),
+        new_sz: Some("275000".to_string()),
+        new_px: Some("0.0001599".to_string()),
+        rpi_taker_access: Some(false),
+        rpi_px_round: Some(true),
+    };
+
+    let place_responses = client
+        .place_orders(vec![place("ORPI001"), place("ORPI002")])
+        .await
+        .unwrap();
+    let amend_responses = client
+        .amend_orders(vec![
+            amend("ORPI001", "RPI-AMEND-1"),
+            amend("ORPI002", "RPI-AMEND-2"),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(place_responses.len(), 2);
+    assert_eq!(place_responses[0].cl_ord_id, Some(Ustr::from("ORPI001")));
+    assert_eq!(place_responses[0].s_code.as_deref(), Some("0"));
+    assert_eq!(place_responses[0].s_msg.as_deref(), Some("Order placed"));
+    assert_eq!(place_responses[1].cl_ord_id, Some(Ustr::from("ORPI002")));
+    assert_eq!(place_responses[1].s_code.as_deref(), Some("51000"));
+    assert_eq!(
+        place_responses[1].s_msg.as_deref(),
+        Some("Parameter rpiPxRound error"),
+    );
+    assert_eq!(amend_responses.len(), 2);
+    assert_eq!(amend_responses[0].req_id, Some(Ustr::from("RPI-AMEND-1")));
+    assert_eq!(amend_responses[0].s_code.as_deref(), Some("0"));
+    assert_eq!(amend_responses[0].s_msg.as_deref(), Some("Order amended"),);
+    assert_eq!(amend_responses[1].req_id, Some(Ustr::from("RPI-AMEND-2")));
+    assert_eq!(amend_responses[1].s_code.as_deref(), Some("51000"));
+    assert_eq!(
+        amend_responses[1].s_msg.as_deref(),
+        Some("Parameter rpiPxRound error"),
+    );
+}
+
+#[tokio::test]
+async fn test_rpi_account_instrument_permission_reachable() {
+    let mut response = load_test_data("http_get_instruments_spot.json");
+    response["data"][0]["instId"] = json!("ADA-USDT");
+    response["data"][0]["rpi"] = json!("2");
+    response["data"][0]["elp"] = json!("1");
+    let router = Router::new().route(
+        "/api/v5/account/instruments",
+        get(
+            move |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| {
+                let response = response.clone();
+                async move {
+                    assert!(has_auth_headers(&headers));
+                    assert_eq!(query.get("instType").map(String::as_str), Some("SPOT"));
+                    assert_eq!(query.get("instId").map(String::as_str), Some("ADA-USDT"));
+                    Json(response)
+                }
+            },
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        format!("http://{addr}"),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .get_account_instruments(
+            GetInstrumentsParamsBuilder::default()
+                .inst_type(OKXInstrumentType::Spot)
+                .inst_id("ADA-USDT")
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(instruments[0].inst_id.as_str(), "ADA-USDT");
+    assert_eq!(instruments[0].rpi, Some(OKXRpiPermission::Permitted));
 }
 
 #[tokio::test]

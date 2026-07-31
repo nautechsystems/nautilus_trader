@@ -15,12 +15,17 @@
 
 //! Data transfer objects for deserializing OKX HTTP API payloads.
 
+use nautilus_core::serialization::deserialize_optional_decimal;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::parse::{
-    deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
-    deserialize_optional_string_to_u64, deserialize_target_currency_as_none,
+use crate::common::{
+    models::OKXRpiBookLevel,
+    parse::{
+        deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
+        deserialize_optional_string_to_u64, deserialize_target_currency_as_none,
+    },
 };
 
 /// Represents a trade tick from the GET /api/v5/market/trades endpoint.
@@ -40,6 +45,9 @@ pub struct OKXTrade {
     /// Trade timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
+    /// Trade source (0: normal order, 1: RPI order).
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// Represents a candlestick from the GET /api/v5/market/history-candles endpoint.
@@ -438,6 +446,21 @@ pub struct OKXOrderBookSnapshot {
     pub asks: Vec<OKXOrderBookLevel>,
     /// Bid levels [price, size, liquidated_orders_count, orders_count].
     pub bids: Vec<OKXOrderBookLevel>,
+    /// Timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
+/// Represents an order book snapshot from the GET /api/v5/market/books-rpi endpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXRpiOrderBookSnapshot {
+    /// Ask levels [price, total quantity, non-RPI quantity, order count].
+    pub asks: Vec<OKXRpiBookLevel>,
+    /// Bid levels [price, total quantity, non-RPI quantity, order count].
+    pub bids: Vec<OKXRpiBookLevel>,
+    /// Sequence ID of the snapshot.
+    pub seq_id: u64,
     /// Timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
@@ -922,6 +945,41 @@ pub struct OKXPlaceOrderRequest {
     /// the venue's accepted range. See the OKX v5 docs for the current matrix.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage_pct: Option<String>,
+    /// Whether the order may take RPI liquidity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_taker_access: Option<bool>,
+    /// Whether OKX may round the order price to an eligible RPI price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_px_round: Option<bool>,
+}
+
+/// Represents the request body for `POST /api/v5/trade/amend-order`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAmendOrderRequest {
+    /// Instrument ID.
+    pub inst_id: String,
+    /// Order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// Client-supplied order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Client-supplied request ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub req_id: Option<String>,
+    /// New order size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_sz: Option<String>,
+    /// New order price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_px: Option<String>,
+    /// Whether the order may take RPI liquidity after amendment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_taker_access: Option<bool>,
+    /// Whether OKX may round the amended price to an eligible RPI price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_px_round: Option<bool>,
 }
 
 /// Represents the request body for `POST /api/v5/trade/cancel-batch-orders`.
@@ -1496,6 +1554,13 @@ pub struct OKXFeeRate {
     pub taker_u: String,
     /// Maker fee rate for USDT-margined contracts.
     pub maker_u: String,
+    /// Maker fee rate for RPI orders.
+    #[serde(
+        default,
+        alias = "elpMaker",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
+    pub rpi_maker: Option<Decimal>,
     /// Delivery fee rate.
     #[serde(default)]
     pub delivery: String,
@@ -2049,6 +2114,8 @@ mod tests {
             speed_bump: None,
             outcome: None,
             slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2079,6 +2146,8 @@ mod tests {
             speed_bump: None,
             outcome: None,
             slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2108,10 +2177,118 @@ mod tests {
             speed_bump: None,
             outcome: None,
             slippage_pct: Some("0.005".to_string()),
+            rpi_taker_access: None,
+            rpi_px_round: None,
         };
 
         let json: serde_json::Value = serde_json::to_value(&request).unwrap();
         assert_eq!(json["slippagePct"], "0.005");
+    }
+
+    #[rstest]
+    fn test_rpi_place_order_request_serialization() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "OMI-USD".to_string(),
+            td_mode: OKXTradeMode::Cash,
+            ccy: None,
+            cl_ord_id: Some("ORPI001".to_string()),
+            tag: Some("rpi-test".to_string()),
+            side: OKXSide::Sell,
+            pos_side: None,
+            ord_type: OKXOrderType::Rpi,
+            sz: "250000".to_string(),
+            px: Some("0.0001600".to_string()),
+            px_usd: None,
+            px_vol: None,
+            reduce_only: Some(false),
+            tgt_ccy: None,
+            attach_algo_ords: None,
+            speed_bump: None,
+            outcome: None,
+            slippage_pct: None,
+            rpi_taker_access: Some(true),
+            rpi_px_round: Some(false),
+        };
+
+        let value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "instId": "OMI-USD",
+                "tdMode": "cash",
+                "clOrdId": "ORPI001",
+                "tag": "rpi-test",
+                "side": "sell",
+                "ordType": "rpi",
+                "sz": "250000",
+                "px": "0.0001600",
+                "reduceOnly": false,
+                "rpiTakerAccess": true,
+                "rpiPxRound": false
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_rpi_amend_order_request_serialization() {
+        let request = OKXAmendOrderRequest {
+            inst_id: "OMI-USD".to_string(),
+            ord_id: Some("2500000000000000001".to_string()),
+            cl_ord_id: None,
+            req_id: Some("RPI-AMEND-1".to_string()),
+            new_sz: Some("275000".to_string()),
+            new_px: Some("0.0001599".to_string()),
+            rpi_taker_access: Some(false),
+            rpi_px_round: Some(true),
+        };
+
+        let value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "instId": "OMI-USD",
+                "ordId": "2500000000000000001",
+                "reqId": "RPI-AMEND-1",
+                "newSz": "275000",
+                "newPx": "0.0001599",
+                "rpiTakerAccess": false,
+                "rpiPxRound": true
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_rpi_place_order_response_parsing() {
+        let response: OKXPlaceOrderResponse = serde_json::from_value(serde_json::json!({
+            "ordId": "2500000000000000001",
+            "clOrdId": "ORPI001",
+            "tag": "rpi-test",
+            "instId": "OMI-USD",
+            "side": "sell",
+            "ordType": "rpi",
+            "sz": "250000",
+            "state": "live",
+            "px": "0.0001600",
+            "avgPx": "",
+            "sCode": "0",
+            "sMsg": ""
+        }))
+        .unwrap();
+
+        assert_eq!(response.ord_id, Some(Ustr::from("2500000000000000001")));
+        assert_eq!(response.cl_ord_id, Some(Ustr::from("ORPI001")));
+        assert_eq!(response.tag.as_deref(), Some("rpi-test"));
+        assert_eq!(response.inst_id, Some(Ustr::from("OMI-USD")));
+        assert_eq!(response.side, Some(OKXSide::Sell));
+        assert_eq!(response.ord_type, Some(OKXOrderType::Rpi));
+        assert_eq!(response.sz.as_deref(), Some("250000"));
+        assert_eq!(response.state, Some(OKXOrderStatus::Live));
+        assert_eq!(response.px.as_deref(), Some("0.0001600"));
+        assert_eq!(response.avg_px.as_deref(), Some(""));
+        assert_eq!(response.s_code.as_deref(), Some("0"));
+        assert_eq!(response.s_msg.as_deref(), Some(""));
     }
 
     #[rstest]
@@ -2222,6 +2399,8 @@ mod tests {
             speed_bump: Some("1".to_string()),
             outcome: Some("yes".to_string()),
             slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
         };
 
         let json: serde_json::Value = serde_json::to_value(&request).unwrap();
@@ -2291,5 +2470,55 @@ mod tests {
 
         assert_eq!(fee_rate.settle, "-0.001");
         assert_eq!(fee_rate.inst_type, OKXInstrumentType::Events);
+    }
+
+    #[rstest]
+    fn test_rpi_maker_fee_rate_deserializes_decimal_and_legacy_alias() {
+        let rpi: OKXFeeRate = serde_json::from_value(serde_json::json!({
+            "level": "VIP1",
+            "taker": "-0.0005",
+            "maker": "-0.0002",
+            "takerU": "-0.0005",
+            "makerU": "-0.0002",
+            "rpiMaker": "-0.00015",
+            "instType": "SPOT",
+            "category": "1",
+            "ts": "1785406500000"
+        }))
+        .unwrap();
+        let legacy: OKXFeeRate = serde_json::from_value(serde_json::json!({
+            "level": "VIP1",
+            "taker": "-0.0005",
+            "maker": "-0.0002",
+            "takerU": "-0.0005",
+            "makerU": "-0.0002",
+            "elpMaker": "-0.00016",
+            "instType": "SPOT",
+            "category": "1",
+            "ts": "1785406500001"
+        }))
+        .unwrap();
+        let not_applicable: OKXFeeRate = serde_json::from_value(serde_json::json!({
+            "level": "VIP1",
+            "taker": "-0.0005",
+            "maker": "-0.0002",
+            "takerU": "-0.0005",
+            "makerU": "-0.0002",
+            "rpiMaker": "",
+            "instType": "OPTION",
+            "category": "1",
+            "ts": "1785406500002"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            rpi.rpi_maker,
+            Some(Decimal::from_str_exact("-0.00015").unwrap())
+        );
+        assert_eq!(
+            legacy.rpi_maker,
+            Some(Decimal::from_str_exact("-0.00016").unwrap())
+        );
+        assert_eq!(not_applicable.rpi_maker, None);
     }
 }

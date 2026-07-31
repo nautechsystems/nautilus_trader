@@ -38,7 +38,7 @@ use crate::{
             OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSettlementState,
             OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
         },
-        models::OKXInstrument,
+        models::{OKXInstrument, OKXRpiBookLevel},
         parse::{
             deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
             deserialize_string_to_u64, deserialize_target_currency_as_none,
@@ -112,6 +112,12 @@ pub enum OKXWsMessage {
         arg: OKXWebSocketArg,
         action: OKXBookAction,
         data: Vec<OKXBookMsg>,
+    },
+    /// Retail Price Improvement order book snapshot or update.
+    RpiBookData {
+        arg: OKXWebSocketArg,
+        action: OKXBookAction,
+        data: Vec<OKXRpiBookMsg>,
     },
     /// Data from a non-book channel (trades, tickers, mark price, funding, candles, etc.).
     ChannelData {
@@ -266,6 +272,11 @@ pub enum OKXWsFrame {
         arg: OKXWebSocketArg,
         action: OKXBookAction,
         data: Vec<OKXBookMsg>,
+    },
+    RpiBookData {
+        arg: OKXWebSocketArg,
+        action: OKXBookAction,
+        data: Vec<OKXRpiBookMsg>,
     },
     Data {
         arg: OKXWebSocketArg,
@@ -452,9 +463,14 @@ fn parse_book_data<E: serde::de::Error>(
         .map_err(|e| E::custom(format!("invalid action: {e}")))?;
 
     let data_val = obj.remove("data").ok_or_else(|| E::missing_field("data"))?;
+    if arg.channel == OKXWsChannel::BooksRpi {
+        let data: Vec<OKXRpiBookMsg> = serde_json::from_value(data_val)
+            .map_err(|e| E::custom(format!("invalid data: {e}")))?;
+        return Ok(OKXWsFrame::RpiBookData { arg, action, data });
+    }
+
     let data: Vec<OKXBookMsg> =
         serde_json::from_value(data_val).map_err(|e| E::custom(format!("invalid data: {e}")))?;
-
     Ok(OKXWsFrame::BookData { arg, action, data })
 }
 
@@ -535,7 +551,7 @@ pub struct OKXTickerMsg {
     /// Timestamp of the data generation, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
-    /// Order source for ELP liquidity identification.
+    /// Order source for RPI liquidity identification.
     #[serde(default)]
     pub source: Option<String>,
 }
@@ -577,6 +593,23 @@ pub struct OKXBookMsg {
     pub ts: u64,
 }
 
+/// Retail Price Improvement order book data for an instrument.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OKXRpiBookMsg {
+    /// Ask levels [price, total quantity, non-RPI quantity, order count].
+    pub asks: Vec<OKXRpiBookLevel>,
+    /// Bid levels [price, total quantity, non-RPI quantity, order count].
+    pub bids: Vec<OKXRpiBookLevel>,
+    /// Sequence ID of the previous message.
+    pub prev_seq_id: i64,
+    /// Sequence ID of the current message.
+    pub seq_id: u64,
+    /// Order book generation time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
 /// Trade data for an instrument.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -601,7 +634,7 @@ pub struct OKXTradeMsg {
     /// Trade timestamp, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
-    /// Order source (0: normal, 1: ELP).
+    /// Order source (0: normal, 1: RPI).
     #[serde(default)]
     pub source: Option<String>,
     /// Sequence ID for trade events.
@@ -1268,6 +1301,14 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage_pct: Option<String>,
+    /// Whether the order may take RPI liquidity.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_taker_access: Option<bool>,
+    /// Whether OKX may round the order price to an eligible RPI price.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_px_round: Option<bool>,
 }
 
 /// Parameters for WebSocket cancel order operation (instType not included).
@@ -1312,9 +1353,9 @@ pub struct WsAmendOrderParams {
     /// User-assigned client order ID (optional if using ordId).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
-    /// New client order ID for the amended order.
+    /// Client request ID for correlating the amendment response.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub new_cl_ord_id: Option<String>,
+    pub req_id: Option<String>,
     /// New order price (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_px: Option<String>,
@@ -1328,6 +1369,12 @@ pub struct WsAmendOrderParams {
     /// New order size (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sz: Option<String>,
+    /// Whether the order may take RPI liquidity after amendment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_taker_access: Option<bool>,
+    /// Whether OKX may round the amended price to an eligible RPI price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpi_px_round: Option<bool>,
     /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed_bump: Option<String>,
@@ -1408,8 +1455,10 @@ pub struct WsCancelAlgoOrderParams {
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
+    use crate::common::testing::load_test_json;
 
     #[rstest]
     fn test_deserialize_websocket_arg() {
@@ -1913,6 +1962,71 @@ mod tests {
             }
             _ => panic!("Expected BookData variant"),
         }
+    }
+
+    #[rstest]
+    fn test_rpi_book_fixtures_preserve_depth_types_and_sequence() {
+        let snapshot: OKXWsFrame =
+            serde_json::from_str(&load_test_json("ws_books_rpi_snapshot.json")).unwrap();
+        let update: OKXWsFrame =
+            serde_json::from_str(&load_test_json("ws_books_rpi_update.json")).unwrap();
+
+        let OKXWsFrame::RpiBookData { arg, action, data } = snapshot else {
+            panic!("Expected RPI book snapshot");
+        };
+        let snapshot = &data[0];
+        assert_eq!(arg.channel, OKXWsChannel::BooksRpi);
+        assert_eq!(arg.inst_id, Some(Ustr::from("OMI-USD")));
+        assert_eq!(action, OKXBookAction::Snapshot);
+        assert_eq!(data.len(), 1);
+        assert_eq!(snapshot.asks.len(), 4);
+        assert_eq!(snapshot.bids.len(), 10);
+        assert_eq!(
+            snapshot.asks[0],
+            OKXRpiBookLevel(
+                Decimal::from_str_exact("0.0001617").unwrap(),
+                Decimal::from_str_exact("12325166.992").unwrap(),
+                Decimal::from(1000),
+                2,
+            )
+        );
+        assert_eq!(snapshot.prev_seq_id, -1);
+        assert_eq!(snapshot.seq_id, 1_082_831_226);
+        assert_eq!(snapshot.ts, 1_785_406_442_403);
+
+        let OKXWsFrame::RpiBookData { arg, action, data } = update else {
+            panic!("Expected RPI book update");
+        };
+        let update = &data[0];
+        assert_eq!(arg.channel, OKXWsChannel::BooksRpi);
+        assert_eq!(arg.inst_id, Some(Ustr::from("OMI-USD")));
+        assert_eq!(action, OKXBookAction::Update);
+        assert_eq!(data.len(), 1);
+        assert_eq!(update.asks.len(), 2);
+        assert!(update.bids.is_empty());
+        assert_eq!(
+            update.asks[1],
+            OKXRpiBookLevel(
+                Decimal::from_str_exact("0.0001625").unwrap(),
+                Decimal::from_str_exact("12324367.786").unwrap(),
+                Decimal::from(1000),
+                2,
+            )
+        );
+        assert_eq!(update.prev_seq_id, snapshot.seq_id as i64);
+        assert_eq!(update.seq_id, 1_082_831_230);
+        assert_eq!(update.ts, 1_785_406_443_903);
+    }
+
+    #[rstest]
+    fn test_rpi_book_rejects_checksum_field() {
+        let mut payload: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_books_rpi_update.json")).unwrap();
+        payload["data"][0]["checksum"] = serde_json::json!(0);
+
+        let error = serde_json::from_value::<OKXWsFrame>(payload).unwrap_err();
+
+        assert!(error.to_string().contains("checksum"));
     }
 
     #[rstest]

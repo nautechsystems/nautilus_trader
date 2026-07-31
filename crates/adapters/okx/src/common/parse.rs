@@ -76,6 +76,30 @@ use crate::{
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
 
+pub(crate) fn prefer_rpi_response_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (current, legacy) in [("rpi", "elp"), ("rpiMaker", "elpMaker")] {
+                if fields.contains_key(current) {
+                    fields.remove(legacy);
+                } else if let Some(legacy_value) = fields.remove(legacy) {
+                    fields.insert(current.to_string(), legacy_value);
+                }
+            }
+
+            for nested in fields.values_mut() {
+                prefer_rpi_response_fields(nested);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                prefer_rpi_response_fields(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Determines if a price string represents a market order.
 ///
 /// OKX uses special values to indicate market execution:
@@ -857,7 +881,7 @@ pub fn parse_order_status_report(
         report.avg_px = Some(decimal);
     }
 
-    if order.ord_type == OKXOrderType::PostOnly {
+    if matches!(order.ord_type, OKXOrderType::PostOnly | OKXOrderType::Rpi) {
         report = report.with_post_only(true);
     }
 
@@ -1216,7 +1240,7 @@ pub fn parse_spread_order_status_report(
         report.avg_px = Some(decimal);
     }
 
-    if order.ord_type == OKXOrderType::PostOnly {
+    if matches!(order.ord_type, OKXOrderType::PostOnly | OKXOrderType::Rpi) {
         report = report.with_post_only(true);
     }
 
@@ -2364,6 +2388,19 @@ fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
         &definition.float_px_lmt_pct,
     );
     insert_non_empty_info(&mut info, "okx_max_px_lmt_pct", &definition.max_px_lmt_pct);
+    if let Some(rpi_min_level) = definition.rpi_min_level {
+        info.insert(
+            "okx_rpi_min_level".to_string(),
+            serde_json::Value::from(rpi_min_level),
+        );
+    }
+
+    if let Some(rpi_min_px_band) = definition.rpi_min_px_band {
+        info.insert(
+            "okx_rpi_min_px_band".to_string(),
+            serde_json::Value::String(rpi_min_px_band.to_string()),
+        );
+    }
 
     (!info.is_empty()).then_some(info)
 }
@@ -2876,6 +2913,7 @@ mod tests {
         assert_eq!(trade0.side, OKXSide::Sell);
         assert_eq!(trade0.trade_id, "734864333");
         assert_eq!(trade0.ts, 1747087163557);
+        assert_eq!(trade0.source.as_deref(), Some("1"));
 
         // Inspect second record
         let trade1 = &parsed.data[1];
@@ -2885,6 +2923,7 @@ mod tests {
         assert_eq!(trade1.side, OKXSide::Buy);
         assert_eq!(trade1.trade_id, "734864332");
         assert_eq!(trade1.ts, 1747087161666);
+        assert_eq!(trade1.source.as_deref(), Some("0"));
     }
 
     #[rstest]
@@ -3684,6 +3723,9 @@ mod tests {
             max_iceberg_sz: String::new(),
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let parsed = parse_event_contract_instrument(
@@ -3921,6 +3963,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let parsed =
@@ -5335,6 +5380,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -5381,6 +5429,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -5429,6 +5480,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -5479,6 +5533,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -6159,5 +6216,50 @@ mod tests {
             okx_inst_category_to_asset_class(instrument.inst_category),
             AssetClass::Equity
         );
+    }
+
+    #[rstest]
+    fn test_rpi_instrument_permission_parses_current_and_legacy_fields() {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let mut current = value["data"][0].clone();
+        current["rpi"] = serde_json::json!("2");
+        let current: OKXInstrument = serde_json::from_value(current).unwrap();
+
+        let legacy = &mut value["data"][1];
+        legacy["elp"] = serde_json::json!("1");
+        let legacy: OKXInstrument = serde_json::from_value(legacy.clone()).unwrap();
+
+        assert_eq!(
+            current.rpi,
+            Some(crate::common::enums::OKXRpiPermission::Permitted)
+        );
+        assert_eq!(
+            legacy.rpi,
+            Some(crate::common::enums::OKXRpiPermission::Enabled)
+        );
+    }
+
+    #[rstest]
+    fn test_rpi_instrument_spacing_fields_are_typed_and_reachable() {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json).unwrap();
+        let okx_inst = response
+            .data
+            .first()
+            .expect("Test data must have an instrument");
+
+        assert_eq!(okx_inst.rpi_min_level, Some(5));
+        assert_eq!(okx_inst.rpi_min_px_band, Some(Decimal::from(20)));
+
+        let instrument =
+            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("expected CurrencyPair");
+        };
+        let info = pair.info.expect("RPI spacing info must be set");
+
+        assert_eq!(info.get_u64("okx_rpi_min_level"), Some(5));
+        assert_eq!(info.get_str("okx_rpi_min_px_band"), Some("20"));
     }
 }
