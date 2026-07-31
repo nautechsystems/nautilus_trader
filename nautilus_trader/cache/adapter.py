@@ -60,10 +60,23 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         self,
         config: CacheConfig | None = None,
     ) -> None:
-        if config:
+        if config is None:
             config = CacheConfig()
         super().__init__(config)
-        self._backing: PostgresCacheDatabase = PostgresCacheDatabase.connect()
+        db_cfg = config.database
+        if db_cfg is not None and db_cfg.type == "postgres":
+            self._backing: PostgresCacheDatabase = PostgresCacheDatabase.connect(
+                host=db_cfg.host,
+                port=db_cfg.port,
+                username=db_cfg.username,
+                password=db_cfg.password,
+                database=getattr(db_cfg, "database", None),
+            )
+        else:
+            # Fall back to env-var-driven connect for callers who rely on
+            # POSTGRES_HOST / POSTGRES_PORT / POSTGRES_USERNAME /
+            # POSTGRES_PASSWORD / POSTGRES_DATABASE environment variables.
+            self._backing = PostgresCacheDatabase.connect()
 
     def dispose(self):
         self._backing.close()
