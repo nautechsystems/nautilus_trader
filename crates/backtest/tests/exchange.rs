@@ -3223,6 +3223,7 @@ impl Log for CapturingLogger {
 static CAPTURING_LOGGER: CapturingLogger = CapturingLogger {
     messages: Mutex::new(Vec::new()),
 };
+static CAPTURING_LOGGER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 struct AdjustmentSimulationModule {
     label: &'static str,
@@ -3401,6 +3402,70 @@ fn test_module_process_called_by_process_modules(crypto_perpetual_ethusdt: Crypt
     exchange.borrow_mut().process_modules(UnixNanos::from(100));
 
     assert_eq!(counts.process.get(), 1);
+}
+
+#[rstest]
+#[case(true, true)]
+#[case(false, false)]
+fn test_process_modules_skips_when_account_adjustments_are_unavailable(
+    #[case] frozen_account: bool,
+    #[case] register_client: bool,
+) {
+    let outcomes = Rc::new(RefCell::new(Vec::new()));
+    let sequence = Rc::new(RefCell::new(Vec::new()));
+    let modules: Vec<Box<dyn SimulationModule>> = vec![Box::new(AdjustmentSimulationModule {
+        label: "guarded",
+        adjustments: vec![Money::from("1 USD")],
+        outcomes: outcomes.clone(),
+        sequence: sequence.clone(),
+    })];
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1000 USD")])
+        .default_leverage(Decimal::ONE)
+        .modules(modules)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .frozen_account(frozen_account)
+        .build()
+        .unwrap();
+    let exchange = Rc::new(RefCell::new(
+        SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+    ));
+
+    if register_client {
+        let execution_client = BacktestExecutionClient::new(
+            TraderId::test_default(),
+            AccountId::test_default(),
+            &exchange,
+            cache,
+            clock,
+            None,
+            Some(frozen_account),
+        );
+        exchange
+            .borrow_mut()
+            .register_client(Rc::new(execution_client));
+    }
+
+    let (handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+
+    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+
+    assert!(
+        sequence.borrow().is_empty(),
+        "module processing must be skipped"
+    );
+    assert!(
+        outcomes.borrow().is_empty(),
+        "module acknowledgement must be skipped"
+    );
+    assert!(account_saver.get_messages().is_empty());
 }
 
 #[rstest]
@@ -3610,7 +3675,7 @@ fn test_fx_rollover_retries_after_quote_arrives(audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
-fn test_fx_rollover_retry_keeps_prior_economic_day(audusd_sim: CurrencyPair) {
+fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPair) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let mut raw_cache = Cache::default();
     add_fx_position(
@@ -3659,7 +3724,7 @@ fn test_fx_rollover_retry_keeps_prior_economic_day(audusd_sim: CurrencyPair) {
         .is_empty()
     );
 
-    // The quote arrives on Thursday. The pending Wednesday remains first and
+    // The quote arrives on Friday. The pending Wednesday remains first and
     // uses January's rates plus the Wednesday triple multiplier.
     add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
     assert_eq!(
@@ -3668,7 +3733,7 @@ fn test_fx_rollover_retry_keeps_prior_economic_day(audusd_sim: CurrencyPair) {
             &exchange,
             &cache,
             &instruments,
-            rollover_timestamp(2024, 2, 1),
+            rollover_timestamp(2024, 2, 2),
         ),
         vec![Money::from("-8.22 USD")]
     );
@@ -3680,9 +3745,21 @@ fn test_fx_rollover_retry_keeps_prior_economic_day(audusd_sim: CurrencyPair) {
             &exchange,
             &cache,
             &instruments,
-            rollover_timestamp(2024, 2, 1) + 1,
+            rollover_timestamp(2024, 2, 2) + 1,
         ),
         vec![Money::from("10.96 USD")]
+    );
+
+    // Friday follows on the next invocation and uses the triple multiplier.
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 2, 2) + 2,
+        ),
+        vec![Money::from("32.88 USD")]
     );
 }
 
@@ -3690,7 +3767,8 @@ fn test_fx_rollover_retry_keeps_prior_economic_day(audusd_sim: CurrencyPair) {
 fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
     audusd_sim: CurrencyPair,
 ) {
-    log::set_logger(&CAPTURING_LOGGER).unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
 
@@ -3763,6 +3841,201 @@ fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
             .iter()
             .all(|(_, message)| !message.contains("Failed to calculate xrate"))
     );
+}
+
+#[rstest]
+fn test_missing_rates_skip_instrument_and_do_not_stall_later_days(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let supported = InstrumentAny::CurrencyPair(audusd_sim);
+    let missing_rates = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &supported,
+        "T-ROLLOVER-SUPPORTED",
+        "100000",
+        "1.00000",
+    );
+    add_fx_position(
+        &mut raw_cache,
+        &missing_rates,
+        "T-ROLLOVER-MISSING-RATES",
+        "100000",
+        "1.20000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(supported.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(missing_rates.clone())
+        .unwrap();
+    // Deliberately no quote for `missing_rates`: the permanently missing rate
+    // must skip the instrument before the transient no-price check can retry
+    // the whole day.
+    add_fx_quote(&exchange, &cache, supported.id(), "0.99990", "1.00010");
+    let instruments = AHashMap::from([
+        (supported.id(), supported.clone()),
+        (missing_rates.id(), missing_rates.clone()),
+    ]);
+    let records = rollover_records()
+        .into_iter()
+        .filter(|record| record.location != "GBR")
+        .collect();
+    let module = FXRolloverInterestModule::new(records).unwrap();
+    let first_day = rollover_timestamp(2020, 1, 15);
+
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, first_day),
+        vec![Money::from("-6.16 USD")]
+    );
+
+    let only_missing = AHashMap::from([(missing_rates.id(), missing_rates)]);
+    let exchange_ref = exchange.borrow();
+    let cache_ref = cache.borrow();
+    let ctx = ExchangeContext {
+        venue: Venue::new("SIM"),
+        base_currency: None,
+        instruments: &only_missing,
+        matching_engines: exchange_ref.get_matching_engines(),
+        cache: &cache_ref,
+    };
+    assert_eq!(
+        module.process(rollover_timestamp(2020, 1, 16), &ctx),
+        SimulationModuleResult::Completed(Vec::new())
+    );
+    module.acknowledge(&[]);
+    assert_eq!(
+        module.process(rollover_timestamp(2020, 1, 17), &ctx),
+        SimulationModuleResult::Completed(Vec::new())
+    );
+
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message.contains("Skipping rollover for GBP/USD.SIM on 2020-01-15")
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+}
+
+#[rstest]
+fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let unrepresentable = InstrumentAny::CurrencyPair(audusd_sim);
+    let transient = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &unrepresentable,
+        "T-ROLLOVER-MONEY",
+        "100000",
+        "1.00000",
+    );
+    add_fx_position(
+        &mut raw_cache,
+        &transient,
+        "T-ROLLOVER-MONEY-RETRY",
+        "100000",
+        "1.20000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(unrepresentable.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(transient.clone())
+        .unwrap();
+    add_fx_quote(
+        &exchange,
+        &cache,
+        unrepresentable.id(),
+        "0.99990",
+        "1.00010",
+    );
+    let instruments = AHashMap::from([
+        (unrepresentable.id(), unrepresentable.clone()),
+        (transient.id(), transient.clone()),
+    ]);
+    let records = vec![
+        InterestRateRecord {
+            location: "AUS".to_string(),
+            time: "2020-01".to_string(),
+            value: f64::MAX,
+        },
+        InterestRateRecord {
+            location: "GBR".to_string(),
+            time: "2020-01".to_string(),
+            value: 0.5,
+        },
+        InterestRateRecord {
+            location: "USA".to_string(),
+            time: "2020-01".to_string(),
+            value: 1.5,
+        },
+    ];
+    let module = FXRolloverInterestModule::new(records).unwrap();
+    let rollover = rollover_timestamp(2020, 1, 15);
+
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
+    add_fx_quote(&exchange, &cache, transient.id(), "1.19990", "1.20010");
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1),
+        vec![Money::from("-9.86 USD")]
+    );
+
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message.contains("Skipping rollover for AUD/USD.SIM on 2020-01-15")
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+    assert!(messages.iter().all(|(level, message)| {
+        *level != Level::Error
+            || !(message.contains("Skipping rollover for AUD/USD.SIM")
+                && message.contains("invalid adjustment"))
+    }));
 }
 
 #[rstest]

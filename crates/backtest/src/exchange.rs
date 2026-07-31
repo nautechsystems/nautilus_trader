@@ -1470,6 +1470,10 @@ impl SimulatedExchange {
     /// Must be called once per time step after all command queues have fully
     /// settled, not inside the settle loop.
     pub fn process_modules(&mut self, ts_now: UnixNanos) {
+        if self.frozen_account || self.exec_client.is_none() {
+            return;
+        }
+
         let results = {
             let cache = self.cache.borrow();
             let ctx = ExchangeContext {

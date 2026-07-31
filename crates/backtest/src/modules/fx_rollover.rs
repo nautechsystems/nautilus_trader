@@ -201,7 +201,7 @@ impl RolloverInterestCalculator {
 )]
 pub struct FXRolloverInterestModule {
     calculator: RolloverInterestCalculator,
-    rollover_applied: Cell<bool>,
+    rollover_completed: Cell<bool>,
     rollover_day: RefCell<Option<RolloverDayState>>,
     rollover_totals: RefCell<AHashMap<Currency, f64>>,
 }
@@ -221,12 +221,28 @@ enum RolloverCalculationOutcome {
     Retry,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RolloverFailureDisposition {
+    RetryDay,
+    SkipInstrument,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum RolloverFailureKind {
     Engine,
+    Money,
     Price,
     Rate,
     Xrate,
+}
+
+impl RolloverFailureKind {
+    const fn disposition(self) -> RolloverFailureDisposition {
+        match self {
+            Self::Engine | Self::Price | Self::Xrate => RolloverFailureDisposition::RetryDay,
+            Self::Money | Self::Rate => RolloverFailureDisposition::SkipInstrument,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -261,7 +277,7 @@ impl FXRolloverInterestModule {
     pub fn new(records: Vec<InterestRateRecord>) -> anyhow::Result<Self> {
         Ok(Self {
             calculator: RolloverInterestCalculator::new(records)?,
-            rollover_applied: Cell::new(false),
+            rollover_completed: Cell::new(false),
             rollover_day: RefCell::new(None),
             rollover_totals: RefCell::new(AHashMap::new()),
         })
@@ -289,7 +305,7 @@ impl FXRolloverInterestModule {
             pending_adjustments: None,
             attempt_time: None,
         }));
-        self.rollover_applied.set(false);
+        self.rollover_completed.set(false);
     }
 
     /// Logs a calculation failure at warn level once per (instrument, kind)
@@ -343,6 +359,28 @@ impl FXRolloverInterestModule {
                 continue;
             }
 
+            // Look up the immutable rate data before any transient market
+            // inputs: a permanently missing rate must skip the instrument
+            // even when the engine or price would first retry the day.
+            let interest_rate = match self.calculator.calc_overnight_rate(instrument_id, date) {
+                Ok(rate) => rate,
+                Err(e) => {
+                    let kind = RolloverFailureKind::Rate;
+                    self.log_calculation_failure(
+                        instrument_id,
+                        kind,
+                        &format!("Skipping rollover for {instrument_id} on {date}: {e}"),
+                    );
+
+                    match kind.disposition() {
+                        RolloverFailureDisposition::RetryDay => {
+                            return RolloverCalculationOutcome::Retry;
+                        }
+                        RolloverFailureDisposition::SkipInstrument => continue,
+                    }
+                }
+            };
+
             let Some(matching_engine) = ctx.matching_engines.get(&instrument_id) else {
                 self.log_calculation_failure(
                     instrument_id,
@@ -365,18 +403,6 @@ impl FXRolloverInterestModule {
                     &format!("Cannot calculate rollover for {instrument_id}: no market price"),
                 );
                 return RolloverCalculationOutcome::Retry;
-            };
-
-            let interest_rate = match self.calculator.calc_overnight_rate(instrument_id, date) {
-                Ok(rate) => rate,
-                Err(e) => {
-                    self.log_calculation_failure(
-                        instrument_id,
-                        RolloverFailureKind::Rate,
-                        &format!("Cannot calculate rollover for {instrument_id}: {e}"),
-                    );
-                    return RolloverCalculationOutcome::Retry;
-                }
             };
 
             let net_qty: f64 = positions.iter().map(|p| p.signed_qty).sum();
@@ -428,8 +454,25 @@ impl FXRolloverInterestModule {
                 instrument.quote_currency()
             };
 
-            let Some(adjustment) = rollover_money(instrument_id, rollover, currency) else {
-                return RolloverCalculationOutcome::Retry;
+            let adjustment = match Money::new_checked(rollover, currency) {
+                Ok(adjustment) => adjustment,
+                Err(e) => {
+                    let kind = RolloverFailureKind::Money;
+                    self.log_calculation_failure(
+                        instrument_id,
+                        kind,
+                        &format!(
+                            "Skipping rollover for {instrument_id} on {date}: invalid adjustment: {e}"
+                        ),
+                    );
+
+                    match kind.disposition() {
+                        RolloverFailureDisposition::RetryDay => {
+                            return RolloverCalculationOutcome::Retry;
+                        }
+                        RolloverFailureDisposition::SkipInstrument => continue,
+                    }
+                }
             };
 
             adjustments.push(adjustment);
@@ -437,14 +480,6 @@ impl FXRolloverInterestModule {
 
         RolloverCalculationOutcome::Completed(adjustments)
     }
-}
-
-fn rollover_money(instrument_id: InstrumentId, value: f64, currency: Currency) -> Option<Money> {
-    Money::new_checked(value, currency)
-        .map_err(|e| {
-            log::error!("Skipping rollover for {instrument_id}: invalid adjustment: {e}");
-        })
-        .ok()
 }
 
 impl SimulationModule for FXRolloverInterestModule {
@@ -455,17 +490,22 @@ impl SimulationModule for FXRolloverInterestModule {
         let eastern_dt = Eastern.from_utc_datetime(&utc_dt);
         let observed_date = eastern_dt.date_naive();
 
-        let initialize = {
+        let initialize_date = {
             let day = self.rollover_day.borrow();
-            day.as_ref()
-                .is_none_or(|day| self.rollover_applied.get() && day.date != observed_date)
+            match day.as_ref() {
+                None => Some(observed_date),
+                Some(day) if self.rollover_completed.get() && day.date < observed_date => {
+                    day.date.succ_opt()
+                }
+                Some(_) => None,
+            }
         };
 
-        if initialize {
-            self.initialize_rollover_day(observed_date);
+        if let Some(date) = initialize_date {
+            self.initialize_rollover_day(date);
         }
 
-        if self.rollover_applied.get() {
+        if self.rollover_completed.get() {
             return SimulationModuleResult::NotReady;
         }
 
@@ -574,7 +614,7 @@ impl SimulationModule for FXRolloverInterestModule {
         }
 
         if failed.is_empty() {
-            self.rollover_applied.set(true);
+            self.rollover_completed.set(true);
             self.rollover_day
                 .borrow_mut()
                 .as_mut()
@@ -622,7 +662,7 @@ impl SimulationModule for FXRolloverInterestModule {
     }
 
     fn reset(&self) {
-        self.rollover_applied.set(false);
+        self.rollover_completed.set(false);
         self.rollover_day.replace(None);
         self.rollover_totals.borrow_mut().clear();
     }
@@ -732,7 +772,7 @@ mod tests {
     fn test_module_reset() {
         let module = FXRolloverInterestModule::new(sample_records()).unwrap();
         module.initialize_rollover_day(NaiveDate::from_ymd_opt(2020, 1, 15).unwrap());
-        module.rollover_applied.set(true);
+        module.rollover_completed.set(true);
         module
             .rollover_totals
             .borrow_mut()
@@ -741,7 +781,7 @@ mod tests {
         module.reset();
 
         assert!(module.rollover_day.borrow().is_none());
-        assert!(!module.rollover_applied.get());
+        assert!(!module.rollover_completed.get());
         assert!(module.rollover_totals.borrow().is_empty());
     }
 
@@ -789,14 +829,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_rollover_money_rejects_unrepresentable_adjustment() {
-        let adjustment =
-            rollover_money(InstrumentId::from("AUDUSD.SIM"), f64::MAX, Currency::USD());
-
-        assert_eq!(adjustment, None);
-    }
-
-    #[rstest]
     fn test_partial_acknowledgement_retries_only_failed_adjustments() {
         let module = FXRolloverInterestModule::new(sample_records()).unwrap();
         let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
@@ -824,7 +856,7 @@ mod tests {
             )),
         ]);
 
-        assert!(!module.rollover_applied.get());
+        assert!(!module.rollover_completed.get());
         assert_eq!(
             module
                 .rollover_day
@@ -888,7 +920,7 @@ mod tests {
         );
         module.acknowledge(&[AccountAdjustmentOutcome::Applied]);
 
-        assert!(module.rollover_applied.get());
+        assert!(module.rollover_completed.get());
         assert_eq!(
             module.rollover_totals.borrow().get(&Currency::USD()),
             Some(&10.0)
