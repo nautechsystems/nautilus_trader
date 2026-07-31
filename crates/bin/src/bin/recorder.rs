@@ -39,8 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }).collect();
 
     let config = RecorderConfig::builder()
-        // .instrument_id(cfg.instrument_id)
-        .path(cfg.path)
+        .catalog_path(cfg.catalog_path)
         .instrument_id(instrument_id)
         .interval_parquet_dump_seconds(cfg.interval_parquet_dump_seconds)
         .book_depth(cfg.book_depth)

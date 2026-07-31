@@ -15,7 +15,7 @@ on_cancel_resubmit = false
 exchange = "bybit"
 trader_id = "TESTER-001"
 instrument_id = ["OPUSDT-LINEAR.BYBIT", "BTCUSDT-LINEAR.BYBIT", "ETHUSDT-LINEAR.BYBIT", "XAUTUSDT-LINEAR.BYBIT"]
-path = "/home/mattia/dev/nautilus_trader/data/"
+catalog_path = "/var/lib/nautilus-trader/"
 book_depth = 50
 interval_parquet_dump_seconds = 60
 

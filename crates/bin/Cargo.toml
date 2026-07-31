@@ -40,3 +40,41 @@ rust_decimal.workspace = true
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 clap.workspace = true
+
+[package.metadata.generate-rpm]
+name = "nautilus-trader"
+version = "0.1.0"
+release = "7"
+arch = "x86_64"
+summary = "nautilus trader binaries and services"
+license = "MIT"
+
+assets = [
+    {source = "../../target/release/recorder", dest = "/usr/bin/nautilus-recorder", mode="755" },
+    {source = "service/recorder.service", dest = "/usr/lib/systemd/system/nautilus-recorder.service", mode="644" },
+    {source = "service/nautilus-trader-sysusers.conf", dest = "/usr/lib/sysusers.d/nautilus-trader.conf", mode = "644" },
+    {source = "service/nautilus-trader.env", dest = "/etc/nautilus-trader/nautilus-trader.env", mode = "600", config = true},
+    {source = "config.toml", dest = "/etc/nautilus-trader/config.toml", mode = "644", config = true}
+]
+
+post_install_script = """
+systemd-sysusers
+
+install -d -o nautilus-trader -g nautilus-trader -m 700 /var/lib/nautilus-trader/data
+
+chown -R root:nautilus-trader /etc/nautilus-trader
+chmod 750 /etc/nautilus-trader
+chmod 640 /etc/nautilus-trader/config.toml
+chmod 600 /etc/nautilus-trader/nautilus-trader.env
+
+systemctl daemon-reload
+systemctl enable --now nautilus-recorder.service
+"""
+
+pre_uninstall_script = """
+systemctl disable --now nautilus-recorder.service
+"""
+
+post_uninstall_script = """
+systemctl daemon-reload
+"""

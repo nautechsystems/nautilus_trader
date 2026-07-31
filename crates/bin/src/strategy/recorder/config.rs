@@ -11,7 +11,7 @@ pub struct RecorderConfig {
     })]
     pub base: StrategyConfig,
     pub instrument_id: Vec<InstrumentId>,
-    pub path: String,
+    pub catalog_path: String,
     pub book_depth: usize,
     pub interval_parquet_dump_seconds: u64
 }

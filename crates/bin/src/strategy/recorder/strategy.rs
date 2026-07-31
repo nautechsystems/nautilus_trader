@@ -28,7 +28,7 @@ impl Recorder {
             core: StrategyCore::new(config.base.clone()),
             instrument_id: config.instrument_id.clone(),
             instrument_precision: HashMap::new(),
-            data_catalog: ParquetDataCatalog::new(Path::new(&config.path), None, None, None, None),
+            data_catalog: ParquetDataCatalog::new(Path::new(&config.catalog_path), None, None, None, None),
             buffer: HashMap::new(),
             is_first_timer: true,
             book_depth: config.book_depth,

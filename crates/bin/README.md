@@ -28,3 +28,6 @@ cargo build --release
 ./target/release/grid_mm
 ./target/release/recorder
 ```
+
+## Building
+use this tool https://github.com/cat-in-136/cargo-generate-rpm

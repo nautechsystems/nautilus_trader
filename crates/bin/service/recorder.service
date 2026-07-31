@@ -1,0 +1,25 @@
+[Unit]
+Description=Record trading data using Nautilus trader framework
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=nautilus-trader
+Group=nautilus-trader
+EnvironmentFile=-/etc/nautilus-trader/nautilus-trader.env
+ExecStart=/usr/bin/nautilus-recorder --config-path /etc/nautilus-trader/config.toml
+
+RuntimeMaxSec=28800
+Restart=always
+RestartSec=5s
+
+ExecStartPost=-/bin/sh -c 'tree -h --du /var/lib/nautilus-trader | tail -1 | mailx -s "starting nautilus recorder" mattiapapaccioli+nautilus@gmail.com'
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nautilus-trader
+
+[Install]
+WantedBy=multi-user.target

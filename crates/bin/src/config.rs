@@ -45,7 +45,7 @@ pub struct RecorderTomlConfig {
     pub trader_id: String,
     pub instrument_id: Vec<String>,
     #[serde(default = "default_recorder_path")]
-    pub path: String,
+    pub catalog_path: String,
     pub book_depth: usize,
     pub interval_parquet_dump_seconds: u64
 }
