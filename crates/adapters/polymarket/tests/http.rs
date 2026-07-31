@@ -1081,18 +1081,14 @@ async fn test_batch_cancel_rate_limit_reports_submitted_id_cost() {
 }
 
 #[rstest]
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn test_retry_after_delays_next_order_request() {
     let state = TestServerState::default();
     state.rate_limit_after.store(0, Ordering::Relaxed);
     let mut response_headers = HeaderMap::new();
     response_headers.insert(HeaderName::from_static("retry-after"), "2".parse().unwrap());
     *state.rate_limit_response_headers.lock().await = response_headers;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let router = create_test_router(state.clone());
-    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-    tokio::task::yield_now().await;
+    let addr = start_mock_server(state.clone()).await;
     let client = PolymarketClobHttpClient::new(
         test_credential(),
         "0x0000000000000000000000000000000000000251".to_string(),
@@ -1103,10 +1099,20 @@ async fn test_retry_after_delays_next_order_request() {
     let order: PolymarketOrder =
         serde_json::from_value(load_json("http_signed_order.json")).unwrap();
 
-    client
+    let error = client
         .post_order(&order, PolymarketOrderType::GTC, false)
         .await
         .unwrap_err();
+    tokio::time::pause();
+
+    assert!(matches!(
+        error,
+        Error::RateLimit {
+            endpoint: "/order",
+            token_cost: 1,
+            retry_after_ms: Some(2_000),
+        }
+    ));
     state.rate_limit_after.store(usize::MAX, Ordering::Relaxed);
 
     let retry_client = client.clone();
@@ -1120,10 +1126,10 @@ async fn test_retry_after_delays_next_order_request() {
     tokio::task::yield_now().await;
     assert_eq!(*state.request_count.lock().await, 1);
 
-    tokio::time::advance(Duration::from_millis(1_999)).await;
+    tokio::time::advance(Duration::from_millis(1_900)).await;
     assert_eq!(*state.request_count.lock().await, 1);
 
-    tokio::time::advance(Duration::from_millis(1)).await;
+    tokio::time::resume();
     retry.await.unwrap().unwrap();
     assert_eq!(*state.request_count.lock().await, 2);
 }
