@@ -24,7 +24,9 @@ use indexmap::IndexMap;
 use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
-    modules::{ExchangeContext, SimulationModule},
+    modules::{
+        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleResult,
+    },
 };
 use nautilus_common::{
     actor::{
@@ -4780,7 +4782,7 @@ struct CountingSimulationModule {
 impl SimulationModule for CountingSimulationModule {
     fn pre_process(&self, _data: &Data) {}
 
-    fn process(&self, ts_now: UnixNanos, _ctx: &ExchangeContext) -> Vec<Money> {
+    fn process(&self, ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
         let prev = self.tracker.last_ts.get();
         if prev == Some(ts_now) {
             self.tracker.duplicate_ts_seen.set(true);
@@ -4789,8 +4791,10 @@ impl SimulationModule for CountingSimulationModule {
         self.tracker
             .total_calls
             .set(self.tracker.total_calls.get() + 1);
-        Vec::new()
+        SimulationModuleResult::Completed(Vec::new())
     }
+
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) {}
 
     fn log_diagnostics(&self) {}
 

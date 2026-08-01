@@ -60,7 +60,10 @@ use ustr::Ustr;
 
 use crate::{
     config::SimulatedVenueConfig,
-    modules::{ExchangeContext, SimulationModule},
+    modules::{
+        AccountAdjustmentError, AccountAdjustmentOutcome, ExchangeContext, SimulationModule,
+        SimulationModuleResult,
+    },
 };
 
 /// Represents commands with simulated network latency in a min-heap priority queue.
@@ -561,26 +564,44 @@ impl SimulatedExchange {
         }
 
         if let Some(exec_client) = &self.exec_client {
+            log::debug!("Adjusting account for venue {}", exec_client.venue());
+        }
+
+        match self.try_adjust_account(adjustment) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("{e}");
+                false
+            }
+        }
+    }
+
+    /// Tries to adjust the account balance by the given amount without logging failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account or currency balance is unavailable, the
+    /// resulting balance exceeds [`Money`] bounds, or account state generation fails.
+    pub fn try_adjust_account(&mut self, adjustment: Money) -> Result<(), AccountAdjustmentError> {
+        if self.frozen_account {
+            // Nothing to adjust
+            return Ok(());
+        }
+
+        if let Some(exec_client) = &self.exec_client {
             let venue = exec_client.venue();
-            log::debug!("Adjusting account for venue {venue}");
             let account_state = {
                 let cache = self.cache.borrow();
                 if let Some(account) = cache.account_for_venue(&venue) {
                     if let Some(balance) = account.balance(Some(adjustment.currency)) {
                         let mut current_balance = *balance;
                         let Some(total) = current_balance.total.checked_add(adjustment) else {
-                            log::error!(
-                                "Cannot adjust account: {} total exceeds Money bounds",
-                                adjustment.currency
-                            );
-                            return false;
+                            return Err(AccountAdjustmentError::TotalOverflow(adjustment.currency));
                         };
                         let Some(free) = current_balance.free.checked_add(adjustment) else {
-                            log::error!(
-                                "Cannot adjust account: {} free balance exceeds Money bounds",
-                                adjustment.currency
-                            );
-                            return false;
+                            return Err(AccountAdjustmentError::FreeBalanceOverflow(
+                                adjustment.currency,
+                            ));
                         };
                         current_balance.total = total;
                         current_balance.free = free;
@@ -596,30 +617,20 @@ impl SimulatedExchange {
                             self.clock.borrow().timestamp_ns(),
                         ))
                     } else {
-                        log::error!(
-                            "Cannot adjust account: no balance for currency {}",
-                            adjustment.currency
-                        );
-                        None
+                        return Err(AccountAdjustmentError::MissingBalance(adjustment.currency));
                     }
                 } else {
-                    log::error!("Cannot adjust account: no account for venue {venue}");
-                    None
+                    return Err(AccountAdjustmentError::MissingAccount(venue));
                 }
             };
 
             if let Some((balances, margins, ts_event)) = account_state {
-                if let Err(e) =
-                    exec_client.generate_account_state(balances, margins, true, ts_event)
-                {
-                    log::error!("Cannot adjust account: failed to generate account state: {e}");
-                    return false;
-                }
-            } else {
-                return false;
+                exec_client
+                    .generate_account_state(balances, margins, true, ts_event)
+                    .map_err(|e| AccountAdjustmentError::AccountStateGeneration(e.to_string()))?;
             }
         }
-        true
+        Ok(())
     }
 
     /// Returns whether there are pending commands at or before `ts_now`.
@@ -1459,7 +1470,11 @@ impl SimulatedExchange {
     /// Must be called once per time step after all command queues have fully
     /// settled, not inside the settle loop.
     pub fn process_modules(&mut self, ts_now: UnixNanos) {
-        let adjustments = {
+        if self.frozen_account || self.exec_client.is_none() {
+            return;
+        }
+
+        let results = {
             let cache = self.cache.borrow();
             let ctx = ExchangeContext {
                 venue: self.id,
@@ -1470,12 +1485,22 @@ impl SimulatedExchange {
             };
             self.modules
                 .iter()
-                .flat_map(|m| m.process(ts_now, &ctx))
-                .collect::<Vec<Money>>()
+                .enumerate()
+                .map(|(module_index, module)| (module_index, module.process(ts_now, &ctx)))
+                .collect::<Vec<_>>()
         };
 
-        for adjustment in adjustments {
-            self.adjust_account(adjustment);
+        for (module_index, result) in results {
+            if let SimulationModuleResult::Completed(adjustments) = result {
+                let outcomes = adjustments
+                    .into_iter()
+                    .map(|adjustment| match self.try_adjust_account(adjustment) {
+                        Ok(()) => AccountAdjustmentOutcome::Applied,
+                        Err(e) => AccountAdjustmentOutcome::Failed(e),
+                    })
+                    .collect::<Vec<_>>();
+                self.modules[module_index].acknowledge(&outcomes);
+            }
         }
     }
 
@@ -1497,6 +1522,7 @@ impl SimulatedExchange {
         self.funding_settlements.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
+        self.inflight_counter.clear();
 
         log::info!("Resetting exchange state");
     }
@@ -1618,8 +1644,6 @@ impl SimulatedExchange {
                     currency,
                 );
             }
-
-            break;
         }
     }
 
@@ -1830,13 +1854,17 @@ impl SimulatedExchange {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::execution::{QueryAccount, QueryOrder};
+    use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
     use nautilus_execution::models::latency::StaticLatencyModel;
     use nautilus_model::{
-        enums::{AccountType, BookType},
+        accounts::MarginAccount,
+        enums::{AccountType, BookType, OrderSide, OrderType},
+        events::AccountState,
         identifiers::{ClientOrderId, StrategyId, TraderId},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         stubs::TestDefault,
+        types::AccountBalance,
     };
     use rstest::rstest;
 
@@ -1945,5 +1973,74 @@ mod tests {
         assert!(exchange.instruments.is_empty());
         assert!(exchange.matching_engines.is_empty());
         assert_eq!(exchange.last_raw_id, u32::MAX);
+    }
+
+    #[rstest]
+    fn test_reset_clears_inflight_counter() {
+        let mut exchange = setup_exchange(Dispatch::Latency);
+        let account = MarginAccount::new(
+            AccountState::new(
+                AccountId::test_default(),
+                AccountType::Margin,
+                vec![AccountBalance::new(
+                    Money::from("1000 USD"),
+                    Money::from("0 USD"),
+                    Money::from("1000 USD"),
+                )],
+                vec![],
+                false,
+                UUID4::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            false,
+        );
+        exchange
+            .cache
+            .borrow_mut()
+            .add_account(AccountAny::Margin(account))
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .client_order_id(ClientOrderId::from("O-RESET"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("1.00000"))
+            .build();
+        exchange
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        exchange
+            .cache
+            .borrow_mut()
+            .update_order(&TestOrderEventStubs::submitted(
+                &order,
+                AccountId::test_default(),
+            ))
+            .unwrap();
+        exchange.send(TradingCommand::SubmitOrder(SubmitOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::from(100),
+            None,
+        )));
+
+        assert_eq!(exchange.inflight_counter.len(), 1);
+
+        exchange.reset();
+
+        assert!(exchange.inflight_counter.is_empty());
     }
 }
