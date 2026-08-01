@@ -180,6 +180,7 @@ pub struct WsDispatchState {
     pub filled_orders: BoundedDedup<ClientOrderId>,
     pub terminal_orders: BoundedDedup<ClientOrderId>,
     pub emitted_trades: BoundedDedup<TradeId>,
+    post_only_rejections: BoundedDedup<Ustr>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
@@ -194,6 +195,7 @@ impl Default for WsDispatchState {
             filled_orders: BoundedDedup::new(DEDUP_CAPACITY),
             terminal_orders: BoundedDedup::new(DEDUP_CAPACITY),
             emitted_trades: BoundedDedup::new(DEDUP_CAPACITY),
+            post_only_rejections: BoundedDedup::new(DEDUP_CAPACITY),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
@@ -608,10 +610,16 @@ fn dispatch_order_messages(
         };
 
         if let Some(ident) = identity {
-            if is_post_only_auto_cancel(msg)
+            let is_post_only_cancel = is_post_only_auto_cancel(msg);
+
+            if is_post_only_cancel
                 || (!state.emitted_accepted.contains(&client_order_id)
                     && is_unfilled_rpi_cancel(msg))
             {
+                if is_post_only_cancel {
+                    state.post_only_rejections.insert(msg.ord_id);
+                }
+
                 let ts_event = parse_millisecond_timestamp(msg.u_time);
                 let reason = if msg.ord_type == OKXOrderType::Rpi {
                     msg.cancel_source_reason
@@ -683,6 +691,12 @@ fn dispatch_order_messages(
                 }
                 Err(e) => log::error!("Failed to parse order event for {client_order_id}: {e}"),
             }
+        } else if is_post_only_auto_cancel(msg) && state.post_only_rejections.contains(&msg.ord_id)
+        {
+            log::debug!(
+                "Skipping replayed post-only rejection for {client_order_id}: ord_id={}",
+                msg.ord_id
+            );
         } else {
             log::debug!(
                 "Untracked order {client_order_id} (ord_id={}), sending as report for reconciliation",

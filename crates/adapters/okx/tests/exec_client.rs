@@ -1274,6 +1274,45 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
         order_instrument(expected_instrument_type, instrument_id, raw_symbol),
     );
 
+    let (untracked_emitter, mut untracked_rx) = test_emitter();
+    let untracked_state = WsDispatchState::default();
+    let mut untracked_fee_cache = AHashMap::new();
+    let mut untracked_filled_qty_cache = AHashMap::new();
+    let mut untracked_order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(vec![message.clone()]),
+        &untracked_emitter,
+        &untracked_state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut untracked_fee_cache,
+        &mut untracked_filled_qty_cache,
+        &mut untracked_order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let untracked_events = drain_events(&mut untracked_rx);
+    assert_eq!(untracked_events.len(), 1);
+    match &untracked_events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.client_order_id, Some(client_order_id));
+            assert_eq!(report.venue_order_id, VenueOrderId::new(venue_order_id));
+            assert_eq!(report.order_side, OrderSide::Buy);
+            assert_eq!(report.order_type, OrderType::Limit);
+            assert_eq!(report.time_in_force, TimeInForce::Gtc);
+            assert_eq!(report.order_status, OrderStatus::Canceled);
+            assert!(report.post_only);
+            assert_eq!(
+                report.cancel_reason.as_deref(),
+                Some(OKX_POST_ONLY_CANCEL_REASON),
+            );
+        }
+        other => panic!("Expected first-seen untracked order status report, was {other:?}"),
+    }
+
     let venue_order_id_key = Ustr::from(venue_order_id);
     let mut fee_cache = AHashMap::new();
     fee_cache.insert(venue_order_id_key, Money::new(1.25, Currency::from("USDT")));
@@ -1338,11 +1377,10 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
     );
 
     let replay_events = drain_events(&mut rx);
-    assert!(
-        !replay_events
-            .iter()
-            .any(|event| matches!(event, ExecutionEvent::Order(_))),
-        "replay should not emit another order event: {replay_events:?}",
+    assert_eq!(
+        replay_events.len(),
+        0,
+        "replay should not emit another execution event: {replay_events:?}",
     );
 }
 
