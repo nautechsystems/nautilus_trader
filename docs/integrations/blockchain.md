@@ -3,7 +3,8 @@
 ## Overview
 
 The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
-NautilusTrader data model. It uses three backends:
+NautilusTrader data model. An execution client for locally signed Uniswap V3 swaps is in active
+development (see [Execution](#execution)). The adapter uses three backends:
 
 - HyperSync: high-throughput historical blocks and contract logs. See the
   [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
@@ -107,6 +108,14 @@ RPC_WSS_URL=wss://your-rpc.example
   client construction before any query is sent.
 - `RPC_HTTP_URL` or `--rpc-url` is required for contract reads and snapshot hydration.
 - `RPC_WSS_URL` is only needed for WSS RPC live streams.
+
+Execution will add further variables (see [Execution](#execution)):
+
+- The signer private key will be read from the variable named by the `signer_private_key_env`
+  configuration field, never from configuration directly.
+- `BLOCKCHAIN_FORK_TESTS=1` and `BLOCKCHAIN_FORK_RPC_URL` will gate the pinned‑block Anvil
+  integration suite, which points Anvil's `--fork-url` at a read‑only Arbitrum RPC and sends signed
+  transactions to localhost only.
 
 For token setup and quota details, see Envio's
 [HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens).
@@ -426,6 +435,196 @@ PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `po
 - PancakeSwap V3 snapshots store `fee_protocol0_basis_points` and
   `fee_protocol1_basis_points`, and replay computes protocol fees as `fee * basis_points / 10000`.
 
+## Execution
+
+:::note
+Execution support is under active development. The specifications in this section describe planned
+behavior and will land in upcoming releases.
+:::
+
+The `BlockchainExecutionClient` currently implements `connect`/`disconnect` and a wallet balance
+refresh at connect (native currency and, when a token universe is configured, ERC-20 tokens).
+
+### Supported order slice
+
+The first execution slice will support Arbitrum as the chain and Uniswap V3 as the DEX, with a
+single order flow:
+
+- The caller selects a pool by its address‑based instrument ID, for example
+  `0xC6962004f452bE9203591991D15f6b388e09E8D0.Arbitrum:UniswapV3`. The venue must parse as
+  `<Chain>:<DexType>` and the symbol as an address `PoolIdentifier`, and the pool must resolve from
+  the shared engine cache populated by the data engine (`Cache::pool`). Unknown pools, V4 pool‑ID
+  symbols, and pools without a fee tier will be rejected.
+- Only a SELL `MarketOrder` with a base‑denominated `Quantity` will be accepted; every other
+  combination will be rejected before any RPC call. Base and quote will resolve through the model's
+  token‑priority convention (`Pool::get_base_token`, `Pool::get_quote_token`): stablecoins price as
+  quote, wrapped native assets next, and all other tokens as base against them. A pool whose tokens
+  share a priority is ambiguous and will be rejected, detected by comparing
+  `Token::get_token_priority` for both pool tokens because the helpers resolve ties silently.
+
+The order will map to a single `exactInputSingle` call on the original Uniswap SwapRouter (the
+deployment whose signature carries a deadline):
+
+| Parameter           | Source                                                      |
+| ------------------- | ----------------------------------------------------------- |
+| `tokenIn`           | Pool base token address                                     |
+| `tokenOut`          | Pool quote token address                                    |
+| `fee`               | Pool fee tier                                               |
+| `recipient`         | Execution wallet address                                    |
+| `deadline`          | Latest block timestamp plus configured `deadline_seconds`   |
+| `amountIn`          | `Quantity` converted to raw `U256` with base token decimals |
+| `amountOutMinimum`  | Derived from a current quote (see below)                    |
+| `sqrtPriceLimitX96` | `0` (slippage is bounded by `amountOutMinimum`)             |
+
+### Slippage protection
+
+`amountOutMinimum` will always be derived, never caller‑supplied:
+
+1. Require an active data-side subscription to the pool so the `PoolProfiler` in the shared engine
+   cache (`Cache::pool_profiler`) is live; without a live profiler no quote exists and the order
+   will be rejected.
+1. Simulate the exact‑input swap locally with `PoolProfiler::swap_exact_in` on that profiler.
+1. Require the pool state to be fresh within `max_quote_age_blocks` of the latest block the data
+   engine has processed for the chain; with no running data engine the quote is stale and the
+   order will be rejected.
+1. Compute `amountOutMinimum = quoted_amount_out * (10_000 - slippage_bps) / 10_000` in integer
+   arithmetic and reject the order when the result is zero.
+
+### Preflight, wrapping, and approval
+
+Preflight, WETH wrapping, and router approval will be explicit operations, separate from
+`submit_order`:
+
+- **Preflight** will be read‑only: it verifies the chain ID, deployed bytecode at the router, pool,
+  and token addresses, wallet balances, router allowance, and current fee conditions, and returns a
+  structured report.
+- **Wrap** will submit a WETH `deposit()` transaction carrying native value, only on explicit
+  command.
+- **Approve** will submit an ERC-20 `approve(router, amount)` transaction, only on explicit
+  command, with the approval amount policy set by `unlimited_approval`.
+
+### Transaction signing and broadcast
+
+Transactions will be built and signed locally as EIP-1559 typed transactions through Alloy
+primitives (the workspace Alloy dependency's `consensus` and `eips` features will be enabled for
+these paths):
+
+- Building an `alloy::consensus::TxEip1559` (chain ID, nonce, gas, fees, `to`, `value`, `input`).
+- Signing with `alloy::signers::local::PrivateKeySigner` (k256) over
+  `SignableTransaction::signature_hash()`, producing a `Signed<TxEip1559>`.
+- Encoding with `alloy::eips::eip2718::Encodable2718::encoded_2718()` and broadcasting the raw
+  bytes with `eth_sendRawTransaction` through the adapter's HTTP RPC client.
+
+Signer and transaction policy:
+
+- The private key will come from the environment variable named by `signer_private_key_env`; it is
+  never logged, serialized, or stored in configuration. One signer is supported. At connect, the
+  address derived from the key must equal the configured `wallet_address`; a mismatch is a
+  configuration error.
+- At most one transaction will be in flight across swaps, wraps, and approvals: a submission guard
+  rejects any new transaction while another awaits inclusion, keeping the `pending` nonce
+  authoritative. The nonce will come from `eth_getTransactionCount` with the `pending` tag.
+- Fees will derive from `eth_maxPriorityFeePerGas` plus the latest base fee with
+  `base_fee_buffer_bps`; `max_fee_per_gas_wei` is a required hard ceiling that rejects the order
+  when current conditions exceed it.
+- Gas will come from `eth_estimateGas` plus `gas_buffer_bps`; a buffered estimate above the
+  `gas_limit` ceiling rejects the order before signing rather than clamping to the ceiling.
+- The client will persist the `(client_order_id, nonce, tx_hash)` mapping to the adapter's Postgres
+  cache database before broadcast; with no durable store configured the client refuses to submit.
+  The order is acked as submitted only after broadcast acceptance.
+
+Execution RPC calls will use per‑request timeouts, and a `null` result is a legitimate pending
+response (a receipt that does not exist yet), not an error. Broadcast failures will classify before
+retry: an `already known` response is acceptance, and a timeout after sending reconciles through
+the persisted record rather than rebroadcasting.
+
+### Risk and validation boundaries
+
+Generic pre‑trade risk will stay in the engine. Venue‑specific gates will live in the adapter as a
+configuration‑driven limiter:
+
+| Check                 | Boundary       | Enforcement                                               |
+| --------------------- | -------------- | --------------------------------------------------------- |
+| Chain ID              | Adapter        | Preflight at connect and before every signature           |
+| Router allowlist      | Risk (adapter) | `router_addresses` only                                   |
+| Token‑pair allowlist  | Risk (adapter) | `allowed_token_pairs` only                                |
+| Order amount          | Risk (adapter) | `max_order_amount` in raw units of the order's base token |
+| Gas and fee           | Risk (adapter) | `gas_limit` and `max_fee_per_gas_wei` ceilings            |
+| Balance sufficiency   | Adapter + risk | Wallet balances as account state; limiter rejects short   |
+| Allowance sufficiency | Adapter        | Preflight and submission check against router allowance   |
+| Slippage              | Risk (adapter) | `max_slippage_bps` ceiling; quote derives the minimum     |
+| In‑flight limit       | Adapter        | Submission guard: one signer, one in‑flight transaction   |
+
+Every limiter rejection will refuse the order before signing and report a structured reason.
+
+### Persistence and reconciliation
+
+Execution persistence will add only new keys and tables: existing Redis, PostgreSQL, and other
+state will never be mutated or cleared, and upgrades will load existing data unchanged. Before any order ack, the
+client will persist a transaction record keyed by `client_order_id` carrying the nonce, the signed
+transaction hash, the chain ID, the venue parameters, and a status. On restart, pending records
+will reload and resume from on‑chain observation.
+
+Order state will derive from transaction observation:
+
+| Outcome   | Detection                                                | Order result                                             |
+| --------- | -------------------------------------------------------- | -------------------------------------------------------- |
+| Included  | Receipt with status 1, not yet finalized                 | Order stays submitted; inclusion recorded                |
+| Finalized | Inclusion block at or behind the chain's `finalized` tag | Fill report; wallet balances refresh; terminal           |
+| Reverted  | Receipt with status 0                                    | Rejected with venue reason                               |
+| Replaced  | Nonce consumed by a different hash before inclusion      | Canceled with replacement reason                         |
+| Dropped   | No receipt within `receipt_timeout_secs`                 | Record marked suspect and alerted; observation continues |
+| Restart   | Pending records reloaded and re‑observed                 | Resumes the matching path                                |
+| Reorg     | Inclusion block no longer canonical before finality      | Inclusion record cleared; observation resumes            |
+
+Finality is observed through the chain's `finalized` block tag (`eth_getBlockByNumber`), not a raw
+L2 confirmation count: on Arbitrum, L2 blocks remain revocable until their batch posts to L1, and
+the tag exposes exactly that boundary. Fills will emit only at finality, so a reorg never voids a
+fill. A dropped record keeps the order submitted and the in‑flight slot occupied until inclusion,
+replacement, or operator intervention; a signed transaction is never forgotten, and replacement
+assumes the key is used only by this client. Fill quantities will come from the receipt and the
+pool's Swap event amounts, decoded through the existing event parsing; the fill price derives from
+the executed amounts at the pool's price and size precision, and the transaction's gas cost maps
+to commission.
+
+### Execution configuration
+
+The `BlockchainExecutionClientConfig` will gain these additive fields:
+
+| Field                            | Default  | Description                                             |
+| -------------------------------- | -------- | ------------------------------------------------------- |
+| `signer_private_key_env`         | Required | Name of the environment variable holding the signer key |
+| `router_addresses`               | Required | Allowed SwapRouter addresses per DEX                    |
+| `allowed_token_pairs`            | Required | Allowed (token in, token out) address pairs             |
+| `slippage_bps`                   | Required | Default slippage applied to quotes                      |
+| `max_slippage_bps`               | Required | Limiter ceiling for slippage                            |
+| `max_order_amount`               | Required | Limiter per‑order raw amount ceiling (base token units) |
+| `max_fee_per_gas_wei`            | Required | Fee ceiling                                             |
+| `base_fee_buffer_bps`            | Required | Buffer over the derived base fee                        |
+| `gas_limit`                      | Required | Gas ceiling; buffered estimates above it reject         |
+| `gas_buffer_bps`                 | Required | Buffer over `eth_estimateGas`                           |
+| `deadline_seconds`               | Required | Swap deadline offset from the latest block timestamp    |
+| `max_quote_age_blocks`           | Required | Freshness bound for the local quote                     |
+| `receipt_timeout_secs`           | Required | Inclusion timeout before the dropped path               |
+| `unlimited_approval`             | `false`  | Approve the router unlimited instead of exact need      |
+| `weth_address`                   | Required | Wrapped native token for wrap operations                |
+| `postgres_cache_database_config` | Required | Durable store for execution records; required to submit |
+
+### Execution testing
+
+Automated execution tests will never use a live network:
+
+- Mocked-RPC unit tests will cover calldata encoding, EIP-1559 signing against fixed vectors, quote
+  and slippage arithmetic, nonce selection, limiter rejections, instrument resolution, receipt
+  classification, and reconciliation transitions, with JSON-RPC fixtures stored as files.
+- A pinned‑block Anvil integration will fork Arbitrum at a fixed block with
+  `anvil --fork-url <RPC> --fork-block-number <N>`, run wrap, approve, and a minimal WETH to USDC
+  swap against localhost only, and assert receipt status 1, positive gas usage, and a positive
+  USDC balance delta. The suite is gated behind `BLOCKCHAIN_FORK_TESTS=1` and
+  `BLOCKCHAIN_FORK_RPC_URL` and never runs in default CI. The fork‑source RPC only reads chain
+  state, so signed transactions never leave localhost. Anvil does not emulate Arbitrum's ArbOS gas
+  pricing, so gas estimation behavior is covered by mocked RPC responses, not the fork suite.
+
 ## Smoke tests
 
 ### HyperSync authentication
@@ -669,6 +868,9 @@ A new protocol family needs the design pass above.
 
 ## Current limitations
 
+- Order submission is not yet implemented: the execution client is a scaffold that connects and
+  refreshes wallet balances once, with order methods, account state, and signing still to land. See
+  [Execution](#execution).
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
   final-state Multicall hydration.
 - `multicall_calls_per_rpc_request` documents the intended batching limit, but some final snapshot
