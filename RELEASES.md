@@ -500,6 +500,7 @@ deferrals.
 - Improved Clippy compatibility for nightly and all-feature Rust builds (#4505), thanks @folknor
 - Improved `Quantity` tests across feature‑conditional precision modes (#4556), thanks @folknor
 - Improved pre-commit checks for DST, Python errors, and Cargo dependency groups (#4506), thanks @folknor
+- Improved DST coverage for `nautilus-backtest` run timestamps and convention enforcement
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
 - Improved v2 NETTING backtest throughput by ~17% by encoding position snapshot frames only when a consumer reads them
 - Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor

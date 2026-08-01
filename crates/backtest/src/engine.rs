@@ -46,6 +46,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable,
+    time::nanos_since_unix_epoch,
 };
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelHandle;
@@ -744,7 +745,7 @@ impl BacktestEngine {
 
             self.run_config_id = run_config_id;
             self.run_id = Some(UUID4::new());
-            self.run_started = Some(UnixNanos::from(std::time::SystemTime::now()));
+            self.run_started = Some(UnixNanos::from(nanos_since_unix_epoch()));
             self.backtest_start = Some(start_ns);
 
             for exchange in self.venues.values() {
@@ -898,7 +899,7 @@ impl BacktestEngine {
         self.kernel.data_engine.borrow_mut().stop();
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
-        self.run_finished = Some(UnixNanos::from(std::time::SystemTime::now()));
+        self.run_finished = Some(UnixNanos::from(nanos_since_unix_epoch()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
         logging_clock_set_realtime_mode();
     }
@@ -971,7 +972,7 @@ impl BacktestEngine {
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
 
-        self.run_finished = Some(UnixNanos::from(std::time::SystemTime::now()));
+        self.run_finished = Some(UnixNanos::from(nanos_since_unix_epoch()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
 
         // Switch logging back to realtime mode

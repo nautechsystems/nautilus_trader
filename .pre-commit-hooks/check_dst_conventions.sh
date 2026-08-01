@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces deterministic simulation testing (DST) path bans in the in-scope crates.
 #
-# Rules (all applied to production code in the 16 in-scope crates):
+# Rules (all applied to production code in the 17 in-scope crates):
 #   1. No direct std::time::Instant::now(), std::time::SystemTime::now(), or
 #      chrono::Utc::now() reads
 #   2. No raw RNG entries (rand::thread_rng, rand::rng(), fastrand::,
@@ -35,9 +35,9 @@ NC='\033[0m'
 VIOLATIONS=0
 ALLOW_MARKER="dst-ok"
 
-# The 16 in-scope crates per phase3 upstream closure plan.
+# The 17 in-scope crates per phase3 upstream closure plan.
 IN_SCOPE_CRATES=(
-  "analysis" "common" "core" "cryptography" "data" "execution"
+  "analysis" "backtest" "common" "core" "cryptography" "data" "execution"
   "indicators" "live" "model" "network" "persistence" "portfolio"
   "risk" "serialization" "system" "trading"
 )
