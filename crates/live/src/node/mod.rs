@@ -2304,9 +2304,11 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
-    /// - The strategy configures external order claims and the request repeats an
-    ///   instrument, either tier already contains a requested claim, or the
-    ///   execution engine is already borrowed.
+    /// - The strategy configures one or more external order claims and the request repeats
+    ///   an instrument, or either tier already contains a requested claim.
+    /// - The strategy configures one or more external order claims or an OMS type override,
+    ///   and the execution engine is already borrowed. A strategy configuring neither does
+    ///   not take the borrow and cannot fail this way.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
@@ -2331,12 +2333,9 @@ impl LiveNode {
         let mut exec_engine = if claims.is_empty() && oms_type.is_none() {
             None
         } else {
-            Some(
-                self.kernel
-                    .exec_engine
-                    .try_borrow_mut()
-                    .map_err(|e| anyhow::anyhow!("Cannot register external order claims: {e}"))?,
-            )
+            Some(self.kernel.exec_engine.try_borrow_mut().map_err(|e| {
+                anyhow::anyhow!("Cannot register external order claims or OMS type: {e}")
+            })?)
         };
         let instrument_ids = match &exec_engine {
             Some(exec_engine) => Self::preflight_external_order_claims(
@@ -4255,6 +4254,59 @@ mod tests {
     }
 
     #[rstest]
+    fn test_register_external_order_claims_engine_only_conflict_changes_neither_tier() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let conflicting_instrument = InstrumentId::from("AUDUSD.SIM");
+        let new_instrument = InstrumentId::from("EURUSD.SIM");
+        let existing_strategy_id = StrategyId::from("CLAIMS-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-002");
+
+        // Seed the conflict on the engine tier only, mirroring the manager-only case.
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_external_order_claims(
+                existing_strategy_id,
+                &HashSet::from([conflicting_instrument]),
+            )
+            .unwrap();
+
+        let result = node.register_external_order_claims(
+            new_strategy_id,
+            &[new_instrument, conflicting_instrument],
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&conflicting_instrument),
+            Some(existing_strategy_id)
+        );
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&conflicting_instrument),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&new_instrument),
+            None
+        );
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&new_instrument),
+            None
+        );
+    }
+
+    #[rstest]
     fn test_deregister_external_order_claims_allows_successor_to_claim() {
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
@@ -4472,7 +4524,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_strategy_without_claims_does_not_require_engine_borrow() {
+    fn test_add_strategy_without_claims_or_oms_type_does_not_require_engine_borrow() {
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
