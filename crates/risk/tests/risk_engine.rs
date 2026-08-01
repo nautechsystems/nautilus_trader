@@ -2642,6 +2642,141 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
 }
 
 #[rstest]
+fn test_submit_order_reduce_only_buy_over_free_balance_then_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    cash_account_state_million_usd: AccountState,
+    quote_audusd: QuoteTick,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    simple_cache.add_quote(quote_audusd).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100000").unwrap())
+        .reduce_only(true)
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved_process_messages.len(), 1);
+
+    assert_eq!(
+        saved_process_messages.first().unwrap().event_type(),
+        OrderEventType::Denied
+    );
+    assert_eq!(
+        saved_process_messages.first().unwrap().message().unwrap(),
+        Ustr::from(
+            "NOTIONAL_EXCEEDS_FREE_BALANCE: free=Money(1000000.00, USD), notional=Money(10100000.00, USD)"
+        )
+    );
+}
+
+#[rstest]
+fn test_submit_order_reduce_only_buy_within_free_balance_then_sends_to_execution(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    quote_audusd: QuoteTick,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    simple_cache.add_quote(quote_audusd).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("1000").unwrap())
+        .reduce_only(true)
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved_process_messages.len(), 0);
+
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+}
+
+#[rstest]
 fn test_submit_order_when_market_order_over_free_balance_with_borrowing_enabled_then_accepts(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
@@ -3848,12 +3983,16 @@ fn test_modify_order_beyond_rate_limit_then_rejects(
         )))
         .unwrap();
 
-    let order = OrderTestBuilder::new(OrderType::StopMarket)
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
         .instrument_id(instrument_audusd.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .trigger_price(Price::new(1.0001, 4))
         .build();
+
+    order
+        .apply(OrderEventAny::Submitted(order_submitted(&order)))
+        .unwrap();
 
     simple_cache
         .add_order(order, None, Some(client_id_binance), true)
@@ -3893,6 +4032,7 @@ fn test_modify_order_beyond_rate_limit_then_rejects(
         first_message.message().unwrap(),
         Ustr::from("Exceeded MAX_ORDER_MODIFY_RATE")
     );
+    assert_eq!(first_message.account_id(), Some(account_id()));
 }
 
 #[rstest]

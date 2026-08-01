@@ -376,7 +376,7 @@ impl RiskEngine {
             timestamp,
             false,
             order.venue_order_id(),
-            None,
+            order.account_id(),
         ))
     }
 
@@ -1610,8 +1610,8 @@ impl RiskEngine {
 
                 // Check if order reduces an existing position
                 let is_position_reducing = if order.is_buy() {
-                    let reducing = order.is_reduce_only()
-                        || (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
+                    let reducing =
+                        (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
                     cum_buy_qty_raw += effective_quantity.raw;
                     reducing
                 } else if order.is_sell() {

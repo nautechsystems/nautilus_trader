@@ -492,6 +492,8 @@ deferrals.
 - Fixed Rust `Throttler` stranding buffered messages after a rejected `try_reserve`, breaking drain order
 - Fixed v2 reconciliation booking negative back-solved inferred fill prices on instruments that disallow them
 - Fixed v2 reconciliation dropping inferred fills and voids when the venue average was unusable
+- Fixed v2 `RiskEngine` skipping cash and betting account balance checks for reduce-only buy orders
+- Fixed v2 `RiskEngine` rate-limit modify-order rejections omitting the order `account_id`
 
 ### Internal Improvements
 - Standardized Rust adapter task‑handle storage with `TaskHandles` while retaining client‑local spawn and shutdown policies
