@@ -3725,7 +3725,7 @@ fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPa
     );
 
     // The quote arrives on Friday. The pending Wednesday remains first and
-    // uses January's rates plus the Wednesday triple multiplier.
+    // the full due batch uses each booking date's rates and multiplier.
     add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
     assert_eq!(
         process_rollover(
@@ -3735,32 +3735,68 @@ fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPa
             &instruments,
             rollover_timestamp(2024, 2, 2),
         ),
-        vec![Money::from("-8.22 USD")]
+        vec![
+            Money::from("-8.22 USD"),
+            Money::from("10.96 USD"),
+            Money::from("32.88 USD"),
+        ]
     );
 
-    // Once Wednesday is acknowledged, Thursday initializes and is immediately due.
-    assert_eq!(
+    // Acknowledgement advances the cursor to Friday, the stored batch end date.
+    assert!(
         process_rollover(
             &module,
             &exchange,
             &cache,
             &instruments,
             rollover_timestamp(2024, 2, 2) + 1,
-        ),
-        vec![Money::from("10.96 USD")]
+        )
+        .is_empty()
     );
+}
 
-    // Friday follows on the next invocation and uses the triple multiplier.
+#[rstest]
+fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-WEEKEND",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
+    let instruments = AHashMap::from([(instrument.id(), instrument)]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+
     assert_eq!(
         process_rollover(
             &module,
             &exchange,
             &cache,
             &instruments,
-            rollover_timestamp(2024, 2, 2) + 2,
+            rollover_timestamp(2020, 1, 17),
         ),
-        vec![Money::from("32.88 USD")]
+        vec![Money::from("-6.16 USD")]
     );
+    let monday = rollover_timestamp(2020, 1, 20);
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, monday),
+        vec![Money::from("-2.05 USD")]
+    );
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, monday + 1).is_empty());
 }
 
 #[rstest]
@@ -4123,6 +4159,8 @@ fn test_fx_rollover_distinguishes_same_ordinal_across_years(audusd_sim: Currency
         .len(),
         1
     );
+    // The catch-up includes the remaining 12 January 2020 weekdays and the
+    // first 11 January 2021 weekdays. Dates without configured rates skip.
     assert_eq!(
         process_rollover(
             &module,
@@ -4132,7 +4170,7 @@ fn test_fx_rollover_distinguishes_same_ordinal_across_years(audusd_sim: Currency
             rollover_timestamp(2021, 1, 15),
         )
         .len(),
-        1
+        23
     );
 }
 
