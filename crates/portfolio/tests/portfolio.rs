@@ -5230,6 +5230,397 @@ fn test_net_exposure_filters_by_account_id(
 }
 
 #[rstest]
+fn test_net_exposure_nets_long_and_short_same_instrument(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    let quote = QuoteTick::new(
+        instrument_audusd.id(),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill_long = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-LONG"),
+    );
+    let pos_long = Position::new(&instrument_audusd, fill_long);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_long, OmsType::Hedging)
+        .unwrap();
+    let opened_long = get_open_position(&pos_long);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_long));
+
+    let fill_short = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        PositionId::new("P-SHORT"),
+    );
+    let pos_short = Position::new(&instrument_audusd, fill_short);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_short, OmsType::Hedging)
+        .unwrap();
+    let opened_short = get_open_position(&pos_short);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_short));
+
+    // Net exposure = |100_000 x 0.800 (bid) - 50_000 x 0.801 (ask)| = 39_950 USD
+    let net = portfolio
+        .net_exposure(&instrument_audusd.id(), None)
+        .unwrap();
+    assert_eq!(net, Money::new(39_950.0, Currency::USD()));
+}
+
+#[rstest]
+fn test_net_exposures_nets_long_and_short_same_instrument(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    let quote = QuoteTick::new(
+        instrument_audusd.id(),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill_long = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-LONG"),
+    );
+    let pos_long = Position::new(&instrument_audusd, fill_long);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_long, OmsType::Hedging)
+        .unwrap();
+    let opened_long = get_open_position(&pos_long);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_long));
+
+    let fill_short = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        PositionId::new("P-SHORT"),
+    );
+    let pos_short = Position::new(&instrument_audusd, fill_short);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_short, OmsType::Hedging)
+        .unwrap();
+    let opened_short = get_open_position(&pos_short);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_short));
+
+    // Net exposure = |100_000 x 0.800 (bid) - 50_000 x 0.801 (ask)| = 39_950 USD
+    let exposures = portfolio
+        .net_exposures(&Venue::test_default(), None)
+        .unwrap();
+    assert_eq!(
+        exposures.get(&Currency::USD()),
+        Some(&Money::new(39_950.0, Currency::USD()))
+    );
+}
+
+#[rstest]
+fn test_net_exposure_short_only_returns_positive_magnitude(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    let quote = QuoteTick::new(
+        instrument_audusd.id(),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill_short = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        PositionId::new("P-SHORT"),
+    );
+    let pos_short = Position::new(&instrument_audusd, fill_short);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_short, OmsType::Hedging)
+        .unwrap();
+    let opened_short = get_open_position(&pos_short);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_short));
+
+    // Exposure magnitude = 50_000 x 0.801 (ask) = 40_050 USD
+    let net = portfolio
+        .net_exposure(&instrument_audusd.id(), None)
+        .unwrap();
+    assert_eq!(net, Money::new(40_050.0, Currency::USD()));
+}
+
+#[rstest]
+fn test_net_exposure_fully_hedged_nets_spread_residual(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    let quote = QuoteTick::new(
+        instrument_audusd.id(),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill_long = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("50000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-LONG"),
+    );
+    let pos_long = Position::new(&instrument_audusd, fill_long);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_long, OmsType::Hedging)
+        .unwrap();
+    let opened_long = get_open_position(&pos_long);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_long));
+
+    let fill_short = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-SHORT"),
+    );
+    let pos_short = Position::new(&instrument_audusd, fill_short);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_short, OmsType::Hedging)
+        .unwrap();
+    let opened_short = get_open_position(&pos_short);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_short));
+
+    // 50_000 x 0.800 (bid) - 50_000 x 0.801 (ask) nets to -50 USD
+    let net = portfolio
+        .net_exposure(&instrument_audusd.id(), None)
+        .unwrap();
+    assert_eq!(net, Money::new(50.0, Currency::USD()));
+
+    let exposures = portfolio
+        .net_exposures(&Venue::test_default(), None)
+        .unwrap();
+    assert_eq!(
+        exposures.get(&Currency::USD()),
+        Some(&Money::new(50.0, Currency::USD()))
+    );
+}
+
+#[rstest]
+fn test_net_exposures_skips_zero_net_instrument(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    let quote = QuoteTick::new(
+        instrument_audusd.id(),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill_long = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("50000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-LONG"),
+    );
+    let pos_long = Position::new(&instrument_audusd, fill_long);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_long, OmsType::Hedging)
+        .unwrap();
+    let opened_long = get_open_position(&pos_long);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_long));
+
+    let fill_short = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-SHORT"),
+    );
+    let pos_short = Position::new(&instrument_audusd, fill_short);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_short, OmsType::Hedging)
+        .unwrap();
+    let opened_short = get_open_position(&pos_short);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_short));
+
+    // Opposing 50_000 positions at one price net to exactly zero
+    let net = portfolio
+        .net_exposure(&instrument_audusd.id(), None)
+        .unwrap();
+    assert_eq!(net, Money::zero(Currency::USD()));
+
+    // A fully hedged instrument contributes no exposure entry
+    let exposures = portfolio
+        .net_exposures(&Venue::test_default(), None)
+        .unwrap();
+    assert!(!exposures.contains_key(&Currency::USD()));
+}
+
+#[rstest]
+fn test_net_exposures_does_not_net_across_instruments(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    instrument_gbpusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    let quote_audusd = QuoteTick::new(
+        instrument_audusd.id(),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        Price::new(0.801, instrument_audusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_quote(quote_audusd)
+        .unwrap();
+    portfolio.update_quote_tick(&quote_audusd);
+
+    let quote_gbpusd = QuoteTick::new(
+        instrument_gbpusd.id(),
+        Price::new(1.3, instrument_gbpusd.price_precision()),
+        Price::new(1.301, instrument_gbpusd.price_precision()),
+        Quantity::new(1.0, 0),
+        Quantity::new(1.0, 0),
+        0.into(),
+        0.into(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_quote(quote_gbpusd)
+        .unwrap();
+    portfolio.update_quote_tick(&quote_gbpusd);
+
+    let fill_long = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-LONG"),
+    );
+    let pos_long = Position::new(&instrument_audusd, fill_long);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_long, OmsType::Hedging)
+        .unwrap();
+    let opened_long = get_open_position(&pos_long);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_long));
+
+    let fill_short = make_fill_for_account(
+        &instrument_gbpusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(1.301, instrument_gbpusd.price_precision()),
+        PositionId::new("P-SHORT"),
+    );
+    let pos_short = Position::new(&instrument_gbpusd, fill_short);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_short, OmsType::Hedging)
+        .unwrap();
+    let opened_short = get_open_position(&pos_short);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened_short));
+
+    // Per-instrument magnitudes sum without cross-instrument netting:
+    // |100_000 x 0.800| + |-50_000 x 1.301| = 80_000 + 65_050 = 145_050 USD
+    let exposures = portfolio
+        .net_exposures(&Venue::test_default(), None)
+        .unwrap();
+    assert_eq!(
+        exposures.get(&Currency::USD()),
+        Some(&Money::new(145_050.0, Currency::USD()))
+    );
+}
+
+#[rstest]
 fn test_unrealized_pnl_filters_by_account_id(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,

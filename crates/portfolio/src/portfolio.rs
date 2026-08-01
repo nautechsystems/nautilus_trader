@@ -605,7 +605,7 @@ impl Portfolio {
             return Some(IndexMap::new()); // Nothing to calculate
         }
 
-        let mut net_exposures: IndexMap<Currency, Money> = IndexMap::new();
+        let mut instrument_sums: IndexMap<InstrumentId, (Currency, Decimal)> = IndexMap::new();
 
         for position in positions_open {
             let instrument = if let Some(instrument) = cache.instrument(&position.instrument_id) {
@@ -618,13 +618,17 @@ impl Portfolio {
                 return None; // Cannot calculate
             };
 
-            if position.side == PositionSide::Flat {
-                log::error!(
-                    "Cannot calculate net exposures: position is flat for {}",
-                    position.instrument_id
-                );
-                continue; // Nothing to calculate
-            }
+            let sign = match position.side {
+                PositionSide::Long => Decimal::ONE,
+                PositionSide::Short => Decimal::NEGATIVE_ONE,
+                _ => {
+                    log::error!(
+                        "Cannot calculate net exposures: position is flat for {}",
+                        position.instrument_id
+                    );
+                    continue; // Nothing to calculate
+                }
+            };
 
             let price = self.get_price(&position)?;
             let notional = match position.try_notional_value(price) {
@@ -653,14 +657,27 @@ impl Portfolio {
 
             let output_currency = account.base_currency().unwrap_or(notional.currency);
 
-            let net_exposure =
-                match Money::from_decimal(notional.as_decimal() * xrate, output_currency) {
-                    Ok(money) => money,
-                    Err(e) => {
-                        log::error!("Cannot calculate net exposures: {e}");
-                        return None;
-                    }
-                };
+            let (_, sum) = instrument_sums
+                .entry(position.instrument_id)
+                .or_insert((output_currency, Decimal::ZERO));
+            *sum += notional.as_decimal() * xrate * sign;
+        }
+
+        let mut net_exposures: IndexMap<Currency, Money> = IndexMap::new();
+
+        // Opposing sides net within each instrument; magnitudes then sum per currency
+        for (output_currency, sum) in instrument_sums.into_values() {
+            let net_exposure = match Money::from_decimal(sum.abs(), output_currency) {
+                Ok(money) => money,
+                Err(e) => {
+                    log::error!("Cannot calculate net exposures: {e}");
+                    return None;
+                }
+            };
+
+            if net_exposure.is_zero() {
+                continue; // Fully hedged instrument contributes no exposure
+            }
 
             net_exposures
                 .entry(output_currency)
@@ -1417,6 +1434,18 @@ impl Portfolio {
         let mut output_currency: Option<Currency> = None;
 
         for position in &positions_open {
+            let sign = match position.side {
+                PositionSide::Long => Decimal::ONE,
+                PositionSide::Short => Decimal::NEGATIVE_ONE,
+                _ => {
+                    log::error!(
+                        "Cannot calculate net exposure: position is flat for {}",
+                        position.instrument_id
+                    );
+                    continue; // Nothing to calculate
+                }
+            };
+
             // Get account for THIS position
             let account = match cache.try_account(&position.account_id) {
                 Ok(account) => account,
@@ -1483,12 +1512,13 @@ impl Portfolio {
                 return None;
             };
 
-            net_exposure += notional_value.as_decimal() * xrate;
+            net_exposure += notional_value.as_decimal() * xrate * sign;
         }
 
         let output_currency = output_currency.unwrap_or_else(|| instrument.cost_currency());
 
-        match Money::from_decimal(net_exposure, output_currency) {
+        // Net exposure is reported as a magnitude once opposing sides are netted
+        match Money::from_decimal(net_exposure.abs(), output_currency) {
             Ok(money) => Some(money),
             Err(e) => {
                 log::error!("Cannot calculate net exposure: {e}");

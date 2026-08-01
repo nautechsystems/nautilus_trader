@@ -213,6 +213,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 portfolio snapshots dropping temporarily unpriced positions and hiding stale valuations
 - Fixed v2 equity curves omitting unrealized PnL between fills (#3899), thanks for reporting @q-learning-trader
 - Fixed v2 account-scoped valuations clearing other accounts' missing-price flags on shared venues
+- Fixed v2 portfolio net exposure ignoring position side, so hedged books reported gross instead of net (v1 parity)
 - Fixed v2 account locks and margins using settlement currency instead of each calculated currency
 - Fixed v2 portfolio pending recovery discarding initial margin after recalculating maintenance margin
 - Fixed v2 portfolio initialization materializing account balance currencies in a nondeterministic order
