@@ -168,6 +168,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case(5)]
+    #[case(252)]
+    fn test_undefined_cagr_propagates_to_calmar_ratio(#[case] days: usize) {
+        let ratio = CalmarRatio::new(Some(252));
+        let mut values = vec![0.0; days];
+        values[0] = -1.5;
+        let returns = create_returns(&values);
+
+        let result = ratio.calculate_from_returns(&returns).unwrap();
+
+        assert!(result.is_nan());
+    }
+
+    #[rstest]
     fn test_positive_ratio() {
         let ratio = CalmarRatio::new(Some(252));
         // Simulate a year with 20% CAGR and 10% max drawdown

@@ -30,18 +30,18 @@ use crate::{
     Returns,
     analyzer::{PortfolioAnalyzer, Statistic},
     statistics::{
-        alpha::Alpha, beta_ratio::BetaRatio, down_capture_ratio::DownCaptureRatio,
-        expectancy::Expectancy, expected_shortfall::ExpectedShortfall,
-        information_ratio::InformationRatio, long_ratio::LongRatio, loser_avg::AvgLoser,
-        loser_max::MaxLoser, loser_min::MinLoser, omega_ratio::OmegaRatio,
-        profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
-        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
-        returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
-        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, tail_ratio::TailRatio,
-        tracking_error::TrackingError, treynor_ratio::TreynorRatio, ulcer_index::UlcerIndex,
-        up_capture_ratio::UpCaptureRatio, value_at_risk::ValueAtRisk, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        alpha::Alpha, beta_ratio::BetaRatio, cagr::CAGR, calmar_ratio::CalmarRatio,
+        down_capture_ratio::DownCaptureRatio, expectancy::Expectancy,
+        expected_shortfall::ExpectedShortfall, information_ratio::InformationRatio,
+        long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser, loser_min::MinLoser,
+        max_drawdown::MaxDrawdown, omega_ratio::OmegaRatio, profit_factor::ProfitFactor,
+        returns_avg::ReturnsAverage, returns_avg_loss::ReturnsAverageLoss,
+        returns_avg_win::ReturnsAverageWin, returns_kurtosis::ReturnsKurtosis,
+        returns_skewness::ReturnsSkewness, returns_volatility::ReturnsVolatility,
+        risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
+        tail_ratio::TailRatio, tracking_error::TrackingError, treynor_ratio::TreynorRatio,
+        ulcer_index::UlcerIndex, up_capture_ratio::UpCaptureRatio, value_at_risk::ValueAtRisk,
+        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -236,6 +236,18 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "CAGR" => {
+                let stat = statistic.extract::<CAGR>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "CalmarRatio" => {
+                let stat = statistic.extract::<CalmarRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "MaxDrawdown" => {
+                let stat = statistic.extract::<MaxDrawdown>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             "Alpha" => {
                 let stat = statistic.extract::<Alpha>(py)?;
                 self.register_statistic(Arc::new(stat));
@@ -381,6 +393,18 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
+            "CAGR" => {
+                let stat = statistic.extract::<CAGR>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "CalmarRatio" => {
+                let stat = statistic.extract::<CalmarRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "MaxDrawdown" => {
+                let stat = statistic.extract::<MaxDrawdown>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
             "Alpha" => {
                 let stat = statistic.extract::<Alpha>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
@@ -457,16 +481,9 @@ impl PortfolioAnalyzer {
     #[pyo3(name = "add_positions")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_positions(&mut self, py: Python, positions: Vec<Py<PyAny>>) -> PyResult<()> {
-        // Extract Position objects from Cython wrappers
         let positions: Vec<Position> = positions
             .iter()
-            .map(|p| {
-                // Try to get the underlying Rust Position
-                // For now, we'll need to handle Cython Position by accessing its _mem field
-                p.getattr(py, "_mem")?
-                    .extract::<Position>(py)
-                    .map_err(Into::into)
-            })
+            .map(|position| position.extract::<Position>(py).map_err(Into::into))
             .collect::<PyResult<Vec<Position>>>()?;
 
         self.add_positions(&positions);

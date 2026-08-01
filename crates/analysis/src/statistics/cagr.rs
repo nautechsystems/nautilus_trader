@@ -84,12 +84,16 @@ impl PortfolioStatistic for CAGR {
         let days = daily_returns.len().max(1) as f64;
 
         // CAGR = (1 + total_return)^(period/days) - 1
-        let cagr = (1.0 + total_return).powf(self.period as f64 / days) - 1.0;
+        let ending_value = 1.0 + total_return;
+        if ending_value < 0.0 {
+            return Some(f64::NAN);
+        }
+        let cagr = ending_value.powf(self.period as f64 / days) - 1.0;
 
         if cagr.is_finite() {
             Some(cagr)
         } else {
-            Some(0.0)
+            Some(f64::NAN)
         }
     }
     fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
@@ -170,6 +174,20 @@ mod tests {
 
         // Should be negative
         assert!(result < 0.0);
+    }
+
+    #[rstest]
+    #[case(5)]
+    #[case(252)]
+    fn test_undefined_cagr_returns_nan(#[case] days: usize) {
+        let cagr = CAGR::new(Some(252));
+        let mut values = vec![0.0; days];
+        values[0] = -1.5;
+        let returns = create_returns(&values);
+
+        let result = cagr.calculate_from_returns(&returns).unwrap();
+
+        assert!(result.is_nan());
     }
 
     #[rstest]

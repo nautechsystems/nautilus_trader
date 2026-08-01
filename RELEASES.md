@@ -196,6 +196,7 @@ adapter set. The following limits remain deferred:
 - Fixed `nautilus database init` leaving schema objects owned by the bootstrap administrator
 - Fixed the v2 SQL schema loader splitting dollar-quoted (`$$`) statement bodies on their inner semicolons
 - Fixed Parquet catalog queries panicking in the Rust live runtime (#4526), thanks @TheoBabilon
+- Fixed `CAGR` and `CalmarRatio` reporting undefined results as zero
 - Fixed v2 clock `set_time_alert` and `set_timer` panicking on pre-epoch or out-of-range `DateTime` inputs
 - Fixed v2 clock past-alert warning logging the adjusted time instead of the original alert time
 - Fixed v2 sandbox execution retaining matching engines and cache state for expired quote-only instruments
@@ -203,6 +204,8 @@ adapter set. The following limits remain deferred:
 - Fixed v2 result tearsheets to reject disposed node state
 - Fixed v2 result tearsheets reporting the backtest range instead of the wall‑clock run duration
 - Fixed v2 result tearsheets to filter PnL and account balances by currency
+- Fixed v2 `PortfolioAnalyzer` account returns failing after empty balance snapshots
+- Fixed v2 `PortfolioAnalyzer` native position ingestion and statistic registration
 - Fixed v2 `BettingInstrument` catalog round trips corrupting raw symbols, increments, and precisions
 - Fixed v2 instrument catalog round trips dropping constraints, margins, and fees
 - Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
