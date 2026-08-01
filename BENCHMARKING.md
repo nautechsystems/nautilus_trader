@@ -77,6 +77,9 @@ or public methods judged to be hot paths. Examples:
 
 - `crates/execution/benches/matching_core.rs`: the `OrderMatchingCore` add /
   delete / lookup / iterate API.
+- `crates/execution/benches/matching_engine.rs`: market data, order submission,
+  passive matching, resting fills, modify, and cancel paths through
+  `OrderMatchingEngine`.
 - `crates/common/benches/matching.rs`: message-bus topic matching.
 - `crates/common/benches/cache_orders.rs`: order cache query and ingest.
 
@@ -101,9 +104,11 @@ These exercise larger units of work: ingesting a tick burst through the
 data engine, replaying a market session, dispatching through the live-node
 runner. Heavier to maintain but a closer proxy for user-observable
 performance than a single-function micro. Examples live under
-`crates/data/benches/`, `crates/live/benches/`, and the Python performance
-suite in `tests/performance_tests/`. Note that `crates/live/benches/` are
-still scoped (e.g. dispatch only, not the full select loop); the deeper
+`crates/backtest/benches/`, `crates/data/benches/`, `crates/live/benches/`, and
+the Python performance suite in `tests/performance_tests/`. The backtest engine
+benchmark covers single‑stream and multi‑stream market data replay plus
+representative order workloads. Note that `crates/live/benches/` are still
+scoped (e.g. dispatch only, not the full select loop); the deeper
 runner-plus-engine workload is the ignored stress test at
 `crates/live/tests/stress.rs`.
 
@@ -114,9 +119,9 @@ branch via the
 [`performance` workflow](.github/workflows/performance.yml). The included
 crates are listed in the `CI_BENCH_CRATES` variable of the workspace
 `Makefile` (currently `nautilus-core`, `nautilus-model`, `nautilus-common`,
-and `nautilus-live`). To opt a new bench into nightly CI execution,
-register it in its crate's `Cargo.toml` and ensure that crate is in
-`CI_BENCH_CRATES`.
+`nautilus-execution`, `nautilus-backtest`, and `nautilus-live`). To opt a new
+bench into nightly CI execution, register it in its crate's `Cargo.toml` and
+ensure that crate is in `CI_BENCH_CRATES`.
 
 CI does not currently fail PRs on Rust benchmark deltas: the performance
 workflow only runs on pushes to `nightly`, not on PR opens. Contributors

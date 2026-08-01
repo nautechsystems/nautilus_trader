@@ -80,3 +80,8 @@ serde_json = { workspace = true }
 name = "matching_core"
 path = "benches/matching_core.rs"
 harness = false
+
+[[bench]]
+name = "matching_engine"
+path = "benches/matching_engine.rs"
+harness = false

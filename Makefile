@@ -1125,7 +1125,8 @@ cargo-miri:  #-- Run Miri across the in-scope foundational and plug-in crates
 #------------------------------------------------------------------------------
 
 # List of crates whose criterion/iai benches run in the performance workflow
-CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common nautilus-live
+CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common \
+	nautilus-execution nautilus-backtest nautilus-live
 
 # NOTE:
 # - We invoke `cargo bench` *once per crate* to avoid the well-known
