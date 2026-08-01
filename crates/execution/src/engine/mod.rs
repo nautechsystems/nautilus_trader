@@ -2531,7 +2531,9 @@ impl ExecutionEngine {
 
                 if validation.is_ok() {
                     let event = OrderEventAny::Filled(fill.clone());
-                    let Some(order) = self.update_cached_order(client_order_id, &event) else {
+                    let Some(order) =
+                        self.update_cached_order(client_order_id, &event, apply_position)
+                    else {
                         return;
                     };
 
@@ -2638,7 +2640,10 @@ impl ExecutionEngine {
                     ));
                 }
 
-                if self.update_cached_order(client_order_id, &event).is_none() {
+                if self
+                    .update_cached_order(client_order_id, &event, true)
+                    .is_none()
+                {
                     return;
                 }
 
@@ -2650,7 +2655,10 @@ impl ExecutionEngine {
                 self.publish_position_events(position_events);
             }
             _ => {
-                if self.update_cached_order(client_order_id, &event).is_some() {
+                if self
+                    .update_cached_order(client_order_id, &event, true)
+                    .is_some()
+                {
                     self.publish_order_event(&event);
                 }
             }
@@ -2680,20 +2688,20 @@ impl ExecutionEngine {
         let duplicate_position_fill = self.position_contains_trade_id(position_id, fill.trade_id);
 
         let event = OrderEventAny::Filled(fill.clone());
-        let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
-        msgbus::send_order_event(portfolio_endpoint, event.clone());
 
-        let position_events = if duplicate_position_fill {
+        if duplicate_position_fill {
             log::warn!(
-                "Duplicate leg fill: {} trade_id={} already applied to position {}, skipping position update",
+                "Duplicate leg fill: {} trade_id={} already applied to position {}, skipping",
                 fill.client_order_id,
                 fill.trade_id,
                 position_id
             );
-            Vec::new()
-        } else {
-            self.handle_position_update(&instrument, fill, oms_type)
-        };
+            return;
+        }
+
+        let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
+        msgbus::send_order_event(portfolio_endpoint, event.clone());
+        let position_events = self.handle_position_update(&instrument, fill, oms_type);
         self.publish_order_event(&event);
         self.publish_position_events(position_events);
     }
@@ -3023,6 +3031,7 @@ impl ExecutionEngine {
         &self,
         client_order_id: ClientOrderId,
         event: &OrderEventAny,
+        send_portfolio_update: bool,
     ) -> Option<OrderAny> {
         let result = { self.cache.borrow_mut().update_order(event) };
 
@@ -3127,7 +3136,9 @@ impl ExecutionEngine {
             self.create_order_state_snapshot(&order);
         }
 
-        self.send_order_update_to_portfolio(event);
+        if send_portfolio_update {
+            self.send_order_update_to_portfolio(event);
+        }
 
         Some(order)
     }

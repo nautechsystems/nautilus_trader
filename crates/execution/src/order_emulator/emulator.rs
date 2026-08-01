@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
@@ -49,7 +49,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use super::handlers::OrderEmulatorOnEventHandler;
+use super::{PendingMessage, handlers::OrderEmulatorOnEventHandler};
 use crate::{
     matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     order_manager::{OrderManagerAction, manager::OrderManager},
@@ -70,6 +70,7 @@ pub struct OrderEmulator {
     quote_handlers: AHashMap<InstrumentId, TypedHandler<QuoteTick>>,
     trade_handlers: AHashMap<InstrumentId, TypedHandler<TradeTick>>,
     on_event_handler: Option<TypedHandler<OrderEventAny>>,
+    pending_messages: Rc<RefCell<VecDeque<PendingMessage>>>,
 }
 
 impl Debug for OrderEmulator {
@@ -102,16 +103,24 @@ impl OrderEmulator {
             quote_handlers: AHashMap::new(),
             trade_handlers: AHashMap::new(),
             on_event_handler: None,
+            pending_messages: Rc::new(RefCell::new(VecDeque::new())),
         }
     }
 
     pub fn register_msgbus_handlers(emulator: &Rc<RefCell<Self>>) {
         let weak = WeakCell::from(Rc::downgrade(emulator));
+        let pending_messages = emulator.borrow().pending_messages.clone();
 
         let execute_weak = weak.clone();
+        let execute_pending = pending_messages.clone();
         let execute_handler = TypedIntoHandler::from(move |cmd: TradingCommand| {
             if let Some(emulator) = execute_weak.upgrade() {
-                emulator.borrow_mut().execute(cmd);
+                match emulator.try_borrow_mut() {
+                    Ok(mut emulator) => emulator.execute(cmd),
+                    Err(_) => execute_pending
+                        .borrow_mut()
+                        .push_back(PendingMessage::Command(Box::new(cmd))),
+                }
             }
         });
         msgbus::register_trading_command_endpoint(
@@ -136,6 +145,7 @@ impl OrderEmulator {
         let on_event_handler = TypedHandler::new(OrderEmulatorOnEventHandler::new(
             Ustr::from(UUID4::new().as_str()),
             weak,
+            WeakCell::from(Rc::downgrade(&pending_messages)),
         ));
 
         let mut emulator = emulator.borrow_mut();
@@ -311,7 +321,7 @@ impl OrderEmulator {
 
                 let is_position_closed = parent_order
                     .position_id()
-                    .is_some_and(|id| self.cache.borrow().is_position_closed(&id));
+                    .is_none_or(|id| self.cache.borrow().is_position_closed(&id));
                 if parent_order.is_closed() && is_position_closed {
                     let actions = self.manager.cancel_order(&order);
                     self.dispatch_manager_actions(actions);
@@ -356,6 +366,8 @@ impl OrderEmulator {
             self.handle_submit_order(&command);
         }
 
+        self.drain_pending_messages();
+
         Ok(())
     }
 
@@ -373,12 +385,26 @@ impl OrderEmulator {
             log::debug!("Error deleting order: {e}");
         }
         // else: Order not in cache yet
+
+        self.drain_pending_messages();
+    }
+
+    fn drain_pending_messages(&mut self) {
+        loop {
+            let message = self.pending_messages.borrow_mut().pop_front();
+            match message {
+                Some(PendingMessage::Command(command)) => self.execute(*command),
+                Some(PendingMessage::Event(event)) => self.on_event(&event),
+                None => break,
+            }
+        }
     }
 
     pub const fn on_stop(&self) {}
 
     pub fn on_reset(&mut self) {
         self.manager.reset();
+        self.pending_messages.borrow_mut().clear();
         self.matching_cores.clear();
         self.unsubscribe_all_market_data();
         self.unsubscribe_strategy_order_events();
@@ -469,6 +495,8 @@ impl OrderEmulator {
             TradingCommand::CancelAllOrders(ref command) => self.handle_cancel_all_orders(command),
             _ => log::error!("Cannot handle command: unrecognized {command:?}"),
         }
+
+        self.drain_pending_messages();
     }
 
     fn dispatch_manager_actions(&mut self, actions: Vec<OrderManagerAction>) {
@@ -606,7 +634,7 @@ impl OrderEmulator {
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
         ) {
             self.update_trailing_stop_order(&mut order);
-            if order.trigger_price().is_none() {
+            if order.trigger_price().is_none() && is_order_activated(&order) {
                 log::error!(
                     "Cannot handle trailing stop order with no trigger_price and no market updates"
                 );
@@ -615,18 +643,24 @@ impl OrderEmulator {
                 self.dispatch_manager_actions(actions);
                 return;
             }
+            // Not yet activated: held inert until the activation price is touched
         }
 
         self.check_monitoring(strategy_id, position_id);
 
         // Check if immediately marketable
+        let is_activated = is_order_activated(&order);
         let match_info = RestingOrder::new(
             order.client_order_id(),
             order.order_side().as_specified(),
             order.order_type(),
-            order.trigger_price(),
-            order.price(),
-            true, // is_activated
+            if is_activated {
+                order.trigger_price()
+            } else {
+                None
+            },
+            if is_activated { order.price() } else { None },
+            is_activated,
         );
 
         if let Some(action) = matching_core.match_order(&match_info) {
@@ -810,13 +844,18 @@ impl OrderEmulator {
                     log::debug!("Cannot update order match info: {e:?}");
                 }
 
+                let is_activated = is_order_activated(&order);
                 let match_info = RestingOrder::new(
                     order.client_order_id(),
                     order.order_side().as_specified(),
                     order.order_type(),
-                    order.trigger_price(),
-                    order.price(),
-                    true, // is_activated
+                    if is_activated {
+                        order.trigger_price()
+                    } else {
+                        None
+                    },
+                    if is_activated { order.price() } else { None },
+                    is_activated,
                 );
                 let action = matching_core.match_order(&match_info);
                 if action.is_none() {
@@ -1072,6 +1111,8 @@ impl OrderEmulator {
 
             self.update_trailing_stop_order(&mut order);
         }
+
+        self.drain_pending_messages();
     }
 
     fn dispatch_match_action(&mut self, action: MatchAction) {
@@ -1309,7 +1350,9 @@ impl OrderEmulator {
 
             let original_events = order.events();
 
-            for event in original_events {
+            // Insert each event at the beginning in reverse
+            // to preserve the correct order of events.
+            for event in original_events.into_iter().rev() {
                 transformed.events.insert(0, event.clone());
             }
 
@@ -1445,7 +1488,9 @@ impl OrderEmulator {
 
             let original_events = order.events();
 
-            for event in original_events {
+            // Insert each event at the beginning in reverse
+            // to preserve the correct order of events.
+            for event in original_events.into_iter().rev() {
                 transformed.events.insert(0, event.clone());
             }
 
@@ -1532,6 +1577,18 @@ impl OrderEmulator {
             }
         }
 
+        let was_activated = is_order_activated(order);
+
+        if !self.maybe_activate_trailing_stop(order, bid, ask, last) {
+            return; // Not yet activated
+        }
+
+        if !was_activated {
+            // Activation transitioned: re-key the held entry from its inert
+            // pre-activation state regardless of the trailing outcome below.
+            self.refresh_matching_core_entry(order, trigger_instrument_id);
+        }
+
         let (new_trigger_px, new_limit_px) = match trailing_stop_calculate(
             price_increment,
             order.trigger_price(),
@@ -1579,22 +1636,130 @@ impl OrderEmulator {
             }
         };
 
+        self.refresh_matching_core_entry(order, trigger_instrument_id);
+
+        self.send_risk_event(wrapped);
+    }
+
+    fn refresh_matching_core_entry(
+        &mut self,
+        order: &OrderAny,
+        trigger_instrument_id: InstrumentId,
+    ) {
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(order.client_order_id()) {
                 log::debug!("Cannot update trailing-stop match info: {e:?}");
             }
 
+            // A trailing stop with no trigger price yet must stay inert:
+            // its limit price must never match as a plain limit order.
+            let (trigger_price, limit_price) = if order.trigger_price().is_some() {
+                (order.trigger_price(), order.price())
+            } else {
+                (None, None)
+            };
+
             matching_core.add_order(RestingOrder::new(
                 order.client_order_id(),
                 order.order_side().as_specified(),
                 order.order_type(),
-                order.trigger_price(),
-                order.price(),
-                true,
+                trigger_price,
+                limit_price,
+                is_order_activated(order),
             ));
         }
+    }
 
-        self.send_risk_event(wrapped);
+    /// Returns true if the trailing stop is (or has just become) activated.
+    ///
+    /// With no `activation_price` the order activates immediately at the current
+    /// market price; otherwise it activates only once the market touches the
+    /// activation price.
+    fn maybe_activate_trailing_stop(
+        &self,
+        order: &mut OrderAny,
+        bid: Option<Price>,
+        ask: Option<Price>,
+        last: Option<Price>,
+    ) -> bool {
+        let (is_activated, activation_price, trigger_type, order_side) = match order {
+            OrderAny::TrailingStopMarket(inner) => (
+                inner.is_activated,
+                inner.activation_price,
+                inner.trigger_type,
+                inner.order_side(),
+            ),
+            OrderAny::TrailingStopLimit(inner) => (
+                inner.is_activated,
+                inner.activation_price,
+                inner.trigger_type,
+                inner.order_side(),
+            ),
+            _ => return true,
+        };
+
+        if is_activated {
+            return true;
+        }
+
+        if let Some(activation_price) = activation_price {
+            let hit = match order_side {
+                OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
+                OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
+                _ => false,
+            };
+
+            if hit {
+                Self::set_trailing_stop_activated(order, None);
+                self.persist_trailing_stop_activation(order);
+            }
+            return hit;
+        }
+
+        let market_price = match trigger_type {
+            TriggerType::LastPrice => last,
+            _ => match order_side {
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
+                _ => None,
+            },
+        };
+
+        let Some(market_price) = market_price else {
+            log::error!(
+                "Cannot activate trailing stop {}: no market price available",
+                order.client_order_id()
+            );
+            return false;
+        };
+
+        Self::set_trailing_stop_activated(order, Some(market_price));
+        self.persist_trailing_stop_activation(order);
+        true
+    }
+
+    fn set_trailing_stop_activated(order: &mut OrderAny, activation_price: Option<Price>) {
+        match order {
+            OrderAny::TrailingStopMarket(inner) => {
+                if let Some(price) = activation_price {
+                    inner.activation_price = Some(price);
+                }
+                inner.set_activated();
+            }
+            OrderAny::TrailingStopLimit(inner) => {
+                if let Some(price) = activation_price {
+                    inner.activation_price = Some(price);
+                }
+                inner.set_activated();
+            }
+            _ => {}
+        }
+    }
+
+    fn persist_trailing_stop_activation(&self, order: &OrderAny) {
+        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
+            log::error!("Failed to update order: {e}");
+        }
     }
 
     fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
@@ -1650,6 +1815,14 @@ fn publish_order_event(event: &OrderEventAny) {
     }
 }
 
+fn is_order_activated(order: &OrderAny) -> bool {
+    match order {
+        OrderAny::TrailingStopMarket(o) => o.is_activated,
+        OrderAny::TrailingStopLimit(o) => o.is_activated,
+        _ => true,
+    }
+}
+
 fn log_cmd_send(command: &TradingCommand) {
     if let Some(id) = command.strategy_id() {
         log::info!("{id} {CMD}{SEND} {command}");
@@ -1682,7 +1855,7 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
-        enums::{AggressorSide, OrderSide, OrderType, TriggerType},
+        enums::{AggressorSide, OrderSide, OrderType, TrailingOffsetType, TriggerType},
         identifiers::{ClientOrderId, OrderListId, StrategyId, TradeId, TraderId},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
@@ -1691,6 +1864,7 @@ mod tests {
         types::{Price, Quantity},
     };
     use rstest::{fixture, rstest};
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
@@ -2996,5 +3170,536 @@ mod tests {
 
         let commands = emulator.borrow().get_submit_order_commands();
         assert!(!commands.contains_key(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_trailing_stop_waits_for_activation_price(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events = register_risk_event_handler("RiskEngine.process.trailing_activation");
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5000.00"));
+        core.set_ask_raw(Price::from("5001.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-TRAILING-1"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .activation_price(Price::from("5050.00"))
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        {
+            let cache = cache.borrow();
+            let cached = cache.order(&client_order_id).unwrap();
+            let is_activated = match &*cached {
+                OrderAny::TrailingStopMarket(o) => o.is_activated,
+                _ => panic!("expected trailing stop market order"),
+            };
+            assert!(
+                !is_activated,
+                "must not activate before the activation price trades"
+            );
+            assert!(cached.trigger_price().is_none());
+        }
+        assert!(
+            !risk_events
+                .get_messages()
+                .iter()
+                .any(|e| matches!(e, OrderEventAny::Updated(_))),
+            "no trailing update before activation"
+        );
+
+        // Market rallies through the 5050 activation price: activates and starts trailing
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5055.00", "5056.00"));
+
+        {
+            let cache = cache.borrow();
+            let cached = cache.order(&client_order_id).unwrap();
+            let is_activated = match &*cached {
+                OrderAny::TrailingStopMarket(o) => o.is_activated,
+                _ => panic!("expected trailing stop market order"),
+            };
+            assert!(is_activated);
+            assert_eq!(cached.trigger_price(), Some(Price::from("5045.00")));
+        }
+        assert!(exec_commands.get_messages().is_empty());
+
+        // Market falls through the trailed trigger: order releases
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5044.00", "5045.00"));
+
+        let commands = exec_commands.get_messages();
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            TradingCommand::SubmitOrder(command) if command.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    fn test_pending_activation_trailing_stop_limit_not_matched_as_plain_limit(
+        instrument: CryptoPerpetual,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+
+        // Market is already through the limit price, but below the activation price
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5000.00"));
+        core.set_ask_raw(Price::from("5001.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-TRAILING-LIMIT-1"))
+            .side(OrderSide::Sell)
+            .price(Price::from("5010.00"))
+            .quantity(Quantity::from(1))
+            .activation_price(Price::from("5050.00"))
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .limit_offset(dec!(5))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        // The market falls below where the trailed trigger would sit (4990)
+        // while staying below the 5050 activation price: must not release.
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "4985.00", "4986.00"));
+
+        assert!(exec_commands.get_messages().is_empty());
+        assert!(
+            emulator
+                .borrow()
+                .get_submit_order_commands()
+                .contains_key(&client_order_id),
+            "order must remain held by the emulator before activation"
+        );
+    }
+
+    #[rstest]
+    fn test_trailing_stop_with_preset_trigger_activates_and_triggers(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5000.00"));
+        core.set_ask_raw(Price::from("5001.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+
+        // Both prices preset: the 5045 trigger must stay inert until 5050 activates
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-TRAILING-2"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .trigger_price(Price::from("5045.00"))
+            .activation_price(Price::from("5050.00"))
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        assert!(
+            exec_commands.get_messages().is_empty(),
+            "preset trigger must not release before activation"
+        );
+
+        // Rally touches the 5050 activation price; the trailed candidate does
+        // not improve on the preset trigger, so no price update is emitted.
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5055.00", "5056.00"));
+
+        assert!(exec_commands.get_messages().is_empty());
+
+        // Bid falls through the preset trigger: the order must release
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5044.00", "5045.00"));
+
+        let commands = exec_commands.get_messages();
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            TradingCommand::SubmitOrder(command) if command.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    fn test_trailing_stop_activates_despite_trailing_calculate_error(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+
+        // Quote-only data: `LastOrBidAsk` trailing calculation errors without a last
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5000.00"));
+        core.set_ask_raw(Price::from("5001.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-TRAILING-3"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .trigger_price(Price::from("5045.00"))
+            .trigger_type(TriggerType::LastOrBidAsk)
+            .activation_price(Price::from("5050.00"))
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        // Activation touches while the trailing calculation errors: the preset
+        // trigger must still be honored once the market crosses it.
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5055.00", "5056.00"));
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5044.00", "5045.00"));
+
+        let commands = exec_commands.get_messages();
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            TradingCommand::SubmitOrder(command) if command.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    fn test_cancel_emulated_oco_leg_cancels_sibling(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+        let client_order_id_a = ClientOrderId::from("O-OCO-A");
+        let client_order_id_b = ClientOrderId::from("O-OCO-B");
+        let order_a = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .strategy_id(StrategyId::from("STRATEGY-001"))
+            .client_order_id(client_order_id_a)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("4900.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![client_order_id_b])
+            .build();
+        let order_b = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .strategy_id(StrategyId::from("STRATEGY-001"))
+            .client_order_id(client_order_id_b)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("4950.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![client_order_id_a])
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order_a.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order_b.clone(), None, None, false)
+            .unwrap();
+
+        for order in [&order_a, &order_b] {
+            let command = create_submit_order(&instrument, order);
+            emulator
+                .borrow_mut()
+                .cache_submit_order_command(command.clone());
+            emulator.borrow_mut().handle_submit_order(&command);
+        }
+        assert_eq!(
+            cache.borrow().order(&client_order_id_a).unwrap().status(),
+            OrderStatus::Emulated
+        );
+        assert_eq!(
+            cache.borrow().order(&client_order_id_b).unwrap().status(),
+            OrderStatus::Emulated
+        );
+
+        let cancel = CancelOrder::new(
+            order_a.trader_id(),
+            None,
+            order_a.strategy_id(),
+            instrument.id(),
+            client_order_id_a,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+        msgbus::send_trading_command(
+            MessagingSwitchboard::order_emulator_execute(),
+            TradingCommand::CancelOrder(cancel),
+        );
+
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.order(&client_order_id_a).unwrap().status(),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            cache.order(&client_order_id_b).unwrap().status(),
+            OrderStatus::Canceled,
+            "OCO sibling must be canceled through the deferred self-published event"
+        );
+    }
+
+    #[rstest]
+    fn test_reentrant_command_from_event_handler_does_not_panic(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+
+        // A strategy-style subscriber issuing an emulator command synchronously
+        // from within its own order-event handler.
+        let cancel = CancelOrder::new(
+            order.trader_id(),
+            None,
+            strategy_id,
+            instrument.id(),
+            client_order_id,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if matches!(event, OrderEventAny::Emulated(_)) {
+                msgbus::send_trading_command(
+                    MessagingSwitchboard::order_emulator_execute(),
+                    TradingCommand::CancelOrder(cancel.clone()),
+                );
+            }
+        });
+        msgbus::subscribe_order_events(format!("events.order.{strategy_id}").into(), handler, None);
+
+        // Must not panic on the reentrant borrow; the command is deferred and drained
+        msgbus::send_trading_command(
+            MessagingSwitchboard::order_emulator_execute(),
+            TradingCommand::SubmitOrder(command),
+        );
+
+        assert!(
+            cache.borrow().order(&client_order_id).unwrap().is_closed(),
+            "deferred cancel must be processed after the active call completes"
+        );
+    }
+
+    #[rstest]
+    fn test_released_order_preserves_chronological_event_history(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("5099.00"));
+        core.set_ask_raw(Price::from("5101.00"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+
+        let order = create_stop_limit_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let original_init = OrderEventAny::Initialized(order.init_event().clone());
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let cache = cache.borrow();
+        let transformed = cache.order(&client_order_id).unwrap();
+        let events = transformed.events();
+
+        assert_eq!(
+            events.first(),
+            Some(&&original_init),
+            "released order history must start with the original OrderInitialized event, was {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn test_on_start_cancels_emulated_child_of_closed_positionless_parent(
+        instrument: CryptoPerpetual,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+
+        let mut parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("5000.00"))
+            .quantity(Quantity::from(1))
+            .submit(true)
+            .build();
+        parent
+            .apply(OrderEventAny::Canceled(OrderCanceled::new(
+                parent.trader_id(),
+                parent.strategy_id(),
+                parent.instrument_id(),
+                parent.client_order_id(),
+                UUID4::new(),
+                0.into(),
+                0.into(),
+                false,
+                None,
+                None,
+            )))
+            .unwrap();
+        assert!(parent.is_closed());
+        assert!(parent.position_id().is_none());
+
+        let mut child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CHILD"))
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("4900.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .parent_order_id(parent.client_order_id())
+            .build();
+        child
+            .apply(OrderEventAny::Emulated(OrderEmulated::new(
+                child.trader_id(),
+                child.strategy_id(),
+                child.instrument_id(),
+                child.client_order_id(),
+                UUID4::new(),
+                0.into(),
+                0.into(),
+            )))
+            .unwrap();
+        assert_eq!(child.status(), OrderStatus::Emulated);
+
+        cache
+            .borrow_mut()
+            .add_order(parent.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(child.clone(), None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().on_start().unwrap();
+
+        assert!(
+            cache
+                .borrow()
+                .order(&child.client_order_id())
+                .unwrap()
+                .is_closed(),
+            "emulated child of a closed position-less parent must be canceled on reactivation"
+        );
     }
 }

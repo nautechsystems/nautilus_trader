@@ -290,6 +290,21 @@ adapter set. The following limits remain deferred:
 - Fixed v2 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
 - Fixed v2 `RiskEngine` skipping cash and betting account balance checks for reduce-only buy orders
 - Fixed v2 `RiskEngine` rate-limit modify-order rejections omitting the order `account_id`
+- Fixed v2 matching engine filling triggered stop-limit orders beyond their limit price
+- Fixed v2 matching engine dropping taker liquidity when a triggered stop-limit or LIT order was amended into the market
+- Fixed v2 matching engine charging `FixedFeeModel` commission per book level instead of once per order
+- Fixed v2 matching engine emitting `OrderTriggered` for stop orders already canceled in the same iteration
+- Fixed v2 order emulator ignoring trailing-stop `activation_price` and trailing before activation
+- Fixed v2 order emulator panicking on reentrant commands issued from order-event handlers
+- Fixed v2 order emulator dropping OCO and OUO contingency actions for events published while handling
+- Fixed v2 order emulator reversing released order event history so `init_event` was not first
+- Fixed v2 order emulator reactivating emulated child orders of closed position-less parents on start
+- Fixed v2 execution engine re-applying duplicate leg fills instead of fully skipping them
+- Fixed v2 execution engine applying portfolio economics for projected reconciliation fills on cash accounts
+- Fixed v2 order manager syncing quantities for OCO instead of OUO contingent orders
+- Fixed v2 reconciliation fill voids never voiding the proportional commissions
+- Fixed v2 reconciliation position matching always passing for negative venue average prices
+- Fixed v2 reconciliation inferred fills misclassifying liquidity for market-to-limit and post-only orders
 - Fixed v2 execution algorithms retaining submit params for denied orders
 - Fixed v2 `DeltaNeutralVol` example strategy stopping further rehedging after a hedge order rejection, denial, or expiration
 - Fixed v2 `LiveNode` startup to restore cache databases and honor `flush_on_start`

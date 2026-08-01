@@ -778,7 +778,7 @@ pub(super) fn check_position_match(
         return false;
     }
 
-    let relative_diff = (simulated_avg_px - venue_avg_px).abs() / venue_avg_px;
+    let relative_diff = (simulated_avg_px - venue_avg_px).abs() / venue_avg_px.abs();
 
     relative_diff <= tolerance
 }

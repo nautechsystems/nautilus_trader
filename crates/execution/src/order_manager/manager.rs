@@ -209,7 +209,10 @@ impl OrderManager {
             .map(|o| o.clone());
 
         if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
+            if order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+            {
                 return self.handle_contingencies(&order);
             }
         } else {
@@ -231,7 +234,10 @@ impl OrderManager {
             .map(|o| o.clone());
 
         if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
+            if order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+            {
                 return self.handle_contingencies(&order);
             }
         } else {
@@ -253,7 +259,10 @@ impl OrderManager {
             .map(|o| o.clone());
 
         if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
+            if order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+            {
                 return self.handle_contingencies(&order);
             }
         } else {
@@ -275,7 +284,10 @@ impl OrderManager {
             .map(|o| o.clone());
 
         if let Some(order) = cloned_order {
-            if order.contingency_type() != Some(ContingencyType::NoContingency) {
+            if order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+            {
                 return self.handle_contingencies_update(&order);
             }
         } else {
@@ -570,7 +582,7 @@ impl OrderManager {
             if let Some(contingency_type) = order.contingency_type()
                 && matches!(
                     contingency_type,
-                    ContingencyType::Oto | ContingencyType::Oco
+                    ContingencyType::Oto | ContingencyType::Ouo
                 )
                 && quantity != contingent_order.quantity()
             {
@@ -1227,5 +1239,73 @@ mod tests {
                 .contains_key(&stale_order.client_order_id()),
             "closed-order gate should short-circuit even when the passed reference is stale",
         );
+    }
+
+    #[rstest]
+    fn test_handle_contingencies_update_syncs_quantity_for_ouo_sibling() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = audusd_sim();
+        let child = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CHILD"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00100"))
+            .quantity(Quantity::from(50_000))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(child.clone(), None, None, false)
+            .unwrap();
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Ouo)
+            .linked_order_ids(vec![child.client_order_id()])
+            .build();
+
+        let actions = manager.handle_contingencies_update(&parent);
+
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(
+            &actions[0],
+            OrderManagerAction::ModifyLocalQuantity { order, quantity }
+                if order.client_order_id() == child.client_order_id()
+                    && *quantity == Quantity::from(100_000)
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_contingencies_update_does_not_sync_quantity_for_oco_sibling() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = audusd_sim();
+        let child = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CHILD"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00100"))
+            .quantity(Quantity::from(50_000))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(child.clone(), None, None, false)
+            .unwrap();
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![child.client_order_id()])
+            .build();
+
+        let actions = manager.handle_contingencies_update(&parent);
+
+        assert!(actions.is_empty());
     }
 }

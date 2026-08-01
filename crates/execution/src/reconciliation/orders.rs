@@ -558,6 +558,11 @@ fn create_reconciliation_fill_voids(
             continue;
         }
         let removed = remaining.min(effective);
+        let voided_qty = prior_qty + removed;
+        let commission_voided = fill.commission.and_then(|commission| {
+            let fraction = voided_qty.as_decimal() / fill.last_qty.as_decimal();
+            Money::from_decimal(commission.as_decimal() * fraction, commission.currency).ok()
+        });
         let mut event = OrderFillVoided::new(
             fill.trader_id,
             fill.strategy_id,
@@ -570,8 +575,8 @@ fn create_reconciliation_fill_voids(
                 report.report_id, fill.trade_id
             )),
             fill.trade_id,
-            prior_qty + removed,
-            previous.and_then(|voided| voided.commission_voided),
+            voided_qty,
+            commission_voided,
             fill.order_side,
             fill.order_type,
             fill.last_px,
@@ -977,10 +982,11 @@ pub(super) fn create_inferred_fill(
     commission: Option<Money>,
 ) -> Option<OrderEventAny> {
     let liquidity_side = match order.order_type() {
-        OrderType::Market | OrderType::StopMarket | OrderType::TrailingStopMarket => {
-            LiquiditySide::Taker
-        }
-        _ if report.post_only => LiquiditySide::Maker,
+        OrderType::Market
+        | OrderType::StopMarket
+        | OrderType::MarketToLimit
+        | OrderType::TrailingStopMarket => LiquiditySide::Taker,
+        _ if order.is_post_only() => LiquiditySide::Maker,
         _ => LiquiditySide::NoLiquiditySide,
     };
 

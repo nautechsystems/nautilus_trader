@@ -408,6 +408,27 @@ fn test_check_position_match_qty_mismatch() {
 }
 
 #[rstest]
+fn test_check_position_match_negative_venue_avg_px() {
+    // Simulated avg px = -1000/10 = -100, venue = -100.005: within tolerance
+    assert!(check_position_match(
+        dec!(10),
+        dec!(-1000),
+        dec!(10),
+        dec!(-100.005),
+        dec!(0.0001)
+    ));
+    // Simulated avg px = -100, venue = -110: ~9% divergence must not match
+    // without an absolute denominator, since the negative ratio always passes the tolerance.
+    assert!(!check_position_match(
+        dec!(10),
+        dec!(-1000),
+        dec!(10),
+        dec!(-110),
+        dec!(0.0001)
+    ));
+}
+
+#[rstest]
 fn test_check_position_match_both_flat() {
     let result = check_position_match(dec!(0), dec!(0), dec!(0), dec!(0), dec!(0.0001));
     assert!(result);
@@ -1440,6 +1461,7 @@ fn test_external_order_rejected_due_post_only() {
 #[case::market(OrderType::Market, false, LiquiditySide::Taker)]
 #[case::stop_market(OrderType::StopMarket, false, LiquiditySide::Taker)]
 #[case::trailing_stop_market(OrderType::TrailingStopMarket, false, LiquiditySide::Taker)]
+#[case::market_to_limit(OrderType::MarketToLimit, false, LiquiditySide::Taker)]
 #[case::limit_post_only(OrderType::Limit, true, LiquiditySide::Maker)]
 #[case::limit_default(OrderType::Limit, false, LiquiditySide::NoLiquiditySide)]
 fn test_inferred_fill_liquidity_side(
@@ -1454,6 +1476,7 @@ fn test_inferred_fill_liquidity_side(
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
             .price(Price::from("100.00"))
+            .post_only(post_only)
             .build(),
         OrderType::StopMarket => OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())
@@ -5700,6 +5723,68 @@ fn test_reconciliation_fill_decrease_carries_terminal_disposition(
     assert_eq!(after.voided_qty(), Quantity::from(50));
     assert_eq!(after.status(), report_status);
     assert!(second_pass.is_empty());
+}
+
+#[rstest]
+fn test_reconciliation_fill_void_carries_proportional_commission(instrument: InstrumentAny) {
+    let client_order_id = ClientOrderId::from("O-FILL-VOID-COMMISSION");
+    let venue_order_id = VenueOrderId::from("V-FILL-VOID-COMMISSION");
+    let account_id = AccountId::from("SIM-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    order
+        .apply(OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(TradeId::from("T-COMMISSION"))
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Limit)
+                .last_qty(Quantity::from(100))
+                .last_px(Price::from("1.00000"))
+                .currency(instrument.quote_currency())
+                .maybe_commission(Some(Money::new(2.0, instrument.quote_currency())))
+                .build(),
+        ))
+        .unwrap();
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100),
+        Quantity::from(40),
+    );
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_snapshot_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::from(10),
+    );
+    let voided = match &events[0] {
+        OrderEventAny::FillVoided(event) => event,
+        other => panic!("expected fill correction, was {other:?}"),
+    };
+
+    assert_eq!(voided.voided_qty, Quantity::from(60));
+    assert_eq!(
+        voided.commission_voided,
+        Some(Money::new(1.20, instrument.quote_currency())),
+        "voided commission must be proportional to the voided quantity",
+    );
 }
 
 #[rstest]
