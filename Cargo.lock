@@ -6314,7 +6314,6 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
- "nautilus-testkit",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",

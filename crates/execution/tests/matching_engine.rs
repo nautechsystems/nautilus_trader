@@ -15,6 +15,9 @@
 
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
+#[path = "matching_engine/cache_database.rs"]
+mod cache_database;
+
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_common::{
     cache::Cache,
@@ -68,11 +71,12 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{Currency, Money, Price, Quantity},
 };
-use nautilus_testkit::cache::TestCacheDatabaseControl;
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 use uuid::Uuid;
+
+use self::cache_database::FailNthAddOrderDatabase;
 
 fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
     Offset::UTC
@@ -13309,7 +13313,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
     );
 
     let option_id = option.id();
-    let (database, database_control) = TestCacheDatabaseControl::create();
+    let (database, database_control) = FailNthAddOrderDatabase::create();
     cache.borrow_mut().set_database(Box::new(database));
 
     let clock = Rc::new(RefCell::new(TestClock::new()));

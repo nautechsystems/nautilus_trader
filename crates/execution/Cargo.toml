@@ -71,8 +71,8 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
 criterion = { workspace = true }
-nautilus-testkit = { workspace = true, features = ["cache"] }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 
