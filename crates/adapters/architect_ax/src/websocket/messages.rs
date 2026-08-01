@@ -33,7 +33,7 @@ use crate::{
         enums::{
             AxCancelReason, AxCancelRejectionReason, AxCandleWidth, AxInstrumentState,
             AxMarketDataLevel, AxMdRequestType, AxOrderRequestType, AxOrderSide, AxOrderStatus,
-            AxOrderWsMessageType, AxTimeInForce, AxTradeSide,
+            AxOrderWsMessageType, AxTimeInForce,
         },
         parse::{
             deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
@@ -646,7 +646,7 @@ pub struct AxWsTradeExecution {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Trade direction.
-    pub d: AxTradeSide,
+    pub d: AxOrderSide,
     /// Whether this was an aggressor (taker) order.
     pub agg: bool,
 }
@@ -1268,7 +1268,7 @@ mod tests {
         let json = include_str!("../../test_data/ws_order_filled.json");
         let msg: AxWsOrderFilled = serde_json::from_str(json).unwrap();
         assert_eq!(msg.o.o, AxOrderStatus::Filled);
-        assert_eq!(msg.xs.d, AxTradeSide::Buy);
+        assert_eq!(msg.xs.d, AxOrderSide::Buy);
     }
 
     #[rstest]
@@ -1276,6 +1276,7 @@ mod tests {
         let json = include_str!("../../test_data/ws_order_partially_filled.json");
         let msg: AxWsOrderPartiallyFilled = serde_json::from_str(json).unwrap();
         assert_eq!(msg.xs.q, 50);
+        assert_eq!(msg.xs.d, AxOrderSide::Buy);
     }
 
     #[rstest]

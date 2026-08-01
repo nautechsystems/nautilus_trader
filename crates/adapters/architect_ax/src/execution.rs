@@ -1986,7 +1986,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce, AxTradeSide},
+        common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
         http::error::AxBuildError,
         websocket::{
             messages::{AxWsOrderExpired, AxWsTradeExecution, OrderMetadata},
@@ -2119,7 +2119,7 @@ mod tests {
             s: Ustr::from("BTC-PERP"),
             q: qty,
             p: price,
-            d: AxTradeSide::Buy,
+            d: AxOrderSide::Buy,
             agg,
         }
     }
