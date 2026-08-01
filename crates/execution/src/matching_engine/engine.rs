@@ -2644,17 +2644,23 @@ impl OrderMatchingEngine {
 
     fn option_cached_trade_ids(&self) -> IndexSet<TradeId> {
         let cache = self.cache.borrow();
-        cache
-            .orders(None, None, None, None, None)
-            .iter()
-            .flat_map(|order| order.trade_ids().into_iter().copied())
-            .chain(
-                cache
-                    .positions(None, None, None, None, None)
-                    .iter()
-                    .flat_map(|position| position.trade_ids.iter().copied()),
-            )
-            .collect()
+        let mut trade_ids = IndexSet::new();
+
+        for client_order_id in cache.client_order_ids_view(None, None, None, None).iter() {
+            let order = cache
+                .order(client_order_id)
+                .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
+            trade_ids.extend(order.trade_ids().into_iter().copied());
+        }
+
+        for position_id in cache.position_ids_view(None, None, None, None).iter() {
+            let position = cache
+                .position(position_id)
+                .unwrap_or_else(|| panic!("Position {position_id} not found"));
+            trade_ids.extend(position.trade_ids.iter().copied());
+        }
+
+        trade_ids
     }
 
     fn option_settlement_plan_collides(
@@ -6942,13 +6948,14 @@ mod tests {
             OrderType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
         },
         events::OrderEventAny,
-        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+        identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es},
         },
         orderbook::OrderBook,
         orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+        position::Position,
         types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
     use proptest::prelude::*;
@@ -7113,6 +7120,92 @@ mod tests {
             .client_order_id(ClientOrderId::from("POST-MATCH-TRAIL"))
             .submit(true)
             .build()
+    }
+
+    #[rstest]
+    fn test_option_cached_trade_ids_preserves_order_and_position_union() {
+        // This preserves existing behavior while the cache scan avoids full ID-set and vector
+        // materializations; it is not a regression for a behavioral bug.
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let order_trade_id = TradeId::from("ORDER-ONLY-TRADE-ID");
+        let position_trade_id = TradeId::from("POSITION-ONLY-TRADE-ID");
+
+        let mut cached_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("CACHED-ORDER"))
+            .submit(true)
+            .build();
+        cached_order
+            .apply(TestOrderEventStubs::accepted(
+                &cached_order,
+                AccountId::from("ACCOUNT-001"),
+                VenueOrderId::from("CACHED-VENUE-ORDER"),
+            ))
+            .unwrap();
+        let order_fill = TestOrderEventStubs::filled(
+            &cached_order,
+            &instrument,
+            Some(order_trade_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("ACCOUNT-001")),
+        );
+        cached_order.apply(order_fill).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(cached_order, None, None, false)
+            .unwrap();
+
+        let position_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("UNCACHED-POSITION-ORDER"))
+            .build();
+        let position_fill = match TestOrderEventStubs::filled(
+            &position_order,
+            &instrument,
+            Some(position_trade_id),
+            Some(PositionId::from("POSITION-001")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("ACCOUNT-001")),
+        ) {
+            OrderEventAny::Filled(fill) => fill,
+            _ => unreachable!(),
+        };
+        let position = Position::new(&instrument, position_fill);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            Default::default(),
+        );
+
+        let cached_trade_ids = engine.option_cached_trade_ids();
+        assert!(cached_trade_ids.contains(&order_trade_id));
+        assert!(cached_trade_ids.contains(&position_trade_id));
     }
 
     #[rstest]
