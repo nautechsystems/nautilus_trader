@@ -35,11 +35,10 @@ fn add_instruments(cache: &mut Cache, venue: Venue) -> Vec<CurrencyPair> {
     FX_BASES
         .iter()
         .map(|base| default_fx_ccy(Symbol::from(format!("{base}/USD").as_str()), Some(venue)))
-        .map(|pair| {
+        .inspect(|pair| {
             cache
                 .add_instrument(InstrumentAny::CurrencyPair(pair.clone()))
                 .unwrap();
-            pair
         })
         .collect()
 }
