@@ -170,7 +170,6 @@ enum WorkerDispatch {
     Registered(TimeEventCallbackToken),
     #[cfg(feature = "python")]
     SenderlessPython(Arc<crate::timer::PythonTimeEventCallback>),
-    SenderlessRust,
 }
 
 impl LiveTimer {
@@ -262,6 +261,16 @@ impl LiveTimer {
     /// Panics if using a Rust callback (`Rust` or `RustLocal`) without a `TimeEventSender`.
     #[allow(unused_variables)]
     pub fn start(&mut self) {
+        if let OwnerCallback::Senderless(callback) = &self.callback {
+            match callback {
+                #[cfg(feature = "python")]
+                TimeEventCallback::Python(_) => {}
+                TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => {
+                    panic!("timer event sender was unset for Rust callback system");
+                }
+            }
+        }
+
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
         let interval_ns = self.interval_ns.get();
@@ -294,7 +303,7 @@ impl LiveTimer {
                     WorkerDispatch::SenderlessPython(callback.clone())
                 }
                 TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => {
-                    WorkerDispatch::SenderlessRust
+                    unreachable!("senderless Rust callback rejected at start")
                 }
             },
         };
@@ -402,9 +411,6 @@ impl LiveTimer {
                     }
                     #[cfg(feature = "python")]
                     (None, WorkerDispatch::SenderlessPython(callback)) => callback.call(event),
-                    (None, WorkerDispatch::SenderlessRust) => {
-                        panic!("timer event sender was unset for Rust callback system");
-                    }
                     _ => unreachable!("timer callback dispatch did not match its sender"),
                 }
 
@@ -836,6 +842,23 @@ mod tests {
 
         // With fire_immediately=false, next_time_ns should be start_time_ns + interval
         assert_eq!(timer.next_time_ns(), UnixNanos::from(1100));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "timer event sender was unset for Rust callback system")]
+    fn test_live_timer_start_panics_on_senderless_rust_callback() {
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let mut timer = LiveTimer::new(
+            Ustr::from("SENDERLESS_RUST"),
+            NonZeroU64::new(1_000_000).unwrap(),
+            now,
+            None,
+            TimeEventCallback::from(|_| {}),
+            false,
+            None, // time_event_sender
+        );
+
+        timer.start();
     }
 
     #[cfg(not(all(feature = "simulation", madsim)))]

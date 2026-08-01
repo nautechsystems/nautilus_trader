@@ -2529,11 +2529,15 @@ impl Cache {
                 .or_default()
                 .insert(*client_order_id);
 
-            // 2: Build index.order_ids -> {VenueOrderId, ClientOrderId}
+            // 2: Build index.venue_order_ids -> {VenueOrderId, ClientOrderId}
+            //    and index.client_order_ids -> {ClientOrderId, VenueOrderId}
             if let Some(venue_order_id) = order.venue_order_id() {
                 self.index
                     .venue_order_ids
                     .insert(venue_order_id, *client_order_id);
+                self.index
+                    .client_order_ids
+                    .insert(*client_order_id, venue_order_id);
             }
 
             // 3: Build index.order_position -> {ClientOrderId, PositionId}
@@ -4994,6 +4998,11 @@ impl Cache {
             self.index.orders_open.remove(&client_order_id);
             self.index.orders_pending_cancel.remove(&client_order_id);
             self.index.orders_closed.insert(client_order_id);
+        }
+
+        // A cancel rejection resolves the outstanding cancel request
+        if matches!(order.last_event(), OrderEventAny::CancelRejected(_)) {
+            self.index.orders_pending_cancel.remove(&client_order_id);
         }
 
         // Update emulation index
@@ -7617,34 +7626,36 @@ impl Cache {
                     continue; // Empty ticks vector
                 }
             } else {
-                let bid_bar = self
-                    .bars
-                    .iter()
-                    .find(|(k, _)| {
-                        k.instrument_id() == *instrument_id
-                            && matches!(k.spec().price_type, PriceType::Bid)
-                    })
-                    .map(|(_, v)| v);
+                // Multiple bar types may exist per instrument: select the most recently added
+                // bar per side, preferring the greatest ts_init for determinism and breaking
+                // ties by bar type.
+                let mut latest_bid: Option<(&BarType, &Bar)> = None;
+                let mut latest_ask: Option<(&BarType, &Bar)> = None;
 
-                let ask_bar = self
-                    .bars
-                    .iter()
-                    .find(|(k, _)| {
-                        k.instrument_id() == *instrument_id
-                            && matches!(k.spec().price_type, PriceType::Ask)
-                    })
-                    .map(|(_, v)| v);
-
-                match (bid_bar, ask_bar) {
-                    (Some(bid), Some(ask)) => {
-                        match (bid.front(), ask.front()) {
-                            (Some(bid_bar), Some(ask_bar)) => (bid_bar.close, ask_bar.close),
-                            _ => {
-                                // Empty bar VecDeques
-                                continue;
-                            }
-                        }
+                for (bar_type, bars) in &self.bars {
+                    if bar_type.instrument_id() != *instrument_id {
+                        continue;
                     }
+
+                    let Some(bar) = bars.front() else {
+                        continue;
+                    };
+
+                    let slot = match bar_type.spec().price_type {
+                        PriceType::Bid => &mut latest_bid,
+                        PriceType::Ask => &mut latest_ask,
+                        _ => continue,
+                    };
+
+                    if slot.is_none_or(|(current_type, current)| {
+                        (current.ts_init, current_type) < (bar.ts_init, bar_type)
+                    }) {
+                        *slot = Some((bar_type, bar));
+                    }
+                }
+
+                match (latest_bid, latest_ask) {
+                    (Some((_, bid_bar)), Some((_, ask_bar))) => (bid_bar.close, ask_bar.close),
                     _ => continue,
                 }
             };
@@ -7674,7 +7685,11 @@ impl Cache {
             .insert((to_currency, from_currency), 1.0 / xrate);
     }
 
-    /// Clears the mark exchange rate for the given currency pair.
+    /// Clears the mark exchange rate for the given currency pair direction.
+    ///
+    /// Removes only the `(from_currency, to_currency)` entry; the inverse rate written
+    /// by [`Self::set_mark_xrate`] is retained until cleared separately or
+    /// [`Self::clear_mark_xrates`] is called.
     pub fn clear_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency) {
         let _ = self.mark_xrates.remove(&(from_currency, to_currency));
     }

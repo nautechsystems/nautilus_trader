@@ -199,6 +199,10 @@ adapter set. The following limits remain deferred:
 - Fixed `CAGR` and `CalmarRatio` reporting undefined results as zero
 - Fixed v2 clock `set_time_alert` and `set_timer` panicking on pre-epoch or out-of-range `DateTime` inputs
 - Fixed v2 clock past-alert warning logging the adjusted time instead of the original alert time
+- Fixed v2 `LiveTimer` panicking in the timer task instead of at `start` for senderless Rust callbacks
+- Fixed v2 cache orders stuck pending-cancel-local after a cancel rejection, blocking later cancels
+- Fixed v2 cache cold loads losing forward venue order ID lookups until the next order event
+- Fixed v2 cache exchange rates picking an arbitrary bar type instead of the latest bar per side
 - Fixed v2 sandbox execution retaining matching engines and cache state for expired quote-only instruments
 - Fixed v2 NETTING backtest growth from replay logs in snapshots and fill clones (#4546), thanks @HungNgo4444
 - Fixed v2 result tearsheets to reject disposed node state
@@ -465,6 +469,7 @@ adapter set. The following limits remain deferred:
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 
 ### Internal Improvements
+- Added `Cache` Criterion bench for `get_xrate` quote and bar fallback paths (Rust)
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Aligned Rust event and own‑book ordering with equality (#4598), thanks @folknor
 - Aligned Rust subscription ordering with equality while preserving delivery order (#4611), thanks @folknor

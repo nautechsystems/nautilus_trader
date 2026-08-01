@@ -38,8 +38,9 @@ use nautilus_model::{
         OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
-        AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
-        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
+        OrderEventAny, OrderFilled, OrderPendingCancel, OrderRejected, OrderReleased,
+        OrderSnapshot, OrderSubmitted, OrderUpdated,
         order::spec::{
             OrderCanceledSpec, OrderEmulatedSpec, OrderFilledSpec, OrderReleasedSpec,
             OrderUpdatedSpec,
@@ -440,6 +441,42 @@ fn test_build_index_when_empty(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_build_index_restores_bidirectional_venue_order_id_lookup(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
+
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
+
+    let client_order_id = order.client_order_id();
+    let venue_order_id = order.venue_order_id().unwrap();
+
+    cache.clear_index();
+    cache.build_index();
+
+    assert_eq!(
+        cache.client_order_id(&venue_order_id),
+        Some(&client_order_id)
+    );
+    assert_eq!(
+        cache.venue_order_id(&client_order_id),
+        Some(&venue_order_id)
+    );
+}
+
+#[rstest]
 fn test_oms_type_returns_actual_position_oms(mut cache: Cache) {
     let position = snapshot_test_position();
     let position_id = position.id;
@@ -578,6 +615,58 @@ fn test_reset_honors_drop_instruments_on_reset(
     assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
     assert_eq!(cache.instrument(&audusd_sim.id).is_some(), retained);
+}
+
+#[rstest]
+fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair) {
+    let mut cache = Cache::default();
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    cache.add_instrument(instrument).unwrap();
+
+    let instrument_id = audusd_sim.id;
+    let ts_older = UnixNanos::from(1000);
+    let ts_newer = UnixNanos::from(2000);
+
+    let make_bar = |bar_type: BarType, close: &str, ts: UnixNanos| {
+        Bar::new(
+            bar_type,
+            Price::from(close),
+            Price::from(close),
+            Price::from(close),
+            Price::from(close),
+            Quantity::from(100_000),
+            ts,
+            ts,
+        )
+    };
+
+    // Older 1-MINUTE bars must not shadow the newer 5-MINUTE bars regardless of map order
+    let bid_type_old = BarType::from(format!("{instrument_id}-1-MINUTE-BID-EXTERNAL").as_str());
+    let bid_type_new = BarType::from(format!("{instrument_id}-5-MINUTE-BID-EXTERNAL").as_str());
+    let ask_type_old = BarType::from(format!("{instrument_id}-1-MINUTE-ASK-EXTERNAL").as_str());
+    let ask_type_new = BarType::from(format!("{instrument_id}-5-MINUTE-ASK-EXTERNAL").as_str());
+
+    cache
+        .add_bar(make_bar(bid_type_old, "0.75000", ts_older))
+        .unwrap();
+    cache
+        .add_bar(make_bar(bid_type_new, "0.80000", ts_newer))
+        .unwrap();
+    cache
+        .add_bar(make_bar(ask_type_old, "0.75010", ts_older))
+        .unwrap();
+    cache
+        .add_bar(make_bar(ask_type_new, "0.80010", ts_newer))
+        .unwrap();
+
+    let rate = cache.get_xrate(
+        instrument_id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Mid,
+    );
+
+    assert_eq!(rate, Some(dec!(0.80005)));
 }
 
 #[rstest]
@@ -1585,6 +1674,38 @@ fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
         cache.venue_order_id(&order.client_order_id()),
         Some(&order.venue_order_id().unwrap())
     );
+}
+
+#[rstest]
+fn test_order_cancel_rejected_clears_pending_cancel_local(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
+
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
+
+    let pending_cancel = OrderEventAny::PendingCancel(OrderPendingCancel::default());
+    update_order_with_event(&mut cache, &mut order, pending_cancel);
+    cache.update_order_pending_cancel_local(&order);
+    assert!(cache.is_order_pending_cancel_local(&order.client_order_id()));
+
+    let cancel_rejected = OrderEventAny::CancelRejected(OrderCancelRejected::default());
+    update_order_with_event(&mut cache, &mut order, cancel_rejected);
+
+    assert!(order.is_open());
+    assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
 }
 
 #[rstest]
