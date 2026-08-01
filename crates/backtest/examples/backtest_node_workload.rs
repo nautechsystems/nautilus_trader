@@ -17,9 +17,9 @@
 //!
 //! The workload reads an existing Parquet catalog, constructs and runs a real
 //! [`BacktestNode`], registers a compiled-in strategy through the native API,
-//! and creates one bounded JSON result file. The result uses the existing
-//! [`BacktestResult`](nautilus_backtest::result::BacktestResult) representation
-//! as native execution evidence, not the canonical parity result.
+//! and creates one bounded canonical JSON result file. The workload retains the
+//! completed engine long enough to project its observable state through
+//! [`CanonicalBacktestResult`](nautilus_backtest::result::CanonicalBacktestResult).
 //!
 //! Run with:
 //! ```bash
@@ -39,7 +39,7 @@ use anyhow::Context;
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
     node::BacktestNode,
-    result::BacktestResult,
+    result::{BacktestResult, CanonicalBacktestResult},
 };
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -47,6 +47,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use nautilus_trading::examples::strategies::EmaCross;
+use serde_json::Value;
 use ustr::Ustr;
 
 const VENUE: &str = "SIM";
@@ -115,6 +116,7 @@ fn run_workload(catalog_path: &Path, result_path: &Path) -> anyhow::Result<()> {
         .id(RUN_CONFIG_ID.to_string())
         .venues(vec![venue_config])
         .data(vec![data_config])
+        .dispose_on_completion(false)
         .raise_exception(true)
         .build()?;
 
@@ -138,7 +140,12 @@ fn run_workload(catalog_path: &Path, result_path: &Path) -> anyhow::Result<()> {
     );
     let result = &results[0];
     validate_result(result)?;
-    write_result(result_path, result)
+    let canonical = node
+        .get_engine(RUN_CONFIG_ID)
+        .with_context(|| format!("backtest engine was not retained for run {RUN_CONFIG_ID}"))?
+        .get_canonical_result()?;
+    validate_canonical_result(&canonical)?;
+    write_result(result_path, &canonical)
 }
 
 fn validate_result(result: &BacktestResult) -> anyhow::Result<()> {
@@ -169,9 +176,44 @@ fn validate_result(result: &BacktestResult) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_result(path: &Path, result: &BacktestResult) -> anyhow::Result<()> {
+fn validate_canonical_result(result: &CanonicalBacktestResult) -> anyhow::Result<()> {
+    let run = &result.as_value()["run"];
+    anyhow::ensure!(
+        result.as_value()["schema"] == "nautilus-backtest-result/v1",
+        "canonical result schema did not match version 1"
+    );
+    anyhow::ensure!(
+        run["run_config_id"] == RUN_CONFIG_ID,
+        "canonical result run config ID did not match {RUN_CONFIG_ID}"
+    );
+    anyhow::ensure!(
+        parse_count(&run["iterations"]) == Some(EXPECTED_ITERATIONS),
+        "canonical result iteration count did not match {EXPECTED_ITERATIONS}"
+    );
+    anyhow::ensure!(
+        parse_count(&run["total_events"]) == Some(EXPECTED_EVENTS),
+        "canonical result event count did not match {EXPECTED_EVENTS}"
+    );
+    anyhow::ensure!(
+        parse_count(&run["total_orders"]) == Some(EXPECTED_ORDERS),
+        "canonical result order count did not match {EXPECTED_ORDERS}"
+    );
+    anyhow::ensure!(
+        parse_count(&run["total_positions"]) == Some(EXPECTED_POSITIONS),
+        "canonical result position count did not match {EXPECTED_POSITIONS}"
+    );
+    Ok(())
+}
+
+fn parse_count(value: &Value) -> Option<usize> {
+    value.as_str()?.parse().ok()
+}
+
+fn write_result(path: &Path, result: &CanonicalBacktestResult) -> anyhow::Result<()> {
     let mut bytes = CappedBuffer::new(RESULT_BYTES_MAX);
-    serde_json::to_writer(&mut bytes, result).context("failed to serialize backtest result")?;
+    bytes
+        .write_all(&result.to_bytes()?)
+        .context("failed to serialize canonical backtest result")?;
 
     let mut file = OpenOptions::new()
         .write(true)
@@ -235,7 +277,6 @@ mod tests {
     };
     use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     use rstest::rstest;
-    use serde_json::Value;
     use tempfile::TempDir;
 
     use super::*;
@@ -291,26 +332,66 @@ mod tests {
     }
 
     #[rstest]
-    fn test_workload_runs_backtest_node_and_writes_one_bounded_result() {
+    fn test_workload_writes_repeatable_bounded_canonical_result() {
         let temp_dir = TempDir::new().unwrap();
         let catalog_path = temp_dir.path().join("catalog");
-        let result_path = temp_dir.path().join("test-result.json");
+        let result_path = temp_dir.path().join("test-result-1.json");
+        let repeated_path = temp_dir.path().join("test-result-2.json");
         fs::create_dir(&catalog_path).unwrap();
         write_catalog(&catalog_path);
 
         run_workload(&catalog_path, &result_path).unwrap();
+        run_workload(&catalog_path, &repeated_path).unwrap();
 
         let bytes = fs::read(&result_path).unwrap();
+        let repeated_bytes = fs::read(&repeated_path).unwrap();
         let value: Value = serde_json::from_slice(&bytes).unwrap();
+        let result = CanonicalBacktestResult::from_slice(&bytes).unwrap();
+        let repeated = CanonicalBacktestResult::from_slice(&repeated_bytes).unwrap();
         let second_run = run_workload(&catalog_path, &result_path);
         let expected_error = format!("failed to create result file {}", result_path.display());
         assert!(bytes.len() <= RESULT_BYTES_MAX);
-        assert_eq!(value["run_config_id"], RUN_CONFIG_ID);
-        assert_eq!(value["iterations"], EXPECTED_ITERATIONS);
-        assert_eq!(value["total_events"], EXPECTED_EVENTS);
-        assert_eq!(value["total_orders"], EXPECTED_ORDERS);
-        assert_eq!(value["total_positions"], EXPECTED_POSITIONS);
+        assert_eq!(bytes, repeated_bytes);
+        assert_eq!(result.digest().unwrap(), repeated.digest().unwrap());
+        assert_eq!(result.first_divergence(&repeated), None);
+        assert_eq!(value["schema"], "nautilus-backtest-result/v1");
+        assert_eq!(value["run"]["run_config_id"], RUN_CONFIG_ID);
+        assert_eq!(
+            parse_count(&value["run"]["iterations"]),
+            Some(EXPECTED_ITERATIONS)
+        );
+        assert_eq!(
+            parse_count(&value["run"]["total_events"]),
+            Some(EXPECTED_EVENTS)
+        );
+        assert_eq!(
+            parse_count(&value["run"]["total_orders"]),
+            Some(EXPECTED_ORDERS)
+        );
+        assert_eq!(
+            parse_count(&value["run"]["total_positions"]),
+            Some(EXPECTED_POSITIONS)
+        );
+        assert_eq!(value["run"]["outcome"], "completed");
+        assert!(
+            value["positions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|position| position.get("id").is_none())
+        );
+        assert_eq!(value["positions"][0]["position_id"], "position-1");
         assert_eq!(second_run.unwrap_err().to_string(), expected_error);
+    }
+
+    #[rstest]
+    #[ignore = "generates the immutable catalog used by the optimized native repeat proof"]
+    fn generate_native_repeat_catalog() {
+        let catalog_path = env::var_os("NAUTILUS_NATIVE_REPEAT_CATALOG_PATH")
+            .map(PathBuf::from)
+            .expect("NAUTILUS_NATIVE_REPEAT_CATALOG_PATH must be set");
+        fs::create_dir(&catalog_path).unwrap();
+        write_catalog(&catalog_path);
     }
 
     #[rstest]

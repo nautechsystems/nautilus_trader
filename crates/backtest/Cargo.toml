@@ -86,6 +86,7 @@ nautilus-trading = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+blake3 = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

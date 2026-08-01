@@ -74,7 +74,10 @@ use crate::{
     data_iterator::BacktestDataIterator,
     exchange::SimulatedExchange,
     execution_client::BacktestExecutionClient,
-    result::BacktestResult,
+    result::{
+        BacktestResult, CanonicalBacktestResult, CanonicalBacktestState, CanonicalDiagnostic,
+        CanonicalDiagnosticCode, CanonicalRunOutcome,
+    },
 };
 
 /// Core backtesting engine for running event-driven strategy backtests on historical data.
@@ -1156,6 +1159,107 @@ impl BacktestEngine {
             stats_general,
             returns_series,
         }
+    }
+
+    /// Returns the versioned deterministic projection of observable state from the last run.
+    ///
+    /// This projection excludes host, process, random identity, wall-clock, and elapsed-time noise.
+    /// It retains deterministic references between domain events and includes the observable cache,
+    /// account, portfolio, component, outcome, and diagnostic state available after the run ends.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if observable state cannot be projected into the canonical schema.
+    pub fn get_canonical_result(&self) -> anyhow::Result<CanonicalBacktestResult> {
+        let result = self.get_result();
+        let cache = self.kernel.cache.borrow();
+        let orders = cache
+            .orders(None, None, None, None, None)
+            .into_iter()
+            .map(|order| order.cloned())
+            .collect();
+        let positions = cache
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|position| position.cloned())
+            .collect();
+        let position_snapshots = cache.position_snapshots(None, None);
+        let accounts = cache.accounts_all_owned();
+        drop(cache);
+
+        let portfolio = self.kernel.portfolio.borrow();
+        let mut portfolio_snapshots = Vec::new();
+        for account in &accounts {
+            portfolio_snapshots.extend(portfolio.snapshots(&account.id()));
+        }
+        drop(portfolio);
+
+        let trader = self.kernel.trader.borrow();
+        let trader_state = trader.state().to_string();
+        let actor_ids = trader
+            .actor_ids()
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
+        let strategy_ids = trader
+            .strategy_ids()
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
+        let exec_algorithm_ids = trader
+            .exec_algorithm_ids()
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
+        drop(trader);
+
+        let outcome = if self.funding_error.is_some() {
+            CanonicalRunOutcome::Failed
+        } else if self.run_finished.is_none() {
+            CanonicalRunOutcome::Incomplete
+        } else if self.force_stop || self.kernel.is_shutdown_requested() {
+            CanonicalRunOutcome::Stopped
+        } else {
+            CanonicalRunOutcome::Completed
+        };
+        let diagnostics = self
+            .funding_error
+            .as_ref()
+            .map(|_| CanonicalDiagnostic {
+                code: CanonicalDiagnosticCode::FundingSettlementFailed,
+            })
+            .into_iter()
+            .collect();
+        let statistics = nautilus_analysis::PortfolioStatistics {
+            pnls: result.stats_pnls,
+            returns: result.stats_returns,
+            general: result.stats_general,
+            returns_series: result.returns_series,
+        };
+
+        CanonicalBacktestResult::from_state(CanonicalBacktestState {
+            trader_id: result.trader_id,
+            run_config_id: result.run_config_id,
+            backtest_start: result.backtest_start,
+            backtest_end: result.backtest_end,
+            iterations: result.iterations,
+            total_events: result.total_events,
+            total_orders: result.total_orders,
+            total_positions: result.total_positions,
+            outcome,
+            diagnostics,
+            trader_state,
+            actor_ids,
+            strategy_ids,
+            exec_algorithm_ids,
+            summary: result.summary.into_iter().collect(),
+            orders,
+            positions,
+            position_snapshots,
+            accounts,
+            portfolio_snapshots,
+            statistics,
+        })
     }
 
     fn build_result_summary(
