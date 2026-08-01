@@ -1151,7 +1151,11 @@ fn test_bid_ask_initialized(instrument_es: InstrumentAny) {
 }
 
 #[rstest]
+#[case::initialized(OrderStatus::Initialized)]
+#[case::released(OrderStatus::Released)]
+#[case::submitted(OrderStatus::Submitted)]
 fn test_not_enough_quantity_filled_fok_order(
+    #[case] initial_status: OrderStatus,
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -1169,22 +1173,28 @@ fn test_not_enough_quantity_filled_fok_order(
         ))
         .build();
 
-    // Create FOK market order with quantity 2 which won't be enough to fill the order
-    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+    let mut builder = OrderTestBuilder::new(OrderType::Market);
+    builder
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("2.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
-        .time_in_force(TimeInForce::Fok)
-        .submit(true)
-        .build();
+        .time_in_force(TimeInForce::Fok);
+
+    if initial_status == OrderStatus::Submitted {
+        builder.submit(true);
+    }
+    let mut market_order = builder.build();
+    if initial_status == OrderStatus::Released {
+        apply_released_status(&mut market_order, Price::from("1500.00"));
+    }
+    assert_eq!(market_order.status(), initial_status);
 
     engine_l2
         .process_order_book_delta(&orderbook_delta_sell)
         .unwrap();
     engine_l2.process_order(&mut market_order, account_id);
 
-    // We need to test that one OrderCanceled event was generated
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
     assert_eq!(saved_messages.len(), 1);
     let first_message = saved_messages.first().unwrap();
@@ -14931,13 +14941,26 @@ fn test_l1_market_order_slip_allowed_at_protection_boundary(
 }
 
 #[rstest]
+#[case::initialized_without_acks(OrderStatus::Initialized, false)]
+#[case::initialized_with_acks(OrderStatus::Initialized, true)]
+#[case::released_without_acks(OrderStatus::Released, false)]
+#[case::released_with_acks(OrderStatus::Released, true)]
+#[case::submitted_without_acks(OrderStatus::Submitted, false)]
+#[case::submitted_with_acks(OrderStatus::Submitted, true)]
 fn test_l1_ioc_market_order_cancels_remainder_instead_of_slipping(
+    #[case] initial_status: OrderStatus,
+    #[case] use_market_order_acks: bool,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
 ) {
     // IOC must cancel the remainder before the slip path runs
-    let mut engine = get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, None);
+    let config = OrderMatchingEngineConfig {
+        use_market_order_acks,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, Some(config));
 
     let quote = QuoteTick::new(
         instrument_eth_usdt.id(),
@@ -14950,33 +14973,70 @@ fn test_l1_ioc_market_order_cancels_remainder_instead_of_slipping(
     );
     engine.process_quote_tick(&quote);
 
-    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+    let mut builder = OrderTestBuilder::new(OrderType::Market);
+    builder
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1.500"))
         .time_in_force(TimeInForce::Ioc)
-        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
-        .submit(true)
-        .build();
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"));
+
+    if initial_status == OrderStatus::Submitted {
+        builder.submit(true);
+    }
+    let mut market_order = builder.build();
+    if initial_status == OrderStatus::Released {
+        apply_released_status(&mut market_order, Price::from("1010.00"));
+    }
+    assert_eq!(market_order.status(), initial_status);
     engine.process_order(&mut market_order, account_id);
 
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
-    let fills: Vec<&OrderFilled> = saved_messages
-        .iter()
-        .filter_map(|event| match event {
-            OrderEventAny::Filled(f) => Some(f),
-            _ => None,
-        })
-        .collect();
-    let canceled_count = saved_messages
-        .iter()
-        .filter(|event| matches!(event, OrderEventAny::Canceled(_)))
-        .count();
+    let fill_index = usize::from(use_market_order_acks);
+    assert_eq!(saved_messages.len(), fill_index + 2);
+    if use_market_order_acks {
+        let OrderEventAny::Accepted(accepted) = &saved_messages[0] else {
+            panic!("Expected OrderAccepted, was {:?}", saved_messages[0]);
+        };
+        assert_eq!(accepted.client_order_id, market_order.client_order_id());
+    }
+    let OrderEventAny::Filled(fill) = &saved_messages[fill_index] else {
+        panic!("Expected OrderFilled, was {:?}", saved_messages[fill_index]);
+    };
+    assert_eq!(fill.client_order_id, market_order.client_order_id());
+    assert_eq!(fill.last_px, Price::from("1010.00"));
+    assert_eq!(fill.last_qty, Quantity::from("0.500"));
+    let OrderEventAny::Canceled(canceled) = &saved_messages[fill_index + 1] else {
+        panic!(
+            "Expected OrderCanceled, was {:?}",
+            saved_messages[fill_index + 1]
+        );
+    };
+    assert_eq!(canceled.client_order_id, market_order.client_order_id());
+}
 
-    assert_eq!(fills.len(), 1);
-    assert_eq!(fills[0].last_px, Price::from("1010.00"));
-    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
-    assert_eq!(canceled_count, 1);
+fn apply_released_status(order: &mut OrderAny, released_price: Price) {
+    let trader_id = order.trader_id();
+    let strategy_id = order.strategy_id();
+    let instrument_id = order.instrument_id();
+    let client_order_id = order.client_order_id();
+    order
+        .apply(OrderEventAny::Emulated(build_order_emulated(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+        )))
+        .unwrap();
+    order
+        .apply(OrderEventAny::Released(build_order_released(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            released_price,
+        )))
+        .unwrap();
 }
 
 #[rstest]

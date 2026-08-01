@@ -5856,7 +5856,16 @@ impl OrderMatchingEngine {
     fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {
         let cancel_contingencies = cancel_contingencies.unwrap_or(true);
 
-        if order.is_active_local() {
+        if order.is_active_local()
+            && !matches!(
+                (order.status(), order.order_type(), order.time_in_force()),
+                (
+                    OrderStatus::Initialized | OrderStatus::Released,
+                    OrderType::Market,
+                    TimeInForce::Ioc | TimeInForce::Fok
+                )
+            )
+        {
             log::error!(
                 "Cannot cancel an order with {} from the matching engine",
                 order.status()

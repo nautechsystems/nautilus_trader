@@ -43,7 +43,7 @@ use nautilus_model::{
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
         AccountType, AggressorSide, BookType, InstrumentCloseType, MarketStatusAction, OmsType,
-        OrderSide, OrderType, PositionSide,
+        OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
     identifiers::{
@@ -2711,6 +2711,103 @@ fn test_config_accessor(execution_client: SandboxExecutionClient, venue: Venue) 
 fn test_get_account_when_none(execution_client: SandboxExecutionClient) {
     // No account in cache yet
     assert!(execution_client.get_account().is_none());
+}
+
+#[rstest]
+fn test_initialized_ioc_market_order_cancels_remainder_through_live_runner(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let instrument_id = instrument.id();
+    let mut context = create_test_context(trader_id, account_id, instrument_id.venue);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument)
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    context.cache.borrow_mut().add_quote(quote).unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.500"))
+        .time_in_force(TimeInForce::Ioc)
+        .client_order_id(ClientOrderId::from("O-IOC-INITIALIZED"))
+        .build();
+    assert_eq!(order.status(), OrderStatus::Initialized);
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(context.client.client_id()), false)
+        .unwrap();
+
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let events: Vec<OrderEventAny> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(order_event) => Some(order_event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(events.len(), 3);
+    let OrderEventAny::Submitted(submitted) = &events[0] else {
+        panic!("Expected OrderSubmitted, was {:?}", events[0]);
+    };
+    assert_eq!(submitted.client_order_id, order.client_order_id());
+    let OrderEventAny::Filled(fill) = &events[1] else {
+        panic!("Expected OrderFilled, was {:?}", events[1]);
+    };
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.last_px, Price::from("1010.00"));
+    assert_eq!(fill.last_qty, Quantity::from("0.500"));
+    let OrderEventAny::Canceled(canceled) = &events[2] else {
+        panic!("Expected OrderCanceled, was {:?}", events[2]);
+    };
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+
+    for event in &events {
+        context.cache.borrow_mut().update_order(event).unwrap();
+    }
+
+    let cached_order = context
+        .cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(cached_order.status(), OrderStatus::Canceled);
+    assert_eq!(cached_order.filled_qty(), Quantity::from("0.500"));
+    assert_eq!(cached_order.leaves_qty(), Quantity::from("1.000"));
+
+    context.client.stop().unwrap();
 }
 
 // Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3732

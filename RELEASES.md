@@ -249,6 +249,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 `subscribed_bars` to include internally aggregated subscriptions (v1 parity)
 - Fixed v2 `request_bars` to reject composite bar types (v1 parity)
 - Fixed v2 `skip_first_non_full_bar` per-command override for bar subscriptions and aggregation requests (v1 parity)
+- Fixed v2 matching engine uncanceled part‑fill `INITIALIZED` IOC market orders (#4626), thanks for reporting @linimin
 - Fixed v2 matching engine stop and touch orders to honor last-price triggers (#4481), thanks for reporting @mgd134
 - Fixed v2 matching engine quote-bar execution to honor `bar_adaptive_high_low_ordering` (v1 parity)
 - Fixed v2 matching engine `reset` to clear cached bid/ask bars, preventing stale pairs across runs
