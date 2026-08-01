@@ -23,7 +23,7 @@ use nautilus_core::params::Params;
 use nautilus_model::{
     data::{QuoteTick, black_scholes::compute_greeks, option_chain::OptionGreeks},
     enums::{OptionKind, OrderSide, TimeInForce},
-    events::{OrderCanceled, OrderFilled},
+    events::{OrderCanceled, OrderDenied, OrderExpired, OrderFilled, OrderRejected},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
     orders::Order,
@@ -520,6 +520,24 @@ nautilus_strategy!(DeltaNeutralVol, {
             .map(|o| o.instrument_id());
 
         if instrument_id == Some(self.config.hedge_instrument_id) {
+            self.hedge_pending = false;
+        }
+    }
+
+    fn on_order_rejected(&mut self, event: OrderRejected) {
+        if event.instrument_id == self.config.hedge_instrument_id {
+            self.hedge_pending = false;
+        }
+    }
+
+    fn on_order_denied(&mut self, event: OrderDenied) {
+        if event.instrument_id == self.config.hedge_instrument_id {
+            self.hedge_pending = false;
+        }
+    }
+
+    fn on_order_expired(&mut self, event: OrderExpired) {
+        if event.instrument_id == self.config.hedge_instrument_id {
             self.hedge_pending = false;
         }
     }

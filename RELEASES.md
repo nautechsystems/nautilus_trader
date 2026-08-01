@@ -283,6 +283,8 @@ adapter set. The following limits remain deferred:
 - Fixed v2 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
 - Fixed v2 `RiskEngine` skipping cash and betting account balance checks for reduce-only buy orders
 - Fixed v2 `RiskEngine` rate-limit modify-order rejections omitting the order `account_id`
+- Fixed v2 execution algorithms retaining submit params for denied orders
+- Fixed v2 `DeltaNeutralVol` example strategy stopping further rehedging after a hedge order rejection, denial, or expiration
 - Fixed v2 `LiveNode` startup to restore cache databases and honor `flush_on_start`
 - Fixed v2 `LiveNode` startup continuing after reconciliation failures (#4406), thanks @TheoBabilon
 - Fixed v2 `LiveExecEngineConfig` accepting invalid or sub‑nanosecond interval seconds
