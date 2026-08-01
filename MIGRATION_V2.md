@@ -82,7 +82,7 @@ V2 shortens common strategy and cache names. The `QuoteTick`, `TradeTick`, and
 | `cache.quote_tick_count`             | `cache.quote_count`            |
 | `cache.trade_tick_count`             | `cache.trade_count`            |
 
-### Public API migration matrix
+### API changes
 
 V2 uses specific names for component and model identities:
 
@@ -261,17 +261,14 @@ V1 types from `nautilus_trader.config` move beside their owning runtime. For exa
 `BacktestRunConfig` comes from `nautilus_trader.backtest` and `PortfolioConfig` from
 `nautilus_trader.portfolio`.
 
-Use the generated type stubs in `python/nautilus_trader/` as the supported Python contract for the
-names they declare, not as an exhaustive inventory of runtime-visible names. Two reviewed
-class-member exceptions apply:
+Use the generated type stubs in `python/nautilus_trader/` as the supported Python contract. Some
+adapter wire DTOs expose extra runtime attributes that are not part of that contract. The following
+methods are callable at runtime but absent from the stubs, so static type checkers cannot resolve
+them:
 
-- Some adapter wire DTOs appear in public signatures or as runtime results. Their readback
-  properties are outside the supported member contract and omitted from the stubs.
-  `NON_CONTRACT_DTO_CLASSES` in the stub guard records the set.
-- `KrakenFuturesHttpClient.edit_orders_batch`, `KrakenFuturesHttpClient.submit_orders_batch`, and
-  `KrakenSpotHttpClient.submit_orders_batch` remain callable at runtime but absent from the stubs
-  because `pyo3_stub_gen` cannot represent their complex tuple parameter types. Static type
-  checkers cannot resolve these methods until the generator supports those parameter types.
+- `KrakenFuturesHttpClient.edit_orders_batch`
+- `KrakenFuturesHttpClient.submit_orders_batch`
+- `KrakenSpotHttpClient.submit_orders_batch`
 
 The [Python v2 examples][python-v2-examples] show current live-node builders, adapter factories,
 strategies, actors, and data/execution testers.
@@ -483,112 +480,9 @@ control-plane integrations and dispatch the same Python callbacks.
 Port one workflow at a time and verify the generated stub before replacing a v1 convenience method.
 Do not assume that a v1 adapter config field also exists on its v2 Rust config.
 
-## ENG-200 parity and tooling exit
+## Behavior changes
 
-The final source‑backed audit ran on 2026‑07‑31 against the worktree based on `af8d4d5bbf`. Both
-packages used that same candidate, with the root `.venv` reserved for v1 and `python/.venv`
-reserved for v2.
-
-### Final inventory
-
-The property inventory excludes tests, examples, benchmarks, sandboxes, scripts, and the embedded
-v1 PyO3 core. Direct readbacks are properties or instance attributes defined by the inventoried
-class rather than inherited members.
-
-| Inventory                         | V1                                      | V2                                            |
-| --------------------------------- | --------------------------------------- | --------------------------------------------- |
-| Discovered package modules        | 471                                     | 47                                            |
-| Import failures                   | 2 optional modules                      | 0                                             |
-| Public class identities           | 916                                     | 674                                           |
-| Classes with direct readback      | 483                                     | 457                                           |
-| Direct readbacks                  | 3,193                                   | 4,063                                         |
-| Writable readbacks                | 12, all Interactive Brokers             | 6: 3 Interactive Brokers, 3 `DataActorConfig` |
-| Generated stub files              | Not applicable                          | 41                                            |
-| Generated stub classes            | Not applicable                          | 650                                           |
-| Generated class functions (total) | Not applicable                          | 7,406                                         |
-| Generated properties              | Not applicable                          | 3,867                                         |
-| Generated property setters        | Not applicable                          | 6                                             |
-| Generated module functions        | Not applicable                          | 131                                           |
-| Supported configs                 | V1 surface used as the migration source | 81                                            |
-| Config constructor parameters     | V1 surface used as the migration source | 1,035                                         |
-| Public config constructor fields  | V1 surface used as the migration source | 1,032                                         |
-| Direct or bounded config readback | V1 surface used as the migration source | 980                                           |
-| Public constructor‑only fields    | V1 surface used as the migration source | 52                                            |
-
-The two v1 import failures are optional tooling modules: Interactive Brokers web scraping needs
-`lxml`, and `test_kit.debug_helpers` needs `debugpy`. Neither participates in the supported rc2
-runtime probes.
-
-### Replacement outcomes
-
-The audit accepts the documented replacement rather than mechanical member parity for:
-
-- Import paths, component identities, callbacks, subscriptions, historical batches, collection
-  inspection, lifecycle inspection, and strategy order commands.
-- Immutable config readback, bounded secret and callback inspection, adapter‑specific config
-  shapes, and Interactive Brokers constructor and builder fields.
-- `ExecutionAlgorithm` as a routed‑order component, `OrderList` client order IDs, signals instead
-  of raw message‑bus access, and cache or portfolio inspection after registration.
-- The behavior and serialization differences listed in [Accepted contract differences](#accepted-contract-differences).
-
-Generated stubs are the supported static contract for declared names. The 13 wire DTO classes in
-`NON_CONTRACT_DTO_CLASSES` are accepted as non‑contract types. Three Kraken batch methods remain
-runtime‑only because `pyo3_stub_gen` cannot express their tuple parameter types. No supported v2
-example or migrated workflow calls those methods.
-
-### Final gate results
-
-| Gate                            | V1 result                       | V2 result                       |
-| ------------------------------- | ------------------------------- | ------------------------------- |
-| Debug build                     | `make build-debug`: passed      | `make build-debug-v2`: passed   |
-| Property inventory              | Completed with the counts above | Completed with the counts above |
-| Config and generated stub guard | Migration source                | 103 passed                      |
-| Migrated workflow               | Reference workflows audited     | 269 passed, 6 accepted skips    |
-| Distribution doctests           | 7 passed                        | 3 passed                        |
-| Supported mypy contract         | Not a v2 input                  | 57 source files, no issues      |
-| Focused runtime regression      | 155 passed                      | 78 passed                       |
-| Generated file drift            | Not applicable                  | No drift after regeneration     |
-
-The migrated workflow covers the backtest acceptance suite, all 19 adapter factory suites,
-execution algorithm authoring, and live node authoring. Five skips retain the deferred
-Databento `data_utils`, options, and spreads plus `StreamingConfig` and `DataCatalogConfig`
-iterator wiring. One skip retains the v1‑specific Betfair fixture and Python `MarketMaker`
-acceptance case; the supported v2 strategy and Betfair factory paths remain covered.
-
-The v1 doctest gate runs supported pure‑Python examples from analysis, Betfair parsing, and
-persistence. It excludes Cython `.pyx` text collection because it lacks compiled module globals
-and duplicates generated `__test__` entries, and excludes the optional Interactive Brokers web
-scraper. The v2 gate runs its two pure‑Python analysis modules. Generated `.pyi` files remain type
-contracts rather than executable doctest inputs.
-
-The v2 mypy gate checks the 56 Python files under `python/examples`: 37 example modules and
-19 package initializers, plus `python/tests/type_checking/supported.py`, against the generated
-stubs. It does not recheck Rust or PyO3 implementation bodies, which the source, runtime, and stub
-guards cover. Missing optional third‑party imports remain ignored so adapter SDK installation is
-not a static‑analysis prerequisite. Published v1 tutorials are not v2 mypy inputs.
-
-Local equivalents are `make pytest-doctest`, `make pytest-doctest-v2`, and `make mypy-v2`. The
-focused v1 regression command is:
-
-```bash
-.venv/bin/python -m pytest \
-  tests/unit_tests/analysis/test_tearsheet.py \
-  tests/unit_tests/backtest/test_config.py -q
-```
-
-The focused v2 regression command is:
-
-```bash
-cd python
-VIRTUAL_ENV= uv run --no-sync pytest \
-  tests/unit/analysis/test_tearsheet.py \
-  tests/unit/adapters/blockchain/test_blockchain_factories.py \
-  tests/unit/adapters/polymarket/test_polymarket_factories.py -q
-```
-
-## Accepted contract differences
-
-The cutover accepts these differences from v1:
+Account for these differences from v1:
 
 - Custom data flows as native `CustomData` without the v1 wrapper semantics.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
@@ -615,17 +509,17 @@ The cutover accepts these differences from v1:
   `order.avg_px` and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node
   now fails at connect time while the old column types remain.
 
-## Deferred limits
+## Known limitations
 
 These gaps can affect migration but do not block supported cutover workflows:
 
-- Python request callback, joined‑response, pending‑request cleanup, and late or duplicate delivery
-  convenience semantics remain the non‑blocking ENG‑436 deferral.
+- Python request callbacks do not provide v1 joined-response, pending-request cleanup, or late and
+  duplicate delivery convenience behavior.
 - Python cannot inject Redis cache databases or external message-bus backing factories into
   `LiveNode`; Rust builders still expose those backings.
 - SQL cache position and synthetic loads, actor and strategy state persistence, and heartbeat remain
-  incomplete. The audited restart workflow uses the Redis backing through Rust builders; Python
-  `LiveNode` configuration cannot select that backing yet.
+  incomplete. Redis backing is available through Rust builders, but Python `LiveNode` configuration
+  cannot select it.
 - External message-bus publishing of serialized order and position snapshots remains deferred.
 - V2 `BacktestNode` does not yet support the v1 `StreamingConfig` and `DataCatalogConfig` iterator
   workflow.
@@ -636,8 +530,6 @@ These gaps can affect migration but do not block supported cutover workflows:
   generated v2 stubs, the [v2 backtest acceptance tests][python-v2-backtest-tests] for backtesting,
   and [Python v2 examples][python-v2-examples] for live and adapter workflows while those tutorials
   are ported.
-- Static typing for three Kraken batch methods remains deferred; no supported rc2 example or
-  migrated workflow uses those members.
 
 The [v2 roadmap][v2-roadmap] tracks the wider post-cutover surface. Release-specific breaking
 changes remain in [RELEASES.md][release-notes].

@@ -44,53 +44,21 @@ The migration guide includes the v1-to-v2 identifier, collection, lifecycle, cal
 subscription, historical-batch, and removed-hook mappings. Typed historical requests use batch
 callbacks; generic custom data continues through `on_historical_data`.
 
-#### Final Python parity and tooling gate
-
-The 2026‑07‑31 ENG‑200 audit used the same worktree candidate based on `af8d4d5bbf` for both
-distributions. The v1 debug build and the v2 debug build both passed in their separate virtual
-environments.
-
-| Gate                            | V1 result                              | V2 result                              |
-| ------------------------------- | -------------------------------------- | -------------------------------------- |
-| Property inventory              | 916 classes and 3,193 direct readbacks | 674 classes and 4,063 direct readbacks |
-| Config and generated stub guard | Migration source                       | 103 passed                             |
-| Migrated workflow               | Reference workflows audited            | 269 passed, 6 accepted skips           |
-| Distribution doctests           | 7 passed                               | 3 passed                               |
-| Supported mypy contract         | Not a v2 input                         | 57 source files, no issues             |
-| Focused runtime regression      | 155 passed                             | 78 passed                              |
-
-The v2 inventory contains 81 supported configs with 1,035 constructor parameters, 1,032 public
-fields, 980 direct or bounded readbacks, 52 public constructor‑only fields, and 6 approved setters.
-Its 41 generated stub files contain 650 classes, 7,406 total class functions including 3,867
-properties and 6 setters, and 131 module functions. Regeneration produced no tracked drift.
-
-The accepted migration contract uses documented v2 replacements for renamed properties,
-callbacks, collection access, lifecycle inspection, config fields, routing, and component
-ownership. See [Migrate from v1 to v2](MIGRATION_V2.md) for the full inventory, accepted
-differences, command results, and evidence for each deferral.
-
 #### Cutover limits
 
 The supported cutover workflows cover Python strategies, actors, backtests, live nodes, core risk
 and execution, portfolio/accounting, data catalogs, reports, tearsheets, and the current Rust-backed
 adapter set. The following limits remain deferred:
 
-- Python request callback, joined‑response, pending‑request cleanup, and late or duplicate delivery
-  convenience semantics in the non‑blocking ENG‑436 follow‑up.
+- Python request callbacks do not provide v1 joined-response, pending-request cleanup, or late and
+  duplicate delivery convenience behavior.
 - Direct Python `LiveNode` injection for Redis cache databases and external message-bus backing.
 - SQL cache position and synthetic loads, state persistence, and heartbeat.
 - External message-bus publication of serialized order and position snapshots.
 - V1 `StreamingConfig` and `DataCatalogConfig` iterator wiring on the v2 `BacktestNode`.
 - V1 adapter instrument-provider filters; Hyperliquid v2 loads the configured universe.
 - Published tutorials still use v1; generated v2 stubs and `python/examples/` show the current API.
-- Static typing for three Kraken batch methods; no supported rc2 example or migrated workflow uses
-  those members. Thirteen wire DTO classes are accepted as non‑contract types.
-
-The Python doctest gate intentionally excludes v1 Cython text collection, the optional Interactive
-Brokers web scraper, and generated v2 `.pyi` files. The mypy gate checks 37 v2 example modules,
-19 package initializers, and the supported authoring contract while source/runtime guards continue
-to own Rust, PyO3, and generated stub parity. These are tooling boundaries, not additional runtime
-deferrals.
+- Static typing does not cover three Kraken batch methods or adapter wire DTO runtime attributes.
 
 ### Enhancements
 - Added opt-in `mimalloc` allocator feature, enabled by default for Python wheels (#4358), thanks @ivannp
