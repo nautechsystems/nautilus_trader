@@ -740,8 +740,10 @@ impl NautilusKernel {
     /// # Errors
     ///
     /// Returns an error if actor or strategy state cannot be saved.
+    #[allow(unknown_lints)]
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "keeps the public async kernel API shape stable"
     )]
     pub async fn finalize_stop(&mut self) -> anyhow::Result<()> {
