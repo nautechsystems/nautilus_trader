@@ -1591,6 +1591,24 @@ async fn test_generate_mass_status_propagates_invalid_fill_response() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_mass_status_rejects_overflowing_lookback() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client(base_url);
+
+    let error = client
+        .generate_mass_status(Some(307_445_735))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "lookback minutes exceed the nanosecond range"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_fill_reports_uses_supported_order_cursor_query() {
     let (addr, captured_queries) =
         start_exec_test_server_with_fill_fixture(FillFixtureMode::Paginated).await;

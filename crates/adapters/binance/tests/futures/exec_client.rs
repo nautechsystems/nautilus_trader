@@ -3642,6 +3642,25 @@ async fn test_generate_mass_status_fails_on_invalid_fill() {
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_rejects_overflowing_lookback() {
+    let addr = start_exec_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (client, _rx, _cache) = create_test_execution_client(base_url_http, base_url_ws);
+
+    let error = client
+        .generate_mass_status(Some(307_445_735))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "lookback minutes exceed the nanosecond range"
+    );
+}
+
+#[rstest]
 #[case(Some(60), false)]
 #[case(None, true)]
 #[tokio::test]

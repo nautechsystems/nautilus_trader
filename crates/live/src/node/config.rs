@@ -32,7 +32,9 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, secs_to_nanos},
+    datetime::{
+        NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, checked_mins_to_nanos, secs_to_nanos,
+    },
 };
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
@@ -992,6 +994,33 @@ impl LiveExecEngineConfig {
             }
         }
 
+        for (field, value) in [
+            (
+                "LiveExecEngineConfig.open_check_lookback_mins",
+                self.open_check_lookback_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_closed_orders_interval_mins",
+                self.purge_closed_orders_interval_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_closed_positions_interval_mins",
+                self.purge_closed_positions_interval_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_account_events_interval_mins",
+                self.purge_account_events_interval_mins,
+            ),
+        ] {
+            if let Some(mins) = value {
+                collector.collect(check_range(
+                    field,
+                    checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    format!("{mins} minutes (must fit in `u64` nanoseconds)"),
+                ));
+            }
+        }
+
         if let Some(instrument_ids) = &self.reconciliation_instrument_ids {
             collector.collect(validate_instrument_id_strings(
                 "LiveExecEngineConfig.reconciliation_instrument_ids",
@@ -1496,6 +1525,45 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "LiveExecEngineConfig.snapshot_orders is not supported by the Rust live runtime yet"
+        );
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_overflowing_minute_fields() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                open_check_lookback_mins: Some(u32::MAX),
+                purge_closed_orders_interval_mins: Some(u32::MAX),
+                purge_closed_positions_interval_mins: Some(u32::MAX),
+                purge_account_events_interval_mins: Some(u32::MAX),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err();
+        assert_eq!(
+            error,
+            ConfigError::Multiple {
+                errors: vec![
+                    ConfigError::range(
+                        "LiveExecEngineConfig.open_check_lookback_mins",
+                        "4294967295 minutes (must fit in `u64` nanoseconds)",
+                    ),
+                    ConfigError::range(
+                        "LiveExecEngineConfig.purge_closed_orders_interval_mins",
+                        "4294967295 minutes (must fit in `u64` nanoseconds)",
+                    ),
+                    ConfigError::range(
+                        "LiveExecEngineConfig.purge_closed_positions_interval_mins",
+                        "4294967295 minutes (must fit in `u64` nanoseconds)",
+                    ),
+                    ConfigError::range(
+                        "LiveExecEngineConfig.purge_account_events_interval_mins",
+                        "4294967295 minutes (must fit in `u64` nanoseconds)",
+                    ),
+                ],
+            }
         );
     }
 

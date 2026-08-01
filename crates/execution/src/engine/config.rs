@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
-use nautilus_core::serialization::default_true;
+use nautilus_core::{datetime::checked_mins_to_nanos, serialization::default_true};
 use nautilus_model::identifiers::ClientId;
 use serde::{Deserialize, Serialize};
 
@@ -154,12 +154,14 @@ impl ExecutionEngineConfig {
             ),
         ] {
             if let Some(mins) = value {
+                let reason = if mins == 0 {
+                    format!("must be a positive number of minutes, was {mins}")
+                } else {
+                    format!("must be positive and fit in `u64` nanoseconds, was {mins} minutes")
+                };
                 errors.check(
-                    mins > 0,
-                    ConfigError::range(
-                        field,
-                        format!("must be a positive number of minutes, was {mins}"),
-                    ),
+                    mins > 0 && checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    ConfigError::range(field, reason),
                 );
             }
         }
@@ -264,6 +266,34 @@ mod tests {
             .purge_closed_orders_buffer_mins(0)
             .build();
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_overflowing_purge_intervals_rejected() {
+        let result = ExecutionEngineConfig::builder()
+            .purge_closed_orders_interval_mins(u32::MAX)
+            .purge_closed_positions_interval_mins(u32::MAX)
+            .purge_account_events_interval_mins(u32::MAX)
+            .build();
+        assert_eq!(
+            result.unwrap_err(),
+            ConfigError::Multiple {
+                errors: vec![
+                    ConfigError::range(
+                        "purge_closed_orders_interval_mins",
+                        "must be positive and fit in `u64` nanoseconds, was 4294967295 minutes",
+                    ),
+                    ConfigError::range(
+                        "purge_closed_positions_interval_mins",
+                        "must be positive and fit in `u64` nanoseconds, was 4294967295 minutes",
+                    ),
+                    ConfigError::range(
+                        "purge_account_events_interval_mins",
+                        "must be positive and fit in `u64` nanoseconds, was 4294967295 minutes",
+                    ),
+                ],
+            }
+        );
     }
 
     #[rstest]

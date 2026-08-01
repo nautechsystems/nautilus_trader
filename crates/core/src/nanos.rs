@@ -63,6 +63,7 @@ use serde::{
 
 use crate::datetime::{
     NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+    U64_UPPER_BOUND_F64,
 };
 
 /// Represents a duration in nanoseconds.
@@ -279,14 +280,11 @@ impl UnixNanos {
 // Converts non-negative float seconds to nanoseconds, truncating (not rounding)
 // sub-nanosecond precision for consistency with `datetime::secs_to_nanos`.
 #[expect(
-    clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "value is checked finite, non-negative, and within u64 range before the cast"
 )]
 fn f64_seconds_to_nanos(value: f64) -> Result<u64, String> {
-    const MAX_NS_F64: f64 = u64::MAX as f64;
-
     if !value.is_finite() {
         return Err(format!("Unix timestamp must be finite, was {value}"));
     }
@@ -300,7 +298,7 @@ fn f64_seconds_to_nanos(value: f64) -> Result<u64, String> {
     // result fits inside `u64` *before* truncating / casting.
     let nanos_f64 = value * 1_000_000_000.0;
 
-    if nanos_f64 > MAX_NS_F64 {
+    if nanos_f64 >= U64_UPPER_BOUND_F64 {
         return Err(format!("Unix timestamp {value} seconds is out of range"));
     }
 
@@ -1105,6 +1103,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_float_u64_boundary_fails() {
+        let deserializer = serde::de::value::F64Deserializer::<serde::de::value::Error>::new(
+            18_446_744_073.709_553,
+        );
+        let err = UnixNanos::deserialize(deserializer).unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[rstest]
     fn test_deserialize_invalid_string_fails() {
         let json = "\"not a timestamp\"";
         let result: Result<UnixNanos, _> = serde_json::from_str(json);
@@ -1392,10 +1399,6 @@ mod tests {
         }
 
         #[rstest]
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "test bound mirrors the production guard in f64_seconds_to_nanos"
-        )]
         fn prop_unix_nanos_f64_deserialize_never_panics(val: f64) {
             // Use IntoDeserializer to hit visit_f64 directly,
             // bypassing JSON text encoding ambiguity
@@ -1403,7 +1406,8 @@ mod tests {
             let deserializer: F64Deserializer<ValueError> = val.into_deserializer();
             let result = UnixNanos::deserialize(deserializer);
 
-            if val.is_finite() && val >= 0.0 && val * 1_000_000_000.0 <= u64::MAX as f64 {
+            let upper_bound = 2.0_f64.powi(64);
+            if val.is_finite() && val >= 0.0 && val * 1_000_000_000.0 < upper_bound {
                 prop_assert!(result.is_ok(), "Should succeed for valid f64: {}", val);
             } else {
                 prop_assert!(result.is_err(), "Should error for invalid f64: {}", val);

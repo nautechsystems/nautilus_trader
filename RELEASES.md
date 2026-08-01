@@ -133,6 +133,7 @@ adapter set. The following limits remain deferred:
 - Added Tardis MEXC spot and futures market data support
 
 ### Breaking Changes
+- Changed Rust `mins_to_secs` and `mins_to_nanos` to panic on overflow; use the `checked_*` variants
 - Changed L3 books to move IDs re‑added at a new price on the same side, fixing ghost levels
 - Changed L3 books to derive price‑based order IDs for orders with a zero order ID
 - Changed unstable Cap'n Proto `BarSpec.step` from `UInt32` to `UInt64`
@@ -144,35 +145,36 @@ adapter set. The following limits remain deferred:
 - Changed Rust FFI functions accessing `CVec` data to `unsafe`; wrap calls in `unsafe` blocks (#4499), thanks @folknor
 - Changed Rust `OrderStatusReport::with_avg_px` to take a `Decimal` and return `Self`; it no longer returns a `Result`
 - Changed Rust `calculate_fixed_risk_position_size` to return `Result<Quantity>`; callers must handle errors
+- Changed Rust CLI parser fields to crate-private; use `nautilus_cli::cli_command` and `run`
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
 - Changed v2 portfolios to record daily equity snapshots by default; set `equity_curve=False` to opt out
 - Changed v2 order-event schemas to persist activation prices and fill `info`; old catalogs must be migrated
+- Changed v2 trailing-stop and order-event constructors to accept activation prices and fill `info`
+- Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
 - Changed v2 order average and slippage prices to `Decimal` in Rust and `decimal.Decimal` in Python
 - Changed v2 SQL order average and slippage prices to `NUMERIC`; run `nautilus database init`
 - Changed v2 `OrderSnapshot` average and slippage prices to strings; migrate mixed‑schema catalogs
 - Changed v2 instrument Arrow schemas to persist all constraints; old catalogs must be migrated
-- Changed v2 trailing-stop and order-event constructors to accept activation prices and fill `info`
-- Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
 - Changed index option settlement to require `IndexPriceUpdate` for underlying levels (#4430, #4431), thanks @taozle
-- Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
-- Removed `Copy` and `Clone` from Rust `CVec`; move values instead (#4499), thanks @folknor
-- Removed Rust `CANCELLABLE_ORDER_STATUSES` and cancellable status set functions; use `OrderStatus::is_cancellable()`
-- Removed Rust `last_day_of_month` and `is_leap_year` helpers from `nautilus_core::datetime`; use chrono equivalents
-- Changed Rust CLI parser fields to crate-private; use `nautilus_cli::cli_command` and `run`
-- Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
+- Changed DeFi `Pool` instrument conversion to preserve pool IDs; update callers keyed by token‑pair symbols
 - Changed Architect AX request models and low-level APIs to current schemas; unverified stop-limit orders are rejected
 - Changed BitMEX quanto multipliers from raw to settlement-currency units (#4507), thanks for reporting @4px4d9cdby-star
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 - Changed Bybit repay result status fields from `String` to `BybitRepayStatus`
-- Changed DeFi `Pool` instrument conversion to preserve pool IDs; update callers keyed by token‑pair symbols
-- Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
 - Changed Lighter `LighterHttpError` to add `HistoryIncomplete`; update exhaustive matches
+- Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
+- Removed `Copy` and `Clone` from Rust `CVec`; move values instead (#4499), thanks @folknor
+- Removed Rust `CANCELLABLE_ORDER_STATUSES` and cancellable status set functions; use `OrderStatus::is_cancellable()`
+- Removed Rust `last_day_of_month` and `is_leap_year` helpers from `nautilus_core::datetime`; use chrono equivalents
 - Removed Polymarket v2 `ack_timeout_secs`; submit buffering no longer waits for acknowledgments
+- Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
+- Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
 
 ### Security
 - Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
 - Fixed cross-thread `RustLocal` callback access that could cause undefined behavior (#4496), thanks @folknor
 - Fixed time-event callback teardown aborting during thread-local destruction (#4516), thanks @folknor
+- Fixed float time conversions saturating and real‑time `AtomicTime` returning placeholder timestamps or aborting
 - Fixed underflow and currency-mismatch panics from out-of-order fill events (#4483), thanks @folknor
 - Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
 - Fixed v2 `CompetitionAwareFillModel` and `VolumeSensitiveFillModel` panics on invalid or overflowing liquidity
@@ -184,6 +186,7 @@ adapter set. The following limits remain deferred:
 - Fixed DeFi spot and execution prices panicking or silently wrapping on high ratios and unsupported token decimals
 
 ### Fixes
+- Fixed execution engine and Binance minute intervals and lookbacks overflowing `u64` nanoseconds
 - Fixed order book `NoOrderSide` deltas mutating the bid side when the ID is on both book sides
 - Fixed Rust `OwnBookLevel::update` panicking on a missing order
 - Fixed own‑book filtering using wall time without a supplied timestamp (#4597), thanks @folknor
@@ -485,6 +488,7 @@ adapter set. The following limits remain deferred:
 
 ### Internal Improvements
 - Added `Cache` Criterion bench for `get_xrate` quote and bar fallback paths (Rust)
+- Improved `Params::get_usize` to return `None` for values outside the target `usize` range
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Aligned Rust event and own‑book ordering with equality (#4598), thanks @folknor
 - Aligned Rust subscription ordering with equality while preserving delivery order (#4611), thanks @folknor
