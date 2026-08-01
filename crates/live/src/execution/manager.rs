@@ -18,10 +18,9 @@
 //! This module provides the execution manager for reconciling execution state between
 //! the local cache and connected venues, as well as purging old state during live trading.
 
-use std::{
-    cell::RefCell, collections::HashSet, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock,
-    time::Duration,
-};
+#[cfg(feature = "node")]
+use std::collections::HashSet;
+use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time::Duration};
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
@@ -2092,6 +2091,7 @@ impl ExecutionManager {
 
     /// Returns the instruments with external order claims owned by `strategy_id`.
     #[must_use]
+    #[cfg(feature = "node")]
     pub(crate) fn get_external_order_claims_for_strategy(
         &self,
         strategy_id: StrategyId,
@@ -2121,6 +2121,7 @@ impl ExecutionManager {
         Ok(())
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn register_external_order_claims(
         &mut self,
         strategy_id: StrategyId,
@@ -2138,6 +2139,7 @@ impl ExecutionManager {
     /// Coordinated live-node callers should use
     /// `LiveNode::deregister_external_order_claims` so the reconciliation
     /// manager and execution engine remain consistent.
+    #[cfg(feature = "node")]
     pub(crate) fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
         self.external_order_claims
             .retain(|_, owner| *owner != strategy_id);
