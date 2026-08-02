@@ -1729,8 +1729,8 @@ mod tests {
             data::{BarsResponse, RequestBars},
             execution::{CancelAllOrders, SubmitOrder, TradingCommand},
         },
-        msgbus::get_message_bus,
-        runner::get_trading_cmd_sender,
+        msgbus::{MessagingSwitchboard, get_message_bus},
+        runner::{TradingCommandMessage, get_trading_cmd_sender},
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::stubs::StubExecutionClient;
@@ -1784,8 +1784,9 @@ mod tests {
 
     impl DataActor for ShutdownCancelStrategy {
         fn on_stop(&mut self) -> anyhow::Result<()> {
-            get_trading_cmd_sender().execute(TradingCommand::CancelAllOrders(
-                CancelAllOrders::new(
+            get_trading_cmd_sender().execute(TradingCommandMessage::new(
+                MessagingSwitchboard::exec_engine_execute(),
+                TradingCommand::CancelAllOrders(CancelAllOrders::new(
                     TraderId::from("TESTER-001"),
                     None,
                     StrategyId::from("SHUTDOWN-CANCEL-001"),
@@ -1795,7 +1796,7 @@ mod tests {
                     UnixNanos::default(),
                     None,
                     None,
-                ),
+                )),
             ));
             Ok(())
         }

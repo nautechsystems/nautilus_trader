@@ -55,7 +55,10 @@ use nautilus_common::{
         self, MessagingSwitchboard, TypedHandler, TypedIntoHandler, get_message_bus,
         switchboard::{self},
     },
-    runner::try_get_trading_cmd_sender,
+    runner::{
+        TradingCommandMessage, capture_trading_cmd, trading_cmd_is_dispatching,
+        try_get_trading_cmd_sender,
+    },
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
@@ -181,14 +184,16 @@ impl ExecutionEngine {
         );
 
         // Queued endpoint for deferred command execution (re-entrancy safe),
-        // falls back to direct endpoint if no sender is initialized (e.g., backtest/test).
+        // with direct dispatch when no sender is installed.
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::exec_engine_queue_execute(),
             TypedIntoHandler::from(move |cmd: TradingCommand| {
-                if let Some(sender) = try_get_trading_cmd_sender() {
-                    sender.execute(cmd);
+                let endpoint = MessagingSwitchboard::exec_engine_execute();
+                if trading_cmd_is_dispatching() {
+                    capture_trading_cmd(TradingCommandMessage::new(endpoint, cmd));
+                } else if let Some(sender) = try_get_trading_cmd_sender() {
+                    sender.execute(TradingCommandMessage::new(endpoint, cmd));
                 } else {
-                    let endpoint = MessagingSwitchboard::exec_engine_execute();
                     msgbus::send_trading_command(endpoint, cmd);
                 }
             }),

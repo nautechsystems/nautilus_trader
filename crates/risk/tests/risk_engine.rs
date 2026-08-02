@@ -18,19 +18,26 @@
     reason = "rstest fixtures define broad test setup signatures"
 )]
 
-use std::{cell::RefCell, rc::Rc, str::FromStr};
+use std::{cell::RefCell, rc::Rc, str::FromStr, sync::Arc};
 
 use ahash::AHashMap;
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::{
-        execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{
+            BatchModifyOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList,
+            TradingCommand,
+        },
         system::trading::TradingStateChanged,
     },
     msgbus::{
         self, MessagingSwitchboard, TypedHandler,
         stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+    },
+    runner::{
+        SyncTradingCommandSender, drain_trading_cmd_queue, replace_exec_cmd_sender,
+        trading_cmd_queue_is_empty,
     },
     throttler::RateLimit,
 };
@@ -40,8 +47,8 @@ use nautilus_model::{
     accounts::{AccountAny, BettingAccount, CashAccount, MarginAccount, stubs::cash_account},
     data::{QuoteTick, stubs::quote_audusd},
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderType, PositionSide, TimeInForce,
-        TradingState, TrailingOffsetType, TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
@@ -630,6 +637,244 @@ fn test_register_msgbus_handlers_registers_process_and_event_subscriptions(
     msgbus::publish_position_event(position_topic.into(), &position_event);
 
     assert_eq!(risk_engine.borrow().event_count(), 3);
+}
+
+#[rstest]
+fn test_deferred_risk_command_is_checked_before_execution(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    cash_account_state_million_usd: AccountState,
+) {
+    std::thread::spawn(move || {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+
+        let process_handler = register_process_handler();
+        let (exec_handler, exec_saving_handler) = get_typed_into_message_saving_handler::<
+            TradingCommand,
+        >(Some(Ustr::from("ExecEngine.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            exec_handler,
+        );
+
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument_audusd.clone()).unwrap();
+        cache
+            .add_account(AccountAny::Cash(cash_account(
+                cash_account_state_million_usd,
+            )))
+            .unwrap();
+        let risk_engine = Rc::new(RefCell::new(get_risk_engine(
+            Some(Rc::new(RefCell::new(cache))),
+            None,
+            None,
+            false,
+        )));
+        RiskEngine::register_msgbus_handlers(&risk_engine);
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::NoOrderSide)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from("100"))
+            .build();
+        risk_engine
+            .borrow()
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id_binance), false)
+            .unwrap();
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            Some(client_id_binance),
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.borrow().clock().borrow().timestamp_ns(),
+            None,
+        );
+
+        msgbus::send_trading_command(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            TradingCommand::SubmitOrder(submit_order),
+        );
+        assert_eq!(risk_engine.borrow().command_count(), 0);
+
+        drain_trading_cmd_queue();
+
+        let denied = get_process_order_event_handler_messages(&process_handler);
+        assert_eq!(risk_engine.borrow().command_count(), 1);
+        assert_eq!(denied.len(), 1);
+        assert_eq!(denied[0].event_type(), OrderEventType::Denied);
+        assert_eq!(
+            denied[0].message().unwrap(),
+            Ustr::from("INVALID_ORDER_SIDE: NO_ORDER_SIDE")
+        );
+        assert_eq!(exec_saving_handler.get_messages(), Vec::new());
+    })
+    .join()
+    .unwrap();
+}
+
+#[rstest]
+fn test_deferred_risk_denial_does_not_reenter_engine(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    cash_account_state_million_usd: AccountState,
+) {
+    std::thread::spawn(move || {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument_audusd.clone()).unwrap();
+            cache
+                .add_account(AccountAny::Cash(cash_account(
+                    cash_account_state_million_usd,
+                )))
+                .unwrap();
+        }
+
+        let exec_engine = Rc::new(RefCell::new(get_exec_engine(
+            Some(cache.clone()),
+            Some(clock.clone()),
+            None,
+        )));
+        ExecutionEngine::register_msgbus_handlers(&exec_engine);
+        let risk_engine = Rc::new(RefCell::new(get_risk_engine(
+            Some(cache.clone()),
+            None,
+            Some(clock),
+            false,
+        )));
+        RiskEngine::register_msgbus_handlers(&risk_engine);
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::NoOrderSide)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from("100"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id_binance), false)
+            .unwrap();
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            Some(client_id_binance),
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.borrow().clock().borrow().timestamp_ns(),
+            None,
+        );
+
+        msgbus::send_trading_command(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            TradingCommand::SubmitOrder(submit_order),
+        );
+        drain_trading_cmd_queue();
+
+        assert!(trading_cmd_queue_is_empty());
+        assert_eq!(risk_engine.borrow().command_count(), 1);
+        assert_eq!(exec_engine.borrow().command_count(), 0);
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Denied
+        );
+    })
+    .join()
+    .unwrap();
+}
+
+#[rstest]
+fn test_deferred_risk_approval_preserves_command_order(
+    get_stub_submit_order: (OrderAny, SubmitOrder),
+) {
+    std::thread::spawn(move || {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let exec_engine = Rc::new(RefCell::new(get_exec_engine(
+            Some(cache.clone()),
+            Some(clock.clone()),
+            None,
+        )));
+        ExecutionEngine::register_msgbus_handlers(&exec_engine);
+
+        let risk_engine = Rc::new(RefCell::new(get_risk_engine(
+            Some(cache),
+            None,
+            Some(clock),
+            true,
+        )));
+        RiskEngine::register_msgbus_handlers(&risk_engine);
+
+        let (exec_handler, exec_saving_handler) = get_typed_into_message_saving_handler::<
+            TradingCommand,
+        >(Some(Ustr::from("ExecEngine.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            exec_handler,
+        );
+
+        let (order, submit_order) = get_stub_submit_order;
+        let cancel_order = CancelOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::from(11),
+            None,
+            None,
+        );
+
+        msgbus::send_trading_command(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            TradingCommand::SubmitOrder(submit_order),
+        );
+        msgbus::send_trading_command(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            TradingCommand::CancelOrder(cancel_order),
+        );
+
+        drain_trading_cmd_queue();
+
+        let commands = exec_saving_handler.get_messages();
+        assert!(trading_cmd_queue_is_empty());
+        assert_eq!(commands.len(), 2);
+        assert!(matches!(commands[0], TradingCommand::SubmitOrder(_)));
+        assert!(matches!(commands[1], TradingCommand::CancelOrder(_)));
+    })
+    .join()
+    .unwrap();
 }
 
 #[rstest]

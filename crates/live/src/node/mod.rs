@@ -94,8 +94,8 @@ use nautilus_common::{
         data::DataCommand,
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
     },
-    msgbus::{self, BusMessage},
-    runner::TimeEventMessage,
+    msgbus::{self, BusMessage, MessagingSwitchboard},
+    runner::{TimeEventMessage, TradingCommandMessage},
 };
 use nautilus_core::{
     UUID4,
@@ -1694,9 +1694,14 @@ impl LiveNode {
         }
     }
 
-    fn process_exec_command(&mut self, command: TradingCommand) {
-        self.observe_exec_command_before_dispatch(&command);
-        AsyncRunner::handle_exec_command(command);
+    fn process_exec_command(&mut self, message: TradingCommandMessage) {
+        let mut messages = vec![message];
+        while let Some(message) = messages.pop() {
+            if message.endpoint() == MessagingSwitchboard::exec_engine_execute() {
+                self.observe_exec_command_before_dispatch(message.command());
+            }
+            messages.extend(message.dispatch().into_iter().rev());
+        }
     }
 
     /// Dispatches a normal-ingress execution event, then commits a direct
@@ -2021,7 +2026,7 @@ impl LiveNode {
         data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
         exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-        exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+        exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     ) {
         let mut drained = 0;
 
@@ -2041,7 +2046,7 @@ impl LiveNode {
         }
 
         while let Ok(cmd) = exec_cmd_rx.try_recv() {
-            AsyncRunner::handle_exec_command(cmd);
+            AsyncRunner::handle_trading_command(cmd);
             drained += 1;
         }
 
@@ -2806,7 +2811,7 @@ struct RunnerReceivers<'a> {
     data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+    exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
 }
 
 /// Flushes data events and commands from both `pending` and the channel receivers
@@ -2850,7 +2855,7 @@ fn flush_all_pending(
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
@@ -2912,7 +2917,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
 ) -> F::Output {
     tokio::pin!(future);
 
@@ -2974,7 +2979,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
 struct PendingEvents {
     data_cmds: Vec<DataCommand>,
     data_evts: Vec<DataEvent>,
-    exec_cmds: Vec<TradingCommand>,
+    exec_cmds: Vec<TradingCommandMessage>,
     exec_reports: Vec<ExecutionReport>,
     order_evts: Vec<OrderEventAny>,
 }
@@ -3047,7 +3052,7 @@ impl PendingEvents {
         }
 
         for cmd in self.exec_cmds.drain(..) {
-            AsyncRunner::handle_exec_command(cmd);
+            AsyncRunner::handle_trading_command(cmd);
         }
 
         for evt in self.order_evts.drain(..) {
@@ -3102,7 +3107,7 @@ mod tests {
         clock::{Clock, TestClock},
         enums::SerializationEncoding,
         live::runner::{get_data_event_sender, get_exec_event_sender},
-        messages::execution::{SubmitOrder, TradingCommand},
+        messages::execution::{QueryAccount, SubmitOrder, TradingCommand},
         msgbus::{
             self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
             MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
@@ -3716,6 +3721,163 @@ mod tests {
                 .all(|event| matches!(event, OrderEventAny::Canceled(_))),
             "batch-cancel children must time out as Canceled events",
         );
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_risk_bound_command_does_not_register_inflight() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: true,
+                inflight_check_threshold_ms: 100,
+                inflight_check_retries: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("RiskBoundNode".to_string(), Some(config)).unwrap();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            TypedIntoHandler::from(|_: TradingCommand| {}),
+        );
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(node.trader_id())
+            .strategy_id(StrategyId::from("S-RISK-DENIED"))
+            .instrument_id(instrument_id)
+            .side(OrderSide::NoOrderSide)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("100.00"))
+            .build();
+        let client_order_id = order.client_order_id();
+
+        {
+            let mut cache = node.kernel.cache.borrow_mut();
+            cache
+                .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+                .unwrap();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+        }
+
+        let submit_order = SubmitOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        node.process_exec_command(TradingCommandMessage::new(
+            MessagingSwitchboard::risk_engine_execute(),
+            TradingCommand::SubmitOrder(submit_order),
+        ));
+
+        advance_clock(Duration::from_millis(101)).await;
+        let result = node.exec_manager.check_inflight_orders();
+        let status = node
+            .kernel
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .status();
+
+        assert_eq!(status, OrderStatus::Initialized);
+        assert_eq!(
+            node.exec_manager.recon_check_retry_count(&client_order_id),
+            0
+        );
+        assert!(result.events.is_empty());
+        assert!(result.queries.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_risk_approved_command_registers_inflight() {
+        let config = LiveNodeConfig {
+            risk_engine: crate::config::LiveRiskEngineConfig {
+                bypass: true,
+                ..Default::default()
+            },
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: true,
+                inflight_check_threshold_ms: 100,
+                inflight_check_retries: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("RiskApprovedNode".to_string(), Some(config)).unwrap();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(|_: TradingCommand| {}),
+        );
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(node.trader_id())
+            .strategy_id(StrategyId::from("S-RISK-APPROVED"))
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("100.00"))
+            .build();
+        let client_order_id = order.client_order_id();
+
+        {
+            let mut cache = node.kernel.cache.borrow_mut();
+            cache
+                .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+                .unwrap();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+        }
+
+        let submit_order = SubmitOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        node.process_exec_command(TradingCommandMessage::new(
+            MessagingSwitchboard::risk_engine_execute(),
+            TradingCommand::SubmitOrder(submit_order),
+        ));
+
+        advance_clock(Duration::from_millis(101)).await;
+        let result = node.exec_manager.check_inflight_orders();
+        let [TradingCommand::QueryOrder(query)] = result.queries.as_slice() else {
+            panic!("expected one query order command");
+        };
+
+        assert_eq!(query.client_order_id, client_order_id);
+        assert_eq!(
+            node.exec_manager.recon_check_retry_count(&client_order_id),
+            1
+        );
+        assert!(result.events.is_empty());
     }
 
     #[rstest]
@@ -5572,20 +5734,23 @@ mod tests {
         )
     }
 
-    fn stub_trading_command() -> TradingCommand {
+    fn stub_trading_command_message() -> TradingCommandMessage {
         use nautilus_common::messages::execution::query::QueryAccount;
         use nautilus_core::{UUID4, UnixNanos};
         use nautilus_model::identifiers::AccountId;
 
-        TradingCommand::QueryAccount(QueryAccount::new(
-            TraderId::from("TESTER-001"),
-            None,
-            AccountId::from("TEST-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None, // correlation_id
-        ))
+        TradingCommandMessage::new(
+            MessagingSwitchboard::exec_engine_execute(),
+            TradingCommand::QueryAccount(QueryAccount::new(
+                TraderId::from("TESTER-001"),
+                None,
+                AccountId::from("TEST-001"),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None, // correlation_id
+            )),
+        )
     }
 
     fn stub_exec_event() -> ExecutionEvent {
@@ -5622,7 +5787,7 @@ mod tests {
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
         let mut pending = PendingEvents::default();
 
@@ -5635,7 +5800,7 @@ mod tests {
         data_evt_tx.send(stub_data_event()).unwrap();
         data_cmd_tx.send(stub_data_command()).unwrap();
         exec_evt_tx.send(stub_exec_event()).unwrap();
-        exec_cmd_tx.send(stub_trading_command()).unwrap();
+        exec_cmd_tx.send(stub_trading_command_message()).unwrap();
 
         flush_all_pending(
             &mut pending,
@@ -5693,7 +5858,7 @@ mod tests {
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
         let mut pending = PendingEvents::default();
 
@@ -5723,7 +5888,7 @@ mod tests {
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
         let mut pending = PendingEvents::default();
 
@@ -5771,9 +5936,59 @@ mod tests {
     #[rstest]
     fn test_pending_is_empty_false_with_exec_cmd() {
         let mut pending = PendingEvents::default();
-        pending.exec_cmds.push(stub_trading_command());
+        pending.exec_cmds.push(stub_trading_command_message());
 
         assert!(!pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_drain_preserves_trading_command_target() {
+        std::thread::spawn(|| {
+            msgbus::get_message_bus().borrow_mut().dispose();
+            let risk_commands = Rc::new(RefCell::new(Vec::new()));
+            let exec_commands = Rc::new(RefCell::new(Vec::new()));
+
+            let risk_commands_handler = risk_commands.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_execute(),
+                TypedIntoHandler::from(move |command: TradingCommand| {
+                    risk_commands_handler.borrow_mut().push(command);
+                }),
+            );
+            let exec_commands_handler = exec_commands.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(move |command: TradingCommand| {
+                    exec_commands_handler.borrow_mut().push(command);
+                }),
+            );
+
+            let mut pending = PendingEvents::default();
+            pending.exec_cmds.push(TradingCommandMessage::new(
+                MessagingSwitchboard::risk_engine_execute(),
+                TradingCommand::QueryAccount(QueryAccount::new(
+                    TraderId::from("TESTER-001"),
+                    None,
+                    AccountId::from("TEST-001"),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )),
+            ));
+
+            pending.drain();
+
+            assert!(pending.is_empty());
+            assert_eq!(risk_commands.borrow().len(), 1);
+            assert!(matches!(
+                &risk_commands.borrow()[0],
+                TradingCommand::QueryAccount(_)
+            ));
+            assert_eq!(exec_commands.borrow().as_slice(), &[]);
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]
@@ -5842,7 +6057,7 @@ mod tests {
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
         let mut pending = PendingEvents::default();
 
@@ -5870,7 +6085,7 @@ mod tests {
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
         let mut pending = PendingEvents::default();
 

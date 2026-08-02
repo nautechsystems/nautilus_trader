@@ -19,8 +19,8 @@ use std::{
 };
 
 use nautilus_common::{
-    messages::{DataEvent, ExecutionEvent, data::DataCommand, execution::TradingCommand},
-    runner::TimeEventMessage,
+    messages::{DataEvent, ExecutionEvent, data::DataCommand},
+    runner::{TimeEventMessage, TradingCommandMessage},
 };
 
 /// Primitive metrics for one `LiveNode::run` dispatch channel after startup.
@@ -317,7 +317,7 @@ impl RunnerChannelQueueDepths {
     pub(crate) fn from_receivers(
         time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         exec_events: &tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-        exec_commands: &tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+        exec_commands: &tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
         data_events: &tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_commands: &tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     ) -> Self {
@@ -383,8 +383,9 @@ mod tests {
     use nautilus_common::{
         messages::{
             data::{SubscribeCommand, subscribe::SubscribeInstruments},
-            execution::QueryAccount,
+            execution::{QueryAccount, TradingCommand},
         },
+        msgbus::MessagingSwitchboard,
         timer::{TimeEvent, TimeEventCallback},
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -558,7 +559,8 @@ mod tests {
     fn test_runner_metrics_queue_depths_use_receiver_lengths() {
         let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
-        let (exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+        let (exec_cmd_tx, exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let metrics = RunnerMetrics::default();
@@ -569,7 +571,12 @@ mod tests {
         }
 
         for _ in 0..3 {
-            exec_cmd_tx.send(stub_trading_command()).unwrap();
+            exec_cmd_tx
+                .send(TradingCommandMessage::new(
+                    MessagingSwitchboard::exec_engine_execute(),
+                    stub_trading_command(),
+                ))
+                .unwrap();
         }
 
         for _ in 0..4 {
