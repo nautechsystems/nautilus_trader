@@ -657,7 +657,7 @@ fn locked_balances(balances: &AHashMap<(InstrumentId, Currency), Money>) -> Valu
             })
         })
         .collect::<Vec<_>>();
-    values.sort_by_cached_key(canonical_sort_key);
+    values.sort_by_cached_key(|value| canonical_sort_key(value, true));
     Value::Array(values)
 }
 
@@ -796,7 +796,9 @@ fn sort_named_arrays(value: &mut Value, identities_normalized: bool) {
                     && let Value::Array(values) = value
                     && (identities_normalized || identity_array_class(key).is_none())
                 {
-                    values.sort_by_cached_key(canonical_sort_key);
+                    values.sort_by_cached_key(|value| {
+                        canonical_sort_key(value, !identities_normalized)
+                    });
                 }
             }
         }
@@ -804,9 +806,11 @@ fn sort_named_arrays(value: &mut Value, identities_normalized: bool) {
     }
 }
 
-fn canonical_sort_key(value: &Value) -> Vec<u8> {
+fn canonical_sort_key(value: &Value, strip_identity_fields: bool) -> Vec<u8> {
     let mut value = value.clone();
-    strip_identities(&mut value, false);
+    if strip_identity_fields {
+        strip_identities(&mut value, false);
+    }
     serde_json::to_vec(&value).expect("serializing a JSON value cannot fail")
 }
 
@@ -1268,6 +1272,46 @@ mod tests {
             "venue-order-1"
         );
         assert_eq!(first["positions"][0]["position_id"], "position-1");
+    }
+
+    #[rstest]
+    fn test_canonicalize_document_orders_records_by_normalized_identity() {
+        let mut first = test_document();
+        first["fills"] = json!([
+            {
+                "event": {
+                    "Filled": {
+                        "position_id": "11111111-1111-4111-8111-111111111111"
+                    }
+                }
+            },
+            {
+                "event": {
+                    "Filled": {
+                        "position_id": "22222222-2222-4222-8222-222222222222"
+                    }
+                }
+            }
+        ]);
+        first["positions"] = json!([
+            {
+                "position_id": "11111111-1111-4111-8111-111111111111",
+                "side": "LONG"
+            },
+            {
+                "position_id": "22222222-2222-4222-8222-222222222222",
+                "side": "LONG"
+            }
+        ]);
+        let mut reordered = first.clone();
+        reordered["positions"].as_array_mut().unwrap().reverse();
+
+        canonicalize_document(&mut first).unwrap();
+        canonicalize_document(&mut reordered).unwrap();
+
+        assert_eq!(first, reordered);
+        assert_eq!(reordered["positions"][0]["position_id"], "position-1");
+        assert_eq!(reordered["positions"][1]["position_id"], "position-2");
     }
 
     #[rstest]
