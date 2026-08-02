@@ -470,6 +470,7 @@ adapter set. The following limits remain deferred:
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed OKX v2 yearly candle bar validation and round trips
 - Fixed OKX algo order status report state filtering and single-order lookups
+- Fixed OKX ambiguous submit failures to await reconciliation instead of rejecting
 - Fixed OKX public mark-price requests missing the required instrument type
 - Fixed Polymarket v1 and v2 allowances for the current Neg Risk adapter
 - Fixed Polymarket auto-loaded instruments not reaching WebSocket subscription (#4574), thanks for reporting @nietoga

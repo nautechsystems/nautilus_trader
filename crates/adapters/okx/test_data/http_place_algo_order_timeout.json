@@ -1,0 +1,12 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "algoId": "3796251408639365120",
+      "algoClOrdId": "OALGOTIMEOUT1",
+      "sCode": "51149",
+      "sMsg": "Order timed out. Please try again."
+    }
+  ]
+}

@@ -3862,7 +3862,7 @@ async fn test_http_request_algo_order_status_report_queries_attached_oco_details
         report.client_order_id,
         Some(ClientOrderId::from("O-attached-oco"))
     );
-    assert!(report.trigger_price.is_some());
+    assert_eq!(report.trigger_price, Some(Price::from("41000")));
 
     let details_queries = state.algo_details_queries.lock().await.clone();
     let pending_queries = state.algo_pending_queries.lock().await.clone();

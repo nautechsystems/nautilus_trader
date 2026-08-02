@@ -62,7 +62,7 @@ use crate::{
     common::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_SUCCESS_CODE, OKX_VENUE, OKX_WS_HEARTBEAT_SECS,
-            resolve_instrument_families, validate_okx_client_order_id,
+            resolve_instrument_families, should_retry_error_code, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         parse::{is_okx_spread_symbol, nanos_to_datetime, okx_instrument_type_from_symbol},
@@ -464,9 +464,7 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_structured_venue_rejection(&e)
-                    || is_okx_http_local_command_failure(&e)
-                {
+                if is_okx_http_submit_rejection(&e) || is_okx_http_local_command_failure(&e) {
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -575,9 +573,7 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_structured_venue_rejection(&e)
-                    || is_okx_http_local_command_failure(&e)
-                {
+                if is_okx_http_submit_rejection(&e) || is_okx_http_local_command_failure(&e) {
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -2384,6 +2380,19 @@ fn is_okx_http_structured_venue_rejection(error: &OKXHttpError) -> bool {
     matches!(error, OKXHttpError::OkxError { .. })
 }
 
+fn is_okx_http_submit_rejection(error: &OKXHttpError) -> bool {
+    match error {
+        OKXHttpError::OkxError {
+            error_code,
+            message,
+        } => {
+            !matches!(error_code.as_str(), "50004" | "51149")
+                && (should_retry_error_code(error_code) || !is_ambiguous_okx_http_failure(message))
+        }
+        _ => false,
+    }
+}
+
 fn is_okx_http_local_command_failure(error: &OKXHttpError) -> bool {
     match error {
         OKXHttpError::MissingCredentials => true,
@@ -2537,6 +2546,36 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(supports_algo_orders(instrument_type), expected);
+    }
+
+    #[rstest]
+    #[case::accepted_despite_timeout("51149", "Order timed out. Please try again.", false)]
+    #[case::documented_unknown_outcome(
+        "50004",
+        "API endpoint request timeout; please check the request result",
+        false
+    )]
+    #[case::unknown_timeout_code("59999", "Order request timed out", false)]
+    #[case::temporary_system_rejection("50013", "System busy, please retry later", true)]
+    #[case::parameter_rejection("51000", "Parameter state error", true)]
+    fn test_is_okx_http_submit_rejection(
+        #[case] error_code: &str,
+        #[case] message: &str,
+        #[case] expected: bool,
+    ) {
+        let error = OKXHttpError::OkxError {
+            error_code: error_code.to_string(),
+            message: message.to_string(),
+        };
+
+        assert_eq!(is_okx_http_submit_rejection(&error), expected);
+    }
+
+    #[rstest]
+    fn test_is_okx_http_submit_rejection_ignores_local_error() {
+        let error = OKXHttpError::ValidationError("invalid quantity".to_string());
+
+        assert!(!is_okx_http_submit_rejection(&error));
     }
 
     #[rstest]
