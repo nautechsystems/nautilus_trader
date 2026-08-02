@@ -147,7 +147,7 @@ pub struct BetfairExecutionClient {
     ocm_state: Arc<Mutex<OcmState>>,
     pending_resync: Arc<AtomicBool>,
     is_reconciling: Arc<AtomicBool>,
-    replay_buffer: Arc<Mutex<Vec<OCM>>>,
+    replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
     pending_tasks: TaskHandles,
     keep_alive_handle: Option<JoinHandle<()>>,
     account_refresh_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
@@ -361,12 +361,12 @@ impl BetfairExecutionClient {
                 self.pending_resync.store(false, Ordering::Release);
                 return;
             }
-            let drained: Vec<OCM> = std::mem::take(&mut *buf);
+            let drained: Vec<ReceivedOcm> = std::mem::take(&mut *buf);
             drop(buf);
 
-            for ocm in &drained {
+            for received in drained {
                 Self::process_ocm(
-                    ocm,
+                    &received,
                     self.core.account_id,
                     self.currency,
                     &self.emitter,
@@ -422,12 +422,15 @@ impl BetfairExecutionClient {
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
         pending_resync: Arc<AtomicBool>,
         is_reconciling: Arc<AtomicBool>,
-        replay_buffer: Arc<Mutex<Vec<OCM>>>,
+        replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
         account_refresh_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        clock: &'static AtomicTime,
     ) -> TcpMessageHandler {
         let has_initial_connection = Arc::new(AtomicBool::new(false));
 
         Arc::new(move |data: &[u8]| {
+            let ts_init = clock.get_time_ns();
+
             let msg = match stream_decode(data) {
                 Ok(msg) => msg,
                 Err(e) => {
@@ -442,17 +445,22 @@ impl BetfairExecutionClient {
                         return;
                     }
 
+                    let received = ReceivedOcm {
+                        message: ocm,
+                        ts_init,
+                    };
+
                     // Lock spans the flag check so the drainer's clear-flag
                     // step cannot race a producer push
                     let mut buf = replay_buffer.lock().expect(MUTEX_POISONED);
                     if pending_resync.load(Ordering::Acquire) {
-                        buf.push(ocm);
+                        buf.push(received);
                         return;
                     }
                     drop(buf);
 
                     Self::process_ocm(
-                        &ocm,
+                        &received,
                         account_id,
                         currency,
                         &emitter,
@@ -491,7 +499,7 @@ impl BetfairExecutionClient {
 
     #[expect(clippy::too_many_arguments)]
     fn process_ocm(
-        ocm: &OCM,
+        received: &ReceivedOcm,
         account_id: AccountId,
         currency: Currency,
         emitter: &ExecutionEventEmitter,
@@ -501,12 +509,14 @@ impl BetfairExecutionClient {
         ignore_external_orders: bool,
         account_refresh_tx: Option<&tokio::sync::mpsc::UnboundedSender<()>>,
     ) {
+        let ocm = &received.message;
         let Some(order_changes) = &ocm.oc else {
             return;
         };
 
         let ts_event = parse_millis_timestamp(ocm.pt);
-        let ts_init = ts_event;
+        let ts_init = received.ts_init;
+
         let context = OcmProcessingContext {
             account_id,
             currency,
@@ -1156,6 +1166,7 @@ impl ExecutionClient for BetfairExecutionClient {
             Arc::clone(&self.is_reconciling),
             Arc::clone(&self.replay_buffer),
             account_refresh_tx,
+            self.clock,
         );
 
         let stream_client = BetfairStreamClient::connect(
@@ -2740,6 +2751,12 @@ impl ExecutionClient for BetfairExecutionClient {
     }
 }
 
+#[derive(Debug)]
+struct ReceivedOcm {
+    message: OCM,
+    ts_init: UnixNanos,
+}
+
 struct OcmProcessingContext<'a> {
     account_id: AccountId,
     currency: Currency,
@@ -3507,6 +3524,124 @@ mod tests {
         (emitter, rx)
     }
 
+    #[expect(
+        clippy::type_complexity,
+        reason = "The tuple exposes each test channel and the replay buffer"
+    )]
+    fn ocm_handler_at(
+        ts_init: UnixNanos,
+        pending_resync: bool,
+    ) -> (
+        TcpMessageHandler,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        Arc<Mutex<Vec<ReceivedOcm>>>,
+    ) {
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, execution_rx) = emitter_with_receiver(account_id);
+        let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (reconnect_tx, _reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (account_refresh_tx, _account_refresh_rx) = tokio::sync::mpsc::unbounded_channel();
+        let replay_buffer = Arc::new(Mutex::new(Vec::new()));
+        let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
+
+        let handler = BetfairExecutionClient::create_ocm_handler(
+            emitter,
+            account_id,
+            Currency::GBP(),
+            Arc::new(Mutex::new(OcmState::default())),
+            data_tx,
+            None,
+            false,
+            reconnect_tx,
+            Arc::new(AtomicBool::new(pending_resync)),
+            Arc::new(AtomicBool::new(false)),
+            Arc::clone(&replay_buffer),
+            account_refresh_tx,
+            clock,
+        );
+
+        (handler, data_rx, execution_rx, replay_buffer)
+    }
+
+    #[rstest]
+    fn test_ocm_handler_sets_init_from_clock() {
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_004);
+
+        let (handler, mut data_rx, _execution_rx, replay_buffer) = ocm_handler_at(ts_init, false);
+        let data = load_test_json("stream/ocm_VOIDED.json");
+
+        handler(data.as_bytes());
+
+        let custom = std::iter::from_fn(|| data_rx.try_recv().ok())
+            .find_map(|event| match event {
+                DataEvent::Data(Data::Custom(custom))
+                    if custom.data.as_any().is::<BetfairOrderVoided>() =>
+                {
+                    Some(custom.data)
+                }
+                _ => None,
+            })
+            .expect("expected BetfairOrderVoided custom data");
+        let voided = custom
+            .as_any()
+            .downcast_ref::<BetfairOrderVoided>()
+            .unwrap();
+
+        assert_eq!(voided.ts_event, UnixNanos::from(1_617_863_371_576_000_000));
+        assert_eq!(voided.ts_init, ts_init);
+        assert!(replay_buffer.lock().unwrap().is_empty());
+    }
+
+    #[rstest]
+    fn test_ocm_handler_preserves_buffered_init() {
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_005);
+
+        let (handler, mut data_rx, mut execution_rx, replay_buffer) = ocm_handler_at(ts_init, true);
+        let data = load_test_json("stream/ocm_VOIDED.json");
+
+        handler(data.as_bytes());
+
+        let received = replay_buffer.lock().unwrap().pop().unwrap();
+
+        assert!(data_rx.try_recv().is_err());
+        assert!(execution_rx.try_recv().is_err());
+
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, _execution_rx) = emitter_with_receiver(account_id);
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        BetfairExecutionClient::process_ocm(
+            &received,
+            account_id,
+            Currency::GBP(),
+            &emitter,
+            &Arc::new(Mutex::new(OcmState::default())),
+            &data_tx,
+            None,
+            false,
+            None,
+        );
+
+        let custom = std::iter::from_fn(|| data_rx.try_recv().ok())
+            .find_map(|event| match event {
+                DataEvent::Data(Data::Custom(custom))
+                    if custom.data.as_any().is::<BetfairOrderVoided>() =>
+                {
+                    Some(custom.data)
+                }
+                _ => None,
+            })
+            .expect("expected buffered BetfairOrderVoided custom data");
+        let voided = custom
+            .as_any()
+            .downcast_ref::<BetfairOrderVoided>()
+            .unwrap();
+
+        assert_eq!(voided.ts_event, UnixNanos::from(1_617_863_371_576_000_000));
+        assert_eq!(voided.ts_init, ts_init);
+        assert!(replay_buffer.lock().unwrap().is_empty());
+    }
+
     #[rstest]
     fn test_tracked_cancel_emits_direct_order_canceled() {
         // A tracked cancel must emit a direct OrderCanceled, not a deferrable report.
@@ -3668,8 +3803,13 @@ mod tests {
         let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
         let (account_refresh_tx, mut account_refresh_rx) = tokio::sync::mpsc::unbounded_channel();
 
+        let received = ReceivedOcm {
+            message: ocm,
+            ts_init: UnixNanos::from(1_800_000_000_000_000_004),
+        };
+
         BetfairExecutionClient::process_ocm(
-            &ocm,
+            &received,
             account_id,
             Currency::from("GBP"),
             &emitter,

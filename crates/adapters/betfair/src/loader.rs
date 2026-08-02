@@ -212,6 +212,7 @@ impl BetfairDataLoader {
                             def,
                             self.currency,
                             ts_init,
+                            ts_init,
                             self.min_notional,
                         )
                     {
@@ -250,6 +251,7 @@ impl BetfairDataLoader {
                     &mc.id,
                     def,
                     self.currency,
+                    ts_event,
                     ts_init,
                     self.min_notional,
                 ) {

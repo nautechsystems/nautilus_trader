@@ -27,6 +27,28 @@ rewrite.
 | Config surface           | No `certs_dir`, no `instrument_config`, fixed keep alive, required heartbeat value.                                | Stable guide still documents the Python config surface.                   | Decide whether to add parity or bless Rust surface.  |
 | SSL certificates         | Stream client currently hardcodes `certs_dir=None`.                                                                | Stable guide documents certificate configuration and `BETFAIR_CERTS_DIR`. | Add support or remove from the future guide.         |
 
+## Timestamp policy
+
+The Rust adapter keeps venue event time separate from local initialization time:
+
+- `ts_event` records when Betfair says the event occurred.
+- `ts_init` records when the live adapter received the containing stream message.
+
+Each live stream callback reads the real‑time atomic clock once, before decoding the message. Every
+output decoded from that message shares the same `ts_init`.
+
+| Input                  | `ts_event` source                                                                                                                                                                                                     | `ts_init` source                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Market change (`mcm`)  | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
+| Race change (`rcm`)    | Runner or race feed time (`ft`), falling back to the message publish time (`pt`) when `ft` is absent.                                                                                                                 | Local receipt time.                                                           |
+| Cricket change (`ccm`) | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
+| Order change (`ocm`)   | The relevant order lifecycle time. Acceptance uses `pd`; fills use `md`, falling back to `pt`; status and cancel events use the latest of `md`, `cd`, or `ld`, falling back to `pt`. OCM‑level custom data uses `pt`. | Local receipt time.                                                           |
+| Historical data loader | The same feed‑time rules as live data.                                                                                                                                                                                | Message publish time (`pt`), because recorded data has no local receipt time. |
+
+When an OCM arrives during post‑reconnect reconciliation, the adapter buffers the message together
+with its captured `ts_init`. Draining the buffer preserves the original receipt time instead of using
+the later replay time.
+
 ## Orders capability
 
 ### Order types

@@ -307,6 +307,7 @@ pub fn parse_market_definition(
     market_id: &str,
     def: &MarketDefinition,
     currency: Currency,
+    ts_event: UnixNanos,
     ts_init: UnixNanos,
     min_notional: Option<Money>,
 ) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -412,7 +413,7 @@ pub fn parse_market_definition(
             Some(fee_rate),     // taker_fee
             None,               // tick_scheme
             None,               // info
-            ts_init,            // ts_event
+            ts_event,           // ts_event
             ts_init,            // ts_init
         )
         .with_context(|| {
@@ -673,25 +674,25 @@ mod tests {
         if let StreamMessage::MarketChange(mcm) = msg {
             let mc = mcm.mc.as_ref().expect("market changes");
             let change = &mc[0];
+            let ts_event = parse_millis_timestamp(mcm.pt);
+            let ts_init = UnixNanos::from(1_800_000_000_000_000_001);
+
             let def = change
                 .market_definition
                 .as_ref()
                 .expect("market definition");
 
-            let instruments = parse_market_definition(
-                &change.id,
-                def,
-                Currency::GBP(),
-                parse_millis_timestamp(mcm.pt),
-                None,
-            )
-            .unwrap();
+            let instruments =
+                parse_market_definition(&change.id, def, Currency::GBP(), ts_event, ts_init, None)
+                    .unwrap();
 
             assert_eq!(instruments.len(), 7);
 
             if let InstrumentAny::Betting(inst) = &instruments[0] {
                 assert_eq!(inst.market_id.as_str(), "1.180737206");
                 assert_eq!(inst.market_type.as_str(), "WIN");
+                assert_eq!(inst.ts_event, ts_event);
+                assert_eq!(inst.ts_init, ts_init);
             } else {
                 panic!("expected BettingInstrument");
             }

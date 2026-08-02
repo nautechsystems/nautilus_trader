@@ -391,8 +391,9 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX local modify rejections, replacement ID races, and Python reconciliation identity
 - Fixed Architect AX Python reconciliation emitting duplicate order acceptance events
 - Fixed Architect AX client order ID bounds, query correlation, and rejection when market previews fail
+- Fixed Betfair v2 live stream `ts_init` timestamps to use local receipt time
+- Fixed Betfair v2 matched sizes and mass-status fill IDs, commissions, and gaps
 - Fixed Betfair v2 voids without reversing unapplied exposure from reconnect snapshots
-- Fixed Betfair matched sizes and v2 mass-status fill IDs, commissions, and gaps
 - Fixed Binance Futures hedge-mode tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu
 - Fixed Binance Futures algo reports omitting fill quantity and average price
 - Fixed Binance Futures filled market reconciliation prices (#4441), thanks @KaizynX
