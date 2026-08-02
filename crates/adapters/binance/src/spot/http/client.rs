@@ -87,7 +87,7 @@ use crate::{
             BINANCE_SPOT_RATE_LIMITS, BINANCE_VENUE, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
-        encoder::{decode_broker_id, encode_broker_id},
+        encoder::{decode_client_order_id, encode_broker_id},
         enums::{
             BinanceEnvironment, BinanceOrderStatus, BinanceProductType, BinanceRateLimitInterval,
             BinanceRateLimitType, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
@@ -3500,18 +3500,18 @@ impl BinanceSpotHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        Ok(responses
+        responses
             .into_iter()
             .map(|r| {
-                (
+                Ok((
                     VenueOrderId::new(r.order_id.to_string()),
-                    ClientOrderId::new(decode_broker_id(
+                    decode_client_order_id(
                         &r.orig_client_order_id,
                         BINANCE_NAUTILUS_SPOT_BROKER_ID,
-                    )),
-                )
+                    )?,
+                ))
             })
-            .collect())
+            .collect()
     }
 }
 

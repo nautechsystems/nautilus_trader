@@ -83,7 +83,7 @@ use crate::{
             OrderIdentity, PendingOperation, PendingRequest, WsDispatchState,
             ensure_accepted_emitted,
         },
-        encoder::{decode_broker_id, encode_broker_id},
+        encoder::{decode_client_order_id, encode_broker_id},
         enums::{BinanceSide, BinanceTimeInForce},
         parse::{
             parse_required_decimal, parse_required_price_at_precision,
@@ -2528,10 +2528,14 @@ fn dispatch_execution_report(
         .get_instrument(&symbol)
         .map_or((8, 8), |i| (i.price_precision(), i.size_precision()));
 
-    let client_order_id = ClientOrderId::new(decode_broker_id(
-        &report.client_order_id,
-        BINANCE_NAUTILUS_SPOT_BROKER_ID,
-    ));
+    let client_order_id =
+        match decode_client_order_id(&report.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID) {
+            Ok(client_order_id) => client_order_id,
+            Err(e) => {
+                log::warn!("Skipping Spot execution report with invalid client order ID: {e}");
+                return;
+            }
+        };
 
     let identity = dispatch_state
         .order_identities
@@ -3531,6 +3535,34 @@ mod tests {
                 .all(|e| !matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))),
             "invalid fill quantity must not emit OrderFilled",
         );
+    }
+
+    #[rstest]
+    fn test_dispatch_execution_report_invalid_client_order_id_emits_nothing() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+        let json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_new.json",
+        );
+        let mut report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        report.client_order_id = "x-TD67BGP9-R".to_string();
+
+        dispatch_execution_report(
+            &report,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            false,
+            &dispatch_state,
+            &seen_trade_ids,
+            clock.get_time_ns(),
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert!(dispatch_state.order_identities.is_empty());
     }
 
     #[rstest]

@@ -31,9 +31,7 @@ use nautilus_model::{
         AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide, OrderSide,
         OrderStatus, OrderType, RecordFlag, TimeInForce, TriggerType,
     },
-    identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, Venue, VenueOrderId,
-    },
+    identifiers::{AccountId, InstrumentId, OrderListId, Symbol, TradeId, Venue, VenueOrderId},
     instruments::{
         Instrument, any::InstrumentAny, crypto_future::CryptoFuture,
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
@@ -48,7 +46,7 @@ use serde_json::Value;
 use crate::{
     common::{
         consts::BINANCE,
-        encoder::decode_broker_id,
+        encoder::decode_client_order_id,
         enums::{
             BinanceContractStatus, BinanceKlineInterval, BinanceProductType, BinanceTradingStatus,
         },
@@ -1056,10 +1054,7 @@ pub fn parse_order_status_report_sbe(
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        Some(ClientOrderId::new(decode_broker_id(
-            &order.client_order_id,
-            broker_id,
-        ))),
+        Some(decode_client_order_id(&order.client_order_id, broker_id)?),
         VenueOrderId::new(order.order_id.to_string()),
         order_side,
         order_type,
@@ -1198,10 +1193,10 @@ pub fn parse_new_order_response_sbe(
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        Some(ClientOrderId::new(decode_broker_id(
+        Some(decode_client_order_id(
             &response.client_order_id,
             broker_id,
-        ))),
+        )?),
         VenueOrderId::new(response.order_id.to_string()),
         order_side,
         order_type,
@@ -1481,6 +1476,7 @@ pub(crate) fn quote_to_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDe
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::identifiers::ClientOrderId;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json::json;

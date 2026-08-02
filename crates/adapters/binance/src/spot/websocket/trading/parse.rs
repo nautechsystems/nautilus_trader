@@ -22,7 +22,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price},
 };
@@ -31,7 +31,7 @@ use rust_decimal::Decimal;
 use super::user_data::{BinanceSpotAccountPositionMsg, BinanceSpotExecutionReport};
 use crate::common::{
     consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
-    encoder::decode_broker_id,
+    encoder::decode_client_order_id,
     enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
     parse::{
         parse_required_decimal, parse_required_price_at_precision,
@@ -53,10 +53,8 @@ pub fn parse_spot_exec_report_to_order_status(
     treat_expired_as_canceled: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let client_order_id = ClientOrderId::new(decode_broker_id(
-        &msg.client_order_id,
-        BINANCE_NAUTILUS_SPOT_BROKER_ID,
-    ));
+    let client_order_id =
+        decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let ts_event = UnixNanos::from_millis(msg.event_time as u64);
 
@@ -143,10 +141,8 @@ pub fn parse_spot_exec_report_to_fill(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let client_order_id = ClientOrderId::new(decode_broker_id(
-        &msg.client_order_id,
-        BINANCE_NAUTILUS_SPOT_BROKER_ID,
-    ));
+    let client_order_id =
+        decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let trade_id = TradeId::new(msg.trade_id.to_string());
     let ts_event = UnixNanos::from_millis(msg.event_time as u64);
@@ -273,7 +269,7 @@ fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::types::Quantity;
+    use nautilus_model::{identifiers::ClientOrderId, types::Quantity};
     use rstest::rstest;
 
     use super::*;
@@ -375,6 +371,32 @@ mod tests {
 
         let error = result.unwrap_err().to_string();
         assert!(error.contains("original_qty"));
+    }
+
+    #[rstest]
+    #[case::empty("", "invalid Binance client order ID ''")]
+    #[case::whitespace("   ", "invalid Binance client order ID '   '")]
+    #[case::non_ascii("client-é", "invalid Binance client order ID 'client-é'")]
+    #[case::malformed_prefixed("x-TD67BGP9-R", "missing raw broker client order ID payload")]
+    fn test_parse_execution_report_to_order_status_rejects_invalid_client_order_id(
+        #[case] client_order_id: &str,
+        #[case] expected: &str,
+    ) {
+        let json = load_fixture_string("spot/user_data_json/execution_report_new.json");
+        let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        msg.client_order_id = client_order_id.to_string();
+
+        let result = parse_spot_exec_report_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            AccountId::from("BINANCE-001"),
+            false,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
     }
 
     #[rstest]
@@ -543,6 +565,27 @@ mod tests {
 
         let error = result.unwrap_err().to_string();
         assert!(error.contains("commission"));
+    }
+
+    #[rstest]
+    fn test_parse_execution_report_to_fill_rejects_invalid_client_order_id() {
+        let json = load_fixture_string("spot/user_data_json/execution_report_trade.json");
+        let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        msg.client_order_id = "x-TD67BGP9-Tinvalid".to_string();
+
+        let result = parse_spot_exec_report_to_fill(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            AccountId::from("BINANCE-001"),
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "invalid O-format broker client order ID payload length"
+        );
     }
 
     #[rstest]

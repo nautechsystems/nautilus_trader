@@ -104,6 +104,7 @@
 //! Use `cargo test --release -p nautilus-binance --lib -- bench_encode_decode_timing --nocapture`
 //! to reproduce these numbers.
 
+use anyhow::Context;
 use nautilus_model::identifiers::ClientOrderId;
 
 /// Base62 encoding alphabet: `0-9 A-Z a-z`.
@@ -197,28 +198,72 @@ pub fn encode_broker_id(client_order_id: &ClientOrderId, broker_id: &str) -> Str
 /// returned as-is for backward compatibility.
 #[must_use]
 pub fn decode_broker_id(encoded: &str, broker_id: &str) -> String {
-    let prefix = broker_prefix(broker_id);
-    let Some(payload) = encoded.strip_prefix(&prefix) else {
-        return encoded.to_string();
-    };
-
-    if payload.is_empty() {
-        return encoded.to_string();
-    }
-
-    let signal = payload.as_bytes()[0];
-    let data = &payload[1..];
-
-    match signal {
-        SIGNAL_O_HYPHENS => unpack_o_format(data, true),
-        SIGNAL_O_NO_HYPHENS => unpack_o_format(data, false),
-        SIGNAL_UUID_HYPHENS => format_uuid(data, true),
-        SIGNAL_UUID_NO_HYPHENS => format_uuid(data, false),
-        SIGNAL_RAW => data.to_string(),
-        _ => {
-            log::warn!("Unknown broker ID signal byte '{signal}', returning raw");
+    match decode_broker_id_checked(encoded, broker_id) {
+        Ok(decoded) => decoded,
+        Err(e) => {
+            log::warn!("Failed to decode broker client order ID: {e}");
             encoded.to_string()
         }
+    }
+}
+
+/// Decodes and validates an inbound Binance client order ID.
+///
+/// Strings without the expected broker prefix are treated as legacy IDs and
+/// validated without decoding.
+///
+/// # Errors
+///
+/// Returns an error if the broker-prefixed encoding is malformed or the
+/// decoded client order ID is invalid.
+pub(crate) fn decode_client_order_id(
+    encoded: &str,
+    broker_id: &str,
+) -> anyhow::Result<ClientOrderId> {
+    let decoded = decode_broker_id_checked(encoded, broker_id)?;
+    ClientOrderId::new_checked(decoded)
+        .with_context(|| format!("invalid Binance client order ID '{encoded}'"))
+}
+
+fn decode_broker_id_checked(encoded: &str, broker_id: &str) -> anyhow::Result<String> {
+    let prefix = broker_prefix(broker_id);
+    let Some(payload) = encoded.strip_prefix(&prefix) else {
+        return Ok(encoded.to_string());
+    };
+
+    let Some((&signal, data)) = payload.as_bytes().split_first() else {
+        anyhow::bail!("missing broker client order ID signal");
+    };
+
+    match signal {
+        SIGNAL_O_HYPHENS | SIGNAL_O_NO_HYPHENS => {
+            anyhow::ensure!(
+                data.len() == O_FORMAT_B62_LEN,
+                "invalid O-format broker client order ID payload length"
+            );
+            let packed = decode_base62(data).context("invalid O-format broker client order ID")?;
+            Ok(unpack_o_format(packed, signal == SIGNAL_O_HYPHENS))
+        }
+        SIGNAL_UUID_HYPHENS | SIGNAL_UUID_NO_HYPHENS => {
+            anyhow::ensure!(
+                data.len() == UUID_B62_LEN,
+                "invalid UUID broker client order ID payload length"
+            );
+            let value = decode_base62(data).context("invalid UUID broker client order ID")?;
+            Ok(format_uuid(value, signal == SIGNAL_UUID_HYPHENS))
+        }
+        SIGNAL_RAW => {
+            let raw = std::str::from_utf8(data).context("invalid raw broker client order ID")?;
+            anyhow::ensure!(
+                !raw.is_empty(),
+                "missing raw broker client order ID payload"
+            );
+            Ok(raw.to_string())
+        }
+        _ => anyhow::bail!(
+            "unknown broker client order ID signal byte '{}'",
+            signal as char
+        ),
     }
 }
 
@@ -240,19 +285,18 @@ fn encode_base62<const N: usize>(mut value: u128) -> [u8; N] {
     buf
 }
 
-fn decode_base62(encoded: &[u8]) -> u128 {
+fn decode_base62(encoded: &[u8]) -> Option<u128> {
     let mut value: u128 = 0;
 
     for &byte in encoded {
         let digit = BASE62_DECODE[byte as usize & 0x7F];
 
-        if digit == 0xFF {
-            log::warn!("Invalid base62 character: {byte}");
-            return 0;
+        if digit == 0xFF || !byte.is_ascii() {
+            return None;
         }
-        value = value * 62 + digit as u128;
+        value = value.checked_mul(62)?.checked_add(digit as u128)?;
     }
-    value
+    Some(value)
 }
 
 fn parse_digits(bytes: &[u8]) -> Option<u32> {
@@ -335,9 +379,7 @@ fn pack_o_format(id_str: &str) -> Option<(u128, bool)> {
     Some((packed, has_hyphens))
 }
 
-fn unpack_o_format(data: &str, has_hyphens: bool) -> String {
-    let packed = decode_base62(data.as_bytes());
-
+fn unpack_o_format(packed: u128, has_hyphens: bool) -> String {
     let count = (packed & 0xF_FFFF) as u32;
     let strategy = ((packed >> 20) & 0x3FF) as u32;
     let trader = ((packed >> 30) & 0x3FF) as u32;
@@ -391,9 +433,8 @@ fn parse_uuid_hex(id_str: &str) -> Option<(u128, bool)> {
     }
 }
 
-fn format_uuid(data: &str, has_hyphens: bool) -> String {
+fn format_uuid(value: u128, has_hyphens: bool) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let value = decode_base62(data.as_bytes());
     let bytes = value.to_be_bytes();
 
     if has_hyphens {
@@ -498,7 +539,7 @@ mod tests {
     fn test_base62_roundtrip_zero() {
         let encoded = encode_base62::<13>(0);
         let decoded = decode_base62(&encoded);
-        assert_eq!(decoded, 0);
+        assert_eq!(decoded, Some(0));
     }
 
     #[rstest]
@@ -506,7 +547,7 @@ mod tests {
         let value: u128 = (1u128 << 72) - 1;
         let encoded = encode_base62::<13>(value);
         let decoded = decode_base62(&encoded);
-        assert_eq!(decoded, value);
+        assert_eq!(decoded, Some(value));
     }
 
     #[rstest]
@@ -514,7 +555,7 @@ mod tests {
         let value: u128 = u128::MAX;
         let encoded = encode_base62::<22>(value);
         let decoded = decode_base62(&encoded);
-        assert_eq!(decoded, value);
+        assert_eq!(decoded, Some(value));
     }
 
     #[rstest]
@@ -632,6 +673,46 @@ mod tests {
     fn test_decode_different_prefix_returns_as_is() {
         let raw = "x-OTHERBROKER-T0000000000000";
         assert_eq!(decode_broker_id(raw, TEST_BROKER_ID), raw);
+    }
+
+    #[rstest]
+    #[case::empty("", "invalid Binance client order ID ''")]
+    #[case::whitespace("   ", "invalid Binance client order ID '   '")]
+    #[case::non_ascii("client-é", "invalid Binance client order ID 'client-é'")]
+    #[case::missing_signal("x-TD67BGP9-", "missing broker client order ID signal")]
+    #[case::missing_raw_payload("x-TD67BGP9-R", "missing raw broker client order ID payload")]
+    #[case::invalid_o_payload(
+        "x-TD67BGP9-T000000000000!",
+        "invalid O-format broker client order ID"
+    )]
+    #[case::unknown_signal(
+        "x-TD67BGP9-Xlegacy-order",
+        "unknown broker client order ID signal byte 'X'"
+    )]
+    fn test_decode_client_order_id_rejects_invalid_input(
+        #[case] encoded: &str,
+        #[case] expected: &str,
+    ) {
+        let error = decode_client_order_id(encoded, TEST_BROKER_ID).unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_decode_client_order_id_preserves_valid_prefixed_id() {
+        let original = ClientOrderId::from("O-20260305-120000-001-001-100");
+        let encoded = encode_broker_id(&original, TEST_BROKER_ID);
+
+        let decoded = decode_client_order_id(&encoded, TEST_BROKER_ID).unwrap();
+
+        assert_eq!(decoded, original);
+    }
+
+    #[rstest]
+    fn test_decode_client_order_id_preserves_valid_legacy_id() {
+        let decoded = decode_client_order_id("legacy-order-1", TEST_BROKER_ID).unwrap();
+
+        assert_eq!(decoded, ClientOrderId::from("legacy-order-1"));
     }
 
     #[rstest]
