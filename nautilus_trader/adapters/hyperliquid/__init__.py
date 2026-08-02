@@ -24,6 +24,10 @@ subpackage's top level, so downstream code can simply import from
 
 """
 
+from typing import Final
+
+import pyarrow as pa
+
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID
@@ -34,10 +38,72 @@ from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDexAssetCtx
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidImpactPrices
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterest
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidPublicTrade
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveDataClientFactory
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveExecClientFactory
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.serialization.arrow.serializer import register_arrow
+from nautilus_trader.serialization.arrow.serializer import register_rust_custom_serializer
+
+
+_hyperliquid_mod = nautilus_pyo3.hyperliquid  # type: ignore[attr-defined]
+
+
+def _convert_hyperliquid_public_trade_to_pyo3(
+    trade: HyperliquidPublicTrade | CustomData,
+) -> object:
+    if isinstance(trade, CustomData):
+        trade = trade.data
+
+    if not isinstance(trade, HyperliquidPublicTrade):
+        raise TypeError(f"Expected HyperliquidPublicTrade, was {type(trade).__name__}")
+
+    return trade.to_pyo3()
+
+
+def _decode_hyperliquid_public_trades(
+    table: pa.Table | pa.RecordBatch,
+) -> list[HyperliquidPublicTrade]:
+    batches = table.to_batches() if isinstance(table, pa.Table) else [table]
+    return [
+        HyperliquidPublicTrade.from_pyo3(trade)
+        for batch in batches
+        for trade in _hyperliquid_mod.HyperliquidPublicTrade.decode_record_batch_py({}, batch)
+    ]
+
+
+register_rust_custom_serializer(
+    "HyperliquidPublicTrade",
+    _hyperliquid_mod.HyperliquidPublicTrade.to_arrow_record_batch_bytes,
+    _convert_hyperliquid_public_trade_to_pyo3,
+    data_cls=HyperliquidPublicTrade,
+)
+
+
+HYPERLIQUID_PUBLIC_TRADE_ARROW_SCHEMA: Final[pa.Schema] = pa.schema(
+    [
+        pa.field("instrument_id", pa.string(), nullable=False),
+        pa.field("price", pa.string(), nullable=False),
+        pa.field("size", pa.string(), nullable=False),
+        pa.field("aggressor_side", pa.string(), nullable=False),
+        pa.field("trade_id", pa.string(), nullable=False),
+        pa.field("buyer", pa.string(), nullable=False),
+        pa.field("seller", pa.string(), nullable=False),
+        pa.field("hash", pa.string(), nullable=False),
+        pa.field("ts_event", pa.uint64(), nullable=False),
+        pa.field("ts_init", pa.uint64(), nullable=False),
+    ],
+    metadata={"type_name": "HyperliquidPublicTrade"},
+)
+
+register_arrow(
+    HyperliquidPublicTrade,
+    HYPERLIQUID_PUBLIC_TRADE_ARROW_SCHEMA,
+    decoder=_decode_hyperliquid_public_trades,
+)
 
 
 __all__ = [
@@ -55,4 +121,5 @@ __all__ = [
     "HyperliquidLiveExecClientFactory",
     "HyperliquidOpenInterest",
     "HyperliquidProductType",
+    "HyperliquidPublicTrade",
 ]

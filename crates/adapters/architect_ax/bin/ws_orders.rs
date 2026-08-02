@@ -137,8 +137,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 AxOrdersWsMessage::OpenOrdersResponse(resp) => {
-                    log::info!("Open orders: {} orders", resp.res.len());
-                    for order in &resp.res {
+                    log::info!("Open orders: {} orders", resp.res.orders.len());
+                    for order in &resp.res.orders {
                         log::info!(
                             "  {} {} {:?} {} @ {} ({:?})",
                             order.oid,

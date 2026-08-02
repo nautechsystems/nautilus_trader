@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.230.0"
+version = "1.231.0"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -30,9 +30,10 @@ dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.3.3,<4.0.0",
   "portion>=2.6.1",
-  "pyarrow>=24.0.0",
+  "pyarrow>=25.0.0",
   "pytz>=2026.2",
-  "tqdm>=4.68.3,<5.0.0",
+  "tzdata>=2026.3",
+  "tqdm>=4.68.4,<5.0.0",
   "uvloop==0.22.1,<1.0.0; sys_platform != \"win32\"", # Pinned to 0.22.1 for stability
 ]
 
@@ -44,10 +45,10 @@ docs = "https://nautilustrader.io/docs"
 # For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
-  "setuptools>=82",
+  "setuptools>=83",
   "poetry-core==2.3.1", # Pinned to 2.3.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.6", # Pinned to 3.2.6 for stability
+  "cython==3.2.9", # Pinned to 3.2.9 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -80,28 +81,28 @@ ib = [
   "nautilus-ibapi==10.45.1",
   "protobuf==5.29.6", # Patched for GHSA-8qvm-5x2c-j2w7 and CVE-2026-0994
 ]
-docker = ["docker>=7.1.0,<8.0.0"]
-polymarket = ["py-clob-client-v2>=1.0.1,<2.0.0"]
+docker = ["docker>=7.2.0,<8.0.0"]
+polymarket = ["py-clob-client-v2>=1.0.2,<2.0.0"]
 visualization = [
-  "plotly>=6.8.0,<7.0.0",
+  "plotly>=6.9.0,<7.0.0",
   "kaleido>=1.3.0,<2.0.0",
   "simplejson==3.20.2", # Pinned to 3.20.2 because 4.0.0 has no cp313 wheels
 ]
 
 [dependency-groups]
 dev = [
-  "cython==3.2.6", # Pinned to 3.2.6 for stability
+  "cython==3.2.9", # Pinned to 3.2.9 for stability
   "jupytext>=1.19.3,<2.0.0",
-  "setuptools>=82",
+  "setuptools>=83",
   "mypy==1.20.2,<2.0.0", # Pinned to 1.20.2 (keep in line with .pre-commit-config.yaml)
   "pandas-stubs>=2.3.3,<4.0.0",
-  "ruff==0.15.18", # Pinned to 0.15.18 (keep in line with .pre-commit-config.yaml)
+  "ruff==0.16.0", # Pinned to 0.16.0 (keep in line with .pre-commit-config.yaml)
   "types-pytz>=2026.2,<2027.0",
   "types-toml>=0.10.8,<1.0.0",
 ]
 test = [
   "aiohttp==3.14.1,<4.0.0",
-  "coverage>=7.14.2,<8.0.0",
+  "coverage>=7.15.0,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.1,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
@@ -121,7 +122,7 @@ docs = [
 ]
 
 [tool.uv]
-required-version = "==0.11.25"
+required-version = "==0.11.33"
 exclude-newer = "3 days"
 # Block sdist builds for every third-party package in uv.lock so unexpected loss
 # of wheel publishing fails `uv lock` instead of silently building from source.
@@ -273,6 +274,17 @@ no-build-package = [
   "yarl",
 ]
 
+[tool.uv.exclude-newer-package]
+# These releases received an extra audit before bypassing the default cooldown.
+bitarray = "8 hours"
+ckzg = "8 hours"
+docker = "8 hours"
+plotly = "8 hours"
+pyarrow = "8 hours"
+regex = "8 hours"
+ruff = "8 hours"
+tzdata = "8 hours"
+
 [tool.isort]
 py_version = "312"
 skip_glob = ["**/core/rust/*"]
@@ -368,6 +380,8 @@ ignore = [
   "E501", # Line too long (will lint separately)
   "E741", # Ambiguous variable name (single char)
   "FURB166", # int() on sliced str (explicit base is clearer than auto-detection)
+  "ISC004", # multi-line string concatenation in collections is intentional for wrapped messages
+  "LOG004", # custom Logger.exception accepts an explicit exception outside handlers
   "PERF401", # manual-list-comprehension (16 violations - fix incrementally)
   "PERF402", # manual-list-copy (3 violations - fix incrementally)
   "PT007", # pytest-parametrize-values-wrong-type (1621 violations - deferred)

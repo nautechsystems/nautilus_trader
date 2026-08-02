@@ -13,26 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Generic subscription state tracking for WebSocket clients.
+//! Adapter‑managed subscription intent and acknowledgment tracking.
 //!
-//! This module provides a robust subscription tracker that maintains confirmed and pending
-//! subscription states with reference counting support. It follows a proven pattern used in
-//! production.
+//! [`SubscriptionState`] keeps confirmed, `pending_subscribe`, and `pending_unsubscribe` topics
+//! separate. Server acknowledgments move topics between those states; late subscribe
+//! acknowledgments do not revive a pending unsubscribe, and stale unsubscribe acknowledgments do
+//! not remove a later resubscription. [`SubscriptionState::all_topics`] returns confirmed and
+//! pending subscribe intent for recovery, excluding pending unsubscriptions.
 //!
-//! # Key Features
+//! Reference counts are independent of acknowledgment state. The first reference tells the caller
+//! to send a subscribe request, and removing the last tells it to send an unsubscribe request. The
+//! tracker records state but never sends protocol messages.
 //!
-//! - **Three-state tracking**: confirmed, `pending_subscribe`, `pending_unsubscribe`.
-//! - **Reference counting**: Prevents duplicate subscribe/unsubscribe messages.
-//! - **Reconnection support**: `all_topics()` returns topics to resubscribe after reconnect.
-//! - **Configurable delimiter**: Supports different topic formats (`.` or `:` etc.).
+//! # Topic format
 //!
-//! # Topic Format
-//!
-//! Topics are strings in the format `channel{delimiter}symbol`:
-//! - Dot delimiter: `tickers.BTCUSDT`
-//! - Colon delimiter: `trades:BTC-USDT`
-//!
-//! Channels without symbols are also supported (e.g., `execution` for all instruments).
+//! Topics use `channel{delimiter}symbol`; the first delimiter occurrence separates the channel
+//! from the optional symbol. A topic without a delimiter represents the whole channel.
 
 use std::{
     num::NonZeroUsize,
@@ -319,6 +315,9 @@ impl SubscriptionState {
             }
         }
 
+        // Sort so resubscription after a reconnect replays topics in the same sequence
+        // across runs; both the outer DashMap and the inner symbol sets are unordered.
+        topics.sort();
         topics
     }
 
@@ -797,6 +796,38 @@ mod tests {
         let topics = state.all_topics();
         assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
         assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+    }
+
+    #[rstest]
+    fn test_all_topics_is_sorted_within_each_group() {
+        let state = SubscriptionState::new('.');
+
+        // Insert scrambled across channels and symbols so hash order cannot pass.
+        for topic in [
+            "trades.SOLUSDT",
+            "tickers.ETHUSDT",
+            "trades.BTCUSDT",
+            "tickers.BTCUSDT",
+        ] {
+            state.mark_subscribe(topic);
+            state.confirm_subscribe(topic);
+        }
+
+        state.mark_subscribe("orders.XRPUSDT");
+        state.mark_subscribe("orders.ADAUSDT");
+
+        // Confirmed topics sort among themselves, then pending ones do the same.
+        assert_eq!(
+            state.all_topics(),
+            vec![
+                "tickers.BTCUSDT",
+                "tickers.ETHUSDT",
+                "trades.BTCUSDT",
+                "trades.SOLUSDT",
+                "orders.ADAUSDT",
+                "orders.XRPUSDT",
+            ]
+        );
     }
 
     #[rstest]
@@ -1567,6 +1598,7 @@ mod tests {
 
     #[cfg(test)]
     mod property_tests {
+        use ahash::AHashMap;
         use proptest::prelude::*;
 
         use super::*;
@@ -1650,9 +1682,9 @@ mod tests {
                 check_invariants(&state, "Final state");
             }
 
-            /// Property: Reference counting is always consistent.
+            /// Reference-count operations match an independent count model.
             #[rstest]
-            fn prop_reference_counting_consistency(
+            fn prop_reference_counting_matches_reference(
                 ops in prop::collection::vec(
                     topic_strategy().prop_flat_map(|t| {
                         prop_oneof![
@@ -1664,13 +1696,32 @@ mod tests {
                 )
             ) {
                 let state = SubscriptionState::new('.');
+                let mut expected = AHashMap::new();
 
                 for op in &ops {
-                    apply_operation(&state, op);
+                    match op {
+                        Operation::AddReference(topic) => {
+                            let count = expected.entry(topic.clone()).or_insert(0usize);
+                            let should_subscribe = *count == 0;
+                            *count += 1;
+                            prop_assert_eq!(state.add_reference(topic), should_subscribe);
+                        }
+                        Operation::RemoveReference(topic) => {
+                            let count = expected.get(topic).copied().unwrap_or(0);
+                            let should_unsubscribe = count == 1;
+                            if should_unsubscribe {
+                                expected.remove(topic);
+                            } else if count > 1 {
+                                *expected.get_mut(topic).unwrap() -= 1;
+                            }
+                            prop_assert_eq!(state.remove_reference(topic), should_unsubscribe);
+                        }
+                        _ => unreachable!("reference-count strategy only generates reference operations"),
+                    }
 
-                    // All reference counts must be >= 0 (NonZeroUsize or absent)
-                    for entry in state.reference_counts.iter() {
-                        assert!(entry.value().get() > 0);
+                    prop_assert_eq!(state.reference_counts.len(), expected.len());
+                    for (topic, count) in &expected {
+                        prop_assert_eq!(state.get_reference_count(topic), *count);
                     }
                 }
             }

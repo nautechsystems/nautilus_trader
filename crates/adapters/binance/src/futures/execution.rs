@@ -24,30 +24,32 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
-        GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
-    AtomicSet, MUTEX_POISONED, UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_nanos},
+    AtomicSet, MUTEX_POISONED, Params, UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, checked_mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, ContingencyType, OmsType, OrderType, PositionSideSpecified,
+        AccountType, ContingencyType, OmsType, OrderType, PositionSideSpecified, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
     events::{
@@ -55,7 +57,7 @@ use nautilus_model::{
         OrderRejected, OrderUpdated,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
@@ -67,7 +69,10 @@ use tokio_util::sync::CancellationToken;
 use super::{
     http::{
         BinanceFuturesHttpError,
-        client::{BinanceFuturesHttpClient, BinanceFuturesInstrument, is_algo_order_type},
+        client::{
+            BinanceFuturesAlgoOrderQueryResult, BinanceFuturesHttpClient, BinanceFuturesInstrument,
+            is_algo_order_type,
+        },
         models::{BatchOrderResult, BinancePositionRisk},
         query::{
             BatchCancelItem, BinanceAllOrdersParamsBuilder, BinanceOpenOrdersParamsBuilder,
@@ -127,6 +132,69 @@ const LISTEN_KEY_KEEPALIVE_SECS: u64 = 30 * 60;
 /// Consecutive keepalive failures before a listenKey rotation is triggered.
 const MAX_KEEPALIVE_FAILURES: u32 = 1;
 
+const USER_TRADES_MAX_INTERVAL_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+
+const USER_TRADES_PAGE_LIMIT: u32 = 1_000;
+
+const BINANCE_GTD_MIN_LEAD_SECS: u64 = 600;
+
+const BINANCE_GTD_MAX_MILLIS: u64 = 253_402_300_799_000;
+
+/// Query parameter declaring that the command's venue order ID is a Binance Algo Service
+/// `algoId`, rather than a regular matching-engine `orderId` or triggered `actualOrderId`.
+pub const BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM: &str = "venue_order_id_is_algo_id";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BinanceFuturesAlgoLookup {
+    Skip,
+    AlgoId,
+    ClientAlgoId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FuturesOrderLifetime {
+    time_in_force: TimeInForce,
+    good_till_date: Option<i64>,
+}
+
+fn create_algo_order_status_report(
+    result: &BinanceFuturesAlgoOrderQueryResult,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    treat_expired_as_canceled: bool,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    if let Some(actual) = result.actual.as_ref() {
+        match result.algo.to_order_status_report_with_actual(
+            actual,
+            account_id,
+            instrument_id,
+            price_precision,
+            size_precision,
+            treat_expired_as_canceled,
+            ts_init,
+        ) {
+            Ok(report) => return Ok(report),
+            Err(e) => {
+                log::warn!(
+                    "Failed to convert matching-engine enrichment for algo order {}: {e}; falling back to Algo Service report",
+                    result.algo.algo_id
+                );
+            }
+        }
+    }
+
+    result.algo.to_order_status_report(
+        account_id,
+        instrument_id,
+        price_precision,
+        size_precision,
+        ts_init,
+    )
+}
+
 /// Live execution client for Binance Futures trading.
 ///
 /// Implements the [`ExecutionClient`] trait for order management on Binance
@@ -146,17 +214,17 @@ pub struct BinanceFuturesExecutionClient {
     http_client: BinanceFuturesHttpClient,
     ws_client: Arc<TokioMutex<Option<BinanceFuturesWebSocketClient>>>,
     ws_trading_client: Option<BinanceFuturesWsTradingClient>,
-    ws_trading_handle: Mutex<Option<JoinHandle<()>>>,
+    ws_trading_handle: Option<JoinHandle<()>>,
     listen_key: Arc<RwLock<Option<String>>>,
     cancellation_token: CancellationToken,
     triggered_algo_order_ids: Arc<AtomicSet<ClientOrderId>>,
     algo_client_order_ids: Arc<AtomicSet<ClientOrderId>>,
     ws_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    keepalive_task: Mutex<Option<JoinHandle<()>>>,
-    recovery_task: Mutex<Option<JoinHandle<()>>>,
+    keepalive_task: Option<JoinHandle<()>>,
+    recovery_task: Option<JoinHandle<()>>,
     recovery_lock: Arc<TokioMutex<()>>,
-    recovery_tx: Mutex<Option<tokio::sync::mpsc::UnboundedSender<()>>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    recovery_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    pending_tasks: TaskHandles,
     is_hedge_mode: AtomicBool,
 }
 
@@ -168,6 +236,7 @@ impl BinanceFuturesExecutionClient {
     /// Returns an error if the HTTP client fails to initialize, credentials are
     /// missing, or the product type is not a futures type (UsdM or CoinM).
     pub fn new(core: ExecutionClientCore, config: BinanceExecClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
         let product_type = config.product_type;
         match product_type {
             BinanceProductType::UsdM | BinanceProductType::CoinM => {}
@@ -194,9 +263,9 @@ impl BinanceFuturesExecutionClient {
             Some(api_key.clone()),
             Some(api_secret.clone()),
             config.base_url_http.clone(),
-            None, // recv_window
+            Some(config.recv_window_ms),
             None, // timeout_secs
-            None, // proxy_url
+            config.proxy_url.clone(),
             config.treat_expired_as_canceled,
         )
         .context("failed to construct Binance Futures HTTP client")?;
@@ -214,13 +283,17 @@ impl BinanceFuturesExecutionClient {
                         _ => Some(BINANCE_FUTURES_USD_WS_API_URL.to_string()),
                     });
 
-            Some(BinanceFuturesWsTradingClient::new(
-                ws_trading_url,
-                api_key,
-                api_secret,
-                None, // heartbeat
-                config.transport_backend,
-            ))
+            Some(
+                BinanceFuturesWsTradingClient::new(
+                    ws_trading_url,
+                    api_key,
+                    api_secret,
+                    None, // heartbeat
+                    config.transport_backend,
+                )
+                .with_proxy(config.proxy_url.clone())
+                .with_recv_window(Some(config.recv_window_ms)),
+            )
         } else {
             None
         };
@@ -243,17 +316,17 @@ impl BinanceFuturesExecutionClient {
             http_client,
             ws_client: Arc::new(TokioMutex::new(None)),
             ws_trading_client,
-            ws_trading_handle: Mutex::new(None),
+            ws_trading_handle: None,
             listen_key: Arc::new(RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
             triggered_algo_order_ids: Arc::new(AtomicSet::new()),
             algo_client_order_ids: Arc::new(AtomicSet::new()),
             ws_task: Arc::new(Mutex::new(None)),
-            keepalive_task: Mutex::new(None),
-            recovery_task: Mutex::new(None),
+            keepalive_task: None,
+            recovery_task: None,
             recovery_lock: Arc::new(TokioMutex::new(())),
-            recovery_tx: Mutex::new(None),
-            pending_tasks: Mutex::new(Vec::new()),
+            recovery_tx: None,
+            pending_tasks: TaskHandles::default(),
             is_hedge_mode: AtomicBool::new(false),
         })
     }
@@ -262,6 +335,27 @@ impl BinanceFuturesExecutionClient {
     #[must_use]
     pub fn is_hedge_mode(&self) -> bool {
         self.is_hedge_mode.load(Ordering::Acquire)
+    }
+
+    fn resolve_algo_lookup(
+        &self,
+        client_order_id: Option<ClientOrderId>,
+        params: Option<&Params>,
+    ) -> BinanceFuturesAlgoLookup {
+        if params.and_then(|p| p.get_bool(BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM)) == Some(true) {
+            return BinanceFuturesAlgoLookup::AlgoId;
+        }
+
+        let Some(client_order_id) = client_order_id else {
+            return BinanceFuturesAlgoLookup::ClientAlgoId;
+        };
+        let cache = self.core.cache();
+        match cache.order(&client_order_id) {
+            Some(order) if !is_algo_order_type(order.order_type()) => {
+                BinanceFuturesAlgoLookup::Skip
+            }
+            _ => BinanceFuturesAlgoLookup::ClientAlgoId,
+        }
     }
 
     /// Returns a clone of the HTTP client's instruments cache Arc.
@@ -395,7 +489,11 @@ impl BinanceFuturesExecutionClient {
             .is_some_and(|c| c.is_active())
     }
 
-    fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order_internal(
+        &self,
+        cmd: &SubmitOrder,
+        lifetime: FuturesOrderLifetime,
+    ) -> anyhow::Result<()> {
         let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         let emitter = self.emitter.clone();
@@ -408,7 +506,8 @@ impl BinanceFuturesExecutionClient {
         let order_side = order.order_side();
         let order_type = order.order_type();
         let quantity = order.quantity();
-        let time_in_force = order.time_in_force();
+        let time_in_force = lifetime.time_in_force;
+        let good_till_date = lifetime.good_till_date;
         let price = order.price();
         let trigger_price = order.trigger_price();
         let reduce_only = order.is_reduce_only();
@@ -505,7 +604,7 @@ impl BinanceFuturesExecutionClient {
                 working_type,
                 price_protect: None,
                 new_order_resp_type: None,
-                good_till_date: None,
+                good_till_date,
                 recv_window: None,
                 price_match,
                 self_trade_prevention_mode: None,
@@ -558,6 +657,7 @@ impl BinanceFuturesExecutionClient {
                         activation_price,
                         callback_rate,
                         working_type,
+                        good_till_date,
                     )
                     .await
             } else {
@@ -576,6 +676,7 @@ impl BinanceFuturesExecutionClient {
                         post_only,
                         position_side,
                         price_match,
+                        good_till_date,
                     )
                     .await
             };
@@ -892,6 +993,9 @@ fn build_futures_order_list_batch(
     is_hedge_mode: bool,
     close_position: bool,
     price_match: Option<BinancePriceMatch>,
+    product_type: BinanceProductType,
+    use_gtd: bool,
+    ts_now: UnixNanos,
 ) -> Result<Vec<BatchOrderItem>, String> {
     if orders.len() > 5 {
         return Err(format!(
@@ -940,10 +1044,20 @@ fn build_futures_order_list_batch(
         let binance_side = BinanceSide::try_from(order.order_side()).map_err(|e| e.to_string())?;
         let binance_order_type =
             order_type_to_binance_futures(order.order_type()).map_err(|e| e.to_string())?;
+        let lifetime = determine_futures_order_lifetime(
+            product_type,
+            order.order_type(),
+            order.time_in_force(),
+            order.expire_time(),
+            order.is_post_only(),
+            use_gtd,
+            ts_now,
+        )
+        .map_err(|e| e.to_string())?;
         let binance_tif = if order.is_post_only() {
             BinanceTimeInForce::Gtx
         } else {
-            BinanceTimeInForce::try_from(order.time_in_force()).map_err(|e| e.to_string())?
+            BinanceTimeInForce::try_from(lifetime.time_in_force).map_err(|e| e.to_string())?
         };
         let position_side =
             determine_position_side(is_hedge_mode, order.order_side(), order.is_reduce_only());
@@ -976,7 +1090,7 @@ fn build_futures_order_list_batch(
             working_type: None,
             price_protect: None,
             close_position: None,
-            good_till_date: None,
+            good_till_date: lifetime.good_till_date,
             price_match: price_match
                 .and_then(binance_price_match_wire)
                 .map(str::to_string),
@@ -985,6 +1099,74 @@ fn build_futures_order_list_batch(
     }
 
     Ok(batch_items)
+}
+
+fn determine_futures_order_lifetime(
+    product_type: BinanceProductType,
+    order_type: OrderType,
+    time_in_force: TimeInForce,
+    expire_time: Option<UnixNanos>,
+    post_only: bool,
+    use_gtd: bool,
+    ts_now: UnixNanos,
+) -> anyhow::Result<FuturesOrderLifetime> {
+    if time_in_force != TimeInForce::Gtd {
+        return Ok(FuturesOrderLifetime {
+            time_in_force,
+            good_till_date: None,
+        });
+    }
+
+    if !use_gtd {
+        log::warn!(
+            "Binance Futures GTD submitted as GTC because use_gtd=false. Enable manage_gtd_expiry on the submitting strategy"
+        );
+        return Ok(FuturesOrderLifetime {
+            time_in_force: TimeInForce::Gtc,
+            good_till_date: None,
+        });
+    }
+
+    anyhow::ensure!(
+        matches!(
+            order_type,
+            OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+        ),
+        "Binance Futures does not support GTD for order type {order_type:?}"
+    );
+    anyhow::ensure!(!post_only, "Binance Futures GTD cannot be post-only");
+
+    anyhow::ensure!(
+        product_type == BinanceProductType::UsdM,
+        "Binance {product_type:?} Futures does not support native GTD"
+    );
+
+    let expire_time = expire_time.context("Binance Futures GTD requires an expire_time")?;
+    let expire_ns = expire_time.as_u64();
+    anyhow::ensure!(
+        expire_ns.is_multiple_of(NANOSECONDS_IN_SECOND),
+        "Binance Futures goodTillDate requires whole-second precision"
+    );
+
+    let minimum_ns = ts_now
+        .as_u64()
+        .checked_add(BINANCE_GTD_MIN_LEAD_SECS * NANOSECONDS_IN_SECOND)
+        .context("Binance Futures GTD minimum timestamp overflow")?;
+    anyhow::ensure!(
+        expire_ns > minimum_ns,
+        "Binance Futures goodTillDate must be strictly greater than current time plus {BINANCE_GTD_MIN_LEAD_SECS} seconds"
+    );
+
+    let good_till_date = expire_ns / NANOSECONDS_IN_MILLISECOND;
+    anyhow::ensure!(
+        good_till_date < BINANCE_GTD_MAX_MILLIS,
+        "Binance Futures goodTillDate must be smaller than {BINANCE_GTD_MAX_MILLIS}"
+    );
+
+    Ok(FuturesOrderLifetime {
+        time_in_force,
+        good_till_date: Some(i64::try_from(good_till_date)?),
+    })
 }
 
 fn is_grouped_order(order: &OrderAny) -> bool {
@@ -1147,6 +1329,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .context("failed to query hedge mode")?;
         self.is_hedge_mode.store(is_hedge_mode, Ordering::Release);
         log::info!("Hedge mode (dual side position): {is_hedge_mode}");
+        if is_hedge_mode != (self.core.oms_type == OmsType::Hedging) {
+            log::warn!(
+                "Binance Futures account position mode does not match the configured OMS type: \
+                 dual_side_position={is_hedge_mode}, oms_type={:?}; set oms_type to match the account position mode",
+                self.core.oms_type,
+            );
+        }
 
         // Load instruments if not already done
         let _instruments = if self.core.instruments_initialized() {
@@ -1154,7 +1343,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         } else {
             let instruments = self
                 .http_client
-                .request_instruments()
+                .request_instruments_with_config(&self.config.instrument_provider)
                 .await
                 .context("failed to request Binance Futures instruments")?;
 
@@ -1209,7 +1398,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         );
 
         let (recovery_tx, recovery_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-        *self.recovery_tx.lock().expect(MUTEX_POISONED) = Some(recovery_tx.clone());
+        self.recovery_tx = Some(recovery_tx.clone());
 
         let seen_trade_ids: Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>> =
             Arc::new(Mutex::new(FifoCache::new()));
@@ -1239,6 +1428,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             api_secret: api_secret.clone(),
             private_base_url: private_base_url.clone(),
             transport_backend: self.config.transport_backend,
+            proxy_url: self.config.proxy_url.clone(),
         };
 
         let ws_client = build_and_connect_user_stream(&ws_build_params, &listen_key).await?;
@@ -1304,7 +1494,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     }
                 }
             });
-            *self.keepalive_task.lock().expect(MUTEX_POISONED) = Some(keepalive_task);
+            self.keepalive_task = Some(keepalive_task);
         }
 
         // Start listen key recovery driver task
@@ -1330,7 +1520,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 )
                 .await;
             });
-            *self.recovery_task.lock().expect(MUTEX_POISONED) = Some(recovery_task);
+            self.recovery_task = Some(recovery_task);
         }
 
         // Request initial account state
@@ -1376,7 +1566,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         }
                     });
 
-                    *self.ws_trading_handle.lock().expect(MUTEX_POISONED) = Some(handle);
+                    self.ws_trading_handle = Some(handle);
                 }
                 Err(e) => {
                     log::error!(
@@ -1385,6 +1575,30 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     );
                 }
             }
+        }
+
+        let refresh_secs = self.config.instrument_refresh_interval_secs;
+        if refresh_secs > 0 {
+            let http_client = self.http_client.clone();
+            let provider = self.config.instrument_provider.clone();
+            self.spawn_task("instrument_refresh", async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
+                interval.tick().await;
+
+                loop {
+                    interval.tick().await;
+
+                    match http_client.request_instruments_with_config(&provider).await {
+                        Ok(instruments) => log::debug!(
+                            "Refreshed Binance Futures execution instruments: count={}",
+                            instruments.len()
+                        ),
+                        Err(e) => {
+                            log::warn!("Binance Futures execution instrument refresh failed: {e}");
+                        }
+                    }
+                }
+            });
         }
 
         self.core.set_connected();
@@ -1398,13 +1612,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         // Drop the recovery tx so the driver exits its recv loop
-        self.recovery_tx.lock().expect(MUTEX_POISONED).take();
+        self.recovery_tx.take();
 
         // Cancel all background tasks
         self.cancellation_token.cancel();
 
         // Abort WS trading task and disconnect
-        if let Some(handle) = self.ws_trading_handle.lock().expect(MUTEX_POISONED).take() {
+        if let Some(handle) = self.ws_trading_handle.take() {
             handle.abort();
         }
 
@@ -1421,7 +1635,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         // Abort the keepalive task. An in-flight keepalive_listen_key HTTP
         // call ignores the cancellation token until it returns, so awaiting
         // without aborting can stall disconnect for the full HTTP timeout.
-        let keepalive_task = self.keepalive_task.lock().expect(MUTEX_POISONED).take();
+        let keepalive_task = self.keepalive_task.take();
         if let Some(task) = keepalive_task {
             task.abort();
             let _ = task.await;
@@ -1430,7 +1644,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         // Abort the recovery driver task. Waiting would block disconnect until
         // any in-flight HTTP or WebSocket call inside recover_user_data_stream
         // returns, which can be many seconds under a network outage.
-        let recovery_task = self.recovery_task.lock().expect(MUTEX_POISONED).take();
+        let recovery_task = self.recovery_task.take();
         if let Some(task) = recovery_task {
             task.abort();
             let _ = task.await;
@@ -1492,14 +1706,43 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
         let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (_, size_precision) = self.get_instrument_precision(instrument_id);
+        let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
         let ts_init = self.clock.get_time_ns();
+        let algo_lookup = self.resolve_algo_lookup(cmd.client_order_id, cmd.params.as_ref());
+
+        if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+            let algo_order = self
+                .http_client
+                .query_algo_order_with_history(
+                    instrument_id,
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                )
+                .await?;
+
+            return match algo_order {
+                Some(result) => Ok(Some(create_algo_order_status_report(
+                    &result,
+                    self.core.account_id,
+                    instrument_id,
+                    price_precision,
+                    size_precision,
+                    self.config.treat_expired_as_canceled,
+                    ts_init,
+                )?)),
+                None => {
+                    log::debug!("Algo order query returned no matching order");
+                    Ok(None)
+                }
+            };
+        }
 
         match self.http_client.query_order(&params).await {
             Ok(order) => {
                 let report = order.to_order_status_report(
                     self.core.account_id,
                     instrument_id,
+                    price_precision,
                     size_precision,
                     self.config.treat_expired_as_canceled,
                     ts_init,
@@ -1507,23 +1750,41 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 Ok(Some(report))
             }
             Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
-                // Order not found in regular API, try algo order API
-                let Some(client_order_id) = cmd.client_order_id else {
+                if algo_lookup == BinanceFuturesAlgoLookup::Skip {
+                    log::debug!("Skipping Algo Service fallback for known regular order");
                     return Ok(None);
-                };
+                }
 
-                match self.http_client.query_algo_order(client_order_id).await {
-                    Ok(algo_order) => {
-                        let report = algo_order.to_order_status_report(
-                            self.core.account_id,
-                            instrument_id,
-                            size_precision,
-                            ts_init,
-                        )?;
-                        Ok(Some(report))
-                    }
-                    Err(e) => {
-                        log::debug!("Algo order query also failed: {e}");
+                // A conditional order may expose its Algo Service `algoId` before triggering and
+                // its matching-engine `actualOrderId` afterwards. Only an explicit ID-kind hint
+                // makes a venue ID safe for Algo Service lookup; cached conditional orders retain
+                // their existing clientAlgoId fallback.
+                let algo_venue_order_id = if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                    cmd.venue_order_id
+                } else {
+                    None
+                };
+                let algo_order = self
+                    .http_client
+                    .query_algo_order_with_history(
+                        instrument_id,
+                        cmd.client_order_id,
+                        algo_venue_order_id,
+                    )
+                    .await?;
+
+                match algo_order {
+                    Some(result) => Ok(Some(create_algo_order_status_report(
+                        &result,
+                        self.core.account_id,
+                        instrument_id,
+                        price_precision,
+                        size_precision,
+                        self.config.treat_expired_as_canceled,
+                        ts_init,
+                    )?)),
+                    None => {
+                        log::debug!("Algo order query returned no matching order");
                         Ok(None)
                     }
                 }
@@ -1555,11 +1816,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             for order in orders {
                 if let Some(instrument_id) = cmd.instrument_id {
-                    let (_, size_precision) = self.get_instrument_precision(instrument_id);
+                    let (price_precision, size_precision) =
+                        self.get_instrument_precision(instrument_id);
 
                     if let Ok(report) = order.to_order_status_report(
                         self.core.account_id,
                         instrument_id,
+                        price_precision,
                         size_precision,
                         self.config.treat_expired_as_canceled,
                         ts_init,
@@ -1571,10 +1834,14 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.raw_symbol().as_str() == order.symbol.as_str())
+                        .find(|instrument| {
+                            instrument.raw_symbol().as_str() == order.symbol.as_str()
+                                && is_instrument_for_product(instrument, self.product_type)
+                        })
                         && let Ok(report) = order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
+                            instrument.price_precision(),
                             instrument.size_precision(),
                             self.config.treat_expired_as_canceled,
                             ts_init,
@@ -1587,11 +1854,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             for algo_order in algo_orders {
                 if let Some(instrument_id) = cmd.instrument_id {
-                    let (_, size_precision) = self.get_instrument_precision(instrument_id);
+                    let (price_precision, size_precision) =
+                        self.get_instrument_precision(instrument_id);
 
                     if let Ok(report) = algo_order.to_order_status_report(
                         self.core.account_id,
                         instrument_id,
+                        price_precision,
                         size_precision,
                         ts_init,
                     ) {
@@ -1602,10 +1871,14 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.raw_symbol().as_str() == algo_order.symbol.as_str())
+                        .find(|instrument| {
+                            instrument.raw_symbol().as_str() == algo_order.symbol.as_str()
+                                && is_instrument_for_product(instrument, self.product_type)
+                        })
                         && let Ok(report) = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
+                            instrument.price_precision(),
                             instrument.size_precision(),
                             ts_init,
                         )
@@ -1636,12 +1909,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
             let orders = self.http_client.query_all_orders(&params).await?;
-            let (_, size_precision) = self.get_instrument_precision(instrument_id);
+            let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
 
             for order in orders {
                 if let Ok(report) = order.to_order_status_report(
                     self.core.account_id,
                     instrument_id,
+                    price_precision,
                     size_precision,
                     self.config.treat_expired_as_canceled,
                     ts_init,
@@ -1664,42 +1938,132 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
 
         let symbol = format_binance_symbol(&instrument_id);
-        let start_time = cmd
-            .start
-            .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
-        let end_time = cmd
+        let mut trades = Vec::new();
+        let mut seen_trade_ids = AHashSet::new();
+        let requested_end_time = cmd
             .end
-            .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+            .map(|end| end.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
 
-        let mut builder = BinanceUserTradesParamsBuilder::default();
-        builder.symbol(symbol);
+        if let Some(start) = cmd.start {
+            let query_start_time = start.as_i64() / NANOSECONDS_IN_MILLISECOND as i64;
+            let query_end_time = requested_end_time.unwrap_or_else(|| {
+                self.clock.get_time_ns().as_i64() / NANOSECONDS_IN_MILLISECOND as i64
+            });
+            anyhow::ensure!(
+                query_start_time <= query_end_time,
+                "fill report start time must not exceed end time"
+            );
+            let mut window_start = query_start_time;
 
-        if let Some(st) = start_time {
-            builder.start_time(st);
+            loop {
+                let window_end = window_start
+                    .saturating_add(USER_TRADES_MAX_INTERVAL_MS)
+                    .min(query_end_time);
+                let mut from_id = None;
+
+                loop {
+                    let mut builder = BinanceUserTradesParamsBuilder::default();
+                    builder.symbol(symbol.clone());
+                    builder.limit(USER_TRADES_PAGE_LIMIT);
+
+                    if let Some(cursor) = from_id {
+                        builder.from_id(cursor);
+                    } else {
+                        builder.start_time(window_start);
+                        builder.end_time(window_end);
+                    }
+                    let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let page = self.http_client.query_user_trades(&params).await?;
+
+                    if page.is_empty() {
+                        break;
+                    }
+
+                    let page_len = page.len();
+                    let max_trade_id = page.iter().map(|trade| trade.id).max().unwrap();
+                    let passed_window_end = page.iter().any(|trade| trade.time > window_end);
+
+                    trades.extend(page.into_iter().filter(|trade| {
+                        trade.time >= window_start
+                            && trade.time <= window_end
+                            && seen_trade_ids.insert(trade.id)
+                    }));
+
+                    if page_len < USER_TRADES_PAGE_LIMIT as usize || passed_window_end {
+                        break;
+                    }
+
+                    let next_from_id = max_trade_id
+                        .checked_add(1)
+                        .context("Binance user trade ID overflow during pagination")?;
+                    anyhow::ensure!(
+                        from_id.is_none_or(|cursor| next_from_id > cursor),
+                        "Binance user-trades pagination made no progress"
+                    );
+                    from_id = Some(next_from_id);
+                }
+
+                if window_end >= query_end_time {
+                    break;
+                }
+                window_start = window_end.saturating_add(1);
+            }
+        } else {
+            let mut from_id = 0;
+
+            loop {
+                let params = BinanceUserTradesParamsBuilder::default()
+                    .symbol(symbol.clone())
+                    .from_id(from_id)
+                    .limit(USER_TRADES_PAGE_LIMIT)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let page = self.http_client.query_user_trades(&params).await?;
+
+                if page.is_empty() {
+                    break;
+                }
+
+                let page_len = page.len();
+                let max_trade_id = page.iter().map(|trade| trade.id).max().unwrap();
+                let passed_end = requested_end_time
+                    .is_some_and(|end_time| page.iter().any(|trade| trade.time > end_time));
+
+                trades.extend(page.into_iter().filter(|trade| {
+                    requested_end_time.is_none_or(|end_time| trade.time <= end_time)
+                        && seen_trade_ids.insert(trade.id)
+                }));
+
+                if page_len < USER_TRADES_PAGE_LIMIT as usize || passed_end {
+                    break;
+                }
+
+                let next_from_id = max_trade_id
+                    .checked_add(1)
+                    .context("Binance user trade ID overflow during pagination")?;
+                anyhow::ensure!(
+                    next_from_id > from_id,
+                    "Binance user-trades pagination made no progress"
+                );
+                from_id = next_from_id;
+            }
         }
 
-        if let Some(et) = end_time {
-            builder.end_time(et);
-        }
-        let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let trades = self.http_client.query_user_trades(&params).await?;
+        trades.sort_unstable_by_key(|trade| (trade.time, trade.id));
         let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
         let ts_init = self.clock.get_time_ns();
 
         let mut reports = Vec::new();
 
         for trade in trades {
-            if let Ok(report) = trade.to_fill_report(
+            reports.push(trade.to_fill_report(
                 self.core.account_id,
                 instrument_id,
                 price_precision,
                 size_precision,
                 self.config.bnfcr_currency,
                 ts_init,
-            ) {
-                reports.push(report);
-            }
+            )?);
         }
 
         Ok(reports)
@@ -1739,10 +2103,14 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
 
             let cache = self.core.cache();
-            if let Some(instrument) = cache
-                .instruments(&BINANCE_VENUE, None)
-                .into_iter()
-                .find(|i| i.raw_symbol().as_str() == position.symbol.as_str())
+            if let Some(instrument) =
+                cache
+                    .instruments(&BINANCE_VENUE, None)
+                    .into_iter()
+                    .find(|instrument| {
+                        instrument.raw_symbol().as_str() == position.symbol.as_str()
+                            && is_instrument_for_product(instrument, self.product_type)
+                    })
             {
                 match self.create_position_report(
                     &position,
@@ -1771,10 +2139,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins_to_nanos(mins);
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = if let Some(mins) = lookback_mins {
+            let lookback_ns = checked_mins_to_nanos(mins)
+                .context("lookback minutes exceed the nanosecond range")?;
+            Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)))
+        } else {
+            None
+        };
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
@@ -1794,7 +2165,72 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             self.generate_position_status_reports(&position_cmd),
         )?;
 
+        let mut instrument_ids: Vec<_> = order_reports
+            .iter()
+            .map(|report| report.instrument_id)
+            .chain(position_reports.iter().map(|report| report.instrument_id))
+            .collect();
+        {
+            let cache = self.core.cache();
+            instrument_ids.extend(
+                cache
+                    .orders_open(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|order| order.instrument_id()),
+            );
+            instrument_ids.extend(
+                cache
+                    .orders_inflight(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|order| order.instrument_id()),
+            );
+            instrument_ids.extend(
+                cache
+                    .positions_open(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|position| position.instrument_id),
+            );
+            instrument_ids.retain(|instrument_id| {
+                cache.instrument(instrument_id).is_some_and(|instrument| {
+                    is_instrument_for_product(instrument, self.product_type)
+                })
+            });
+        }
+        instrument_ids.sort_unstable();
+        instrument_ids.dedup();
+
+        let mut fill_reports = Vec::new();
+
+        for instrument_id in instrument_ids {
+            let fill_cmd = GenerateFillReportsBuilder::default()
+                .ts_init(ts_now)
+                .instrument_id(Some(instrument_id))
+                .start(start)
+                .build()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            fill_reports.extend(self.generate_fill_reports(fill_cmd).await?);
+        }
+
         log::info!("Received {} OrderStatusReports", order_reports.len());
+        log::info!("Received {} FillReports", fill_reports.len());
         log::info!("Received {} PositionReports", position_reports.len());
 
         let mut mass_status = ExecutionMassStatus::new(
@@ -1806,6 +2242,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         );
 
         mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
 
         Ok(Some(mass_status))
@@ -1819,6 +2256,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("query_order: client_order_id={}", cmd.client_order_id);
 
+        let algo_lookup = self.resolve_algo_lookup(Some(cmd.client_order_id), cmd.params.as_ref());
         let http_client = self.http_client.clone();
         let command = cmd;
         let emitter = self.emitter.clone();
@@ -1838,10 +2276,39 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             &command.client_order_id,
             BINANCE_NAUTILUS_FUTURES_BROKER_ID,
         ));
-        let (_, size_precision) = self.get_instrument_precision(command.instrument_id);
+        let (price_precision, size_precision) =
+            self.get_instrument_precision(command.instrument_id);
         let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
 
         self.spawn_task("query_order", async move {
+            if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                match http_client
+                    .query_algo_order_with_history(
+                        command.instrument_id,
+                        Some(command.client_order_id),
+                        command.venue_order_id,
+                    )
+                    .await
+                {
+                    Ok(Some(result)) => {
+                        let report = create_algo_order_status_report(
+                            &result,
+                            account_id,
+                            command.instrument_id,
+                            price_precision,
+                            size_precision,
+                            treat_expired_as_canceled,
+                            clock.get_time_ns(),
+                        )?;
+                        emitter.send_order_status_report(report);
+                    }
+                    Ok(None) => log::warn!("Algo order query returned no matching order"),
+                    Err(e) => log::warn!("Failed to query algo order status: {e}"),
+                }
+
+                return Ok(());
+            }
+
             let mut builder = BinanceOrderQueryParamsBuilder::default();
             builder.symbol(symbol.clone());
 
@@ -1864,12 +2331,55 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     let report = order.to_order_status_report(
                         account_id,
                         command.instrument_id,
+                        price_precision,
                         size_precision,
                         treat_expired_as_canceled,
                         ts_init,
                     )?;
 
                     emitter.send_order_status_report(report);
+                }
+                Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
+                    if algo_lookup == BinanceFuturesAlgoLookup::Skip {
+                        log::debug!("Skipping Algo Service fallback for known regular order");
+                        return Ok(());
+                    }
+
+                    // Untriggered algo orders (STOP_MARKET, STOP_LIMIT, MIT, LIT,
+                    // TRAILING_STOP_MARKET) live in the Binance Futures Algo Service
+                    // and return -2013 on the regular order endpoint. Mirror the
+                    // reconciliation path (`generate_order_status_report`) so live
+                    // inflight checks resolve them instead of exhausting retries into
+                    // `OrderRejected(reason='INFLIGHT_TIMEOUT')`.
+                    let algo_venue_order_id = if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                        command.venue_order_id
+                    } else {
+                        None
+                    };
+
+                    match http_client
+                        .query_algo_order_with_history(
+                            command.instrument_id,
+                            Some(command.client_order_id),
+                            algo_venue_order_id,
+                        )
+                        .await
+                    {
+                        Ok(Some(result)) => {
+                            let report = create_algo_order_status_report(
+                                &result,
+                                account_id,
+                                command.instrument_id,
+                                price_precision,
+                                size_precision,
+                                treat_expired_as_canceled,
+                                clock.get_time_ns(),
+                            )?;
+                            emitter.send_order_status_report(report);
+                        }
+                        Ok(None) => log::warn!("Algo order query returned no matching order"),
+                        Err(e) => log::warn!("Algo order query also failed: {e}"),
+                    }
                 }
                 Err(e) => log::warn!("Failed to query order status: {e}"),
             }
@@ -1901,9 +2411,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.core.set_started();
 
         let http_client = self.http_client.clone();
+        let provider = self.config.instrument_provider.clone();
 
         get_runtime().spawn(async move {
-            match http_client.request_instruments().await {
+            match http_client.request_instruments_with_config(&provider).await {
                 Ok(instruments) => {
                     if instruments.is_empty() {
                         log::warn!("No instruments returned for Binance Futures");
@@ -1934,7 +2445,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         self.cancellation_token.cancel();
 
-        if let Some(handle) = self.ws_trading_handle.lock().expect(MUTEX_POISONED).take() {
+        if let Some(handle) = self.ws_trading_handle.take() {
             handle.abort();
         }
 
@@ -1942,12 +2453,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             handle.abort();
         }
 
-        if let Some(handle) = self.keepalive_task.lock().expect(MUTEX_POISONED).take() {
+        if let Some(handle) = self.keepalive_task.take() {
             handle.abort();
         }
 
-        self.recovery_tx.lock().expect(MUTEX_POISONED).take();
-        if let Some(handle) = self.recovery_task.lock().expect(MUTEX_POISONED).take() {
+        self.recovery_tx.take();
+        if let Some(handle) = self.recovery_task.take() {
             handle.abort();
         }
 
@@ -2017,10 +2528,20 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             );
         }
 
+        let lifetime = determine_futures_order_lifetime(
+            self.product_type,
+            order.order_type(),
+            order.time_in_force(),
+            order.expire_time(),
+            order.is_post_only(),
+            self.config.use_gtd,
+            self.clock.get_time_ns(),
+        )?;
+
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
-        self.submit_order_internal(&cmd)
+        self.submit_order_internal(&cmd, lifetime)
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
@@ -2065,6 +2586,9 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             self.is_hedge_mode(),
             close_position,
             price_match,
+            self.product_type,
+            self.config.use_gtd,
+            self.clock.get_time_ns(),
         ) {
             Ok(batch_items) => batch_items,
             Err(reason) => {
@@ -2546,8 +3070,35 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 }
 
+fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinanceProductType) -> bool {
+    match product_type {
+        BinanceProductType::UsdM => {
+            matches!(
+                instrument,
+                InstrumentAny::CryptoFuture(_)
+                    | InstrumentAny::CryptoPerpetual(_)
+                    | InstrumentAny::PerpetualContract(_)
+            ) && !instrument.is_inverse()
+        }
+        BinanceProductType::CoinM => {
+            matches!(
+                instrument,
+                InstrumentAny::CryptoFuture(_) | InstrumentAny::CryptoPerpetual(_)
+            ) && instrument.is_inverse()
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        instruments::stubs::{
+            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            perpetual_contract_eurusd, xbtusd_bitmex,
+        },
+        types::Price,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -2563,6 +3114,130 @@ mod tests {
     fn test_classify_submit_order_error_gtx_is_post_only() {
         let err = http_error(BINANCE_GTX_ORDER_REJECT_CODE);
         assert!(classify_submit_order_error(&err));
+    }
+
+    #[rstest]
+    fn test_futures_order_lifetime_encodes_valid_usdm_gtd() {
+        let ts_now = UnixNanos::from_seconds(1_700_000_000);
+        let expire_time = UnixNanos::from_seconds(1_700_000_601);
+
+        let lifetime = determine_futures_order_lifetime(
+            BinanceProductType::UsdM,
+            OrderType::Limit,
+            TimeInForce::Gtd,
+            Some(expire_time),
+            false,
+            true,
+            ts_now,
+        )
+        .unwrap();
+
+        assert_eq!(lifetime.time_in_force, TimeInForce::Gtd);
+        assert_eq!(lifetime.good_till_date, Some(1_700_000_601_000));
+    }
+
+    #[rstest]
+    #[case::minimum(
+        BinanceProductType::UsdM,
+        OrderType::Limit,
+        UnixNanos::from_seconds(1_700_000_600),
+        false,
+        "strictly greater"
+    )]
+    #[case::subsecond(
+        BinanceProductType::UsdM,
+        OrderType::Limit,
+        UnixNanos::from(1_700_000_601_000_000_001),
+        false,
+        "whole-second precision"
+    )]
+    #[case::coin_m(
+        BinanceProductType::CoinM,
+        OrderType::Limit,
+        UnixNanos::from_seconds(1_700_000_601),
+        false,
+        "does not support native GTD"
+    )]
+    #[case::market(
+        BinanceProductType::UsdM,
+        OrderType::Market,
+        UnixNanos::from_seconds(1_700_000_601),
+        false,
+        "does not support GTD for order type Market"
+    )]
+    #[case::post_only(
+        BinanceProductType::UsdM,
+        OrderType::Limit,
+        UnixNanos::from_seconds(1_700_000_601),
+        true,
+        "cannot be post-only"
+    )]
+    fn test_futures_order_lifetime_rejects_invalid_gtd(
+        #[case] product_type: BinanceProductType,
+        #[case] order_type: OrderType,
+        #[case] expire_time: UnixNanos,
+        #[case] post_only: bool,
+        #[case] expected: &str,
+    ) {
+        let error = determine_futures_order_lifetime(
+            product_type,
+            order_type,
+            TimeInForce::Gtd,
+            Some(expire_time),
+            post_only,
+            true,
+            UnixNanos::from_seconds(1_700_000_000),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains(expected));
+    }
+
+    #[rstest]
+    #[case::coin_m_limit(BinanceProductType::CoinM, OrderType::Limit, false)]
+    #[case::usd_m_market(BinanceProductType::UsdM, OrderType::Market, false)]
+    #[case::usd_m_post_only(BinanceProductType::UsdM, OrderType::Limit, true)]
+    fn test_futures_order_lifetime_maps_locally_managed_gtd_to_gtc(
+        #[case] product_type: BinanceProductType,
+        #[case] order_type: OrderType,
+        #[case] post_only: bool,
+    ) {
+        let lifetime = determine_futures_order_lifetime(
+            product_type,
+            order_type,
+            TimeInForce::Gtd,
+            Some(UnixNanos::from_seconds(1_700_000_601)),
+            post_only,
+            false,
+            UnixNanos::from_seconds(1_700_000_000),
+        )
+        .unwrap();
+
+        assert_eq!(lifetime.time_in_force, TimeInForce::Gtc);
+        assert_eq!(lifetime.good_till_date, None);
+    }
+
+    #[rstest]
+    fn test_futures_order_lifetime_requires_expire_time() {
+        let error = determine_futures_order_lifetime(
+            BinanceProductType::UsdM,
+            OrderType::Limit,
+            TimeInForce::Gtd,
+            None,
+            false,
+            true,
+            UnixNanos::from_seconds(1_700_000_000),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("requires an expire_time"));
+    }
+
+    #[rstest]
+    fn test_futures_order_lifetime_maximum_exceeds_unix_nanos_range() {
+        let maximum_unix_nanos_millis = u64::MAX / NANOSECONDS_IN_MILLISECOND;
+
+        assert!(maximum_unix_nanos_millis < BINANCE_GTD_MAX_MILLIS);
     }
 
     #[rstest]
@@ -2599,5 +3274,50 @@ mod tests {
         let err = http_error(BINANCE_GTX_ORDER_REJECT_CODE);
         assert!(!is_ambiguous_submit_error(&err));
         assert!(is_structured_venue_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_instrument_product_matching_distinguishes_futures_products_from_spot() {
+        let usdm = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let generic_perpetual = InstrumentAny::PerpetualContract(perpetual_contract_eurusd());
+        let coinm = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let delivery =
+            || crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
+        let usdm_delivery = InstrumentAny::CryptoFuture(delivery());
+        let mut coinm_delivery = delivery();
+        coinm_delivery.is_inverse = true;
+        let coinm_delivery = InstrumentAny::CryptoFuture(coinm_delivery);
+        let spot = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+
+        assert!(is_instrument_for_product(&usdm, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&usdm, BinanceProductType::CoinM));
+        assert!(is_instrument_for_product(
+            &generic_perpetual,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(
+            &generic_perpetual,
+            BinanceProductType::CoinM
+        ));
+        assert!(is_instrument_for_product(&coinm, BinanceProductType::CoinM));
+        assert!(!is_instrument_for_product(&coinm, BinanceProductType::UsdM));
+        assert!(is_instrument_for_product(
+            &usdm_delivery,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(
+            &usdm_delivery,
+            BinanceProductType::CoinM
+        ));
+        assert!(is_instrument_for_product(
+            &coinm_delivery,
+            BinanceProductType::CoinM
+        ));
+        assert!(!is_instrument_for_product(
+            &coinm_delivery,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
     }
 }

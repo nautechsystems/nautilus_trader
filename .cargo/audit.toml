@@ -20,10 +20,13 @@ ignore = [
   "RUSTSEC-2025-0090",
   "RUSTSEC-2025-0098",
   "RUSTSEC-2025-0100",
-  # bincode unmaintained, dev-only via madsim
+  # bincode unmaintained, transitive via madsim and hypersync-client
   "RUSTSEC-2025-0141",
   # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
   "RUSTSEC-2025-0143",
   # proc-macro-error2 unmaintained, transitive via alloy and tabled_derive
   "RUSTSEC-2026-0173",
+  # quick-xml DoS, transitive via object_store 0.13.2; no object_store release with quick-xml >= 0.41.0
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
 ]

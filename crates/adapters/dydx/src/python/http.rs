@@ -26,6 +26,7 @@ use nautilus_model::{
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyDict, PyList},
 };
@@ -84,6 +85,11 @@ impl DydxHttpClient {
     ///
     /// This method does NOT automatically cache results. Use `fetch_and_cache_instruments()`
     /// for automatic caching, or call `cache_instruments()` manually with the results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request or parsing fails.
+    /// Individual instrument parsing errors are logged as warnings.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(
         &self,
@@ -278,6 +284,10 @@ impl DydxHttpClient {
     ///
     /// Fetches orders from the dYdX Indexer API and converts them to Nautilus
     /// `OrderStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_order_status_reports<'py>(
@@ -301,8 +311,11 @@ impl DydxHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -312,6 +325,10 @@ impl DydxHttpClient {
     ///
     /// Fetches fills from the dYdX Indexer API and converts them to Nautilus
     /// `FillReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_fill_reports<'py>(
@@ -330,8 +347,11 @@ impl DydxHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -341,6 +361,10 @@ impl DydxHttpClient {
     ///
     /// Fetches positions from the dYdX Indexer API and converts them to Nautilus
     /// `PositionStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(
@@ -364,8 +388,11 @@ impl DydxHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -375,6 +402,10 @@ impl DydxHttpClient {
     ///
     /// Fetches the subaccount from the dYdX Indexer API and converts it to a Nautilus
     /// `AccountState` with balances and margin calculations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -390,7 +421,7 @@ impl DydxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+            Python::attach(|py| account_state.into_py_any(py))
         })
     }
 
@@ -404,6 +435,13 @@ impl DydxHttpClient {
     /// filtered out.
     ///
     /// Results are returned in chronological order (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The bar type uses unsupported aggregation/price type.
+    /// - The HTTP request fails or response cannot be parsed.
+    /// - The instrument is not found in the cache.
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     fn py_request_bars<'py>(
@@ -424,7 +462,11 @@ impl DydxHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, bars.into_iter().map(|b| b.into_py_any_unwrap(py)))?;
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -437,6 +479,11 @@ impl DydxHttpClient {
     /// and client-side time filtering (the dYdX API has no timestamp filter).
     ///
     /// Results are returned in chronological order (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
     #[pyo3(name = "request_trade_ticks")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trade_ticks<'py>(
@@ -456,7 +503,11 @@ impl DydxHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -469,6 +520,10 @@ impl DydxHttpClient {
     /// `FundingRateUpdate` objects.
     ///
     /// Results are returned in chronological order (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response cannot be parsed.
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(
@@ -488,12 +543,11 @@ impl DydxHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(
-                    py,
-                    funding_rates
-                        .into_iter()
-                        .map(|rate| rate.into_py_any_unwrap(py)),
-                )?;
+                let py_rates = funding_rates
+                    .into_iter()
+                    .map(|rate| rate.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_rates)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -504,6 +558,11 @@ impl DydxHttpClient {
     /// Fetches order book data from the dYdX Indexer API and converts it to Nautilus
     /// `OrderBookDeltas`. The snapshot is represented as a sequence of deltas starting
     /// with a CLEAR action followed by ADD actions for each level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
     #[pyo3(name = "request_orderbook_snapshot")]
     fn py_request_orderbook_snapshot<'py>(
         &self,
@@ -518,7 +577,7 @@ impl DydxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(deltas.into_py_any_unwrap(py)))
+            Python::attach(|py| deltas.into_py_any(py))
         })
     }
 

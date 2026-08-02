@@ -376,7 +376,7 @@ impl MarketIfTouchedOrder {
 
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
-        let event_any = pyobject_to_order_event(py, event).unwrap();
+        let event_any = pyobject_to_order_event(py, event)?;
         self.apply(event_any).map_err(to_pyruntime_err)
     }
 
@@ -499,7 +499,7 @@ impl MarketIfTouchedOrder {
         )?;
         self.avg_px.map_or_else(
             || dict.set_item("avg_px", py.None()),
-            |x| dict.set_item("avg_px", x),
+            |x| dict.set_item("avg_px", x.to_string()),
         )?;
         self.position_id.map_or_else(
             || dict.set_item("position_id", py.None()),
@@ -511,7 +511,7 @@ impl MarketIfTouchedOrder {
         )?;
         self.slippage.map_or_else(
             || dict.set_item("slippage", py.None()),
-            |x| dict.set_item("slippage", x),
+            |x| dict.set_item("slippage", x.to_string()),
         )?;
         self.account_id.map_or_else(
             || dict.set_item("account_id", py.None()),

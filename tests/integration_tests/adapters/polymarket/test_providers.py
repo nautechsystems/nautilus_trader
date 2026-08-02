@@ -217,10 +217,10 @@ async def test_load_markets_with_is_active_filter_excludes_closed_markets(
     to be included when is_active=True filter is used.
 
     Test cases:
-    - active=True, closed=False: ✅ Include (truly active)
-    - active=True, closed=True: ❌ Exclude (closed/disputed)
-    - active=False, closed=False: ❌ Exclude (suspended/paused)
-    - active=False, closed=True: ❌ Exclude (inactive and closed)
+    - active=True, closed=False: ✓ Include (truly active)
+    - active=True, closed=True: ✗ Exclude (closed/disputed)
+    - active=False, closed=False: ✗ Exclude (suspended/paused)
+    - active=False, closed=True: ✗ Exclude (inactive and closed)
 
     """
     # Arrange: Mock get_markets to return markets with different states

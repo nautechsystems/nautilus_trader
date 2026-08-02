@@ -2234,7 +2234,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         dust_trade_id = TradeId(f"{msg.id[:27]}-dust")
                         self._log.info(
                             f"Order {venue_order_id!r} MATCHED with dust residual "
-                            f"{dust_qty} — emitting synthetic fill",
+                            f"{dust_qty} - emitting synthetic fill",
                         )
 
                         if order is not None:

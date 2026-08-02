@@ -5,23 +5,42 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "COINBASE",
+    "COINBASE_CLIENT_ID",
+    "COINBASE_VENUE",
     "CoinbaseDataClientConfig",
     "CoinbaseDataClientFactory",
     "CoinbaseEnvironment",
     "CoinbaseExecClientConfig",
     "CoinbaseExecutionClientFactory",
-    "CoinbaseHttpClient",
     "CoinbaseMarginType",
-    "CoinbaseWebSocketClient",
 ]
 
 COINBASE: str
+COINBASE_CLIENT_ID: model.ClientId
+COINBASE_VENUE: model.Venue
 
 @typing.final
 class CoinbaseDataClientConfig:
+    @property
+    def base_url_rest(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def environment(self) -> CoinbaseEnvironment: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def ws_timeout_secs(self) -> int: ...
+    @property
+    def update_instruments_interval_mins(self) -> int: ...
+    @property
+    def derivatives_poll_interval_secs(self) -> int: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         api_key: str | None = None,
@@ -34,9 +53,10 @@ class CoinbaseDataClientConfig:
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         derivatives_poll_interval_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
-    def proxy_url(self) -> str | None: ...
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class CoinbaseDataClientFactory:
@@ -45,6 +65,30 @@ class CoinbaseDataClientFactory:
 
 @typing.final
 class CoinbaseExecClientConfig:
+    @property
+    def base_url_rest(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def environment(self) -> CoinbaseEnvironment: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def max_retries(self) -> int: ...
+    @property
+    def retry_delay_initial_ms(self) -> int: ...
+    @property
+    def retry_delay_max_ms(self) -> int: ...
+    @property
+    def account_type(self) -> model.AccountType: ...
+    @property
+    def default_margin_type(self) -> CoinbaseMarginType | None: ...
+    @property
+    def default_leverage(self) -> decimal.Decimal | None: ...
+    @property
+    def retail_portfolio_id(self) -> str | None: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         api_key: str | None = None,
@@ -61,20 +105,15 @@ class CoinbaseExecClientConfig:
         default_margin_type: CoinbaseMarginType | None = None,
         default_leverage: decimal.Decimal | None = None,
         retail_portfolio_id: str | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
-    def proxy_url(self) -> str | None: ...
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class CoinbaseExecutionClientFactory:
     def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
     def name(self) -> str: ...
-
-@typing.final
-class CoinbaseHttpClient: ...
-
-@typing.final
-class CoinbaseWebSocketClient: ...
 
 @typing.final
 class CoinbaseEnvironment(enum.Enum):

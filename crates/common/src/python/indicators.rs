@@ -15,10 +15,10 @@
 
 use std::{any::Any, fmt::Debug, rc::Rc};
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pytype_err};
+use nautilus_core::python::to_pytype_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::{
-    Py, PyAny, PyResult, Python,
+    IntoPyObjectExt, Py, PyAny, PyResult, Python,
     types::{PyAnyMethods, PyList, PyListMethods},
 };
 
@@ -75,8 +75,9 @@ impl ActorIndicator for PyActorIndicator {
 
     fn handle_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
         Python::attach(|py| {
+            let quote = (*quote).into_py_any(py)?;
             self.indicator
-                .call_method1(py, "handle_quote_tick", ((*quote).into_py_any_unwrap(py),))
+                .call_method1(py, "handle_quote_tick", (quote,))
         })
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("{e}"))
@@ -84,8 +85,9 @@ impl ActorIndicator for PyActorIndicator {
 
     fn handle_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
         Python::attach(|py| {
+            let trade = (*trade).into_py_any(py)?;
             self.indicator
-                .call_method1(py, "handle_trade_tick", ((*trade).into_py_any_unwrap(py),))
+                .call_method1(py, "handle_trade_tick", (trade,))
         })
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("{e}"))
@@ -93,8 +95,8 @@ impl ActorIndicator for PyActorIndicator {
 
     fn handle_bar(&self, bar: &Bar) -> anyhow::Result<()> {
         Python::attach(|py| {
-            self.indicator
-                .call_method1(py, "handle_bar", ((*bar).into_py_any_unwrap(py),))
+            let bar = (*bar).into_py_any(py)?;
+            self.indicator.call_method1(py, "handle_bar", (bar,))
         })
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("{e}"))

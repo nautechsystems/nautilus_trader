@@ -76,6 +76,30 @@ use crate::{
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
 
+pub(crate) fn prefer_rpi_response_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (current, legacy) in [("rpi", "elp"), ("rpiMaker", "elpMaker")] {
+                if fields.contains_key(current) {
+                    fields.remove(legacy);
+                } else if let Some(legacy_value) = fields.remove(legacy) {
+                    fields.insert(current.to_string(), legacy_value);
+                }
+            }
+
+            for nested in fields.values_mut() {
+                prefer_rpi_response_fields(nested);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                prefer_rpi_response_fields(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Determines if a price string represents a market order.
 ///
 /// OKX uses special values to indicate market execution:
@@ -342,7 +366,7 @@ pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
 ///
 /// # Errors
 ///
-/// Returns an error for the same reasons as [`parse_price`] – parsing failure or invalid
+/// Returns an error for the same reasons as [`parse_price`] - parsing failure or invalid
 /// precision.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     let decimal = Decimal::from_str(value)?;
@@ -857,7 +881,7 @@ pub fn parse_order_status_report(
         report.avg_px = Some(decimal);
     }
 
-    if order.ord_type == OKXOrderType::PostOnly {
+    if matches!(order.ord_type, OKXOrderType::PostOnly | OKXOrderType::Rpi) {
         report = report.with_post_only(true);
     }
 
@@ -1216,7 +1240,7 @@ pub fn parse_spread_order_status_report(
         report.avg_px = Some(decimal);
     }
 
-    if order.ord_type == OKXOrderType::PostOnly {
+    if matches!(order.ord_type, OKXOrderType::PostOnly | OKXOrderType::Rpi) {
         report = report.with_post_only(true);
     }
 
@@ -1991,6 +2015,7 @@ impl InstrumentParser for SpotInstrumentParser {
 
         // Parse multiplier as product of ct_mult and ct_val
         let multiplier = parse_multiplier_product(definition)?;
+        let info = build_price_limit_info(definition);
 
         let instrument = CurrencyPair::new(
             common.instrument_id,
@@ -2014,7 +2039,7 @@ impl InstrumentParser for SpotInstrumentParser {
             margin_fees.maker_fee,
             margin_fees.taker_fee,
             None,
-            None,
+            info,
             ts_init,
             ts_init,
         );
@@ -2155,6 +2180,7 @@ pub fn parse_swap_instrument(
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
     let min_price = None; // TBD
+    let info = build_price_limit_info(definition);
 
     let instrument = CryptoPerpetual::new(
         instrument_id,
@@ -2180,7 +2206,7 @@ pub fn parse_swap_instrument(
         maker_fee,
         taker_fee,
         None,
-        None,
+        info,
         ts_init, // No ts_event for response
         ts_init,
     );
@@ -2290,7 +2316,7 @@ pub fn parse_futures_instrument(
     let max_price = None; // TBD
     let min_price = None; // TBD
 
-    let info = build_futures_info(definition)?;
+    let info = build_futures_info(definition);
 
     let instrument = CryptoFuture::new(
         instrument_id,
@@ -2335,19 +2361,57 @@ pub fn is_xperp_rule_type(rule_type: &str) -> bool {
     rule_type.eq_ignore_ascii_case("xperp")
 }
 
-fn build_futures_info(definition: &OKXInstrument) -> anyhow::Result<Option<Params>> {
-    if definition.rule_type.is_empty() {
-        return Ok(None);
+fn build_futures_info(definition: &OKXInstrument) -> Option<Params> {
+    let mut info = build_price_limit_info(definition).unwrap_or_default();
+
+    if !definition.rule_type.is_empty() {
+        info.insert(
+            "rule_type".to_string(),
+            serde_json::Value::String(definition.rule_type.clone()),
+        );
     }
 
-    let mut map = serde_json::Map::new();
-    map.insert(
-        "rule_type".to_string(),
-        serde_json::Value::String(definition.rule_type.clone()),
+    (!info.is_empty()).then_some(info)
+}
+
+fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
+    let mut info = Params::new();
+
+    insert_non_empty_info(
+        &mut info,
+        "okx_init_px_lmt_pct",
+        &definition.init_px_lmt_pct,
     );
-    Ok(Some(serde_json::from_value(serde_json::Value::Object(
-        map,
-    ))?))
+    insert_non_empty_info(
+        &mut info,
+        "okx_float_px_lmt_pct",
+        &definition.float_px_lmt_pct,
+    );
+    insert_non_empty_info(&mut info, "okx_max_px_lmt_pct", &definition.max_px_lmt_pct);
+    if let Some(rpi_min_level) = definition.rpi_min_level {
+        info.insert(
+            "okx_rpi_min_level".to_string(),
+            serde_json::Value::from(rpi_min_level),
+        );
+    }
+
+    if let Some(rpi_min_px_band) = definition.rpi_min_px_band {
+        info.insert(
+            "okx_rpi_min_px_band".to_string(),
+            serde_json::Value::String(rpi_min_px_band.to_string()),
+        );
+    }
+
+    (!info.is_empty()).then_some(info)
+}
+
+fn insert_non_empty_info(info: &mut Params, key: &str, value: &str) {
+    if !value.is_empty() {
+        info.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+    }
 }
 
 /// Parses an OKX option instrument definition into a Nautilus option contract.
@@ -2849,6 +2913,7 @@ mod tests {
         assert_eq!(trade0.side, OKXSide::Sell);
         assert_eq!(trade0.trade_id, "734864333");
         assert_eq!(trade0.ts, 1747087163557);
+        assert_eq!(trade0.source.as_deref(), Some("1"));
 
         // Inspect second record
         let trade1 = &parsed.data[1];
@@ -2858,6 +2923,7 @@ mod tests {
         assert_eq!(trade1.side, OKXSide::Buy);
         assert_eq!(trade1.trade_id, "734864332");
         assert_eq!(trade1.ts, 1747087161666);
+        assert_eq!(trade1.source.as_deref(), Some("0"));
     }
 
     #[rstest]
@@ -3208,6 +3274,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_spot_instrument_exposes_price_limit_percentages_as_info() {
+        let json_data = load_test_json("http_get_instruments_price_limit.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let okx_inst = response
+            .data
+            .first()
+            .expect("Test data must have an instrument");
+
+        assert_eq!(okx_inst.init_px_lmt_pct, "0.05");
+        assert_eq!(okx_inst.float_px_lmt_pct, "0.03");
+        assert_eq!(okx_inst.max_px_lmt_pct, "0.15");
+
+        let instrument =
+            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("expected CurrencyPair");
+        };
+        let info = pair.info.expect("price-limit info must be set");
+
+        assert_eq!(info.get_str("okx_init_px_lmt_pct"), Some("0.05"));
+        assert_eq!(info.get_str("okx_float_px_lmt_pct"), Some("0.03"));
+        assert_eq!(info.get_str("okx_max_px_lmt_pct"), Some("0.15"));
+        assert_eq!(pair.max_price, None);
+        assert_eq!(pair.min_price, None);
+    }
+
+    #[rstest]
     fn test_parse_margin_instrument() {
         let json_data = load_test_json("http_get_instruments_margin.json");
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
@@ -3375,6 +3469,33 @@ mod tests {
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_price(), None);
         assert_eq!(instrument.min_price(), None);
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_exposes_price_limit_percentages_as_info() {
+        let json_data = load_test_json("http_get_instruments_swap.json");
+        let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let okx_inst = response
+            .data
+            .first_mut()
+            .expect("Test data must have an instrument");
+        okx_inst.init_px_lmt_pct = "0.05".to_string();
+        okx_inst.float_px_lmt_pct = "0.03".to_string();
+        okx_inst.max_px_lmt_pct = "0.15".to_string();
+
+        let instrument =
+            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+
+        let InstrumentAny::CryptoPerpetual(perpetual) = instrument else {
+            panic!("expected CryptoPerpetual");
+        };
+        let info = perpetual.info.expect("price-limit info must be set");
+
+        assert_eq!(info.get_str("okx_init_px_lmt_pct"), Some("0.05"));
+        assert_eq!(info.get_str("okx_float_px_lmt_pct"), Some("0.03"));
+        assert_eq!(info.get_str("okx_max_px_lmt_pct"), Some("0.15"));
+        assert_eq!(perpetual.max_price, None);
+        assert_eq!(perpetual.min_price, None);
     }
 
     #[rstest]
@@ -3574,6 +3695,9 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: Some(Ustr::from("BTC-ABOVE-DAILY")),
             inst_category: Some(OKXInstrumentCategory::Crypto),
+            init_px_lmt_pct: String::new(),
+            float_px_lmt_pct: String::new(),
+            max_px_lmt_pct: String::new(),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from("USDT"),
             settle_ccy: Ustr::from("USDT"),
@@ -3599,6 +3723,9 @@ mod tests {
             max_iceberg_sz: String::new(),
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let parsed = parse_event_contract_instrument(
@@ -3767,6 +3894,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_futures_instrument_merges_price_limit_percentages_with_rule_type() {
+        let json_data = load_test_json("http_get_instruments_futures.json");
+        let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let okx_inst = response
+            .data
+            .first_mut()
+            .expect("Test data must have an instrument");
+        okx_inst.init_px_lmt_pct = "0.04".to_string();
+        okx_inst.float_px_lmt_pct = "0.02".to_string();
+        okx_inst.max_px_lmt_pct = "0.12".to_string();
+
+        let instrument =
+            parse_futures_instrument(okx_inst, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        let InstrumentAny::CryptoFuture(crypto_future) = instrument else {
+            panic!("expected CryptoFuture");
+        };
+        let info = crypto_future.info.expect("price-limit info must be set");
+
+        assert_eq!(info.get_str("rule_type"), Some("normal"));
+        assert_eq!(info.get_str("okx_init_px_lmt_pct"), Some("0.04"));
+        assert_eq!(info.get_str("okx_float_px_lmt_pct"), Some("0.02"));
+        assert_eq!(info.get_str("okx_max_px_lmt_pct"), Some("0.12"));
+        assert_eq!(crypto_future.max_price, None);
+        assert_eq!(crypto_future.min_price, None);
+    }
+
+    #[rstest]
     fn test_parse_futures_instrument_xperp_carries_rule_type() {
         // X-Perp instruments ship with the standard 3-part futures symbol
         // shape; the `ruleType=xperp` field is what distinguishes them from
@@ -3778,6 +3934,9 @@ mod tests {
             inst_family: Ustr::from("BTC-USDT"),
             series_id: None,
             inst_category: None,
+            init_px_lmt_pct: String::new(),
+            float_px_lmt_pct: String::new(),
+            max_px_lmt_pct: String::new(),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from("USDT"),
             settle_ccy: Ustr::from("USDT"),
@@ -3804,6 +3963,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let parsed =
@@ -5189,6 +5351,9 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            init_px_lmt_pct: String::new(),
+            float_px_lmt_pct: String::new(),
+            max_px_lmt_pct: String::new(),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from(""),
             settle_ccy: Ustr::from("USD"),
@@ -5215,6 +5380,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -5232,6 +5400,9 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            init_px_lmt_pct: String::new(),
+            float_px_lmt_pct: String::new(),
+            max_px_lmt_pct: String::new(),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from(""),
             settle_ccy: Ustr::from("USD"),
@@ -5258,6 +5429,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -5275,6 +5449,9 @@ mod tests {
             inst_family: Ustr::from("BTC-USD"),
             series_id: None,
             inst_category: None,
+            init_px_lmt_pct: String::new(),
+            float_px_lmt_pct: String::new(),
+            max_px_lmt_pct: String::new(),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from(""),
             settle_ccy: Ustr::from("USD"),
@@ -5303,6 +5480,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -5324,6 +5504,9 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            init_px_lmt_pct: String::new(),
+            float_px_lmt_pct: String::new(),
+            max_px_lmt_pct: String::new(),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from(""),
             settle_ccy: Ustr::from("USD"),
@@ -5350,6 +5533,9 @@ mod tests {
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
             inst_id_code: None,
+            rpi: None,
+            rpi_min_level: None,
+            rpi_min_px_band: None,
         };
 
         let result =
@@ -6030,5 +6216,50 @@ mod tests {
             okx_inst_category_to_asset_class(instrument.inst_category),
             AssetClass::Equity
         );
+    }
+
+    #[rstest]
+    fn test_rpi_instrument_permission_parses_current_and_legacy_fields() {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let mut current = value["data"][0].clone();
+        current["rpi"] = serde_json::json!("2");
+        let current: OKXInstrument = serde_json::from_value(current).unwrap();
+
+        let legacy = &mut value["data"][1];
+        legacy["elp"] = serde_json::json!("1");
+        let legacy: OKXInstrument = serde_json::from_value(legacy.clone()).unwrap();
+
+        assert_eq!(
+            current.rpi,
+            Some(crate::common::enums::OKXRpiPermission::Permitted)
+        );
+        assert_eq!(
+            legacy.rpi,
+            Some(crate::common::enums::OKXRpiPermission::Enabled)
+        );
+    }
+
+    #[rstest]
+    fn test_rpi_instrument_spacing_fields_are_typed_and_reachable() {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json).unwrap();
+        let okx_inst = response
+            .data
+            .first()
+            .expect("Test data must have an instrument");
+
+        assert_eq!(okx_inst.rpi_min_level, Some(5));
+        assert_eq!(okx_inst.rpi_min_px_band, Some(Decimal::from(20)));
+
+        let instrument =
+            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("expected CurrencyPair");
+        };
+        let info = pair.info.expect("RPI spacing info must be set");
+
+        assert_eq!(info.get_u64("okx_rpi_min_level"), Some(5));
+        assert_eq!(info.get_str("okx_rpi_min_px_band"), Some("20"));
     }
 }

@@ -17,7 +17,8 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     actor::{
-        DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig,
+        DataActor, DataActorCore, DataActorNative,
+        data_actor::{DataActorConfig, ImportableActorConfig},
         registry::try_get_actor_unchecked,
     },
     component::Component,
@@ -25,7 +26,7 @@ use nautilus_common::{
     nautilus_actor,
 };
 use nautilus_model::identifiers::{ActorId, StrategyId};
-use nautilus_trading::{Strategy, StrategyNative};
+use nautilus_trading::{ImportableStrategyConfig, Strategy, StrategyNative};
 
 use crate::{messages::ControllerCommand, trader::Trader};
 
@@ -80,15 +81,15 @@ impl Controller {
     /// Returns an error if the requested lifecycle operation fails.
     pub fn execute(&mut self, command: ControllerCommand) -> anyhow::Result<()> {
         match command {
-            ControllerCommand::CreateActor(command) => {
-                Self::unsupported_create_actor_command(&command)
-            }
+            ControllerCommand::CreateActor(command) => self
+                .create_actor_from_config(&command.actor_config, command.start)
+                .map(|_| ()),
             ControllerCommand::StartActor(command) => self.start_actor(&command.actor_id),
             ControllerCommand::StopActor(command) => self.stop_actor(&command.actor_id),
             ControllerCommand::RemoveActor(command) => self.remove_actor(&command.actor_id),
-            ControllerCommand::CreateStrategy(command) => {
-                Self::unsupported_create_strategy_command(&command)
-            }
+            ControllerCommand::CreateStrategy(command) => self
+                .create_strategy_from_config(&command.strategy_config, command.start)
+                .map(|_| ()),
             ControllerCommand::StartStrategy(command) => self.start_strategy(&command.strategy_id),
             ControllerCommand::StopStrategy(command) => self.stop_strategy(&command.strategy_id),
             ControllerCommand::ExitMarket(strategy_id) => self.exit_market(&strategy_id),
@@ -133,6 +134,41 @@ impl Controller {
         self.create_actor(actor, start)
     }
 
+    /// Creates a new actor from an importable config and optionally starts it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the import, actor registration, or startup fails.
+    #[cfg(feature = "python")]
+    pub fn create_actor_from_config(
+        &self,
+        actor_config: &ImportableActorConfig,
+        start: bool,
+    ) -> anyhow::Result<ActorId> {
+        let actor_id = self
+            .trader
+            .borrow_mut()
+            .add_actor_from_importable_config(actor_config)?;
+
+        self.start_created_actor(actor_id, start)?;
+
+        Ok(actor_id)
+    }
+
+    /// Rejects importable actor creation when Python support is not compiled in.
+    ///
+    /// # Errors
+    ///
+    /// Always returns an unsupported command error.
+    #[cfg(not(feature = "python"))]
+    pub fn create_actor_from_config(
+        &self,
+        actor_config: &ImportableActorConfig,
+        _start: bool,
+    ) -> anyhow::Result<ActorId> {
+        Self::unsupported_create_actor_config(actor_config)
+    }
+
     /// Creates a new strategy and optionally starts it.
     ///
     /// # Errors
@@ -169,6 +205,41 @@ impl Controller {
     {
         let strategy = factory()?;
         self.create_strategy(strategy, start)
+    }
+
+    /// Creates a new strategy from an importable config and optionally starts it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the import, strategy registration, or startup fails.
+    #[cfg(feature = "python")]
+    pub fn create_strategy_from_config(
+        &self,
+        strategy_config: &ImportableStrategyConfig,
+        start: bool,
+    ) -> anyhow::Result<StrategyId> {
+        let strategy_id = self
+            .trader
+            .borrow_mut()
+            .add_strategy_from_importable_config(strategy_config)?;
+
+        self.start_created_strategy(strategy_id, start)?;
+
+        Ok(strategy_id)
+    }
+
+    /// Rejects importable strategy creation when Python support is not compiled in.
+    ///
+    /// # Errors
+    ///
+    /// Always returns an unsupported command error.
+    #[cfg(not(feature = "python"))]
+    pub fn create_strategy_from_config(
+        &self,
+        strategy_config: &ImportableStrategyConfig,
+        _start: bool,
+    ) -> anyhow::Result<StrategyId> {
+        Self::unsupported_create_strategy_config(strategy_config)
     }
 
     /// Starts the registered actor with the given identifier.
@@ -317,21 +388,23 @@ impl Controller {
         Self::EXECUTE_ENDPOINT.into()
     }
 
-    fn unsupported_create_actor_command(
-        command: &crate::messages::CreateActor,
-    ) -> anyhow::Result<()> {
+    #[cfg(not(feature = "python"))]
+    fn unsupported_create_actor_config(
+        actor_config: &ImportableActorConfig,
+    ) -> anyhow::Result<ActorId> {
         anyhow::bail!(
             "CreateActor command for importable actor '{}' is not supported by the Rust controller",
-            command.actor_config.actor_path
+            actor_config.actor_path
         );
     }
 
-    fn unsupported_create_strategy_command(
-        command: &crate::messages::CreateStrategy,
-    ) -> anyhow::Result<()> {
+    #[cfg(not(feature = "python"))]
+    fn unsupported_create_strategy_config(
+        strategy_config: &ImportableStrategyConfig,
+    ) -> anyhow::Result<StrategyId> {
         anyhow::bail!(
             "CreateStrategy command for importable strategy '{}' is not supported by the Rust controller",
-            command.strategy_config.strategy_path
+            strategy_config.strategy_path
         );
     }
 }
@@ -363,7 +436,11 @@ nautilus_actor!(Controller);
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    #[cfg(feature = "python")]
+    use std::ffi::CString;
 
+    #[cfg(feature = "python")]
+    use nautilus_common::python::actor::{PyDataActor, PyDataActorInner};
     use nautilus_common::{
         actor::data_actor::ImportableActorConfig,
         cache::Cache,
@@ -374,9 +451,16 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{identifiers::TraderId, stubs::TestDefault};
     use nautilus_portfolio::portfolio::Portfolio;
+    #[cfg(feature = "python")]
+    use nautilus_trading::python::strategy::{PyStrategy, PyStrategyInner};
     use nautilus_trading::{
         ImportableStrategyConfig, nautilus_strategy,
         strategy::{StrategyConfig, StrategyCore},
+    };
+    #[cfg(feature = "python")]
+    use pyo3::{
+        prelude::*,
+        types::{PyDict, PyModule},
     };
     use rstest::rstest;
 
@@ -565,7 +649,96 @@ mod tests {
         (trader, controller_id)
     }
 
+    #[cfg(feature = "python")]
+    fn install_controller_importables_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("DataActor", py.get_type::<PyDataActor>())
+            .expect("DataActor type should bind");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+        module
+            .setattr("RESULTS", PyDict::new(py))
+            .expect("RESULTS should bind");
+
+        let code = CString::new(
+            r#"
+RESULTS["actor_start"] = 0
+RESULTS["strategy_start"] = 0
+RESULTS["fallback_post_init"] = 0
+RESULTS["fallback_post_init_seen"] = False
+RESULTS["fallback_actor_id"] = ""
+
+class CommandActorConfig:
+    def __init__(self, actor_id=None, log_events=True, log_commands=True):
+        self.actor_id = actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+
+class CommandActor(DataActor):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def on_start(self):
+        RESULTS["actor_start"] += 1
+
+class FailingActor(CommandActor):
+    def on_start(self):
+        raise RuntimeError("simulated actor start failure")
+
+class FallbackActorConfig:
+    def __init__(self):
+        self.actor_id = None
+        self.log_events = True
+        self.log_commands = True
+        self.post_init_called = False
+
+    def __post_init__(self):
+        self.post_init_called = True
+        RESULTS["fallback_post_init"] += 1
+
+class FallbackActor(DataActor):
+    def __init__(self, config):
+        super().__init__(config)
+        RESULTS["fallback_post_init_seen"] = config.post_init_called
+        RESULTS["fallback_actor_id"] = str(config.actor_id)
+
+class CommandStrategyConfig:
+    def __init__(self, strategy_id=None, log_events=True, log_commands=True):
+        self.strategy_id = strategy_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+
+class CommandStrategy(Strategy):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def on_start(self):
+        RESULTS["strategy_start"] += 1
+
+class FailingStrategy(CommandStrategy):
+    def on_start(self):
+        raise RuntimeError("simulated strategy start failure")
+"#,
+        )
+        .expect("python test code should be valid CString");
+
+        py.run(code.as_c_str(), Some(&module.dict()), None)
+            .expect("test importables module should load");
+
+        let sys_modules = py
+            .import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist");
+        sys_modules
+            .set_item(module_name, module)
+            .expect("test module should register");
+    }
+
     #[rstest]
+    #[cfg(not(feature = "python"))]
     fn test_controller_rejects_importable_create_commands() {
         let (trader, controller_id) = create_running_controller();
         let controller_actor_id = controller_id.inner();
@@ -599,6 +772,456 @@ mod tests {
         );
 
         drop(controller);
+        trader.borrow_mut().stop().unwrap();
+        trader.borrow_mut().dispose_components().unwrap();
+    }
+
+    #[rstest]
+    #[cfg(feature = "python")]
+    fn test_controller_creates_importable_actor_and_strategy_commands() {
+        Python::initialize();
+
+        let module_name = "test_system_controller_importables";
+        Python::attach(|py| install_controller_importables_module(py, module_name));
+
+        let (trader, controller_id) = create_running_controller();
+        let controller_actor_id = controller_id.inner();
+        let actor_id = ActorId::from("CommandActor-001");
+        let strategy_id = StrategyId::from("CommandStrategy-001");
+
+        {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let actor_config = ImportableActorConfig {
+                actor_path: format!("{module_name}:CommandActor"),
+                config_path: format!("{module_name}:CommandActorConfig"),
+                config: HashMap::from([(
+                    "actor_id".to_string(),
+                    serde_json::Value::String("CommandActor-001".to_string()),
+                )]),
+            };
+            let strategy_config = ImportableStrategyConfig {
+                strategy_path: format!("{module_name}:CommandStrategy"),
+                config_path: format!("{module_name}:CommandStrategyConfig"),
+                config: HashMap::from([(
+                    "strategy_id".to_string(),
+                    serde_json::Value::String("CommandStrategy-001".to_string()),
+                )]),
+            };
+
+            controller
+                .execute(
+                    CreateActor::new(actor_config, false, UUID4::new(), UnixNanos::default())
+                        .into(),
+                )
+                .unwrap();
+            controller
+                .execute(
+                    CreateStrategy::new(strategy_config, true, UUID4::new(), UnixNanos::default())
+                        .into(),
+                )
+                .unwrap();
+        }
+
+        assert!(trader.borrow().actor_ids().contains(&actor_id));
+        assert!(trader.borrow().strategy_ids().contains(&strategy_id));
+
+        assert_eq!(
+            try_get_actor_unchecked::<PyDataActorInner>(&actor_id.inner())
+                .unwrap()
+                .state(),
+            ComponentState::Ready
+        );
+        assert_eq!(
+            try_get_actor_unchecked::<PyStrategyInner>(&strategy_id.inner())
+                .unwrap()
+                .state(),
+            ComponentState::Running
+        );
+
+        Python::attach(|py| {
+            let module = py.import(module_name).expect("test module should import");
+            let results_obj = module.getattr("RESULTS").expect("RESULTS should exist");
+            let results = results_obj
+                .cast::<PyDict>()
+                .expect("RESULTS should be a dict");
+            assert_eq!(
+                results
+                    .get_item("actor_start")
+                    .expect("actor_start lookup should not error")
+                    .expect("actor_start should exist")
+                    .extract::<usize>()
+                    .expect("actor_start should extract"),
+                0
+            );
+            assert_eq!(
+                results
+                    .get_item("strategy_start")
+                    .expect("strategy_start lookup should not error")
+                    .expect("strategy_start should exist")
+                    .extract::<usize>()
+                    .expect("strategy_start should extract"),
+                1
+            );
+        });
+
+        trader.borrow_mut().remove_actor(&actor_id).unwrap();
+        trader.borrow_mut().stop().unwrap();
+        trader.borrow_mut().dispose_components().unwrap();
+    }
+
+    #[rstest]
+    #[cfg(feature = "python")]
+    fn test_controller_stop_skips_unstarted_importable_components() {
+        Python::initialize();
+
+        let module_name = "test_system_controller_unstarted_components";
+        Python::attach(|py| install_controller_importables_module(py, module_name));
+
+        let (trader, controller_id) = create_running_controller();
+        let controller_actor_id = controller_id.inner();
+        let actor_id = ActorId::from("CommandActor-001");
+        let strategy_id = StrategyId::from("CommandStrategy-001");
+
+        {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let actor_config = ImportableActorConfig {
+                actor_path: format!("{module_name}:CommandActor"),
+                config_path: format!("{module_name}:CommandActorConfig"),
+                config: HashMap::from([(
+                    "actor_id".to_string(),
+                    serde_json::Value::String("CommandActor-001".to_string()),
+                )]),
+            };
+            let strategy_config = ImportableStrategyConfig {
+                strategy_path: format!("{module_name}:CommandStrategy"),
+                config_path: format!("{module_name}:CommandStrategyConfig"),
+                config: HashMap::from([(
+                    "strategy_id".to_string(),
+                    serde_json::Value::String("CommandStrategy-001".to_string()),
+                )]),
+            };
+
+            controller
+                .execute(
+                    CreateActor::new(actor_config, false, UUID4::new(), UnixNanos::default())
+                        .into(),
+                )
+                .unwrap();
+            controller
+                .execute(
+                    CreateStrategy::new(strategy_config, false, UUID4::new(), UnixNanos::default())
+                        .into(),
+                )
+                .unwrap();
+        }
+
+        assert_eq!(
+            try_get_actor_unchecked::<PyDataActorInner>(&actor_id.inner())
+                .unwrap()
+                .state(),
+            ComponentState::Ready
+        );
+        assert_eq!(
+            try_get_actor_unchecked::<PyStrategyInner>(&strategy_id.inner())
+                .unwrap()
+                .state(),
+            ComponentState::Ready
+        );
+
+        trader.borrow_mut().stop().unwrap();
+        trader.borrow_mut().dispose_components().unwrap();
+    }
+
+    #[rstest]
+    #[cfg(feature = "python")]
+    fn test_controller_importable_strategy_tag_collision_does_not_register_orphan() {
+        Python::initialize();
+
+        let module_name = "test_system_controller_tag_collision";
+        Python::attach(|py| install_controller_importables_module(py, module_name));
+
+        let (trader, controller_id) = create_running_controller();
+        let controller_actor_id = controller_id.inner();
+        let existing_strategy_id = StrategyId::from("ExistingStrategy-001");
+        let colliding_strategy_id = StrategyId::from("CommandStrategy-001");
+
+        {
+            let controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            controller
+                .create_strategy(
+                    TestStrategy::new(StrategyConfig {
+                        strategy_id: Some(existing_strategy_id),
+                        order_id_tag: Some("001".to_string()),
+                        ..Default::default()
+                    }),
+                    false,
+                )
+                .unwrap();
+        }
+
+        let clock_count_before = trader.borrow().get_component_clocks().len();
+
+        let result = {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let strategy_config = ImportableStrategyConfig {
+                strategy_path: format!("{module_name}:CommandStrategy"),
+                config_path: format!("{module_name}:CommandStrategyConfig"),
+                config: HashMap::from([(
+                    "strategy_id".to_string(),
+                    serde_json::Value::String("CommandStrategy-001".to_string()),
+                )]),
+            };
+
+            controller.execute(
+                CreateStrategy::new(strategy_config, false, UUID4::new(), UnixNanos::default())
+                    .into(),
+            )
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Strategy order_id_tag conflict for '001', explicitly define unique order_id_tag values"
+        );
+        assert!(
+            !trader
+                .borrow()
+                .strategy_ids()
+                .contains(&colliding_strategy_id)
+        );
+        assert!(
+            try_get_actor_unchecked::<PyStrategyInner>(&colliding_strategy_id.inner()).is_none()
+        );
+        assert_eq!(
+            trader.borrow().get_component_clocks().len(),
+            clock_count_before
+        );
+
+        trader
+            .borrow_mut()
+            .remove_strategy(&existing_strategy_id)
+            .unwrap();
+        trader.borrow_mut().stop().unwrap();
+        trader.borrow_mut().dispose_components().unwrap();
+    }
+
+    #[rstest]
+    #[cfg(feature = "python")]
+    fn test_controller_importable_start_failure_rolls_back_registration() {
+        Python::initialize();
+
+        let module_name = "test_system_controller_start_failure";
+        Python::attach(|py| install_controller_importables_module(py, module_name));
+
+        let (trader, controller_id) = create_running_controller();
+        let controller_actor_id = controller_id.inner();
+        let actor_id = ActorId::from("FailingPyActor-001");
+        let strategy_id = StrategyId::from("FailingPyStrategy-001");
+        let clock_count_before = trader.borrow().get_component_clocks().len();
+
+        let actor_result = {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let actor_config = ImportableActorConfig {
+                actor_path: format!("{module_name}:FailingActor"),
+                config_path: format!("{module_name}:CommandActorConfig"),
+                config: HashMap::from([(
+                    "actor_id".to_string(),
+                    serde_json::Value::String("FailingPyActor-001".to_string()),
+                )]),
+            };
+
+            controller.execute(
+                CreateActor::new(actor_config, true, UUID4::new(), UnixNanos::default()).into(),
+            )
+        };
+
+        assert!(
+            actor_result
+                .unwrap_err()
+                .to_string()
+                .contains("simulated actor start failure")
+        );
+        assert!(!trader.borrow().actor_ids().contains(&actor_id));
+        if let Some(actor) = try_get_actor_unchecked::<PyDataActorInner>(&actor_id.inner()) {
+            assert_eq!(actor.state(), ComponentState::Disposed);
+        }
+        assert_eq!(
+            trader.borrow().get_component_clocks().len(),
+            clock_count_before
+        );
+
+        let strategy_result = {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let strategy_config = ImportableStrategyConfig {
+                strategy_path: format!("{module_name}:FailingStrategy"),
+                config_path: format!("{module_name}:CommandStrategyConfig"),
+                config: HashMap::from([(
+                    "strategy_id".to_string(),
+                    serde_json::Value::String("FailingPyStrategy-001".to_string()),
+                )]),
+            };
+
+            controller.execute(
+                CreateStrategy::new(strategy_config, true, UUID4::new(), UnixNanos::default())
+                    .into(),
+            )
+        };
+
+        assert!(
+            strategy_result
+                .unwrap_err()
+                .to_string()
+                .contains("simulated strategy start failure")
+        );
+        assert!(!trader.borrow().strategy_ids().contains(&strategy_id));
+        if let Some(strategy) = try_get_actor_unchecked::<PyStrategyInner>(&strategy_id.inner()) {
+            assert_eq!(strategy.state(), ComponentState::Disposed);
+        }
+        assert_eq!(
+            trader.borrow().get_component_clocks().len(),
+            clock_count_before
+        );
+
+        trader.borrow_mut().stop().unwrap();
+        trader.borrow_mut().dispose_components().unwrap();
+    }
+
+    #[rstest]
+    #[cfg(feature = "python")]
+    fn test_controller_importable_malformed_paths_fail_without_mutation() {
+        Python::initialize();
+
+        let (trader, controller_id) = create_running_controller();
+        let controller_actor_id = controller_id.inner();
+        let clock_count_before = trader.borrow().get_component_clocks().len();
+
+        let actor_result = {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let actor_config = ImportableActorConfig {
+                actor_path: "no_colon_here".to_string(),
+                config_path: String::new(),
+                config: HashMap::new(),
+            };
+
+            controller.execute(
+                CreateActor::new(actor_config, false, UUID4::new(), UnixNanos::default()).into(),
+            )
+        };
+        let strategy_result = {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let strategy_config = ImportableStrategyConfig {
+                strategy_path: "module:Class:Extra".to_string(),
+                config_path: String::new(),
+                config: HashMap::new(),
+            };
+
+            controller.execute(
+                CreateStrategy::new(strategy_config, false, UUID4::new(), UnixNanos::default())
+                    .into(),
+            )
+        };
+
+        assert_eq!(
+            actor_result.unwrap_err().to_string(),
+            "actor_path must be in format 'module.path:ClassName'"
+        );
+        assert_eq!(
+            strategy_result.unwrap_err().to_string(),
+            "strategy_path must be in format 'module.path:ClassName'"
+        );
+        assert_eq!(trader.borrow().actor_ids(), vec![controller_id]);
+        assert!(trader.borrow().strategy_ids().is_empty());
+        assert_eq!(
+            trader.borrow().get_component_clocks().len(),
+            clock_count_before
+        );
+
+        trader.borrow_mut().stop().unwrap();
+        trader.borrow_mut().dispose_components().unwrap();
+    }
+
+    #[rstest]
+    #[cfg(feature = "python")]
+    fn test_controller_importable_config_fallback_registers_actor() {
+        Python::initialize();
+
+        let module_name = "test_system_controller_config_fallback";
+        Python::attach(|py| install_controller_importables_module(py, module_name));
+
+        let (trader, controller_id) = create_running_controller();
+        let controller_actor_id = controller_id.inner();
+        let actor_id = ActorId::from("FallbackActor-001");
+
+        {
+            let mut controller = try_get_actor_unchecked::<Controller>(&controller_actor_id)
+                .expect("controller should be registered");
+            let actor_config = ImportableActorConfig {
+                actor_path: format!("{module_name}:FallbackActor"),
+                config_path: format!("{module_name}:FallbackActorConfig"),
+                config: HashMap::from([(
+                    "actor_id".to_string(),
+                    serde_json::Value::String("FallbackActor-001".to_string()),
+                )]),
+            };
+
+            controller
+                .execute(
+                    CreateActor::new(actor_config, false, UUID4::new(), UnixNanos::default())
+                        .into(),
+                )
+                .unwrap();
+        }
+
+        assert!(trader.borrow().actor_ids().contains(&actor_id));
+        assert_eq!(
+            try_get_actor_unchecked::<PyDataActorInner>(&actor_id.inner())
+                .unwrap()
+                .state(),
+            ComponentState::Ready
+        );
+
+        Python::attach(|py| {
+            let module = py.import(module_name).expect("test module should import");
+            let results_obj = module.getattr("RESULTS").expect("RESULTS should exist");
+            let results = results_obj
+                .cast::<PyDict>()
+                .expect("RESULTS should be a dict");
+            assert_eq!(
+                results
+                    .get_item("fallback_post_init")
+                    .expect("fallback_post_init lookup should not error")
+                    .expect("fallback_post_init should exist")
+                    .extract::<usize>()
+                    .expect("fallback_post_init should extract"),
+                1
+            );
+            assert!(
+                results
+                    .get_item("fallback_post_init_seen")
+                    .expect("fallback_post_init_seen lookup should not error")
+                    .expect("fallback_post_init_seen should exist")
+                    .extract::<bool>()
+                    .expect("fallback_post_init_seen should extract")
+            );
+            assert_eq!(
+                results
+                    .get_item("fallback_actor_id")
+                    .expect("fallback_actor_id lookup should not error")
+                    .expect("fallback_actor_id should exist")
+                    .extract::<String>()
+                    .expect("fallback_actor_id should extract"),
+                "FallbackActor-001"
+            );
+        });
+
+        trader.borrow_mut().remove_actor(&actor_id).unwrap();
         trader.borrow_mut().stop().unwrap();
         trader.borrow_mut().dispose_components().unwrap();
     }

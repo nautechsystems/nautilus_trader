@@ -31,7 +31,11 @@ impl CalmarRatio {
     ///
     /// Formula: Calmar Ratio = CAGR / |Max Drawdown|
     ///
-    /// Reference: Young, T. W. (1991). "Calmar Ratio: A Smoother Tool". Futures, 20(1).
+    /// # References
+    ///
+    /// - Young, T. W. (1991). "Calmar Ratio: A Smoother Tool". *Futures*, 20(1).
+    /// - Bacon, C. R. (2008). *Practical Portfolio Performance Measurement and Attribution*
+    ///   (2nd ed.). Wiley.
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {

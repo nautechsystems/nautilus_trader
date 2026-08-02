@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS "order" (
     order_side TEXT NOT NULL,
     quantity TEXT NOT NULL,
     price TEXT,
+    activation_price TEXT,
     trigger_price TEXT,
     trigger_type TEXT,
     limit_offset TEXT,
@@ -94,8 +95,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     expire_time TEXT,
     filled_qty TEXT DEFAULT '0',
     liquidity_side TEXT,
-    avg_px DOUBLE PRECISION,
-    slippage DOUBLE PRECISION,
+    avg_px NUMERIC,
+    slippage NUMERIC,
     commissions TEXT[],
     status TEXT NOT NULL,
     is_post_only BOOLEAN,
@@ -118,6 +119,34 @@ CREATE TABLE IF NOT EXISTS "order" (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before trailing-stop activation-price persistence forward
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS activation_price TEXT;
+-- Widen the order average-price columns from DOUBLE PRECISION to unconstrained NUMERIC.
+--
+-- Guarded because `ALTER COLUMN ... TYPE ... USING` takes ACCESS EXCLUSIVE and rewrites the whole
+-- table, and this file is re-issued on every `nautilus database init`.
+--
+-- Cast through `text` rather than directly: a direct `double precision::numeric` rounds to 15
+-- significant digits, so 1.2345678901234567 would land as 1.23456789012346. Going via `text`
+-- takes float8's shortest round-trip output and keeps the stored value.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'order' AND column_name = 'avg_px' AND data_type = 'double precision'
+    ) THEN
+        ALTER TABLE "order" ALTER COLUMN avg_px TYPE NUMERIC USING avg_px::text::NUMERIC;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'order' AND column_name = 'slippage' AND data_type = 'double precision'
+    ) THEN
+        ALTER TABLE "order" ALTER COLUMN slippage TYPE NUMERIC USING slippage::text::NUMERIC;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "order_event" (
     id TEXT PRIMARY KEY NOT NULL,
@@ -142,6 +171,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     price TEXT,
     last_px TEXT,
     last_qty TEXT,
+    activation_price TEXT,
     trigger_price TEXT,
     trigger_type TEXT,
     limit_offset TEXT,
@@ -168,6 +198,8 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before trailing-stop activation-price persistence forward
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS activation_price TEXT;
 
 CREATE TABLE IF NOT EXISTS "order_position_index" (
     client_order_id TEXT PRIMARY KEY NOT NULL,
@@ -231,9 +263,11 @@ CREATE TABLE IF NOT EXISTS "position"(
     ts_closed TEXT,
     ts_init TEXT NOT NULL,
     ts_last TEXT NOT NULL,
+    replay_state JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE "position" ADD COLUMN IF NOT EXISTS replay_state JSONB;
 
 CREATE TABLE IF NOT EXISTS "account_event"(
     id TEXT PRIMARY KEY NOT NULL,
@@ -390,6 +424,18 @@ CREATE TABLE IF NOT EXISTS "pool" (
     FOREIGN KEY (token1_chain, token1_address) REFERENCES token(chain_id, address),
     FOREIGN KEY (chain_id, dex_name) REFERENCES dex(chain_id, name)
 );
+ALTER TABLE "pool" ADD COLUMN IF NOT EXISTS event_sync_version INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS "pool_event_sync" (
+    chain_id INTEGER NOT NULL,
+    dex_name TEXT NOT NULL,
+    pool_identifier TEXT NOT NULL,
+    event_family TEXT NOT NULL,
+    last_full_sync_block_number BIGINT NOT NULL,
+    PRIMARY KEY (chain_id, dex_name, pool_identifier, event_family),
+    FOREIGN KEY (chain_id, dex_name, pool_identifier)
+        REFERENCES pool(chain_id, dex_name, pool_identifier) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     id BIGSERIAL PRIMARY KEY,
@@ -473,14 +519,16 @@ CREATE TABLE IF NOT EXISTS "pool_fee_protocol_update_event" (
     transaction_hash TEXT NOT NULL,
     transaction_index INTEGER NOT NULL,
     log_index INTEGER NOT NULL,
-    fee_protocol0_new SMALLINT NOT NULL,
-    fee_protocol1_new SMALLINT NOT NULL,
+    fee_protocol0_new INTEGER NOT NULL,
+    fee_protocol1_new INTEGER NOT NULL,
     FOREIGN KEY (chain_id, dex_name, pool_identifier) REFERENCES pool(chain_id, dex_name, pool_identifier),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
 );
 CREATE INDEX IF NOT EXISTS idx_pool_fee_protocol_update_event_lookup
     ON pool_fee_protocol_update_event(chain_id, pool_identifier, block, transaction_index, log_index);
+ALTER TABLE "pool_fee_protocol_update_event" ALTER COLUMN fee_protocol0_new TYPE INTEGER;
+ALTER TABLE "pool_fee_protocol_update_event" ALTER COLUMN fee_protocol1_new TYPE INTEGER;
 
 CREATE TABLE IF NOT EXISTS "pool_fee_protocol_collect_event" (
     id BIGSERIAL PRIMARY KEY,
@@ -538,6 +586,8 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     protocol_fees_token0 U256 NOT NULL,
     protocol_fees_token1 U256 NOT NULL,
     fee_protocol SMALLINT NOT NULL,
+    fee_protocol0_basis_points INTEGER,
+    fee_protocol1_basis_points INTEGER,
     fee_growth_global_0 U256 NOT NULL,
     fee_growth_global_1 U256 NOT NULL,
     total_amount0_deposited U256 NOT NULL,
@@ -558,6 +608,8 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
 -- Bring databases created before snapshot validation states forward. Existing rows become 'replay'
 -- (usable as replay start points) until a later analyze-pool run re-validates them to 'on_chain' or 'invalid'.
 ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS validation_state TEXT NOT NULL DEFAULT 'replay';
+ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS fee_protocol0_basis_points INTEGER;
+ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS fee_protocol1_basis_points INTEGER;
 
 CREATE TABLE IF NOT EXISTS "pool_position" (
     chain_id INTEGER NOT NULL,

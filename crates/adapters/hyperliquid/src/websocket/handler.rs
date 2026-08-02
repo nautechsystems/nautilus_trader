@@ -55,9 +55,10 @@ use super::{
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
         parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
-        parse_ws_quote_tick, parse_ws_trade_tick,
+        parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick,
     },
     post::PostRouter,
+    trades::TradeStreamUses,
 };
 use crate::data_types::{
     HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
@@ -99,6 +100,8 @@ pub enum HandlerCommand {
         coin: Ustr,
         data_types: AHashSet<AssetContextDataType>,
     },
+    /// Update the logical consumers of a `trades` stream for a coin.
+    UpdateTradeSubs { coin: Ustr, uses: TradeStreamUses },
     /// Cache the ordered instrument IDs needed to normalize `allDexsAssetCtxs`.
     CacheAllDexAssetCtxsInstrumentIds(AHashMap<Ustr, Vec<Option<InstrumentId>>>),
     /// Cache spot fill coin mappings for instrument lookup.
@@ -169,9 +172,11 @@ pub(super) struct FeedHandler {
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+    trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
+    processed_public_trade_ids: FifoCache<(Ustr, u64), 10_000>,
     asset_context_caches: AssetContextCaches,
 }
 
@@ -208,9 +213,11 @@ impl FeedHandler {
             bar_types_cache: AHashMap::new(),
             bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
+            trade_subs: AHashMap::new(),
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
             depth10_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
+            processed_public_trade_ids: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
         }
     }
@@ -359,6 +366,13 @@ impl FeedHandler {
                                 self.asset_context_subs.insert(coin, data_types);
                             }
                         }
+                        HandlerCommand::UpdateTradeSubs { coin, uses } => {
+                            if uses.is_empty() {
+                                self.trade_subs.remove(&coin);
+                            } else {
+                                self.trade_subs.insert(coin, uses);
+                            }
+                        }
                         HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mappings) => {
                             self.all_dex_asset_ctxs_instrument_ids = mappings;
                         }
@@ -402,8 +416,10 @@ impl FeedHandler {
                                         self.account_id,
                                         ts_init,
                                         &self.asset_context_subs,
+                                        &self.trade_subs,
                                         &self.depth10_subs,
                                         &mut self.processed_trade_ids,
+                                        &mut self.processed_public_trade_ids,
                                         &mut self.asset_context_caches,
                                         &mut self.bar_cache,
                                         &self.all_dex_asset_ctxs_instrument_ids,
@@ -453,8 +469,10 @@ impl FeedHandler {
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+        trade_subs: &AHashMap<Ustr, TradeStreamUses>,
         depth10_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
+        processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         asset_context_caches: &mut AssetContextCaches,
         bar_cache: &mut AHashMap<String, CandleData>,
         all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
@@ -544,9 +562,13 @@ impl FeedHandler {
                 }
             }
             HyperliquidWsMessage::Trades { data } => {
-                if let Some(msg) = Self::handle_trades(&data, instruments, ts_init) {
-                    result.push(msg);
-                }
+                result.extend(Self::handle_trades(
+                    &data,
+                    instruments,
+                    trade_subs,
+                    processed_public_trade_ids,
+                    ts_init,
+                ));
             }
             HyperliquidWsMessage::AllMids { data } => {
                 let mut mids = std::collections::HashMap::with_capacity(
@@ -747,16 +769,45 @@ impl FeedHandler {
     fn handle_trades(
         data: &[super::messages::WsTradeData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        trade_subs: &AHashMap<Ustr, TradeStreamUses>,
+        processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         ts_init: UnixNanos,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         let mut trade_ticks = Vec::new();
+        let mut public_trades = Vec::new();
 
         for trade in data {
             if let Some(instrument) = instruments.get(&trade.coin) {
-                match parse_ws_trade_tick(trade, instrument, ts_init) {
-                    Ok(tick) => trade_ticks.push(tick),
-                    Err(e) => {
-                        log::error!("Error parsing trade tick: {e}");
+                let uses = trade_subs.get(&trade.coin).copied().unwrap_or_default();
+
+                if uses.ticks {
+                    match parse_ws_trade_tick(trade, instrument, ts_init) {
+                        Ok(tick) => trade_ticks.push(tick),
+                        Err(e) => {
+                            log::error!("Error parsing trade tick: {e}");
+                        }
+                    }
+                }
+
+                if uses.public_trades {
+                    let trade_key = (trade.coin, trade.tid);
+                    if processed_public_trade_ids.contains(&trade_key) {
+                        log::debug!(
+                            "Skipping replayed public trade: coin={}, tid={}",
+                            trade.coin,
+                            trade.tid
+                        );
+                        continue;
+                    }
+
+                    match parse_ws_public_trade(trade, instrument, ts_init) {
+                        Ok(trade) => {
+                            processed_public_trade_ids.add(trade_key);
+                            public_trades.push(trade);
+                        }
+                        Err(e) => {
+                            log::error!("Error parsing public trade: {e}");
+                        }
                     }
                 }
             } else {
@@ -764,11 +815,18 @@ impl FeedHandler {
             }
         }
 
-        if trade_ticks.is_empty() {
-            None
-        } else {
-            Some(NautilusWsMessage::Trades(trade_ticks))
+        let mut result = Vec::with_capacity(1 + public_trades.len());
+        if !trade_ticks.is_empty() {
+            result.push(NautilusWsMessage::Trades(trade_ticks));
         }
+        result.extend(public_trades.into_iter().map(|trade| {
+            let instrument_id = trade.instrument_id;
+            NautilusWsMessage::CustomData(Data::Custom(CustomData::new(
+                Arc::new(trade),
+                Self::public_trade_data_type(instrument_id),
+            )))
+        }));
+        result
     }
 
     fn handle_bbo(
@@ -1110,6 +1168,19 @@ impl FeedHandler {
         );
         DataType::new(
             "HyperliquidOpenInterest",
+            Some(metadata),
+            Some(instrument_id.to_string()),
+        )
+    }
+
+    fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        );
+        DataType::new(
+            "HyperliquidPublicTrade",
             Some(metadata),
             Some(instrument_id.to_string()),
         )

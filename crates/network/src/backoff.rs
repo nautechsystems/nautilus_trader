@@ -21,10 +21,15 @@
 //! An "immediate first" flag is available so that the very first reconnect attempt
 //! can occur without any delay.
 
-use std::time::Duration;
+use std::{pin::pin, sync::atomic::AtomicU8, time::Duration};
 
 use nautilus_core::correctness::{check_in_range_inclusive_f64, check_predicate_true};
 use rand::RngExt;
+
+use crate::{dst, mode::ConnectionMode};
+
+// Keep public reconnect_max_attempts docs synchronized with this value
+pub(crate) const RECONNECT_STABILITY_THRESHOLD: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct ExponentialBackoff {
@@ -165,6 +170,32 @@ impl ExponentialBackoff {
     #[must_use]
     pub const fn current_delay(&self) -> Duration {
         self.delay_current
+    }
+}
+
+pub(crate) async fn wait_reconnect_delay(
+    duration: Duration,
+    connection_mode: &AtomicU8,
+    state_notify: &tokio::sync::Notify,
+) -> bool {
+    if duration.is_zero() {
+        return true;
+    }
+
+    tokio::select! {
+        biased;
+        () = dst::time::sleep(duration) => true,
+        () = async {
+            loop {
+                let mut notified = pin!(state_notify.notified());
+                notified.as_mut().enable();
+
+                if !ConnectionMode::from_atomic(connection_mode).is_reconnect() {
+                    break;
+                }
+                notified.await;
+            }
+        } => false,
     }
 }
 

@@ -12,7 +12,6 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
-publish = false # Do not publish to crates.io yet
 
 [lints]
 workspace = true
@@ -48,6 +47,7 @@ python = [
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "pyo3-stub-gen",
 ]
 gateway = ["bollard"]
 
@@ -77,6 +77,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
 ibapi = { workspace = true }
@@ -94,9 +95,12 @@ ustr = { workspace = true }
 bollard = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-testkit = { workspace = true }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "testers",
+] }
 nautilus-trading = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }

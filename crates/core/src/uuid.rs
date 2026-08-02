@@ -688,18 +688,15 @@ mod tests {
         }
 
         #[rstest]
-        fn prop_uuid4_equality_and_hashing(uuid1 in uuid4_strategy(), uuid2 in uuid4_strategy()) {
-            // Identity
-            prop_assert_eq!(uuid1, uuid1);
+        fn prop_uuid4_equality_and_hashing(uuid in uuid4_strategy()) {
+            let equivalent = uuid;
+            let mut first_hasher = DefaultHasher::new();
+            let mut second_hasher = DefaultHasher::new();
+            uuid.hash(&mut first_hasher);
+            equivalent.hash(&mut second_hasher);
 
-            // Equality implies hash equality
-            if uuid1 == uuid2 {
-                let mut h1 = DefaultHasher::new();
-                let mut h2 = DefaultHasher::new();
-                uuid1.hash(&mut h1);
-                uuid2.hash(&mut h2);
-                prop_assert_eq!(h1.finish(), h2.finish());
-            }
+            prop_assert_eq!(uuid, equivalent);
+            prop_assert_eq!(first_hasher.finish(), second_hasher.finish());
         }
 
         #[rstest]

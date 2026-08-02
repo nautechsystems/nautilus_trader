@@ -25,7 +25,7 @@ use nautilus_model::{
 /// Returns `true` if the economically meaningful fields of two instruments differ.
 ///
 /// [`InstrumentAny`]'s `PartialEq` compares only the instrument ID, and definitions carry
-/// per-fetch timestamps that always change — so neither is usable for detecting "real" updates.
+/// per-fetch timestamps that always change - so neither is usable for detecting "real" updates.
 /// This compares the fields a strategy prices and sizes against, ignoring timestamps.
 fn economics_differ(a: &InstrumentAny, b: &InstrumentAny) -> bool {
     a.maker_fee() != b.maker_fee()

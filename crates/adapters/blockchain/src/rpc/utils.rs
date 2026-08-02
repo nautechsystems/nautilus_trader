@@ -21,7 +21,21 @@
 /// ```
 #[must_use]
 pub fn is_subscription_confirmation_response(json: &serde_json::Value) -> bool {
-    json.get("id").is_some() && json.get("result").is_some()
+    json.get("id").is_some() && json.get("result").is_some_and(serde_json::Value::is_string)
+}
+
+/// Determines if a JSON message is an unsubscribe acknowledgement from the blockchain RPC server.
+///
+/// Example response:
+/// ```json
+/// { "id": 1, "jsonrpc": "2.0", "result": true}
+/// ```
+#[must_use]
+pub fn is_unsubscribe_confirmation_response(json: &serde_json::Value) -> bool {
+    json.get("id").is_some()
+        && json
+            .get("result")
+            .is_some_and(serde_json::Value::is_boolean)
 }
 
 /// Determines if a JSON message is a subscription event notification from the blockchain RPC server.
@@ -87,6 +101,19 @@ mod tests {
     fn test_is_subscription_confirmation_response(subscription_confirmation: serde_json::Value) {
         assert!(is_subscription_confirmation_response(
             &subscription_confirmation
+        ));
+    }
+
+    #[rstest]
+    fn test_unsubscribe_confirmation_is_not_subscription_confirmation() {
+        let unsubscribe_confirmation =
+            serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": true});
+
+        assert!(!is_subscription_confirmation_response(
+            &unsubscribe_confirmation
+        ));
+        assert!(is_unsubscribe_confirmation_response(
+            &unsubscribe_confirmation
         ));
     }
 

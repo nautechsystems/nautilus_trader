@@ -231,6 +231,11 @@ impl PyCache {
         self.0.borrow().funding_rate(&instrument_id).copied()
     }
 
+    #[pyo3(name = "funding_rates")]
+    fn py_funding_rates(&self, instrument_id: InstrumentId) -> Option<Vec<FundingRateUpdate>> {
+        self.0.borrow().funding_rates(&instrument_id)
+    }
+
     #[pyo3(name = "instrument_status")]
     fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
         self.0.borrow().instrument_status(&instrument_id).copied()
@@ -271,6 +276,26 @@ impl PyCache {
         self.0.borrow().has_trade_ticks(&instrument_id)
     }
 
+    #[pyo3(name = "has_mark_prices")]
+    fn py_has_mark_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_mark_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "has_index_prices")]
+    fn py_has_index_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_index_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "has_funding_rates")]
+    fn py_has_funding_rates(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_funding_rates(&instrument_id)
+    }
+
+    #[pyo3(name = "has_instrument_statuses")]
+    fn py_has_instrument_statuses(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_instrument_statuses(&instrument_id)
+    }
+
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
         self.0.borrow().has_bars(&bar_type)
@@ -284,6 +309,26 @@ impl PyCache {
     #[pyo3(name = "trade_count")]
     fn py_trade_count(&self, instrument_id: InstrumentId) -> usize {
         self.0.borrow().trade_count(&instrument_id)
+    }
+
+    #[pyo3(name = "mark_price_count")]
+    fn py_mark_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().mark_price_count(&instrument_id)
+    }
+
+    #[pyo3(name = "index_price_count")]
+    fn py_index_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().index_price_count(&instrument_id)
+    }
+
+    #[pyo3(name = "funding_rate_count")]
+    fn py_funding_rate_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().funding_rate_count(&instrument_id)
+    }
+
+    #[pyo3(name = "instrument_status_count")]
+    fn py_instrument_status_count(&self, instrument_id: InstrumentId) -> usize {
+        self.0.borrow().instrument_status_count(&instrument_id)
     }
 
     #[pyo3(name = "bar_count")]
@@ -854,23 +899,18 @@ impl PyCache {
     }
 
     #[pyo3(name = "order_list")]
-    fn py_order_list(&self, py: Python, order_list_id: OrderListId) -> PyResult<Option<Py<PyAny>>> {
-        let cache = self.0.borrow();
-        match cache.order_list(&order_list_id) {
-            Some(order_list) => Ok(Some(order_list.clone().into_pyobject(py)?.into())),
-            None => Ok(None),
-        }
+    fn py_order_list(&self, order_list_id: OrderListId) -> Option<OrderList> {
+        self.0.borrow().order_list(&order_list_id).cloned()
     }
 
     #[pyo3(name = "order_lists", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None))]
     fn py_order_lists(
         &self,
-        py: Python,
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
         account_id: Option<AccountId>,
-    ) -> PyResult<Vec<Py<PyAny>>> {
+    ) -> Vec<OrderList> {
         let cache = self.0.borrow();
         cache
             .order_lists(
@@ -880,7 +920,7 @@ impl PyCache {
                 account_id.as_ref(),
             )
             .into_iter()
-            .map(|ol| Ok(ol.clone().into_pyobject(py)?.into()))
+            .cloned()
             .collect()
     }
 
@@ -1159,7 +1199,6 @@ impl PyCache {
         self.0
             .borrow_mut()
             .snapshot_position(&position_obj)
-            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
@@ -1176,6 +1215,45 @@ impl PyCache {
             .into_iter()
             .map(|p| Ok(p.into_pyobject(py)?.into()))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn create_order_list() -> OrderList {
+        OrderList::new(
+            OrderListId::from("OL-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
+            vec![ClientOrderId::from("O-001")],
+            UnixNanos::from(42_u64),
+        )
+    }
+
+    #[rstest]
+    fn test_order_list_queries_preserve_concrete_type() {
+        let order_list = create_order_list();
+        let order_list_id = order_list.id;
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_order_list(order_list.clone())
+            .unwrap();
+        let py_cache = PyCache::from_rc(cache);
+
+        assert_eq!(
+            py_cache.py_order_list(order_list_id),
+            Some(order_list.clone()),
+        );
+        assert_eq!(
+            py_cache.py_order_lists(None, None, None, None),
+            vec![order_list],
+        );
     }
 }
 
@@ -1336,7 +1414,7 @@ impl Cache {
     /// Resets the cache.
     ///
     /// All stateful fields are reset to their initial value. Instruments,
-    /// currencies and synthetics are retained when `drop_instruments_on_reset`
+    /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
@@ -1473,6 +1551,10 @@ impl Cache {
     /// `override_existing`: If the added order should 'override' any existing order and replace
     /// it in the cache. This is currently used for emulated orders which are
     /// being released and transformed into another type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -1635,6 +1717,10 @@ impl Cache {
     }
 
     /// Adds the `position` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the position to the backing database fails.
     #[pyo3(name = "add_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(
@@ -1648,8 +1734,13 @@ impl Cache {
             .map_err(to_pyvalue_err)
     }
 
-    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
-    /// serializing it, and storing it in the position snapshots.
+    /// Creates a snapshot of the `position` by cloning it, assigning a new ID, and storing it
+    /// in the position snapshots.
+    ///
+    /// The copy excludes `replay_events` and `fill_voids`, which no snapshot consumer reads,
+    /// so snapshot size stays independent of the fills applied to the position ID. The copy
+    /// encodes only when a consumer asks for the bytes, so this call stays off the encode path
+    /// unless a backing database has to persist the frame.
     ///
     /// # Errors
     ///
@@ -1659,7 +1750,6 @@ impl Cache {
     fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
         self.snapshot_position(&position_obj)
-            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
@@ -1827,6 +1917,30 @@ impl Cache {
         self.has_trade_ticks(&instrument_id)
     }
 
+    /// Returns whether the cache contains mark price updates for the `instrument_id`.
+    #[pyo3(name = "has_mark_prices")]
+    fn py_has_mark_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.has_mark_prices(&instrument_id)
+    }
+
+    /// Returns whether the cache contains index price updates for the `instrument_id`.
+    #[pyo3(name = "has_index_prices")]
+    fn py_has_index_prices(&self, instrument_id: InstrumentId) -> bool {
+        self.has_index_prices(&instrument_id)
+    }
+
+    /// Returns whether the cache contains funding rate updates for the `instrument_id`.
+    #[pyo3(name = "has_funding_rates")]
+    fn py_has_funding_rates(&self, instrument_id: InstrumentId) -> bool {
+        self.has_funding_rates(&instrument_id)
+    }
+
+    /// Returns whether the cache contains instrument status updates for the `instrument_id`.
+    #[pyo3(name = "has_instrument_statuses")]
+    fn py_has_instrument_statuses(&self, instrument_id: InstrumentId) -> bool {
+        self.has_instrument_statuses(&instrument_id)
+    }
+
     /// Returns whether the cache contains bars for the `bar_type`.
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
@@ -1843,6 +1957,30 @@ impl Cache {
     #[pyo3(name = "trade_count")]
     fn py_trade_count(&self, instrument_id: InstrumentId) -> usize {
         self.trade_count(&instrument_id)
+    }
+
+    /// Gets the mark price update count for the `instrument_id`.
+    #[pyo3(name = "mark_price_count")]
+    fn py_mark_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.mark_price_count(&instrument_id)
+    }
+
+    /// Gets the index price update count for the `instrument_id`.
+    #[pyo3(name = "index_price_count")]
+    fn py_index_price_count(&self, instrument_id: InstrumentId) -> usize {
+        self.index_price_count(&instrument_id)
+    }
+
+    /// Gets the funding rate update count for the `instrument_id`.
+    #[pyo3(name = "funding_rate_count")]
+    fn py_funding_rate_count(&self, instrument_id: InstrumentId) -> usize {
+        self.funding_rate_count(&instrument_id)
+    }
+
+    /// Gets the instrument status update count for the `instrument_id`.
+    #[pyo3(name = "instrument_status_count")]
+    fn py_instrument_status_count(&self, instrument_id: InstrumentId) -> usize {
+        self.instrument_status_count(&instrument_id)
     }
 
     /// Gets the bar count for the `instrument_id`.
@@ -1879,6 +2017,12 @@ impl Cache {
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.funding_rate(&instrument_id).copied()
+    }
+
+    /// Gets all funding rate updates for the `instrument_id`.
+    #[pyo3(name = "funding_rates")]
+    fn py_funding_rates(&self, instrument_id: InstrumentId) -> Option<Vec<FundingRateUpdate>> {
+        self.funding_rates(&instrument_id)
     }
 
     /// Gets a reference to the latest instrument status update for the `instrument_id`.
@@ -2518,7 +2662,7 @@ impl Cache {
     /// Gets the serialized position snapshot frames for the `position_id`.
     ///
     /// Each element in the returned vector is one JSON-encoded `Position` snapshot,
-    /// in the order they were taken.
+    /// in the order they were taken. Frames that fail to serialize are skipped with a warning.
     #[pyo3(name = "position_snapshot_bytes")]
     fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<Vec<u8>>> {
         self.position_snapshot_bytes(&position_id)
@@ -2528,7 +2672,6 @@ impl Cache {
     ///
     /// When `position_id` is `Some`, only snapshots for that position are returned.
     /// When `account_id` is `Some`, snapshots are filtered to that account.
-    /// Frames that fail to deserialize are skipped with a warning.
     #[pyo3(name = "position_snapshots", signature = (position_id=None, account_id=None))]
     fn py_position_snapshots(
         &self,
@@ -2618,7 +2761,11 @@ impl Cache {
         self.set_mark_xrate(from_currency, to_currency, xrate);
     }
 
-    /// Clears the mark exchange rate for the given currency pair.
+    /// Clears the mark exchange rate for the given currency pair direction.
+    ///
+    /// Removes only the `(from_currency, to_currency)` entry; the inverse rate written
+    /// by `Self.set_mark_xrate` is retained until cleared separately or
+    /// `Self.clear_mark_xrates` is called.
     #[pyo3(name = "clear_mark_xrate")]
     fn py_clear_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency) {
         self.clear_mark_xrate(from_currency, to_currency);

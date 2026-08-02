@@ -105,7 +105,7 @@ pub fn build_add_order_params(
             | OrderType::LimitIfTouched
     );
 
-    let limit_price = order.price().map(|p| p.as_f64());
+    let limit_price = order.price().map(|p| p.as_decimal());
 
     let trigger = if is_conditional {
         let trigger_ref = match order.trigger_type() {
@@ -117,7 +117,7 @@ pub fn build_add_order_params(
         };
         order.trigger_price().map(|tp| KrakenWsTriggerParams {
             reference: trigger_ref,
-            price: tp.as_f64(),
+            price: tp.as_decimal(),
             price_type: None,
         })
     } else {
@@ -136,7 +136,7 @@ pub fn build_add_order_params(
     Ok(KrakenWsAddOrderParams {
         order_type: kraken_order_type,
         side,
-        order_qty: order.quantity().as_f64(),
+        order_qty: order.quantity().as_decimal(),
         symbol,
         token,
         limit_price,
@@ -182,9 +182,9 @@ pub fn build_amend_order_params(cmd: &ModifyOrder, token: String) -> KrakenWsAme
         token,
         order_id,
         cl_ord_id,
-        order_qty: cmd.quantity.map(|q| q.as_f64()),
-        limit_price: cmd.price.map(|p| p.as_f64()),
-        trigger_price: cmd.trigger_price.map(|p| p.as_f64()),
+        order_qty: cmd.quantity.map(|q| q.as_decimal()),
+        limit_price: cmd.price.map(|p| p.as_decimal()),
+        trigger_price: cmd.trigger_price.map(|p| p.as_decimal()),
     }
 }
 
@@ -241,6 +241,7 @@ mod tests {
         ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -296,6 +297,7 @@ mod tests {
             cl_ord_id,
             OrderSide::Buy,
             Quantity::from("0.01"),
+            None,
             Price::from("50000.00"),
             TriggerType::LastPrice,
             Decimal::new(100, 0),
@@ -532,8 +534,8 @@ mod tests {
             instrument_id: InstrumentId::from("XBT/USD.KRAKEN"),
             client_order_id: ClientOrderId::from("O-001"),
             venue_order_id: Some(VenueOrderId::new("OABCDE-12345-FGHIJ")),
-            quantity: Some(Quantity::new(0.1, 1)),
-            price: Some(Price::new(50000.0, 1)),
+            quantity: Some(Quantity::from("0.1")),
+            price: Some(Price::from("50000.0")),
             trigger_price: None,
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
@@ -546,8 +548,8 @@ mod tests {
 
         assert_eq!(params.order_id.as_deref(), Some("OABCDE-12345-FGHIJ"));
         assert!(params.cl_ord_id.is_none());
-        assert!((params.order_qty.unwrap() - 0.1).abs() < 1e-10);
-        assert!((params.limit_price.unwrap() - 50000.0).abs() < 1e-10);
+        assert_eq!(params.order_qty, Some(dec!(0.1)));
+        assert_eq!(params.limit_price, Some(dec!(50000)));
         assert!(params.trigger_price.is_none());
     }
 
@@ -562,7 +564,7 @@ mod tests {
             instrument_id: InstrumentId::from("XBT/USD.KRAKEN"),
             client_order_id: ClientOrderId::from("O-001"),
             venue_order_id: None,
-            quantity: Some(Quantity::new(0.2, 1)),
+            quantity: Some(Quantity::from("0.2")),
             price: None,
             trigger_price: None,
             command_id: UUID4::new(),

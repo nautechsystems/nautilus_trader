@@ -21,7 +21,11 @@
 use std::collections::HashMap;
 
 use nautilus_core::UnixNanos;
-use nautilus_model::{identifiers::InstrumentId, types::Price};
+use nautilus_model::{
+    enums::AggressorSide,
+    identifiers::InstrumentId,
+    types::{Price, Quantity},
+};
 use nautilus_persistence_macros::custom_data;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -64,6 +68,45 @@ pub struct HyperliquidOpenInterest {
     #[custom_data_field(serde)]
     pub open_interest: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// A complete public Hyperliquid trade, including the venue-provided counterparties.
+///
+/// This is opt-in adapter-specific data. It deliberately does not extend the
+/// generic [`TradeTick`](nautilus_model::data::TradeTick), and is self-contained
+/// so one catalog stream can be recorded and replayed without joining sidecar data.
+#[cfg_attr(
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
+)]
+#[cfg_attr(
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
+)]
+pub struct HyperliquidPublicTrade {
+    /// The instrument ID for this trade.
+    pub instrument_id: InstrumentId,
+    /// The trade price normalized to the instrument's precision.
+    #[custom_data_field(serde)]
+    pub price: Price,
+    /// The trade size normalized to the instrument's precision.
+    #[custom_data_field(serde)]
+    pub size: Quantity,
+    /// The aggressor side reported by Hyperliquid.
+    #[custom_data_field(serde)]
+    pub aggressor_side: AggressorSide,
+    /// Hyperliquid venue trade identifier.
+    pub trade_id: String,
+    /// Buyer wallet address reported by Hyperliquid.
+    pub buyer: String,
+    /// Seller wallet address reported by Hyperliquid.
+    pub seller: String,
+    /// Hyperliquid trade hash.
+    pub hash: String,
+    /// UNIX timestamp (nanoseconds) when the trade occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
@@ -129,6 +172,7 @@ pub fn register_hyperliquid_custom_data() {
     {
         nautilus_serialization::ensure_custom_data_registered::<HyperliquidAllMids>();
         nautilus_serialization::ensure_custom_data_registered::<HyperliquidOpenInterest>();
+        nautilus_serialization::ensure_custom_data_registered::<HyperliquidPublicTrade>();
     }
 
     #[cfg(not(feature = "arrow"))]
@@ -136,6 +180,8 @@ pub fn register_hyperliquid_custom_data() {
         let _ = nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidAllMids>();
         let _ =
             nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidOpenInterest>();
+        let _ =
+            nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidPublicTrade>();
     }
 
     let _ =
@@ -231,5 +277,48 @@ mod tests {
             }
             other => panic!("Expected Data::Custom, was {other:?}"),
         }
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_hyperliquid_public_trade_arrow_round_trip_preserves_counterparties() {
+        use nautilus_model::{
+            data::Data,
+            enums::AggressorSide,
+            types::{Price, Quantity},
+        };
+        use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
+
+        let original = HyperliquidPublicTrade::new(
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+            Price::from("100000.50"),
+            Quantity::from("0.123"),
+            AggressorSide::Buyer,
+            "123456".to_string(),
+            "0xbuyer".to_string(),
+            "0xseller".to_string(),
+            "0xhash".to_string(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        let metadata = EncodeToRecordBatch::metadata(&original);
+        let batch =
+            HyperliquidPublicTrade::encode_batch(&metadata, std::slice::from_ref(&original))
+                .unwrap();
+        let decoded = HyperliquidPublicTrade::decode_data_batch(&metadata, batch).unwrap();
+
+        let Data::Custom(custom) = &decoded[0] else {
+            panic!("Expected Data::Custom");
+        };
+        let trade = custom
+            .data
+            .as_any()
+            .downcast_ref::<HyperliquidPublicTrade>()
+            .expect("expected HyperliquidPublicTrade");
+        assert_eq!(trade.buyer, original.buyer);
+        assert_eq!(trade.seller, original.seller);
+        assert_eq!(trade.hash, original.hash);
+        assert_eq!(trade.price, original.price);
+        assert_eq!(trade.size, original.size);
     }
 }

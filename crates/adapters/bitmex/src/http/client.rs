@@ -702,6 +702,13 @@ impl BitmexRawHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
     pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
+        self.place_order_response(params).await
+    }
+
+    async fn place_order_response<T: DeserializeOwned>(
+        &self,
+        params: PostOrderParams,
+    ) -> Result<T, BitmexHttpError> {
         // BitMEX spec requires form-encoded body for POST /order
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| {
@@ -719,6 +726,13 @@ impl BitmexRawHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
     pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
+        self.cancel_orders_response(params).await
+    }
+
+    async fn cancel_orders_response<T: DeserializeOwned>(
+        &self,
+        params: DeleteOrderParams,
+    ) -> Result<T, BitmexHttpError> {
         // BitMEX spec requires form-encoded body for DELETE /order
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| {
@@ -736,6 +750,13 @@ impl BitmexRawHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
     pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
+        self.amend_order_response(params).await
+    }
+
+    async fn amend_order_response<T: DeserializeOwned>(
+        &self,
+        params: PutOrderParams,
+    ) -> Result<T, BitmexHttpError> {
         // BitMEX spec requires form-encoded body for PUT /order
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| {
@@ -760,6 +781,13 @@ impl BitmexRawHttpClient {
         &self,
         params: DeleteAllOrdersParams,
     ) -> Result<Value, BitmexHttpError> {
+        self.cancel_all_orders_response(params).await
+    }
+
+    async fn cancel_all_orders_response<T: DeserializeOwned>(
+        &self,
+        params: DeleteAllOrdersParams,
+    ) -> Result<T, BitmexHttpError> {
         self.send_request(Method::DELETE, "/order/all", Some(&params), None, true)
             .await
     }
@@ -1765,9 +1793,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.place_order(params).await?;
-
-        let order: BitmexOrder = serde_json::from_value(response)?;
+        let order: BitmexOrder = self.inner.place_order_response(params).await?;
 
         if order.ord_status == Some(BitmexOrderStatus::Rejected) {
             let reason = order
@@ -1813,9 +1839,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.cancel_orders(params).await?;
-
-        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let orders: Vec<BitmexOrder> = self.inner.cancel_orders_response(params).await?;
         let order = orders
             .into_iter()
             .next()
@@ -1873,9 +1897,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.cancel_orders(params).await?;
-
-        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let orders: Vec<BitmexOrder> = self.inner.cancel_orders_response(params).await?;
 
         let ts_init = self.generate_ts_init();
         let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
@@ -1927,9 +1949,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.cancel_all_orders(params).await?;
-
-        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let orders: Vec<BitmexOrder> = self.inner.cancel_all_orders_response(params).await?;
 
         let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
@@ -1937,6 +1957,10 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in orders {
+            if is_cancel_all_rejection(&order) {
+                continue;
+            }
+
             reports.push(parse_order_status_report(
                 &order,
                 &instrument,
@@ -1996,9 +2020,7 @@ impl BitmexHttpClient {
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let response = self.inner.amend_order(params).await?;
-
-        let order: BitmexOrder = serde_json::from_value(response)?;
+        let order: BitmexOrder = self.inner.amend_order_response(params).await?;
 
         if order.ord_status == Some(BitmexOrderStatus::Rejected) {
             let reason = order
@@ -2718,6 +2740,15 @@ impl BitmexHttpClient {
     }
 }
 
+fn is_cancel_all_rejection(order: &BitmexOrder) -> bool {
+    order.ord_status == Some(BitmexOrderStatus::Rejected)
+        && order.ord_rej_reason.as_deref() == Some("Invalid orderID")
+        && order.cl_ord_id.is_none()
+        && order.order_qty.is_none()
+        && order.leaves_qty.is_none()
+        && order.cum_qty.is_none()
+}
+
 fn parse_order_book_l2_snapshot(
     rows: &[BitmexOrderBookL2],
     instrument: &InstrumentAny,
@@ -2955,6 +2986,38 @@ mod tests {
         let err = account_id_from_margins(&margins).unwrap_err();
 
         assert!(err.to_string().contains("inconsistent margin account IDs"));
+    }
+
+    #[rstest]
+    fn test_cancel_all_rejection_requires_unavailable_order_shape() {
+        let unavailable: BitmexOrder = serde_json::from_str(include_str!(
+            "../../test_data/http_cancel_all_close_race.json"
+        ))
+        .unwrap();
+        let mut with_client_id = unavailable.clone();
+        with_client_id.cl_ord_id = Some(Ustr::from("tracked-rejection"));
+        let mut with_order_qty = unavailable.clone();
+        with_order_qty.order_qty = Some(100);
+        let mut with_leaves_qty = unavailable.clone();
+        with_leaves_qty.leaves_qty = Some(0);
+        let mut with_cum_qty = unavailable.clone();
+        with_cum_qty.cum_qty = Some(0);
+        let mut with_other_reason = unavailable.clone();
+        with_other_reason.ord_rej_reason = Some(Ustr::from("Insufficient margin"));
+
+        let unavailable_result = is_cancel_all_rejection(&unavailable);
+        let preserved = [
+            ("client order ID", with_client_id),
+            ("order quantity", with_order_qty),
+            ("leaves quantity", with_leaves_qty),
+            ("cumulative quantity", with_cum_qty),
+            ("different rejection reason", with_other_reason),
+        ];
+
+        assert!(unavailable_result);
+        for (case, order) in preserved {
+            assert!(!is_cancel_all_rejection(&order), "preserved {case}");
+        }
     }
 
     #[rstest]

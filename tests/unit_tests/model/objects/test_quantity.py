@@ -699,6 +699,8 @@ class TestQuantity:
             "-0.5",
             "-1e3",
             "1e",
+            "1e-",
+            "1e-abc",
             "e10",
             "1e1e1",
             "",

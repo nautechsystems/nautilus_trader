@@ -16,7 +16,7 @@
 //! Error structures and enumerations for the OKX integration.
 //!
 //! The JSON error schema is described in the OKX documentation under
-//! *REST API > Error Codes* – <https://www.okx.com/docs-v5/en/#error-codes>.
+//! *REST API > Error Codes* - <https://www.okx.com/docs-v5/en/#error-codes>.
 //! The types below mirror that structure and are reused across the entire
 //! crate.
 

@@ -18,8 +18,12 @@
 use std::process::ExitCode;
 
 use clap::FromArgMatches;
+use mimalloc::MiMalloc;
 use nautilus_cli::opt::NautilusCli;
 use nautilus_common::logging::ensure_logging_initialized;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> ExitCode {

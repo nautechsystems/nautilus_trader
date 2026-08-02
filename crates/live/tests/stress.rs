@@ -20,7 +20,8 @@
 //! Each scenario stands up a real `LiveNode` (kernel, message bus, data engine,
 //! risk engine, execution engine) with no data or execution clients attached,
 //! then drives synthetic traffic directly into the runner's mpsc channels and
-//! reads `MessageBus` counters before and after.
+//! reads `MessageBus` counters and `LiveNodeHandle` runner metrics before and
+//! after.
 //!
 //! - `trade_burst`: pushes `TRADE_BURST_COUNT` `TradeTick`s into the data event
 //!   channel as fast as possible, drains, and reports end-to-end throughput
@@ -106,13 +107,13 @@ use nautilus_common::{
         DataEvent,
         execution::{CancelOrder, TradingCommand},
     },
-    msgbus,
-    runner::get_trading_cmd_sender,
+    msgbus::{self, MessagingSwitchboard},
+    runner::{TradingCommandMessage, get_trading_cmd_sender},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig},
-    node::{LiveNode, LiveNodeHandle},
+    node::{LiveNode, LiveNodeHandle, RunnerMetricsDelta, RunnerMetricsSnapshot},
 };
 use nautilus_model::{
     data::{Data, trade::TradeTick},
@@ -127,6 +128,7 @@ const CANCEL_STARVATION_TRADES: usize = 200_000;
 const TRADE_BATCH: usize = 1024;
 const STABLE_DRAIN_ITERS: usize = 10;
 const DRAIN_TICK: Duration = Duration::from_millis(1);
+const QUEUE_DEPTH_DRAIN_SAMPLES: usize = 500;
 
 // Scale factor for burst counts, read from `NAUTILUS_STRESS_SCALE` (default 1).
 // Bump this for `cargo flamegraph` so perf collects enough samples to make
@@ -221,6 +223,30 @@ fn read_pub_count() -> u64 {
     msgbus::get_message_bus().borrow().pub_count()
 }
 
+fn assert_runner_timing_advanced(_delta: &RunnerMetricsDelta) {
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    {
+        assert!(_delta.dispatch_busy_ns > 0);
+        assert!(_delta.elapsed_ns > 0);
+    }
+}
+
+fn assert_runner_queues_drained(snapshot: RunnerMetricsSnapshot) {
+    assert_eq!(snapshot.time_events.queue_depth, 0);
+    assert_eq!(snapshot.exec_events.queue_depth, 0);
+    assert_eq!(snapshot.exec_commands.queue_depth, 0);
+    assert_eq!(snapshot.data_events.queue_depth, 0);
+    assert_eq!(snapshot.data_commands.queue_depth, 0);
+}
+
+fn runner_queues_drained(snapshot: RunnerMetricsSnapshot) -> bool {
+    snapshot.time_events.queue_depth == 0
+        && snapshot.exec_events.queue_depth == 0
+        && snapshot.exec_commands.queue_depth == 0
+        && snapshot.data_events.queue_depth == 0
+        && snapshot.data_commands.queue_depth == 0
+}
+
 // Yields cooperatively until the runner reports `Running`. Avoids
 // `wait_until_async`, which sleeps via real `tokio::time` and panics under
 // madsim where there is no real Tokio reactor.
@@ -252,6 +278,19 @@ async fn drain_until_stable() {
     }
 }
 
+async fn wait_until_runner_queues_drained(handle: &LiveNodeHandle) {
+    for _ in 0..QUEUE_DEPTH_DRAIN_SAMPLES {
+        let snapshot = handle.metrics_snapshot();
+        if runner_queues_drained(snapshot) {
+            return;
+        }
+
+        dst::time::sleep(DRAIN_TICK).await;
+    }
+
+    assert_runner_queues_drained(handle.metrics_snapshot());
+}
+
 fn percentile(sorted_us: &[u128], pct: f64) -> u128 {
     if sorted_us.is_empty() {
         return 0;
@@ -277,6 +316,7 @@ async fn stress_trade_burst() {
 
         let total = TRADE_BURST_COUNT * stress_scale();
         let before = snapshot_bus();
+        let runner_before = driver_handle.metrics_snapshot();
         let trade = sample_trade();
         let sender = get_data_event_sender();
 
@@ -309,13 +349,24 @@ async fn stress_trade_burst() {
         drain_until_stable().await;
         let elapsed = start.elapsed();
         let after = snapshot_bus();
+        wait_until_runner_queues_drained(&driver_handle).await;
+        let runner_after = driver_handle.metrics_snapshot();
         let delta = after.delta(&before);
+        let runner_delta = RunnerMetricsDelta::from_snapshots(runner_before, runner_after);
         let mean_msg_s = total as f64 / elapsed.as_secs_f64();
+
+        assert_eq!(runner_delta.data_events, total as u64);
+        assert_eq!(runner_delta.total_dispatched(), total as u64);
+        assert_runner_timing_advanced(&runner_delta);
 
         println!(
             "scenario=trade_burst messages={} elapsed_ms={} mean_msg_s={:.0} \
              max_interval_msg_s={:.0} counter.msgbus.sent={} counter.msgbus.pub={} \
-             counter.msgbus.req={} counter.msgbus.res={}",
+             counter.msgbus.req={} counter.msgbus.res={} runner.dispatch.data_events={} \
+             runner.dispatch.total={} runner.dispatch_busy_ns={} runner.elapsed_ns={} \
+             runner.maintenance_busy_ns={} runner.external_msgbus_busy_ns={} \
+             runner.total_busy_ns={} runner.dispatch_utilization={:.6} \
+             runner.loop_utilization={:.6} runner.mean_dispatch_ns={}",
             total,
             elapsed.as_millis(),
             mean_msg_s,
@@ -324,6 +375,16 @@ async fn stress_trade_burst() {
             delta.pub_,
             delta.req,
             delta.res,
+            runner_delta.data_events,
+            runner_delta.total_dispatched(),
+            runner_delta.dispatch_busy_ns,
+            runner_delta.elapsed_ns,
+            runner_delta.maintenance_busy_ns,
+            runner_delta.external_msgbus_busy_ns,
+            runner_delta.total_busy_ns(),
+            runner_delta.dispatch_utilization(),
+            runner_delta.loop_utilization(),
+            runner_delta.mean_dispatch_ns(),
         );
 
         driver_handle.stop();
@@ -357,6 +418,7 @@ async fn stress_cancel_starvation() {
         let cancels = CANCEL_STARVATION_COUNT * scale;
         let total_trades = CANCEL_STARVATION_TRADES * scale;
         let before = snapshot_bus();
+        let runner_before = driver_handle.metrics_snapshot();
         let trade = sample_trade();
         let data_sender = get_data_event_sender();
 
@@ -385,9 +447,10 @@ async fn stress_cancel_starvation() {
             // pure handler time. See the module doc for the full caveat.
             let pre_cmd = driver_exec_engine.borrow().command_count();
             let ts_init = driver_clock.borrow().timestamp_ns();
-            get_trading_cmd_sender().execute(TradingCommand::CancelOrder(sample_cancel(
-                seq as u64, ts_init,
-            )));
+            get_trading_cmd_sender().execute(TradingCommandMessage::new(
+                MessagingSwitchboard::exec_engine_execute(),
+                TradingCommand::CancelOrder(sample_cancel(seq as u64, ts_init)),
+            ));
 
             let mut yield_iters = 0u32;
 
@@ -410,7 +473,10 @@ async fn stress_cancel_starvation() {
         drain_until_stable().await;
         let total_elapsed = start.elapsed();
         let after = snapshot_bus();
+        wait_until_runner_queues_drained(&driver_handle).await;
+        let runner_after = driver_handle.metrics_snapshot();
         let delta = after.delta(&before);
+        let runner_delta = RunnerMetricsDelta::from_snapshots(runner_before, runner_after);
 
         latencies_us.sort_unstable();
         let min = latencies_us.first().copied().unwrap_or(0);
@@ -421,13 +487,26 @@ async fn stress_cancel_starvation() {
         let max = latencies_us.last().copied().unwrap_or(0);
 
         let yield_iters_mean = yield_iters_total as f64 / cancels as f64;
+        assert_eq!(runner_delta.data_events, trades_sent as u64);
+        assert_eq!(runner_delta.exec_commands, cancels as u64);
+        assert_eq!(
+            runner_delta.total_dispatched(),
+            (trades_sent + cancels) as u64
+        );
+        assert_runner_timing_advanced(&runner_delta);
+
         println!(
             "scenario=cancel_starvation cancels={} trades={} elapsed_ms={} \
              counter.msgbus.sent={} counter.msgbus.pub={} \
              latency.cancel.min_us={} latency.cancel.p50_us={} \
              latency.cancel.p95_us={} latency.cancel.p99_us={} \
              latency.cancel.p999_us={} latency.cancel.max_us={} \
-             yield_iters.mean={:.1} yield_iters.max={}",
+             yield_iters.mean={:.1} yield_iters.max={} runner.dispatch.data_events={} \
+             runner.dispatch.exec_commands={} runner.dispatch.total={} \
+             runner.dispatch_busy_ns={} runner.elapsed_ns={} runner.maintenance_busy_ns={} \
+             runner.external_msgbus_busy_ns={} runner.total_busy_ns={} \
+             runner.dispatch_utilization={:.6} runner.loop_utilization={:.6} \
+             runner.mean_dispatch_ns={}",
             cancels,
             trades_sent,
             total_elapsed.as_millis(),
@@ -441,6 +520,17 @@ async fn stress_cancel_starvation() {
             max,
             yield_iters_mean,
             yield_iters_max,
+            runner_delta.data_events,
+            runner_delta.exec_commands,
+            runner_delta.total_dispatched(),
+            runner_delta.dispatch_busy_ns,
+            runner_delta.elapsed_ns,
+            runner_delta.maintenance_busy_ns,
+            runner_delta.external_msgbus_busy_ns,
+            runner_delta.total_busy_ns(),
+            runner_delta.dispatch_utilization(),
+            runner_delta.loop_utilization(),
+            runner_delta.mean_dispatch_ns(),
         );
 
         driver_handle.stop();

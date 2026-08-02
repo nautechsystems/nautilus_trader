@@ -24,6 +24,7 @@ use nautilus_network::{
     RECONNECTED,
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
 };
+use serde_json::value::RawValue;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender}; // tokio-import-ok
 use tokio_tungstenite::tungstenite::Message;
 
@@ -255,9 +256,17 @@ impl FeedHandler {
 
         match self.channel {
             WsChannel::Market => {
-                if let Ok(msgs) = serde_json::from_str::<Vec<MarketWsMessage>>(text) {
-                    msgs.into_iter().map(PolymarketWsMessage::Market).collect()
-                } else if let Ok(msg) = serde_json::from_str::<MarketWsMessage>(text) {
+                if let Ok(msgs) = serde_json::from_str::<Vec<&RawValue>>(text) {
+                    msgs.into_iter()
+                        .filter_map(|raw| match MarketWsMessage::parse(raw.get()) {
+                            Ok(msg) => Some(PolymarketWsMessage::Market(msg)),
+                            Err(e) => {
+                                log::warn!("Failed to parse market WS batch element: {e}");
+                                None
+                            }
+                        })
+                        .collect()
+                } else if let Ok(msg) = MarketWsMessage::parse(text) {
                     vec![PolymarketWsMessage::Market(msg)]
                 } else {
                     log::warn!("Failed to parse market WS message: {text}");
@@ -265,9 +274,9 @@ impl FeedHandler {
                 }
             }
             WsChannel::User => {
-                if let Ok(msgs) = serde_json::from_str::<Vec<UserWsMessage>>(text) {
+                if let Ok(msgs) = UserWsMessage::parse_batch(text) {
                     msgs.into_iter().map(PolymarketWsMessage::User).collect()
-                } else if let Ok(msg) = serde_json::from_str::<UserWsMessage>(text) {
+                } else if let Ok(msg) = UserWsMessage::parse(text) {
                     vec![PolymarketWsMessage::User(msg)]
                 } else {
                     log::warn!("Failed to parse user WS message: {text}");
@@ -358,5 +367,132 @@ impl FeedHandler {
                 else => return None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::{fixture, rstest};
+
+    use super::*;
+    use crate::common::enums::PolymarketOrderSide;
+
+    #[fixture]
+    fn market_handler() -> FeedHandler {
+        feed_handler(WsChannel::Market)
+    }
+
+    #[fixture]
+    fn user_handler() -> FeedHandler {
+        feed_handler(WsChannel::User)
+    }
+
+    fn feed_handler(channel: WsChannel) -> FeedHandler {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            channel,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            AuthTracker::new(),
+            false,
+            false,
+        )
+    }
+
+    #[rstest]
+    fn test_parse_market_batch_skips_unknown_event(market_handler: FeedHandler) {
+        let messages = market_handler.parse_messages(include_str!(
+            "../../test_data/ws_market_mixed_known_unknown.json"
+        ));
+
+        assert_eq!(messages.len(), 2);
+
+        let PolymarketWsMessage::Market(MarketWsMessage::PriceChange(quotes)) = &messages[0] else {
+            panic!("Expected first message to be a price change");
+        };
+        assert_eq!(
+            quotes.market.as_str(),
+            "0x1111111111111111111111111111111111111111111111111111111111111111"
+        );
+        assert_eq!(quotes.timestamp, "1700000000001");
+        assert_eq!(quotes.price_changes.len(), 1);
+
+        let quote = &quotes.price_changes[0];
+        assert_eq!(quote.asset_id.as_str(), "101");
+        assert_eq!(quote.price, "0.37");
+        assert_eq!(quote.side, PolymarketOrderSide::Buy);
+        assert_eq!(quote.size, "12.5");
+        assert_eq!(quote.hash, "price-change-hash");
+        assert_eq!(quote.best_bid.as_deref(), Some("0.36"));
+        assert_eq!(quote.best_ask.as_deref(), Some("0.38"));
+
+        let PolymarketWsMessage::Market(MarketWsMessage::LastTradePrice(trade)) = &messages[1]
+        else {
+            panic!("Expected second message to be a last trade price");
+        };
+        assert_eq!(
+            trade.market.as_str(),
+            "0x2222222222222222222222222222222222222222222222222222222222222222"
+        );
+        assert_eq!(trade.asset_id.as_str(), "202");
+        assert_eq!(trade.fee_rate_bps, "17");
+        assert_eq!(trade.price, "0.63");
+        assert_eq!(trade.side, PolymarketOrderSide::Sell);
+        assert_eq!(trade.size, "4.25");
+        assert_eq!(trade.timestamp, "1700000000003");
+        assert_eq!(trade.transaction_hash.as_deref(), Some("0xtrade-hash"));
+    }
+
+    #[rstest]
+    fn test_parse_market_single_message(market_handler: FeedHandler) {
+        let messages = market_handler.parse_messages(include_str!(
+            "../../test_data/ws_market_last_trade_msg.json"
+        ));
+
+        assert_eq!(messages.len(), 1);
+
+        let PolymarketWsMessage::Market(MarketWsMessage::LastTradePrice(trade)) = &messages[0]
+        else {
+            panic!("Expected a last trade price");
+        };
+        assert_eq!(
+            trade.market.as_str(),
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        );
+        assert_eq!(
+            trade.asset_id.as_str(),
+            "71321045679252212594626385532706912750332728571942532289631379312455583992563"
+        );
+        assert_eq!(trade.fee_rate_bps, "0");
+        assert_eq!(trade.price, "0.51");
+        assert_eq!(trade.side, PolymarketOrderSide::Buy);
+        assert_eq!(trade.size, "25.0");
+        assert_eq!(trade.timestamp, "1703875202000");
+        assert!(trade.transaction_hash.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_user_batch(user_handler: FeedHandler) {
+        let messages =
+            user_handler.parse_messages(include_str!("../../test_data/ws_user_batch_msg.json"));
+        let actual: Vec<UserWsMessage> = messages
+            .into_iter()
+            .map(|message| match message {
+                PolymarketWsMessage::User(message) => message,
+                other => panic!("Expected user message, received {other:?}"),
+            })
+            .collect();
+        let expected: Vec<UserWsMessage> =
+            serde_json::from_str(include_str!("../../test_data/ws_user_batch_msg.json"))
+                .expect("user batch fixture should deserialize");
+
+        assert_eq!(actual, expected);
     }
 }

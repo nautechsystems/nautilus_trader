@@ -113,11 +113,11 @@ pub struct KrakenSpotExecutionClient {
     ws_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    order_qty_cache: Arc<AtomicMap<String, f64>>,
+    order_qty_cache: Arc<AtomicMap<String, Decimal>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     ws_dispatch_state: Arc<WsDispatchState>,
     order_request_state: Arc<OrderRequestState>,
-    order_event_rx: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>>>,
+    order_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>>,
 }
 
 impl KrakenSpotExecutionClient {
@@ -207,7 +207,7 @@ impl KrakenSpotExecutionClient {
             truncated_id_map: Arc::new(AtomicMap::new()),
             ws_dispatch_state,
             order_request_state,
-            order_event_rx: Mutex::new(Some(order_event_rx)),
+            order_event_rx: Some(order_event_rx),
         })
     }
 
@@ -318,7 +318,7 @@ impl KrakenSpotExecutionClient {
 
         if !order.is_quote_quantity() {
             self.order_qty_cache
-                .insert(kraken_cl_ord_id.clone(), order.quantity().as_f64());
+                .insert(kraken_cl_ord_id.clone(), order.quantity().as_decimal());
         }
 
         if kraken_cl_ord_id != client_order_id.as_str() {
@@ -561,7 +561,7 @@ impl KrakenSpotExecutionClient {
 
         self.ws_stream_handle = Some(handle);
 
-        let event_rx = self.order_event_rx.lock().expect(MUTEX_POISONED).take();
+        let event_rx = self.order_event_rx.take();
 
         if let Some(mut event_rx) = event_rx {
             let emitter = self.emitter.clone();
@@ -703,7 +703,7 @@ impl KrakenSpotExecutionClient {
         dispatch_state: &Arc<WsDispatchState>,
         order_request_state: &Arc<OrderRequestState>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        order_qty_cache: &Arc<AtomicMap<String, f64>>,
+        order_qty_cache: &Arc<AtomicMap<String, Decimal>>,
         truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
         account_id: AccountId,
         clock: &'static AtomicTime,
@@ -973,7 +973,7 @@ fn build_batch_order(
         };
         order.trigger_price().map(|tp| KrakenWsTriggerParams {
             reference: trigger_ref,
-            price: tp.as_f64(),
+            price: tp.as_decimal(),
             price_type: None,
         })
     } else {
@@ -989,8 +989,8 @@ fn build_batch_order(
     Ok(KrakenWsBatchAddOrder {
         order_type: kraken_order_type,
         side,
-        order_qty: order.quantity().as_f64(),
-        limit_price: order.price().map(|p| p.as_f64()),
+        order_qty: order.quantity().as_decimal(),
+        limit_price: order.price().map(|p| p.as_decimal()),
         cl_ord_id: Some(truncate_cl_ord_id(&order.client_order_id())),
         time_in_force: ws_tif,
         expire_time,
@@ -1438,7 +1438,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
             if !order.is_quote_quantity() {
                 self.order_qty_cache
-                    .insert(kraken_cl_ord_id.clone(), order.quantity().as_f64());
+                    .insert(kraken_cl_ord_id.clone(), order.quantity().as_decimal());
             }
 
             if kraken_cl_ord_id != client_order_id.as_str() {

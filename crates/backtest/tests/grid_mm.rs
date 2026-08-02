@@ -77,9 +77,9 @@ fn test_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) {
         .build();
     engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
-    // Phase 1: Stable at 1000 (5 ticks, within threshold) — initial quote placed, rest skip
-    // Phase 2: Ramp up to 1010 (20 ticks, 0.5/tick) — triggers requotes as mid moves
-    // Phase 3: Ramp down to 1000 (20 ticks) — triggers requotes in opposite direction
+    // Phase 1: Stable at 1000 (5 ticks, within threshold) - initial quote placed, rest skip
+    // Phase 2: Ramp up to 1010 (20 ticks, 0.5/tick) - triggers requotes as mid moves
+    // Phase 3: Ramp down to 1000 (20 ticks) - triggers requotes in opposite direction
     let spread = 0.10;
     let mut quotes = Vec::new();
     let base_ts: u64 = 1_000_000_000;
@@ -141,7 +141,7 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
         .build();
     engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
-    // All quotes within the 5.0 threshold — only the first triggers orders
+    // All quotes within the 5.0 threshold - only the first triggers orders
     let quotes: Vec<Data> = (0..10u64)
         .map(|i| {
             let mid = 1000.0 + (i as f64 * 0.1);

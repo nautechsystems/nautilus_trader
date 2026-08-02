@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use rust_decimal::Decimal;
 
 pub(crate) fn test_emitter() -> (
     ExecutionEventEmitter,
@@ -90,6 +91,6 @@ pub(crate) fn empty_quantity_map() -> Arc<AtomicMap<String, Quantity>> {
     Arc::new(AtomicMap::new())
 }
 
-pub(crate) fn empty_f64_map() -> Arc<AtomicMap<String, f64>> {
+pub(crate) fn empty_decimal_map() -> Arc<AtomicMap<String, Decimal>> {
     Arc::new(AtomicMap::new())
 }

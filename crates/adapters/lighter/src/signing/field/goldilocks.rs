@@ -72,6 +72,12 @@ impl Fp {
         r.wrapping_sub(0u32.wrapping_sub(c as u32) as u64)
     }
 
+    #[inline(always)]
+    pub(super) const fn from_montgomery_products(lo: u128, hi: u128) -> Self {
+        // Fold each product's high half with 2^64 = 2^32 - 1 (mod p)
+        Self(Self::montyred(lo + (hi << 32) - hi))
+    }
+
     /// Build an element from a `u64`, reducing modulo `p`.
     #[inline(always)]
     pub const fn from_u64_reduce(v: u64) -> Self {

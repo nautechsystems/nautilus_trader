@@ -43,5 +43,5 @@ Then from repo root: `make init-db` to apply the schema.
 
 ### Stop / purge
 
-- `make stop-services` — stop containers (data preserved).
-- `make purge-services` — stop and remove volumes.
+- `make stop-services` - stop containers (data preserved).
+- `make purge-services` - stop and remove volumes.

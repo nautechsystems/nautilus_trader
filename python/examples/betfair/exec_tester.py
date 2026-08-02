@@ -32,8 +32,8 @@ from nautilus_trader.adapters.betfair import BetfairDataConfig
 from nautilus_trader.adapters.betfair import BetfairExecConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
-from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId

@@ -1,10 +1,10 @@
 #![no_main]
 
 use alloy_primitives::{Address, B256};
-use libfuzzer_sys::fuzz_target;
 use nautilus_derive::signing::eip712::{
     ActionContext, compute_action_hash, compute_typed_data_hash,
 };
+use nautilus_live::fuzz::fuzz_target;
 
 const INPUT_LEN: usize = 180;
 

@@ -4,21 +4,45 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "LIGHTER",
+    "LIGHTER_CLIENT_ID",
+    "LIGHTER_VENUE",
     "LighterDataClientConfig",
     "LighterDataClientFactory",
     "LighterEnvironment",
     "LighterExecClientConfig",
     "LighterExecutionClientFactory",
-    "revoke_lighter_integrator",
 ]
 
 LIGHTER: str
+LIGHTER_CLIENT_ID: model.ClientId
+LIGHTER_VENUE: model.Venue
 
 @typing.final
 class LighterDataClientConfig:
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def environment(self) -> LighterEnvironment: ...
+    @property
+    def account_index(self) -> int | None: ...
+    @property
+    def api_key_index(self) -> int | None: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def ws_timeout_secs(self) -> int: ...
+    @property
+    def update_instruments_interval_mins(self) -> int: ...
+    @property
+    def rest_quota_per_min(self) -> int | None: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         base_url_http: str | None = None,
@@ -32,9 +56,10 @@ class LighterDataClientConfig:
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         rest_quota_per_min: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
-    def proxy_url(self) -> str | None: ...
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class LighterDataClientFactory:
@@ -43,6 +68,32 @@ class LighterDataClientFactory:
 
 @typing.final
 class LighterExecClientConfig:
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def account_id(self) -> model.AccountId: ...
+    @property
+    def account_index(self) -> int | None: ...
+    @property
+    def api_key_index(self) -> int | None: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def environment(self) -> LighterEnvironment: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def ws_timeout_secs(self) -> int: ...
+    @property
+    def market_order_slippage_bps(self) -> int: ...
+    @property
+    def rest_quota_per_min(self) -> int | None: ...
+    @property
+    def sendtx_quota_per_min(self) -> int | None: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         trader_id: model.TraderId,
@@ -59,9 +110,10 @@ class LighterExecClientConfig:
         market_order_slippage_bps: int | None = None,
         rest_quota_per_min: int | None = None,
         sendtx_quota_per_min: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
-    def proxy_url(self) -> str | None: ...
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class LighterExecutionClientFactory:

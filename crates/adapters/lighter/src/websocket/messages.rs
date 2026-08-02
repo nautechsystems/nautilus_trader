@@ -67,23 +67,54 @@ pub enum NautilusWsMessage {
     },
     AccountState(Box<AccountState>),
     SendTxAck {
+        connection_epoch: u64,
         tx_hash: Option<String>,
         code: i64,
     },
     SendTxRejected {
+        connection_epoch: u64,
         source: SendTxRejectionSource,
         code: Option<i64>,
         message: String,
         tx_hash: Option<String>,
     },
     Raw(serde_json::Value),
-    Reconnected,
+    Reconnected {
+        connection_epoch: u64,
+    },
     /// Marker emitted by the feed handler right after each account stream
     /// has delivered its first frame. The execution consumption loop forwards
     /// any preceding typed reports first, then marks the corresponding
     /// readiness flag, keeping `connect()` blocked until applied state is
     /// observable to strategies.
     AccountStreamFirstFrame(AccountStream),
+}
+
+impl NautilusWsMessage {
+    #[must_use]
+    pub(crate) fn with_connection_epoch(self, connection_epoch: u64) -> Self {
+        match self {
+            Self::SendTxAck { tx_hash, code, .. } => Self::SendTxAck {
+                connection_epoch,
+                tx_hash,
+                code,
+            },
+            Self::SendTxRejected {
+                source,
+                code,
+                message,
+                tx_hash,
+                ..
+            } => Self::SendTxRejected {
+                connection_epoch,
+                source,
+                code,
+                message,
+                tx_hash,
+            },
+            other => other,
+        }
+    }
 }
 
 /// Identifier for one of the five account-scoped WebSocket streams the
@@ -465,7 +496,7 @@ pub enum LighterWsFrame {
         #[serde(default, deserialize_with = "deserialize_trade_vec")]
         trades: Vec<LighterTrade>,
     },
-    #[serde(rename = "update/account_orders")]
+    #[serde(rename = "update/account_orders", alias = "subscribed/account_orders")]
     AccountOrders {
         account: i64,
         channel: Ustr,
@@ -526,7 +557,7 @@ pub enum LighterWsFrame {
         stats: LighterUserStats,
         timestamp: u64,
     },
-    #[serde(rename = "update/height")]
+    #[serde(rename = "update/height", alias = "subscribed/height")]
     Height {
         channel: Ustr,
         height: i64,
@@ -1365,6 +1396,7 @@ mod tests {
                 let market_orders = orders.get(&Ustr::from("0")).unwrap();
                 assert_eq!(market_orders.len(), 1);
                 assert_eq!(market_orders[0].order_id, "281476929510110");
+                assert_eq!(market_orders[0].nonce, 281_474_720_725_346);
                 assert_eq!(
                     market_orders[0].filled_base_amount,
                     Decimal::from_str("0.0020").unwrap(),
@@ -1372,6 +1404,17 @@ mod tests {
             }
             _ => panic!("expected account orders frame, was {frame:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_account_orders_subscribed_frame_deserializes() {
+        let mut payload: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ORDERS_UPDATE).unwrap();
+        payload["type"] = serde_json::json!("subscribed/account_orders");
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        assert!(matches!(frame, LighterWsFrame::AccountOrders { .. }));
     }
 
     #[rstest]
@@ -1485,6 +1528,16 @@ mod tests {
             }
             _ => panic!("expected height frame"),
         }
+    }
+
+    #[rstest]
+    fn test_height_subscribed_frame_deserializes() {
+        let mut payload: serde_json::Value = serde_json::from_str(WS_HEIGHT_UPDATE).unwrap();
+        payload["type"] = serde_json::json!("subscribed/height");
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        assert!(matches!(frame, LighterWsFrame::Height { .. }));
     }
 
     #[rstest]

@@ -1,5 +1,8 @@
 <!--NSI Web Service v8.19.2.2-->
-<message:GenericData>
+<message:GenericData
+    xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message"
+    xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common"
+    xmlns:generic="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic">
     <message:Header>
         <message:ID>IREF009042</message:ID>
         <message:Test>false</message:Test>

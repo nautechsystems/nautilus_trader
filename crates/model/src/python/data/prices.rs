@@ -220,14 +220,18 @@ impl MarkPriceUpdate {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 
@@ -421,14 +425,18 @@ impl IndexPriceUpdate {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 
@@ -449,8 +457,7 @@ impl IndexPriceUpdate {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::Python;
+    use pyo3::{IntoPyObjectExt, Python};
     use rstest::{fixture, rstest};
 
     use super::*;
@@ -500,7 +507,7 @@ mod tests {
     fn test_mark_price_from_pyobject(mark_price: MarkPriceUpdate) {
         Python::initialize();
         Python::attach(|py| {
-            let tick_pyobject = mark_price.into_py_any_unwrap(py);
+            let tick_pyobject = mark_price.into_py_any(py).unwrap();
             let parsed_tick = MarkPriceUpdate::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, mark_price);
         });
@@ -530,7 +537,7 @@ mod tests {
     fn test_index_price_from_pyobject(index_price: IndexPriceUpdate) {
         Python::initialize();
         Python::attach(|py| {
-            let tick_pyobject = index_price.into_py_any_unwrap(py);
+            let tick_pyobject = index_price.into_py_any(py).unwrap();
             let parsed_tick = IndexPriceUpdate::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, index_price);
         });

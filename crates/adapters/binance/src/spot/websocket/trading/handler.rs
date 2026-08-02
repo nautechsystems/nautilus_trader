@@ -47,7 +47,7 @@ use super::{
     },
 };
 use crate::{
-    common::credential::SigningCredential,
+    common::credential::{SigningCredential, canonical_ws_query_string},
     spot::{
         enums::BinanceSpotUserDataEventType,
         http::{models::BinanceCancelOrderResponse, parse},
@@ -74,6 +74,7 @@ pub struct BinanceSpotWsTradingHandler {
     credential: Arc<SigningCredential>,
     pending_requests: AHashMap<String, BinanceSpotWsTradingRequestMeta>,
     request_id_counter: AtomicU64,
+    recv_window_ms: Option<u64>,
 }
 
 impl Debug for BinanceSpotWsTradingHandler {
@@ -107,7 +108,15 @@ impl BinanceSpotWsTradingHandler {
             credential,
             pending_requests: AHashMap::new(),
             request_id_counter: AtomicU64::new(1000),
+            recv_window_ms: None,
         }
+    }
+
+    /// Configures the receive window added before request signing.
+    #[must_use]
+    pub const fn with_recv_window(mut self, recv_window_ms: Option<u64>) -> Self {
+        self.recv_window_ms = recv_window_ms;
+        self
     }
 
     /// Runs the main event loop for commands and raw messages.
@@ -342,10 +351,23 @@ impl BinanceSpotWsTradingHandler {
                 "apiKey".to_string(),
                 serde_json::json!(self.credential.api_key()),
             );
+
+            if let Some(recv_window_ms) = self.recv_window_ms {
+                obj.insert("recvWindow".to_string(), serde_json::json!(recv_window_ms));
+            }
         }
 
-        let query_string = serde_urlencoded::to_string(&params)
-            .map_err(|e| BinanceWsApiError::ClientError(e.to_string()))?;
+        // Sign over a key-sorted query string: Binance's WS API verifies the
+        // signature against the parameters sorted by key, which must not depend
+        // on serde_json's Map iteration order (issue #4410).
+        let query_string = canonical_ws_query_string(
+            params
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| (k.as_str(), v)),
+        )
+        .map_err(|e| BinanceWsApiError::ClientError(e.to_string()))?;
         let signature = self.credential.sign(&query_string);
 
         if let Some(obj) = params.as_object_mut() {
@@ -417,6 +439,12 @@ impl BinanceSpotWsTradingHandler {
         // User data events arrive wrapped: {"subscriptionId": N, "event": {...}}
         if let Some(event) = json.get("event") {
             self.handle_user_data_event(event);
+            return;
+        }
+
+        // Legacy listen-key streams, including Binance US, send the event directly.
+        if json.get("e").is_some() {
+            self.handle_user_data_event(&json);
             return;
         }
 
@@ -959,5 +987,45 @@ mod tests {
     fn test_classify_user_data_event_unknown_returns_none() {
         let event = serde_json::json!({"e": "somethingElse"});
         assert!(classify_user_data_event(&event).is_none());
+    }
+
+    #[rstest]
+    fn test_sign_params_includes_recv_window_in_signature() {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let credential = Arc::new(SigningCredential::new(
+            "api-key".to_string(),
+            "hmac-secret".to_string(),
+        ));
+        let handler = BinanceSpotWsTradingHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            credential.clone(),
+        )
+        .with_recv_window(Some(45_000));
+
+        let signed = handler
+            .sign_params(serde_json::json!({"symbol": "BTCUSDT"}))
+            .unwrap();
+        let mut unsigned = signed.clone();
+        let signature = unsigned
+            .as_object_mut()
+            .unwrap()
+            .remove("signature")
+            .unwrap();
+        let query = canonical_ws_query_string(
+            unsigned
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.as_str(), value)),
+        )
+        .unwrap();
+
+        assert_eq!(signed["recvWindow"], 45_000);
+        assert_eq!(signature, credential.sign(&query));
     }
 }

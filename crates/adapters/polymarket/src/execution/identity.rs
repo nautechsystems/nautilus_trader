@@ -27,7 +27,7 @@ use std::sync::Mutex;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::MUTEX_POISONED;
 use nautilus_model::{
-    enums::{OrderSide, OrderType},
+    enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
     orders::{Order, OrderAny},
 };
@@ -44,6 +44,7 @@ pub(crate) struct OrderIdentity {
     pub instrument_id: InstrumentId,
     pub order_side: OrderSide,
     pub order_type: OrderType,
+    pub time_in_force: TimeInForce,
 }
 
 impl OrderIdentity {
@@ -55,7 +56,16 @@ impl OrderIdentity {
             instrument_id: order.instrument_id(),
             order_side: order.order_side(),
             order_type: order.order_type(),
+            time_in_force: order.time_in_force(),
         }
+    }
+
+    /// Returns true when any taker fill implies full completion.
+    ///
+    /// FOK is atomic, so a sub-cent difference between its registered and filled quantities is
+    /// normalization. IOC maps to venue FAK: every positive remainder is canceled.
+    pub(crate) fn requires_terminal_quantity_normalization(&self) -> bool {
+        self.time_in_force == TimeInForce::Fok
     }
 }
 
@@ -73,6 +83,7 @@ pub(crate) struct OrderIdentityRegistry {
 #[derive(Debug, Default)]
 struct RegistryInner {
     identities: FifoCacheMap<VenueOrderId, OrderIdentity, 10_000>,
+    client_to_venue: FifoCacheMap<ClientOrderId, VenueOrderId, 10_000>,
     accepted: FifoCache<VenueOrderId, 10_000>,
 }
 
@@ -83,11 +94,11 @@ impl OrderIdentityRegistry {
         venue_order_id: VenueOrderId,
         identity: OrderIdentity,
     ) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .identities
-            .insert(venue_order_id, identity);
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        guard.identities.insert(venue_order_id, identity);
+        guard
+            .client_to_venue
+            .insert(identity.client_order_id, venue_order_id);
     }
 
     /// Returns the identity for a tracked order, if known.
@@ -97,6 +108,16 @@ impl OrderIdentityRegistry {
             .expect(MUTEX_POISONED)
             .identities
             .get(venue_order_id)
+            .copied()
+    }
+
+    /// Returns the latest venue order ID captured for a tracked client order.
+    pub(crate) fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .client_to_venue
+            .get(client_order_id)
             .copied()
     }
 
@@ -128,6 +149,7 @@ mod tests {
             instrument_id: InstrumentId::from("TEST.POLYMARKET"),
             order_side: OrderSide::Buy,
             order_type: OrderType::Limit,
+            time_in_force: TimeInForce::Gtc,
         }
     }
 
@@ -141,6 +163,10 @@ mod tests {
         let identity = registry.get(&vid).expect("identity registered");
         assert_eq!(identity.client_order_id, ClientOrderId::from("O-1"));
         assert_eq!(identity.order_side, OrderSide::Buy);
+        assert_eq!(
+            registry.venue_order_id(&ClientOrderId::from("O-1")),
+            Some(vid)
+        );
     }
 
     #[rstest]

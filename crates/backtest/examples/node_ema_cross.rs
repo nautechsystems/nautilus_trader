@@ -70,7 +70,7 @@ fn generate_quotes(instrument_id: InstrumentId) -> Vec<QuoteTick> {
         tick += 1;
     };
 
-    // Flat initialization — both EMAs converge around 0.65000
+    // Flat initialization - both EMAs converge around 0.65000
     for _ in 0..25 {
         add(0.65000);
     }
@@ -80,12 +80,12 @@ fn generate_quotes(instrument_id: InstrumentId) -> Vec<QuoteTick> {
     for cycle in 0..cycles {
         let base = 0.65000 + (cycle as f64 * 0.00100);
 
-        // Ramp up — fast EMA crosses above slow -> BUY signal
+        // Ramp up - fast EMA crosses above slow -> BUY signal
         for i in 0..40 {
             add(base + (i as f64 * 0.00050));
         }
 
-        // Ramp down — fast EMA crosses below slow -> SELL signal
+        // Ramp down - fast EMA crosses below slow -> SELL signal
         for i in 0..80 {
             let peak = base + 39.0 * 0.00050;
             add(peak - (i as f64 * 0.00050));

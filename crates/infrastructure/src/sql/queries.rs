@@ -293,11 +293,11 @@ impl DatabaseQueries {
                 is_post_only, is_reduce_only, is_quote_quantity, display_qty, emulation_trigger,
                 trigger_instrument_id, contingency_type, order_list_id, linked_order_ids,
                 parent_order_id, exec_algorithm_id, exec_algorithm_params, exec_spawn_id, tags, init_id, ts_init, ts_last,
-                created_at, updated_at
+                activation_price, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $1, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
                 $17::TRAILING_OFFSET_TYPE, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42,
+                $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
@@ -343,6 +343,7 @@ impl DatabaseQueries {
                 init_id = $40,
                 ts_init = $41,
                 ts_last = $42,
+                activation_price = $43,
                 updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(snapshot.client_order_id.to_string())  // Used for both id and client_order_id
@@ -387,6 +388,7 @@ impl DatabaseQueries {
             .bind(snapshot.init_id.to_string())
             .bind(snapshot.ts_init.to_string())
             .bind(snapshot.ts_last.to_string())
+            .bind(snapshot.activation_price.map(|x| x.to_string()))
             .execute(&mut *transaction)
             .await
             .map(|_| ())
@@ -445,17 +447,18 @@ impl DatabaseQueries {
             INSERT INTO "position" (
                 id, trader_id, strategy_id, instrument_id, account_id, opening_order_id, closing_order_id, entry, side, signed_qty, quantity, peak_qty,
                 quote_currency, base_currency, settlement_currency, avg_px_open, avg_px_close, realized_return, realized_pnl, unrealized_pnl, commissions,
-                duration_ns, ts_opened, ts_closed, ts_init, ts_last, created_at, updated_at
+                duration_ns, ts_opened, ts_closed, ts_init, ts_last, replay_state, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $21, $22, $23, $24, $25, $26, $27, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
             SET
                 trader_id = $2, strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
                 peak_qty = $12, quote_currency = $13, base_currency = $14, settlement_currency = $15, avg_px_open = $16, avg_px_close = $17, realized_return = $18, realized_pnl = $19, unrealized_pnl = $20,
-                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_init = $25, ts_last = $26, updated_at = CURRENT_TIMESTAMP
+                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_init = $25, ts_last = $26,
+                replay_state = $27, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(snapshot.position_id.to_string())
             .bind(snapshot.trader_id.to_string())
@@ -483,6 +486,7 @@ impl DatabaseQueries {
             .bind(snapshot.ts_closed.map(|x| x.to_string()))
             .bind(snapshot.ts_init.to_string())
             .bind(snapshot.ts_last.to_string())
+            .bind(snapshot.replay_state)
             .execute(&mut *transaction)
             .await
             .map(|_| ())
@@ -596,11 +600,11 @@ impl DatabaseQueries {
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
-                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, created_at, updated_at
+                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, activation_price, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26::trailing_offset_type, $27, $28, $29, $30, $31, $32, $33, $34,
-                $35, $36, $37, $38, $39, $40, $41, $42, $43, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
@@ -609,7 +613,7 @@ impl DatabaseQueries {
                 quantity = $13, time_in_force = $14, liquidity_side = $15, post_only = $16, reduce_only = $17, quote_quantity = $18, reconciliation = $19, price = $20, last_px = $21,
                 last_qty = $22, trigger_price = $23, trigger_type = $24, limit_offset = $25, trailing_offset = $26, trailing_offset_type = $27, expire_time = $28, display_qty = $29,
                 emulation_trigger = $30, trigger_instrument_id = $31, contingency_type = $32, order_list_id = $33, linked_order_ids = $34, parent_order_id = $35, exec_algorithm_id = $36,
-                exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, updated_at = CURRENT_TIMESTAMP
+                exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, activation_price = $44, updated_at = CURRENT_TIMESTAMP
 
         "#)
             .bind(order_event.id().to_string())
@@ -655,6 +659,7 @@ impl DatabaseQueries {
             .bind(order_event.commission().map(|x| x.to_string()))
             .bind(order_event.ts_event().to_string())
             .bind(order_event.ts_init().to_string())
+            .bind(order_event.activation_price().map(|x| x.to_string()))
             .execute(&mut *transaction)
             .await
             .map(|_| ())
@@ -837,6 +842,14 @@ impl DatabaseQueries {
         pool: &PgPool,
         position_id: &PositionId,
     ) -> anyhow::Result<Option<Position>> {
+        if let Some(snapshot) = Self::load_position_snapshot(pool, position_id).await?
+            && let Some(replay_state) = snapshot.replay_state
+        {
+            return serde_json::from_value(replay_state)
+                .map(Some)
+                .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"));
+        }
+
         let fills = Self::load_position_events(pool, position_id).await?;
         let Some((first_fill, remaining_fills)) = fills.split_first() else {
             return Ok(None);
@@ -849,7 +862,7 @@ impl DatabaseQueries {
             return Ok(None);
         };
 
-        let mut position = Position::new(&instrument, *first_fill);
+        let mut position = Position::new(&instrument, first_fill.clone());
         for fill in remaining_fills {
             if position.trade_ids().contains(&fill.trade_id) {
                 anyhow::bail!(
@@ -1214,6 +1227,14 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
+        if bar.bar_type.is_composite() {
+            anyhow::bail!(
+                "Cannot persist bar with composite bar type {}: the bar table stores only \
+                 the standard form; standardize the bar type before persisting",
+                bar.bar_type,
+            );
+        }
+
         let bar_step = i32::try_from(bar.bar_type.spec().step.get())
             .map_err(|e| anyhow::anyhow!("invalid bar step: {e}"))?;
 

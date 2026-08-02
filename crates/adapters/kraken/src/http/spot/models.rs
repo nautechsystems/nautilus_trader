@@ -16,15 +16,19 @@
 //! Data models for Kraken Spot HTTP API responses.
 
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{MapAccess, SeqAccess, Visitor},
 };
 use ustr::Ustr;
 
-use crate::common::enums::{
-    KrakenAssetClass, KrakenOrderSide, KrakenOrderStatus, KrakenOrderType, KrakenPairStatus,
-    KrakenSpotTrigger, KrakenSystemStatus,
+use crate::common::{
+    enums::{
+        KrakenAssetClass, KrakenOrderSide, KrakenOrderStatus, KrakenOrderType, KrakenPairStatus,
+        KrakenSpotTrigger, KrakenSystemStatus,
+    },
+    serialization::decimal_pairs,
 };
 
 /// Wrapper for Kraken API responses.
@@ -149,10 +153,10 @@ pub struct AssetPairInfo {
     pub leverage_buy: Vec<i32>,
     #[serde(default)]
     pub leverage_sell: Vec<i32>,
-    #[serde(default)]
-    pub fees: Vec<(i32, f64)>,
-    #[serde(default)]
-    pub fees_maker: Vec<(i32, f64)>,
+    #[serde(default, with = "decimal_pairs")]
+    pub fees: Vec<(i32, Decimal)>,
+    #[serde(default, with = "decimal_pairs")]
+    pub fees_maker: Vec<(i32, Decimal)>,
     pub fee_volume_currency: Option<Ustr>,
     pub margin_call: Option<i32>,
     pub margin_stop: Option<i32>,

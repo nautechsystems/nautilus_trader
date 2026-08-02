@@ -1,12 +1,12 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc1"
+version = "2.0.0rc2"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
   "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
   "Operating System :: OS Independent",
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -28,7 +28,7 @@ dependencies = []
 [project.optional-dependencies]
 visualization = [
   "pandas>=2.3.3,<4.0.0",
-  "plotly>=6.8.0,<7.0.0",
+  "plotly>=6.9.0,<7.0.0",
   "kaleido>=1.3.0,<2.0.0",
   "simplejson==3.20.2",
 ]
@@ -52,6 +52,7 @@ features = [
   "arrow",
   "betfair",
   "high-precision",
+  "mimalloc",
   "redis",
   "postgres",
   "defi",
@@ -63,8 +64,10 @@ strip = false
 include = ["**/*.pyi"]
 
 [tool.uv]
-required-version = "==0.11.25"
+required-version = "==0.11.33"
 exclude-newer = "3 days"
+# These releases received an extra audit before bypassing the default cooldown.
+exclude-newer-package = { plotly = "8 hours", ruff = "8 hours", tzdata = "8 hours" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -107,7 +110,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.14.0", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.18"]
+dev = ["maturin==1.14.0", "mypy>=1.20.2,<2.0.0", "ruff>=0.16.0"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
@@ -183,6 +186,7 @@ ignore = [
   "E501", # Line too long (linted separately)
   "E741", # Ambiguous variable name (single char)
   "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
+  "ISC004", # multi-line string concatenation in collections is intentional for wrapped messages
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "S101", # Use of assert detected (OK in test suite)
@@ -211,9 +215,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "D",
   "RUF002",
 ] # Generated stubs use explicit default values from #[pyo3(signature)] and inherit Rust docstrings
-"nautilus_trader/adapters/hyperliquid/__init__.py" = [
-  "PLE0604",
-] # Dynamic __all__ extension from star import
+"nautilus_trader/adapters/*/__init__.py" = [
+  "F405",
+] # Adapter facades re-export star-imported names in __all__
 "examples/**/*.py" = [
   "DTZ",
   "S101",

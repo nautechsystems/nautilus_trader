@@ -50,7 +50,7 @@ pub(crate) async fn sync_ws_subscription_async(
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    ws: crate::websocket::client::WsSubscriptionHandle,
+    ws: crate::websocket::pool::PolymarketMarketPoolHandle,
 ) {
     let token_id = Ustr::from(token_id_str.as_str());
     let _guard = ws_sub_mutex.lock().await;
@@ -82,18 +82,33 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::{client::WsSubscriptionHandle, handler::HandlerCommand};
+    use crate::websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle};
 
     type ActiveSet = Arc<AtomicSet<InstrumentId>>;
     type OpenTokens = Arc<AtomicSet<Ustr>>;
     type WsMutex = Arc<tokio::sync::Mutex<()>>;
 
     fn make_handle() -> (
-        WsSubscriptionHandle,
+        PolymarketMarketPoolHandle,
+        tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    ) {
+        make_handle_with_assigned(&[])
+    }
+
+    // Builds a single-shard pool handle with `assigned` tokens pre-owned, matching
+    // the pool state a prior subscribe would leave. Needed for unsubscribe cases,
+    // which route only for tokens the pool already owns.
+    fn make_handle_with_assigned(
+        assigned: &[&str],
+    ) -> (
+        PolymarketMarketPoolHandle,
         tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        (WsSubscriptionHandle::from_sender(tx), rx)
+        (
+            PolymarketMarketPoolHandle::test_single_shard(tx, assigned),
+            rx,
+        )
     }
 
     fn make_state() -> (ActiveSet, ActiveSet, ActiveSet, OpenTokens, WsMutex) {
@@ -149,7 +164,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn sync_ws_unsubscribes_when_intent_absent_and_ws_open() {
-        let (ws, mut rx) = make_handle();
+        let (ws, mut rx) = make_handle_with_assigned(&["0xCOND-0xTOKEN"]);
         let (quotes, deltas, trades, open, mutex) = make_state();
 
         let inst = instrument_id();
@@ -220,7 +235,7 @@ mod tests {
     async fn sync_ws_rolls_back_open_tokens_on_send_failure() {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         drop(rx);
-        let ws = WsSubscriptionHandle::from_sender(tx);
+        let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &[]);
 
         let (quotes, deltas, trades, open, mutex) = make_state();
 

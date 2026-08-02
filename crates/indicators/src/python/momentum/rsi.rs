@@ -13,10 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::{
-    data::{Bar, QuoteTick, TradeTick},
-    enums::PriceType,
-};
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
 use crate::{
@@ -35,7 +33,7 @@ impl RelativeStrengthIndex {
     }
 
     fn __repr__(&self) -> String {
-        format!("ExponentialMovingAverage({})", self.period)
+        format!("RelativeStrengthIndex({}, {})", self.period, self.ma_type)
     }
 
     #[getter]
@@ -48,6 +46,12 @@ impl RelativeStrengthIndex {
     #[pyo3(name = "period")]
     const fn py_period(&self) -> usize {
         self.period
+    }
+
+    #[getter]
+    #[pyo3(name = "has_inputs")]
+    fn py_has_inputs(&self) -> bool {
+        self.has_inputs()
     }
 
     #[getter]
@@ -74,17 +78,22 @@ impl RelativeStrengthIndex {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
-        self.py_update_raw(quote.extract_price(PriceType::Mid).into());
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+        self.handle_bar(bar);
     }
 
     #[pyo3(name = "handle_trade_tick")]
     fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
-        self.update_raw((&trade.price).into());
+        self.handle_trade(trade);
+    }
+
+    #[pyo3(name = "reset")]
+    fn py_reset(&mut self) {
+        self.reset();
     }
 }

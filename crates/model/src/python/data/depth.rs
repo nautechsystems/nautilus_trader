@@ -29,7 +29,7 @@ use nautilus_core::{
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -56,6 +56,9 @@ impl OrderBookDepth10 {
     ///
     /// Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
     /// its specialized structure and limited depth use case.
+    ///
+    /// Per-level `BookOrder.order_id` values are non-semantic for this aggregated MBP data.
+    /// Parquet catalog decoding canonicalizes them to zero.
     #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
@@ -283,14 +286,18 @@ impl OrderBookDepth10 {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 

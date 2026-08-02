@@ -24,6 +24,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersDataClientFactory {
     /// Factory for creating Interactive Brokers data clients.
     #[new]
@@ -38,6 +39,7 @@ impl InteractiveBrokersDataClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersExecutionClientFactory {
     /// Factory for creating Interactive Brokers execution clients.
     #[new]

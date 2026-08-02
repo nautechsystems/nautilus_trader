@@ -34,8 +34,10 @@
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
 //! - `python`: Enables PyO3 bindings for configs, enums, the historical client, the instrument
-//!   provider, and the Dockerized gateway helper.
-//! - `gateway`: Enables the Dockerized IB Gateway helper via [`bollard`](https://crates.io/crates/bollard).
+//!   provider.
+//! - `gateway`: Enables the Dockerized IB Gateway helper via
+//!   [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
+//!   `python`.
 //! - `extension-module`: Builds as a Python extension module (used together with `python` and `gateway`).
 //!
 //! # Documentation

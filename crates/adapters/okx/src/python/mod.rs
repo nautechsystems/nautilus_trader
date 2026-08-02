@@ -36,7 +36,10 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
-    common::{consts::OKX, enums::OKXTriggerType},
+    common::{
+        consts::{OKX, OKX_CLIENT_ID, OKX_VENUE},
+        enums::OKXTriggerType,
+    },
     config::{OKXDataClientConfig, OKXExecClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
@@ -117,6 +120,8 @@ fn extract_okx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dy
 #[pymodule]
 pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(OKX), OKX)?;
+    m.add(stringify!(OKX_CLIENT_ID), *OKX_CLIENT_ID)?;
+    m.add(stringify!(OKX_VENUE), *OKX_VENUE)?;
     m.add_class::<super::websocket::OKXWebSocketClient>()?;
     m.add_class::<super::websocket::messages::OKXWebSocketError>()?;
     m.add_class::<super::http::OKXHttpClient>()?;
@@ -127,6 +132,7 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::OKXMarginMode>()?;
     m.add_class::<crate::common::enums::OKXTradeMode>()?;
     m.add_class::<crate::common::enums::OKXOrderStatus>()?;
+    m.add_class::<crate::common::enums::OKXAlgoOrderStatus>()?;
     m.add_class::<crate::common::enums::OKXPositionMode>()?;
     m.add_class::<crate::common::enums::OKXVipLevel>()?;
     m.add_class::<crate::common::enums::OKXEnvironment>()?;

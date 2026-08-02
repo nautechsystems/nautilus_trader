@@ -15,11 +15,12 @@
 
 //! Binance adapter configuration structures.
 
-use std::{any::Any, collections::HashMap};
+use std::{any::Any, collections::HashMap, str::FromStr};
 
 use nautilus_common::factories::ClientConfig;
 use nautilus_model::{
-    identifiers::{AccountId, TraderId},
+    enums::OmsType,
+    identifiers::{AccountId, InstrumentId, TraderId},
     types::Currency,
 };
 use nautilus_network::websocket::TransportBackend;
@@ -27,6 +28,116 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};
+
+/// Configuration for Binance instrument loading.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+)]
+pub struct BinanceInstrumentProviderConfig {
+    /// Whether to load all instruments on startup.
+    #[builder(default = true)]
+    pub load_all: bool,
+    /// Specific Nautilus instrument IDs to load when `load_all` is false.
+    pub load_ids: Option<Vec<String>>,
+    /// Venue filters applied while loading instruments.
+    ///
+    /// Supported keys are `symbols`, `bases`, `quotes`, and, for Futures,
+    /// `contract_types`. Each value may be a string or an array of strings.
+    #[builder(default)]
+    pub filters: HashMap<String, serde_json::Value>,
+    /// Fully qualified Python callable path requested by legacy configuration.
+    ///
+    /// Binance v2 rejects this field because the legacy Binance provider never
+    /// applied it and Rust live clients cannot safely invoke arbitrary Python.
+    pub filter_callable: Option<String>,
+    /// Whether instrument parser failures should be logged as warnings.
+    #[builder(default = true)]
+    pub log_warnings: bool,
+    /// Whether to query account-specific commission rates for every loaded symbol.
+    #[builder(default)]
+    pub query_commission_rates: bool,
+}
+
+impl Default for BinanceInstrumentProviderConfig {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
+impl BinanceInstrumentProviderConfig {
+    /// Validates instrument loading configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for malformed IDs, unsupported filters, or a legacy
+    /// callable filter that Binance v2 cannot execute safely.
+    pub fn validate(&self, product_type: BinanceProductType) -> anyhow::Result<()> {
+        if let Some(filter_callable) = self
+            .filter_callable
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            anyhow::bail!(
+                "Binance v2 does not support instrument filter_callable {filter_callable:?}; \
+                 the legacy Binance provider never applied callable filters"
+            );
+        }
+
+        if let Some(load_ids) = &self.load_ids {
+            for raw in load_ids {
+                let instrument_id = InstrumentId::from_str(raw)
+                    .map_err(|e| anyhow::anyhow!("invalid Binance load_ids value {raw:?}: {e}"))?;
+                anyhow::ensure!(
+                    instrument_id.venue.as_str() == "BINANCE",
+                    "Binance load_ids value {raw:?} must use venue BINANCE"
+                );
+            }
+        }
+
+        for (key, value) in &self.filters {
+            let supported = matches!(key.as_str(), "symbols" | "bases" | "quotes")
+                || key == "contract_types"
+                    && matches!(
+                        product_type,
+                        BinanceProductType::UsdM | BinanceProductType::CoinM
+                    );
+            anyhow::ensure!(
+                supported,
+                "unsupported Binance instrument filter {key:?} for {product_type:?}"
+            );
+            validate_filter_strings(key, value)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn validate_filter_strings(name: &str, value: &serde_json::Value) -> anyhow::Result<()> {
+    let valid = match value {
+        serde_json::Value::String(value) => !value.trim().is_empty(),
+        serde_json::Value::Array(values) => {
+            !values.is_empty()
+                && values
+                    .iter()
+                    .all(|value| value.as_str().is_some_and(|value| !value.trim().is_empty()))
+        }
+        _ => false,
+    };
+
+    anyhow::ensure!(
+        valid,
+        "Binance instrument filter {name:?} must be a non-empty string or array of strings"
+    );
+    Ok(())
+}
 
 /// Spot market-data transport mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,18 +198,78 @@ pub struct BinanceDataClientConfig {
     /// - `Json` forces public JSON streams with no credentials.
     #[builder(default)]
     pub spot_market_data_mode: BinanceSpotMarketDataMode,
+    /// Instrument loading and fee configuration.
+    #[builder(default)]
+    pub instrument_provider: BinanceInstrumentProviderConfig,
+    /// Interval in seconds for a full instrument catalogue refresh.
+    ///
+    /// Set to 0 to disable. Defaults to 3600 (60 minutes).
+    #[builder(default = 3600)]
+    pub instrument_refresh_interval_secs: u64,
     /// Interval in seconds for polling exchange info to detect instrument status
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// Receive window in milliseconds for signed HTTP requests.
+    #[builder(default = 5_000)]
+    pub recv_window_ms: u64,
+    /// Whether to route this Spot client to Binance US.
+    #[builder(default)]
+    pub us: bool,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BinanceDataClientConfig {
+    product_type: BinanceProductType,
+    environment: BinanceEnvironment,
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    spot_market_data_mode: BinanceSpotMarketDataMode,
+    instrument_provider: BinanceInstrumentProviderConfig,
+    instrument_refresh_interval_secs: u64,
+    instrument_status_poll_secs: u64,
+    recv_window_ms: u64,
+    us: bool,
+    transport_backend: TransportBackend,
+});
+
 impl Default for BinanceDataClientConfig {
     fn default() -> Self {
         Self::builder().build()
+    }
+}
+
+impl BinanceDataClientConfig {
+    /// Validates Binance data client configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid receive-window, provider, or Binance US settings.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_recv_window(self.recv_window_ms)?;
+        self.instrument_provider.validate(self.product_type)?;
+
+        if self.us {
+            anyhow::ensure!(
+                self.product_type == BinanceProductType::Spot,
+                "Binance US supports Spot clients only"
+            );
+            anyhow::ensure!(
+                self.environment == BinanceEnvironment::Live,
+                "Binance US supports the Live environment only"
+            );
+            anyhow::ensure!(
+                self.spot_market_data_mode == BinanceSpotMarketDataMode::Json,
+                "Binance US market data requires spot_market_data_mode=Json"
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -110,9 +281,8 @@ impl ClientConfig for BinanceDataClientConfig {
 
 /// Configuration for Binance execution client.
 ///
-/// Ed25519 API keys are required for execution clients. Binance deprecated
-/// listenKey-based user data streams in favor of WebSocket API authentication,
-/// which only supports Ed25519.
+/// Global execution uses WebSocket API authentication with Ed25519 credentials.
+/// Binance US uses HMAC-signed HTTP requests and listen-key user data streams.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
@@ -147,6 +317,23 @@ pub struct BinanceExecClientConfig {
     /// Whether to use the WebSocket trading API for order operations (Spot and USD-M Futures).
     #[builder(default = true)]
     pub use_ws_trading: bool,
+    /// Timeout in milliseconds for each Binance Spot WS trading setup response.
+    #[builder(default = 10_000)]
+    pub ws_trading_setup_timeout_ms: u64,
+    /// Instrument loading and fee configuration.
+    #[builder(default)]
+    pub instrument_provider: BinanceInstrumentProviderConfig,
+    /// Interval in seconds for refreshing the execution instrument cache.
+    ///
+    /// Set to 0 to disable. Defaults to 3600 (60 minutes).
+    #[builder(default = 3600)]
+    pub instrument_refresh_interval_secs: u64,
+    /// Whether to use Binance-native GTD orders.
+    ///
+    /// Set to false only when the strategy manages GTD expiry locally. The adapter then maps GTD
+    /// to GTC and the strategy must enable `manage_gtd_expiry`.
+    #[builder(default = true)]
+    pub use_gtd: bool,
     /// Whether to use Binance Futures hedging position IDs.
     ///
     /// When true, fill reports include a `venue_position_id` derived from
@@ -155,6 +342,11 @@ pub struct BinanceExecClientConfig {
     /// with `OmsType::Hedging`.
     #[builder(default = true)]
     pub use_position_ids: bool,
+    /// Optional OMS type override for Binance Futures accounts.
+    ///
+    /// Set to `Hedging` when the account uses dual-side position mode. When
+    /// `None`, Binance Futures clients use `Netting`. Ignored for Spot clients.
+    pub oms_type: Option<OmsType>,
     /// Default taker fee rate for commission estimation.
     ///
     /// Used as a fallback when the venue omits commission fields in
@@ -162,9 +354,17 @@ pub struct BinanceExecClientConfig {
     /// Standard Binance Futures taker fee is 0.0004 (0.04%).
     #[builder(default = Decimal::new(4, 4))]
     pub default_taker_fee: Decimal,
-    /// API key (Ed25519 required, uses env var if not provided).
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// Receive window in milliseconds for signed HTTP requests.
+    #[builder(default = 5_000)]
+    pub recv_window_ms: u64,
+    /// Whether to route this Spot client to Binance US.
+    #[builder(default)]
+    pub us: bool,
+    /// API key (uses an environment variable if not provided).
     pub api_key: Option<String>,
-    /// API secret (Ed25519 base64-encoded, required, uses env var if not provided).
+    /// API secret (Ed25519 for Global or HMAC for Binance US).
     pub api_secret: Option<String>,
     /// Initial leverage per Binance symbol (e.g. BTCUSDT -> 20), applied during connect.
     pub futures_leverages: Option<HashMap<String, u32>>,
@@ -189,10 +389,76 @@ pub struct BinanceExecClientConfig {
     pub transport_backend: TransportBackend,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    product_type: BinanceProductType,
+    environment: BinanceEnvironment,
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    base_url_ws_trading: Option<String>,
+    use_ws_trading: bool,
+    ws_trading_setup_timeout_ms: u64,
+    instrument_provider: BinanceInstrumentProviderConfig,
+    instrument_refresh_interval_secs: u64,
+    use_gtd: bool,
+    use_position_ids: bool,
+    oms_type: Option<OmsType>,
+    default_taker_fee: Decimal,
+    recv_window_ms: u64,
+    us: bool,
+    futures_leverages: Option<HashMap<String, u32>>,
+    futures_margin_types: Option<HashMap<String, BinanceMarginType>>,
+    treat_expired_as_canceled: bool,
+    use_trade_lite: bool,
+    bnfcr_currency: Currency,
+    transport_backend: TransportBackend,
+});
+
 impl Default for BinanceExecClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
+}
+
+impl BinanceExecClientConfig {
+    /// Validates Binance execution client configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid receive-window, WS trading setup timeout, provider, or
+    /// Binance US settings.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_recv_window(self.recv_window_ms)?;
+        anyhow::ensure!(
+            self.ws_trading_setup_timeout_ms > 0,
+            "ws_trading_setup_timeout_ms must be greater than 0, was {}",
+            self.ws_trading_setup_timeout_ms
+        );
+        self.instrument_provider.validate(self.product_type)?;
+
+        if self.us {
+            anyhow::ensure!(
+                self.product_type == BinanceProductType::Spot,
+                "Binance US supports Spot clients only"
+            );
+            anyhow::ensure!(
+                self.environment == BinanceEnvironment::Live,
+                "Binance US supports the Live environment only"
+            );
+        }
+
+        Ok(())
+    }
+}
+
+fn validate_recv_window(recv_window_ms: u64) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        (1..=60_000).contains(&recv_window_ms),
+        "recv_window_ms must be in the inclusive range 1..=60000, was {recv_window_ms}"
+    );
+    Ok(())
 }
 
 impl ClientConfig for BinanceExecClientConfig {
@@ -259,13 +525,207 @@ product_types = ["SPOT", "USD_M"]
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.use_ws_trading, expected.use_ws_trading);
+        assert_eq!(config.ws_trading_setup_timeout_ms, 10_000);
+        assert_eq!(config.instrument_provider, expected.instrument_provider);
+        assert_eq!(
+            config.instrument_refresh_interval_secs,
+            expected.instrument_refresh_interval_secs
+        );
+        assert_eq!(config.use_gtd, expected.use_gtd);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
+        assert_eq!(config.oms_type, expected.oms_type);
         assert_eq!(config.default_taker_fee, expected.default_taker_fee);
+        assert_eq!(config.proxy_url, expected.proxy_url);
+        assert_eq!(config.recv_window_ms, expected.recv_window_ms);
+        assert_eq!(config.us, expected.us);
         assert_eq!(
             config.treat_expired_as_canceled,
             expected.treat_expired_as_canceled,
         );
         assert_eq!(config.use_trade_lite, expected.use_trade_lite);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_oms_type_override() {
+        let config: BinanceExecClientConfig = toml::from_str(
+            r#"
+oms_type = "Hedging"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.oms_type, Some(OmsType::Hedging));
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_use_gtd_override() {
+        let config: BinanceExecClientConfig = toml::from_str("use_gtd = false").unwrap();
+
+        assert!(!config.use_gtd);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_ws_trading_setup_timeout_override() {
+        let config: BinanceExecClientConfig =
+            toml::from_str("ws_trading_setup_timeout_ms = 250").unwrap();
+
+        assert_eq!(config.ws_trading_setup_timeout_ms, 250);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(60_001)]
+    fn test_data_config_rejects_recv_window_out_of_bounds(#[case] recv_window_ms: u64) {
+        let config = BinanceDataClientConfig {
+            recv_window_ms,
+            ..Default::default()
+        };
+
+        let message = config.validate().unwrap_err().to_string();
+
+        assert_eq!(
+            message,
+            format!(
+                "recv_window_ms must be in the inclusive range 1..=60000, was {recv_window_ms}"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_exec_config_rejects_zero_ws_trading_setup_timeout() {
+        let config = BinanceExecClientConfig {
+            ws_trading_setup_timeout_ms: 0,
+            ..Default::default()
+        };
+
+        let message = config.validate().unwrap_err().to_string();
+
+        assert_eq!(
+            message,
+            "ws_trading_setup_timeout_ms must be greater than 0, was 0"
+        );
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(60_000)]
+    fn test_exec_config_accepts_recv_window_bounds(#[case] recv_window_ms: u64) {
+        let config = BinanceExecClientConfig {
+            recv_window_ms,
+            ..Default::default()
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Live,
+        BinanceSpotMarketDataMode::Json,
+        "Binance US supports Spot clients only"
+    )]
+    #[case(
+        BinanceProductType::Spot,
+        BinanceEnvironment::Testnet,
+        BinanceSpotMarketDataMode::Json,
+        "Binance US supports the Live environment only"
+    )]
+    #[case(
+        BinanceProductType::Spot,
+        BinanceEnvironment::Live,
+        BinanceSpotMarketDataMode::Sbe,
+        "Binance US market data requires spot_market_data_mode=Json"
+    )]
+    fn test_data_config_rejects_unsupported_binance_us_combinations(
+        #[case] product_type: BinanceProductType,
+        #[case] environment: BinanceEnvironment,
+        #[case] spot_market_data_mode: BinanceSpotMarketDataMode,
+        #[case] expected: &str,
+    ) {
+        let config = BinanceDataClientConfig {
+            product_type,
+            environment,
+            spot_market_data_mode,
+            us: true,
+            ..Default::default()
+        };
+
+        assert_eq!(config.validate().unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(
+        BinanceProductType::CoinM,
+        BinanceEnvironment::Live,
+        "Binance US supports Spot clients only"
+    )]
+    #[case(
+        BinanceProductType::Spot,
+        BinanceEnvironment::Demo,
+        "Binance US supports the Live environment only"
+    )]
+    fn test_exec_config_rejects_unsupported_binance_us_combinations(
+        #[case] product_type: BinanceProductType,
+        #[case] environment: BinanceEnvironment,
+        #[case] expected: &str,
+    ) {
+        let config = BinanceExecClientConfig {
+            product_type,
+            environment,
+            us: true,
+            ..Default::default()
+        };
+
+        assert_eq!(config.validate().unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_instrument_provider_rejects_callable_and_spot_contract_filter() {
+        let callable = BinanceInstrumentProviderConfig {
+            filter_callable: Some("package.module:predicate".to_string()),
+            ..Default::default()
+        };
+        let contract_filter = BinanceInstrumentProviderConfig {
+            filters: HashMap::from([(
+                "contract_types".to_string(),
+                serde_json::json!("PERPETUAL"),
+            )]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            callable
+                .validate(BinanceProductType::Spot)
+                .unwrap_err()
+                .to_string(),
+            "Binance v2 does not support instrument filter_callable \"package.module:predicate\"; the legacy Binance provider never applied callable filters"
+        );
+        assert_eq!(
+            contract_filter
+                .validate(BinanceProductType::Spot)
+                .unwrap_err()
+                .to_string(),
+            "unsupported Binance instrument filter \"contract_types\" for Spot"
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_provider_rejects_empty_and_non_string_filter_values() {
+        for value in [serde_json::json!([]), serde_json::json!(["BTC", 7])] {
+            let config = BinanceInstrumentProviderConfig {
+                filters: HashMap::from([("bases".to_string(), value)]),
+                ..Default::default()
+            };
+
+            assert_eq!(
+                config
+                    .validate(BinanceProductType::UsdM)
+                    .unwrap_err()
+                    .to_string(),
+                "Binance instrument filter \"bases\" must be a non-empty string or array of strings"
+            );
+        }
     }
 }

@@ -13,20 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Configuration for WebSocket client connections.
+//! Static transport and lifecycle configuration for WebSocket connections.
 //!
-//! # Reconnection Strategy
+//! [`WebSocketConfig`] selects the endpoint, upgrade headers, heartbeat and idle detection,
+//! reconnect policy, transport backend, and optional proxy. Runtime handlers and rate limiting are
+//! supplied to the client constructors instead.
 //!
-//! The default configuration uses unlimited reconnection attempts (`reconnect_max_attempts: None`).
-//! This is intentional for trading systems because:
-//! - Venues may be down for extended periods but eventually recover.
-//! - Exponential backoff already prevents resource waste.
-//! - Automatic recovery can be useful when manual intervention is not desirable.
+//! # Reconnection strategy
 //!
-//! Use `Some(n)` primarily for testing, development, or non-critical connections.
+//! Reconnect settings apply only in handler mode; stream mode ignores them.
+//! `reconnect_max_attempts: None` permits unlimited attempts with exponential backoff, while
+//! `Some(n)` closes the client once `n` consecutive reconnect attempts have either failed or
+//! established connections active for less than 10 seconds. A reconnect active for at least 10
+//! seconds resets its attempt count and backoff delay; shorter-lived connections continue the
+//! current cycle.
 
 use std::fmt::Debug;
 
+use nautilus_core::string::secret::REDACTED;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{NetworkConfigError, NetworkConfigResult};
@@ -44,6 +48,23 @@ use crate::error::{NetworkConfigError, NetworkConfigResult};
 /// [`WebSocketConfig::headers`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.network",
+        eq,
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
+)]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "PyO3-backed enum still needs serde deserialization for strict config decoding"
+)]
 pub enum TransportBackend {
     /// `tokio-tungstenite` backed transport (default when `transport-sockudo` is disabled).
     #[cfg_attr(not(feature = "transport-sockudo"), default)]
@@ -88,7 +109,7 @@ pub enum TransportBackend {
     clippy::unsafe_derive_deserialize,
     reason = "PyO3-backed config still needs serde deserialization for strict config decoding"
 )]
-#[derive(Clone, Debug, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]
 pub struct WebSocketConfig {
@@ -128,7 +149,8 @@ pub struct WebSocketConfig {
     /// The maximum number of reconnection attempts before giving up.
     /// **Note**: Only applies to handler mode. Ignored in stream mode.
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
-    /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
+    /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
+    ///   failed or established connections active for less than 10 seconds.
     #[serde(default)]
     pub reconnect_max_attempts: Option<u32>,
     /// The idle timeout (milliseconds) for the read task.
@@ -158,6 +180,32 @@ pub struct WebSocketConfig {
     pub proxy_url: Option<String>,
 }
 
+impl Debug for WebSocketConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(WebSocketConfig))
+            .field("url", &self.url)
+            .field(
+                "headers",
+                &format_args!("<{} header(s)>", self.headers.len()),
+            )
+            .field("heartbeat", &self.heartbeat)
+            .field("heartbeat_msg", &self.heartbeat_msg)
+            .field("reconnect_timeout_ms", &self.reconnect_timeout_ms)
+            .field(
+                "reconnect_delay_initial_ms",
+                &self.reconnect_delay_initial_ms,
+            )
+            .field("reconnect_delay_max_ms", &self.reconnect_delay_max_ms)
+            .field("reconnect_backoff_factor", &self.reconnect_backoff_factor)
+            .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
+            .field("reconnect_max_attempts", &self.reconnect_max_attempts)
+            .field("idle_timeout_ms", &self.idle_timeout_ms)
+            .field("backend", &self.backend)
+            .field("proxy_url", &self.proxy_url.as_ref().map(|_| REDACTED))
+            .finish()
+    }
+}
+
 impl<S: web_socket_config_builder::IsComplete> WebSocketConfigBuilder<S> {
     /// Validates and builds the [`WebSocketConfig`].
     ///
@@ -178,8 +226,8 @@ impl WebSocketConfig {
     /// # Errors
     ///
     /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval or a
-    /// reconnection timing field is not positive, `reconnect_backoff_factor` is not finite and
-    /// at least `1.0`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
+    /// reconnection timing field is not positive, `reconnect_backoff_factor` is outside
+    /// `[1.0, 100.0]`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
 
@@ -218,11 +266,11 @@ impl WebSocketConfig {
         }
 
         if let Some(factor) = self.reconnect_backoff_factor
-            && !(factor.is_finite() && factor >= 1.0)
+            && !(1.0..=100.0).contains(&factor)
         {
             errors.push(NetworkConfigError::invalid(
                 "reconnect_backoff_factor",
-                format!("must be finite and >= 1.0, was {factor}"),
+                format!("must be in range [1.0, 100.0], was {factor}"),
             ));
         }
 
@@ -309,6 +357,7 @@ mod tests {
 
     #[rstest]
     #[case::too_small(0.5)]
+    #[case::too_large(100.1)]
     #[case::nan(f64::NAN)]
     #[case::infinite(f64::INFINITY)]
     fn test_validate_rejects_invalid_backoff_factor(#[case] factor: f64) {
@@ -353,5 +402,17 @@ mod tests {
                 panic!("expected Multiple, was {other:?}")
             }
         }
+    }
+
+    #[rstest]
+    fn test_debug_redacts_proxy_credentials() {
+        const SECRET: &str = "unique-proxy-secret";
+        let mut config = valid_config();
+        config.proxy_url = Some(format!("http://proxytest:{SECRET}@proxy.example.com:8080"));
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("proxy_url: Some(\"<redacted>\")"));
+        assert!(!debug.contains(SECRET));
     }
 }

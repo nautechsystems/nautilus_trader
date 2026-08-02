@@ -2,6 +2,10 @@
 
 This guide outlines the style conventions and best practices for writing documentation for NautilusTrader.
 
+The [Markdown Style](markdown_style.md) guide is the shared baseline for Markdown syntax and
+formatting, and `.markdownlint.jsonc` enforces its mechanical subset. This guide covers what is
+specific to NautilusTrader documentation rather than repeating that baseline.
+
 ## General principles
 
 - We favor simplicity over complexity, less is more.
@@ -15,12 +19,12 @@ Most pages should fit one of four types
 ([Divio documentation system](https://docs.divio.com/documentation-system/)).
 Mixing types in a single page makes it harder to read and harder to maintain.
 
-| Type             | Purpose                          | Section          |
-|------------------|----------------------------------|------------------|
-| **Tutorial**     | Teach by walking through a task  | `tutorials/`     |
-| **How‑to guide** | Solve a specific problem         | `how_to/`        |
-| **Explanation**  | Clarify design and architecture  | `concepts/`      |
-| **Reference**    | Describe the machinery           | `api_reference/` |
+| Type             | Purpose                         | Section          |
+| ---------------- | ------------------------------- | ---------------- |
+| **Tutorial**     | Teach by walking through a task | `tutorials/`     |
+| **How‑to guide** | Solve a specific problem        | `how_to/`        |
+| **Explanation**  | Clarify design and architecture | `concepts/`      |
+| **Reference**    | Describe the machinery          | `api_reference/` |
 
 Two sections are exceptions: `getting_started/` is an onboarding path that
 combines tutorial-style walkthroughs with setup instructions, and
@@ -57,11 +61,8 @@ API reference for field definitions rather than listing them again.
 
 ## Markdown tables
 
-### Column alignment and spacing
-
-- Use symmetrical column widths based on the space dictated by the widest content in each column.
-- Align column separators (`|`) vertically for better readability.
-- Use consistent spacing around cell content.
+Table syntax, pipe alignment, and delimiter padding follow the
+[Markdown Style](markdown_style.md#tables) guide.
 
 ### Notes and descriptions
 
@@ -73,7 +74,7 @@ API reference for field definitions rather than listing them again.
 
 ```markdown
 | Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                   |
-|------------------------|------|--------|--------------|--------------|-------------------------|
+| ---------------------- | ---- | ------ | ------------ | ------------ | ----------------------- |
 | `MARKET`               | ✓    | ✓      | ✓            | ✓            |                         |
 | `STOP_MARKET`          | -    | ✓      | ✓            | ✓            | Not supported for Spot. |
 | `MARKET_IF_TOUCHED`    | -    | -      | ✓            | ✓            | Futures only.           |
@@ -90,46 +91,31 @@ API reference for field definitions rather than listing them again.
 
 ## Code references
 
-- Use backticks for inline code, method names, class names, and configuration options.
-- Use code blocks for multi-line examples.
-- When referencing code locations, use `file_path::function_name` or `file_path::ClassName` rather than line numbers, which become stale as code changes.
+Inline code and fenced code blocks follow the [Markdown Style](markdown_style.md#code) guide.
+
+When referencing code locations, use `file_path::function_name` or `file_path::ClassName` rather
+than line numbers, which become stale as code changes.
 
 ## Headings
 
-We follow modern documentation conventions that prioritize readability and accessibility:
+Heading style, case, and hierarchy follow the [Markdown Style](markdown_style.md#headings) guide:
+title case for the page heading, sentence case below it.
 
-- Use title case for the main page heading (# Level 1 only).
-- Use sentence case for all subheadings (## Level 2 and below).
-- Always capitalize proper nouns regardless of heading level (product names, technologies, companies, acronyms).
-- Use proper heading hierarchy (don't skip levels).
-
-This convention aligns with industry standards used by major technology companies including Google Developer Documentation, Microsoft Docs, and Anthropic's documentation.
-It improves readability, reduces cognitive load, and is more accessible for international users and screen readers.
-
-### Examples
-
-```markdown
-# NautilusTrader Developer Guide
-
-## Getting started with Python
-## Using the Binance adapter
-## REST API implementation
-## WebSocket data streaming
-## Testing with pytest
-```
+Always capitalize proper nouns regardless of heading level (product names, technologies,
+companies, acronyms).
 
 ## Lists
 
-- Use hyphens (`-`) for unordered list bullets; avoid `*` or `+` to keep the Markdown style consistent across the project.
-- Use numbered lists only when order matters.
-- Maintain consistent indentation for nested lists.
-- End list items with periods when they are complete sentences.
+List markers, ordering, and indentation follow the [Markdown Style](markdown_style.md#lists) guide.
+
+End list items with periods when they are complete sentences.
 
 ## Links and references
 
-- Use descriptive link text (avoid "click here" or "this link").
-- Reference external documentation when appropriate.
-- Keep all internal links relative and accurate.
+Link text, link style, and images follow the
+[Markdown Style](markdown_style.md#links-and-images) guide.
+
+Reference external documentation when appropriate.
 
 ## Technical terminology
 
@@ -149,7 +135,7 @@ It improves readability, reduces cognitive load, and is more accessible for inte
 Use admonition blocks to highlight important information:
 
 | Admonition   | Purpose                                                       |
-|--------------|---------------------------------------------------------------|
+| ------------ | ------------------------------------------------------------- |
 | `:::note`    | Supplementary context that clarifies but isn't essential.     |
 | `:::info`    | Important information the reader should be aware of.          |
 | `:::tip`     | Helpful suggestions or best practices.                        |
@@ -189,14 +175,14 @@ Python columns. Leave a blank line above and below the inner content so the Mark
 <Tab value="Rust">
 
 | Field           | Type           | Required/default | Notes                   |
-|-----------------|----------------|------------------|-------------------------|
+| --------------- | -------------- | ---------------- | ----------------------- |
 | `instrument_id` | `InstrumentId` | Required         | Stored as `id` in Rust. |
 
 </Tab>
 <Tab value="Python">
 
 | Field           | Type           | Required/default | Notes |
-|-----------------|----------------|------------------|-------|
+| --------------- | -------------- | ---------------- | ----- |
 | `instrument_id` | `InstrumentId` | Required         |       |
 
 </Tab>
@@ -257,13 +243,6 @@ Use `Cards` and `Card` for linked content grids.
 ### TypeTable
 
 Use `TypeTable` for parameter or type documentation tables.
-
-## Line length and wrapping
-
-- Wrap lines at no more than ~100-120 characters for better readability and diff reviews.
-- Break long sentences at natural points (after commas, conjunctions, or phrases).
-- Avoid orphaned words on new lines when possible.
-- Code blocks and URLs can exceed the line limit when necessary.
 
 ## API documentation
 

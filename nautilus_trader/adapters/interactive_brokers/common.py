@@ -307,7 +307,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
         Unlike IBContract.strike (where 0.0 is a valid kwarg we fix in __post_init__),
         "underConid" is an invalid kwarg that must be renamed in the dict before
-        the constructor sees it — hence this is a classmethod rather than __post_init__.
+        the constructor sees it - hence this is a classmethod rather than __post_init__.
 
         """
         if not isinstance(contract_details.contract, IBContract):

@@ -15,6 +15,8 @@
 
 //! Shared OCM stream handler state.
 
+use std::collections::VecDeque;
+
 use ahash::{AHashMap, AHashSet};
 use nautilus_model::identifiers::{ClientOrderId, StrategyId};
 use rust_decimal::Decimal;
@@ -46,6 +48,7 @@ pub struct OcmState {
     pub stream_reported_client_orders: AHashSet<ClientOrderId>,
     /// Bet IDs that have received a terminal event (cancel, lapse, fill-complete).
     pub terminal_orders: AHashSet<String>,
+    terminal_order_queue: VecDeque<String>,
     /// Old bet IDs from replace operations, to suppress late stream updates.
     pub replaced_venue_order_ids: AHashSet<String>,
     /// (client_order_id, old_bet_id) pairs for in-flight replace operations.
@@ -53,6 +56,9 @@ pub struct OcmState {
 }
 
 impl OcmState {
+    /// Bounds dedup memory while retaining recent delayed stream and REST overlap.
+    const TERMINAL_ORDER_RETENTION: usize = 10_000;
+
     /// Registers a customer_order_ref mapping for a new order.
     pub fn register_customer_order_ref(&mut self, client_order_id: ClientOrderId) {
         let rfo = make_customer_order_ref(client_order_id.as_str());
@@ -134,13 +140,28 @@ impl OcmState {
         }
     }
 
+    /// Records a terminal bet and bounds the stream and REST dedup state.
+    pub fn mark_terminal_order(&mut self, bet_id: String) {
+        if !self.terminal_orders.insert(bet_id.clone()) {
+            return;
+        }
+
+        self.terminal_order_queue.push_back(bet_id);
+        if self.terminal_order_queue.len() > Self::TERMINAL_ORDER_RETENTION
+            && let Some(expired_bet_id) = self.terminal_order_queue.pop_front()
+        {
+            self.terminal_orders.remove(&expired_bet_id);
+            self.fill_tracker.prune(&expired_bet_id);
+        }
+    }
+
     /// Anchors the fill tracker against cached orders so the post-reconnect
     /// image neither treats cumulative size as a new fill nor re-emits a
     /// fill that was published via another channel.
     pub fn sync_from_orders(&mut self, orders: &[OrderSyncEntry]) {
         for entry in orders {
             if entry.is_closed {
-                self.terminal_orders.insert(entry.bet_id.clone());
+                self.mark_terminal_order(entry.bet_id.clone());
             } else {
                 self.register_customer_order_ref_with_legacy(entry.client_order_id);
             }
@@ -155,5 +176,46 @@ impl OcmState {
                     .seed_published_trade_ids(entry.trade_ids.iter().cloned());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn terminal_order_retention_evicts_fill_tracker_state() {
+        let mut state = OcmState::default();
+        let first_bet_id = "bet-0";
+        let size_matched = Decimal::new(10, 0);
+        let average_price = Decimal::new(20, 1);
+
+        assert!(
+            state
+                .fill_tracker
+                .advance_cumulative_fill(
+                    first_bet_id,
+                    size_matched,
+                    Some(average_price),
+                    average_price,
+                )
+                .is_some(),
+        );
+        state.mark_terminal_order(first_bet_id.to_string());
+        for index in 1..=OcmState::TERMINAL_ORDER_RETENTION {
+            state.mark_terminal_order(format!("bet-{index}"));
+        }
+
+        let replay_after_eviction = state.fill_tracker.advance_cumulative_fill(
+            first_bet_id,
+            size_matched,
+            Some(average_price),
+            average_price,
+        );
+
+        assert!(!state.terminal_orders.contains(first_bet_id));
+        assert!(replay_after_eviction.is_some());
     }
 }

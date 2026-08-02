@@ -25,35 +25,11 @@ use pyo3::prelude::*;
 #[cfg(feature = "gateway")]
 use crate::config::DockerizedIBGatewayConfig;
 #[cfg(feature = "gateway")]
-use crate::gateway::dockerized::{ContainerStatus, DockerizedIBGateway};
+use crate::gateway::dockerized::DockerizedIBGateway;
 
 #[cfg(feature = "gateway")]
 #[pymethods]
-impl ContainerStatus {
-    #[classattr]
-    const NO_CONTAINER: Self = Self::NoContainer;
-
-    #[classattr]
-    const CONTAINER_CREATED: Self = Self::ContainerCreated;
-
-    #[classattr]
-    const CONTAINER_STARTING: Self = Self::ContainerStarting;
-
-    #[classattr]
-    const CONTAINER_STOPPED: Self = Self::ContainerStopped;
-
-    #[classattr]
-    const NOT_LOGGED_IN: Self = Self::NotLoggedIn;
-
-    #[classattr]
-    const READY: Self = Self::Ready;
-
-    #[classattr]
-    const UNKNOWN: Self = Self::Unknown;
-}
-
-#[cfg(feature = "gateway")]
-#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DockerizedIBGateway {
     #[new]
     fn py_new(config: DockerizedIBGatewayConfig) -> PyResult<Self> {

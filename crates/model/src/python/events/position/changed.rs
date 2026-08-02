@@ -24,8 +24,8 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl PositionChanged {
     #[staticmethod]
     #[pyo3(name = "create")]
@@ -108,6 +108,12 @@ impl PositionChanged {
     #[getter]
     #[pyo3(name = "peak_quantity")]
     fn py_peak_quantity(&self) -> Quantity {
+        self.peak_quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "peak_qty")]
+    fn py_peak_qty(&self) -> Quantity {
         self.peak_quantity
     }
 

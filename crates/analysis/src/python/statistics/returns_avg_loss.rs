@@ -23,6 +23,10 @@ use crate::{statistic::PortfolioStatistic, statistics::returns_avg_loss::Returns
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ReturnsAverageLoss {
+    /// Calculates the arithmetic mean of the negative portfolio returns.
+    ///
+    /// Zero returns are excluded (neither wins nor losses). Returns `NaN` for an
+    /// empty series or when there are no negative returns.
     #[new]
     fn py_new() -> Self {
         Self {}

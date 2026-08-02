@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The `core` subpackage groups core constants, functions and low-level components used
+The `core` subpackage groups core constants, functions, and low-level components used
 throughout the framework.
 
 The main focus here is on efficiency and re-usability as this forms the base

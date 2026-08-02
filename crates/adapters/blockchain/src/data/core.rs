@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, collections::BTreeMap, sync::Arc};
 
+use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
@@ -28,13 +29,17 @@ use nautilus_model::defi::{
     },
     pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
+    tick_map::tick::PoolTick,
 };
 use nautilus_network::websocket::TransportBackend;
 
 use crate::{
-    cache::BlockchainCache,
+    cache::{BlockchainCache, PoolEventSyncState},
     config::BlockchainDataClientConfig,
-    contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
+    contracts::{
+        erc20::Erc20Contract,
+        uniswap_v3_pool::{FeeProtocolEncoding, UniswapV3PoolContract},
+    },
     data::subscription::DefiDataSubscriptionManager,
     events::{
         burn::BurnEvent, collect::CollectEvent, fee_protocol_collect::FeeProtocolCollectEvent,
@@ -60,6 +65,25 @@ use crate::{
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
 const POOL_EVENT_BLOCK_BATCH_SIZE: usize = 20_000;
+const POOL_EVENT_SYNC_VERSION_LEGACY: u32 = 0;
+const POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE: u32 = 1;
+// Give each added family a new introduction version, then advance this current version
+const POOL_EVENT_SYNC_VERSION: u32 = POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE;
+// Block-scoped RPC snapshots include the whole block, so same-block replay must skip every log.
+const BLOCK_SCOPED_SNAPSHOT_INDEX: u32 = i32::MAX as u32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PoolEventFamily {
+    name: &'static str,
+    signature: String,
+    introduced_version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PoolEventSyncRange {
+    from_block: u64,
+    families: Vec<PoolEventFamily>,
+}
 
 /// Core blockchain data client responsible for fetching, processing, and caching blockchain data.
 ///
@@ -459,16 +483,14 @@ impl BlockchainDataClientCore {
         // Extract address for blockchain queries
         let pool_address = &pool.address;
 
-        let (last_synced_block, effective_from_block) = if reset {
-            (None, from_block)
+        let dex_extended = self.get_dex_extended(dex)?.clone();
+        let event_families = Self::pool_event_families(&dex_extended);
+        let sync_state = if reset {
+            PoolEventSyncState::default()
         } else {
-            let last_synced_block = self
-                .cache
-                .get_pool_last_synced_block(dex, &pool_identifier)
-                .await?;
-            let effective_from_block = last_synced_block
-                .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
-            (last_synced_block, effective_from_block)
+            self.cache
+                .get_pool_event_sync_state(dex, &pool_identifier)
+                .await?
         };
 
         let to_block = match to_block {
@@ -476,16 +498,65 @@ impl BlockchainDataClientCore {
             None => self.hypersync_client.current_block().await,
         };
 
-        // Skip sync if we're already up to date
-        if effective_from_block > to_block {
+        if from_block > to_block {
             log::debug!(
-                "D {} already synced to block {} (current: {}), skipping sync",
+                "D {} Pool '{}' requested event range {} to {} is empty, skipping sync",
                 dex,
-                last_synced_block.unwrap_or(0).separate_with_commas(),
-                to_block.separate_with_commas()
+                pool_display,
+                from_block.separate_with_commas(),
+                to_block.separate_with_commas(),
             );
             return Ok(());
         }
+
+        let sync_ranges =
+            Self::pool_event_sync_ranges(&event_families, &sync_state, from_block, to_block);
+        let inherited_event_family_names = event_families
+            .iter()
+            .filter(|family| {
+                sync_state.version == POOL_EVENT_SYNC_VERSION_LEGACY
+                    && family.introduced_version == POOL_EVENT_SYNC_VERSION_LEGACY
+                    && !sync_state
+                        .family_blocks
+                        .iter()
+                        .any(|(name, _)| name == family.name)
+            })
+            .map(|family| family.name)
+            .collect::<Vec<_>>();
+
+        let Some(sync_range) = sync_ranges.first().cloned() else {
+            if sync_state.version < POOL_EVENT_SYNC_VERSION {
+                if let Some(last_full_sync_block) = sync_state.last_full_sync_block {
+                    self.cache
+                        .update_pool_event_sync(
+                            dex,
+                            &pool_identifier,
+                            &inherited_event_family_names,
+                            last_full_sync_block,
+                            None,
+                        )
+                        .await?;
+                }
+                self.cache
+                    .update_pool_event_sync(
+                        dex,
+                        &pool_identifier,
+                        &[],
+                        to_block,
+                        Some(POOL_EVENT_SYNC_VERSION),
+                    )
+                    .await?;
+            }
+
+            log::debug!(
+                "D {} Pool '{}' event families already synced to block {}, skipping sync",
+                dex,
+                pool_display,
+                to_block.separate_with_commas()
+            );
+            return Ok(());
+        };
+        let has_more_ranges = sync_ranges.len() > 1;
 
         // Query table max blocks to detect last blocks to use batch insert before that, then COPY command.
         let last_block_across_pool_events_table = self
@@ -493,21 +564,20 @@ impl BlockchainDataClientCore {
             .get_pool_event_tables_last_block(&pool_identifier)
             .await?;
 
+        let effective_from_block = sync_range.from_block;
+        let event_family_names = sync_range
+            .families
+            .iter()
+            .map(|family| family.name)
+            .collect::<Vec<_>>();
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
         log::debug!(
-            "Syncing Pool: '{}' events from {} to {} (total: {} blocks){}",
+            "Syncing Pool: '{}' event families {:?} from {} to {} (total: {} blocks)",
             pool_display,
+            event_family_names,
             effective_from_block.separate_with_commas(),
             to_block.separate_with_commas(),
             total_blocks.separate_with_commas(),
-            if let Some(last_synced) = last_synced_block {
-                format!(
-                    " - resuming from last synced block {}",
-                    last_synced.separate_with_commas()
-                )
-            } else {
-                String::new()
-            }
         );
 
         let mut metrics = BlockchainSyncReporter::new(
@@ -516,7 +586,6 @@ impl BlockchainDataClientCore {
             total_blocks,
             BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
-        let dex_extended = self.get_dex_extended(dex)?.clone();
         let swap_event_signature = dex_extended.swap_created_event.as_ref();
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
@@ -557,28 +626,11 @@ impl BlockchainDataClientCore {
         let initialize_sig_bytes = initialize_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
-        let mut event_signatures = vec![
-            swap_event_signature,
-            mint_event_signature,
-            burn_event_signature,
-            collect_event_signature,
-        ];
-
-        if let Some(event) = dex_extended.initialize_event.as_ref() {
-            event_signatures.push(event);
-        }
-
-        if let Some(event) = dex_extended.fee_protocol_update_event.as_ref() {
-            event_signatures.push(event);
-        }
-
-        if let Some(event) = dex_extended.fee_protocol_collect_event.as_ref() {
-            event_signatures.push(event);
-        }
-
-        if let Some(event) = dex_extended.flash_created_event.as_ref() {
-            event_signatures.push(event);
-        }
+        let event_signatures = sync_range
+            .families
+            .iter()
+            .map(|family| family.signature.as_str())
+            .collect();
 
         let pool_events_stream = self
             .hypersync_client
@@ -774,7 +826,13 @@ impl BlockchainDataClientCore {
                     Self::completed_pool_event_checkpoint(block_number, effective_from_block)
                 {
                     self.cache
-                        .update_pool_last_synced_block(dex, &pool_identifier, checkpoint_block)
+                        .update_pool_event_sync(
+                            dex,
+                            &pool_identifier,
+                            &event_family_names,
+                            checkpoint_block,
+                            None,
+                        )
                         .await?;
                 }
             }
@@ -796,20 +854,158 @@ impl BlockchainDataClientCore {
 
         metrics.log_final_stats();
         self.cache
-            .update_pool_last_synced_block(dex, &pool_identifier, to_block)
+            .update_pool_event_sync(
+                dex,
+                &pool_identifier,
+                &event_family_names,
+                to_block,
+                None,
+            )
             .await?;
 
         log::debug!(
-            "Successfully synced Dex '{}' Pool '{}' up to block {}",
+            "Successfully synced Dex '{}' Pool '{}' event families {:?} up to block {}",
             dex,
             pool_display,
+            event_family_names,
             to_block.separate_with_commas()
         );
                 Ok(())
             } => result
         };
 
-        sync_result
+        sync_result?;
+
+        if has_more_ranges {
+            return Box::pin(self.sync_pool_events(
+                dex,
+                pool_identifier,
+                Some(from_block),
+                Some(to_block),
+                false,
+            ))
+            .await;
+        }
+
+        if let Some(last_full_sync_block) = sync_state.last_full_sync_block {
+            self.cache
+                .update_pool_event_sync(
+                    dex,
+                    &pool_identifier,
+                    &inherited_event_family_names,
+                    last_full_sync_block,
+                    None,
+                )
+                .await?;
+        }
+        self.cache
+            .update_pool_event_sync(
+                dex,
+                &pool_identifier,
+                &[],
+                to_block,
+                Some(POOL_EVENT_SYNC_VERSION),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    fn pool_event_families(dex: &DexExtended) -> Vec<PoolEventFamily> {
+        let mut families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: dex.swap_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+            PoolEventFamily {
+                name: "mint",
+                signature: dex.mint_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+            PoolEventFamily {
+                name: "burn",
+                signature: dex.burn_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+            PoolEventFamily {
+                name: "collect",
+                signature: dex.collect_created_event.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            },
+        ];
+
+        if let Some(signature) = &dex.initialize_event {
+            families.push(PoolEventFamily {
+                name: "initialize",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            });
+        }
+
+        if let Some(signature) = &dex.flash_created_event {
+            families.push(PoolEventFamily {
+                name: "flash",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_LEGACY,
+            });
+        }
+
+        if let Some(signature) = &dex.fee_protocol_update_event {
+            families.push(PoolEventFamily {
+                name: "fee_protocol_update",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE,
+            });
+        }
+
+        if let Some(signature) = &dex.fee_protocol_collect_event {
+            families.push(PoolEventFamily {
+                name: "fee_protocol_collect",
+                signature: signature.to_string(),
+                introduced_version: POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE,
+            });
+        }
+
+        families
+    }
+
+    fn pool_event_sync_ranges(
+        families: &[PoolEventFamily],
+        state: &PoolEventSyncState,
+        from_block: u64,
+        to_block: u64,
+    ) -> Vec<PoolEventSyncRange> {
+        let mut grouped = BTreeMap::<u64, Vec<PoolEventFamily>>::new();
+
+        for family in families {
+            let explicit_checkpoint = state
+                .family_blocks
+                .iter()
+                .find_map(|(name, block)| (name == family.name).then_some(*block));
+            let legacy_checkpoint = (state.version == POOL_EVENT_SYNC_VERSION_LEGACY
+                && family.introduced_version == POOL_EVENT_SYNC_VERSION_LEGACY)
+                .then_some(state.last_full_sync_block)
+                .flatten();
+            let family_from_block = explicit_checkpoint
+                .or(legacy_checkpoint)
+                .map_or(from_block, |block| max(from_block, block.saturating_add(1)));
+
+            if family_from_block <= to_block {
+                grouped
+                    .entry(family_from_block)
+                    .or_default()
+                    .push(family.clone());
+            }
+        }
+
+        grouped
+            .into_iter()
+            .map(|(from_block, families)| PoolEventSyncRange {
+                from_block,
+                families,
+            })
+            .collect()
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -1210,6 +1406,11 @@ impl BlockchainDataClientCore {
             dex_extended.collect_created_event.as_ref(),
             dex_extended.flash_created_event.as_deref(),
         );
+        self.subscription_manager.register_dex_fee_protocol_events(
+            dex_id,
+            dex_extended.fee_protocol_update_event.as_deref(),
+            dex_extended.fee_protocol_collect_event.as_deref(),
+        );
         Ok(())
     }
 
@@ -1253,56 +1454,9 @@ impl BlockchainDataClientCore {
             Some(block) => block,
             None => self.hypersync_client.current_block().await,
         };
-        let mut profiler = PoolProfiler::new(pool.clone());
-
-        // Calculate latest valid block position after which we need to start profiling.
-        let from_position = match self
-            .cache
-            .database
-            .as_ref()
-            .unwrap()
-            .load_latest_pool_snapshot(
-                pool.chain.chain_id,
-                &pool.pool_identifier,
-                Some(to_block),
-                true,
-            )
-            .await
-        {
-            Ok(Some(snapshot)) => {
-                // Empty snapshots at the pool's creation block are stubs left behind by an
-                // earlier bootstrap that bailed before any liquidity events landed. Restoring
-                // marks the profiler as initialized, which then conflicts with the Initialize
-                // event that hypersync re-emits at the same block. Fall through to a fresh
-                // bootstrap rather than trust the stub.
-                if snapshot.positions.is_empty()
-                    && snapshot.ticks.is_empty()
-                    && snapshot.block_position.number == pool.creation_block
-                {
-                    log::warn!(
-                        "Ignoring empty stub snapshot at pool creation block {} for {}; rebuilding from events",
-                        snapshot.block_position.number.separate_with_commas(),
-                        pool.instrument_id,
-                    );
-                    None
-                } else {
-                    log::debug!(
-                        "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
-                        snapshot.block_position.number.separate_with_commas(),
-                        snapshot.positions.len(),
-                        snapshot.ticks.len()
-                    );
-                    let block_position = snapshot.block_position.clone();
-                    profiler.restore_from_snapshot(snapshot)?;
-                    log::debug!("Restored profiler from snapshot");
-                    Some(block_position)
-                }
-            }
-            _ => {
-                log::debug!("No valid snapshot found, processing from beginning");
-                None
-            }
-        };
+        let (mut profiler, from_position) = self
+            .seed_pool_profiler_from_latest_snapshot(pool, to_block)
+            .await?;
 
         // If we don't have never synced pool events, proceed with faster
         // construction of pool profiler from hypersync and RPC, where we
@@ -1375,12 +1529,128 @@ impl BlockchainDataClientCore {
         Ok((profiler, false))
     }
 
+    /// Bootstraps a pool profiler by reading liquidity topology from HyperSync and state from RPC.
+    ///
+    /// This mode avoids storing the full swap history. It streams Initialize, Mint, Burn, and
+    /// fee-protocol updates only, then hydrates the exact target block from the pool contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database is not initialized, event streaming fails, or RPC hydration fails.
+    pub async fn bootstrap_pool_profiler_from_rpc_snapshot(
+        &mut self,
+        pool: &SharedPool,
+        to_block: u64,
+    ) -> anyhow::Result<(PoolProfiler, bool)> {
+        if self.cache.database.is_none() {
+            anyhow::bail!(
+                "Database is not initialized, so we cannot bootstrap the pool profiler from an RPC snapshot"
+            );
+        }
+
+        self.construct_pool_profiler_from_hypersync_rpc(
+            PoolProfiler::new(pool.clone()),
+            None,
+            to_block,
+        )
+        .await
+    }
+
+    /// Advances an RPC-hydrated profiler to a later checkpoint.
+    ///
+    /// The profiler must come from [`Self::bootstrap_pool_profiler_from_rpc_snapshot`] or an earlier
+    /// call to this method. This keeps one command incremental without trusting an unproven stored
+    /// snapshot as the topology source.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the profiler has no RPC snapshot watermark, the target precedes that
+    /// watermark, event streaming fails, or RPC hydration fails.
+    pub async fn advance_pool_profiler_from_rpc_snapshot(
+        &mut self,
+        profiler: PoolProfiler,
+        to_block: u64,
+    ) -> anyhow::Result<(PoolProfiler, bool)> {
+        let from_position = profiler.last_processed_event.clone().ok_or_else(|| {
+            anyhow::anyhow!("cannot advance an RPC profiler without a snapshot watermark")
+        })?;
+
+        if to_block < from_position.number {
+            anyhow::bail!(
+                "cannot advance RPC profiler from block {} to earlier block {to_block}",
+                from_position.number
+            );
+        }
+
+        self.construct_pool_profiler_from_hypersync_rpc(profiler, Some(from_position), to_block)
+            .await
+    }
+
+    async fn seed_pool_profiler_from_latest_snapshot(
+        &self,
+        pool: &SharedPool,
+        to_block: u64,
+    ) -> anyhow::Result<(PoolProfiler, Option<BlockPosition>)> {
+        let mut profiler = PoolProfiler::new(pool.clone());
+
+        let from_position = match self
+            .cache
+            .database
+            .as_ref()
+            .expect("database presence is checked by caller")
+            .load_latest_pool_snapshot(
+                pool.chain.chain_id,
+                &pool.pool_identifier,
+                Some(to_block),
+                true,
+            )
+            .await
+        {
+            Ok(Some(snapshot)) => {
+                // Empty snapshots at the pool's creation block are stubs left behind by an
+                // earlier bootstrap that bailed before any liquidity events landed. Restoring
+                // marks the profiler as initialized, which then conflicts with the Initialize
+                // event that hypersync re-emits at the same block. Fall through to a fresh
+                // bootstrap rather than trust the stub.
+                if snapshot.positions.is_empty()
+                    && snapshot.ticks.is_empty()
+                    && snapshot.block_position.number == pool.creation_block
+                {
+                    log::warn!(
+                        "Ignoring empty stub snapshot at pool creation block {} for {}; rebuilding from events",
+                        snapshot.block_position.number.separate_with_commas(),
+                        pool.instrument_id,
+                    );
+                    None
+                } else {
+                    log::debug!(
+                        "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
+                        snapshot.block_position.number.separate_with_commas(),
+                        snapshot.positions.len(),
+                        snapshot.ticks.len()
+                    );
+                    let block_position = snapshot.block_position.clone();
+                    profiler.restore_from_snapshot(snapshot)?;
+                    log::debug!("Restored profiler from snapshot");
+                    Some(block_position)
+                }
+            }
+            _ => {
+                log::debug!("No valid snapshot found, processing from beginning");
+                None
+            }
+        };
+
+        Ok((profiler, from_position))
+    }
+
     /// Constructs a pool profiler by fetching events directly from HyperSync RPC.
     ///
     /// This method is used when the pool has never been synced to the database. It streams
     /// liquidity events (mints, burns) directly from HyperSync and processes them
     /// to build up the profiler's state in real-time. After processing all events, it
-    /// restores the profiler from the current on-chain state with the provided ticks and positions
+    /// restores the profiler from on-chain state at the target block with the provided ticks and
+    /// positions.
     ///
     /// # Returns
     ///
@@ -1400,9 +1670,7 @@ impl BlockchainDataClientCore {
         from_position: Option<BlockPosition>,
         to_block: u64,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
-        log::debug!(
-            "Constructing pool profiler from hypersync stream and RPC final state querying"
-        );
+        log::debug!("Constructing pool profiler from hypersync stream and RPC target block state");
         let dex_extended = self.get_dex_extended(&profiler.pool.dex.name)?.clone();
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
@@ -1433,6 +1701,9 @@ impl BlockchainDataClientCore {
         let protocol_update_event_signature = dex_extended.fee_protocol_update_event.as_deref();
         let protocol_update_sig_bytes = protocol_update_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
+        let protocol_collect_event_signature = dex_extended.fee_protocol_collect_event.as_deref();
+        let protocol_collect_sig_bytes = protocol_collect_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
         let from_block = from_position.map_or(profiler.pool.creation_block, |block_position| {
             block_position.number
@@ -1457,6 +1728,10 @@ impl BlockchainDataClientCore {
         ];
 
         if let Some(event) = protocol_update_event_signature {
+            event_signatures.push(event);
+        }
+
+        if let Some(event) = protocol_collect_event_signature {
             event_signatures.push(event);
         }
 
@@ -1542,6 +1817,24 @@ impl BlockchainDataClientCore {
                         )
                     })?;
                 profiler.process(&DexPoolData::FeeProtocolUpdate(update))?;
+            } else if protocol_collect_sig_bytes
+                .as_ref()
+                .is_some_and(|sig| sig.as_slice() == event_sig_bytes)
+            {
+                let fee_protocol_collect_event =
+                    dex_extended.parse_fee_protocol_collect_event_hypersync(&log)?;
+                let collect = self
+                    .process_pool_fee_protocol_collect_event(
+                        &fee_protocol_collect_event,
+                        &profiler.pool,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "failed to process CollectProtocol event at block {}",
+                            fee_protocol_collect_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::FeeProtocolCollect(collect))?;
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
                 anyhow::bail!(
@@ -1553,23 +1846,26 @@ impl BlockchainDataClientCore {
         self.flush_pool_event_blocks(&mut block_batch).await?;
         profiler.finalize_reporting();
 
+        let snapshot_block_position = self.block_scoped_snapshot_position(to_block).await?;
         let on_chain_snapshot = self
-            .get_on_chain_snapshot(&profiler)
+            .get_on_chain_snapshot_at_position(&profiler, snapshot_block_position)
             .await
             .with_context(|| {
-                let snapshot_block = profiler
-                    .last_processed_event
-                    .as_ref()
-                    .map_or(profiler.pool.creation_block, |event| event.number);
-
                 format!(
-                    "failed to restore pool {} from on-chain snapshot at block {} with {} ticks and {} positions",
+                    "failed to restore pool {} from RPC snapshot at target block {} with {} ticks and {} positions",
                     profiler.pool.address,
-                    snapshot_block.separate_with_commas(),
+                    to_block.separate_with_commas(),
                     profiler.get_active_tick_values().len().separate_with_commas(),
                     profiler.get_all_position_keys().len().separate_with_commas()
                 )
             })?;
+        Self::validate_rpc_snapshot_topology(&profiler, &on_chain_snapshot).with_context(|| {
+            format!(
+                "RPC snapshot topology validation failed for pool {} at block {}",
+                profiler.pool.address,
+                to_block.separate_with_commas()
+            )
+        })?;
         profiler.restore_from_snapshot(on_chain_snapshot)?;
 
         Ok((profiler, true))
@@ -1698,16 +1994,29 @@ impl BlockchainDataClientCore {
     /// using the profiler's active positions and last processed block number.
     /// Used for profiler state restoration after bootstrapping and validation.
     async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
-        // PancakeSwap V3 shares the Uniswap V3 pool read ABI, so it hydrates through the same contract
+        let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
+        self.get_on_chain_snapshot_at_position(profiler, last_processed_event)
+            .await
+    }
+
+    async fn get_on_chain_snapshot_at_position(
+        &self,
+        profiler: &PoolProfiler,
+        block_position: BlockPosition,
+    ) -> anyhow::Result<PoolSnapshot> {
+        // PancakeSwap V3 shares the Uniswap V3 pool read ABI except slot0.feeProtocol width.
         if matches!(
             profiler.pool.dex.name,
             DexType::UniswapV3 | DexType::PancakeSwapV3
         ) {
-            let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
+            let fee_protocol_encoding = match profiler.pool.dex.name {
+                DexType::PancakeSwapV3 => FeeProtocolEncoding::PancakeSwapV3BasisPoints,
+                _ => FeeProtocolEncoding::UniswapV3Packed,
+            };
             let timestamp = Self::timestamp_for_on_chain_snapshot(
                 profiler,
                 self.cache
-                    .get_block_timestamp(last_processed_event.number)
+                    .get_block_timestamp(block_position.number)
                     .copied(),
             )?;
             let on_chain_snapshot = self
@@ -1717,9 +2026,10 @@ impl BlockchainDataClientCore {
                     profiler.pool.instrument_id,
                     profiler.get_active_tick_values().as_slice(),
                     &profiler.get_all_position_keys(),
-                    last_processed_event,
+                    block_position,
                     timestamp, // ts_event
                     timestamp, // ts_init (same block timestamp)
+                    fee_protocol_encoding,
                 )
                 .await?;
 
@@ -1730,6 +2040,180 @@ impl BlockchainDataClientCore {
                 profiler.pool.dex.name
             )
         }
+    }
+
+    fn validate_rpc_snapshot_topology(
+        profiler: &PoolProfiler,
+        snapshot: &PoolSnapshot,
+    ) -> anyhow::Result<()> {
+        let tick_spacing = i32::try_from(
+            profiler
+                .pool
+                .tick_spacing
+                .context("pool tick spacing is not set")?,
+        )?;
+        let expected_positions: AHashMap<_, _> = profiler
+            .get_all_positions()
+            .into_iter()
+            .map(|position| {
+                (
+                    (position.owner, position.tick_lower, position.tick_upper),
+                    position.liquidity,
+                )
+            })
+            .collect();
+        let actual_positions: AHashMap<_, _> = snapshot
+            .positions
+            .iter()
+            .map(|position| {
+                (
+                    (position.owner, position.tick_lower, position.tick_upper),
+                    position.liquidity,
+                )
+            })
+            .collect();
+
+        if actual_positions.len() != snapshot.positions.len()
+            || actual_positions != expected_positions
+        {
+            anyhow::bail!(
+                "RPC positions do not match the complete HyperSync topology: expected {} positions, received {}",
+                expected_positions.len(),
+                actual_positions.len()
+            );
+        }
+
+        let actual_ticks: AHashMap<_, _> = snapshot
+            .ticks
+            .iter()
+            .map(|tick| (tick.value, tick))
+            .collect();
+
+        if actual_ticks.len() != snapshot.ticks.len() {
+            anyhow::bail!("RPC snapshot contains duplicate ticks");
+        }
+
+        let expected_tick_values = profiler.get_active_tick_values();
+        if actual_ticks.len() != expected_tick_values.len() {
+            anyhow::bail!(
+                "RPC ticks do not match the complete HyperSync topology: expected {} ticks, received {}",
+                expected_tick_values.len(),
+                actual_ticks.len()
+            );
+        }
+
+        for tick_value in expected_tick_values {
+            let expected_tick = profiler
+                .get_tick(tick_value)
+                .with_context(|| format!("missing replay tick {tick_value}"))?;
+            let actual_tick = actual_ticks
+                .get(&tick_value)
+                .with_context(|| format!("RPC snapshot omitted tick {tick_value}"))?;
+
+            if !actual_tick.initialized
+                || actual_tick.liquidity_gross == 0
+                || actual_tick.liquidity_gross != expected_tick.liquidity_gross
+                || actual_tick.liquidity_net != expected_tick.liquidity_net
+            {
+                anyhow::bail!(
+                    "RPC tick {tick_value} topology mismatch: expected gross={} net={}, received gross={} net={} initialized={}",
+                    expected_tick.liquidity_gross,
+                    expected_tick.liquidity_net,
+                    actual_tick.liquidity_gross,
+                    actual_tick.liquidity_net,
+                    actual_tick.initialized
+                );
+            }
+        }
+
+        let mut derived_ticks: AHashMap<i32, (u128, i128)> = AHashMap::new();
+        let mut active_liquidity = 0_u128;
+
+        for position in &snapshot.positions {
+            if position.tick_lower >= position.tick_upper
+                || position.tick_lower < PoolTick::MIN_TICK
+                || position.tick_upper > PoolTick::MAX_TICK
+                || position.tick_lower % tick_spacing != 0
+                || position.tick_upper % tick_spacing != 0
+            {
+                anyhow::bail!(
+                    "RPC position {} has invalid tick range [{}, {}) for spacing {tick_spacing}",
+                    position.owner,
+                    position.tick_lower,
+                    position.tick_upper
+                );
+            }
+
+            if position.liquidity == 0 {
+                continue;
+            }
+
+            let liquidity_net = i128::try_from(position.liquidity).with_context(|| {
+                format!(
+                    "RPC position {} liquidity exceeds i128::MAX",
+                    position.owner
+                )
+            })?;
+            let lower = derived_ticks.entry(position.tick_lower).or_default();
+            lower.0 = lower
+                .0
+                .checked_add(position.liquidity)
+                .context("lower tick liquidity gross overflow")?;
+            lower.1 = lower
+                .1
+                .checked_add(liquidity_net)
+                .context("lower tick liquidity net overflow")?;
+            let upper = derived_ticks.entry(position.tick_upper).or_default();
+            upper.0 = upper
+                .0
+                .checked_add(position.liquidity)
+                .context("upper tick liquidity gross overflow")?;
+            upper.1 = upper
+                .1
+                .checked_sub(liquidity_net)
+                .context("upper tick liquidity net underflow")?;
+
+            if position.tick_lower <= snapshot.state.current_tick
+                && snapshot.state.current_tick < position.tick_upper
+            {
+                active_liquidity = active_liquidity
+                    .checked_add(position.liquidity)
+                    .context("active position liquidity overflow")?;
+            }
+        }
+
+        if active_liquidity != snapshot.state.liquidity {
+            anyhow::bail!(
+                "RPC active liquidity mismatch: positions sum to {active_liquidity}, global state reports {}",
+                snapshot.state.liquidity
+            );
+        }
+
+        if derived_ticks.len() != actual_ticks.len() {
+            anyhow::bail!(
+                "RPC tick topology does not match positions: derived {} ticks, received {}",
+                derived_ticks.len(),
+                actual_ticks.len()
+            );
+        }
+
+        for (tick_value, (liquidity_gross, liquidity_net)) in derived_ticks {
+            let actual_tick = actual_ticks
+                .get(&tick_value)
+                .with_context(|| format!("RPC snapshot omitted position boundary {tick_value}"))?;
+
+            if actual_tick.liquidity_gross != liquidity_gross
+                || actual_tick.liquidity_net != liquidity_net
+            {
+                anyhow::bail!(
+                    "RPC tick {tick_value} does not match positions: derived gross={liquidity_gross} net={liquidity_net}, received gross={} net={}",
+                    actual_tick.liquidity_gross,
+                    actual_tick.liquidity_net
+                );
+            }
+        }
+
+        Ok(())
     }
 
     fn timestamp_for_on_chain_snapshot(
@@ -1755,6 +2239,50 @@ impl BlockchainDataClientCore {
             );
         };
         Ok(last_processed_event)
+    }
+
+    async fn block_scoped_snapshot_position(
+        &mut self,
+        block_number: u64,
+    ) -> anyhow::Result<BlockPosition> {
+        let blocks_stream = self
+            .hypersync_client
+            .request_blocks_stream(block_number, Some(block_number))
+            .await;
+        tokio::pin!(blocks_stream);
+        let block = blocks_stream
+            .next()
+            .await
+            .with_context(|| format!("failed to fetch block {block_number} for RPC snapshot"))?;
+
+        let block_position =
+            Self::block_scoped_snapshot_position_from_block(&mut self.cache, &block, block_number)?;
+        self.cache.add_pool_event_blocks_batch(vec![block]).await?;
+
+        Ok(block_position)
+    }
+
+    fn block_scoped_snapshot_position_from_block(
+        cache: &mut BlockchainCache,
+        block: &Block,
+        block_number: u64,
+    ) -> anyhow::Result<BlockPosition> {
+        if block.number != block_number {
+            anyhow::bail!(
+                "Fetched block {} while requesting RPC snapshot block {}",
+                block.number,
+                block_number
+            );
+        }
+
+        cache.cache_block_timestamp(block.number, block.timestamp);
+
+        Ok(BlockPosition::new(
+            block.number,
+            block.hash.clone(),
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+        ))
     }
 
     /// Replays historical events for a pool to hydrate its profiler state.
@@ -1875,17 +2403,25 @@ impl BlockchainDataClientCore {
     /// This method should be called when shutting down the client to ensure
     /// proper cleanup of network connections and background tasks.
     pub async fn disconnect(&mut self) {
+        self.subscription_manager.clear_block_demand();
         self.hypersync_client.disconnect().await;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::{U160, address};
+    use alloy::primitives::{Address, U160, U256, address};
     use nautilus_core::UnixNanos;
-    use nautilus_model::defi::{Chain, Token};
+    use nautilus_model::defi::{
+        Chain, Token,
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolState},
+        },
+    };
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -1938,6 +2474,63 @@ mod tests {
     }
 
     #[rstest]
+    fn validate_rpc_snapshot_topology_accepts_consistent_snapshot() {
+        let (profiler, snapshot) = rpc_topology_fixture();
+
+        let result = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_missing_tick() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.ticks.pop();
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("expected 2 ticks, received 1"));
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_zeroed_position() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.positions[0].liquidity = 0;
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("RPC positions do not match the complete HyperSync topology")
+        );
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_active_liquidity_mismatch() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.state.liquidity -= 1;
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("RPC active liquidity mismatch"));
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_tick_liquidity_mismatch() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.ticks[0].liquidity_gross -= 1;
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("RPC tick -60 topology mismatch"));
+    }
+
+    #[rstest]
     fn timestamp_for_on_chain_snapshot_prefers_cached_block_timestamp() {
         let pool = weth_usdt_pool();
         let mut profiler = PoolProfiler::new(pool);
@@ -1980,6 +2573,51 @@ mod tests {
     }
 
     #[rstest]
+    fn block_scoped_snapshot_position_from_block_caches_timestamp_and_uses_sentinel_indexes() {
+        let chain = Arc::new(
+            Chain::from_chain_id(42161)
+                .expect("Arbitrum chain should exist")
+                .clone(),
+        );
+        let mut cache = BlockchainCache::new(chain);
+        let timestamp = UnixNanos::from(1_700_000_002_000_000_000);
+        let block = test_block(123, timestamp);
+
+        let position = BlockchainDataClientCore::block_scoped_snapshot_position_from_block(
+            &mut cache, &block, 123,
+        )
+        .unwrap();
+
+        assert_eq!(position.number, 123);
+        assert_eq!(position.transaction_hash, block.hash);
+        assert_eq!(position.transaction_index, BLOCK_SCOPED_SNAPSHOT_INDEX);
+        assert_eq!(position.log_index, BLOCK_SCOPED_SNAPSHOT_INDEX);
+        assert_eq!(cache.get_block_timestamp(123), Some(&timestamp));
+    }
+
+    #[rstest]
+    fn block_scoped_snapshot_position_from_block_rejects_mismatched_block() {
+        let chain = Arc::new(
+            Chain::from_chain_id(42161)
+                .expect("Arbitrum chain should exist")
+                .clone(),
+        );
+        let mut cache = BlockchainCache::new(chain);
+        let block = test_block(122, UnixNanos::from(1_700_000_002_000_000_000));
+
+        let error = BlockchainDataClientCore::block_scoped_snapshot_position_from_block(
+            &mut cache, &block, 123,
+        )
+        .expect_err("mismatched block should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "Fetched block 122 while requesting RPC snapshot block 123"
+        );
+        assert_eq!(cache.get_block_timestamp(122), None);
+    }
+
+    #[rstest]
     #[case(100, 50, Some(99))]
     #[case(50, 50, None)]
     #[case(0, 0, None)]
@@ -1994,6 +2632,125 @@ mod tests {
         );
 
         assert_eq!(checkpoint, expected);
+    }
+
+    #[rstest]
+    fn pool_event_sync_ranges_preserve_legacy_history_during_new_family_backfill() {
+        let families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: "swap".to_string(),
+                introduced_version: 0,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_update",
+                signature: "fee_protocol_update".to_string(),
+                introduced_version: 1,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_collect",
+                signature: "fee_protocol_collect".to_string(),
+                introduced_version: 1,
+            },
+        ];
+        let state = PoolEventSyncState {
+            version: 0,
+            last_full_sync_block: Some(100),
+            family_blocks: Vec::new(),
+        };
+
+        let ranges = BlockchainDataClientCore::pool_event_sync_ranges(&families, &state, 10, 110);
+
+        assert_eq!(
+            ranges,
+            vec![
+                PoolEventSyncRange {
+                    from_block: 10,
+                    families: vec![families[1].clone(), families[2].clone()],
+                },
+                PoolEventSyncRange {
+                    from_block: 101,
+                    families: vec![families[0].clone()],
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn pool_event_sync_ranges_group_families_by_checkpoint() {
+        let families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: "swap".to_string(),
+                introduced_version: 0,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_update",
+                signature: "fee_protocol_update".to_string(),
+                introduced_version: 1,
+            },
+            PoolEventFamily {
+                name: "fee_protocol_collect",
+                signature: "fee_protocol_collect".to_string(),
+                introduced_version: 1,
+            },
+        ];
+        let state = PoolEventSyncState {
+            version: 1,
+            last_full_sync_block: Some(100),
+            family_blocks: vec![
+                ("fee_protocol_collect".to_string(), 75),
+                ("fee_protocol_update".to_string(), 50),
+                ("swap".to_string(), 100),
+            ],
+        };
+
+        let ranges = BlockchainDataClientCore::pool_event_sync_ranges(&families, &state, 10, 100);
+
+        assert_eq!(
+            ranges,
+            vec![
+                PoolEventSyncRange {
+                    from_block: 51,
+                    families: vec![families[1].clone()],
+                },
+                PoolEventSyncRange {
+                    from_block: 76,
+                    families: vec![families[2].clone()],
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn pool_event_sync_ranges_backfill_future_family_without_schema_migration() {
+        let families = vec![
+            PoolEventFamily {
+                name: "swap",
+                signature: "swap".to_string(),
+                introduced_version: 0,
+            },
+            PoolEventFamily {
+                name: "future",
+                signature: "future".to_string(),
+                introduced_version: 2,
+            },
+        ];
+        let state = PoolEventSyncState {
+            version: 1,
+            last_full_sync_block: Some(100),
+            family_blocks: vec![("swap".to_string(), 100)],
+        };
+
+        let ranges = BlockchainDataClientCore::pool_event_sync_ranges(&families, &state, 10, 100);
+
+        assert_eq!(
+            ranges,
+            vec![PoolEventSyncRange {
+                from_block: 10,
+                families: vec![families[1].clone()],
+            }]
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2150,5 +2907,65 @@ mod tests {
             Some(60),
             UnixNanos::default(),
         ))
+    }
+
+    fn rpc_topology_fixture() -> (PoolProfiler, PoolSnapshot) {
+        let pool = weth_usdt_pool();
+        let owner = Address::ZERO;
+        let liquidity = 1_000_u128;
+        let state = PoolState {
+            current_tick: 0,
+            liquidity,
+            ..Default::default()
+        };
+        let position = PoolPosition::new(owner, -60, 60, liquidity as i128);
+        let ticks = vec![
+            PoolTick::new(
+                -60,
+                liquidity,
+                liquidity as i128,
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                0,
+            ),
+            PoolTick::new(
+                60,
+                liquidity,
+                -(liquidity as i128),
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                0,
+            ),
+        ];
+        let timestamp = UnixNanos::from(1_700_000_000_000_000_000);
+        let snapshot = PoolSnapshot::new(
+            pool.instrument_id,
+            state,
+            vec![position],
+            ticks,
+            PoolAnalytics::default(),
+            BlockPosition::new(100, "0xabc".to_string(), 0, 0),
+            timestamp,
+            timestamp,
+        );
+        let mut profiler = PoolProfiler::new(pool);
+        profiler.restore_from_snapshot(snapshot.clone()).unwrap();
+
+        (profiler, snapshot)
+    }
+
+    fn test_block(number: u64, timestamp: UnixNanos) -> Block {
+        Block::new(
+            format!("0x{number:064x}"),
+            String::from("0x0"),
+            number,
+            Ustr::from("0x0000000000000000000000000000000000000000"),
+            30_000_000,
+            21_000,
+            timestamp,
+            Some(Blockchain::Arbitrum),
+        )
     }
 }

@@ -140,6 +140,11 @@ path = "benches/cache/query_sets.rs"
 harness = false
 
 [[bench]]
+name = "cache_xrate"
+path = "benches/cache/xrate.rs"
+harness = false
+
+[[bench]]
 name = "client_order_id"
 path = "benches/client_order_id.rs"
 harness = false

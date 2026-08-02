@@ -1,0 +1,14 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "instType": "SWAP",
+      "instId": "BTC-USDT-SWAP",
+      "buyLmt": "17057.9",
+      "sellLmt": "16388.9",
+      "ts": "1597026383085",
+      "enabled": true
+    }
+  ]
+}

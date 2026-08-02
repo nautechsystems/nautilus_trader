@@ -537,7 +537,7 @@ pub fn parse_funding_rate_history_record(
 /// Pass price and size precision from the instrument definition rather than
 /// inferring them from the wire values. The Derive `timestamp_bucket` is the
 /// bucket start in UNIX seconds; the returned bar's `ts_event` marks that
-/// start (not the close).
+/// bucket's close.
 ///
 /// # Errors
 ///
@@ -561,7 +561,17 @@ pub fn parse_candle_record(
         .context("invalid Derive candle volume")?;
     let timestamp =
         u64::try_from(record.timestamp_bucket).context("negative Derive candle timestamp")?;
-    let ts_event = timestamp_seconds_to_nanos(timestamp, "candle timestamp_bucket")?;
+    let bucket_start = timestamp_seconds_to_nanos(timestamp, "candle timestamp_bucket")?;
+    let interval_ns = bar_type
+        .spec()
+        .timedelta()
+        .num_nanoseconds()
+        .context("bar specification produced non-integer interval")?;
+    let interval_ns = u64::try_from(interval_ns)
+        .context("bar interval overflowed the u64 range for nanoseconds")?;
+    let ts_event = bucket_start
+        .checked_add(interval_ns)
+        .context("bar timestamp overflowed when adjusting to close time")?;
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Derive candle record")
@@ -1832,7 +1842,7 @@ mod tests {
         assert_eq!(bar.low, Price::from_str("3499.00").unwrap());
         assert_eq!(bar.close, Price::from_str("3501.00").unwrap());
         assert_eq!(bar.volume, Quantity::from_str("3.527").unwrap());
-        assert_eq!(bar.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_700_000_060_000_000_000));
         assert_eq!(bar.ts_init, UnixNanos::from(789));
     }
 
@@ -1884,6 +1894,34 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("Derive candle timestamp_bucket overflows nanoseconds"),
+            "{err}",
+        );
+    }
+
+    #[rstest]
+    fn test_parse_candle_record_rejects_close_timestamp_overflow() {
+        let record = DerivePublicCandle {
+            open_price: Decimal::from_str("1").unwrap(),
+            high_price: Decimal::from_str("1").unwrap(),
+            low_price: Decimal::from_str("1").unwrap(),
+            close_price: Decimal::from_str("1").unwrap(),
+            volume_usd: Decimal::ZERO,
+            volume_contracts: Decimal::ZERO,
+            timestamp: 1_700_000_000,
+            timestamp_bucket: (u64::MAX / NANOSECONDS_IN_SECOND) as i64,
+        };
+        let err = parse_candle_record(
+            &record,
+            BarType::from("ETH-PERP.DERIVE-1-MINUTE-LAST-EXTERNAL"),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(789),
+        )
+        .expect_err("must reject close timestamp overflow");
+
+        assert!(
+            err.to_string()
+                .contains("bar timestamp overflowed when adjusting to close time"),
             "{err}",
         );
     }

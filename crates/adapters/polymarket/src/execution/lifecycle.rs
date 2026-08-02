@@ -14,34 +14,94 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    sync::atomic::Ordering,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use indexmap::IndexMap;
 use nautilus_common::{
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::{MUTEX_POISONED, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
-    events::{OrderEventAny, PositionEvent},
+    events::{OrderEventAny, OrderFilled, PositionEvent},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
+    orders::Order,
 };
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::PolymarketExecutionClient;
 use crate::{
-    execution::reports::fetch_and_emit_account_state,
+    execution::{identity::OrderIdentity, reports::fetch_and_emit_account_state},
+    http::{clob::HeartbeatResponse, error::Error as HttpError},
     websocket::{
         dispatch::{WsDispatchContext, WsDispatchState, dispatch_user_message},
         messages::PolymarketWsMessage,
     },
 };
 
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
+const HEARTBEAT_TRANSPORT_FAILURE_LIMIT: u32 = 2;
+
 impl PolymarketExecutionClient {
+    fn start_heartbeat_task(&mut self) {
+        if !self.config.heartbeat_enabled {
+            return;
+        }
+
+        if self
+            .heartbeat_task
+            .as_ref()
+            .is_some_and(|task| !task.handle.is_finished())
+        {
+            return;
+        }
+
+        if let Some(completed) = self.heartbeat_task.take() {
+            completed.handle.abort();
+        }
+
+        self.heartbeat_healthy.store(true, Ordering::Release);
+        let cancellation = CancellationToken::new();
+
+        let handle = get_runtime().spawn(run_heartbeats(
+            self.http_client.clone(),
+            cancellation.clone(),
+            Arc::clone(&self.heartbeat_healthy),
+        ));
+        self.heartbeat_task = Some(super::HeartbeatTask {
+            cancellation,
+            handle,
+        });
+    }
+
+    fn abort_heartbeat_task(&mut self) {
+        if let Some(task) = self.heartbeat_task.take() {
+            task.cancellation.cancel();
+            task.handle.abort();
+        }
+    }
+
+    async fn stop_heartbeat_task(&mut self) {
+        if let Some(task) = self.heartbeat_task.take() {
+            task.cancellation.cancel();
+            if let Err(e) = task.handle.await
+                && !e.is_cancelled()
+            {
+                log::warn!("Heartbeat task failed to join during disconnect: {e}");
+            }
+        }
+    }
+
     fn ensure_order_event_subscription(&mut self) {
         if self.order_event_handler.is_some() {
             return;
@@ -123,15 +183,26 @@ impl PolymarketExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     pub(super) fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
+        self.pending_tasks.abort_all();
+    }
+
+    pub(super) async fn await_pending_tasks(&self) {
+        loop {
+            let tasks = self.pending_tasks.take_all();
+
+            if tasks.is_empty() {
+                break;
+            }
+
+            for handle in tasks {
+                if let Err(e) = handle.await {
+                    log::warn!("Pending execution task failed to join during disconnect: {e}");
+                }
+            }
         }
     }
 
@@ -195,6 +266,7 @@ impl PolymarketExecutionClient {
         let http_client = self.http_client.clone();
         let clock = self.clock;
         let signature_type = self.config.signature_type;
+        let stopping = self.stopping.clone();
         let user_address = self
             .secrets
             .funder
@@ -205,9 +277,9 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let pending_submits = self.pending_submits.clone();
         let order_identities = self.order_identities.clone();
+        let ws_dispatch_state = self.ws_dispatch_state.clone();
 
         let handle = get_runtime().spawn(async move {
-            let mut state = WsDispatchState::default();
             let ctx = WsDispatchContext {
                 token_instruments: &token_instruments,
                 fill_tracker: &fill_tracker,
@@ -223,9 +295,12 @@ impl PolymarketExecutionClient {
             loop {
                 match rx.recv().await {
                     Some(PolymarketWsMessage::User(user_msg)) => {
-                        if let Some(_refresh) =
+                        let refresh = {
+                            let mut state = ws_dispatch_state.lock().expect(MUTEX_POISONED);
                             dispatch_user_message(&user_msg, &ctx, &mut state)
-                        {
+                        };
+
+                        if refresh.is_some() {
                             let http = http_client.clone();
                             let emit = emitter.clone();
 
@@ -248,6 +323,25 @@ impl PolymarketExecutionClient {
                     Some(PolymarketWsMessage::Market(_)) => {}
                     Some(PolymarketWsMessage::Reconnected) => {
                         log::info!("User WebSocket reconnected");
+                        if stopping.load(Ordering::Acquire) {
+                            log::debug!("Skipping account refresh because execution client is stopping");
+                            continue;
+                        }
+
+                        let http = http_client.clone();
+                        let emit = emitter.clone();
+                        get_runtime().spawn(async move {
+                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type)
+                                .await
+                            {
+                                Ok(()) => {
+                                    log::info!("Account state refreshed after WebSocket reconnect");
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to refresh account after reconnect: {e}");
+                                }
+                            }
+                        });
                     }
                     None => {
                         log::debug!("User WebSocket stream ended");
@@ -259,7 +353,7 @@ impl PolymarketExecutionClient {
             log::debug!("User WebSocket handler task completed");
         });
 
-        *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
+        self.ws_stream_handle = Some(handle);
         Ok(())
     }
 
@@ -299,6 +393,71 @@ impl PolymarketExecutionClient {
         log::debug!("Loaded {} instruments from cache", instruments.len());
     }
 
+    pub(super) fn load_orders_from_cache(&self) {
+        let cache = self.core.cache();
+        let orders: Vec<_> = cache
+            .orders(
+                Some(&self.core.venue),
+                None,
+                None,
+                Some(&self.core.account_id),
+                None,
+            )
+            .into_iter()
+            .map(|order| order.cloned())
+            .collect();
+        drop(cache);
+
+        let mut matched_fills: AHashMap<String, Vec<OrderFilled>> = AHashMap::new();
+        let mut voided_trades = AHashSet::new();
+
+        for order in &orders {
+            let Some(venue_order_id) = order.venue_order_id() else {
+                continue;
+            };
+
+            self.order_identities
+                .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
+            self.order_identities.mark_accepted(venue_order_id);
+            self.fill_tracker.restore_order(
+                venue_order_id,
+                order.quantity(),
+                order.filled_qty(),
+                order.order_side(),
+            );
+
+            for event in order.events() {
+                match event {
+                    OrderEventAny::Filled(fill) => {
+                        if let Some(key) = polymarket_trade_key(fill.info.as_ref()) {
+                            matched_fills.entry(key).or_default().push(fill.clone());
+                        }
+                    }
+                    OrderEventAny::FillVoided(voided) => {
+                        if let Some(key) = polymarket_trade_key(voided.info.as_ref()) {
+                            voided_trades.insert(key);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut state = self.ws_dispatch_state.lock().expect(MUTEX_POISONED);
+
+        for (key, fills) in matched_fills {
+            if !voided_trades.contains(&key) {
+                state.restore_matched_trade(key, fills);
+            }
+        }
+
+        for key in voided_trades {
+            state.restore_voided_trade(key);
+        }
+
+        log::debug!("Loaded {} order lifecycles from cache", orders.len());
+    }
+
     pub(super) fn start_client(&mut self) {
         if self.core.is_started() {
             return;
@@ -327,11 +486,11 @@ impl PolymarketExecutionClient {
         self.clear_order_event_subscription();
         self.clear_position_event_subscription();
 
-        if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
+        if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
 
-        self.abort_pending_tasks();
+        self.abort_heartbeat_task();
         self.ws_client.abort();
 
         self.core.set_disconnected();
@@ -347,6 +506,7 @@ impl PolymarketExecutionClient {
         self.clear_position_event_subscription();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
+        *self.ws_dispatch_state.lock().expect(MUTEX_POISONED) = WsDispatchState::default();
     }
 
     pub(super) async fn connect_client(&mut self) -> anyhow::Result<()> {
@@ -359,6 +519,7 @@ impl PolymarketExecutionClient {
         self.stopping.store(false, Ordering::Release);
 
         self.load_instruments_from_cache();
+        self.load_orders_from_cache();
         self.core.set_instruments_initialized();
 
         self.start_ws_stream().await?;
@@ -382,6 +543,7 @@ impl PolymarketExecutionClient {
         }
 
         self.core.set_connected();
+        self.start_heartbeat_task();
 
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
@@ -395,16 +557,17 @@ impl PolymarketExecutionClient {
         log::info!("Disconnecting Polymarket execution client");
 
         self.stopping.store(true, Ordering::Release);
+        self.await_pending_tasks().await;
+        self.stop_heartbeat_task().await;
         self.clear_order_event_subscription();
         self.clear_position_event_subscription();
 
         self.ws_client.disconnect().await?;
 
-        if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
+        if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
 
-        self.abort_pending_tasks();
         self.core.set_disconnected();
 
         log::info!("Disconnected: client_id={}", self.core.client_id);
@@ -414,6 +577,87 @@ impl PolymarketExecutionClient {
     pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
         self.upsert_execution_lookup(instrument);
     }
+}
+
+async fn run_heartbeats(
+    http_client: crate::http::clob::PolymarketClobHttpClient,
+    cancellation: CancellationToken,
+    healthy: Arc<AtomicBool>,
+) {
+    let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut heartbeat_id = String::new();
+    let mut transport_failures = 0;
+
+    loop {
+        tokio::select! {
+            () = cancellation.cancelled() => break,
+            _ = interval.tick() => {}
+        }
+
+        let mut resynchronized = false;
+
+        loop {
+            let response = tokio::select! {
+                () = cancellation.cancelled() => return,
+                response = tokio::time::timeout(
+                    HEARTBEAT_REQUEST_TIMEOUT,
+                    http_client.post_heartbeat(&heartbeat_id),
+                ) => response.unwrap_or(Err(HttpError::Timeout)),
+            };
+
+            match response {
+                Ok(HeartbeatResponse::Acknowledged(next_id)) => {
+                    if let Some(next_id) = next_id {
+                        heartbeat_id = next_id;
+                    }
+                    transport_failures = 0;
+                    break;
+                }
+                Ok(HeartbeatResponse::Resynchronize(next_id)) if !resynchronized => {
+                    heartbeat_id = next_id;
+                    resynchronized = true;
+                }
+                Ok(HeartbeatResponse::Resynchronize(_)) => {
+                    log::error!("Polymarket heartbeat rejected after ID resynchronization");
+                    healthy.store(false, Ordering::Release);
+                    return;
+                }
+                Err(e) if e.is_retryable() => {
+                    transport_failures += 1;
+                    if transport_failures >= HEARTBEAT_TRANSPORT_FAILURE_LIMIT {
+                        log::error!(
+                            "Polymarket heartbeat failed after {transport_failures} consecutive transport attempts"
+                        );
+                        healthy.store(false, Ordering::Release);
+                        return;
+                    }
+
+                    log::warn!(
+                        "Polymarket heartbeat transport attempt {transport_failures} failed"
+                    );
+                    break;
+                }
+                Err(HttpError::Auth(_)) => {
+                    log::error!("Polymarket heartbeat authentication failed");
+                    healthy.store(false, Ordering::Release);
+                    return;
+                }
+                Err(_) => {
+                    log::error!("Polymarket heartbeat was rejected by the venue");
+                    healthy.store(false, Ordering::Release);
+                    return;
+                }
+            }
+        }
+    }
+}
+
+fn polymarket_trade_key(info: Option<&IndexMap<Ustr, Ustr>>) -> Option<String> {
+    let info = info?;
+    let trade_id = info.get(&Ustr::from("id"))?;
+    let taker_order_id = info.get(&Ustr::from("taker_order_id"))?;
+    Some(format!("{trade_id}-{taker_order_id}"))
 }
 
 fn upsert_execution_lookup(
@@ -496,6 +740,7 @@ fn is_terminal_order_event(event: &OrderEventAny) -> bool {
             | OrderEventAny::Expired(_)
             | OrderEventAny::Rejected(_)
             | OrderEventAny::Filled(_)
+            | OrderEventAny::FillVoided(_)
     )
 }
 
@@ -503,6 +748,7 @@ fn is_terminal_order_event(event: &OrderEventAny) -> bool {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use nautilus_common::{
         cache::Cache,
         live::runner::set_exec_event_sender,
@@ -511,11 +757,11 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos, nanos::DurationNanos};
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
-        enums::{AccountType, OmsType, OrderSide, PositionSide, TimeInForce},
-        events::{OrderEventAny, PositionClosed, PositionEvent},
+        enums::{AccountType, OmsType, OrderSide, OrderStatus, PositionSide, TimeInForce},
+        events::{OrderEventAny, PositionClosed, PositionEvent, order::spec::OrderFillVoidedSpec},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId,
-            VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId,
+            TraderId, VenueOrderId,
         },
         instruments::stubs::binary_option,
         orders::{LimitOrder, Order, OrderAny, stubs::TestOrderEventStubs},
@@ -526,12 +772,31 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+    use crate::factories::spawn_rejecting_proxy;
 
     const TEST_PRIVATE_KEY: &str =
         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
 
     fn test_client() -> (PolymarketExecutionClient, Rc<RefCell<Cache>>) {
+        test_client_with_proxy(None)
+    }
+
+    fn test_client_with_proxy(
+        proxy_url: Option<String>,
+    ) -> (PolymarketExecutionClient, Rc<RefCell<Cache>>) {
+        test_client_with_proxy_and_http_urls(
+            proxy_url,
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3000",
+        )
+    }
+
+    fn test_client_with_proxy_and_http_urls(
+        proxy_url: Option<String>,
+        base_url_http: &str,
+        base_url_data_api: &str,
+    ) -> (PolymarketExecutionClient, Rc<RefCell<Cache>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
@@ -553,15 +818,79 @@ mod tests {
                 api_secret: Some(TEST_API_SECRET_B64.to_string()),
                 passphrase: Some("test_pass".to_string()),
                 funder: None,
-                base_url_http: Some("http://127.0.0.1:3000".to_string()),
+                base_url_http: Some(base_url_http.to_string()),
                 base_url_ws: Some("ws://127.0.0.1:3000/ws".to_string()),
-                base_url_data_api: Some("http://127.0.0.1:3000".to_string()),
+                base_url_data_api: Some(base_url_data_api.to_string()),
+                proxy_url,
                 ..crate::config::PolymarketExecClientConfig::default()
             },
         )
         .expect("test client should construct");
 
         (client, cache)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn execution_client_propagates_proxy_without_debug_exposure() {
+        const USERNAME: &str = "exec-user";
+        const SECRET: &str = "exec-client-proxy-secret";
+        let (proxy_addr, requests) = spawn_rejecting_proxy(2).await;
+        let proxy_url = format!("http://{USERNAME}:{SECRET}@{proxy_addr}");
+        let (client, _cache) = test_client_with_proxy_and_http_urls(
+            Some(proxy_url.clone()),
+            "https://clob-auth.fixture",
+            "https://data-auth.fixture",
+        );
+        let debug = format!("{client:?}");
+        let errors = [
+            client
+                .http_client
+                .get_book("auth-token")
+                .await
+                .unwrap_err()
+                .to_string(),
+            client
+                .data_api_client
+                .get_positions("0x0000000000000000000000000000000000000002")
+                .await
+                .unwrap_err()
+                .to_string(),
+        ];
+        let requests = requests.lock().await;
+        let request_lines = requests
+            .iter()
+            .map(|request| request.lines().next().unwrap().to_string())
+            .collect::<Vec<_>>();
+        let expected_auth = format!("Basic {}", BASE64.encode(format!("{USERNAME}:{SECRET}")));
+
+        assert_eq!(client.config.proxy_url.as_deref(), Some(proxy_url.as_str()));
+        assert_eq!(client.ws_client.proxy_url().unwrap().expose(), proxy_url);
+        assert_eq!(
+            request_lines,
+            [
+                "CONNECT clob-auth.fixture:443 HTTP/1.1",
+                "CONNECT data-auth.fixture:443 HTTP/1.1",
+            ]
+        );
+
+        for request in requests.iter() {
+            let auth = request
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("proxy-authorization")
+                        .then_some(value.trim())
+                })
+                .expect("Proxy-Authorization header");
+            assert_eq!(auth, expected_auth);
+        }
+
+        for error in errors {
+            assert!(!error.contains(SECRET));
+            assert!(!error.contains(&expected_auth));
+        }
+        assert!(!debug.contains(SECRET));
     }
 
     fn test_binary_option(raw_symbol: &str, expired: bool, neg_risk: bool) -> InstrumentAny {
@@ -721,6 +1050,87 @@ mod tests {
                 .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
         );
         assert!(client.neg_risk_index.contains_key(&expired.id()));
+    }
+
+    #[rstest]
+    fn load_orders_from_cache_restores_failed_trade_correction_state() {
+        let (client, cache) = test_client();
+        let instrument = test_binary_option("0xRESTART", false, false);
+        let venue_order_id = VenueOrderId::from("V-001");
+
+        let order = {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument.clone()).unwrap();
+            let order = cache_accepted_open_order(&mut cache, instrument.id());
+            let mut filled = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                None,
+                None,
+                Some(ModelPrice::from("0.5000")),
+                None,
+                None,
+                None,
+                None,
+                Some(AccountId::from("POLYMARKET-001")),
+            );
+
+            if let OrderEventAny::Filled(ref mut fill) = filled {
+                fill.trade_id = TradeId::from("trade-restart");
+                fill.info = Some(IndexMap::from([
+                    (Ustr::from("id"), Ustr::from("trade-restart")),
+                    (Ustr::from("taker_order_id"), Ustr::from("V-001")),
+                ]));
+            }
+            let filled = match filled {
+                OrderEventAny::Filled(filled) => filled,
+                other => panic!("expected filled event, was {other:?}"),
+            };
+            cache
+                .update_order(&OrderEventAny::Filled(filled.clone()))
+                .unwrap();
+            let voided = OrderFillVoidedSpec::builder()
+                .trader_id(filled.trader_id)
+                .strategy_id(filled.strategy_id)
+                .instrument_id(filled.instrument_id)
+                .client_order_id(filled.client_order_id)
+                .venue_order_id(filled.venue_order_id)
+                .account_id(filled.account_id)
+                .trade_id(filled.trade_id)
+                .voided_qty(filled.last_qty)
+                .maybe_commission_voided(filled.commission)
+                .order_side(filled.order_side)
+                .order_type(filled.order_type)
+                .last_px(filled.last_px)
+                .currency(filled.currency)
+                .liquidity_side(filled.liquidity_side)
+                .maybe_position_id(filled.position_id)
+                .maybe_info(filled.info)
+                .build();
+            cache
+                .update_order(&OrderEventAny::FillVoided(voided))
+                .unwrap()
+        };
+
+        client.load_orders_from_cache();
+
+        let key = "trade-restart-V-001";
+        let identity = client
+            .order_identities
+            .get(&venue_order_id)
+            .expect("order identity restored");
+        let state = client.ws_dispatch_state.lock().expect(MUTEX_POISONED);
+
+        assert_eq!(identity.client_order_id, order.client_order_id());
+        assert!(!client.order_identities.mark_accepted(venue_order_id));
+        assert_eq!(
+            client.fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(order.filled_qty())
+        );
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert!(state.processed_fills.contains(&key.to_string()));
+        assert_eq!(state.matched_fill_count(key), 0);
+        assert!(state.is_voided_trade(key));
     }
 
     #[rstest]
@@ -993,6 +1403,12 @@ mod tests {
         client.upsert_execution_lookup(&expired);
         client.ensure_order_event_subscription();
         client.ensure_position_event_subscription();
+        client
+            .ws_dispatch_state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .processed_fills
+            .add("trade-1".to_string());
 
         client.reset_client();
 
@@ -1004,5 +1420,37 @@ mod tests {
                 .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
         );
         assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert!(
+            !client
+                .ws_dispatch_state
+                .lock()
+                .expect(MUTEX_POISONED)
+                .processed_fills
+                .contains(&"trade-1".to_string())
+        );
+    }
+
+    #[rstest]
+    fn stop_preserves_websocket_dedup_state_for_reconnect() {
+        let (mut client, _cache) = test_client();
+        let dedup_key = "trade-reconnect".to_string();
+        client.start_client();
+        client
+            .ws_dispatch_state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .processed_fills
+            .add(dedup_key.clone());
+
+        client.stop_client();
+
+        assert!(
+            client
+                .ws_dispatch_state
+                .lock()
+                .expect(MUTEX_POISONED)
+                .processed_fills
+                .contains(&dedup_key)
+        );
     }
 }

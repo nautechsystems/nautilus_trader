@@ -52,7 +52,7 @@ impl TrailingStopMarketOrder {
     /// Creates a new `TrailingStopMarketOrder` instance.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, trigger_price, trigger_type, trailing_offset, trailing_offset_type, time_in_force, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, trigger_price, trigger_type, trailing_offset, trailing_offset_type, time_in_force, reduce_only, quote_quantity, init_id, ts_init, activation_price=None, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -60,7 +60,7 @@ impl TrailingStopMarketOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
-        trigger_price: Price,
+        trigger_price: Option<Price>,
         trigger_type: TriggerType,
         trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
@@ -69,6 +69,7 @@ impl TrailingStopMarketOrder {
         quote_quantity: bool,
         init_id: UUID4,
         ts_init: u64,
+        activation_price: Option<Price>,
         expire_time: Option<u64>,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
@@ -89,6 +90,7 @@ impl TrailingStopMarketOrder {
             client_order_id,
             order_side,
             quantity,
+            activation_price,
             trigger_price,
             trigger_type,
             trailing_offset,
@@ -192,7 +194,7 @@ impl TrailingStopMarketOrder {
 
     #[getter]
     #[pyo3(name = "trigger_price")]
-    fn py_trigger_price(&self) -> Price {
+    fn py_trigger_price(&self) -> Option<Price> {
         self.trigger_price
     }
 
@@ -413,7 +415,7 @@ impl TrailingStopMarketOrder {
 
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
-        let event_any = pyobject_to_order_event(py, event).unwrap();
+        let event_any = pyobject_to_order_event(py, event)?;
         self.apply(event_any).map_err(to_pyruntime_err)
     }
 
@@ -429,7 +431,10 @@ impl TrailingStopMarketOrder {
             s.parse::<OrderSide>().map_err(|e| e.to_string())
         })?;
         let quantity = Quantity::from(get_required_string(values, "quantity")?.as_str());
-        let trigger_price = Price::from(get_required_string(values, "trigger_price")?.as_str());
+        let activation_price =
+            get_optional_parsed(values, "activation_price", |s| Ok(Price::from(s.as_str())))?;
+        let trigger_price =
+            get_optional_parsed(values, "trigger_price", |s| Ok(Price::from(s.as_str())))?;
         let trigger_type = get_required_parsed(values, "trigger_type", |s| {
             s.parse::<TriggerType>().map_err(|e| e.to_string())
         })?;
@@ -481,13 +486,14 @@ impl TrailingStopMarketOrder {
             .map(|vec| vec.iter().map(|s| Ustr::from(s)).collect());
         let init_id = get_required_parsed(values, "init_id", |s| s.parse::<UUID4>())?;
         let ts_init = get_required::<u64>(values, "ts_init")?;
-        let order = Self::new(
+        let order = Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
             order_side,
             quantity,
+            activation_price,
             trigger_price,
             trigger_type,
             trailing_offset,
@@ -509,7 +515,8 @@ impl TrailingStopMarketOrder {
             tags,
             init_id,
             ts_init.into(),
-        );
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(order)
     }
 
@@ -524,7 +531,10 @@ impl TrailingStopMarketOrder {
         dict.set_item("type", self.order_type.to_string())?;
         dict.set_item("quantity", self.quantity.to_string())?;
         dict.set_item("status", self.status.to_string())?;
-        dict.set_item("trigger_price", self.trigger_price.to_string())?;
+        self.trigger_price.map_or_else(
+            || dict.set_item("trigger_price", py.None()),
+            |x| dict.set_item("trigger_price", x.to_string()),
+        )?;
         dict.set_item("trigger_type", self.trigger_type.to_string())?;
         dict.set_item("trailing_offset", self.trailing_offset.to_string())?;
         dict.set_item(
@@ -556,7 +566,7 @@ impl TrailingStopMarketOrder {
         )?;
         self.avg_px.map_or_else(
             || dict.set_item("avg_px", py.None()),
-            |x| dict.set_item("avg_px", x),
+            |x| dict.set_item("avg_px", x.to_string()),
         )?;
         self.position_id.map_or_else(
             || dict.set_item("position_id", py.None()),
@@ -568,7 +578,7 @@ impl TrailingStopMarketOrder {
         )?;
         self.slippage.map_or_else(
             || dict.set_item("slippage", py.None()),
-            |x| dict.set_item("slippage", x),
+            |x| dict.set_item("slippage", x.to_string()),
         )?;
         self.account_id.map_or_else(
             || dict.set_item("account_id", py.None()),

@@ -243,7 +243,7 @@ struct UUID4_t uuid4_from_cstr(const char *ptr);
 /**
  * Return a borrowed *null-terminated* UTF-8 C string representing `uuid`.
  *
- * The pointer remains valid for as long as the input `UUID4` reference lives – callers **must
+ * The pointer remains valid for as long as the input `UUID4` reference lives - callers **must
  * not** attempt to free it.
  */
 const char *uuid4_to_cstr(const struct UUID4_t *uuid);
@@ -254,6 +254,6 @@ const char *uuid4_to_cstr(const struct UUID4_t *uuid);
 uint8_t uuid4_eq(const struct UUID4_t *lhs, const struct UUID4_t *rhs);
 
 /**
- * Compute the stable [`u64`] hash of `uuid` using Rust’s default hasher.
+ * Compute the stable [`u64`] hash of `uuid` using Rust's default hasher.
  */
 uint64_t uuid4_hash(const struct UUID4_t *uuid);

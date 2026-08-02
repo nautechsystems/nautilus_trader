@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_core::{UUID4, python::to_pyvalue_err};
@@ -33,8 +35,8 @@ use crate::{
     python::config_error_to_pyvalue_err,
 };
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl LoggerConfig {
     /// Configuration for the Nautilus logger.
     #[new]
@@ -88,6 +90,75 @@ impl LoggerConfig {
         Ok(config)
     }
 
+    #[getter]
+    #[pyo3(name = "stdout_level")]
+    fn py_stdout_level(&self) -> LogLevel {
+        level_filter_to_log_level(self.stdout_level)
+    }
+
+    #[getter]
+    #[pyo3(name = "fileout_level")]
+    fn py_fileout_level(&self) -> LogLevel {
+        level_filter_to_log_level(self.fileout_level)
+    }
+
+    #[getter]
+    #[pyo3(name = "component_levels")]
+    fn py_component_levels(&self) -> HashMap<String, String> {
+        self.component_level
+            .iter()
+            .map(|(component, level)| (component.to_string(), level.to_string()))
+            .collect()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_colored")]
+    const fn py_is_colored(&self) -> bool {
+        self.is_colored
+    }
+
+    #[getter]
+    #[pyo3(name = "print_config")]
+    const fn py_print_config(&self) -> bool {
+        self.print_config
+    }
+
+    #[getter]
+    #[pyo3(name = "bypass_logging")]
+    const fn py_bypass_logging(&self) -> bool {
+        self.bypass_logging
+    }
+
+    #[getter]
+    #[pyo3(name = "log_components_only")]
+    const fn py_log_components_only(&self) -> bool {
+        self.log_components_only
+    }
+
+    #[getter]
+    #[pyo3(name = "file_config")]
+    fn py_file_config(&self) -> Option<FileWriterConfig> {
+        self.file_config.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "clear_log_file")]
+    const fn py_clear_log_file(&self) -> bool {
+        self.clear_log_file
+    }
+
+    #[getter]
+    #[pyo3(name = "fileout_sync_on_flush")]
+    const fn py_fileout_sync_on_flush(&self) -> bool {
+        self.fileout_sync_on_flush
+    }
+
+    #[getter]
+    #[pyo3(name = "buffered_stdout")]
+    const fn py_buffered_stdout(&self) -> bool {
+        self.buffered_stdout
+    }
+
     /// Parses a configuration from a spec string.
     ///
     /// # Format
@@ -107,8 +178,8 @@ impl LoggerConfig {
     }
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl FileWriterConfig {
     /// Creates a new `FileWriterConfig` instance.
     #[new]
@@ -122,6 +193,32 @@ impl FileWriterConfig {
     ) -> Self {
         Self::new(directory, file_name, file_format, file_rotate)
     }
+
+    #[getter]
+    #[pyo3(name = "directory")]
+    fn py_directory(&self) -> Option<&str> {
+        self.directory.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "file_name")]
+    fn py_file_name(&self) -> Option<&str> {
+        self.file_name.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "file_format")]
+    fn py_file_format(&self) -> Option<&str> {
+        self.file_format.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "file_rotate")]
+    fn py_file_rotate(&self) -> Option<(u64, u32)> {
+        self.file_rotate
+            .as_ref()
+            .map(|rotate| (rotate.max_file_size, rotate.max_backup_count))
+    }
 }
 
 /// Initialize logging.
@@ -133,6 +230,10 @@ impl FileWriterConfig {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
+///
+/// # Errors
+///
+/// Returns an error if the logging subsystem fails to initialize.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_logging")]
@@ -225,6 +326,17 @@ fn parse_component_levels(
             Ok(new_map)
         }
         None => Ok(AHashMap::new()),
+    }
+}
+
+const fn level_filter_to_log_level(level: LevelFilter) -> LogLevel {
+    match level {
+        LevelFilter::Off => LogLevel::Off,
+        LevelFilter::Error => LogLevel::Error,
+        LevelFilter::Warn => LogLevel::Warning,
+        LevelFilter::Info => LogLevel::Info,
+        LevelFilter::Debug => LogLevel::Debug,
+        LevelFilter::Trace => LogLevel::Trace,
     }
 }
 

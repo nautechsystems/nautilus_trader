@@ -15,23 +15,46 @@ rewrite.
 
 ## Current Rust status
 
-| Area                     | Current Rust behavior                                                                                        | Difference from `betfair.md` today                                        | Cutover work                                        |
-|--------------------------|--------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|-----------------------------------------------------|
-| Order types              | `MARKET` only supports `AT_THE_CLOSE`; `LIMIT` supports BSP on close flows.                                  | Stable guide is still Python shaped in this area.                         | Decide final Betfair market order model.            |
-| Batch operations         | `SubmitOrderList` and `BatchCancelOrders` are implemented.                                                   | Stable guide used to mark these as unsupported.                           | Keep and promote.                                   |
-| Reconciliation scope     | `reconcile_market_ids_only` uses `reconcile_market_ids`; otherwise falls back to `stream_market_ids_filter`. | Stable guide says stream filtering and reconciliation are separate.       | Decide if Rust keeps or removes this coupling.      |
-| Full image cache checks  | Rust uses `generate_mass_status()` at startup and on every stream reconnect; no `check_cache_against_order_image`. | Stable guide describes the Python full image cache check.                 | Add parity or document the Rust path as final.      |
-| Post‑reconnect halt      | `submit_order` and `submit_order_list` emit `OrderDenied STREAM_RECONCILING` while the reconcile is in flight. | Python keeps trading during reconnect.                                    | Promote as the Rust default once `betfair.md` flips. |
-| External order filtering | `ignore_external_orders` only skips OCM updates with no `rfo`.                                               | Python also uses it during full image cache checks.                       | Decide final filtering behavior.                    |
-| Config surface           | No `certs_dir`, no `instrument_config`, fixed keep alive, required heartbeat value.                          | Stable guide still documents the Python config surface.                   | Decide whether to add parity or bless Rust surface. |
-| SSL certificates         | Stream client currently hardcodes `certs_dir=None`.                                                          | Stable guide documents certificate configuration and `BETFAIR_CERTS_DIR`. | Add support or remove from the future guide.        |
+| Area                     | Current Rust behavior                                                                                              | Difference from `betfair.md` today                                        | Cutover work                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Order types              | `MARKET` only supports `AT_THE_CLOSE`; `LIMIT` supports BSP on close flows.                                        | Stable guide is still Python shaped in this area.                         | Decide final Betfair market order model.             |
+| Batch operations         | `SubmitOrderList` and `BatchCancelOrders` are implemented.                                                         | Stable guide used to mark these as unsupported.                           | Keep and promote.                                    |
+| Voided fills             | Cumulative `sv` allocation emits `OrderFillVoided` order events.                                                   | Python publishes only the `BetfairOrderVoided` custom data type.          | Keep and promote.                                    |
+| Reconciliation scope     | `reconcile_market_ids_only` uses `reconcile_market_ids`; otherwise falls back to `stream_market_ids_filter`.       | Stable guide says stream filtering and reconciliation are separate.       | Decide if Rust keeps or removes this coupling.       |
+| Full image cache checks  | Rust uses `generate_mass_status()` at startup and on every stream reconnect; no `check_cache_against_order_image`. | Stable guide describes the Python full image cache check.                 | Add parity or document the Rust path as final.       |
+| Post‑reconnect halt      | `submit_order` and `submit_order_list` emit `OrderDenied STREAM_RECONCILING` while the reconcile is in flight.     | Python keeps trading during reconnect.                                    | Promote as the Rust default once `betfair.md` flips. |
+| External order filtering | `ignore_external_orders` only skips OCM updates with no `rfo`.                                                     | Python also uses it during full image cache checks.                       | Decide final filtering behavior.                     |
+| Config surface           | No `certs_dir`, no `instrument_config`, fixed keep alive, required heartbeat value.                                | Stable guide still documents the Python config surface.                   | Decide whether to add parity or bless Rust surface.  |
+| SSL certificates         | Stream client currently hardcodes `certs_dir=None`.                                                                | Stable guide documents certificate configuration and `BETFAIR_CERTS_DIR`. | Add support or remove from the future guide.         |
+
+## Timestamp policy
+
+The Rust adapter keeps venue event time separate from local initialization time:
+
+- `ts_event` records when Betfair says the event occurred.
+- `ts_init` records when the live adapter received the containing stream message.
+
+Each live stream callback reads the real‑time atomic clock once, before decoding the message. Every
+output decoded from that message shares the same `ts_init`.
+
+| Input                  | `ts_event` source                                                                                                                                                                                                     | `ts_init` source                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Market change (`mcm`)  | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
+| Race change (`rcm`)    | Runner or race feed time (`ft`), falling back to the message publish time (`pt`) when `ft` is absent.                                                                                                                 | Local receipt time.                                                           |
+| Cricket change (`ccm`) | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
+| Order change (`ocm`)   | The relevant order lifecycle time. Acceptance uses `pd`; fills use `md`, falling back to `pt`; status and cancel events use the latest of `md`, `cd`, or `ld`, falling back to `pt`. OCM‑level custom data uses `pt`. | Local receipt time.                                                           |
+| Historical data loader | The same feed‑time rules as live data.                                                                                                                                                                                | Message publish time (`pt`), because recorded data has no local receipt time. |
+
+When an OCM arrives during post‑reconnect reconciliation, the adapter buffers the message together
+with its captured `ts_init`. Draining the buffer preserves the original receipt time instead of using
+the later replay time.
 
 ## Orders capability
 
 ### Order types
 
 | Order Type             | Supported | Notes                                                                       |
-|------------------------|-----------|-----------------------------------------------------------------------------|
+| ---------------------- | --------- | --------------------------------------------------------------------------- |
 | `MARKET`               | ✓*        | Rust only supports `AT_THE_CLOSE`, which maps to Betfair `MARKET_ON_CLOSE`. |
 | `LIMIT`                | ✓         | Rust supports regular limit orders and BSP on close limit orders.           |
 | `STOP_MARKET`          | -         | Not supported.                                                              |
@@ -43,7 +66,7 @@ rewrite.
 ### Time in force
 
 | Time in force  | Supported | Notes                                                        |
-|----------------|-----------|--------------------------------------------------------------|
+| -------------- | --------- | ------------------------------------------------------------ |
 | `GTC`          | ✓         | Maps to Betfair `PERSIST`.                                   |
 | `DAY`          | ✓         | Maps to Betfair `LAPSE`.                                     |
 | `FOK`          | ✓         | Maps to Betfair `FILL_OR_KILL`.                              |
@@ -55,11 +78,11 @@ Rust currently also accepts `LIMIT` orders in `AT_THE_OPEN` mode and routes them
 
 ### Batch operations
 
-| Operation    | Supported | Notes                                      |
-|--------------|-----------|--------------------------------------------|
-| Batch Submit | ✓         | Implemented through `SubmitOrderList`.     |
-| Batch Modify | -         | Not supported.                             |
-| Batch Cancel | ✓         | Implemented through `BatchCancelOrders`.   |
+| Operation    | Supported | Notes                                    |
+| ------------ | --------- | ---------------------------------------- |
+| Batch Submit | ✓         | Implemented through `SubmitOrderList`.   |
+| Batch Modify | -         | Not supported.                           |
+| Batch Cancel | ✓         | Implemented through `BatchCancelOrders`. |
 
 ## Execution control flow
 
@@ -90,7 +113,7 @@ Betfair sessions expire every 12-24 hours. The Rust adapter handles session reco
 automatically through three mechanisms:
 
 | Mechanism           | Trigger                           | Action                                                               |
-|---------------------|-----------------------------------|----------------------------------------------------------------------|
+| ------------------- | --------------------------------- | -------------------------------------------------------------------- |
 | Periodic keep‑alive | Every 10 hours.                   | Renew session token, push to all stream watch channels.              |
 | Keep‑alive fallback | Keep‑alive returns `LoginFailed`. | Full re‑login via `reconnect()`, push fresh token to streams.        |
 | Stream reconnect    | `Connection` message after drop.  | Try keep‑alive, fall back to re‑login on `LoginFailed`, update auth. |
@@ -122,13 +145,13 @@ off the unmatched book before the post-reconnect stream image arrives). It there
 runs a mass-status reconciliation over a recent window before allowing strategies to
 add new exposure.
 
-| Step | Trigger                                        | Action                                                                                                          |
-|------|------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| 1    | Second `Connection` message after stream drop. | OCM handler raises `pending_resync` and `is_reconciling`, sends a reconnect signal to the background task.      |
-| 2    | Reconnect task receives signal.                | Re‑asserts `is_reconciling` so a queued second reconnect halts during its own iteration too.                    |
+| Step | Trigger                                        | Action                                                                                                             |
+| ---- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 1    | Second `Connection` message after stream drop. | OCM handler raises `pending_resync` and `is_reconciling`, sends a reconnect signal to the background task.         |
+| 2    | Reconnect task receives signal.                | Re‑asserts `is_reconciling` so a queued second reconnect halts during its own iteration too.                       |
 | 3    | Reconnect task body.                           | Refreshes session, updates stream auth, fetches `getAccountFunds`, and calls `listCurrentOrders` for orders+fills. |
-| 4    | Mass status built.                             | Dispatched as `ExecutionReport::MassStatus` so the engine reconciles into the cache.                            |
-| 5    | Iteration ends.                                | `is_reconciling` cleared. A failed iteration also clears it (fail‑open, consistent with the rest of Nautilus).  |
+| 4    | Mass status built.                             | Dispatched as `ExecutionReport::MassStatus` so the engine reconciles into the cache.                               |
+| 5    | Iteration ends.                                | `is_reconciling` cleared. A failed iteration also clears it (fail‑open, consistent with the rest of Nautilus).     |
 
 While `is_reconciling` is set:
 
@@ -151,7 +174,7 @@ a fill that completed mid-gap is still captured.
 Betfair uses a tiered tick scheme with varying increments across price ranges:
 
 | Price range    | Tick size |
-|----------------|-----------|
+| -------------- | --------- |
 | 1.01 - 2.00    | 0.01      |
 | 2.00 - 3.00    | 0.02      |
 | 3.00 - 4.00    | 0.05      |
@@ -202,13 +225,34 @@ The adapter handles several edge cases when processing fills from the stream:
   stream disconnect is recovered by the post-reconnect mass-status reconciliation; see
   [Post-reconnect reconciliation](#post-reconnect-reconciliation).
 
+### Voided fills
+
+Betfair can void matched bets after reporting them, for example after an integrity ruling or a VAR
+decision. The order stream carries the running total in `sv` (size voided). Voids caused by runner
+removal settle instead of streaming, so they do not reach this path.
+
+The adapter allocates each `sv` increase to locally applied fill lots newest-first and emits one
+cumulative [`OrderFillVoided`](../concepts/events/order_fill_voided.md) per affected `trade_id`. A
+first-seen snapshot seeds its cumulative void state without reversing exposure Nautilus never
+applied, so a reconnect does not double-correct. Any `sv` increase also triggers an account refresh.
+
+An `EXECUTION_COMPLETE` update with no locally applied fill lots takes the terminal path instead: one
+correction under a synthetic `VOID-{bet_id}` trade ID that carries the order to `VOIDED`. That status
+resolves only when `sv` is positive and both cancelled and lapsed quantities are zero, so a mixed
+update carrying `sc` or `sl` alongside `sv` emits no correction. Betfair voids never set
+`is_reopened`, so `VOIDED` is final.
+
+The adapter also publishes the [`BetfairOrderVoided`](#custom-data-types) custom data type carrying
+the venue's raw void detail. The Python adapter publishes only that type and no order event, so a
+Rust strategy receives position and PnL corrections that Python does not.
+
 ## Rate limiting
 
 The adapter uses separate rate limit buckets so that account state polling and
 reconciliation do not throttle order placement:
 
 | Bucket  | Default | Endpoints                                       |
-|---------|---------|-------------------------------------------------|
+| ------- | ------- | ----------------------------------------------- |
 | General | 5/s     | Account state, reconciliation, keep‑alive.      |
 | Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. |
 
@@ -231,7 +275,7 @@ The Rust adapter emits the same custom data types as the Python adapter through 
 market and race streams. All custom data flows automatically when subscribed to markets.
 
 | Type                       | Stream | Description                                       |
-|----------------------------|--------|---------------------------------------------------|
+| -------------------------- | ------ | ------------------------------------------------- |
 | `BetfairTicker`            | Market | Last traded price, traded volume, BSP indicators. |
 | `BetfairStartingPrice`     | Market | Realized BSP after market close.                  |
 | `BetfairSequenceCompleted` | Market | Marks end of a market change sequence.            |
@@ -254,64 +298,64 @@ When multiple trading nodes share a single Betfair account across different mark
 
 ### Data client configuration
 
-| Option                              | Default  | Notes                                         |
-|-------------------------------------|----------|-----------------------------------------------|
-| `account_currency`                  | Required | Betfair account currency.                     |
-| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.             |
-| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.             |
-| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.              |
-| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.         |
-| `request_rate_per_second`           | `5`      | General HTTP rate limit.                      |
-| `default_min_notional`              | `None`   | Optional minimum notional override.           |
-| `event_type_ids`                    | `None`   | Optional navigation filter.                   |
-| `event_type_names`                  | `None`   | Optional navigation filter.                   |
-| `event_ids`                         | `None`   | Optional navigation filter.                   |
-| `country_codes`                     | `None`   | Optional navigation filter.                   |
-| `market_types`                      | `None`   | Optional navigation filter.                   |
-| `market_ids`                        | `None`   | Optional navigation filter.                   |
-| `min_market_start_time`             | `None`   | Optional navigation filter.                   |
-| `max_market_start_time`             | `None`   | Optional navigation filter.                   |
-| `stream_host`                       | `None`   | Optional stream host override.                |
-| `stream_port`                       | `None`   | Optional stream port override.                |
-| `stream_heartbeat_ms`               | `5,000`  | Required in Rust today.                       |
-| `stream_idle_timeout_ms`            | `60,000` | Idle timeout before reconnect.                |
-| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                      |
-| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                      |
-| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.            |
-| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                  |
-| `subscription_delay_secs`           | `3`      | Delay before the first market subscription.   |
-| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                     |
+| Option                              | Default  | Notes                                       |
+| ----------------------------------- | -------- | ------------------------------------------- |
+| `account_currency`                  | Required | Betfair account currency.                   |
+| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.           |
+| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.           |
+| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.            |
+| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.       |
+| `request_rate_per_second`           | `5`      | General HTTP rate limit.                    |
+| `default_min_notional`              | `None`   | Optional minimum notional override.         |
+| `event_type_ids`                    | `None`   | Optional navigation filter.                 |
+| `event_type_names`                  | `None`   | Optional navigation filter.                 |
+| `event_ids`                         | `None`   | Optional navigation filter.                 |
+| `country_codes`                     | `None`   | Optional navigation filter.                 |
+| `market_types`                      | `None`   | Optional navigation filter.                 |
+| `market_ids`                        | `None`   | Optional navigation filter.                 |
+| `min_market_start_time`             | `None`   | Optional navigation filter.                 |
+| `max_market_start_time`             | `None`   | Optional navigation filter.                 |
+| `stream_host`                       | `None`   | Optional stream host override.              |
+| `stream_port`                       | `None`   | Optional stream port override.              |
+| `stream_heartbeat_ms`               | `5,000`  | Required in Rust today.                     |
+| `stream_idle_timeout_ms`            | `60,000` | Idle timeout before reconnect.              |
+| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                    |
+| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                    |
+| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.          |
+| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                |
+| `subscription_delay_secs`           | `3`      | Delay before the first market subscription. |
+| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                   |
 
 Rust does not yet expose `certs_dir` or `instrument_config`. Rust also uses a fixed 36,000 second
 keep-alive interval.
 
 ### Execution client configuration
 
-| Option                              | Default       | Notes                                                  |
-|-------------------------------------|---------------|--------------------------------------------------------|
-| `trader_id`                         | `TRADER-001`  | Trader ID for the client core.                         |
-| `account_id`                        | `BETFAIR-001` | Account ID for the client core.                        |
-| `account_currency`                  | `GBP`         | Betfair account currency.                              |
-| `username`                          | `None`        | Falls back to `BETFAIR_USERNAME`.                      |
-| `password`                          | `None`        | Falls back to `BETFAIR_PASSWORD`.                      |
-| `app_key`                           | `None`        | Falls back to `BETFAIR_APP_KEY`.                       |
-| `proxy_url`                         | `None`        | Optional proxy URL for HTTP requests.                  |
-| `request_rate_per_second`           | `5`           | General HTTP rate limit.                               |
-| `order_request_rate_per_second`     | `20`          | Order endpoint rate limit.                             |
-| `stream_host`                       | `None`        | Optional stream host override.                         |
-| `stream_port`                       | `None`        | Optional stream port override.                         |
-| `stream_heartbeat_ms`               | `5,000`       | Required in Rust today.                                |
-| `stream_idle_timeout_ms`            | `60,000`      | Idle timeout before reconnect.                         |
-| `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                               |
-| `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                               |
-| `stream_use_tls`                    | `True`        | Use TLS for the stream connection.                     |
-| `stream_market_ids_filter`          | `None`        | Optional live OCM market filter.                       |
-| `ignore_external_orders`            | `False`       | Only skips OCM updates with no `rfo`.                  |
-| `calculate_account_state`           | `True`        | Gates periodic account state polling in Rust today.    |
-| `request_account_state_secs`        | `300`         | Poll interval for account funds.                       |
-| `reconcile_market_ids_only`         | `False`       | When `True`, use `reconcile_market_ids`.               |
-| `reconcile_market_ids`              | `None`        | Explicit startup reconciliation market IDs.            |
-| `use_market_version`                | `False`       | Attach market version to place and replace requests.   |
+| Option                              | Default       | Notes                                                              |
+| ----------------------------------- | ------------- | ------------------------------------------------------------------ |
+| `trader_id`                         | `TRADER-001`  | Trader ID for the client core.                                     |
+| `account_id`                        | `BETFAIR-001` | Account ID for the client core.                                    |
+| `account_currency`                  | `GBP`         | Betfair account currency.                                          |
+| `username`                          | `None`        | Falls back to `BETFAIR_USERNAME`.                                  |
+| `password`                          | `None`        | Falls back to `BETFAIR_PASSWORD`.                                  |
+| `app_key`                           | `None`        | Falls back to `BETFAIR_APP_KEY`.                                   |
+| `proxy_url`                         | `None`        | Optional proxy URL for HTTP requests.                              |
+| `request_rate_per_second`           | `5`           | General HTTP rate limit.                                           |
+| `order_request_rate_per_second`     | `20`          | Order endpoint rate limit.                                         |
+| `stream_host`                       | `None`        | Optional stream host override.                                     |
+| `stream_port`                       | `None`        | Optional stream port override.                                     |
+| `stream_heartbeat_ms`               | `5,000`       | Required in Rust today.                                            |
+| `stream_idle_timeout_ms`            | `60,000`      | Idle timeout before reconnect.                                     |
+| `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                                           |
+| `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                                           |
+| `stream_use_tls`                    | `True`        | Use TLS for the stream connection.                                 |
+| `stream_market_ids_filter`          | `None`        | Optional live OCM market filter.                                   |
+| `ignore_external_orders`            | `False`       | Only skips OCM updates with no `rfo`.                              |
+| `calculate_account_state`           | `True`        | Gates periodic account state polling in Rust today.                |
+| `request_account_state_secs`        | `300`         | Poll interval for account funds.                                   |
+| `reconcile_market_ids_only`         | `False`       | When `True`, use `reconcile_market_ids`.                           |
+| `reconcile_market_ids`              | `None`        | Explicit startup reconciliation market IDs.                        |
+| `use_market_version`                | `False`       | Attach market version to place and replace requests.               |
 | `stream_gap_recovery_lookback_mins` | `10`          | Lookback window for the post‑reconnect mass‑status reconciliation. |
 
 Rust does not yet expose `certs_dir` or `instrument_config`.

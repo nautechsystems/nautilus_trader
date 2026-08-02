@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountBalance
 from nautilus_trader.model import AccountId
@@ -230,6 +232,18 @@ def test_margin_account_from_account_events():
     assert account.id == AccountId("SIM-004")
     assert account.initial_margin(instrument.id) == Money.from_str("10.00 USD")
     assert account.maintenance_margin(instrument.id) == Money.from_str("5.00 USD")
+
+
+@pytest.mark.parametrize(
+    ("factory", "args"),
+    [
+        (cash_account_from_account_events, ([{}], True, False)),
+        (margin_account_from_account_events, ([{}], True)),
+    ],
+)
+def test_account_from_events_rejects_malformed_event(factory, args):
+    with pytest.raises(KeyError, match="Missing required key: account_id"):
+        factory(*args)
 
 
 def test_margin_model_exports():

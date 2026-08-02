@@ -1,0 +1,11 @@
+[
+  "maker",
+  "taker",
+  "liquidation",
+  "partialLiquidation",
+  "assignor",
+  "assignee",
+  "takerAfterEdit",
+  "unwindBankrupt",
+  "unwindCounterparty"
+]

@@ -596,7 +596,7 @@ pub fn parse_order_msg(
     }
 
     if let Some(avg_px) = msg.avg_px {
-        report = report.with_avg_px(avg_px)?;
+        report = report.with_avg_px(avg_px);
     }
 
     if let Some(trigger_price) = msg.stop_px {
@@ -793,7 +793,7 @@ pub fn parse_order_update_msg(
     // Uses external IDs; callers enrich with tracked identity when available
     let trader_id = TraderId::external();
     let strategy_id = StrategyId::external();
-    let instrument_id = parse_instrument_id(msg.symbol);
+    let instrument_id = parse_instrument_id(msg.symbol?);
     let venue_order_id = Some(VenueOrderId::new(msg.order_id.to_string()));
     let client_order_id = msg
         .cl_ord_id
@@ -808,6 +808,8 @@ pub fn parse_order_update_msg(
     };
     let price = msg
         .price
+        .value()
+        .copied()
         .map(|p| Price::new(p, instrument.price_precision()));
 
     // BitMEX doesn't send trigger price in regular order updates?
@@ -1524,7 +1526,8 @@ mod tests {
     #[rstest]
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
-        let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
+        let mut msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
+        msg.avg_px = Some(Decimal::from_str("30000.500000000004").unwrap());
         let mut cache = AHashMap::new();
         let instrument = create_test_perpetual_instrument();
         let report = parse_order_msg(&msg, &instrument, &mut cache, UnixNanos::default()).unwrap();
@@ -1546,6 +1549,10 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from(100));
         assert_eq!(report.filled_qty, Quantity::from(0));
         assert_eq!(report.price.unwrap(), Price::from("98000.0"));
+        assert_eq!(
+            report.avg_px,
+            Some(Decimal::from_str("30000.500000000004").unwrap())
+        );
         assert_eq!(report.ts_accepted, 1732530600000000000); // 2024-11-25T10:30:00.000Z
     }
 

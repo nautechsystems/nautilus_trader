@@ -79,7 +79,7 @@ impl Scalar {
     /// Build a scalar from five raw 64-bit limbs without any reduction.
     ///
     /// The caller is responsible for ensuring the value is canonical when it
-    /// will subsequently feed the modular `Add`, `Sub`, `Neg` or `Mul`
+    /// will subsequently feed the modular `Add`, `Sub`, `Neg`, or `Mul`
     /// operators.
     #[inline]
     #[must_use]

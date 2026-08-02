@@ -3357,7 +3357,7 @@ class TestExecutionEngine:
 
         instrument = AUDUSD_SIM
 
-        # Create a bracket order with limit entry, limit TP and limit SL
+        # Create a bracket order with limit entry, limit TP, and limit SL
         bracket = strategy.order_factory.bracket(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,

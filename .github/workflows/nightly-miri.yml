@@ -36,9 +36,6 @@ jobs:
       # Dedicated target directory: Miri rebuilds against a different sysroot,
       # so sharing a target dir with stable jobs only churns the cache.
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/miri-${{ matrix.crate }}
-      # Pin a recent nightly so Miri behaviour is reproducible across runs.
-      # Bump when the channel rotates or when a newer Miri is needed.
-      MIRI_TOOLCHAIN: nightly-2026-04-16
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
@@ -55,6 +52,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Get Miri toolchain
+        run: echo "MIRI_TOOLCHAIN=$(bash scripts/tool-version.sh miri)" >> "$GITHUB_ENV"
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
@@ -68,6 +68,9 @@ jobs:
         run: |
           rustup toolchain install "${MIRI_TOOLCHAIN}" --component miri --profile minimal
           rustup +"${MIRI_TOOLCHAIN}" component add rust-src
+
+      - name: Verify Miri toolchain compatibility
+        run: bash scripts/ci/check-miri-toolchain.bash --verify-installed
 
       - name: Setup miri sysroot
         run: cargo +"${MIRI_TOOLCHAIN}" miri setup

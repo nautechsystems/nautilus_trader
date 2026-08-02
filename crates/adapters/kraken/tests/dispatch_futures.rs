@@ -16,8 +16,8 @@
 //! Integration tests for the Kraken Futures WebSocket execution dispatch.
 //!
 //! Validates the two-tier routing contract from
-//! `docs/developer_guide/adapters.md` lines 1232-1296 for the futures product:
-//! tracked orders (registered at submission via `OrderIdentity`) emit typed
+//! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates`:
+//! tracked orders for the futures product (registered at submission via `OrderIdentity`) emit typed
 //! [`OrderEventAny`] events; untracked / external orders fall back to
 //! [`ExecutionReport`] variants.
 
@@ -49,6 +49,8 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 const FUTURES_PRODUCT: &str = "PF_XBTUSD";
@@ -92,8 +94,8 @@ fn instruments_with(instrument: InstrumentAny) -> Arc<AtomicMap<InstrumentId, In
 }
 
 fn make_open_order(
-    qty: f64,
-    filled: f64,
+    qty: Decimal,
+    filled: Decimal,
     cli_ord_id: Option<&str>,
     venue_order_id: &str,
 ) -> KrakenFuturesOpenOrder {
@@ -103,7 +105,7 @@ fn make_open_order(
         last_update_time: 0,
         qty,
         filled,
-        limit_price: Some(70_000.0),
+        limit_price: Some(dec!(70000)),
         stop_price: None,
         order_type: KrakenFuturesOrderType::Limit,
         order_id: venue_order_id.to_string(),
@@ -117,8 +119,8 @@ fn make_open_order(
 fn make_open_orders_delta(
     is_cancel: bool,
     reason: Option<&str>,
-    qty: f64,
-    filled: f64,
+    qty: Decimal,
+    filled: Decimal,
     cli_ord_id: Option<&str>,
     venue_order_id: &str,
 ) -> KrakenFuturesOpenOrdersDelta {
@@ -155,14 +157,14 @@ fn make_fills_delta(
         fills: vec![KrakenFuturesFill {
             instrument: Some(Ustr::from(FUTURES_PRODUCT)),
             time: 0,
-            price: 70_000.0,
-            qty: 0.0001,
+            price: dec!(70000),
+            qty: dec!(0.0001),
             order_id: venue_order_id.to_string(),
             cli_ord_id: cli_ord_id.map(str::to_string),
             fill_id: trade_id.to_string(),
             fill_type: KrakenFillType::Maker,
             buy: true,
-            fee_paid: Some(0.05),
+            fee_paid: Some(dec!(0.05)),
             fee_currency: Some("USD".to_string()),
         }],
     }
@@ -178,7 +180,14 @@ fn test_futures_delta_tracked_emits_order_accepted() {
         make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
     );
 
-    let delta = make_open_orders_delta(false, None, 0.0001, 0.0, Some("uuid-tracked-1"), "v-1");
+    let delta = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("uuid-tracked-1"),
+        "v-1",
+    );
     dispatch::futures::open_orders_delta(
         &delta,
         &state,
@@ -215,8 +224,8 @@ fn test_futures_delta_tracked_cancel_synthesizes_accepted_then_canceled() {
     let delta = make_open_orders_delta(
         true,
         Some("cancelled_by_user"),
-        0.0001,
-        0.0,
+        dec!(0.0001),
+        dec!(0.0),
         Some("uuid-tracked-2"),
         "v-2",
     );
@@ -259,8 +268,8 @@ fn test_futures_delta_fill_driven_cancel_is_skipped() {
     let delta = make_open_orders_delta(
         true,
         Some("full_fill"),
-        0.0,
-        0.0001,
+        dec!(0.0),
+        dec!(0.0001),
         Some("uuid-tracked-3"),
         "v-3",
     );
@@ -354,7 +363,7 @@ fn test_futures_fills_delta_dedup_skips_duplicate_trade_id() {
     let truncated = empty_string_map();
     let venue_client = empty_string_map();
 
-    // First dispatch — accepted + filled.
+    // First dispatch - accepted + filled.
     dispatch::futures::fills_delta(
         &fills,
         &state,
@@ -365,7 +374,7 @@ fn test_futures_fills_delta_dedup_skips_duplicate_trade_id() {
         account_id(),
         UnixNanos::default(),
     );
-    // Second dispatch with the same trade id — must be deduped.
+    // Second dispatch with the same trade id - must be deduped.
     dispatch::futures::fills_delta(
         &fills,
         &state,
@@ -447,7 +456,7 @@ fn test_futures_open_orders_cancel_external_falls_back_to_report() {
         InstrumentId::from(FUTURES_INSTRUMENT_ID),
     );
     let venue_order_qty = empty_quantity_map();
-    venue_order_qty.insert("v-ext".to_string(), Quantity::new(0.0001, 4));
+    venue_order_qty.insert("v-ext".to_string(), Quantity::from("0.0001"));
 
     let cancel = make_open_orders_cancel(Some("cancelled_by_user"), None, "v-ext");
     dispatch::futures::open_orders_cancel(
@@ -497,7 +506,7 @@ fn test_futures_delta_external_emits_status_report() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
 
-    let delta = make_open_orders_delta(false, None, 0.0001, 0.0, None, "v-ext-2");
+    let delta = make_open_orders_delta(false, None, dec!(0.0001), Decimal::ZERO, None, "v-ext-2");
     dispatch::futures::open_orders_delta(
         &delta,
         &state,
@@ -531,8 +540,8 @@ fn test_futures_delta_modify_ack_emits_order_updated() {
     let placement = make_open_orders_delta(
         false,
         Some("new_placed_order_by_user"),
-        0.0001,
-        0.0,
+        dec!(0.0001),
+        dec!(0.0),
         Some("uuid-modify-ack"),
         "v-modify",
     );
@@ -554,12 +563,12 @@ fn test_futures_delta_modify_ack_emits_order_updated() {
     let mut amended = make_open_orders_delta(
         false,
         None,
-        0.0001,
-        0.0,
+        dec!(0.0001),
+        dec!(0.0),
         Some("uuid-modify-ack"),
         "v-modify",
     );
-    amended.order.limit_price = Some(71_000.0);
+    amended.order.limit_price = Some(dec!(71000));
 
     dispatch::futures::open_orders_delta(
         &amended,
@@ -584,7 +593,7 @@ fn test_futures_delta_modify_ack_emits_order_updated() {
 
 #[rstest]
 fn test_futures_delta_no_op_repeat_does_not_emit_updated() {
-    // Two identical deltas — nothing changed — must not emit OrderUpdated.
+    // Two identical deltas - nothing changed - must not emit OrderUpdated.
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("uuid-noop");
@@ -597,8 +606,8 @@ fn test_futures_delta_no_op_repeat_does_not_emit_updated() {
     let placement = make_open_orders_delta(
         false,
         Some("new_placed_order_by_user"),
-        0.0001,
-        0.0,
+        dec!(0.0001),
+        dec!(0.0),
         Some("uuid-noop"),
         "v-noop",
     );
@@ -652,8 +661,8 @@ fn test_futures_delta_partial_fill_does_not_emit_updated() {
     let placement = make_open_orders_delta(
         false,
         None,
-        0.0002,
-        0.0,
+        dec!(0.0002),
+        dec!(0.0),
         Some("uuid-partial-fill"),
         "v-partial",
     );
@@ -675,8 +684,8 @@ fn test_futures_delta_partial_fill_does_not_emit_updated() {
     let partial = make_open_orders_delta(
         false,
         None,
-        0.0002,
-        0.0001,
+        dec!(0.0002),
+        dec!(0.0001),
         Some("uuid-partial-fill"),
         "v-partial",
     );
@@ -741,8 +750,8 @@ fn test_futures_delta_stale_after_terminal_is_skipped() {
     let delta = make_open_orders_delta(
         false,
         Some("status_update"),
-        0.0001,
-        0.0001,
+        dec!(0.0001),
+        dec!(0.0001),
         Some("uuid-stale"),
         "v-stale",
     );
@@ -783,12 +792,12 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
     );
     let instruments = instruments_with(make_futures_perpetual());
 
-    // Placement delta — filled=0
+    // Placement delta - filled=0
     let placement = make_open_orders_delta(
         false,
         Some("new_placed_order_by_user"),
-        0.001,
-        0.0,
+        dec!(0.001),
+        dec!(0.0),
         Some("uuid-no-double"),
         "v-no-double",
     );
@@ -804,12 +813,12 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         account_id(),
         UnixNanos::default(),
     );
-    // Partial-fill delta — filled=0.0005
+    // Partial-fill delta - filled=0.0005
     let partial = make_open_orders_delta(
         false,
         None,
-        0.001,
-        0.0005,
+        dec!(0.001),
+        dec!(0.0005),
         Some("uuid-no-double"),
         "v-no-double",
     );
@@ -825,21 +834,21 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         account_id(),
         UnixNanos::default(),
     );
-    // Matching FillsDelta — last_qty=0.0005 (the same fill)
+    // Matching FillsDelta - last_qty=0.0005 (the same fill)
     let fill = KrakenFuturesFillsDelta {
         feed: KrakenFuturesFeed::Fills,
         username: None,
         fills: vec![KrakenFuturesFill {
             instrument: Some(Ustr::from(FUTURES_PRODUCT)),
             time: 0,
-            price: 70_000.0,
-            qty: 0.0005,
+            price: dec!(70000),
+            qty: dec!(0.0005),
             order_id: "v-no-double".to_string(),
             cli_ord_id: Some("uuid-no-double".to_string()),
             fill_id: "trade-half".to_string(),
             fill_type: KrakenFillType::Maker,
             buy: true,
-            fee_paid: Some(0.0),
+            fee_paid: Some(Decimal::ZERO),
             fee_currency: Some("USD".to_string()),
         }],
     };
@@ -894,8 +903,8 @@ fn test_futures_modify_ack_refreshes_tracked_quantity() {
     let placement = make_open_orders_delta(
         false,
         None,
-        0.001,
-        0.0,
+        dec!(0.001),
+        dec!(0.0),
         Some("uuid-modify-qty"),
         "v-modify-qty",
     );
@@ -917,8 +926,8 @@ fn test_futures_modify_ack_refreshes_tracked_quantity() {
     let modify = make_open_orders_delta(
         false,
         None,
-        0.002,
-        0.0,
+        dec!(0.002),
+        dec!(0.0),
         Some("uuid-modify-qty"),
         "v-modify-qty",
     );
@@ -944,7 +953,7 @@ fn test_futures_modify_ack_refreshes_tracked_quantity() {
 #[rstest]
 fn test_cleanup_terminal_clears_all_dispatch_state() {
     // Cleanup is what the rejection paths in submit_single_order /
-    // submit_order_list call when a REST submit fails — the order will
+    // submit_order_list call when a REST submit fails - the order will
     // never appear on the wire so the dispatch entry must not leak.
     let state = WsDispatchState::new();
     let cid = ClientOrderId::new("uuid-rejected");
@@ -976,7 +985,14 @@ fn test_truncated_id_map_resolves_full_client_order_id() {
 
     // The wire message carries the truncated id; dispatch must resolve it
     // to the full id and find the registered identity.
-    let delta = make_open_orders_delta(false, None, 0.0001, 0.0, Some("trunc-aaa"), "v-trunc");
+    let delta = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some("trunc-aaa"),
+        "v-trunc",
+    );
     dispatch::futures::open_orders_delta(
         &delta,
         &state,

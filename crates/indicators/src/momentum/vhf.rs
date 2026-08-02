@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use arraydeque::{ArrayDeque, Wrapping};
-use nautilus_model::data::Bar;
+use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -64,6 +64,12 @@ impl Indicator for VerticalHorizontalFilter {
     fn initialized(&self) -> bool {
         self.initialized
     }
+
+    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn handle_trade(&mut self, _trade: &TradeTick) {}
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.close).into());

@@ -1,6 +1,6 @@
 {
   "risk_snapshot": {
-    "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+    "account_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
     "timestamp_ns": "2024-01-15T10:30:00Z",
     "balance_usd": "100000.50",
     "equity": "102500.75",
@@ -17,16 +17,20 @@
         "signed_notional": "1084.50",
         "average_price": "1.08300",
         "liquidation_price": "1.05000",
-        "initial_margin_required": "3000.00",
+        "initial_margin_required_position": "3000.00",
+        "initial_margin_required_open_orders": "0.00",
+        "initial_margin_required_total": "3000.00",
         "maintenance_margin_required": "2100.00",
         "unrealized_pnl": "1500.00"
       },
       "GBPUSD-PERP": {
         "signed_quantity": -500,
         "signed_notional": "-635.75",
-        "average_price": "1.27300",
+        "average_price": null,
         "liquidation_price": null,
-        "initial_margin_required": "2000.00",
+        "initial_margin_required_position": "2000.00",
+        "initial_margin_required_open_orders": "0.00",
+        "initial_margin_required_total": "2000.00",
         "maintenance_margin_required": "1400.00",
         "unrealized_pnl": "1000.25"
       }

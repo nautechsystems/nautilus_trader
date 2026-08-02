@@ -49,7 +49,7 @@ use crate::{
             OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUCCESS_CODE,
         },
-        enums::OKXOrderStatus,
+        enums::{OKXOrderStatus, OKXOrderType},
         parse::{
             is_market_price, parse_client_order_id, parse_millisecond_timestamp, parse_price,
             parse_quantity,
@@ -59,7 +59,7 @@ use crate::{
     websocket::{
         client::PendingOrderInfo,
         enums::OKXWsOperation,
-        handler::is_post_only_auto_cancel,
+        handler::{is_post_only_auto_cancel, is_unfilled_rpi_cancel},
         messages::{ExecutionReport, OKXOrderMsg, OKXWsMessage},
         parse::{
             OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg, parse_order_event,
@@ -180,6 +180,7 @@ pub struct WsDispatchState {
     pub filled_orders: BoundedDedup<ClientOrderId>,
     pub terminal_orders: BoundedDedup<ClientOrderId>,
     pub emitted_trades: BoundedDedup<TradeId>,
+    post_only_rejections: BoundedDedup<Ustr>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
@@ -194,6 +195,7 @@ impl Default for WsDispatchState {
             filled_orders: BoundedDedup::new(DEDUP_CAPACITY),
             terminal_orders: BoundedDedup::new(DEDUP_CAPACITY),
             emitted_trades: BoundedDedup::new(DEDUP_CAPACITY),
+            post_only_rejections: BoundedDedup::new(DEDUP_CAPACITY),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
@@ -518,7 +520,9 @@ pub fn dispatch_ws_message(
         OKXWsMessage::ChannelData { channel, .. } => {
             log::debug!("Ignoring data channel message on execution client: {channel:?}");
         }
-        OKXWsMessage::BookData { .. } | OKXWsMessage::Instruments(_) => {
+        OKXWsMessage::BookData { .. }
+        | OKXWsMessage::RpiBookData { .. }
+        | OKXWsMessage::Instruments(_) => {
             log::debug!("Ignoring data message on execution client");
         }
         OKXWsMessage::Error(e) => {
@@ -606,15 +610,32 @@ fn dispatch_order_messages(
         };
 
         if let Some(ident) = identity {
-            if is_post_only_auto_cancel(msg) {
+            let is_post_only_cancel = is_post_only_auto_cancel(msg);
+
+            if is_post_only_cancel
+                || (!state.emitted_accepted.contains(&client_order_id)
+                    && is_unfilled_rpi_cancel(msg))
+            {
+                if is_post_only_cancel {
+                    state.post_only_rejections.insert(msg.ord_id);
+                }
+
                 let ts_event = parse_millisecond_timestamp(msg.u_time);
+                let reason = if msg.ord_type == OKXOrderType::Rpi {
+                    msg.cancel_source_reason
+                        .as_deref()
+                        .filter(|reason| !reason.is_empty())
+                        .unwrap_or("RPI order canceled before acceptance")
+                } else {
+                    "Post-only order would have taken liquidity"
+                };
                 let rejected = OrderRejected::new(
                     emitter.trader_id(),
                     ident.strategy_id,
                     instrument.id(),
                     client_order_id,
                     account_id,
-                    Ustr::from("Post-only order would have taken liquidity"),
+                    Ustr::from(reason),
                     UUID4::new(),
                     ts_event,
                     ts_init,
@@ -670,6 +691,12 @@ fn dispatch_order_messages(
                 }
                 Err(e) => log::error!("Failed to parse order event for {client_order_id}: {e}"),
             }
+        } else if is_post_only_auto_cancel(msg) && state.post_only_rejections.contains(&msg.ord_id)
+        {
+            log::debug!(
+                "Skipping replayed post-only rejection for {client_order_id}: ord_id={}",
+                msg.ord_id
+            );
         } else {
             log::debug!(
                 "Untracked order {client_order_id} (ord_id={}), sending as report for reconciliation",
@@ -1031,6 +1058,7 @@ fn fill_report_to_order_filled(
         false,
         report.venue_position_id,
         Some(report.commission),
+        None,
     )
 }
 

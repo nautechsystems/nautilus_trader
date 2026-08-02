@@ -55,7 +55,7 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
 
 /// Return a borrowed *null-terminated* UTF-8 C string representing `uuid`.
 ///
-/// The pointer remains valid for as long as the input `UUID4` reference lives – callers **must
+/// The pointer remains valid for as long as the input `UUID4` reference lives - callers **must
 /// not** attempt to free it.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
@@ -68,7 +68,7 @@ pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
     abort_on_panic(|| u8::from(lhs == rhs))
 }
 
-/// Compute the stable [`u64`] hash of `uuid` using Rust’s default hasher.
+/// Compute the stable [`u64`] hash of `uuid` using Rust's default hasher.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
     abort_on_panic(|| {

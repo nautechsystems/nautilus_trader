@@ -38,6 +38,8 @@ pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "redis")]
     m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
     #[cfg(feature = "redis")]
+    m.add_class::<redis::msgbus::PyRedisMessageBusBacking>()?;
+    #[cfg(feature = "redis")]
     m.add_class::<crate::redis::msgbus::RedisMessageBusConfig>()?;
     #[cfg(feature = "postgres")]
     m.add_class::<crate::sql::cache::PostgresCacheConfig>()?;
@@ -46,4 +48,23 @@ pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "postgres")]
     m.add_class::<crate::sql::pg::PostgresConnectOptions>()?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "redis"))]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_infrastructure_module_exports_redis_message_bus_backing() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::new(py, "infrastructure").unwrap();
+
+            infrastructure(py, &module).unwrap();
+
+            assert!(module.getattr("RedisMessageBusBacking").is_ok());
+        });
+    }
 }

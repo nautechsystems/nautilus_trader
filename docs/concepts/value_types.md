@@ -8,7 +8,7 @@ and environments.
 ## Overview
 
 | Type       | Purpose                                  | Signed | Currency |
-|------------|------------------------------------------|--------|----------|
+| ---------- | ---------------------------------------- | ------ | -------- |
 | `Quantity` | Trade sizes, order amounts, positions.   | No     | -        |
 | `Price`    | Market prices, quotes, price levels.     | Yes    | -        |
 | `Money`    | Monetary amounts, P&L, account balances. | Yes    | Yes      |
@@ -27,8 +27,8 @@ qty2 = Quantity(50, precision=0)
 # This creates a NEW Quantity; qty1 and qty2 are unchanged
 result = qty1 + qty2
 
-print(qty1)    # 100
-print(qty2)    # 50
+print(qty1)  # 100
+print(qty2)  # 50
 print(result)  # 150
 ```
 
@@ -50,7 +50,7 @@ Addition and subtraction of the same value type return that type, preserving
 domain meaning (a price plus a price is still a price):
 
 | Operation             | Result     |
-|-----------------------|------------|
+| --------------------- | ---------- |
 | `Quantity + Quantity` | `Quantity` |
 | `Quantity - Quantity` | `Quantity` |
 | `Price + Price`       | `Price`    |
@@ -65,18 +65,18 @@ price1 = Price(100.50, precision=2)
 price2 = Price(0.25, precision=2)
 
 result = price1 + price2  # Returns Price(100.75, precision=2)
-print(type(result))       # <class 'Price'>
+print(type(result))  # <class 'Price'>
 ```
 
 Multiplication, division, floor division, and modulo between two values of the
 same type return `Decimal`:
 
-| Operation             | Result    |
-|-----------------------|-----------|
-| `Price * Price`       | `Decimal` |
-| `Price / Price`       | `Decimal` |
-| `Price // Price`      | `Decimal` |
-| `Price % Price`       | `Decimal` |
+| Operation        | Result    |
+| ---------------- | --------- |
+| `Price * Price`  | `Decimal` |
+| `Price / Price`  | `Decimal` |
+| `Price // Price` | `Decimal` |
+| `Price % Price`  | `Decimal` |
 
 The same pattern applies to `Quantity` and `Money`.
 
@@ -90,14 +90,14 @@ misinterpretation of the result as a value with the original unit.
 
 Unary operators preserve the value type where the result is valid for that type:
 
-| Operation    | `Price`   | `Quantity` | `Money`   |
-|--------------|-----------|------------|-----------|
-| `-x` (neg)   | `Price`   | `Decimal`  | `Money`   |
-| `+x` (pos)   | `Price`   | `Quantity` | `Money`   |
-| `abs(x)`     | `Price`   | `Quantity` | `Money`   |
-| `int(x)`     | `int`     | `int`      | `int`     |
-| `float(x)`   | `float`   | `float`    | `float`   |
-| `round(x)`   | `Decimal` | `Decimal`  | `Decimal` |
+| Operation  | `Price`   | `Quantity` | `Money`   |
+| ---------- | --------- | ---------- | --------- |
+| `-x` (neg) | `Price`   | `Decimal`  | `Money`   |
+| `+x` (pos) | `Price`   | `Quantity` | `Money`   |
+| `abs(x)`   | `Price`   | `Quantity` | `Money`   |
+| `int(x)`   | `int`     | `int`      | `int`     |
+| `float(x)` | `float`   | `float`    | `float`   |
+| `round(x)` | `Decimal` | `Decimal`  | `Decimal` |
 
 `Quantity.__neg__` returns `Decimal` rather than `Quantity` because `Quantity` is
 unsigned and cannot represent a negative value.
@@ -107,16 +107,16 @@ from nautilus_trader.model.objects import Price, Quantity, Money
 from nautilus_trader.model.currencies import USD
 
 price = Price(100.50, precision=2)
-print(-price)            # -100.50
-print(type(-price))      # <class 'Price'>
+print(-price)  # -100.50
+print(type(-price))  # <class 'Price'>
 
 money = Money(-50.00, USD)
-print(abs(money))        # 50.00 USD
+print(abs(money))  # 50.00 USD
 print(type(abs(money)))  # <class 'Money'>
 
 qty = Quantity(10, precision=0)
-print(+qty)              # 10
-print(type(+qty))        # <class 'Quantity'>
+print(+qty)  # 10
+print(type(+qty))  # <class 'Quantity'>
 ```
 
 ### Mixed-type operations
@@ -130,7 +130,7 @@ This applies to all six binary operators (`+`, `-`, `*`, `/`, `//`, `%`) and wor
 in both directions (`value op scalar` and `scalar op value`):
 
 | Left operand | Right operand | Result type |
-|--------------|---------------|-------------|
+| ------------ | ------------- | ----------- |
 | Value type   | `int`         | `Decimal`   |
 | Value type   | `float`       | `float`     |
 | Value type   | `Decimal`     | `Decimal`   |
@@ -172,12 +172,12 @@ formatting and serialization, but the underlying raw value always uses the globa
 ```python
 from nautilus_trader.model.objects import Price
 
-p1 = Price(1.23, precision=2)   # displays as "1.23"
+p1 = Price(1.23, precision=2)  # displays as "1.23"
 p2 = Price(1.230, precision=3)  # displays as "1.230"
 
 p1 == p2  # True: same underlying value
-str(p1)   # "1.23"
-str(p2)   # "1.230"
+str(p1)  # "1.23"
+str(p2)  # "1.230"
 ```
 
 **Precision controls display, not identity.** Two prices with the same decimal value but
@@ -206,11 +206,11 @@ uses the maximum precision of the operands.
 ```python
 from nautilus_trader.model.objects import Price
 
-price1 = Price(100.5, precision=1)    # 1 decimal place
-price2 = Price(0.125, precision=3)    # 3 decimal places
+price1 = Price(100.5, precision=1)  # 1 decimal place
+price2 = Price(0.125, precision=3)  # 3 decimal places
 
 result = price1 + price2
-print(result)            # 100.625
+print(result)  # 100.625
 print(result.precision)  # 3 (max of 1 and 3)
 ```
 

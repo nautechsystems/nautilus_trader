@@ -46,7 +46,8 @@ jobs:
         if: matrix.language == 'rust'
         id: rust-toolchain
         run: |
-          echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+          TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
+          echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       - name: Set up Rust toolchain

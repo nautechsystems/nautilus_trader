@@ -64,6 +64,13 @@ pub struct BitmexExecFactoryConfig {
     pub config: BitmexExecClientConfig,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BitmexExecFactoryConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    config: BitmexExecClientConfig,
+});
+
 impl BitmexExecFactoryConfig {
     /// Creates a new [`BitmexExecFactoryConfig`].
     ///

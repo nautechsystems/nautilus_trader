@@ -10,7 +10,7 @@ for risk management.
 The platform defines several option instrument types:
 
 | Instrument           | Description                                                                  |
-|----------------------|------------------------------------------------------------------------------|
+| -------------------- | ---------------------------------------------------------------------------- |
 | `OptionContract`     | Exchange‑traded option on an underlying with strike and expiry.              |
 | `OptionSpread`       | Exchange‑defined multi‑leg option strategy as one line.                      |
 | `CryptoOption`       | Crypto option with crypto quote/settlement; inverse or quanto style.         |
@@ -106,7 +106,7 @@ def on_option_chain(self, chain) -> None:
 `StrikeRange` controls which strikes are active in a chain subscription:
 
 | Variant       | Description                                         | Example                                        |
-|---------------|-----------------------------------------------------|------------------------------------------------|
+| ------------- | --------------------------------------------------- | ---------------------------------------------- |
 | `Fixed`       | Subscribe to an explicit set of strikes.            | `nautilus_pyo3.StrikeRange.fixed([...])`       |
 | `AtmRelative` | N strikes above and N below the current ATM strike. | `nautilus_pyo3.StrikeRange.atm_relative(5, 5)` |
 | `AtmPercent`  | All strikes within a percentage band around ATM.    | `nautilus_pyo3.StrikeRange.atm_percent(0.10)`  |
@@ -343,7 +343,7 @@ boundaries.
 single option contract:
 
 | Field              | Type               | Description                                         |
-|--------------------|--------------------|-----------------------------------------------------|
+| ------------------ | ------------------ | --------------------------------------------------- |
 | `instrument_id`    | `InstrumentId`     | The option contract these Greeks apply to.          |
 | `convention`       | `GreeksConvention` | Numeraire convention for the Greeks.                |
 | `delta`            | `float`            | Rate of change of option price per unit underlying. |
@@ -365,12 +365,12 @@ single option contract:
 
 Properties:
 
-| Property     | Type                 | Description                         |
-|--------------|----------------------|-------------------------------------|
-| `series_id`  | `OptionSeriesId`     | The option series identifier.       |
-| `atm_strike` | `Price` or None      | Current ATM strike (if determined). |
-| `ts_event`   | `int`                | UNIX timestamp (nanoseconds).       |
-| `ts_init`    | `int`                | UNIX timestamp (nanoseconds).       |
+| Property     | Type             | Description                         |
+| ------------ | ---------------- | ----------------------------------- |
+| `series_id`  | `OptionSeriesId` | The option series identifier.       |
+| `atm_strike` | `Price` or None  | Current ATM strike (if determined). |
+| `ts_event`   | `int`            | UNIX timestamp (nanoseconds).       |
+| `ts_init`    | `int`            | UNIX timestamp (nanoseconds).       |
 
 Call and put data are accessed through methods, not as direct properties.
 Each `OptionStrikeData` returned by these methods contains a `quote` (`QuoteTick`)
@@ -390,7 +390,7 @@ Methods:
 The following adapters currently support option Greeks subscriptions:
 
 | Adapter | Per‑instrument Greeks | Option chains |
-|---------|:---------------------:|:-------------:|
+| ------- | :-------------------: | :-----------: |
 | Deribit | ✓                     | ✓             |
 | Bybit   | ✓                     | ✓             |
 | OKX     | ✓                     | -             |
@@ -398,5 +398,5 @@ The following adapters currently support option Greeks subscriptions:
 ## See also
 
 - [Greeks](greeks.md) - Local Greeks calculation and portfolio risk management.
-- [Data](data.md) - Built-in data types and the subscription model.
+- [Data](data/) - Built-in data types and the subscription model.
 - [Actors](actors.md) - Subscription and handler reference table.

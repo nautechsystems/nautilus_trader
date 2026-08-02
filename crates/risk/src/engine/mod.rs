@@ -32,7 +32,7 @@ use nautilus_common::{
     },
     msgbus,
     msgbus::{MessagingSwitchboard, TypedHandler, TypedIntoHandler, get_message_bus},
-    runner::try_get_trading_cmd_sender,
+    runner::{TradingCommandMessage, try_get_trading_cmd_sender},
     throttler::{RateLimit, Throttler},
 };
 use nautilus_core::{UUID4, WeakCell};
@@ -148,13 +148,16 @@ impl RiskEngine {
         // In live mode the `TradingCommandSender` queues the command for the next
         // event-loop iteration, preventing a synchronous `deny_order()` from
         // dispatching an `OrderDenied` back into a strategy that still holds a
-        // mutable borrow — which would otherwise panic on `RefCell` re-entrancy.
-        // In backtest/test mode (no sender), falls back to the direct endpoint.
+        // mutable borrow - which would otherwise panic on `RefCell` re-entrancy.
+        // If no sender is installed, the queued endpoint falls back to direct dispatch.
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::risk_engine_queue_execute(),
             TypedIntoHandler::from(move |cmd: TradingCommand| {
                 if let Some(sender) = try_get_trading_cmd_sender() {
-                    sender.execute(cmd);
+                    sender.execute(TradingCommandMessage::new(
+                        MessagingSwitchboard::risk_engine_execute(),
+                        cmd,
+                    ));
                 } else {
                     let endpoint = MessagingSwitchboard::risk_engine_execute();
                     msgbus::send_trading_command(endpoint, cmd);
@@ -176,8 +179,13 @@ impl RiskEngine {
         msgbus::subscribe_order_events(
             "events.order.*".into(),
             TypedHandler::from(move |event: &OrderEventAny| {
-                if let Some(rc) = weak_order_events.upgrade() {
-                    rc.borrow_mut().process(event.clone());
+                // Risk-generated events can publish while `execute` still owns the engine,
+                // and processing is observational, so skipping reentrant events is safe.
+                // TODO: Revisit this if order-event processing gains stateful behavior
+                if let Some(rc) = weak_order_events.upgrade()
+                    && let Ok(mut engine) = rc.try_borrow_mut()
+                {
+                    engine.process(event.clone());
                 }
             }),
             Some(10),
@@ -376,7 +384,7 @@ impl RiskEngine {
             timestamp,
             false,
             order.venue_order_id(),
-            None,
+            order.account_id(),
         ))
     }
 
@@ -1380,8 +1388,17 @@ impl RiskEngine {
                 }
             }
 
-            let notional =
-                instrument.calculate_notional_value(effective_quantity, last_px, Some(true));
+            let notional = match instrument.try_calculate_notional_value(
+                effective_quantity,
+                last_px,
+                Some(true),
+            ) {
+                Ok(notional) => notional,
+                Err(e) => {
+                    self.deny_order(order, &format!("Cannot calculate notional value: {e}"));
+                    return false;
+                }
+            };
 
             if self.config.debug {
                 log::debug!("Notional: {notional:?}");
@@ -1437,12 +1454,21 @@ impl RiskEngine {
             if is_margin {
                 // Margin account: check initial margin requirement
                 let margin_req = match &mut account {
-                    AccountAny::Margin(margin) => margin
-                        .calculate_initial_margin(instrument, effective_quantity, last_px, None)
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to calculate initial margin: {e}");
-                            Money::zero(instrument.quote_currency())
-                        }),
+                    AccountAny::Margin(margin) => match margin.calculate_initial_margin(
+                        instrument,
+                        effective_quantity,
+                        last_px,
+                        None,
+                    ) {
+                        Ok(margin) => margin,
+                        Err(e) => {
+                            self.deny_order(
+                                order,
+                                &format!("Cannot calculate initial margin: {e}"),
+                            );
+                            return false;
+                        }
+                    },
                     _ => unreachable!(),
                 };
 
@@ -1502,7 +1528,16 @@ impl RiskEngine {
 
                 // Cumulative margin check
                 match cum_margin_required.as_mut() {
-                    Some(cum) => cum.raw += margin_req.raw,
+                    Some(cum) => {
+                        let Some(total) = cum.checked_add(margin_req) else {
+                            self.deny_order(
+                                order,
+                                "Cannot calculate cumulative margin: total exceeds Money bounds",
+                            );
+                            return false;
+                        };
+                        *cum = total;
+                    }
                     None => cum_margin_required = Some(margin_req),
                 }
 
@@ -1525,26 +1560,39 @@ impl RiskEngine {
                 }
             } else {
                 // Cash account: check full notional value
-                let notional =
-                    instrument.calculate_notional_value(effective_quantity, last_px, None);
+                let notional = match instrument.try_calculate_notional_value(
+                    effective_quantity,
+                    last_px,
+                    None,
+                ) {
+                    Ok(notional) => notional,
+                    Err(e) => {
+                        self.deny_order(order, &format!("Cannot calculate notional value: {e}"));
+                        return false;
+                    }
+                };
                 let order_balance_impact = if is_betting {
                     match &mut account {
-                        AccountAny::Betting(betting) => Money::from_raw(
-                            -betting
-                                .calculate_balance_locked(
-                                    instrument,
-                                    order.order_side(),
-                                    effective_quantity,
-                                    last_px,
-                                    None,
-                                )
-                                .unwrap_or_else(|e| {
-                                    log::error!("Failed to calculate betting balance locked: {e}");
-                                    Money::zero(instrument.quote_currency())
-                                })
-                                .raw,
-                            instrument.quote_currency(),
-                        ),
+                        AccountAny::Betting(betting) => {
+                            match betting.calculate_balance_locked(
+                                instrument,
+                                order.order_side(),
+                                effective_quantity,
+                                last_px,
+                                None,
+                            ) {
+                                Ok(locked) => {
+                                    Money::from_raw(-locked.raw, instrument.quote_currency())
+                                }
+                                Err(e) => {
+                                    self.deny_order(
+                                        order,
+                                        &format!("Cannot calculate betting balance locked: {e}"),
+                                    );
+                                    return false;
+                                }
+                            }
+                        }
                         _ => unreachable!(),
                     }
                 } else {
@@ -1570,8 +1618,8 @@ impl RiskEngine {
 
                 // Check if order reduces an existing position
                 let is_position_reducing = if order.is_buy() {
-                    let reducing = order.is_reduce_only()
-                        || (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
+                    let reducing =
+                        (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
                     cum_buy_qty_raw += effective_quantity.raw;
                     reducing
                 } else if order.is_sell() {
@@ -1733,7 +1781,10 @@ impl RiskEngine {
                         // Use base-currency free balance for sell checks
                         let base_free = match &account {
                             AccountAny::Margin(_) => None,
-                            AccountAny::Cash(cash) => cash.balance_free(Some(base_currency)),
+                            AccountAny::Cash(cash) => Some(
+                                cash.balance_free(Some(base_currency))
+                                    .unwrap_or_else(|| Money::zero(base_currency)),
+                            ),
                             AccountAny::Betting(betting) => {
                                 betting.balance_free(Some(base_currency))
                             }

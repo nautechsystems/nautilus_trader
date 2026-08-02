@@ -18,6 +18,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
+from nautilus_trader.network import TransportBackend
 
 
 class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -71,6 +72,7 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
@@ -125,6 +127,7 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000

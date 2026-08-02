@@ -15,10 +15,11 @@
 
 //! Value conversions between Nautilus domain types and Binance Futures venue types.
 
+use nautilus_core::UnixNanos;
 use nautilus_model::{enums::OrderSide, types::Currency};
 use rust_decimal::Decimal;
 
-use crate::common::enums::BinancePositionSide;
+use crate::common::{enums::BinancePositionSide, parse::parse_millis};
 
 const BNFCR_ASSET: &str = "BNFCR";
 
@@ -126,6 +127,14 @@ pub(crate) fn format_callback_rate(rate: Decimal) -> String {
     }
 }
 
+pub(crate) fn parse_good_till_date(value: Option<i64>) -> anyhow::Result<Option<UnixNanos>> {
+    let Some(value) = value.filter(|value| *value != 0) else {
+        return Ok(None);
+    };
+
+    parse_millis(value, "goodTillDate").map(Some)
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::enums::CurrencyType;
@@ -152,6 +161,33 @@ mod tests {
             error.to_string(),
             "callbackRate 0.05% out of Binance range [0.1, 10.0]"
         );
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::zero(Some(0))]
+    fn test_parse_good_till_date_omits_missing_expiry(#[case] value: Option<i64>) {
+        assert_eq!(parse_good_till_date(value).unwrap(), None);
+    }
+
+    #[rstest]
+    fn test_parse_good_till_date_preserves_milliseconds() {
+        let value = 1_700_000_000_000;
+        assert_eq!(
+            parse_good_till_date(Some(value)).unwrap(),
+            Some(UnixNanos::from_millis(value as u64)),
+        );
+    }
+
+    #[rstest]
+    #[case::negative(-1, "invalid negative Binance goodTillDate")]
+    #[case::overflow(i64::MAX, "outside the UnixNanos range")]
+    fn test_parse_good_till_date_rejects_invalid_values(
+        #[case] value: i64,
+        #[case] expected: &str,
+    ) {
+        let error = parse_good_till_date(Some(value)).unwrap_err();
+        assert!(error.to_string().contains(expected));
     }
 
     #[rstest]

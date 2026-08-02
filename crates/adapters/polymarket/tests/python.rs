@@ -31,7 +31,10 @@ use nautilus_polymarket::{
     python,
 };
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    Py, Python,
+    types::{PyAnyMethods, PyModule},
+};
 use rstest::rstest;
 
 const SMOKE_PRIVATE_KEY: &str =
@@ -50,6 +53,30 @@ fn test_polymarket_python_factories_extract_from_registry() {
         register_polymarket_python_module(py);
         assert_data_factory_extracts_from_python_object(py);
         assert_exec_factory_extracts_from_python_object(py);
+    });
+}
+
+#[rstest]
+fn test_polymarket_python_module_registers_data_loader() {
+    Python::initialize();
+
+    Python::attach(|py| {
+        let module = PyModule::new(py, "polymarket").expect("Polymarket module should be created");
+        python::polymarket(py, &module).expect("Polymarket Python module should register");
+        let loader = module
+            .getattr("PolymarketDataLoader")
+            .expect("PolymarketDataLoader should be registered");
+
+        assert_eq!(
+            loader
+                .getattr("__name__")
+                .expect("loader name")
+                .extract::<String>()
+                .expect("string loader name"),
+            "PolymarketDataLoader",
+        );
+        assert!(loader.getattr("from_market_slug").is_ok());
+        assert!(loader.getattr("query_events").is_ok());
     });
 }
 
@@ -125,6 +152,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             api_key: Some(SMOKE_API_KEY.to_string()),
             api_secret: Some(SMOKE_API_SECRET.to_string()),
             passphrase: Some(SMOKE_PASSPHRASE.to_string()),
+            heartbeat_enabled: true,
             ..PolymarketExecClientConfig::default()
         },
     )
@@ -158,6 +186,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     );
     assert_eq!(polymarket_config.trader_id, trader_id);
     assert_eq!(polymarket_config.account_id, account_id);
+    assert!(polymarket_config.heartbeat_enabled);
     assert_eq!(
         client.client_id(),
         ClientId::from("POLYMARKET-EXEC-EXTRACTED")

@@ -15,7 +15,7 @@
 
 //! WebSocket message dispatch context for the Derive data client.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use nautilus_common::{cache::quote::QuoteCache, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
@@ -34,5 +34,6 @@ pub(crate) struct WsMessageContext {
     pub(crate) active_index_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) active_funding_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) active_greeks_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(crate) quote_cache: QuoteCache,
+    pub(crate) subscription_lock: Arc<Mutex<()>>,
+    pub(crate) quote_cache: Arc<Mutex<QuoteCache>>,
 }

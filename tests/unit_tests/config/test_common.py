@@ -525,6 +525,18 @@ def test_encoding_timedelta() -> None:
     assert result == obj.isoformat()
 
 
+def test_encoding_dataframe_uses_custom_encoder() -> None:
+    # Arrange
+    obj = pd.DataFrame({"LOCATION": ["LDN"], "VALUE": [1.23]})
+
+    # Act
+    result = msgspec_encoding_hook(obj)
+
+    # Assert
+    assert isinstance(result, str)
+    assert '"LOCATION":{"0":"LDN"}' in result
+
+
 def test_decoding_timedelta() -> None:
     # Arrange
     obj_type = pd.Timedelta

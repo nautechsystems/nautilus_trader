@@ -17,7 +17,7 @@
 #[cfg(feature = "postgres")]
 #[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
-    use std::{collections::HashSet, time::Duration};
+    use std::{collections::HashSet, str::FromStr, time::Duration};
 
     use bytes::Bytes;
     use indexmap::indexmap;
@@ -27,7 +27,11 @@ mod serial_tests {
         testing::{wait_until, wait_until_async},
     };
     use nautilus_core::{Params, UnixNanos};
-    use nautilus_infrastructure::sql::{cache::get_pg_cache_database, queries::DatabaseQueries};
+    use nautilus_infrastructure::sql::{
+        cache::{PostgresCacheDatabase, get_pg_cache_database},
+        pg::{connect_pg, get_postgres_connect_options, init_postgres},
+        queries::DatabaseQueries,
+    };
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
@@ -36,7 +40,7 @@ mod serial_tests {
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{
-            OrderEventAny, OrderFilled, PositionSnapshot,
+            OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
             account::stubs::cash_account_state_million_usd,
         },
         identifiers::{
@@ -56,7 +60,9 @@ mod serial_tests {
     };
     use nautilus_persistence::test_data::RustTestCustomData;
     use nautilus_serialization::ensure_custom_data_registered;
+    use rust_decimal::Decimal;
     use serde::Serialize;
+    use sqlx::{AssertSqlSafe, PgPool, postgres::PgConnectOptions};
     use ustr::Ustr;
 
     pub(crate) fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
@@ -66,9 +72,33 @@ mod serial_tests {
         assert_eq!(a_serialized, b_serialized);
     }
 
+    async fn get_test_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
+        match tokio::time::timeout(Duration::from_secs(2), get_pg_cache_database()).await {
+            Ok(result) => result.map_err(|e| {
+                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
+            }),
+            Err(e) => Err(anyhow::anyhow!(
+                "A running PostgreSQL service is required for this test: connection timed out: \
+                 {e}"
+            )),
+        }
+    }
+
+    async fn connect_test_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
+        match tokio::time::timeout(Duration::from_secs(2), connect_pg(options)).await {
+            Ok(result) => result.map_err(|e| {
+                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
+            }),
+            Err(e) => Err(anyhow::anyhow!(
+                "A running PostgreSQL service is required for this test: connection timed out: \
+                 {e}"
+            )),
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let test_id_value = Bytes::from("test_value");
         pg_cache
@@ -103,7 +133,7 @@ mod serial_tests {
     )]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_currency_and_instruments() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Define currencies
         let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
@@ -317,7 +347,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_truncate() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add items in currency and instrument table
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -350,7 +380,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_order_and_load_indexes() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1");
         let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2");
@@ -438,7 +468,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_index_order_position_round_trip() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
         let position_id_1 = PositionId::new("P-19700101-000000-001-001-1");
@@ -485,7 +515,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_position_round_trip() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -597,7 +627,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_position_replaces_event_log_for_reused_position_id() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -674,7 +704,7 @@ mod serial_tests {
         ) else {
             unreachable!();
         };
-        let reopened_position = Position::new(&instrument, reopen_fill);
+        let reopened_position = Position::new(&instrument, reopen_fill.clone());
         pg_cache.add_position(&reopened_position).unwrap();
 
         wait_until_async(
@@ -701,7 +731,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_position_duplicate_fill_returns_error() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -772,7 +802,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_position_event_without_position_id_returns_error() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let order = OrderTestBuilder::new(OrderType::Market)
@@ -808,7 +838,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_load_positions_skips_duplicate_fill_position() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -858,7 +888,7 @@ mod serial_tests {
         ) else {
             unreachable!();
         };
-        let good_position = Position::new(&instrument, good_fill);
+        let good_position = Position::new(&instrument, good_fill.clone());
 
         let OrderEventAny::Filled(corrupt_fill) = TestOrderEventStubs::filled(
             &corrupt_order,
@@ -901,7 +931,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_order_for_open_order() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
@@ -973,7 +1003,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_account() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let mut account = AccountAny::Cash(CashAccount::new(
             cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
@@ -1018,7 +1048,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_account_without_existing_event_returns_error() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
         let event = cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
 
         let result = DatabaseQueries::add_account(&pg_cache.pool, true, event).await;
@@ -1037,7 +1067,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_quote() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
@@ -1072,7 +1102,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_trade() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
@@ -1107,7 +1137,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_bar() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add target instrument and currencies
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -1142,7 +1172,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_signal() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         // Add signal
         let name = Ustr::from("SignalExample");
@@ -1167,7 +1197,7 @@ mod serial_tests {
     async fn test_add_custom_data() {
         ensure_custom_data_registered::<RustTestCustomData>();
 
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let instrument_id = InstrumentId::from("RUST.TEST");
         let metadata = indexmap! {
@@ -1212,7 +1242,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_order_snapshot() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
@@ -1241,8 +1271,216 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_snapshot_keeps_exact_avg_px_and_slippage() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-2");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        // Full 28-place scale, which the previous `double precision` column could not hold
+        let mut snapshot: OrderSnapshot = order.into();
+        snapshot.avg_px = Some(Decimal::from_str("1.6666666666666666666666666667").unwrap());
+        snapshot.slippage = Some(Decimal::from_str("0.0000000000000000000000000001").unwrap());
+
+        pg_cache.add_order_snapshot(&snapshot).unwrap();
+
+        wait_until(
+            || {
+                pg_cache
+                    .load_order_snapshot(&client_order_id)
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        );
+
+        let loaded = pg_cache
+            .load_order_snapshot(&client_order_id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded.avg_px, snapshot.avg_px);
+        assert_eq!(loaded.slippage, snapshot.slippage);
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_init_postgres_skips_existing_objects_on_re_run() {
+        // `types.sql` has no `CREATE TYPE IF NOT EXISTS`, so a re-run against an initialized
+        // database always raises "already exists" on the first statement. The loader must skip it
+        // and carry on; it previously mapped that branch to `Err(())` and unwrapped, aborting init.
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+
+        let result = init_postgres(&pg, options.database, options.password, Some(schema_dir)).await;
+
+        assert!(
+            result.is_ok(),
+            "re-running init must succeed, was {result:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_application_role_owns_schema_objects() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let expected_owner = options.database.clone();
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+
+        init_postgres(&pg, options.database, options.password, Some(schema_dir))
+            .await
+            .unwrap();
+
+        let owners: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'database', pg_get_userbyid(datdba)
+             FROM pg_database
+             WHERE datname = current_database()
+             UNION ALL
+             SELECT 'domain', pg_get_userbyid(t.typowner)
+             FROM pg_type t
+             JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typname = 'i256'
+             UNION ALL
+             SELECT 'function', pg_get_userbyid(p.proowner)
+             FROM pg_proc p
+             JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'public' AND p.proname = 'get_all_tables'
+             UNION ALL
+             SELECT 'schema', pg_get_userbyid(nspowner)
+             FROM pg_namespace
+             WHERE nspname = 'public'
+             UNION ALL
+             SELECT 'table', pg_get_userbyid(c.relowner)
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relname = 'order'
+             UNION ALL
+             SELECT 'type', pg_get_userbyid(t.typowner)
+             FROM pg_type t
+             JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typname = 'account_type'
+             ORDER BY 1",
+        )
+        .fetch_all(&pg)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            owners,
+            vec![
+                (String::from("database"), expected_owner.clone()),
+                (String::from("domain"), expected_owner.clone()),
+                (String::from("function"), expected_owner.clone()),
+                (String::from("schema"), expected_owner.clone()),
+                (String::from("table"), expected_owner.clone()),
+                (String::from("type"), expected_owner),
+            ]
+        );
+    }
+
+    // Extracts the guarded order-column migration from the real schema file, so the test runs the
+    // shipped SQL rather than a copy of it.
+    fn order_numeric_migration_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/tables.sql");
+        let schema = std::fs::read_to_string(path).unwrap();
+        let start = schema
+            .find("DO $$")
+            .expect("no DO block in tables.sql; the order-column migration moved");
+        let end = schema[start..]
+            .find("END $$;")
+            .expect("unterminated DO block in tables.sql")
+            + start
+            + "END $$;".len();
+        let block = schema[start..end].to_string();
+        assert!(
+            block.contains("avg_px TYPE NUMERIC") && block.contains("slippage TYPE NUMERIC"),
+            "first DO block in tables.sql is no longer the order-column migration"
+        );
+        block
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_column_migration_converts_legacy_floats_without_rounding() {
+        // A direct `double precision::numeric` cast rounds to 15 significant digits, so these
+        // would land as 1.23456789012346 and 1.66666666666667. The shipped migration casts through
+        // `text` instead, which takes float8's shortest round-trip output.
+        const LEGACY_AVG_PX: &str = "1.2345678901234567";
+        const LEGACY_SLIPPAGE: &str = "1.6666666666666667";
+
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.into()).await.unwrap();
+
+        // The whole exercise runs inside a transaction that is always rolled back: PostgreSQL DDL
+        // is transactional, so neither the column downgrade nor the probe row can outlive the
+        // test, even on panic.
+        let mut tx = pg.begin().await.unwrap();
+
+        sqlx::query(
+            r#"ALTER TABLE "order"
+               ALTER COLUMN avg_px TYPE DOUBLE PRECISION USING avg_px::float8,
+               ALTER COLUMN slippage TYPE DOUBLE PRECISION USING slippage::float8"#,
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"INSERT INTO "order" (id, strategy_id, client_order_id, order_type, order_side,
+               quantity, time_in_force, status, avg_px, slippage, init_id, ts_init, ts_last)
+               VALUES ('O-LEGACY-FLOAT', 'S-1', 'O-LEGACY-FLOAT', 'MARKET', 'BUY', '1', 'GTC',
+               'FILLED', $1, $2, 'i', '0', '0')"#,
+        )
+        .bind(LEGACY_AVG_PX.parse::<f64>().unwrap())
+        .bind(LEGACY_SLIPPAGE.parse::<f64>().unwrap())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        sqlx::query(AssertSqlSafe(order_numeric_migration_sql()))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let (avg_px, slippage): (Decimal, Decimal) =
+            sqlx::query_as(r#"SELECT avg_px, slippage FROM "order" WHERE id = 'O-LEGACY-FLOAT'"#)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let types: Vec<String> = sqlx::query_scalar(
+            "SELECT data_type FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = 'order'
+               AND column_name IN ('avg_px', 'slippage')
+             ORDER BY column_name",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.rollback().await.unwrap();
+
+        assert_eq!(types, vec!["numeric".to_string(), "numeric".to_string()]);
+        assert_eq!(avg_px, Decimal::from_str(LEGACY_AVG_PX).unwrap());
+        assert_eq!(slippage, Decimal::from_str(LEGACY_SLIPPAGE).unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_add_position_snapshot() {
-        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());

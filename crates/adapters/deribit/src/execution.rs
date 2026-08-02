@@ -15,14 +15,14 @@
 
 //! Live execution client implementation for the Deribit adapter.
 
-use std::{future::Future, sync::Mutex};
+use std::future::Future;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -32,7 +32,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    UnixNanos,
     datetime::NANOSECONDS_IN_SECOND,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -73,7 +73,7 @@ pub struct DeribitExecutionClient {
     http_client: DeribitHttpClient,
     ws_client: DeribitWebSocketClient,
     ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
 }
 
 impl DeribitExecutionClient {
@@ -112,6 +112,7 @@ impl DeribitExecutionClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             DERIBIT_WS_HEARTBEAT_SECS,
+            config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),
@@ -137,7 +138,7 @@ impl DeribitExecutionClient {
             http_client,
             ws_client,
             ws_stream_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
         })
     }
 
@@ -153,17 +154,12 @@ impl DeribitExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     /// Aborts all pending async tasks.
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     // Rejects unsupported order types and time-in-force values
@@ -1047,6 +1043,9 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
                 emitter.send_fill_report(report);
             }
         }
+        NautilusWsMessage::OrderFilled(event) => {
+            emitter.send_order_event(OrderEventAny::Filled(event));
+        }
         NautilusWsMessage::OrderRejected(event) => {
             emitter.send_order_event(OrderEventAny::Rejected(event));
         }
@@ -1109,4 +1108,108 @@ fn reject_modify_command(
         ts_event,
     );
     anyhow::bail!("{reason}");
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::messages::{ExecutionEvent, execution::ExecutionReport};
+    use nautilus_core::UUID4;
+    use nautilus_model::{
+        enums::LiquiditySide,
+        events::OrderFilled,
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId},
+        types::{Currency, Money, Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    fn dispatch_test_rig() -> (
+        ExecutionEventEmitter,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) {
+        let trader_id = TraderId::from("TRADER-001");
+        let account_id = AccountId::from("DERIBIT-001");
+        let mut emitter = ExecutionEventEmitter::new(
+            get_atomic_clock_realtime(),
+            trader_id,
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(tx);
+        (emitter, rx)
+    }
+
+    fn fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("DERIBIT-001"),
+            InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            VenueOrderId::from("ETH-584830574"),
+            TradeId::from("ETH-2696068"),
+            OrderSide::Buy,
+            Quantity::from("1.000000"),
+            Price::from("203.80"),
+            Money::from("0.00036801 USDT"),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            None,
+            UnixNanos::from(2),
+            UnixNanos::from(3),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn dispatch_tracked_fill_uses_order_event_path() {
+        let (emitter, mut rx) = dispatch_test_rig();
+        let report = fill_report();
+        let filled = OrderFilled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            report.instrument_id,
+            report.client_order_id.unwrap(),
+            report.venue_order_id,
+            report.account_id,
+            report.trade_id,
+            report.order_side,
+            OrderType::Market,
+            report.last_qty,
+            report.last_px,
+            Currency::USDT(),
+            report.liquidity_side,
+            UUID4::new(),
+            report.ts_event,
+            report.ts_init,
+            false,
+            None,
+            Some(report.commission),
+            None,
+        );
+
+        dispatch_ws_message(NautilusWsMessage::OrderFilled(filled), &emitter);
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Filled(event))
+                if event.client_order_id == ClientOrderId::from("O-19700101-000000-001-001-1")
+                    && event.trade_id == TradeId::from("ETH-2696068")
+        ));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn dispatch_untracked_fill_keeps_report_path() {
+        let (emitter, mut rx) = dispatch_test_rig();
+        let report = fill_report();
+
+        dispatch_ws_message(NautilusWsMessage::FillReports(vec![report]), &emitter);
+
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            ExecutionEvent::Report(ExecutionReport::Fill(_))
+        ));
+        assert!(rx.try_recv().is_err());
+    }
 }

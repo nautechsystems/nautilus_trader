@@ -80,7 +80,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
     ) -> None:
         PyCondition.is_true(
             account_type.is_spot_or_margin,
-            "account_type was not SPOT, MARGIN or ISOLATED_MARGIN",
+            "account_type was not SPOT, MARGIN, or ISOLATED_MARGIN",
         )
 
         # Spot HTTP API

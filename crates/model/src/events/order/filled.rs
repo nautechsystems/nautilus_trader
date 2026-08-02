@@ -15,6 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
@@ -82,6 +83,8 @@ pub struct OrderFilled {
     pub position_id: Option<PositionId>,
     /// The commission generated from this execution.
     pub commission: Option<Money>,
+    /// Additional fill metadata (venue/adapter specific).
+    pub info: Option<IndexMap<Ustr, Ustr>>,
     /// The causation ID associated with the event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<UUID4>,
@@ -111,6 +114,7 @@ impl OrderFilled {
         reconciliation: bool,
         position_id: Option<PositionId>,
         commission: Option<Money>,
+        info: Option<IndexMap<Ustr, Ustr>>,
     ) -> Self {
         Self {
             trader_id,
@@ -132,6 +136,7 @@ impl OrderFilled {
             reconciliation,
             position_id,
             commission,
+            info,
             causation_id: None,
         }
     }
@@ -328,6 +333,10 @@ impl OrderEvent for OrderFilled {
         Some(self.last_qty)
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
+
     fn trigger_price(&self) -> Option<Price> {
         None
     }
@@ -447,6 +456,7 @@ mod tests {
             false,
             Some(PositionId::from("P-001")),
             Some(Money::new(2.5, Currency::USD())),
+            None,
         )
     }
 
@@ -466,6 +476,23 @@ mod tests {
     fn test_order_filled_is_buy(order_filled: OrderFilled) {
         assert!(order_filled.is_buy());
         assert!(!order_filled.is_sell());
+    }
+
+    #[rstest]
+    fn test_order_filled_info_round_trips_through_serde(order_filled: OrderFilled) {
+        let mut info = IndexMap::new();
+        info.insert(Ustr::from("liquidation"), Ustr::from("true"));
+        info.insert(Ustr::from("maker_order_id"), Ustr::from("ABC-123"));
+        let original = OrderFilled {
+            info: Some(info),
+            ..order_filled
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderFilled = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.info, original.info);
+        assert_eq!(deserialized, original);
     }
 
     #[rstest]

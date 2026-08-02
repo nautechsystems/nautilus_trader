@@ -180,7 +180,7 @@ class TestOrderFillTracker:
             price_precision=PRICE_PRECISION,
         )
 
-        # Only half filled — residual = 50 >> 0.01
+        # Only half filled - residual = 50 >> 0.01
         tracker.record_fill(vid, 50.0, 0.55, 1000)
         result = tracker.check_dust_residual(vid)
         assert result is None

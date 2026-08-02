@@ -19,7 +19,7 @@
 //! `Inverse` product types. Spot and HIP-4 outcome orders/positions are
 //! intentionally out of scope: spot holdings are token balances rather than
 //! derivative positions, and "flattening" them would mean dumping into a
-//! different quote asset — a real trade decision rather than cleanup. Working
+//! different quote asset - a real trade decision rather than cleanup. Working
 //! orders on those product types are left untouched and will continue to be
 //! eligible to fill after this binary exits.
 //!
@@ -145,7 +145,12 @@ async fn cancel_open_orders(
     }
 
     log::info!("Cancelling {} open perp order(s)", cancels.len());
-    let action = HyperliquidExecAction::Cancel { cancels };
+    // Flatten cancels a mixed bag of order types (trigger orders can't be fast-cancelled)
+    // and the frontend open-orders parse does not track type, so omit the fast flag here.
+    let action = HyperliquidExecAction::Cancel {
+        cancels,
+        fast: None,
+    };
     let response = client
         .post_action_exec(&action)
         .await

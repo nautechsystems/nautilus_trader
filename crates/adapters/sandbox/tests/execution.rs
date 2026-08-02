@@ -43,7 +43,7 @@ use nautilus_model::{
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
         AccountType, AggressorSide, BookType, InstrumentCloseType, MarketStatusAction, OmsType,
-        OrderSide, OrderType, PositionSide,
+        OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
     identifiers::{
@@ -1221,6 +1221,265 @@ fn test_instrument_close_finalizes_expired_engine_without_open_state(
             .borrow()
             .instrument(&harness.instrument.id())
             .is_none()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_periodic_sweep_retires_expired_quote_only_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    // Quote-only lifecycle: the matching engine is lazily created from a quote, with no order,
+    // position, or InstrumentClose to drive the event-driven cleanup paths.
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id, account_id, "0xSWEEP", "0xYES", "Yes", 100,
+    );
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    // Expiry alone, before the sweep interval elapses, does not release the engine.
+    let pre_sweep = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+    assert!(
+        pre_sweep.is_empty(),
+        "sweep timer must not fire before its interval",
+    );
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    // Advance past one sweep interval and fire the timer (60s matches
+    // EXPIRED_ENGINE_SWEEP_INTERVAL_NS in `execution.rs`).
+    let events = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(60_000_000_001), true);
+    let handlers = harness.test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.run();
+    }
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        0,
+        "periodic sweep should retire the expired quote-only matching engine",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none(),
+        "periodic sweep should purge the expired instrument from the cache",
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_periodic_sweep_retains_expired_engine_with_open_position(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xSWEEPOPEN",
+        "0xYES",
+        "Yes",
+        100,
+    );
+
+    let position = submit_open_position_and_seed_cache(
+        &harness.client,
+        &harness.cache,
+        trader_id,
+        &harness.instrument,
+        "OPEN-SWEEP",
+        "P-OPEN-SWEEP",
+        &mut harness.rx,
+    );
+    let venue = harness.instrument.id().venue;
+    harness
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    // Isolate any event produced by the sweep from the opening fill emitted during setup.
+    while harness.rx.try_recv().is_ok() {}
+
+    // Fire the sweep past expiry: settlement safety must retain the engine while a position is open.
+    let events = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(60_000_000_001), true);
+    let handlers = harness.test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.run();
+    }
+
+    // The sweep performs no settlement: no fill or position-close event, and the position stays open.
+    let sweep_events: Vec<ExecutionEvent> =
+        std::iter::from_fn(|| harness.rx.try_recv().ok()).collect();
+    assert!(
+        sweep_events.is_empty(),
+        "periodic sweep must not emit execution events for an open position, was {sweep_events:?}",
+    );
+    assert!(
+        harness.cache.borrow().has_positions_open(
+            Some(&venue),
+            Some(&harness.instrument.id()),
+            None,
+            None,
+            None,
+        ),
+        "periodic sweep must leave the open position open",
+    );
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        1,
+        "periodic sweep must not retire an expired engine with an open position",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some(),
+        "periodic sweep must not purge an instrument with an open position",
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_periodic_sweep_retains_expired_engine_with_open_order(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xSWEEPORDER",
+        "0xYES",
+        "Yes",
+        100,
+    );
+
+    // A limit order well below the bid rests unfilled, so the instrument expires carrying a
+    // non-terminal order and no position.
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(0.10, 3))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("RESTING-SWEEP".into())
+        .ts_init(UnixNanos::from(10))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(10),
+        ))
+        .unwrap();
+
+    // Apply the acceptance so the order registers in the cache open-order index.
+    let accepted = std::iter::from_fn(|| harness.rx.try_recv().ok())
+        .find_map(|event| match event {
+            ExecutionEvent::Order(order_event @ OrderEventAny::Accepted(_)) => Some(order_event),
+            _ => None,
+        })
+        .expect("expected acceptance for the resting limit order");
+    harness.cache.borrow_mut().update_order(&accepted).unwrap();
+
+    let venue = harness.instrument.id().venue;
+    let instrument_id = harness.instrument.id();
+    assert!(
+        harness.cache.borrow().has_orders_open(
+            Some(&venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        ),
+        "resting limit order should be open before the sweep",
+    );
+    assert!(
+        !harness.cache.borrow().has_positions_open(
+            Some(&venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        ),
+        "resting limit order should not have opened a position",
+    );
+
+    let events = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(60_000_000_001), true);
+    let handlers = harness.test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.run();
+    }
+
+    // `purge_instrument_skip_order_guard` requires callers to have already terminalized order
+    // state, which this sweep has not done, so engine and instrument must both be retained.
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        1,
+        "periodic sweep must not retire an expired engine with an open order",
+    );
+    assert!(
+        harness.cache.borrow().instrument(&instrument_id).is_some(),
+        "periodic sweep must not purge an instrument with an open order",
+    );
+    assert!(
+        harness.cache.borrow().has_orders_open(
+            Some(&venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        ),
+        "periodic sweep must leave the resting order open and reachable",
     );
 
     harness.client.stop().unwrap();
@@ -2418,6 +2677,28 @@ fn test_account_id(execution_client: SandboxExecutionClient, account_id: Account
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_returns_empty_report(
+    execution_client: SandboxExecutionClient,
+    client_id: ClientId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    let mass_status = execution_client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(mass_status.client_id, client_id);
+    assert_eq!(mass_status.account_id, account_id);
+    assert_eq!(mass_status.venue, venue);
+    assert!(mass_status.order_reports().is_empty());
+    assert!(mass_status.fill_reports().is_empty());
+    assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
 fn test_config_accessor(execution_client: SandboxExecutionClient, venue: Venue) {
     let config = execution_client.config();
 
@@ -2430,6 +2711,103 @@ fn test_config_accessor(execution_client: SandboxExecutionClient, venue: Venue) 
 fn test_get_account_when_none(execution_client: SandboxExecutionClient) {
     // No account in cache yet
     assert!(execution_client.get_account().is_none());
+}
+
+#[rstest]
+fn test_initialized_ioc_market_order_cancels_remainder_through_live_runner(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let instrument_id = instrument.id();
+    let mut context = create_test_context(trader_id, account_id, instrument_id.venue);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument)
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    context.cache.borrow_mut().add_quote(quote).unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.500"))
+        .time_in_force(TimeInForce::Ioc)
+        .client_order_id(ClientOrderId::from("O-IOC-INITIALIZED"))
+        .build();
+    assert_eq!(order.status(), OrderStatus::Initialized);
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(context.client.client_id()), false)
+        .unwrap();
+
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let events: Vec<OrderEventAny> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(order_event) => Some(order_event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(events.len(), 3);
+    let OrderEventAny::Submitted(submitted) = &events[0] else {
+        panic!("Expected OrderSubmitted, was {:?}", events[0]);
+    };
+    assert_eq!(submitted.client_order_id, order.client_order_id());
+    let OrderEventAny::Filled(fill) = &events[1] else {
+        panic!("Expected OrderFilled, was {:?}", events[1]);
+    };
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.last_px, Price::from("1010.00"));
+    assert_eq!(fill.last_qty, Quantity::from("0.500"));
+    let OrderEventAny::Canceled(canceled) = &events[2] else {
+        panic!("Expected OrderCanceled, was {:?}", events[2]);
+    };
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+
+    for event in &events {
+        context.cache.borrow_mut().update_order(event).unwrap();
+    }
+
+    let cached_order = context
+        .cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(cached_order.status(), OrderStatus::Canceled);
+    assert_eq!(cached_order.filled_qty(), Quantity::from("0.500"));
+    assert_eq!(cached_order.leaves_qty(), Quantity::from("1.000"));
+
+    context.client.stop().unwrap();
 }
 
 // Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3732

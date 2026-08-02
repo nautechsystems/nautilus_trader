@@ -19,6 +19,10 @@ use nautilus_model::position::Position;
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the arithmetic mean of portfolio returns.
+///
+/// All returns are included, so zero returns count toward the average.
+/// Returns `NaN` for an empty series.
 #[repr(C)]
 #[derive(Debug, Clone)]
 #[cfg_attr(

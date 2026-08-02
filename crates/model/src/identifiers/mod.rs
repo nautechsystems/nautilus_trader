@@ -58,7 +58,7 @@ pub use crate::identifiers::{
     client_order_id::ClientOrderId,
     component_id::ComponentId,
     exec_algorithm_id::ExecAlgorithmId,
-    instrument_id::{InstrumentId, InstrumentIdError},
+    instrument_id::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, InstrumentIdError},
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
     position_id::PositionId,

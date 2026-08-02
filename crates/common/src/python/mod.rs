@@ -86,6 +86,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::LogColor>()?;
     m.add_class::<crate::enums::LogLevel>()?;
     m.add_class::<crate::enums::LogFormat>()?;
+    m.add_class::<crate::enums::SerializationEncoding>()?;
     m.add_class::<crate::logging::logger::LoggerConfig>()?;
     m.add_class::<crate::logging::logger::LogGuard>()?;
     m.add_class::<crate::logging::writer::FileWriterConfig>()?;

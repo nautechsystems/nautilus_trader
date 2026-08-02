@@ -127,13 +127,25 @@ pub fn compare_pool_profiler_detailed(
         sqrt_price_matches = false;
     }
 
-    if snapshot.state.fee_protocol == profiler.state.fee_protocol {
-        log::info!("✓ fee_protocol matches: {}", snapshot.state.fee_protocol);
+    if snapshot.state.fee_protocol == profiler.state.fee_protocol
+        && snapshot.state.fee_protocol0_basis_points == profiler.state.fee_protocol0_basis_points
+        && snapshot.state.fee_protocol1_basis_points == profiler.state.fee_protocol1_basis_points
+    {
+        log::info!(
+            "✓ fee_protocol matches: packed={}, token0_bps={:?}, token1_bps={:?}",
+            snapshot.state.fee_protocol,
+            snapshot.state.fee_protocol0_basis_points,
+            snapshot.state.fee_protocol1_basis_points,
+        );
     } else {
         log::warn!(
-            "Fee protocol mismatch: profiler={}, compared={}",
+            "Fee protocol mismatch: profiler=(packed={}, token0_bps={:?}, token1_bps={:?}), compared=(packed={}, token0_bps={:?}, token1_bps={:?})",
             profiler.state.fee_protocol,
-            snapshot.state.fee_protocol
+            profiler.state.fee_protocol0_basis_points,
+            profiler.state.fee_protocol1_basis_points,
+            snapshot.state.fee_protocol,
+            snapshot.state.fee_protocol0_basis_points,
+            snapshot.state.fee_protocol1_basis_points,
         );
         fee_protocol_matches = false;
     }

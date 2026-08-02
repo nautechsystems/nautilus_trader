@@ -48,6 +48,10 @@ pub fn py_rsa_signature(private_key_pem: &str, data: &str) -> PyResult<String> {
 }
 
 /// Signs `data` using Ed25519 with the provided private key seed.
+///
+/// # Errors
+///
+/// Returns an error if the provided private key seed is invalid or signature creation fails.
 #[pyfunction(name = "ed25519_signature")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.cryptography")]
 pub fn py_ed25519_signature(

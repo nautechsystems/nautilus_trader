@@ -33,6 +33,7 @@ use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{Py, Python, types::PyModule};
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 const TEST_WALLET_ADDRESS: &str = "0x0000000000000000000000000000000000001234";
 const TEST_SESSION_KEY: &str = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
@@ -128,6 +129,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
                 session_key: Some(TEST_SESSION_KEY.to_string()),
                 subaccount_id: Some(TEST_SUBACCOUNT_ID),
                 environment: DeriveEnvironment::Testnet,
+                max_fee_per_contract: Some(Decimal::ONE),
                 ..DeriveExecClientConfig::default()
             },
         },

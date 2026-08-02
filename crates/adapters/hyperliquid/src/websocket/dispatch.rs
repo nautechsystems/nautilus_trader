@@ -16,7 +16,7 @@
 //! WebSocket execution dispatch for the Hyperliquid execution client.
 //!
 //! Implements the two-tier execution dispatch contract from
-//! `docs/developer_guide/adapters.md` (lines 1232-1296):
+//! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates`:
 //!
 //! 1. The execution client registers an [`OrderIdentity`] in [`WsDispatchState`]
 //!    when it submits an order, and refreshes the cached venue order id when a
@@ -40,12 +40,16 @@
 //! `OrderUpdated` event, and suppresses the stale cancel so strategies never
 //! observe a spurious termination.
 //!
-//! The pending-modify marker (keyed on `client_order_id`) is set by
-//! `modify_order` before the HTTP call and cleared on either the matching
-//! `ACCEPTED(new_voi)` or any modify failure. It lets dispatch skip an
-//! early `CANCELED(old_voi)` that arrives before the replacement
-//! `ACCEPTED(new_voi)` on the WebSocket, regardless of whether the WS
-//! message races ahead of the HTTP response.
+//! Each in-flight modify is tracked as an intent in a per-order chain (keyed
+//! on `client_order_id`), pushed by `modify_order` before the HTTP call. An
+//! intent lets dispatch skip an early `CANCELED(old_voi)` that arrives before
+//! the replacement `ACCEPTED(new_voi)`, regardless of whether the WS message
+//! races ahead of the HTTP response. Rapid repeated modifies under one stable
+//! CLOID queue as a chain so a later modify cannot overwrite an earlier
+//! intent's old-leg suppression, and a failed modify clears only its own
+//! generation (leaving newer intents intact). The front intent is claimed on
+//! promotion, advancing the next intent's old leg to the promoted replacement;
+//! a rejected front reparents the next intent to the same still-live leg.
 //!
 //! A fill carrying the replacement `venue_order_id` during an in-flight modify
 //! promotes the binding directly (the same `OrderUpdated` path as the
@@ -85,7 +89,10 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::http::models::HyperliquidExecPlaceOrderRequest;
+use crate::{
+    common::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH,
+    http::models::HyperliquidExecPlaceOrderRequest,
+};
 
 pub const DEDUP_CAPACITY: usize = 10_000;
 
@@ -180,6 +187,42 @@ where
     }
 }
 
+/// Maximum in-flight modify intents tracked per order. Rapid repricing rarely
+/// queues more than one or two unacknowledged modifies at once; the cap bounds
+/// memory if replacement acks stall. On overflow the oldest intent is evicted.
+pub const MAX_PENDING_MODIFY_INTENTS: usize = 32;
+
+/// A single in-flight Hyperliquid modify awaiting its replacement leg.
+///
+/// Rapid repeated modifies under one stable CLOID queue as a chain of intents
+/// so a later modify cannot overwrite an earlier pending old-leg marker, and a
+/// failed modify clears only its own generation rather than a newer one's
+/// state. Each intent carries the venue leg it cancel-replaces
+/// (`old_venue_order_id`), the user-intended absolute total quantity, and the
+/// exact request sent (used to size a corrective reduce).
+#[derive(Debug, Clone)]
+pub struct ModifyIntent {
+    /// Monotonic per-order generation, used to clear a specific intent on failure.
+    pub generation: u64,
+    /// Venue order id this modify cancel-replaces, once known.
+    pub old_venue_order_id: Option<VenueOrderId>,
+    /// User-intended absolute total quantity for the replacement.
+    pub target_qty: Quantity,
+    /// Exact venue request sent, used to size a corrective reduce.
+    pub sent_request: Option<HyperliquidExecPlaceOrderRequest>,
+}
+
+/// Bounded FIFO chain of in-flight modify intents for one order.
+///
+/// The venue processes chained modifies in submission order, so the front
+/// (oldest) intent is the next to promote; on promotion the next intent's old
+/// leg advances to the replacement just accepted.
+#[derive(Debug, Default)]
+struct ModifyChain {
+    intents: VecDeque<ModifyIntent>,
+    next_generation: u64,
+}
+
 /// Per-client dispatch state shared between order submission and the
 /// WebSocket consumer task.
 ///
@@ -195,6 +238,11 @@ pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     /// Client order IDs for which an `OrderAccepted` event has been emitted.
     pub emitted_accepted: DashSet<ClientOrderId>,
+    /// Tracked submissions whose POST response has not resolved yet.
+    pending_submissions: DashSet<ClientOrderId>,
+    /// Submission-time rejections held until the POST path can preserve its
+    /// more detailed venue error string.
+    pending_submission_rejections: DashMap<ClientOrderId, OrderStatusReport>,
     /// Client order IDs that have reached the filled terminal state.
     ///
     /// Retained past `cleanup_terminal` so that late replay of the same
@@ -215,19 +263,18 @@ pub struct WsDispatchState {
     /// order id under the same client order id is treated as the
     /// replacement leg of a Hyperliquid modify and emitted as `OrderUpdated`.
     pub cached_venue_order_ids: DashMap<ClientOrderId, VenueOrderId>,
-    /// Maps `client_order_id` to the old venue order id of an in-flight
-    /// modify. Populated by `modify_order` before the HTTP call so the WS
-    /// cancel handler sees the marker even when `CANCELED(old_voi)` arrives
-    /// before the HTTP response. Cleared on the matching `ACCEPTED(new_voi)`
-    /// or on any modify failure. A `CANCELED(old_voi)` arriving while the
-    /// marker is set is treated as the cancel leg of a cancel-before-accept
-    /// race and suppressed so the later `ACCEPTED(new_voi)` can flow through
-    /// the `OrderUpdated` path.
-    pub pending_modify_keys: DashMap<ClientOrderId, VenueOrderId>,
-    /// User-intended absolute total qty for an in-flight modify; the
-    /// cancel-replace promotion uses it instead of the venue's
-    /// remaining-only `report.quantity`.
-    pub pending_modify_target_qty: DashMap<ClientOrderId, Quantity>,
+    /// Per-order chain of in-flight modify intents, keyed by `client_order_id`.
+    ///
+    /// Rapid repeated modifies under one stable CLOID queue as a chain so a
+    /// later modify cannot overwrite an earlier pending old-leg marker, and a
+    /// failed modify clears only its own generation rather than a newer one's
+    /// state. Populated by `modify_order` before the HTTP call so the WS cancel
+    /// handler sees an intent even when `CANCELED(old_voi)` arrives before the
+    /// HTTP response. A `CANCELED(old_voi)` matching any queued intent's old
+    /// leg is suppressed so the later `ACCEPTED(new_voi)` can flow through the
+    /// `OrderUpdated` path; the front intent is claimed on promotion and the
+    /// next intent's old leg advances to the promoted replacement.
+    pending_modify_chains: DashMap<ClientOrderId, ModifyChain>,
     /// `FillReport`s buffered only when a cancel-replace fill cannot be promoted
     /// (the identity carries no price); drained by the cancel-replace branch of
     /// `handle_accepted`. The common path promotes on the fill instead. See
@@ -236,9 +283,6 @@ pub struct WsDispatchState {
     /// Cumulative filled quantity per tracked order. Compared against
     /// `OrderIdentity::quantity` to decide when to clean up tracked state.
     pub order_filled_qty: DashMap<ClientOrderId, Quantity>,
-    /// Exact venue request sent for an in-flight modify, used by the
-    /// cancel-replace promotion to build a corrective reduce.
-    pub pending_modify_request: DashMap<ClientOrderId, HyperliquidExecPlaceOrderRequest>,
     /// Corrective reduce queued by the cancel-replace promotion: client order
     /// id to (new venue order id, reduced request). Drained by the WS loop.
     pub pending_corrective: DashMap<ClientOrderId, (u64, HyperliquidExecPlaceOrderRequest)>,
@@ -250,15 +294,15 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             emitted_accepted: DashSet::default(),
+            pending_submissions: DashSet::default(),
+            pending_submission_rejections: DashMap::new(),
             filled_orders: DashSet::default(),
             emitted_trades: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
             terminal_cloids: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
             cached_venue_order_ids: DashMap::new(),
-            pending_modify_keys: DashMap::new(),
-            pending_modify_target_qty: DashMap::new(),
+            pending_modify_chains: DashMap::new(),
             buffered_fills: DashMap::new(),
             order_filled_qty: DashMap::new(),
-            pending_modify_request: DashMap::new(),
             pending_corrective: DashMap::new(),
             clearing: AtomicBool::new(false),
         }
@@ -284,6 +328,36 @@ impl WsDispatchState {
         self.order_identities
             .get(client_order_id)
             .map(|r| r.clone())
+    }
+
+    /// Marks a tracked order as awaiting its submission POST response.
+    pub fn mark_submission_pending(&self, client_order_id: ClientOrderId) {
+        self.pending_submissions.insert(client_order_id);
+    }
+
+    /// Returns whether the order still awaits its submission POST response.
+    #[must_use]
+    pub fn submission_pending(&self, client_order_id: &ClientOrderId) -> bool {
+        self.pending_submissions.contains(client_order_id)
+    }
+
+    /// Holds a submission-time rejection until the POST response resolves.
+    pub fn buffer_submission_rejection(
+        &self,
+        client_order_id: ClientOrderId,
+        report: OrderStatusReport,
+    ) {
+        self.pending_submission_rejections
+            .insert(client_order_id, report);
+    }
+
+    /// Resolves submission tracking and returns any early rejection report.
+    #[must_use]
+    pub fn resolve_submission(&self, client_order_id: &ClientOrderId) -> Option<OrderStatusReport> {
+        self.pending_submissions.remove(client_order_id);
+        self.pending_submission_rejections
+            .remove(client_order_id)
+            .map(|(_, report)| report)
     }
 
     /// Refreshes the tracked price for a modify ack when the new report
@@ -374,45 +448,133 @@ impl WsDispatchState {
         self.cached_venue_order_ids.get(client_order_id).map(|r| *r)
     }
 
-    /// Marks an in-flight modify for cancel-before-accept suppression and
-    /// records the target absolute total qty for the cancel-replace promotion.
+    /// Queues an in-flight modify intent for cancel-before-accept suppression
+    /// and records the target absolute total qty for the cancel-replace
+    /// promotion. Returns the intent's generation.
+    ///
+    /// The generation lets the submission path clear only this modify on
+    /// failure via [`Self::clear_modify_generation`], leaving newer queued
+    /// modifies intact. Chained modifies append rather than overwrite, so a
+    /// later modify cannot drop an earlier pending old-leg marker.
     pub fn mark_pending_modify(
         &self,
         client_order_id: ClientOrderId,
         old_venue_order_id: VenueOrderId,
         target_qty: Quantity,
-    ) {
-        self.pending_modify_keys
-            .insert(client_order_id, old_venue_order_id);
-        self.pending_modify_target_qty
-            .insert(client_order_id, target_qty);
+    ) -> u64 {
+        let mut chain = self
+            .pending_modify_chains
+            .entry(client_order_id)
+            .or_default();
+        let generation = chain.next_generation;
+        chain.next_generation += 1;
+        chain.intents.push_back(ModifyIntent {
+            generation,
+            old_venue_order_id: Some(old_venue_order_id),
+            target_qty,
+            sent_request: None,
+        });
+
+        if chain.intents.len() > MAX_PENDING_MODIFY_INTENTS {
+            chain.intents.pop_front();
+            log::warn!(
+                "Modify chain for {client_order_id} exceeded {MAX_PENDING_MODIFY_INTENTS}; \
+                 evicting oldest intent",
+            );
+        }
+        generation
     }
 
-    /// Clears the pending modify marker for a client order id.
+    /// Clears the entire pending modify chain for a client order id.
     pub fn clear_pending_modify(&self, client_order_id: &ClientOrderId) {
-        self.pending_modify_keys.remove(client_order_id);
-        self.pending_modify_target_qty.remove(client_order_id);
-        self.pending_modify_request.remove(client_order_id);
+        self.pending_modify_chains.remove(client_order_id);
     }
 
-    /// Stashes the exact venue request sent for an in-flight modify.
+    /// Removes a single modify intent by generation, leaving newer queued
+    /// modifies intact. Drops the chain entry when it empties.
+    ///
+    /// When the removed intent is the front, the next queued modify inherits
+    /// its old leg: a rejected modify does not cancel-replace, so the resting
+    /// leg it targeted is still live and the next modify cancel-replaces the
+    /// same one. A non-front removal needs no reparenting; the front's
+    /// promotion (or its own removal) advances the chain.
+    pub fn clear_modify_generation(&self, client_order_id: &ClientOrderId, generation: u64) {
+        let Some(mut chain) = self.pending_modify_chains.get_mut(client_order_id) else {
+            return;
+        };
+        let removed_front_old = chain
+            .intents
+            .front()
+            .filter(|front| front.generation == generation)
+            .and_then(|front| front.old_venue_order_id);
+        chain
+            .intents
+            .retain(|intent| intent.generation != generation);
+
+        if let Some(old) = removed_front_old
+            && let Some(new_front) = chain.intents.front_mut()
+        {
+            new_front.old_venue_order_id = Some(old);
+        }
+        drop(chain);
+        // Remove only if still empty: a concurrent mark for the same order may
+        // queue a new intent between the drop above and this remove
+        self.pending_modify_chains
+            .remove_if(client_order_id, |_, chain| chain.intents.is_empty());
+    }
+
+    /// Stashes the exact venue request sent onto the most recently queued
+    /// modify intent for the order.
     pub fn stash_modify_request(
         &self,
         client_order_id: ClientOrderId,
         request: HyperliquidExecPlaceOrderRequest,
     ) {
-        self.pending_modify_request.insert(client_order_id, request);
+        if let Some(mut chain) = self.pending_modify_chains.get_mut(&client_order_id)
+            && let Some(back) = chain.intents.back_mut()
+        {
+            back.sent_request = Some(request);
+        } else {
+            log::debug!(
+                "Stash modify request for {client_order_id} with no pending intent; ignoring"
+            );
+        }
     }
 
-    /// Returns a clone of the stashed in-flight modify request, if any.
+    /// Returns a clone of the front intent's stashed modify request, if any.
     #[must_use]
     pub fn modify_request(
         &self,
         client_order_id: &ClientOrderId,
     ) -> Option<HyperliquidExecPlaceOrderRequest> {
-        self.pending_modify_request
+        self.pending_modify_chains
             .get(client_order_id)
-            .map(|r| r.clone())
+            .and_then(|chain| chain.intents.front().and_then(|i| i.sent_request.clone()))
+    }
+
+    /// Claims the front (oldest) modify intent for promotion.
+    ///
+    /// Advances the next queued intent's old leg to `new_venue_order_id`: its
+    /// cancel-replace targets the replacement just promoted, not the leg it was
+    /// queued against. Returns the claimed intent, or `None` when no intent is
+    /// queued (an external modify with no local marker). Drops the chain entry
+    /// when it empties.
+    pub fn claim_front_modify(
+        &self,
+        client_order_id: &ClientOrderId,
+        new_venue_order_id: VenueOrderId,
+    ) -> Option<ModifyIntent> {
+        let mut chain = self.pending_modify_chains.get_mut(client_order_id)?;
+        let claimed = chain.intents.pop_front();
+        if let Some(next) = chain.intents.front_mut() {
+            next.old_venue_order_id = Some(new_venue_order_id);
+        }
+        drop(chain);
+        // Remove only if still empty: a concurrent mark for the same order may
+        // queue a new intent between the drop above and this remove
+        self.pending_modify_chains
+            .remove_if(client_order_id, |_, chain| chain.intents.is_empty());
+        claimed
     }
 
     /// Queues a corrective reduce for the WebSocket consumer loop to post.
@@ -437,18 +599,48 @@ impl WsDispatchState {
             .map(|(_, v)| v)
     }
 
-    /// Returns the pending modify marker for a client order id, if any.
+    /// Returns whether any modify intent is queued for the client order id.
     #[must_use]
-    pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
-        self.pending_modify_keys.get(client_order_id).map(|r| *r)
+    pub fn has_pending_modify(&self, client_order_id: &ClientOrderId) -> bool {
+        self.pending_modify_chains
+            .get(client_order_id)
+            .is_some_and(|chain| !chain.intents.is_empty())
     }
 
-    /// Returns the recorded target absolute total qty, if any.
+    /// Returns the front intent's old venue order id, if any.
+    #[must_use]
+    pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
+        self.pending_modify_chains
+            .get(client_order_id)
+            .and_then(|chain| chain.intents.front().and_then(|i| i.old_venue_order_id))
+    }
+
+    /// Returns whether any queued intent cancel-replaces `venue_order_id`.
+    ///
+    /// Used to suppress the `CANCELED(old_voi)` leg of any in-flight modify in
+    /// the chain, not only the oldest.
+    #[must_use]
+    pub fn pending_modify_contains_old(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.pending_modify_chains
+            .get(client_order_id)
+            .is_some_and(|chain| {
+                chain
+                    .intents
+                    .iter()
+                    .any(|i| i.old_venue_order_id == Some(venue_order_id))
+            })
+    }
+
+    /// Returns the front intent's recorded target absolute total qty, if any.
     #[must_use]
     pub fn pending_modify_target_qty(&self, client_order_id: &ClientOrderId) -> Option<Quantity> {
-        self.pending_modify_target_qty
+        self.pending_modify_chains
             .get(client_order_id)
-            .map(|r| *r)
+            .and_then(|chain| chain.intents.front().map(|i| i.target_qty))
     }
 
     /// Buffers a `FillReport` arrived during an in-flight cancel-replace.
@@ -494,10 +686,10 @@ impl WsDispatchState {
     pub fn cleanup_terminal(&self, client_order_id: &ClientOrderId) {
         self.order_identities.remove(client_order_id);
         self.emitted_accepted.remove(client_order_id);
+        self.pending_submissions.remove(client_order_id);
+        self.pending_submission_rejections.remove(client_order_id);
         self.cached_venue_order_ids.remove(client_order_id);
-        self.pending_modify_keys.remove(client_order_id);
-        self.pending_modify_target_qty.remove(client_order_id);
-        self.pending_modify_request.remove(client_order_id);
+        self.pending_modify_chains.remove(client_order_id);
         self.pending_corrective.remove(client_order_id);
         self.buffered_fills.remove(client_order_id);
         self.order_filled_qty.remove(client_order_id);
@@ -603,7 +795,8 @@ pub fn dispatch_order_event(
         | OrderStatus::Initialized
         | OrderStatus::Denied
         | OrderStatus::Released
-        | OrderStatus::Emulated => DispatchOutcome::Tracked,
+        | OrderStatus::Emulated
+        | OrderStatus::Voided => DispatchOutcome::Tracked,
     }
 }
 
@@ -644,7 +837,7 @@ pub fn dispatch_order_fill(
 
     // Promote the binding from the fill so a dropped replacement ACCEPTED cannot
     // strand it (see module docs).
-    if state.pending_modify(&client_order_id).is_some()
+    if state.has_pending_modify(&client_order_id)
         && let Some(cached_voi) = state.cached_venue_order_id(&client_order_id)
         && report.venue_order_id != cached_voi
     {
@@ -737,6 +930,7 @@ pub fn dispatch_order_fill(
         false,
         report.venue_position_id,
         Some(report.commission),
+        None,
     );
     emitter.send_order_event(OrderEventAny::Filled(filled));
 
@@ -871,7 +1065,8 @@ fn promote_cancel_replace(
     state.record_venue_order_id(client_order_id, venue_order_id);
     state.update_identity_quantity(&client_order_id, quantity);
     state.update_identity_price(&client_order_id, Some(price));
-    state.clear_pending_modify(&client_order_id);
+    // Claim the front intent; the next queued modify advances to this replacement
+    state.claim_front_modify(&client_order_id, venue_order_id);
 
     let updated = OrderUpdated::new(
         emitter.trader_id(),
@@ -920,7 +1115,7 @@ pub fn promote_replacement_from_query(
         return false;
     };
 
-    if state.pending_modify(&client_order_id).is_none() {
+    if !state.has_pending_modify(&client_order_id) {
         return false;
     }
 
@@ -1075,13 +1270,11 @@ fn handle_canceled(
     }
 
     // Cancel-before-accept race: an in-flight modify may deliver
-    // CANCELED(old_voi) before the replacement ACCEPTED(new_voi). The
-    // pending marker (set before the modify HTTP call and cleared on
-    // failure) lets us suppress the old leg so the later ACCEPTED can route
-    // through OrderUpdated. See GH-3827.
-    if let Some(pending_old) = state.pending_modify(&client_order_id)
-        && pending_old == venue_order_id
-    {
+    // CANCELED(old_voi) before the replacement ACCEPTED(new_voi). Any queued
+    // intent whose old leg matches (marked before the HTTP call, cleared on
+    // failure) suppresses that cancel so the later ACCEPTED routes through
+    // OrderUpdated. See GH-3827.
+    if state.pending_modify_contains_old(&client_order_id, venue_order_id) {
         log::debug!(
             "Skipping cancel-before-accept leg for {client_order_id}: venue_order_id={venue_order_id}",
         );
@@ -1169,6 +1362,11 @@ fn handle_rejected(
     emitter: &ExecutionEventEmitter,
     ts_init: UnixNanos,
 ) -> DispatchOutcome {
+    if state.submission_pending(&client_order_id) {
+        state.buffer_submission_rejection(client_order_id, report.clone());
+        return DispatchOutcome::Skip;
+    }
+
     if !claim_terminal_order(client_order_id, state, report.order_status) {
         return DispatchOutcome::Skip;
     }
@@ -1188,7 +1386,7 @@ fn handle_rejected(
         report.ts_last,
         ts_init,
         false,
-        false,
+        report.post_only && reason.contains(HYPERLIQUID_POST_ONLY_WOULD_MATCH),
     );
     emitter.send_order_event(OrderEventAny::Rejected(rejected));
     state.cleanup_terminal(&client_order_id);
@@ -1377,19 +1575,7 @@ mod tests {
     fn test_cleanup_terminal_clears_corrective_state() {
         let state = WsDispatchState::new();
         let cid = ClientOrderId::new("O-021");
-        let request = HyperliquidExecPlaceOrderRequest {
-            asset: 0,
-            is_buy: true,
-            price: "100".parse::<Decimal>().unwrap(),
-            size: Decimal::from(1),
-            reduce_only: false,
-            kind: HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Gtc,
-                },
-            },
-            cloid: None,
-        };
+        let request = sample_request(Decimal::from(1));
         state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("1"));
         state.stash_modify_request(cid, request.clone());
         state.queue_corrective(cid, 1, request);
@@ -1400,5 +1586,174 @@ mod tests {
         assert!(state.modify_request(&cid).is_none());
         assert!(state.take_corrective(&cid).is_none());
         assert!(state.pending_modify(&cid).is_none());
+    }
+
+    fn sample_request(size: Decimal) -> HyperliquidExecPlaceOrderRequest {
+        HyperliquidExecPlaceOrderRequest {
+            asset: 0,
+            is_buy: true,
+            price: "100".parse::<Decimal>().unwrap(),
+            size,
+            reduce_only: false,
+            kind: HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams {
+                    tif: HyperliquidExecTif::Gtc,
+                },
+            },
+            cloid: None,
+        }
+    }
+
+    #[rstest]
+    fn test_modify_chain_keeps_both_intents_on_rapid_modifies() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-100");
+        let g0 =
+            state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00020"));
+        let g1 =
+            state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("0.00030"));
+
+        assert_ne!(g0, g1);
+        assert!(state.has_pending_modify(&cid));
+        // Front is the oldest intent
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new("v-0")));
+        assert_eq!(
+            state.pending_modify_target_qty(&cid),
+            Some(Quantity::from("0.00020")),
+        );
+        // Both queued old legs suppress their cancel-before-accept
+        assert!(state.pending_modify_contains_old(&cid, VenueOrderId::new("v-0")));
+        assert!(state.pending_modify_contains_old(&cid, VenueOrderId::new("v-1")));
+    }
+
+    #[rstest]
+    fn test_clear_modify_generation_preserves_newer_intent() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-101");
+        // Two rapid modifies queued before either acked, both against the live
+        // leg v-0.
+        let g0 =
+            state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00020"));
+        state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00030"));
+
+        // Failure of the first modify clears only its generation; the second
+        // stays, still targeting the live leg v-0.
+        state.clear_modify_generation(&cid, g0);
+
+        assert!(state.has_pending_modify(&cid));
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new("v-0")));
+        assert_eq!(
+            state.pending_modify_target_qty(&cid),
+            Some(Quantity::from("0.00030")),
+        );
+        assert!(state.pending_modify_contains_old(&cid, VenueOrderId::new("v-0")));
+    }
+
+    #[rstest]
+    fn test_claim_front_modify_advances_next_old_id() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-102");
+        // Both queued against the same stale old leg (M2 fired before M1 acked)
+        state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00020"));
+        state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00030"));
+
+        // Promoting the first replacement claims the front and advances the
+        // next intent's old leg to the replacement id.
+        let claimed = state.claim_front_modify(&cid, VenueOrderId::new("v-1"));
+        assert_eq!(
+            claimed.map(|i| i.target_qty),
+            Some(Quantity::from("0.00020"))
+        );
+
+        assert!(state.has_pending_modify(&cid));
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new("v-1")));
+        assert!(state.pending_modify_contains_old(&cid, VenueOrderId::new("v-1")));
+        // The stale leg no longer matches once advanced
+        assert!(!state.pending_modify_contains_old(&cid, VenueOrderId::new("v-0")));
+
+        // Claiming the last intent empties the chain
+        let claimed2 = state.claim_front_modify(&cid, VenueOrderId::new("v-2"));
+        assert_eq!(
+            claimed2.map(|i| i.target_qty),
+            Some(Quantity::from("0.00030"))
+        );
+        assert!(!state.has_pending_modify(&cid));
+        assert!(state.pending_modify(&cid).is_none());
+    }
+
+    #[rstest]
+    fn test_modify_chain_caps_and_evicts_oldest() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-106");
+        // Queue one past the cap with no promotion or clear to drain them
+        for i in 0..=MAX_PENDING_MODIFY_INTENTS {
+            let voi = format!("v-{i}");
+            state.mark_pending_modify(cid, VenueOrderId::new(&voi), Quantity::from("0.00020"));
+        }
+
+        // The oldest intent was evicted; the newest remains and the front
+        // advanced to the second-oldest.
+        assert!(!state.pending_modify_contains_old(&cid, VenueOrderId::new("v-0")));
+        let newest = format!("v-{MAX_PENDING_MODIFY_INTENTS}");
+        assert!(state.pending_modify_contains_old(&cid, VenueOrderId::new(&newest)));
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new("v-1")));
+    }
+
+    #[rstest]
+    fn test_clear_front_modify_reparents_next_old() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-104");
+        // Three rapid modifies where the first already promoted to v-1
+        // (advancing the front to old=v-1); the third still holds stale v-0.
+        let g_front =
+            state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("0.00020"));
+        state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00030"));
+
+        // The front is rejected; the next intent must inherit the live leg
+        // (v-1), not keep stale v-0, or CANCELED(v-1) would surface as a real
+        // cancel.
+        state.clear_modify_generation(&cid, g_front);
+
+        assert!(state.has_pending_modify(&cid));
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new("v-1")));
+        assert!(state.pending_modify_contains_old(&cid, VenueOrderId::new("v-1")));
+        assert!(!state.pending_modify_contains_old(&cid, VenueOrderId::new("v-0")));
+    }
+
+    #[rstest]
+    fn test_clear_non_front_modify_leaves_front_old() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-105");
+        state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00020"));
+        let g_back =
+            state.mark_pending_modify(cid, VenueOrderId::new("v-9"), Quantity::from("0.00030"));
+
+        // Removing a non-front intent must not disturb the front's old leg
+        state.clear_modify_generation(&cid, g_back);
+
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new("v-0")));
+        assert!(!state.pending_modify_contains_old(&cid, VenueOrderId::new("v-9")));
+    }
+
+    #[rstest]
+    fn test_stash_modify_request_targets_latest_intent() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-103");
+        state.mark_pending_modify(cid, VenueOrderId::new("v-0"), Quantity::from("0.00020"));
+        state.stash_modify_request(cid, sample_request(Decimal::from(1)));
+        state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("0.00030"));
+        state.stash_modify_request(cid, sample_request(Decimal::from(2)));
+
+        // Front intent keeps its own request
+        assert_eq!(
+            state.modify_request(&cid).map(|r| r.size),
+            Some(Decimal::from(1)),
+        );
+        // After claiming the front, the next intent's request surfaces
+        state.claim_front_modify(&cid, VenueOrderId::new("v-1"));
+        assert_eq!(
+            state.modify_request(&cid).map(|r| r.size),
+            Some(Decimal::from(2)),
+        );
     }
 }

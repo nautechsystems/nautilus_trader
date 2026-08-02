@@ -92,10 +92,10 @@ The position maintains a `signed_qty` field representing the net exposure:
 signed_qty = +100  # LONG position
 
 # Subsequent SELL 150 units at $55
-signed_qty = -50   # Now SHORT position
+signed_qty = -50  # Now SHORT position
 
 # Final BUY 50 units at $52
-signed_qty = 0     # Position FLAT (closed)
+signed_qty = 0  # Position FLAT (closed)
 ```
 
 ## Position adjustments
@@ -172,12 +172,12 @@ net positions automatically.
 
 The platform allows different OMS configurations for strategies and venues:
 
-| Strategy OMS | Venue OMS | Behavior                                                    |
-|--------------|-----------|-------------------------------------------------------------|
-| `NETTING`    | `NETTING` | Single position per instrument at both strategy and venue.  |
-| `HEDGING`    | `HEDGING` | Multiple positions supported at both levels.                |
-| `NETTING`    | `HEDGING` | Venue tracks multiple, Nautilus maintains single position.  |
-| `HEDGING`    | `NETTING` | Venue tracks single, Nautilus maintains virtual positions.  |
+| Strategy OMS | Venue OMS | Behavior                                                   |
+| ------------ | --------- | ---------------------------------------------------------- |
+| `NETTING`    | `NETTING` | Single position per instrument at both strategy and venue. |
+| `HEDGING`    | `HEDGING` | Multiple positions supported at both levels.               |
+| `NETTING`    | `HEDGING` | Venue tracks multiple, Nautilus maintains single position. |
+| `HEDGING`    | `NETTING` | Venue tracks single, Nautilus maintains virtual positions. |
 
 :::tip
 For most trading scenarios, keeping strategy and venue OMS types aligned simplifies
@@ -210,6 +210,11 @@ engine snapshots the closed position state before resetting it, preserving:
 This snapshot is stored in the cache indexed by position ID. The position then resets for the new
 cycle while previous snapshots remain accessible. The Portfolio aggregates PnL across all snapshots
 for accurate totals.
+
+A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the
+cycle boundaries the stored snapshots describe, so the engine replaces them with the cycles the
+corrected history actually closes, keeping each counted once. See
+[Position replay across NETTING cycles](execution.md#position-replay-across-netting-cycles).
 
 :::note
 This historical snapshot mechanism differs from optional position state snapshots (`snapshot_positions`),
@@ -264,11 +269,11 @@ reference price (bid, ask, mid, last, or mark):
 
 ```python
 position.unrealized_pnl(last_price)  # Using last traded price
-position.unrealized_pnl(bid_price)   # Conservative for LONG positions
-position.unrealized_pnl(ask_price)   # Conservative for SHORT positions
+position.unrealized_pnl(bid_price)  # Conservative for LONG positions
+position.unrealized_pnl(ask_price)  # Conservative for SHORT positions
 ```
 
-Returns `Money(0, settlement_currency)` for `FLAT` positions regardless of the price provided.
+Returns `Money(0, cost_currency)` for `FLAT` positions regardless of the price provided.
 
 ### Total PnL
 
@@ -281,10 +286,10 @@ total_pnl = position.total_pnl(current_price)
 
 ### Currency considerations
 
-- PnL is calculated in the instrument's settlement currency.
-- For Forex, this is typically the quote currency.
-- For inverse contracts, PnL may be in the base currency.
-- Portfolio aggregates realized PnL per instrument in settlement currency.
+- PnL is calculated in the instrument's cost currency: quote for linear contracts, base for
+  inverse contracts, and settlement for quanto contracts.
+- For Forex, the cost currency is typically the quote currency.
+- Portfolio aggregates realized PnL per instrument in cost currency.
 - Multi-currency totals require conversion outside the Position class.
 
 ## Commissions and costs
@@ -294,7 +299,7 @@ Positions track all trading costs:
 - Commissions are accumulated by currency.
 - Each fill's commission is added to the running total.
 - Multiple commission currencies are supported.
-- Realized PnL includes commissions only when denominated in the settlement currency.
+- Realized PnL includes commissions only when denominated in the position's cost currency.
 - Other commissions are tracked separately and may require conversion.
 
 ```python
@@ -302,14 +307,12 @@ commissions = position.commissions()
 # Returns list[Money] with aggregated commission totals per currency
 
 notional = position.notional_value(current_price)
-# Returns Money in quote currency (standard) or base currency (inverse)
+# Returns Money in quote (linear), base (inverse), or settlement currency (quanto)
 ```
 
-**Limitations:**
+**Limitation:**
 
 - Panics if inverse instrument has no `base_currency` set.
-- Does not handle quanto contracts (returns quote currency instead of settlement currency).
-- For quanto instruments, use `instrument.calculate_notional_value()` instead.
 
 ## Position properties and state
 
@@ -455,7 +458,7 @@ mode, and the event history supports detailed analysis and reconciliation.
 
 ## Related guides
 
-- [Events](events.md) - How fills produce position events.
+- [Events](events/) - How fills produce position events.
 - [Orders](orders/) - Orders that create and modify positions.
 - [Execution](execution.md) - Fill handling that updates positions.
 - [Portfolio](portfolio.md) - Portfolio-level position aggregation.

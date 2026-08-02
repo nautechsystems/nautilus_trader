@@ -85,6 +85,8 @@ impl DataClientFactory for BinanceDataClientFactory {
 
         let client_id = ClientId::from(name);
 
+        binance_config.validate()?;
+
         let product_type = binance_config.product_type;
 
         match product_type {
@@ -157,6 +159,8 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
 
         let product_type = binance_config.product_type;
 
+        binance_config.validate()?;
+
         match product_type {
             BinanceProductType::Spot => {
                 // Spot uses cash account type and hedging OMS
@@ -178,9 +182,8 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
                 Ok(Box::new(client))
             }
             BinanceProductType::UsdM | BinanceProductType::CoinM => {
-                // Futures uses margin account type and netting OMS
                 let account_type = AccountType::Margin;
-                let oms_type = OmsType::Netting;
+                let oms_type = binance_config.oms_type.unwrap_or(OmsType::Netting);
 
                 let core = ExecutionClientCore::new(
                     binance_config.trader_id,
@@ -215,7 +218,12 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::factories::DataClientFactory;
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        factories::{DataClientFactory, ExecutionClientFactory},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -231,5 +239,32 @@ mod tests {
     fn test_binance_data_client_factory_default() {
         let factory = BinanceDataClientFactory;
         assert_eq!(factory.name(), BINANCE);
+    }
+
+    #[rstest]
+    #[case(BinanceProductType::Spot, Some(OmsType::Netting), OmsType::Hedging)]
+    #[case(BinanceProductType::UsdM, None, OmsType::Netting)]
+    #[case(BinanceProductType::UsdM, Some(OmsType::Hedging), OmsType::Hedging)]
+    fn test_binance_execution_client_factory_selects_oms_type(
+        #[case] product_type: BinanceProductType,
+        #[case] oms_type: Option<OmsType>,
+        #[case] expected: OmsType,
+    ) {
+        let factory = BinanceExecutionClientFactory::new();
+        let config = BinanceExecClientConfig {
+            product_type,
+            use_ws_trading: false,
+            oms_type,
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let client = factory
+            .create("BINANCE-TEST", &config, cache.into())
+            .unwrap();
+
+        assert_eq!(client.oms_type(), expected);
     }
 }

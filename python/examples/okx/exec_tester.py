@@ -36,8 +36,8 @@ from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.adapters.okx import OKXMarginMode
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
-from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId

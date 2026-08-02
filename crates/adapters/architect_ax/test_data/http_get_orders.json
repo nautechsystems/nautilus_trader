@@ -4,6 +4,7 @@
       "ts": 1704067200,
       "tn": 500000000,
       "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "aid": "account-1",
       "u": "test_user@example.com",
       "s": "EURUSD-PERP",
       "p": "1.08400",
@@ -22,6 +23,7 @@
       "ts": 1704067100,
       "tn": 0,
       "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FBW",
+      "aid": "account-1",
       "u": "test_user@example.com",
       "s": "GBPUSD-PERP",
       "p": "1.27200",
@@ -39,5 +41,5 @@
   ],
   "total_count": 2,
   "limit": 100,
-  "offset": 0
+  "next_cursor": null
 }

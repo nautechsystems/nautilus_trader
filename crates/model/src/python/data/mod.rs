@@ -16,13 +16,11 @@
 //! Data types for the trading domain model.
 
 #[cfg(feature = "ffi")]
-use std::ffi::CStr;
+use std::{ffi::CStr, ptr};
 
 pub mod bar;
 pub mod bet;
 pub mod close;
-#[cfg(feature = "python")]
-pub mod custom;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
@@ -35,6 +33,9 @@ pub mod prices;
 pub mod quote;
 pub mod status;
 pub mod trade;
+
+#[cfg(feature = "python")]
+pub mod custom;
 
 #[cfg(feature = "ffi")]
 use nautilus_core::ffi::cvec::CVec;
@@ -225,17 +226,10 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) -> PyResult<()> {
         .map_err(|e| to_pyvalue_err(format!("Invalid DataFFI CVec PyCapsule: {e}")))?
         .as_ptr()
         .cast::<CVec>();
-    // SAFETY: The capsule name check above verifies this is a DataFfiCVec, whose
-    // transparent representation starts with the CVec metadata.
-    let cvec = unsafe { *cvec_ptr };
-
-    if cvec.len == 0 && cvec.cap == 0 {
-        // SAFETY: The pointer targets the CVec metadata inside the checked capsule.
-        unsafe {
-            *cvec_ptr = CVec::empty();
-        }
-        return Ok(());
-    }
+    // SAFETY: The capsule name check above verifies this is a DataFfiCVec, whose transparent
+    // representation starts with the CVec metadata. Ownership is not transferred until after
+    // validation.
+    let cvec = unsafe { &*cvec_ptr };
 
     if cvec.len > cvec.cap {
         return Err(to_pyvalue_err(format!(
@@ -244,22 +238,18 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) -> PyResult<()> {
         )));
     }
 
-    if cvec.ptr.is_null() {
+    if cvec.cap > 0 && cvec.ptr.is_null() {
         return Err(to_pyvalue_err(format!(
             "Invalid DataFFI CVec metadata: null ptr with len ({}) and cap ({})",
             cvec.len, cvec.cap
         )));
     }
 
-    // SAFETY: The pointer targets the CVec metadata inside the checked capsule.
-    // Reset it before reconstructing the Vec so repeated calls do not double free.
-    unsafe {
-        *cvec_ptr = CVec::empty();
-    }
-
+    // SAFETY: The pointer targets the CVec metadata inside the checked capsule. Replacing it
+    // transfers unique ownership and leaves an empty sentinel so repeated calls are harmless.
+    let cvec = unsafe { ptr::replace(cvec_ptr, CVec::empty()) };
     // SAFETY: The metadata came from CVec::from(Vec<DataFFI>) and was validated above.
-    let data: Vec<DataFFI> =
-        unsafe { Vec::from_raw_parts(cvec.ptr.cast::<DataFFI>(), cvec.len, cvec.cap) };
+    let data = unsafe { cvec.into_vec::<DataFFI>() };
     drop(data);
     Ok(())
 }
@@ -630,7 +620,7 @@ fn py_decode_record_batch_to_custom_data(
 /// The class must have:
 /// - `type_name_static()` class method or `__name__` (used as type name in storage)
 /// - `decode_record_batch_py(metadata, ipc_bytes)` class method
-/// - Instances must have `ts_event`, `ts_init` and `encode_record_batch_py(items)`.
+/// - Instances must have `ts_event`, `ts_init`, and `encode_record_batch_py(items)`.
 ///
 /// # Arguments
 ///

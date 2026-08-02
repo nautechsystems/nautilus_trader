@@ -75,8 +75,9 @@ impl Indicator for MovingAverageConvergenceDivergence {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -215,7 +216,7 @@ mod tests {
         macd_10.update_raw(1.00000);
         assert!(
             approx_equal(macd_10.value, -2.5e-5),
-            "MACD value {:.17e} not within tolerance of –2.5e-5",
+            "MACD value {:.17e} not within tolerance of -2.5e-5",
             macd_10.value
         );
     }
@@ -225,7 +226,7 @@ mod tests {
         mut macd_10: MovingAverageConvergenceDivergence,
         stub_quote: QuoteTick,
     ) {
-        macd_10.handle_quote(&stub_quote);
+        macd_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(macd_10.value, 0.0);
     }
 

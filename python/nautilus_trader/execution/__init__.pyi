@@ -11,6 +11,8 @@ __all__ = [
     "CompetitionAwareFillModel",
     "DefaultFillModel",
     "ExecutionEngineConfig",
+    "FeeModel",
+    "FillModel",
     "FixedFeeModel",
     "LimitOrderPartialFillModel",
     "MakerTakerFeeModel",
@@ -65,24 +67,6 @@ class DefaultFillModel:
 
 @typing.final
 class ExecutionEngineConfig:
-    def __init__(
-        self,
-        load_cache: bool | None = None,
-        manage_own_order_books: bool | None = None,
-        snapshot_orders: bool | None = None,
-        snapshot_positions: bool | None = None,
-        snapshot_positions_interval_secs: float | None = None,
-        allow_overfills: bool | None = None,
-        external_clients: typing.Sequence[model.ClientId] | None = None,
-        purge_closed_orders_interval_mins: int | None = None,
-        purge_closed_orders_buffer_mins: int | None = None,
-        purge_closed_positions_interval_mins: int | None = None,
-        purge_closed_positions_buffer_mins: int | None = None,
-        purge_account_events_interval_mins: int | None = None,
-        purge_account_events_lookback_mins: int | None = None,
-        purge_from_database: bool | None = None,
-        debug: bool | None = None,
-    ) -> None: ...
     @property
     def load_cache(self) -> bool: ...
     @property
@@ -94,11 +78,77 @@ class ExecutionEngineConfig:
     @property
     def snapshot_positions_interval_secs(self) -> float | None: ...
     @property
+    def carry_replay_events_on_reopen(self) -> bool: ...
+    @property
     def allow_overfills(self) -> bool: ...
+    @property
+    def external_clients(self) -> list[model.ClientId] | None: ...
+    @property
+    def purge_closed_orders_interval_mins(self) -> int | None: ...
+    @property
+    def purge_closed_orders_buffer_mins(self) -> int | None: ...
+    @property
+    def purge_closed_positions_interval_mins(self) -> int | None: ...
+    @property
+    def purge_closed_positions_buffer_mins(self) -> int | None: ...
+    @property
+    def purge_account_events_interval_mins(self) -> int | None: ...
+    @property
+    def purge_account_events_lookback_mins(self) -> int | None: ...
     @property
     def purge_from_database(self) -> bool: ...
     @property
     def debug(self) -> bool: ...
+    def __new__(
+        cls,
+        load_cache: bool | None = None,
+        manage_own_order_books: bool | None = None,
+        snapshot_orders: bool | None = None,
+        snapshot_positions: bool | None = None,
+        snapshot_positions_interval_secs: float | None = None,
+        carry_replay_events_on_reopen: bool | None = None,
+        allow_overfills: bool | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        purge_closed_orders_interval_mins: int | None = None,
+        purge_closed_orders_buffer_mins: int | None = None,
+        purge_closed_positions_interval_mins: int | None = None,
+        purge_closed_positions_buffer_mins: int | None = None,
+        purge_account_events_interval_mins: int | None = None,
+        purge_account_events_lookback_mins: int | None = None,
+        purge_from_database: bool | None = None,
+        debug: bool | None = None,
+    ) -> ExecutionEngineConfig: ...
+
+class FeeModel:
+    def __init__(self) -> None: ...
+    def get_commission(
+        self,
+        _order: typing.Any,
+        _fill_quantity: model.Quantity,
+        _fill_px: model.Price,
+        _instrument: typing.Any,
+    ) -> model.Money: ...
+    def get_commission_with_context(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+        _underlying_px: model.Price | None = ...,
+    ) -> model.Money: ...
+
+class FillModel:
+    def __init__(self) -> None: ...
+    def is_limit_filled(self) -> bool: ...
+    def is_slipped(self) -> bool: ...
+    def fill_limit_inside_spread(self) -> bool: ...
+    def get_orderbook_for_fill_simulation(
+        self,
+        _instrument: typing.Any,
+        _order: typing.Any,
+        _best_bid: model.Price,
+        _best_ask: model.Price,
+    ) -> model.OrderBook | None: ...
 
 @typing.final
 class FixedFeeModel:

@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Bug – behavior that contradicts the platform's documented or intended design
+about: Bug - behavior that contradicts the platform's documented or intended design
 labels:
   - bug
 ---
@@ -9,11 +9,11 @@ labels:
 
 Use this template only for issues that fit the **Bug** definition.
 
-| Term                          | Definition |
-|-------------------------------|------------|
-| **Bug**                       | Behavior that contradicts the platform’s documented or intended design as per code, docs, or specs. (i.e., the implementation is incorrect.) |
-| **Expectation&nbsp;mismatch** | Behavior that follows the platform’s documented or intended design but differs from what you expected. (i.e., the design/spec might be the problem.) |
-| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., *“It would be great if the platform could…”*) |
+| Term                          | Definition                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bug**                       | Behavior that contradicts the platform's documented or intended design as per code, docs, or specs. (i.e., the implementation is incorrect.)         |
+| **Expectation&nbsp;mismatch** | Behavior that follows the platform's documented or intended design but differs from what you expected. (i.e., the design/spec might be the problem.) |
+| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., *"It would be great if the platform could…"*)             |
 
 **Note:**
 
@@ -26,43 +26,53 @@ Use this template only for issues that fit the **Bug** definition.
 
 **Before opening a bug report, please confirm:**
 
-- [ ] I’ve re-read the relevant sections of the documentation.
-- [ ] I’ve searched existing issues and discussions to avoid duplicates.
-- [ ] I’ve reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.
-- [ ] I’ve tested this issue using a recent *development* wheel (`dev` develop or `a` nightly) and can still reproduce it.
+- [ ] I've re-read the relevant sections of the documentation.
+- [ ] I've searched existing issues and discussions to avoid duplicates.
+- [ ] I've reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.
+- [ ] I've tested this issue using a recent pre-release or development wheel (`2.0.0rcN`,
+      `dev` develop, or `a` nightly) and can still reproduce it.
 
-Checking a recent development wheel can save time because the issue may already have been fixed.
-You can install a development wheel by running:
+Checking a recent pre-release or development wheel can save time because the issue may already have been fixed.
+You can test the v2 release-candidate wheels from PyPI by running:
+
+```bash
+pip install -U nautilus_trader --pre
+```
+
+You can test branch development wheels by running:
 
 ```bash
 pip install -U nautilus_trader --pre --index-url https://packages.nautechsystems.io/simple
 ```
 
-See the [development-wheels](https://github.com/nautechsystems/nautilus_trader#development-wheels) section for more details.
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for more details.
 
-### Expected Behavior
-
-Add here...
-
-### Actual Behavior
+## Expected behavior
 
 Add here...
 
-### Steps to Reproduce the Problem
+## Actual behavior
+
+Add here...
+
+## Steps to reproduce
 
 1.
 2.
 3.
 
-### Code Snippets or Logs
+Consider starting from our
+[Minimal Reproducible Example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/other/minimal_reproducible_example)
+template, which generates its own data so you do not need to attach market data files.
+
+## Code snippets or logs
 
 <!-- If applicable, provide relevant code snippets, error logs, or stack traces. Use code blocks for clarity. -->
 
-<!-- Consider starting from our Minimal Reproducible Example template: -->
-<!-- https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/other/minimal_reproducible_example -->
-
-### Specifications
+## Specifications
 
 - OS platform:
 - Python version:
 - `nautilus_trader` version:
+- Installed from (PyPI wheel, package index wheel, or built from source):
+- Adapter/venue (if applicable):

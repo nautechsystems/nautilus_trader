@@ -15,7 +15,6 @@
 
 import asyncio
 import functools
-import secrets
 
 from ibapi import comm
 from ibapi import decoder
@@ -141,23 +140,50 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
         """
         self._eclient.reset()
-        if self._randomize_client_id_on_next_connect:
-            self._client_id = self._generate_random_client_id()
-            self._randomize_client_id_on_next_connect = False
-        else:
-            self._client_id = self._configured_client_id
+        self._client_id = self._next_client_id()
+
+        if self._client_id != self._configured_client_id:
+            # A consistent client-id collision forced a fallback off the configured id. Because
+            # IB scopes open-order visibility by client id, order isolation is NOT active under
+            # the fallback id, so re-fetch all open orders on connect and warn the operator.
+            self._fetch_all_open_orders = True
+            self._log.warning(
+                f"Configured client id {self._configured_client_id} is consistently in use; "
+                f"falling back to client id {self._client_id}. Order isolation by client id is "
+                f"NOT active under the fallback id (open orders will be re-fetched).",
+            )
+
         self._eclient.host = self._host
         self._eclient.port = self._port
         self._eclient.clientId = self._client_id
 
-    def _generate_random_client_id(self) -> int:
-        reserved_client_ids = {self._configured_client_id, self._client_id}
-        client_id = self._client_id
+    def _next_client_id(self) -> int:
+        """
+        Return the client id to use for the next connection attempt.
 
-        while client_id in reserved_client_ids:
-            client_id = 1000 + secrets.randbelow(9000)
+        Three tiers of behaviour:
 
-        return client_id
+        - Normal (no collision): the configured client id.
+        - A single/occasional IB error 326 ("client id already in use"): the configured id is
+          reused, so a back-off then retry re-acquires it once the gateway releases the previous
+          session. This is the common case during a nightly gateway restart, and it preserves
+          order isolation (IB scopes open-order visibility by client id). The configured id is
+          retried for up to ``_client_id_reuse_limit`` consecutive collisions.
+        - A consistent collision (beyond that limit): the id is incremented deterministically
+          within a bounded band (``_max_client_id_offset``) - never randomly - so a fixed
+          client-id allocation policy is preserved and sibling processes are not clobbered.
+
+        The collision counter resets on a clean connection.
+
+        """
+        if self._client_id_collision_count <= self._client_id_reuse_limit:
+            return self._configured_client_id
+
+        offset = min(
+            self._client_id_collision_count - self._client_id_reuse_limit,
+            self._max_client_id_offset,
+        )
+        return self._configured_client_id + offset
 
     async def _connect_socket(self) -> None:
         """

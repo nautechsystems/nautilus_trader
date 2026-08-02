@@ -102,6 +102,8 @@ pub fn should_retry_ws_error(error: &DeriveWsError) -> bool {
         DeriveWsError::NotConnected
         | DeriveWsError::Serde(_)
         | DeriveWsError::Auth(_)
+        | DeriveWsError::Authentication { .. }
+        | DeriveWsError::Subscription { .. }
         | DeriveWsError::MissingCredentials { .. } => false,
     }
 }
@@ -110,7 +112,9 @@ pub fn should_retry_ws_error(error: &DeriveWsError) -> bool {
 #[must_use]
 pub fn is_fatal_ws_error(error: &DeriveWsError) -> bool {
     match error {
-        DeriveWsError::Auth(_) | DeriveWsError::MissingCredentials { .. } => true,
+        DeriveWsError::Auth(_)
+        | DeriveWsError::Authentication { .. }
+        | DeriveWsError::MissingCredentials { .. } => true,
         DeriveWsError::JsonRpc { code, .. } => is_fatal_jsonrpc_code(*code),
         _ => false,
     }
@@ -190,6 +194,8 @@ pub(crate) fn is_write_outcome_ambiguous_ws(error: &DeriveWsError) -> bool {
         DeriveWsError::JsonRpc { code, .. } => is_write_outcome_ambiguous_jsonrpc(*code),
         DeriveWsError::NotConnected
         | DeriveWsError::Auth(_)
+        | DeriveWsError::Authentication { .. }
+        | DeriveWsError::Subscription { .. }
         | DeriveWsError::MissingCredentials { .. } => false,
     }
 }
@@ -343,6 +349,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_ws_authentication_and_subscription_failures_are_terminal() {
+        let authentication = DeriveWsError::Authentication {
+            operation: "private/order".into(),
+            reason: "session recovery failed".into(),
+        };
+        let subscription = DeriveWsError::Subscription {
+            details: "30769.trades: unauthorized".into(),
+        };
+
+        assert!(!should_retry_ws_error(&authentication));
+        assert!(is_fatal_ws_error(&authentication));
+        assert!(!should_retry_ws_error(&subscription));
+        assert!(!is_fatal_ws_error(&subscription));
+    }
+
+    #[rstest]
     fn test_ws_write_outcome_ambiguous_classification() {
         // Sent-but-unconfirmed outcomes are ambiguous; everything else is a
         // definitive rejection the caller can surface as a terminal event.
@@ -372,6 +394,13 @@ mod tests {
             },
             DeriveWsError::MissingCredentials {
                 operation: "private/order".into(),
+            },
+            DeriveWsError::Authentication {
+                operation: "private/order".into(),
+                reason: "session recovery failed".into(),
+            },
+            DeriveWsError::Subscription {
+                details: "30769.trades: unauthorized".into(),
             },
         ];
 

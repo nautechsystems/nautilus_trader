@@ -51,7 +51,7 @@ use crate::{
 /// Dispatches a Kraken Futures `OpenOrdersDelta` message.
 ///
 /// Fill-driven cancel deltas (`is_cancel=true` with reason `full_fill` /
-/// `partial_fill`) are skipped — the corresponding `FillsDelta` carries the
+/// `partial_fill`) are skipped - the corresponding `FillsDelta` carries the
 /// real fill, so emitting a synthetic Canceled here would race with the
 /// genuine `OrderFilled`.
 #[expect(clippy::too_many_arguments)]
@@ -87,7 +87,10 @@ pub fn open_orders_delta(
     // (which arrive without the order body) can be reconstructed for the
     // external fallback path.
     order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
-    let qty = Quantity::new(delta.order.qty, instrument.size_precision());
+    let Ok(qty) = Quantity::from_decimal_dp(delta.order.qty, instrument.size_precision()) else {
+        log::error!("Failed to parse order quantity: {}", delta.order.qty);
+        return;
+    };
     venue_order_qty.insert(delta.order.order_id.clone(), qty);
 
     let resolved_id = delta
@@ -160,7 +163,11 @@ fn delta_tracked(
 ) {
     let venue_order_id = VenueOrderId::new(&delta.order.order_id);
     let ts_event = millis_to_nanos(delta.order.last_update_time);
-    let new_filled = Quantity::new(delta.order.filled, instrument.size_precision());
+    let Ok(new_filled) = Quantity::from_decimal_dp(delta.order.filled, instrument.size_precision())
+    else {
+        log::error!("Failed to parse filled quantity: {}", delta.order.filled);
+        return;
+    };
 
     if delta.is_cancel {
         ensure_accepted_emitted(
@@ -202,7 +209,10 @@ fn delta_tracked(
         ts_init,
     );
 
-    let qty = Quantity::new(delta.order.qty, instrument.size_precision());
+    let Ok(qty) = Quantity::from_decimal_dp(delta.order.qty, instrument.size_precision()) else {
+        log::error!("Failed to parse order quantity: {}", delta.order.qty);
+        return;
+    };
     let snapshot = DeltaSnapshot::new(
         qty,
         new_filled,
@@ -233,6 +243,31 @@ fn delta_tracked(
     // Modify ack: refresh tracked quantity (size may have changed) and emit
     // OrderUpdated so the engine clears PendingUpdate.
     state.update_identity_quantity(&client_order_id, qty);
+    let price = match delta
+        .order
+        .limit_price
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()
+    {
+        Ok(price) => price,
+        Err(e) => {
+            log::error!("Failed to parse limit price: {e}");
+            return;
+        }
+    };
+    let trigger_price = match delta
+        .order
+        .stop_price
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()
+    {
+        Ok(price) => price,
+        Err(e) => {
+            log::error!("Failed to parse stop price: {e}");
+            return;
+        }
+    };
+
     let updated = OrderUpdated::new(
         emitter.trader_id(),
         identity.strategy_id,
@@ -245,14 +280,8 @@ fn delta_tracked(
         false,
         Some(venue_order_id),
         Some(account_id),
-        delta
-            .order
-            .limit_price
-            .map(|p| Price::new(p, instrument.price_precision())),
-        delta
-            .order
-            .stop_price
-            .map(|p| Price::new(p, instrument.price_precision())),
+        price,
+        trigger_price,
         None,
         false,
     );

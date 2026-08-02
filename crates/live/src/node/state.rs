@@ -15,8 +15,13 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+    atomic::{AtomicU8, Ordering},
 };
+
+use super::metrics::{RunnerMetrics, RunnerMetricsSnapshot};
+
+const STOP_REQUESTED: u8 = 1 << 7;
+const STATE_MASK: u8 = !STOP_REQUESTED;
 
 /// Lifecycle state of the `LiveNode` runner.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -61,14 +66,21 @@ impl NodeState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RunningTransition {
+    Entered,
+    StopRequested,
+    Invalid(u8),
+}
+
 /// A thread-safe handle to control a `LiveNode` from other threads.
 ///
 /// This allows stopping and querying the node's state without requiring the
 /// node itself to be Send + Sync.
 #[derive(Clone, Debug)]
 pub struct LiveNodeHandle {
-    pub(crate) stop_flag: Arc<AtomicBool>,
-    pub(crate) state: Arc<AtomicU8>,
+    control: Arc<AtomicU8>,
+    pub(crate) metrics: Arc<RunnerMetrics>,
 }
 
 impl Default for LiveNodeHandle {
@@ -82,28 +94,56 @@ impl LiveNodeHandle {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            stop_flag: Arc::new(AtomicBool::new(false)),
-            state: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
+            control: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
+            metrics: Arc::new(RunnerMetrics::default()),
         }
     }
 
-    pub(crate) fn set_state(&self, state: NodeState) {
-        self.state.store(state.as_u8(), Ordering::Relaxed);
-        if state == NodeState::Running {
-            self.stop_flag.store(false, Ordering::Relaxed);
+    pub(crate) fn set_starting(&self) {
+        self.set_state(NodeState::Starting);
+    }
+
+    pub(crate) fn set_shutting_down(&self) {
+        self.set_state(NodeState::ShuttingDown);
+    }
+
+    pub(crate) fn set_stopped(&self) {
+        self.set_state(NodeState::Stopped);
+    }
+
+    pub(super) fn try_set_running(&self) -> RunningTransition {
+        match self.control.compare_exchange(
+            NodeState::Starting.as_u8(),
+            NodeState::Running.as_u8(),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => RunningTransition::Entered,
+            Err(control) if control == (NodeState::Starting.as_u8() | STOP_REQUESTED) => {
+                RunningTransition::StopRequested
+            }
+            Err(control) => RunningTransition::Invalid(control),
         }
+    }
+
+    fn set_state(&self, state: NodeState) {
+        let _ = self
+            .control
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |control| {
+                Some((control & STOP_REQUESTED) | state.as_u8())
+            });
     }
 
     /// Returns the current node state.
     #[must_use]
     pub fn state(&self) -> NodeState {
-        NodeState::from_u8(self.state.load(Ordering::Relaxed))
+        NodeState::from_u8(self.control.load(Ordering::Acquire) & STATE_MASK)
     }
 
     /// Returns whether the node should stop.
     #[must_use]
     pub fn should_stop(&self) -> bool {
-        self.stop_flag.load(Ordering::Relaxed)
+        self.control.load(Ordering::Acquire) & STOP_REQUESTED != 0
     }
 
     /// Returns whether the node is currently running.
@@ -112,9 +152,15 @@ impl LiveNodeHandle {
         self.state().is_running()
     }
 
+    /// Returns a by-value snapshot of `LiveNode::run` dispatch metrics after startup.
+    #[must_use]
+    pub fn metrics_snapshot(&self) -> RunnerMetricsSnapshot {
+        self.metrics.snapshot()
+    }
+
     /// Signals the node to stop.
     pub fn stop(&self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+        self.control.fetch_or(STOP_REQUESTED, Ordering::AcqRel);
     }
 }
 

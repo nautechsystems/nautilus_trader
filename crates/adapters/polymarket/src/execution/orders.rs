@@ -54,6 +54,13 @@ impl PolymarketExecutionClient {
             None => return,
         };
 
+        if let Err(reason) =
+            PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
+        {
+            self.emitter.emit_order_denied(&order, &reason);
+            return;
+        }
+
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_decimals = instrument.price_precision() as u32;
@@ -214,11 +221,9 @@ impl PolymarketExecutionClient {
                         builder_taker_fee_rate: Decimal::ZERO,
                     }),
                     Err(e) => {
-                        emitter.emit_order_rejected(
+                        emitter.emit_order_denied(
                             &order,
                             &format!("Failed to fetch pUSD balance for fee adjustment: {e}"),
-                            clock.get_time_ns(),
-                            false,
                         );
                         return Ok(());
                     }
@@ -461,6 +466,13 @@ impl PolymarketExecutionClient {
                 None => continue,
             };
 
+            if let Err(reason) =
+                PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
+            {
+                self.emitter.emit_order_denied(&order, &reason);
+                continue;
+            }
+
             let price = order
                 .price()
                 .expect("validated limit order must have a price");
@@ -503,7 +515,6 @@ impl PolymarketExecutionClient {
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
         let pending_tasks = self.pending_tasks.clone();
-        let stopping = self.stopping.clone();
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
@@ -579,14 +590,15 @@ impl PolymarketExecutionClient {
                             handle_batch_order_responses(
                                 responses,
                                 orders_chunk,
+                                expected_venue_order_ids,
                                 &submitter,
                                 &emitter,
                                 clock,
                                 &fill_tracker,
                                 &order_identities,
+                                &pending_submits,
                                 &pending_cancels,
                                 &pending_tasks,
-                                &stopping,
                                 account_id,
                             )
                             .await;
@@ -652,6 +664,7 @@ impl PolymarketExecutionClient {
             .cache()
             .order(&cmd.client_order_id)
             .map(|o| o.clone());
+
         if let Some(order) = order {
             let venue_order_id = order.venue_order_id();
             let ts_now = self.clock.get_time_ns();
@@ -672,8 +685,10 @@ impl PolymarketExecutionClient {
         liquidity_side: LiquiditySide,
     ) -> Money {
         let fee_rate = instrument_taker_fee(instrument);
+        let fee_exponent = instrument_fee_exponent(instrument);
         let commission = compute_commission(
             fee_rate,
+            fee_exponent,
             last_qty.as_decimal(),
             last_px.as_decimal(),
             liquidity_side,

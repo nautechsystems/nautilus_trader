@@ -22,11 +22,16 @@ PyO3 for performance.
 """
 
 import asyncio
+import contextlib
 from datetime import timedelta
 
 import pandas as pd
 
 from nautilus_trader.adapters.architect_ax.config import AxDataClientConfig
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REFRESH_RETRY_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_TTL_SECS
 from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
 from nautilus_trader.adapters.architect_ax.providers import AxInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -37,6 +42,8 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestFundingRates
+from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
@@ -55,11 +62,18 @@ from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -120,6 +134,7 @@ class AxDataClient(LiveMarketDataClient):
 
         self._http_client = client
         self._ws_client: nautilus_pyo3.AxMdWebSocketClient | None = None
+        self._auth_refresh_task: asyncio.Task | None = None
 
         if config.base_url_ws:
             self._ws_url = config.base_url_ws
@@ -139,17 +154,20 @@ class AxDataClient(LiveMarketDataClient):
         return self._instrument_provider
 
     async def _connect(self) -> None:
+        await self._stop_auth_refresh()
         await self._instrument_provider.initialize()
         self._send_all_instruments_to_data_engine()
 
         self._ws_client = nautilus_pyo3.AxMdWebSocketClient.without_auth(
             url=self._ws_url,
-            heartbeat=20,
+            heartbeat=self._config.heartbeat_interval_secs,
             proxy_url=self._config.proxy_url,
+            transport_backend=self._config.transport_backend,
         )
 
+        auth_token = None
         try:
-            auth_token = await self._http_client.authenticate_auto()
+            auth_token = await self._http_client.authenticate_auto(AX_AUTH_TOKEN_TTL_SECS)
             self._ws_client.set_auth_token(auth_token)
             self._log.info("Authenticated with AX Exchange", LogColor.BLUE)
         except ValueError as e:
@@ -166,12 +184,16 @@ class AxDataClient(LiveMarketDataClient):
         await self._ws_client.connect(self._loop, self._handle_msg)
         self._log.info("Connected to AX Exchange market data WebSocket", LogColor.BLUE)
 
+        if auth_token is not None:
+            self._auth_refresh_task = self.create_task(self._refresh_auth_token())
+
         if self._update_instruments_interval_mins:
             self._update_instruments_task = self.create_task(
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
     async def _disconnect(self) -> None:
+        await self._stop_auth_refresh()
         self._http_client.cancel_all_requests()
 
         if self._update_instruments_task:
@@ -193,6 +215,39 @@ class AxDataClient(LiveMarketDataClient):
             await self._ws_client.close()
             self._ws_client = None
             self._log.info("Disconnected from AX Exchange", LogColor.BLUE)
+
+    async def _refresh_auth_token(self) -> None:
+        next_delay = AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+
+        while True:
+            try:
+                await asyncio.sleep(next_delay)
+                token = await asyncio.wait_for(
+                    self._http_client.authenticate_auto(AX_AUTH_TOKEN_TTL_SECS),
+                    timeout=AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS,
+                )
+
+                if self._ws_client is None:
+                    return
+                self._ws_client.update_auth_token(token)
+                next_delay = AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+                self._log.debug("Refreshed AX authentication token")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self._log.error(f"Failed to refresh AX authentication token: {e}")
+                next_delay = AX_AUTH_TOKEN_REFRESH_RETRY_SECS
+
+    async def _stop_auth_refresh(self) -> None:
+        if self._auth_refresh_task is None:
+            return
+
+        task = self._auth_refresh_task
+        self._auth_refresh_task = None
+        task.cancel()
+
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for currency in self._instrument_provider.currencies().values():
@@ -453,6 +508,130 @@ class AxDataClient(LiveMarketDataClient):
             )
         except Exception as e:
             self._log.error(f"Failed to request funding rates for {instrument_id}: {e}")
+
+    async def _request_instruments(self, request: RequestInstruments) -> None:
+        if request.start is not None:
+            self._log.warning(
+                f"Requesting instruments for {request.venue} with specified `start` which has no effect",
+            )
+
+        if request.end is not None:
+            self._log.warning(
+                f"Requesting instruments for {request.venue} with specified `end` which has no effect",
+            )
+
+        instruments = [
+            instrument
+            for instrument in self._instrument_provider.get_all().values()
+            if instrument.venue == request.venue
+        ]
+        self._handle_instruments(
+            request.venue,
+            instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        instrument_id = request.instrument_id
+        pyo3_instrument_id = self._get_pyo3_instrument_id(instrument_id)
+
+        try:
+            pyo3_book = await self._http_client.request_book_snapshot(
+                instrument_id=pyo3_instrument_id,
+                depth=request.limit or None,
+            )
+        except Exception as e:
+            self._log.exception(f"Failed to request book snapshot for {instrument_id}", e)
+            return
+
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}")
+            return
+
+        ts_event = pyo3_book.ts_last
+        ts_init = self._clock.timestamp_ns()
+        sequence = pyo3_book.sequence
+        snapshot_flag = RecordFlag.F_SNAPSHOT
+        deltas: list[OrderBookDelta] = [
+            OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.CLEAR,
+                order=BookOrder(
+                    side=OrderSide.NO_ORDER_SIDE,
+                    price=instrument.make_price(0),
+                    size=instrument.make_qty(0),
+                    order_id=0,
+                ),
+                flags=snapshot_flag,
+                sequence=sequence,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            ),
+        ]
+
+        bids = list(pyo3_book.bids())
+        asks = list(pyo3_book.asks())
+
+        for i, level in enumerate(bids):
+            deltas.append(
+                OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.ADD,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=instrument.make_price(level.price.as_double()),
+                        size=instrument.make_qty(level.size()),
+                        order_id=i,
+                    ),
+                    flags=snapshot_flag,
+                    sequence=sequence,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+
+        for i, level in enumerate(asks):
+            deltas.append(
+                OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.ADD,
+                    order=BookOrder(
+                        side=OrderSide.SELL,
+                        price=instrument.make_price(level.price.as_double()),
+                        size=instrument.make_qty(level.size()),
+                        order_id=len(bids) + i,
+                    ),
+                    flags=snapshot_flag,
+                    sequence=sequence,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+
+        last = deltas[-1]
+        deltas[-1] = OrderBookDelta(
+            instrument_id=last.instrument_id,
+            action=last.action,
+            order=last.order,
+            flags=snapshot_flag | RecordFlag.F_LAST,
+            sequence=last.sequence,
+            ts_event=last.ts_event,
+            ts_init=last.ts_init,
+        )
+
+        data_type = DataType(OrderBookDeltas, metadata={"instrument_id": instrument_id})
+        self._handle_data_response(
+            data_type=data_type,
+            data=[OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)],
+            correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
+        )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error("Cannot request historical quotes: not published by AX Exchange")

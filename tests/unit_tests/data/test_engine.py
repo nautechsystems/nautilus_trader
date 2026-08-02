@@ -9169,7 +9169,7 @@ class TestDataEngineContinuousFuture:
         ]
         assert len(pending_timers) == 1
 
-        # Unsubscribe before the transition fires — timer must be cancelled
+        # Unsubscribe before the transition fires - timer must be cancelled
         self.data_engine.execute(
             UnsubscribeBars(
                 client_id=ClientId("XCME"),

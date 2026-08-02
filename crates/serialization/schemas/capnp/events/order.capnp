@@ -38,6 +38,7 @@ struct OrderEvent {
         cancelRejected @13 :OrderCancelRejected;
         updated @14 :OrderUpdated;
         filled @15 :OrderFilled;
+        fillVoided @16 :OrderFillVoided;
     }
 }
 
@@ -76,6 +77,7 @@ struct OrderInitialized {
     execAlgorithmParams @30 :Base.StringMap;
     execSpawnId @31 :Identifiers.ClientOrderId;
     tags @32 :List(Text);
+    activationPrice @33 :Types.Price;
 }
 
 # OrderDenied - order denied by system
@@ -291,4 +293,33 @@ struct OrderFilled {
     reconciliation @16 :Bool;
     positionId @17 :Identifiers.PositionId;
     commission @18 :Types.Money;
+    info @19 :Base.StringMap;
+}
+
+# OrderFillVoided - cumulative correction of a previously applied fill
+struct OrderFillVoided {
+    traderId @0 :Identifiers.TraderId;
+    strategyId @1 :Identifiers.StrategyId;
+    instrumentId @2 :Identifiers.InstrumentId;
+    clientOrderId @3 :Identifiers.ClientOrderId;
+    venueOrderId @4 :Identifiers.VenueOrderId;
+    accountId @5 :Identifiers.AccountId;
+    correctionId @6 :Text;
+    tradeId @7 :Identifiers.TradeId;
+    voidedQty @8 :Types.Quantity;
+    commissionVoided @9 :Types.Money;
+    orderSide @10 :Enums.OrderSide;
+    orderType @11 :Enums.OrderType;
+    lastPx @12 :Types.Price;
+    currency @13 :Types.Currency;
+    liquiditySide @14 :Enums.LiquiditySide;
+    positionId @15 :Identifiers.PositionId;
+    reason @16 :Text;
+    info @17 :Base.StringMap;
+    eventId @18 :Base.UUID4;
+    tsEvent @19 :Base.UnixNanos;
+    tsInit @20 :Base.UnixNanos;
+    reconciliation @21 :Bool;
+    causationId @22 :Base.UUID4;
+    isReopened @23 :Bool;
 }

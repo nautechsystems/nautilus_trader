@@ -86,39 +86,50 @@ def test_bar_spec_str_with_various_aggregations(step, aggregation, expected_str)
         (
             12,
             BarAggregation.MILLISECOND,
-            "Invalid step in bar_type.spec.step: 12 for aggregation=10. "
+            "Invalid step in bar_type.spec.step: 12 for aggregation=MILLISECOND. "
             "step must evenly divide 1000",
         ),
         (
             1000,
             BarAggregation.MILLISECOND,
-            "Invalid step in bar_type.spec.step: 1000 for aggregation=10. step must not be 1000",
+            "Invalid step in bar_type.spec.step: 1000 for aggregation=MILLISECOND. "
+            "step must not be 1000",
         ),
         (
             50,
             BarAggregation.SECOND,
-            "Invalid step in bar_type.spec.step: 50 for aggregation=11. step must evenly divide 60",
+            "Invalid step in bar_type.spec.step: 50 for aggregation=SECOND. "
+            "step must evenly divide 60",
         ),
         (
             60,
             BarAggregation.MINUTE,
-            "Invalid step in bar_type.spec.step: 60 for aggregation=12. step must not be 60",
+            "Invalid step in bar_type.spec.step: 60 for aggregation=MINUTE. step must not be 60",
         ),
         (
             13,
             BarAggregation.HOUR,
-            "Invalid step in bar_type.spec.step: 13 for aggregation=13. step must evenly divide 24",
+            "Invalid step in bar_type.spec.step: 13 for aggregation=HOUR. "
+            "step must evenly divide 24",
         ),
         (
-            12,
+            5,
             BarAggregation.MONTH,
-            "Invalid step in bar_type.spec.step: 12 for aggregation=16. step must not be 12",
+            "Invalid step in bar_type.spec.step: 5 for aggregation=MONTH. "
+            "step must evenly divide 12",
         ),
     ],
 )
 def test_bar_spec_invalid_periodic_step(step, aggregation, expected_msg):
     with pytest.raises(ValueError, match=expected_msg):
         BarSpecification(step, aggregation, PriceType.BID)
+
+
+def test_bar_spec_12_month_round_trips():
+    # 12-MONTH is a valid specification (OKX yearly candles)
+    spec = BarSpecification(12, BarAggregation.MONTH, PriceType.LAST)
+
+    assert BarSpecification.from_str(str(spec)) == spec
 
 
 @pytest.mark.parametrize(

@@ -264,14 +264,14 @@ cdef class CashAccount(Account):
         # an inflated locked amount due to latency or rounding differences)
         # the calculated ``locked_raw`` can exceed the ``total_raw`` balance. This
         # would normally propagate to the ``AccountBalance`` constructor where
-        # the internal correctness checks would raise – ultimately causing the
+        # the internal correctness checks would raise - ultimately causing the
         # entire application to terminate. That fail-fast behaviour is useful
         # during development, but in live trading we prefer to degrade
         # gracefully whilst ensuring that balances remain internally
         # consistent.
         #
         # Therefore we clamp the locked amount to the total balance whenever it
-        # would otherwise exceed it. The resulting free balance is then zero –
+        # would otherwise exceed it. The resulting free balance is then zero -
         # indicating that no funds are currently available for trading.
         # Note: Only clamp when total is non-negative. When total is negative
         # (borrowing enabled), keep locked as-is and allow free to be negative.

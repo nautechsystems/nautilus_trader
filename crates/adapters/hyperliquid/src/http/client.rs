@@ -33,6 +33,7 @@ use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -70,10 +71,11 @@ use crate::{
             derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
             normalize_price, order_to_hyperliquid_request_with_asset_and_cloid,
             parse_combined_account_balances_and_margins, parse_spot_account_balances,
-            round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+            parse_trigger_order_type, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
+    data_types::HyperliquidPublicTrade,
     http::{
         error::{Error, Result},
         models::{
@@ -82,20 +84,20 @@ use crate::{
             HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
             HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecMergeOutcomeParams,
             HyperliquidExecMergeQuestionParams, HyperliquidExecModifyOrderRequest,
-            HyperliquidExecNegateOutcomeParams, HyperliquidExecOrderKind,
-            HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
+            HyperliquidExecModifyTarget, HyperliquidExecNegateOutcomeParams,
+            HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecSplitOutcomeParams,
             HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams,
             HyperliquidExecUserOutcomeOp, HyperliquidFills, HyperliquidFundingHistoryEntry,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, HyperliquidRecentTrade,
-            OutcomeMeta, PerpDex, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
-            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus,
+            HyperliquidOrderStatusEntry, HyperliquidRecentTrade, OutcomeMeta, PerpDex, PerpMeta,
+            PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
-            HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
-            parse_order_status_report_from_basic, parse_outcome_instruments,
+            HyperliquidInstrumentDef, filter_recent_public_trades, instruments_from_defs_owned,
+            parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
             parse_perp_instruments_with_settlement, parse_position_status_report,
-            parse_spot_instruments, parse_spot_position_status_report,
+            parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
             resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
@@ -109,6 +111,57 @@ use crate::{
     },
     websocket::messages::WsBasicOrderData,
 };
+
+fn deduplicate_historical_order_reports(reports: Vec<OrderStatusReport>) -> Vec<OrderStatusReport> {
+    let mut best_by_venue_order_id = AHashMap::new();
+
+    for candidate in reports {
+        let Some(current) = best_by_venue_order_id.remove(&candidate.venue_order_id) else {
+            best_by_venue_order_id.insert(candidate.venue_order_id, candidate);
+            continue;
+        };
+        let (mut best, other) = if historical_report_is_more_advanced(&candidate, &current) {
+            (candidate, current)
+        } else {
+            (current, candidate)
+        };
+
+        if matches!(
+            best.order_type,
+            OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+        ) {
+            best.price = best.price.or(other.price);
+        }
+        best.trigger_price = best.trigger_price.or(other.trigger_price);
+        best_by_venue_order_id.insert(best.venue_order_id, best);
+    }
+
+    best_by_venue_order_id.into_values().collect()
+}
+
+fn historical_report_is_more_advanced(
+    candidate: &OrderStatusReport,
+    current: &OrderStatusReport,
+) -> bool {
+    candidate.filled_qty > current.filled_qty
+        || (candidate.filled_qty == current.filled_qty
+            && (historical_status_priority(candidate.order_status)
+                > historical_status_priority(current.order_status)
+                || (candidate.order_status == current.order_status
+                    && candidate.ts_last > current.ts_last)))
+}
+
+const fn historical_status_priority(status: OrderStatus) -> u8 {
+    match status {
+        OrderStatus::Initialized | OrderStatus::Submitted | OrderStatus::Emulated => 0,
+        OrderStatus::Released | OrderStatus::Denied => 1,
+        OrderStatus::Accepted | OrderStatus::PendingUpdate | OrderStatus::PendingCancel => 2,
+        OrderStatus::Triggered => 3,
+        OrderStatus::PartiallyFilled => 4,
+        OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => 5,
+        OrderStatus::Filled | OrderStatus::Voided => 6,
+    }
+}
 
 // https://hyperliquid.xyz/docs/api#rate-limits
 pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
@@ -125,10 +178,6 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
         module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
         from_py_object
     )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidRawHttpClient {
     client: HttpClient,
@@ -420,6 +469,16 @@ impl HyperliquidRawHttpClient {
     pub async fn info_frontend_open_orders(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::frontend_open_orders(user);
         self.send_info_request(&request).await
+    }
+
+    /// Get the most recent historical orders for a user.
+    pub async fn info_historical_orders(
+        &self,
+        user: &str,
+    ) -> Result<Vec<HyperliquidOrderStatusEntry>> {
+        let request = InfoRequest::historical_orders(user);
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
     }
 
     /// Get clearinghouse state (balances, positions, margin) for a user.
@@ -935,6 +994,27 @@ impl HyperliquidHttpClient {
             .expect(MUTEX_POISONED)
             .get(client_order_id)
             .copied()
+    }
+
+    /// Returns the cached CLOID for a client order ID when no other client
+    /// order ID maps to the same CLOID.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "cloid cache mutex poisoning is not expected"
+    )]
+    #[must_use]
+    pub(crate) fn unique_cached_client_order_id_cloid(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<Cloid> {
+        let cloids = self.client_order_id_cloids.lock().expect(MUTEX_POISONED);
+        let cloid = cloids.get(client_order_id).copied()?;
+        let mapping_count = cloids
+            .values()
+            .filter(|cached_cloid| **cached_cloid == cloid)
+            .count();
+
+        (mapping_count == 1).then_some(cloid)
     }
 
     /// Removes the cached CLOID for a client order ID.
@@ -1706,6 +1786,14 @@ impl HyperliquidHttpClient {
         self.inner.info_frontend_open_orders(user).await
     }
 
+    /// Get the most recent historical orders for a user.
+    pub async fn info_historical_orders(
+        &self,
+        user: &str,
+    ) -> Result<Vec<HyperliquidOrderStatusEntry>> {
+        self.inner.info_historical_orders(user).await
+    }
+
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         self.inner.info_clearinghouse_state(user).await
@@ -1806,6 +1894,7 @@ impl HyperliquidHttpClient {
                         asset: asset_id,
                         cloid,
                     }],
+                    fast: None,
                 }
             } else if let Some(oid) = venue_order_id {
                 let oid_u64 = oid
@@ -1817,6 +1906,7 @@ impl HyperliquidHttpClient {
                         asset: asset_id,
                         oid: oid_u64,
                     }],
+                    fast: None,
                 }
             } else {
                 let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
@@ -1825,6 +1915,7 @@ impl HyperliquidHttpClient {
                         asset: asset_id,
                         cloid,
                     }],
+                    fast: None,
                 }
             }
         } else if let Some(oid) = venue_order_id {
@@ -1837,6 +1928,7 @@ impl HyperliquidHttpClient {
                     asset: asset_id,
                     oid: oid_u64,
                 }],
+                fast: None,
             }
         } else {
             return Err(Error::bad_request(
@@ -1864,18 +1956,18 @@ impl HyperliquidHttpClient {
 
     /// Modify an order on the Hyperliquid exchange.
     ///
-    /// The HL modify API requires a full replacement order spec plus the
-    /// venue order ID. The caller must provide all order fields.
+    /// The HL modify API requires a full replacement order spec plus a venue
+    /// order ID or cached CLOID target. The caller must provide all order fields.
     ///
     /// # Errors
     ///
-    /// Returns an error if the asset index is not found, the venue order ID
-    /// is invalid, or the API returns an error.
+    /// Returns an error if the asset index is not found, no safe modify target
+    /// exists, the venue order ID is invalid, or the API returns an error.
     #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: Option<VenueOrderId>,
         order_side: OrderSide,
         order_type: OrderType,
         price: Price,
@@ -1893,10 +1985,21 @@ impl HyperliquidHttpClient {
             ))
         })?;
 
-        let oid: u64 = venue_order_id
-            .as_str()
-            .parse()
-            .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
+        let oid = match client_order_id
+            .as_ref()
+            .and_then(|id| self.unique_cached_client_order_id_cloid(id))
+        {
+            Some(cloid) => HyperliquidExecModifyTarget::Cloid(cloid),
+            None => {
+                let Some(venue_order_id) = venue_order_id.as_ref() else {
+                    return Err(Error::bad_request(
+                        "venue_order_id or unique cached CLOID is required for modify",
+                    ));
+                };
+                HyperliquidExecModifyTarget::from_venue_order_id(venue_order_id)
+                    .map_err(|_| Error::bad_request("Invalid venue order ID format"))?
+            }
+        };
 
         let is_buy = matches!(order_side, OrderSide::Buy);
         let decimals = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
@@ -2164,6 +2267,91 @@ impl HyperliquidHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Request historical order status reports for a user.
+    ///
+    /// The venue bounds this endpoint to its 2,000 most recent historical
+    /// orders. Mass-status reconciliation narrows these reports to venue order
+    /// IDs represented by the retained fill window.
+    pub async fn request_historical_order_status_reports(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<OrderStatusReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+        let entries = self.info_historical_orders(user).await?;
+        let mut reports = Vec::new();
+        let ts_init = self.clock.get_time_ns();
+
+        for entry in entries {
+            let instrument = match self.get_or_create_instrument(&entry.order.coin, None) {
+                Some(instrument) => instrument,
+                None => continue,
+            };
+
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            let order_type = entry.order.order_type.as_deref().unwrap_or_default();
+            let tpsl = if order_type.starts_with("Take Profit") {
+                Some(crate::common::enums::HyperliquidTpSl::Tp)
+            } else if order_type.starts_with("Stop") {
+                Some(crate::common::enums::HyperliquidTpSl::Sl)
+            } else {
+                None
+            };
+            let is_market = entry
+                .order
+                .order_type
+                .as_deref()
+                .is_some_and(|label| label.ends_with("Market"));
+            let historical_order_type = match tpsl.as_ref() {
+                Some(tpsl) => parse_trigger_order_type(is_market, tpsl),
+                None if is_market => OrderType::Market,
+                None => OrderType::Limit,
+            };
+            let order = WsBasicOrderData {
+                coin: entry.order.coin,
+                side: entry.order.side,
+                limit_px: entry.order.limit_px,
+                sz: entry.order.sz,
+                oid: entry.order.oid,
+                timestamp: entry.order.timestamp,
+                orig_sz: entry.order.orig_sz,
+                cloid: entry.order.cloid,
+                tif: entry.order.tif,
+                reduce_only: entry.order.reduce_only,
+                trigger_px: entry
+                    .order
+                    .trigger_px
+                    .filter(|price| *price != Decimal::ZERO),
+                is_market: tpsl.is_some().then_some(is_market),
+                tpsl,
+                trigger_activated: None,
+                trailing_stop: None,
+            };
+
+            match parse_order_status_report_from_basic(
+                &order,
+                &entry.status,
+                &instrument,
+                account_id,
+                ts_init,
+            ) {
+                Ok(mut report) => {
+                    report.order_type = historical_order_type;
+                    report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
+                    reports.push(report);
+                }
+                Err(e) => log::error!("Failed to parse historical order status report: {e}"),
+            }
+        }
+
+        Ok(deduplicate_historical_order_reports(reports))
     }
 
     /// Request a single order status report by venue order ID.
@@ -2516,9 +2704,10 @@ impl HyperliquidHttpClient {
     /// Request account state (balances and margins) for a user.
     ///
     /// Fetches perp and spot clearinghouse state from Hyperliquid and merges them
-    /// into a single [`AccountState`]. USDC is taken from the perp margin summary
-    /// when present (to avoid double-counting combined `withdrawable`); non-USDC
-    /// tokens are appended from the spot balances.
+    /// into a single [`AccountState`]. USDC comes from the perp margin summary only
+    /// when that summary reflects non-zero collateral, margin used, or withdrawable
+    /// balance; if the summary is absent or zeroed, spot USDC is used instead. Non-USDC
+    /// tokens are always appended from the spot balances.
     ///
     /// # Errors
     ///
@@ -2775,6 +2964,68 @@ impl HyperliquidHttpClient {
             candles.len() - bars.len()
         );
         Ok(bars)
+    }
+
+    /// Request the recent public trade snapshot for an instrument.
+    ///
+    /// Hyperliquid's `recentTrades` endpoint is a bounded newest-first snapshot,
+    /// rather than a range-query endpoint. The returned trades are normalized to
+    /// ascending event time and then constrained to the requested window.
+    ///
+    /// A self-hosted node without the indexer responds with HTTP 422. This is
+    /// treated as no available coverage so requests can still complete.
+    pub async fn request_public_trades(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<chrono::DateTime<chrono::Utc>>,
+        end: Option<chrono::DateTime<chrono::Utc>>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HyperliquidPublicTrade>> {
+        let symbol = instrument_id.symbol;
+        let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
+        let alias = cache_alias_for_symbol(symbol.as_str())
+            .map(|alias| Ustr::from(alias.as_str()))
+            .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?;
+        let instrument = self
+            .get_or_create_instrument(&alias, product_type)
+            .ok_or_else(|| {
+                Error::bad_request(InstrumentLookupError::not_found(instrument_id).to_string())
+            })?;
+
+        let raw_trades = match self
+            .info_recent_trades(instrument.raw_symbol().as_ref())
+            .await
+        {
+            Ok(trades) => trades,
+            Err(e) if e.is_unprocessable_entity() => {
+                log::warn!(
+                    "Recent public trades endpoint unavailable for {instrument_id} \
+                     (requires the Hyperliquid indexer); returning empty response"
+                );
+                Vec::new()
+            }
+            Err(e) => return Err(e),
+        };
+
+        let mut trades: Vec<HyperliquidPublicTrade> = raw_trades
+            .iter()
+            .filter_map(|raw| match parse_recent_public_trade(raw, &instrument) {
+                Ok(trade) => Some(trade),
+                Err(e) => {
+                    log::warn!("Skipping recent public trade for {instrument_id}: {e}");
+                    None
+                }
+            })
+            .collect();
+        trades.sort_by_key(|trade| trade.ts_event);
+
+        Ok(filter_recent_public_trades(
+            trades,
+            datetime_to_unix_nanos(start),
+            datetime_to_unix_nanos(end),
+            limit.filter(|limit| *limit > 0),
+            instrument_id,
+        ))
     }
 
     /// Submits an order to the exchange.
@@ -3671,12 +3922,14 @@ mod tests {
         let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
         let client_order_id = ClientOrderId::new("O-CLOID-CACHE");
         let other_client_order_id = ClientOrderId::new("O-CLOID-CACHE-OTHER");
+        let duplicate_client_order_id = ClientOrderId::new("O-CLOID-CACHE-DUPLICATE");
         let explicit_cloid = Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap();
 
         let first = client.get_or_generate_client_order_id_cloid(client_order_id);
         let second = client.get_or_generate_client_order_id_cloid(client_order_id);
         client.cache_client_order_id_cloid(client_order_id, explicit_cloid);
         client.cache_client_order_id_cloid(other_client_order_id, explicit_cloid);
+        client.cache_client_order_id_cloid(duplicate_client_order_id, explicit_cloid);
 
         assert_eq!(first, Cloid::from_client_order_id(client_order_id));
         assert_eq!(first, second);
@@ -3686,8 +3939,17 @@ mod tests {
             "cache insert must not overwrite an existing generated CLOID",
         );
         assert_eq!(
+            client.unique_cached_client_order_id_cloid(&client_order_id),
+            Some(first),
+        );
+        assert_eq!(
             client.cached_client_order_id_cloid(&other_client_order_id),
             Some(explicit_cloid),
+        );
+        assert_eq!(
+            client.unique_cached_client_order_id_cloid(&other_client_order_id),
+            None,
+            "duplicate CLOID mappings are not safe modify targets",
         );
         assert_eq!(
             client.remove_client_order_id_cloid(&client_order_id),

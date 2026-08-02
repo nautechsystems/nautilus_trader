@@ -314,16 +314,31 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
+    /// Returns an error if the value cannot be converted to a `Price`.
+    #[inline(always)]
+    fn try_make_price_from_decimal(&self, value: Decimal) -> anyhow::Result<Price> {
+        let precision = u32::from(self.min_price_increment_precision());
+        let rounded_decimal =
+            value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
+        Price::from_decimal_dp(rounded_decimal, self.price_precision()).map_err(Into::into)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if the value cannot be converted to a `Price` (see `try_make_price_from_decimal`).
+    fn make_price_from_decimal(&self, value: Decimal) -> Price {
+        self.try_make_price_from_decimal(value).unwrap()
+    }
+
+    /// # Errors
+    ///
     /// Returns an error if the value is not finite, not representable as a `Decimal`, or cannot
     /// be converted to a `Price`.
     #[inline(always)]
     fn try_make_price(&self, value: f64) -> anyhow::Result<Price> {
         let dec_value = Decimal::from_str(&value.to_string())
             .map_err(|_| anyhow::anyhow!("invalid `value` for make_price, was {value}"))?;
-        let precision = u32::from(self.min_price_increment_precision());
-        let rounded_decimal =
-            dec_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
-        Price::from_decimal_dp(rounded_decimal, self.price_precision()).map_err(Into::into)
+        self.try_make_price_from_decimal(dec_value)
     }
 
     /// # Panics
@@ -410,12 +425,13 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns an error if the value is not finite, not representable as a `Decimal`, rounds to
-    /// zero, or cannot be converted to a `Quantity`.
+    /// Returns an error if the value rounds to zero or cannot be converted to a `Quantity`.
     #[inline(always)]
-    fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
-        let dec_value = Decimal::from_str(&value.to_string())
-            .map_err(|_| anyhow::anyhow!("invalid `value` for make_qty, was {value}"))?;
+    fn try_make_qty_from_decimal(
+        &self,
+        value: Decimal,
+        round_down: Option<bool>,
+    ) -> anyhow::Result<Quantity> {
         let precision = u32::from(self.min_size_increment_precision());
 
         let strategy = if round_down.unwrap_or(false) {
@@ -424,12 +440,30 @@ pub trait Instrument: 'static + Send {
             RoundingStrategy::MidpointNearestEven
         };
 
-        let rounded = dec_value.round_dp_with_strategy(precision, strategy);
-        if dec_value > Decimal::ZERO && rounded.is_zero() {
+        let rounded = value.round_dp_with_strategy(precision, strategy);
+        if value > Decimal::ZERO && rounded.is_zero() {
             anyhow::bail!("value rounded to zero for quantity");
         }
 
         Quantity::from_decimal_dp(rounded, self.size_precision()).map_err(Into::into)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if the value cannot be converted to a `Quantity` (see `try_make_qty_from_decimal`).
+    fn make_qty_from_decimal(&self, value: Decimal, round_down: Option<bool>) -> Quantity {
+        self.try_make_qty_from_decimal(value, round_down).unwrap()
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error if the value is not finite, not representable as a `Decimal`, rounds to
+    /// zero, or cannot be converted to a `Quantity`.
+    #[inline(always)]
+    fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
+        let dec_value = Decimal::from_str(&value.to_string())
+            .map_err(|_| anyhow::anyhow!("invalid `value` for make_qty, was {value}"))?;
+        self.try_make_qty_from_decimal(dec_value, round_down)
     }
 
     /// # Panics
@@ -525,11 +559,47 @@ pub trait Instrument: 'static + Send {
             .unwrap()
     }
 
+    /// Calculates the notional value for the given quantity and price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if base-denominated inverse valuation lacks a base currency or positive
+    /// price, or if the result cannot be represented as [`Money`].
+    #[inline(always)]
+    fn try_calculate_notional_value(
+        &self,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        let use_quote_inverse = use_quote_for_inverse.unwrap_or(false);
+        let currency = if self.is_inverse() {
+            if use_quote_inverse {
+                self.quote_currency()
+            } else {
+                self.base_currency().ok_or_else(|| {
+                    anyhow::anyhow!("inverse instrument {} has no base currency", self.id())
+                })?
+            }
+        } else if self.is_quanto() {
+            self.settlement_currency()
+        } else {
+            self.quote_currency()
+        };
+
+        try_notional_value(
+            quantity,
+            price,
+            self.multiplier(),
+            self.is_inverse(),
+            use_quote_inverse,
+            currency,
+        )
+    }
+
     /// # Panics
     ///
-    /// Panics if the instrument is inverse and does not have a base currency, if the
-    /// instrument is inverse and `price` is zero, or if the notional amount cannot be
-    /// represented as `Money`.
+    /// Panics if [`Instrument::try_calculate_notional_value`] returns an error.
     #[inline(always)]
     fn calculate_notional_value(
         &self,
@@ -537,29 +607,8 @@ pub trait Instrument: 'static + Send {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
-        let use_quote_inverse = use_quote_for_inverse.unwrap_or(false);
-        let (amount, currency) = if self.is_inverse() {
-            if use_quote_inverse {
-                (quantity.as_decimal(), self.quote_currency())
-            } else {
-                let amount =
-                    quantity.as_decimal() * self.multiplier().as_decimal() / price.as_decimal();
-                let currency = self
-                    .base_currency()
-                    .expect("inverse instrument without base_currency");
-                (amount, currency)
-            }
-        } else if self.is_quanto() {
-            let amount =
-                quantity.as_decimal() * self.multiplier().as_decimal() * price.as_decimal();
-            (amount, self.settlement_currency())
-        } else {
-            let amount =
-                quantity.as_decimal() * self.multiplier().as_decimal() * price.as_decimal();
-            (amount, self.quote_currency())
-        };
-
-        Money::from_decimal(amount, currency).expect("Invalid notional value")
+        self.try_calculate_notional_value(quantity, price, use_quote_for_inverse)
+            .expect("invalid notional value")
     }
 
     #[inline(always)]
@@ -649,6 +698,37 @@ pub trait Instrument: 'static + Send {
 
         prices
     }
+}
+
+pub(crate) fn try_notional_value(
+    quantity: Quantity,
+    price: Price,
+    multiplier: Quantity,
+    is_inverse: bool,
+    use_quote_for_inverse: bool,
+    currency: Currency,
+) -> anyhow::Result<Money> {
+    let amount = if is_inverse && !use_quote_for_inverse {
+        anyhow::ensure!(
+            price.is_positive(),
+            "price must be positive for inverse notional valuation"
+        );
+        quantity
+            .as_decimal()
+            .checked_mul(multiplier.as_decimal())
+            .and_then(|value| value.checked_div(price.as_decimal()))
+            .ok_or_else(|| anyhow::anyhow!("inverse notional calculation overflow"))?
+    } else if is_inverse {
+        quantity.as_decimal()
+    } else {
+        quantity
+            .as_decimal()
+            .checked_mul(multiplier.as_decimal())
+            .and_then(|value| value.checked_mul(price.as_decimal()))
+            .ok_or_else(|| anyhow::anyhow!("notional calculation overflow"))?
+    };
+
+    Money::from_decimal(amount, currency).map_err(Into::into)
 }
 
 impl Display for CurrencyPair {
@@ -776,6 +856,31 @@ mod tests {
             currency_pair_btcusdt.make_qty(input, None).to_string(),
             expected
         );
+    }
+
+    #[rstest]
+    #[case(dec!(1.5), None, dec!(1.5))]
+    #[case(dec!(1.2345678), None, dec!(1.234568))]
+    #[case(dec!(1.2345678), Some(true), dec!(1.234567))]
+    #[case(dec!(1.9999999), Some(true), dec!(1.999999))]
+    #[case(dec!(0.000123), None, dec!(0.000123))]
+    fn make_qty_from_decimal_matches_f64_path(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] value: Decimal,
+        #[case] round_down: Option<bool>,
+        #[case] expected: Decimal,
+    ) {
+        let from_decimal = currency_pair_btcusdt.make_qty_from_decimal(value, round_down);
+        let from_f64 =
+            currency_pair_btcusdt.make_qty(value.to_string().parse::<f64>().unwrap(), round_down);
+        assert_eq!(from_decimal, from_f64);
+        assert_eq!(from_decimal.as_decimal(), expected);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "value rounded to zero")]
+    fn make_qty_from_decimal_rounds_to_zero(currency_pair_btcusdt: CurrencyPair) {
+        currency_pair_btcusdt.make_qty_from_decimal(dec!(0.0000001), None);
     }
 
     #[rstest]
@@ -1437,6 +1542,22 @@ mod tests {
     }
 
     #[rstest]
+    #[case(dec!(1.234999), dec!(1.23))]
+    #[case(dec!(1.235), dec!(1.24))]
+    #[case(dec!(1.235001), dec!(1.24))]
+    #[case(dec!(10000.0), dec!(10000.0))]
+    fn make_price_from_decimal_matches_f64_path(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] value: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        let from_decimal = currency_pair_btcusdt.make_price_from_decimal(value);
+        let from_f64 = currency_pair_btcusdt.make_price(value.to_string().parse::<f64>().unwrap());
+        assert_eq!(from_decimal, from_f64);
+        assert_eq!(from_decimal.as_decimal(), expected);
+    }
+
+    #[rstest]
     fn is_quanto_flag(ethbtc_quanto: CryptoFuture) {
         assert!(ethbtc_quanto.is_quanto());
     }
@@ -1505,6 +1626,48 @@ mod tests {
         let notional = xbtusd_inverse_perp.calculate_notional_value(quantity, price, Some(true));
         let expected = Money::new(100.0, xbtusd_inverse_perp.quote_currency());
         assert_eq!(notional, expected);
+    }
+
+    #[rstest]
+    fn try_notional_inverse_zero_price_returns_error(xbtusd_inverse_perp: CryptoPerpetual) {
+        let result = xbtusd_inverse_perp.try_calculate_notional_value(
+            xbtusd_inverse_perp.make_qty(100.0, None),
+            Price::new(0.0, 1),
+            Some(false),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "price must be positive for inverse notional valuation"
+        );
+    }
+
+    #[rstest]
+    fn try_notional_unrepresentable_money_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let result = currency_pair_btcusdt.try_calculate_notional_value(
+            Quantity::from("100000000"),
+            Price::from("100000000"),
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn try_notional_decimal_overflow_returns_error() {
+        let result = try_notional_value(
+            Quantity::from("9000000000"),
+            Price::from("9000000000"),
+            Quantity::from("9000000000"),
+            false,
+            false,
+            Currency::USD(),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "notional calculation overflow"
+        );
     }
 
     #[rstest]

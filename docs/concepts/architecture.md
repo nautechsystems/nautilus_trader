@@ -51,10 +51,10 @@ business requirements. Practically this means we:
 - Prefer zero-cost safety techniques built into Rust (ownership, `Result`
   surfaces, `panic = abort`) and add targeted formal tools only where they pay
   for themselves.
-- Track “assurance debt” alongside feature work so new integrations extend the
+- Track "assurance debt" alongside feature work so new integrations extend the
   safety net rather than bypass it.
 
-This approach preserves the platform’s delivery cadence while giving
+This approach preserves the platform's delivery cadence while giving
 high-stakes flows the additional scrutiny they need.
 
 Further reading: [High Assurance Rust](https://highassurance.rs/).
@@ -239,7 +239,7 @@ Here are the available environments you can work with:
 
 ### Common core
 
-The platform has been designed to share as much common code between backtest, sandbox and live trading systems as possible.
+The platform has been designed to share as much common code between backtest, sandbox, and live trading systems as possible.
 This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class,
 providing a common core system 'kernel'.
 
@@ -526,7 +526,7 @@ from the left nav menu.
 
 ### Core / low-level
 
-- `core`: Constants, functions and low-level components used throughout the framework.
+- `core`: Constants, functions, and low-level components used throughout the framework.
 - `common`: Common parts for assembling the frameworks various components.
 - `network`: Low-level base components for networking clients.
 - `serialization`: Serialization base components and serializer implementations.
@@ -541,7 +541,7 @@ from the left nav menu.
 - `data`: The data stack and data tooling for the platform.
 - `execution`: The execution stack for the platform.
 - `indicators`: A set of efficient indicators and analyzers.
-- `persistence`: Data storage, cataloging and retrieval, mainly to support backtesting.
+- `persistence`: Data storage, cataloging, and retrieval, mainly to support backtesting.
 - `portfolio`: Portfolio management functionality.
 - `risk`: Risk specific components and tooling.
 - `trading`: Trading domain specific components and tooling.
@@ -638,7 +638,7 @@ flowchart BT
 **Crate categories:**
 
 | Category       | Crates                                                    | Purpose                                                  |
-|----------------|-----------------------------------------------------------|----------------------------------------------------------|
+| -------------- | --------------------------------------------------------- | -------------------------------------------------------- |
 | Foundation     | `core`, `model`, `common`, `system`, `trading`            | Primitives, domain model, kernel, actor & strategy base. |
 | Engines        | `data`, `execution`, `portfolio`, `risk`                  | Core trading engine components.                          |
 | Infrastructure | `serialization`, `network`, `cryptography`, `persistence` | Encoding, networking, signing, storage.                  |
@@ -648,12 +648,12 @@ flowchart BT
 
 **Feature flags:**
 
-| Feature     | Crates                     | Effect                                                     |
-|-------------|----------------------------|------------------------------------------------------------|
-| `streaming` | `data`, `system`, `live`   | Enables `persistence` dependency for catalog streaming.    |
-| `cloud`     | `persistence`              | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
-| `python`    | most crates                | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
-| `defi`      | `common`, `model`, `data`  | Enables DeFi/blockchain data types.                        |
+| Feature     | Crates                    | Effect                                                     |
+| ----------- | ------------------------- | ---------------------------------------------------------- |
+| `streaming` | `data`, `system`, `live`  | Enables `persistence` dependency for catalog streaming.    |
+| `cloud`     | `persistence`             | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
+| `python`    | most crates               | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
+| `defi`      | `common`, `model`, `data` | Enables DeFi/blockchain data types.                        |
 
 :::note
 Both Rust and Cython are build dependencies. The binary wheels produced from a build do not require
@@ -707,6 +707,23 @@ Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in t
 For production deployments, add multiple strategies to a **single TradingNode** within a process.
 For parallel execution or workload isolation, run each node in its own separate process.
 :::
+
+### Memory allocation
+
+The event-driven core allocates and frees small objects at high frequency: message bus dispatch,
+order event handling, and order book maintenance all exercise the heap on every event. Default
+system allocators handle this pattern poorly; profiling shows allocator overhead approaching half
+of hot-loop time on both the Windows CRT heap and glibc malloc under order-flow workloads.
+
+The Python wheels and the `nautilus` CLI binary therefore use
+[mimalloc](https://github.com/microsoft/mimalloc) for Rust allocations.
+Backtest engine benchmarks run roughly 3% to 44% faster depending on workload,
+with order-flow heavy paths gaining the most. The trade-off is a modest increase in resident
+memory from mimalloc's segment caching.
+
+A Rust binary links exactly one global allocator, and libraries do not impose one, so the
+NautilusTrader crates remain allocator-neutral. When building directly against the crates,
+opt in from your own binary (see the [Rust guide](rust.md#memory-allocator)).
 
 ## Related guides
 

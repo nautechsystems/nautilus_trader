@@ -1,12 +1,12 @@
 # Run Live Trading (Rust)
 
-The `LiveNode` connects to real venues through adapter clients. This guide
+The `LiveNode` connects to real venues and data sources through adapter clients. This guide
 walks through a complete live trading setup using OKX as an example.
 
-For background on live trading architecture and reconciliation, see the
-[Live trading](../concepts/live.md) concept guide. For project setup and
-feature flags, see the [Rust](../concepts/rust.md#project-setup) concept
-guide.
+For the node lifecycle, see [Live trading](../concepts/live.md). For command outcomes, see
+[Execution](../concepts/execution.md#command-outcomes). For state recovery, see
+[Execution reconciliation](../concepts/reconciliation.md). For project setup and feature flags,
+see the [Rust](../concepts/rust.md#project-setup) concept guide.
 
 ## Dependencies
 
@@ -15,11 +15,11 @@ Add the live crate, your venue adapter, and supporting crates to
 
 ```toml
 [dependencies]
-nautilus-common = "0.59"
-nautilus-live = "0.59"
-nautilus-model = "0.59"
-nautilus-okx = "0.59"
-nautilus-trading = { version = "0.59", features = ["examples"] }
+nautilus-common = "0.60"
+nautilus-live = "0.60"
+nautilus-model = "0.60"
+nautilus-okx = "0.60"
+nautilus-trading = { version = "0.60", features = ["examples"] }
 
 anyhow = "1"
 dotenvy = "0.15"
@@ -82,7 +82,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 :::warning
 This example disables reconciliation for simplicity. In production, remove
 `.with_reconciliation(false)` so the engine aligns cached state with the
-venue on startup. See [Execution reconciliation](../concepts/live.md#execution-reconciliation).
+venue on startup. See [Execution reconciliation](../concepts/reconciliation.md).
 :::
 
 ## Add strategies and run
@@ -154,19 +154,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Most adapters include runnable examples with data testers and execution
 testers:
 
-| Adapter      | Example directory                          |
-|--------------|--------------------------------------------|
-| Architect AX | `crates/adapters/architect_ax/examples/`   |
-| Betfair      | `crates/adapters/betfair/examples/`        |
-| Binance      | `crates/adapters/binance/examples/`        |
-| BitMEX       | `crates/adapters/bitmex/examples/`         |
-| Bybit        | `crates/adapters/bybit/examples/`          |
-| Databento    | `crates/adapters/databento/examples/`      |
-| Deribit      | `crates/adapters/deribit/examples/`        |
-| dYdX         | `crates/adapters/dydx/examples/`           |
-| Hyperliquid  | `crates/adapters/hyperliquid/examples/`    |
-| Kraken       | `crates/adapters/kraken/examples/`         |
-| OKX          | `crates/adapters/okx/examples/`            |
-| Polymarket   | `crates/adapters/polymarket/examples/`     |
-| Sandbox      | `crates/adapters/sandbox/examples/`        |
-| Tardis       | `crates/adapters/tardis/examples/`         |
+| Adapter             | Example directory                               |
+| ------------------- | ----------------------------------------------- |
+| Architect AX        | `crates/adapters/architect_ax/examples/`        |
+| Betfair             | `crates/adapters/betfair/examples/`             |
+| Binance             | `crates/adapters/binance/examples/`             |
+| BitMEX              | `crates/adapters/bitmex/examples/`              |
+| Blockchain          | `crates/adapters/blockchain/examples/`          |
+| Bybit               | `crates/adapters/bybit/examples/`               |
+| Coinbase            | `crates/adapters/coinbase/examples/`            |
+| Databento           | `crates/adapters/databento/examples/`           |
+| Deribit             | `crates/adapters/deribit/examples/`             |
+| Derive              | `crates/adapters/derive/examples/`              |
+| dYdX                | `crates/adapters/dydx/examples/`                |
+| Hyperliquid         | `crates/adapters/hyperliquid/examples/`         |
+| Interactive Brokers | `crates/adapters/interactive_brokers/examples/` |
+| Kraken              | `crates/adapters/kraken/examples/`              |
+| Lighter             | `crates/adapters/lighter/examples/`             |
+| OKX                 | `crates/adapters/okx/examples/`                 |
+| Polymarket          | `crates/adapters/polymarket/examples/`          |
+| Sandbox             | `crates/adapters/sandbox/examples/`             |
+| Tardis              | `crates/adapters/tardis/examples/`              |

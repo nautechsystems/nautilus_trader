@@ -48,8 +48,8 @@ use crate::{
 /// ## Instrument ID Format
 ///
 /// The instrument ID encodes with the following components:
-/// - `symbol` – The pool identifier (address for V2/V3, Pool ID for V4)
-/// - `venue`  – The chain name plus DEX ID
+/// - `symbol` - The pool identifier (address for V2/V3, Pool ID for V4)
+/// - `venue`  - The chain name plus DEX ID
 ///
 /// String representation: `<POOL_IDENTIFIER>.<CHAIN_NAME>:<DEX_ID>`
 ///
@@ -81,7 +81,7 @@ pub struct Pool {
     /// The second token in the trading pair.
     pub token1: Token,
     /// The trading fee tier used by the pool expressed in hundred-thousandths
-    /// (1e-6) of one unit – identical to Uniswap-V3’s fee representation.
+    /// (1e-6) of one unit - identical to Uniswap-V3's fee representation.
     ///
     /// Examples:
     /// • `500`   →  0.05 %  (5 bps)

@@ -42,8 +42,8 @@ from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConf
 from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
 from nautilus_trader.adapters.polymarket import SignatureType
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
-from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Quantity
@@ -140,6 +140,8 @@ def main() -> None:
                 use_post_only=True,
                 cancel_orders_on_stop=live_orders,
                 close_positions_on_stop=live_orders,
+                close_positions_qty_precision=2,
+                close_positions_time_in_force=TimeInForce.IOC,
                 reduce_only_on_stop=False,
                 dry_run=args.dry_run,
                 log_data=args.log_data,
@@ -270,7 +272,7 @@ def build_updown_event_slugs(
     period_secs = interval_mins * 60
     now = unix_secs if unix_secs is not None else int(time.time())
     period_start = (now // period_secs) * period_secs
-    slugs = []
+    slugs: list[str] = []
 
     for period in range(periods):
         timestamp = period_start + (start_offset_periods + period) * period_secs
@@ -298,8 +300,8 @@ def request_gamma_events_by_slug(
     try:
         with urllib.request.urlopen(request, timeout=timeout_secs) as response:  # noqa: S310
             payload = response.read().decode()
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Failed to fetch Polymarket event slug '{slug}': {exc}") from exc
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Failed to fetch Polymarket event slug '{slug}': {e}") from e
 
     data = json.loads(payload)
     if not isinstance(data, list):

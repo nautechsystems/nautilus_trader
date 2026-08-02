@@ -3724,10 +3724,12 @@ class LiveExecutionEngine(ExecutionEngine):
         self._record_local_activity(event)
 
         if isinstance(event, OrderFilled):
-            self._recent_fills_cache[event.trade_id] = self._clock.timestamp_ns()
-            self._position_local_activity_ns[(event.instrument_id, event.account_id)] = (
-                event.ts_event
-            )
+            ts_now = self._clock.timestamp_ns()
+            self._recent_fills_cache[event.trade_id] = ts_now
+
+            # Stamp receipt time: a venue ts_event ahead of this clock would make
+            # the grace delta negative and suppress the position check.
+            self._position_local_activity_ns[(event.instrument_id, event.account_id)] = ts_now
 
             # Track inferred fill timestamps to prevent duplicate historical fills
             if event.reconciliation:

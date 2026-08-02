@@ -37,6 +37,11 @@ def test_none_raises():
         Quantity(None, precision=0)
 
 
+def test_ordering_with_unsupported_type_raises():
+    with pytest.raises(TypeError):
+        _ = Quantity.from_int(1) < object()
+
+
 def test_negative_precision_raises():
     with pytest.raises(OverflowError):
         Quantity(1.0, precision=-1)
@@ -463,7 +468,13 @@ def test_min(v1, v2, expected):
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [("1", 1), ("1.1", 1)],
+    [
+        ("0", 0),
+        ("0.000000001", 0),
+        ("1.999999999", 1),
+        ("50.25", 50),
+        ("9007199253.999999999", 9_007_199_253),
+    ],
 )
 def test_int(value, expected):
     assert int(Quantity.from_str(value)) == expected

@@ -24,6 +24,10 @@ use crate::{statistic::PortfolioStatistic, statistics::loser_min::MinLoser};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MinLoser {
+    /// Calculates the smallest losing trade (least negative PnL) from realized PnLs.
+    ///
+    /// Only negative PnLs count as losers. Returns `NaN` for an empty series or
+    /// when there are no losing trades.
     #[new]
     fn py_new() -> Self {
         Self {}

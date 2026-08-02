@@ -163,7 +163,7 @@ impl HyperliquidWebSocketClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| match report {
-                Some(r) => Ok(r.into_py_any_unwrap(py)),
+                Some(report) => report.into_py_any(py),
                 None => Ok(py.None()),
             })
         })
@@ -201,8 +201,11 @@ impl HyperliquidWebSocketClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -262,7 +265,7 @@ impl HyperliquidWebSocketClient {
         py: Python<'py>,
         signer: &HyperliquidHttpClient,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: Option<VenueOrderId>,
         order_side: OrderSide,
         order_type: OrderType,
         price: Price,
@@ -605,6 +608,42 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to complete public trades for an instrument.
+    #[pyo3(name = "subscribe_public_trades")]
+    fn py_subscribe_public_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_public_trades(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from complete public trades for an instrument.
+    #[pyo3(name = "unsubscribe_public_trades")]
+    fn py_unsubscribe_public_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_public_trades(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Subscribe to all mid prices across markets.
     #[pyo3(name = "subscribe_all_mids")]
     fn py_subscribe_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -673,6 +712,9 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Unsubscribe from L2 order book for an instrument.
+    ///
+    /// Tears down the venue `l2Book` stream unless active depth10 subscribers
+    /// still need it.
     #[pyo3(name = "unsubscribe_book")]
     fn py_unsubscribe_book<'py>(
         &self,
@@ -738,7 +780,24 @@ impl HyperliquidWebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book(instrument_id)
+                .subscribe_book_depth10(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_book_snapshots")]
+    fn py_unsubscribe_book_snapshots<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_book_depth10(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

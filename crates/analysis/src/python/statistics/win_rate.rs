@@ -24,6 +24,21 @@ use crate::{statistic::PortfolioStatistic, statistics::win_rate::WinRate};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl WinRate {
+    /// Calculates the win rate of a trading strategy based on realized PnLs.
+    ///
+    /// Win rate is the percentage of profitable trades out of total trades:
+    /// `Count(Trades with PnL > 0) / Total Trades`
+    ///
+    /// Returns a value between 0.0 and 1.0, where 1.0 represents 100% winning trades.
+    ///
+    /// Note: While a high win rate is desirable, it should be considered alongside
+    /// average win/loss sizes and profit factor for complete system evaluation.
+    ///
+    /// # References
+    ///
+    /// - Standard trading performance metric across the industry
+    /// - Tharp, V. K. (1998). *Trade Your Way to Financial Freedom*. McGraw-Hill.
+    /// - Kaufman, P. J. (2013). *Trading Systems and Methods* (5th ed.). Wiley.
     #[new]
     fn py_new() -> Self {
         Self {}

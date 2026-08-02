@@ -36,13 +36,13 @@ flowchart LR
     EC <--> EE
 ```
 
-| Component            | Purpose                                                    |
-|----------------------|------------------------------------------------------------|
-| `HttpClient`         | REST API communication.                                    |
-| `WebSocketClient`    | Real‑time streaming connection.                            |
-| `InstrumentProvider` | Loads and parses instrument definitions from the venue.    |
-| `DataClient`         | Handles market data subscriptions and requests.            |
-| `ExecutionClient`    | Handles order submission, modification, and cancellation.  |
+| Component            | Purpose                                                   |
+| -------------------- | --------------------------------------------------------- |
+| `HttpClient`         | REST API communication.                                   |
+| `WebSocketClient`    | Real‑time streaming connection.                           |
+| `InstrumentProvider` | Loads and parses instrument definitions from the venue.   |
+| `DataClient`         | Handles market data subscriptions and requests.           |
+| `ExecutionClient`    | Handles order submission, modification, and cancellation. |
 
 ## Instrument providers
 
@@ -161,8 +161,10 @@ def on_start(self) -> None:
     # Subscribe to live bars
     self.subscribe_bars(BarType.from_str("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"))
 
+
 def on_trade_tick(self, tick: TradeTick) -> None:
     self.log.info(f"Trade: {tick}")
+
 
 def on_bar(self, bar: Bar) -> None:
     self.log.info(f"Bar: {bar}")
@@ -197,4 +199,4 @@ For building a custom adapter, see the [Adapter Developer Guide](../developer_gu
 
 - [Live Trading](live.md) - Configure and run live trading with adapters.
 - [Execution](execution.md) - Order execution through adapters.
-- [Data](data.md) - Market data provided by adapters.
+- [Data](data/) - Market data provided by adapters.

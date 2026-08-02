@@ -152,10 +152,11 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
-            BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
-            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
+            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
+            BybitPositionIdx, BybitPositionMode, BybitPositionSide, BybitProductType,
+            BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -171,6 +172,15 @@ use crate::{
 };
 
 const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
+
+const BYBIT_POST_ONLY_REJECT_REASON: &str = "EC_PostOnlyWillTakeLiquidity";
+
+/// Returns whether a Bybit rejection reason indicates a post-only order that
+/// would have taken liquidity (crossed the book).
+#[must_use]
+pub fn bybit_rejection_due_post_only(reason: &str) -> bool {
+    reason.contains(BYBIT_POST_ONLY_REJECT_REASON)
+}
 
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
 #[must_use]
@@ -306,9 +316,27 @@ pub fn parse_spot_instrument(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
     )?);
+    let min_notional = Some(Money::from_decimal(
+        parse_decimal(
+            &definition.lot_size_filter.min_order_amt,
+            "lotSizeFilter.minOrderAmt",
+        )?,
+        quote_currency,
+    )?);
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
+
+    let margin_trading_supported = matches!(
+        definition.margin_trading,
+        BybitMarginTrading::Both | BybitMarginTrading::UtaOnly
+    );
+
+    let mut info = Params::new();
+    info.insert(
+        "margin_trading".to_string(),
+        serde_json::Value::Bool(margin_trading_supported),
+    );
 
     let instrument = CurrencyPair::new(
         instrument_id,
@@ -324,7 +352,7 @@ pub fn parse_spot_instrument(
         max_quantity,
         min_quantity,
         None,
-        None,
+        min_notional,
         None,
         None,
         Some(default_margin()),
@@ -332,7 +360,7 @@ pub fn parse_spot_instrument(
         Some(maker_fee),
         Some(taker_fee),
         None,
-        None,
+        Some(info),
         ts_event,
         ts_init,
     );
@@ -644,7 +672,7 @@ pub fn parse_option_instrument(
     let underlying = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = get_currency(definition.settle_coin.as_str());
-    // Bybit Options are linear contracts — they are margined and settled in stablecoins
+    // Bybit Options are linear contracts - they are margined and settled in stablecoins
     let is_inverse = false;
 
     let price_increment = parse_price(&definition.price_filter.tick_size, "priceFilter.tickSize")?;
@@ -1396,6 +1424,15 @@ pub fn parse_order_status_report(
         }
         BybitOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         BybitOrderStatus::Filled => OrderStatus::Filled,
+        // A post-only order that would take liquidity is reported as Cancelled with
+        // rejectReason=EC_PostOnlyWillTakeLiquidity (not Rejected). Surface it as Rejected
+        // for consistency with the tracked-order event path.
+        BybitOrderStatus::Canceled
+            if filled_qty.is_zero()
+                && bybit_rejection_due_post_only(order.reject_reason.as_str()) =>
+        {
+            OrderStatus::Rejected
+        }
         BybitOrderStatus::Canceled | BybitOrderStatus::PartiallyFilledCanceled => {
             OrderStatus::Canceled
         }
@@ -1438,9 +1475,9 @@ pub fn parse_order_status_report(
         && avg_price != "0"
     {
         let avg_px = avg_price
-            .parse::<f64>()
-            .with_context(|| format!("Failed to parse avg_price='{avg_price}' as f64"))?;
-        report = report.with_avg_px(avg_px)?;
+            .parse::<Decimal>()
+            .with_context(|| format!("Failed to parse avg_price='{avg_price}' as Decimal"))?;
+        report = report.with_avg_px(avg_px);
     }
 
     if !order.trigger_price.is_empty() && order.trigger_price != "0" {
@@ -1850,7 +1887,10 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::{BybitOrderSide, BybitOrderType, BybitStopOrderType, BybitTriggerDirection},
+            enums::{
+                BybitExecType, BybitOrderSide, BybitOrderType, BybitStopOrderType,
+                BybitTriggerDirection,
+            },
             testing::load_test_json,
         },
         http::models::{
@@ -1886,6 +1926,16 @@ mod tests {
     }
 
     #[rstest]
+    #[case::post_only_cross("EC_PostOnlyWillTakeLiquidity", true)]
+    #[case::post_only_cross_with_prefix("Order rejected: EC_PostOnlyWillTakeLiquidity", true)]
+    #[case::other_reason("EC_OrigClOrdIDDoesNotExist", false)]
+    #[case::generic("Order rejected by venue", false)]
+    #[case::empty("", false)]
+    fn test_bybit_rejection_due_post_only(#[case] reason: &str, #[case] expected: bool) {
+        assert_eq!(bybit_rejection_due_post_only(reason), expected);
+    }
+
+    #[rstest]
     fn parse_spot_instrument_builds_currency_pair() {
         let json = load_test_json("http_get_instruments_spot.json");
         let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
@@ -1900,6 +1950,41 @@ mod tests {
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
                 assert_eq!(pair.base_currency.code.as_str(), "BTC");
                 assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(
+                    pair.min_notional,
+                    Some(Money::from_decimal(Decimal::new(10, 0), Currency::USDT()).unwrap()),
+                );
+                assert_eq!(
+                    pair.info.as_ref().unwrap().get_bool("margin_trading"),
+                    Some(true)
+                );
+            }
+            _ => panic!("expected CurrencyPair"),
+        }
+    }
+
+    #[rstest]
+    #[case(BybitMarginTrading::Both, true)]
+    #[case(BybitMarginTrading::UtaOnly, true)]
+    #[case(BybitMarginTrading::None, false)]
+    #[case(BybitMarginTrading::Other, false)]
+    fn parse_spot_instrument_maps_margin_trading(
+        #[case] margin_trading: BybitMarginTrading,
+        #[case] expected: bool,
+    ) {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.margin_trading = margin_trading;
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.0006", "0.0001", Some("BTC"));
+
+        let parsed = parse_spot_instrument(&instrument, &fee_rate, TS, TS).unwrap();
+        match parsed {
+            InstrumentAny::CurrencyPair(pair) => {
+                assert_eq!(
+                    pair.info.as_ref().unwrap().get_bool("margin_trading"),
+                    Some(expected)
+                );
             }
             _ => panic!("expected CurrencyPair"),
         }
@@ -2792,6 +2877,27 @@ mod tests {
         let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_http_corporate_action_fill_report() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_executions.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["result"]["list"][0]["execType"] = json!("CorporateAction");
+        let response: BybitTradeHistoryResponse = serde_json::from_value(value).unwrap();
+        let execution = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
+        assert!(execution.exec_type.is_exchange_generated());
+
+        let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("8c065341-7b52-4ca9-ac2c-37e31ac55c94")
+        );
     }
 
     #[rstest]

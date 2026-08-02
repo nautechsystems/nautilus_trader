@@ -15,7 +15,7 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{collections::HashMap, result::Result as StdResult, str::from_utf8};
+use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
 
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
@@ -27,8 +27,11 @@ use nautilus_model::{
     identifiers::InstrumentId,
     orderbook::OrderBook,
 };
-use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
-use serde::{Serialize, de::DeserializeOwned};
+use nautilus_network::{
+    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    websocket::proxy::ProxyUrl,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     common::{credential::Credential, enums::PolymarketOrderType, urls::clob_http_url},
@@ -43,7 +46,7 @@ use crate::{
             GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams, OrderResponse,
             PaginatedResponse,
         },
-        rate_limits::POLYMARKET_CLOB_REST_QUOTA,
+        rate_limits::{PolymarketRateLimiter, RateLimitHeaders, TradingBucket},
     },
     websocket::parse::{parse_price, parse_quantity},
 };
@@ -54,10 +57,14 @@ const CURSOR_END: &str = "LTE=";
 const PATH_ORDERS: &str = "/data/orders";
 const PATH_TRADES: &str = "/data/trades";
 const PATH_BALANCE_ALLOWANCE: &str = "/balance-allowance";
+const PATH_BALANCE_ALLOWANCE_UPDATE: &str = "/balance-allowance/update";
 const PATH_POST_ORDER: &str = "/order";
 const PATH_POST_ORDERS: &str = "/orders";
 const PATH_CANCEL_ALL: &str = "/cancel-all";
 const PATH_CANCEL_MARKET_ORDERS: &str = "/cancel-market-orders";
+const PATH_HEARTBEATS: &str = "/heartbeats";
+
+const CLOB_CANCEL_BATCH_LIMIT: usize = 1_000;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +82,26 @@ struct CancelOrderBody<'a> {
     order_id: &'a str,
 }
 
+#[derive(Serialize)]
+struct HeartbeatRequest<'a> {
+    heartbeat_id: &'a str,
+}
+
+#[derive(Deserialize)]
+struct HeartbeatWireResponse {
+    heartbeat_id: Option<String>,
+    status: Option<String>,
+}
+
+/// Outcome from an authenticated CLOB order-safety heartbeat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HeartbeatResponse {
+    /// The heartbeat was acknowledged, with an optional next ID for chaining.
+    Acknowledged(Option<String>),
+    /// The supplied ID was stale and the venue returned the current ID.
+    Resynchronize(String),
+}
+
 /// Provides an authenticated HTTP client for the Polymarket CLOB REST API.
 ///
 /// Handles HTTP transport, L2 HMAC-SHA256 auth signing, pagination, and raw
@@ -83,6 +110,7 @@ struct CancelOrderBody<'a> {
 #[derive(Debug, Clone)]
 pub struct PolymarketClobHttpClient {
     client: HttpClient,
+    rate_limiter: Arc<PolymarketRateLimiter>,
     base_url: String,
     credential: Credential,
     address: String,
@@ -101,15 +129,32 @@ impl PolymarketClobHttpClient {
         base_url: Option<String>,
         timeout_secs: u64,
     ) -> StdResult<Self, HttpClientError> {
+        Self::new_with_proxy(credential, address, base_url, timeout_secs, None)
+    }
+
+    /// Creates a new authenticated client with an optional validated proxy URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new_with_proxy(
+        credential: Credential,
+        address: String,
+        base_url: Option<String>,
+        timeout_secs: u64,
+        proxy_url: Option<ProxyUrl>,
+    ) -> StdResult<Self, HttpClientError> {
+        let rate_limiter = PolymarketRateLimiter::for_signer(&address);
         Ok(Self {
             client: HttpClient::new(
                 Self::default_headers(),
+                RateLimitHeaders::names(),
                 vec![],
-                vec![],
-                Some(*POLYMARKET_CLOB_REST_QUOTA),
-                Some(timeout_secs),
                 None,
+                Some(timeout_secs),
+                proxy_url.map(|url| url.expose().to_string()),
             )?,
+            rate_limiter,
             base_url: base_url
                 .unwrap_or_else(|| clob_http_url().to_string())
                 .trim_end_matches('/')
@@ -218,16 +263,128 @@ impl PolymarketClobHttpClient {
         }
     }
 
-    async fn send_post<T: DeserializeOwned>(&self, path: &str, body_bytes: Vec<u8>) -> Result<T> {
+    async fn send_post<T: DeserializeOwned>(
+        &self,
+        path: &'static str,
+        body_bytes: Vec<u8>,
+        cost: u32,
+    ) -> Result<T> {
+        self.send_trading(
+            Method::POST,
+            path,
+            Some(body_bytes),
+            TradingBucket::Order,
+            cost,
+            |_| 0,
+        )
+        .await
+    }
+
+    async fn send_delete<T: DeserializeOwned>(
+        &self,
+        path: &'static str,
+        body_bytes: Option<Vec<u8>>,
+        cost: u32,
+    ) -> Result<T> {
+        self.send_trading(
+            Method::DELETE,
+            path,
+            body_bytes,
+            TradingBucket::Cancel,
+            cost,
+            |_| 0,
+        )
+        .await
+    }
+
+    async fn send_delete_with_cancel_debit(
+        &self,
+        path: &'static str,
+        body_bytes: Option<Vec<u8>>,
+    ) -> Result<BatchCancelResponse> {
+        self.send_trading(
+            Method::DELETE,
+            path,
+            body_bytes,
+            TradingBucket::Cancel,
+            1,
+            canceled_count,
+        )
+        .await
+    }
+
+    async fn send_trading<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &'static str,
+        body_bytes: Option<Vec<u8>>,
+        bucket: TradingBucket,
+        cost: u32,
+        post_response_cost: impl FnOnce(&T) -> u32,
+    ) -> Result<T> {
+        self.rate_limiter.acquire(path, bucket, cost).await?;
+
+        let body_str = body_bytes
+            .as_deref()
+            .map(|b| from_utf8(b).map_err(|e| Error::decode(format!("UTF-8 error: {e}"))))
+            .transpose()?
+            .unwrap_or("");
+        let headers = Some(self.auth_headers(method.as_str(), path, body_str));
+        let url = self.url(path);
+        let response = self
+            .client
+            .request(method, url, None, headers, body_bytes, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+        let rate_limit_headers = RateLimitHeaders::parse(&response.headers);
+
+        if response.status.is_success() {
+            let decoded = serde_json::from_slice(&response.body);
+            let post_response_cost = decoded.as_ref().map_or(0, post_response_cost);
+            self.rate_limiter
+                .observe_response(
+                    path,
+                    bucket,
+                    cost,
+                    post_response_cost,
+                    &rate_limit_headers,
+                    false,
+                )
+                .await;
+            decoded.map_err(Error::Serde)
+        } else {
+            let rate_limited = response.status.as_u16() == 429;
+            self.rate_limiter
+                .observe_response(path, bucket, cost, 0, &rate_limit_headers, rate_limited)
+                .await;
+
+            if rate_limited {
+                Err(Error::rate_limit(
+                    path,
+                    cost,
+                    rate_limit_headers.retry_after_ms(),
+                ))
+            } else {
+                Err(Error::from_status_code(
+                    response.status.as_u16(),
+                    &response.body,
+                ))
+            }
+        }
+    }
+
+    /// Sends an authenticated order-safety heartbeat.
+    pub async fn post_heartbeat(&self, heartbeat_id: &str) -> Result<HeartbeatResponse> {
+        let body = HeartbeatRequest { heartbeat_id };
+        let body_bytes = serde_json::to_vec(&body).map_err(Error::Serde)?;
         let body_str =
             from_utf8(&body_bytes).map_err(|e| Error::decode(format!("UTF-8 error: {e}")))?;
-        let headers = Some(self.auth_headers("POST", path, body_str));
-        let url = self.url(path);
+        let headers = Some(self.auth_headers("POST", PATH_HEARTBEATS, body_str));
         let response = self
             .client
             .request(
                 Method::POST,
-                url,
+                self.url(PATH_HEARTBEATS),
                 None,
                 headers,
                 Some(body_bytes),
@@ -237,42 +394,30 @@ impl PolymarketClobHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
+        let wire = serde_json::from_slice::<HeartbeatWireResponse>(&response.body);
         if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
-    }
+            let wire = wire.map_err(Error::Serde)?;
+            if let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty()) {
+                return Ok(HeartbeatResponse::Acknowledged(Some(heartbeat_id)));
+            }
 
-    async fn send_delete<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body_bytes: Option<Vec<u8>>,
-    ) -> Result<T> {
-        let body_str = body_bytes
-            .as_deref()
-            .map(|b| from_utf8(b).map_err(|e| Error::decode(format!("UTF-8 error: {e}"))))
-            .transpose()?
-            .unwrap_or("");
-        let headers = Some(self.auth_headers("DELETE", path, body_str));
-        let url = self.url(path);
-        let response = self
-            .client
-            .request(Method::DELETE, url, None, headers, body_bytes, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
-
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
+            if wire.status.as_deref() == Some("ok") {
+                return Ok(HeartbeatResponse::Acknowledged(None));
+            }
+            return Err(Error::exchange("Heartbeat acknowledgment was invalid"));
         }
+
+        if response.status.as_u16() == 400
+            && let Ok(wire) = wire
+            && let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty())
+        {
+            return Ok(HeartbeatResponse::Resynchronize(heartbeat_id));
+        }
+
+        Err(Error::from_status_code(
+            response.status.as_u16(),
+            &response.body,
+        ))
     }
 
     /// Fetches all open orders matching the given parameters (auto-paginated).
@@ -358,6 +503,17 @@ impl PolymarketClobHttpClient {
         }
     }
 
+    /// Refreshes the CLOB backend's cached balance and allowance data.
+    pub async fn update_balance_allowance(&self, params: GetBalanceAllowanceParams) -> Result<()> {
+        self.send_get_optional::<_, serde_json::Value>(
+            PATH_BALANCE_ALLOWANCE_UPDATE,
+            Some(&params),
+            true,
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Submits a single signed order to the exchange.
     pub async fn post_order(
         &self,
@@ -373,7 +529,7 @@ impl PolymarketClobHttpClient {
             post_only,
         };
         let body_bytes = serde_json::to_vec(&body).map_err(Error::Serde)?;
-        self.send_post(PATH_POST_ORDER, body_bytes).await
+        self.send_post(PATH_POST_ORDER, body_bytes, 1).await
     }
 
     /// Submits a batch of signed orders to the exchange.
@@ -394,25 +550,33 @@ impl PolymarketClobHttpClient {
             })
             .collect();
         let body_bytes = serde_json::to_vec(&entries).map_err(Error::Serde)?;
-        self.send_post(PATH_POST_ORDERS, body_bytes).await
+        let cost = batch_cost(PATH_POST_ORDERS, entries.len())?;
+        self.send_post(PATH_POST_ORDERS, body_bytes, cost).await
     }
 
     /// Cancels a single order by ID.
     pub async fn cancel_order(&self, order_id: &str) -> Result<CancelResponse> {
         let body = CancelOrderBody { order_id };
         let body_bytes = serde_json::to_vec(&body).map_err(Error::Serde)?;
-        self.send_delete("/order", Some(body_bytes)).await
+        self.send_delete(PATH_POST_ORDER, Some(body_bytes), 1).await
     }
 
     /// Cancels multiple orders by ID.
     pub async fn cancel_orders(&self, order_ids: &[&str]) -> Result<BatchCancelResponse> {
         let body_bytes = serde_json::to_vec(order_ids).map_err(Error::Serde)?;
-        self.send_delete("/orders", Some(body_bytes)).await
+        let cost = batch_cost(PATH_POST_ORDERS, order_ids.len())?;
+        self.send_delete(PATH_POST_ORDERS, Some(body_bytes), cost)
+            .await
+    }
+
+    pub(crate) async fn cancel_batch_limit(&self) -> usize {
+        cancel_batch_limit(self.rate_limiter.burst(TradingBucket::Cancel).await)
     }
 
     /// Cancels all open orders.
     pub async fn cancel_all(&self) -> Result<BatchCancelResponse> {
-        self.send_delete(PATH_CANCEL_ALL, None).await
+        self.send_delete_with_cancel_debit(PATH_CANCEL_ALL, None)
+            .await
     }
 
     /// Cancels all orders for a specific market.
@@ -421,7 +585,7 @@ impl PolymarketClobHttpClient {
         params: CancelMarketOrdersParams,
     ) -> Result<BatchCancelResponse> {
         let body_bytes = serde_json::to_vec(&params).map_err(Error::Serde)?;
-        self.send_delete(PATH_CANCEL_MARKET_ORDERS, Some(body_bytes))
+        self.send_delete_with_cancel_debit(PATH_CANCEL_MARKET_ORDERS, Some(body_bytes))
             .await
     }
 
@@ -461,6 +625,19 @@ impl PolymarketClobPublicClient {
     ///
     /// Returns an error if the HTTP client cannot be created.
     pub fn new(base_url: Option<String>, timeout_secs: u64) -> StdResult<Self, HttpClientError> {
+        Self::new_with_proxy(base_url, timeout_secs, None)
+    }
+
+    /// Creates a new public client with an optional validated proxy URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new_with_proxy(
+        base_url: Option<String>,
+        timeout_secs: u64,
+        proxy_url: Option<ProxyUrl>,
+    ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::new(
                 HashMap::from([
@@ -469,9 +646,9 @@ impl PolymarketClobPublicClient {
                 ]),
                 vec![],
                 vec![],
-                Some(*POLYMARKET_CLOB_REST_QUOTA),
-                Some(timeout_secs),
                 None,
+                Some(timeout_secs),
+                proxy_url.map(|url| url.expose().to_string()),
             )?,
             base_url: base_url
                 .unwrap_or_else(|| clob_http_url().to_string())
@@ -558,6 +735,27 @@ impl PolymarketClobPublicClient {
 
         Ok(book)
     }
+}
+
+fn batch_cost(endpoint: &'static str, len: usize) -> Result<u32> {
+    let cost = u32::try_from(len)
+        .map_err(|_| Error::bad_request(format!("{endpoint} batch length exceeds u32")))?;
+    if cost == 0 {
+        return Err(Error::bad_request(format!(
+            "{endpoint} batch must not be empty"
+        )));
+    }
+    Ok(cost)
+}
+
+fn cancel_batch_limit(burst: u32) -> usize {
+    usize::try_from(burst)
+        .unwrap_or(usize::MAX)
+        .min(CLOB_CANCEL_BATCH_LIMIT)
+}
+
+fn canceled_count(response: &BatchCancelResponse) -> u32 {
+    u32::try_from(response.canceled.len()).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -648,5 +846,39 @@ mod tests {
 
         assert!(book.best_bid_price().is_none());
         assert!(book.best_ask_price().is_none());
+    }
+
+    #[rstest]
+    fn test_batch_cost_uses_entry_count_and_rejects_empty_batch() {
+        assert_eq!(batch_cost(PATH_POST_ORDERS, 15).unwrap(), 15);
+        assert_eq!(
+            batch_cost(PATH_POST_ORDERS, 0).unwrap_err().to_string(),
+            "bad request: /orders batch must not be empty"
+        );
+    }
+
+    #[rstest]
+    fn test_canceled_count_uses_only_successful_cancellations() {
+        let response = BatchCancelResponse {
+            canceled: vec!["order-1".to_string(), "order-2".to_string()],
+            not_canceled: ahash::AHashMap::from_iter([(
+                "order-3".to_string(),
+                Some("already canceled".to_string()),
+            )]),
+        };
+
+        assert_eq!(canceled_count(&response), 2);
+    }
+
+    #[rstest]
+    #[case::standard(120, 120)]
+    #[case::silver(600, 600)]
+    #[case::gold(1_200, 1_000)]
+    #[case::elite(1_800, 1_000)]
+    fn test_cancel_batch_limit_uses_tier_burst_and_venue_ceiling(
+        #[case] burst: u32,
+        #[case] expected: usize,
+    ) {
+        assert_eq!(cancel_batch_limit(burst), expected);
     }
 }

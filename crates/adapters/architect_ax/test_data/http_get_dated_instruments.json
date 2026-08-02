@@ -1,0 +1,42 @@
+{
+  "instruments": [
+    {
+      "symbol": "XAU-2026-SEP",
+      "product": "XAU",
+      "expiration": "2026-09-30T15:00:00Z",
+      "multiplier": "1",
+      "price_scale": 10,
+      "minimum_order_size": "1",
+      "tick_size": "0.1",
+      "quote_currency": "USD",
+      "funding_settlement_currency": "USD",
+      "maintenance_margin_pct": "7.5",
+      "initial_margin_pct": "12.5",
+      "category": "metals",
+      "description": "Gold Metals Sep-2026 Future",
+      "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 ounce per contract",
+      "price_quotation": "U.S. dollars per ounce"
+    },
+    {
+      "symbol": "XAU-2026-DEC",
+      "product": "XAU",
+      "expiration": "2026-12-31T16:00:00Z",
+      "multiplier": "1",
+      "price_scale": 10,
+      "minimum_order_size": "1",
+      "tick_size": "0.1",
+      "quote_currency": "USD",
+      "funding_settlement_currency": "USD",
+      "maintenance_margin_pct": "7.5",
+      "initial_margin_pct": "12.5",
+      "category": "metals",
+      "description": "Gold Metals Dec-2026 Future",
+      "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 ounce per contract",
+      "price_quotation": "U.S. dollars per ounce"
+    }
+  ]
+}

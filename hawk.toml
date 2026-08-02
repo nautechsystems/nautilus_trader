@@ -1,0 +1,11 @@
+# Nautilus Rust crates expose supported external APIs. Review findings before applying fixes, and
+# add an override for intentional API use that Hawk cannot observe.
+
+[[production]]
+package = "nautilus-cli"
+bin = "nautilus"
+reason = "shipped Nautilus command-line interface"
+
+# Core doctests provide representative external API use without rebuilding every crate's docs
+[[doctest]]
+package = "nautilus-core"

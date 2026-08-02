@@ -134,6 +134,13 @@ pub struct HyperliquidExecFactoryConfig {
     pub config: HyperliquidExecClientConfig,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(HyperliquidExecFactoryConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    config: HyperliquidExecClientConfig,
+});
+
 impl ClientConfig for HyperliquidExecFactoryConfig {
     fn as_any(&self) -> &dyn Any {
         self

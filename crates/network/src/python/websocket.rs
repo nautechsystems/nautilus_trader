@@ -90,6 +90,7 @@ impl WebSocketConfig {
         reconnect_max_attempts=None,
         idle_timeout_ms=None,
         proxy_url=None,
+        backend=None,
     ))]
     fn py_new(
         url: String,
@@ -104,6 +105,7 @@ impl WebSocketConfig {
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
         proxy_url: Option<String>,
+        backend: Option<TransportBackend>,
     ) -> PyResult<Self> {
         let config = Self {
             url,
@@ -117,11 +119,89 @@ impl WebSocketConfig {
             reconnect_jitter_ms,
             reconnect_max_attempts,
             idle_timeout_ms,
-            backend: TransportBackend::default(),
+            backend: backend.unwrap_or_default(),
             proxy_url,
         };
         config.validate().map_err(to_pyvalue_err)?;
         Ok(config)
+    }
+
+    #[getter]
+    #[pyo3(name = "url")]
+    fn py_url(&self) -> &str {
+        &self.url
+    }
+
+    #[getter]
+    #[pyo3(name = "header_names")]
+    fn py_header_names(&self) -> Vec<String> {
+        self.headers.iter().map(|(name, _)| name.clone()).collect()
+    }
+
+    #[getter]
+    #[pyo3(name = "heartbeat")]
+    const fn py_heartbeat(&self) -> Option<u64> {
+        self.heartbeat
+    }
+
+    #[getter]
+    #[pyo3(name = "heartbeat_msg")]
+    fn py_heartbeat_msg(&self) -> Option<&str> {
+        self.heartbeat_msg.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "reconnect_timeout_ms")]
+    const fn py_reconnect_timeout_ms(&self) -> Option<u64> {
+        self.reconnect_timeout_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "reconnect_delay_initial_ms")]
+    const fn py_reconnect_delay_initial_ms(&self) -> Option<u64> {
+        self.reconnect_delay_initial_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "reconnect_delay_max_ms")]
+    const fn py_reconnect_delay_max_ms(&self) -> Option<u64> {
+        self.reconnect_delay_max_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "reconnect_backoff_factor")]
+    const fn py_reconnect_backoff_factor(&self) -> Option<f64> {
+        self.reconnect_backoff_factor
+    }
+
+    #[getter]
+    #[pyo3(name = "reconnect_jitter_ms")]
+    const fn py_reconnect_jitter_ms(&self) -> Option<u64> {
+        self.reconnect_jitter_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "reconnect_max_attempts")]
+    const fn py_reconnect_max_attempts(&self) -> Option<u32> {
+        self.reconnect_max_attempts
+    }
+
+    #[getter]
+    #[pyo3(name = "idle_timeout_ms")]
+    const fn py_idle_timeout_ms(&self) -> Option<u64> {
+        self.idle_timeout_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "backend")]
+    const fn py_backend(&self) -> TransportBackend {
+        self.backend
+    }
+
+    #[getter]
+    #[pyo3(name = "has_proxy_url")]
+    fn py_has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
     }
 }
 
@@ -139,6 +219,12 @@ impl WebSocketClient {
     /// bindings, or callback-based message handling.
     ///
     /// See `WebSocketConfig` documentation for comparison with stream mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The connection cannot be established.
+    /// - `message_handler` is `None` (use `connect_stream` instead).
     #[staticmethod]
     #[pyo3(name = "connect", signature = (loop_, config, handler, ping_handler = None, post_reconnection = None, keyed_quotas = Vec::new(), default_quota = None))]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -354,6 +440,10 @@ impl WebSocketClient {
     /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
     /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
     /// message. During reconnection, messages are buffered and replayed on the new connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
     #[pyo3(name = "send_text")]
     #[pyo3(signature = (data, keys=None))]
     #[expect(clippy::needless_pass_by_value)]
@@ -398,6 +488,10 @@ impl WebSocketClient {
     }
 
     /// Sends a pong frame back to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
     #[pyo3(name = "send_pong")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_send_pong<'py>(
@@ -466,6 +560,7 @@ mod py_new_tests {
         let result = WebSocketConfig::py_new(
             String::new(),
             vec![],
+            None,
             None,
             None,
             None,
@@ -666,6 +761,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -749,6 +845,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
             None,

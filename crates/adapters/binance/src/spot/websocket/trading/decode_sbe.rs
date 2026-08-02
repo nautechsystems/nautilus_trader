@@ -16,7 +16,7 @@
 //! SBE decoders for Binance Spot user data stream events.
 //!
 //! Decodes templates 601 (BalanceUpdateEvent), 603 (ExecutionReportEvent), and
-//! 607 (OutboundAccountPositionEvent) from schema 3:4 binary payloads into the
+//! 607 (OutboundAccountPositionEvent) from schema 3:5 binary payloads into the
 //! venue-level structs defined in [`super::user_data`].
 //! The existing JSON parse functions in [`super::parse`] then convert these to Nautilus types.
 
@@ -38,6 +38,19 @@ use crate::{
 
 const HEADER_LEN: usize = message_header_codec::ENCODED_LENGTH;
 
+// Historical block lengths are not exposed by the generated codec
+const EXECUTION_REPORT_BLOCK_LENGTH_V0: usize = 268;
+const EXECUTION_REPORT_BLOCK_LENGTH_V1: usize = 281;
+const EXECUTION_REPORT_BLOCK_LENGTH_V3: usize = 282;
+const EXECUTION_REPORT_VAR_DATA_FIELDS: [&str; 6] = [
+    "symbol",
+    "client_order_id",
+    "orig_client_order_id",
+    "commission_asset",
+    "reject_reason",
+    "counter_symbol",
+];
+
 /// Decodes an SBE ExecutionReportEvent (template 603) into a [`BinanceSpotExecutionReport`].
 ///
 /// The input buffer must include the 8-byte SBE message header.
@@ -45,7 +58,7 @@ const HEADER_LEN: usize = message_header_codec::ENCODED_LENGTH;
 /// # Errors
 ///
 /// Returns error if the buffer is too short, the template ID is wrong,
-/// or the schema ID does not match.
+/// the schema ID does not match, or variable-length data is malformed.
 pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecutionReport> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -74,12 +87,38 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         );
     }
 
-    let min_len = HEADER_LEN + block_length as usize;
+    let min_block_len = execution_report_min_block_length(version);
+    if usize::from(block_length) < min_block_len {
+        anyhow::bail!(
+            "SBE execution report block length too short: expected at least {min_block_len}, was {block_length}"
+        );
+    }
+
+    let min_len = HEADER_LEN + usize::from(block_length);
     if data.len() < min_len {
         anyhow::bail!(
             "Buffer too short for fixed block: expected {min_len}, was {}",
             data.len()
         );
+    }
+
+    let mut field_offset = min_len;
+    for field in EXECUTION_REPORT_VAR_DATA_FIELDS {
+        let Some(length) = data.get(field_offset) else {
+            anyhow::bail!(
+                "Buffer too short for {field} length: expected {}, was {}",
+                field_offset + 1,
+                data.len()
+            );
+        };
+        let expected_len = field_offset + 1 + usize::from(*length);
+        if data.len() < expected_len {
+            anyhow::bail!(
+                "Buffer too short for {field}: expected {expected_len}, was {}",
+                data.len()
+            );
+        }
+        field_offset = expected_len;
     }
 
     let mut dec = execution_report_event_codec::ExecutionReportEventDecoder::default().wrap(
@@ -185,6 +224,15 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         original_client_order_id: orig_client_order_id,
         expiry_reason,
     })
+}
+
+fn execution_report_min_block_length(version: u16) -> usize {
+    match version {
+        0 => EXECUTION_REPORT_BLOCK_LENGTH_V0,
+        1 | 2 => EXECUTION_REPORT_BLOCK_LENGTH_V1,
+        3..=5 => EXECUTION_REPORT_BLOCK_LENGTH_V3,
+        _ => usize::from(execution_report_event_codec::SBE_BLOCK_LENGTH),
+    }
 }
 
 /// Decodes an SBE OutboundAccountPositionEvent (template 607) into a
@@ -425,10 +473,10 @@ fn map_expiry_reason(reason: expiry_reason::ExpiryReason) -> Option<String> {
     }
 }
 
-/// Converts SBE microsecond timestamp to JSON millisecond timestamp.
+/// Converts an SBE microsecond timestamp to a JSON millisecond timestamp.
 #[inline]
 fn us_to_ms(us: i64) -> i64 {
-    us / 1000
+    if us < 0 { us } else { us / 1_000 }
 }
 
 /// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] without floating-point.
@@ -616,6 +664,38 @@ mod tests {
         enc.counter_symbol("");
 
         buf_vec
+    }
+
+    fn encode_bounds_execution_report() -> Vec<u8> {
+        encode_execution_report(
+            "SYMBOL1",
+            "CLIENT2",
+            12345678,
+            Some(87654321),
+            OrderSide::Buy,
+            SbeOrderType::Limit,
+            SbeTif::Gtc,
+            ExecutionType::Trade,
+            OrderStatus::Filled,
+            -2,
+            -5,
+            -8,
+            123456,
+            234567,
+            345678,
+            456789,
+            567891,
+            678912,
+            789123,
+            891234,
+            "ASSET3",
+            true,
+            false,
+            1709654400123456,
+            1709654400234567,
+            Some(1709654400345678),
+            expiry_reason::ExpiryReason::NullVal,
+        )
     }
 
     fn encode_account_position(
@@ -949,6 +1029,72 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_execution_report_rejects_truncated_variable_data() {
+        let data = encode_bounds_execution_report();
+        let lengths = ["SYMBOL1".len(), "CLIENT2".len(), 0, "ASSET3".len(), 0, 0];
+        let mut offset = HEADER_LEN + usize::from(execution_report_event_codec::SBE_BLOCK_LENGTH);
+
+        for (field, length) in EXECUTION_REPORT_VAR_DATA_FIELDS.into_iter().zip(lengths) {
+            let err = decode_execution_report(&data[..offset]).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "Buffer too short for {field} length: expected {}, was {offset}",
+                    offset + 1
+                )
+            );
+
+            if length > 0 {
+                let truncated_len = offset + length;
+                let expected_len = offset + 1 + length;
+                let err = decode_execution_report(&data[..truncated_len]).unwrap_err();
+                assert_eq!(
+                    err.to_string(),
+                    format!(
+                        "Buffer too short for {field}: expected {expected_len}, was {truncated_len}"
+                    )
+                );
+            }
+
+            offset += 1 + length;
+        }
+    }
+
+    #[rstest]
+    fn test_decode_execution_report_rejects_short_declared_block() {
+        let mut data = encode_bounds_execution_report();
+        let block_length = execution_report_event_codec::SBE_BLOCK_LENGTH - 1;
+        data[..2].copy_from_slice(&block_length.to_le_bytes());
+
+        let err = decode_execution_report(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SBE execution report block length too short: expected at least {EXECUTION_REPORT_BLOCK_LENGTH_V3}, was {block_length}"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_decode_execution_report_rejects_short_version_2_block() {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/mainnet/execution_report_event_1.sbe",
+        );
+        let block_length = EXECUTION_REPORT_BLOCK_LENGTH_V1 as u16 - 1;
+        data[..2].copy_from_slice(&block_length.to_le_bytes());
+
+        let err = decode_execution_report(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SBE execution report block length too short: expected at least {EXECUTION_REPORT_BLOCK_LENGTH_V1}, was {block_length}"
+            )
+        );
+    }
+
+    #[rstest]
     fn test_decode_execution_report_wrong_template() {
         let mut data = encode_execution_report(
             "TEST",
@@ -1123,8 +1269,13 @@ mod tests {
 
     #[rstest]
     fn test_us_to_ms() {
-        assert_eq!(us_to_ms(1709654400000000), 1709654400000);
-        assert_eq!(us_to_ms(1709654400123456), 1709654400123);
+        assert_eq!(us_to_ms(1_709_654_400_000_000), 1_709_654_400_000);
+        assert_eq!(us_to_ms(1_709_654_400_123_456), 1_709_654_400_123);
+    }
+
+    #[rstest]
+    fn test_us_to_ms_preserves_negative_submillisecond_value() {
+        assert_eq!(us_to_ms(-1), -1);
     }
 
     #[rstest]

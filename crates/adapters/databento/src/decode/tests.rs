@@ -16,6 +16,7 @@
 use std::{
     ffi::c_char,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use databento::dbn::{
@@ -60,6 +61,14 @@ fn cstr<const N: usize>(value: &str) -> [c_char; N] {
         result[index] = byte as c_char;
     }
     result
+}
+
+fn quantity(value: u64) -> Quantity {
+    Quantity::from_mantissa_exponent(value, 0, 0)
+}
+
+fn quantity_from_str(value: &str) -> Quantity {
+    Quantity::from_str(value).expect("valid quantity literal")
 }
 
 #[rstest]
@@ -217,7 +226,7 @@ mod cmbp_trade_id_property_tests {
 #[rstest]
 #[case('A' as c_char, Ok(BookAction::Add))]
 #[case('C' as c_char, Ok(BookAction::Delete))]
-#[case('F' as c_char, Ok(BookAction::Update))]
+#[case('F' as c_char, Err("Invalid `BookAction`, was 'F'"))]
 #[case('M' as c_char, Ok(BookAction::Update))]
 #[case('R' as c_char, Ok(BookAction::Clear))]
 #[case('X' as c_char, Err("Invalid `BookAction`, was 'X'"))]
@@ -302,8 +311,10 @@ fn test_precision_from_raw(#[case] value: i64, #[case] expected: u8) {
 }
 
 #[rstest]
-#[case(0, 2, Price::new(0.01, 2))] // Default for 0
-#[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
+#[case(0, 0, Price::from_mantissa_exponent(1, 0, 0))] // Default for 0 at whole precision
+#[case(0, 2, Price::from_mantissa_exponent(1, -2, 2))] // Default for 0
+#[case(i64::MAX, 2, Price::from_mantissa_exponent(1, -2, 2))] // Default for i64::MAX
+#[case(i64::MAX, 6, Price::from_mantissa_exponent(1, -6, 6))] // Default preserves precision
 #[case(
     10_000_000_000,
     2,
@@ -317,6 +328,7 @@ fn test_precision_from_raw(#[case] value: i64, #[case] expected: u8) {
 fn test_decode_price_increment(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
     let actual = decode_price_increment(value, precision);
     assert_eq!(actual, expected);
+    assert_eq!(actual.precision, expected.precision);
 }
 
 #[rstest]
@@ -351,11 +363,14 @@ fn test_decode_price_or_undef(#[case] value: i64, #[case] precision: u8, #[case]
 
 #[rstest]
 #[case(i64::MAX, None)] // None for i64::MAX
-#[case(0, Some(Quantity::from(0_u64)))] // 0 is valid quantity
-#[case(10, Some(Quantity::from(10_u64)))] // Arbitrary valid quantity
+#[case(0, Some(quantity(0)))] // 0 is valid quantity
+#[case(10, Some(quantity(10)))] // Arbitrary valid quantity
 fn test_decode_optional_quantity(#[case] value: i64, #[case] expected: Option<Quantity>) {
     let actual = decode_optional_quantity(value).unwrap();
     assert_eq!(actual, expected);
+    if let (Some(actual), Some(expected)) = (actual, expected) {
+        assert_eq!(actual.precision, expected.precision);
+    }
 }
 
 #[rstest]
@@ -391,17 +406,19 @@ fn test_decode_optional_timestamp(#[case] value: u64, #[case] expected: Option<U
 }
 
 #[rstest]
-#[case(0, Quantity::from(1))] // Default fallback for 0
-#[case(i64::MAX, Quantity::from(1))] // Default fallback for i64::MAX
-#[case(50_000_000_000, Quantity::from("50"))] // 50.0 exactly
-#[case(12_500_000_000, Quantity::from("12.5"))] // 12.5 exactly
-#[case(1_000_000_000, Quantity::from("1"))] // 1.0 exactly
-#[case(1, Quantity::from("0.000000001"))] // Smallest positive value
-#[case(1_000_000_001, Quantity::from("1.000000001"))] // Just over 1.0
-#[case(999_999_999, Quantity::from("0.999999999"))] // Just under 1.0
-#[case(123_456_789_000, Quantity::from("123.456789"))] // Trailing zeros trimmed
+#[case(0, quantity(1))] // Default fallback for 0
+#[case(i64::MAX, quantity(1))] // Default fallback for i64::MAX
+#[case(50_000_000_000, quantity_from_str("50"))] // 50.0 exactly
+#[case(12_500_000_000, quantity_from_str("12.5"))] // 12.5 exactly
+#[case(1_000_000_000, quantity_from_str("1"))] // 1.0 exactly
+#[case(1, quantity_from_str("0.000000001"))] // Smallest positive value
+#[case(1_000_000_001, quantity_from_str("1.000000001"))] // Just over 1.0
+#[case(999_999_999, quantity_from_str("0.999999999"))] // Just under 1.0
+#[case(123_456_789_000, quantity_from_str("123.456789"))] // Trailing zeros trimmed
 fn test_decode_multiplier_precise(#[case] raw: i64, #[case] expected: Quantity) {
-    assert_eq!(decode_multiplier(raw).unwrap(), expected);
+    let actual = decode_multiplier(raw).unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(actual.precision, expected.precision);
 }
 
 #[rstest]
@@ -420,21 +437,31 @@ fn test_decode_multiplier_negative_error(#[case] raw: i64) {
 }
 
 #[rstest]
-#[case(100, Quantity::from(100))]
-#[case(1000, Quantity::from(1000))]
-#[case(5, Quantity::from(5))]
+#[case(100, quantity(100))]
+#[case(1000, quantity(1000))]
+#[case(5, quantity(5))]
 fn test_decode_quantity(#[case] value: u64, #[case] expected: Quantity) {
-    assert_eq!(decode_quantity(value), expected);
+    let actual = decode_quantity(value);
+    assert_eq!(actual, expected);
+    assert_eq!(actual.precision, expected.precision);
 }
 
 #[rstest]
-#[case(0, Quantity::from(1))] // Default for 0
-#[case(i32::MAX, Quantity::from(1))] // Default for MAX
-#[case(100, Quantity::from(100))]
-#[case(1, Quantity::from(1))]
-#[case(1000, Quantity::from(1000))]
+#[case(0, quantity(1))] // Default for 0
+#[case(i32::MAX, quantity(1))] // Default for MAX
+#[case(100, quantity(100))]
+#[case(1, quantity(1))]
+#[case(1000, quantity(1000))]
 fn test_decode_lot_size(#[case] value: i32, #[case] expected: Quantity) {
-    assert_eq!(decode_lot_size(value), expected);
+    let actual = decode_lot_size(value);
+    assert_eq!(actual, expected);
+    assert_eq!(actual.precision, expected.precision);
+}
+
+#[rstest]
+#[should_panic(expected = "Invalid negative lot size: -1")]
+fn test_decode_lot_size_rejects_negative_value() {
+    let _ = decode_lot_size(-1);
 }
 
 #[rstest]
@@ -492,7 +519,7 @@ fn test_decode_mbo_msg() {
     assert_eq!(delta.action, BookAction::Delete);
     assert_eq!(delta.order.side, OrderSide::Sell);
     assert_eq!(delta.order.price, Price::from("3722.75"));
-    assert_eq!(delta.order.size, Quantity::from("1"));
+    assert_eq!(delta.order.size, quantity_from_str("1"));
     assert_eq!(delta.order.order_id, 647_784_973_705);
     assert_eq!(delta.flags, 128);
     assert_eq!(delta.sequence, 1_170_352);
@@ -529,7 +556,7 @@ fn test_decode_mbo_msg_clear_action() {
     assert_eq!(delta.instrument_id, instrument_id);
     assert_eq!(delta.action, BookAction::Clear);
     assert_eq!(delta.order.side, OrderSide::NoOrderSide);
-    assert_eq!(delta.order.size, Quantity::from("0"));
+    assert_eq!(delta.order.size, quantity_from_str("0"));
     assert_eq!(delta.order.order_id, 0);
     assert_eq!(delta.sequence, 1_000_000);
     assert_eq!(delta.ts_event, ts_recv);
@@ -563,6 +590,90 @@ fn test_decode_mbo_msg_price_undef_with_precision() {
     assert!(delta.order.price.is_undefined());
     assert_eq!(delta.order.price.precision, 0);
     assert_eq!(delta.order.price.raw, PRICE_UNDEF);
+}
+
+fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
+    let ts_recv = 1_609_160_400_000_000_000;
+    dbn::MboMsg {
+        hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
+        order_id: 6_879_427_951_347, // never Added (iceberg hidden part)
+        price: 4_800_250_000_000,
+        size: 2, // filled amount, NOT remaining size
+        flags,
+        channel_id: 1,
+        action,
+        side: 'A' as c_char,
+        ts_recv,
+        ts_in_delta: 0,
+        sequence: 1_000_000,
+    }
+}
+
+#[rstest]
+#[case('F' as c_char, true)] // Fill: attribution only - book impact arrives as explicit C/M
+#[case('F' as c_char, false)]
+#[case('N' as c_char, true)] // None: status record, no book impact
+#[case('N' as c_char, false)]
+fn test_decode_mbo_msg_fill_and_none_produce_nothing(
+    #[case] action: c_char,
+    #[case] include_trades: bool,
+) {
+    // An iceberg hidden-part fill is the lethal case: its 'F' carries an
+    // order ID that was never Added, so decoding it as a delta materializes
+    // a phantom order which nothing ever deletes (crossed book on GLBX).
+    // With include_trades=true it must not become a TradeTick either - the
+    // trade is already conveyed by the 'T' record of the same event.
+    let msg = mbo_msg_with_action(action, dbn::FlagSet::empty());
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) =
+        decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), include_trades).unwrap();
+
+    assert!(delta.is_none());
+    assert!(trade.is_none());
+}
+
+#[rstest]
+#[case('F' as c_char)]
+#[case('N' as c_char)]
+fn test_decode_mbo_msg_fill_and_none_with_last_flag_still_produce_nothing(#[case] action: c_char) {
+    // A pure-fill match event (e.g. [T, F]) carries F_LAST on its final
+    // record; flags do not promote 'F'/'N' into book actions.
+    let msg = mbo_msg_with_action(action, dbn::FlagSet::empty().set_last());
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), true).unwrap();
+
+    assert!(delta.is_none());
+    assert!(trade.is_none());
+}
+
+#[rstest]
+fn test_decode_mbo_msg_trade_event_sequence_book_records_only() {
+    // A full match event as GLBX publishes it - [A, T, F, C] - must yield
+    // exactly the Add and Delete deltas plus one TradeTick: the F is
+    // attribution and produces nothing.
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let seq = [
+        ('A' as c_char, 'A' as c_char),
+        ('T' as c_char, 'B' as c_char), // aggressor buy
+        ('F' as c_char, 'A' as c_char), // fill attribution on the resting ask
+        ('C' as c_char, 'A' as c_char), // explicit removal of the eaten order
+    ];
+    let mut deltas = Vec::new();
+    let mut trades = Vec::new();
+
+    for (action, side) in seq {
+        let mut msg = mbo_msg_with_action(action, dbn::FlagSet::empty());
+        msg.side = side;
+        let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), true).unwrap();
+        deltas.extend(delta);
+        trades.extend(trade);
+    }
+    assert_eq!(deltas.len(), 2);
+    assert_eq!(deltas[0].action, BookAction::Add);
+    assert_eq!(deltas[1].action, BookAction::Delete);
+    assert_eq!(trades.len(), 1);
 }
 
 #[rstest]
@@ -611,8 +722,8 @@ fn test_decode_mbp1_msg() {
     assert_eq!(quote.instrument_id, instrument_id);
     assert_eq!(quote.bid_price, Price::from("3720.25"));
     assert_eq!(quote.ask_price, Price::from("3720.50"));
-    assert_eq!(quote.bid_size, Quantity::from("24"));
-    assert_eq!(quote.ask_size, Quantity::from("11"));
+    assert_eq!(quote.bid_size, quantity_from_str("24"));
+    assert_eq!(quote.ask_size, quantity_from_str("11"));
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_event, 1_609_160_400_006_136_329);
     assert_eq!(quote.ts_init, 0);
@@ -715,7 +826,7 @@ fn test_decode_mbp1_msg_trade_still_returned_with_undefined_prices() {
     let trade = maybe_trade.expect("Expected trade");
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
-    assert_eq!(trade.size, Quantity::from("5"));
+    assert_eq!(trade.size, quantity_from_str("5"));
 }
 
 #[rstest]
@@ -733,8 +844,8 @@ fn test_decode_bbo_1s_msg() {
     assert_eq!(quote.instrument_id, instrument_id);
     assert_eq!(quote.bid_price, Price::from("3702.25"));
     assert_eq!(quote.ask_price, Price::from("3702.75"));
-    assert_eq!(quote.bid_size, Quantity::from("18"));
-    assert_eq!(quote.ask_size, Quantity::from("13"));
+    assert_eq!(quote.bid_size, quantity_from_str("18"));
+    assert_eq!(quote.ask_size, quantity_from_str("13"));
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_event, 1609113600000000000);
     assert_eq!(quote.ts_init, 0);
@@ -755,8 +866,8 @@ fn test_decode_bbo_1m_msg() {
     assert_eq!(quote.instrument_id, instrument_id);
     assert_eq!(quote.bid_price, Price::from("3702.25"));
     assert_eq!(quote.ask_price, Price::from("3702.75"));
-    assert_eq!(quote.bid_size, Quantity::from("18"));
-    assert_eq!(quote.ask_size, Quantity::from("13"));
+    assert_eq!(quote.bid_size, quantity_from_str("18"));
+    assert_eq!(quote.ask_size, quantity_from_str("13"));
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_event, 1609113600000000000);
     assert_eq!(quote.ts_init, 0);
@@ -798,7 +909,7 @@ fn test_decode_trade_msg() {
 
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
-    assert_eq!(trade.size, Quantity::from("5"));
+    assert_eq!(trade.size, quantity_from_str("5"));
     assert_eq!(trade.aggressor_side, AggressorSide::Seller);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
@@ -821,15 +932,15 @@ fn test_decode_tbbo_msg() {
     assert_eq!(quote.instrument_id, instrument_id);
     assert_eq!(quote.bid_price, Price::from("3720.25"));
     assert_eq!(quote.ask_price, Price::from("3720.50"));
-    assert_eq!(quote.bid_size, Quantity::from("26"));
-    assert_eq!(quote.ask_size, Quantity::from("7"));
+    assert_eq!(quote.bid_size, quantity_from_str("26"));
+    assert_eq!(quote.ask_size, quantity_from_str("7"));
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_event, 1_609_160_400_099_150_057);
     assert_eq!(quote.ts_init, 0);
 
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
-    assert_eq!(trade.size, Quantity::from("5"));
+    assert_eq!(trade.size, quantity_from_str("5"));
     assert_eq!(trade.aggressor_side, AggressorSide::Seller);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
@@ -856,7 +967,7 @@ fn test_decode_ohlcv_msg() {
     assert_eq!(bar.high, Price::from("372050.00"));
     assert_eq!(bar.low, Price::from("372025.00"));
     assert_eq!(bar.close, Price::from("372050.00"));
-    assert_eq!(bar.volume, Quantity::from("57"));
+    assert_eq!(bar.volume, quantity_from_str("57"));
     assert_eq!(bar.ts_event, msg.hd.ts_event + BAR_CLOSE_ADJUSTMENT_1S); // timestamp_on_close=true
     assert_eq!(bar.ts_init, 0); // ts_init was Some(0)
 }
@@ -882,7 +993,7 @@ fn test_decode_definition_msg_equity() {
     assert_eq!(equity.currency, Currency::from("USD"));
     assert_eq!(equity.price_precision, 2);
     assert_eq!(equity.price_increment, Price::from("0.01"));
-    assert_eq!(equity.lot_size, Some(Quantity::from(100)));
+    assert_eq!(equity.lot_size, Some(quantity(100)));
     assert_eq!(equity.ts_init, 0);
 }
 
@@ -909,7 +1020,7 @@ fn test_decode_definition_msg_futures_contract() {
     assert_eq!(future.currency, Currency::from("USD"));
     assert_eq!(future.price_precision, 2);
     assert_eq!(future.price_increment, Price::from("0.25"));
-    assert_eq!(future.multiplier, Quantity::from(50));
+    assert_eq!(future.multiplier, quantity(50));
     assert_eq!(future.ts_init, 0);
 }
 
@@ -937,7 +1048,7 @@ fn test_decode_definition_msg_futures_spread() {
     assert_eq!(spread.currency, Currency::from("USD"));
     assert_eq!(spread.price_precision, 2);
     assert_eq!(spread.price_increment, Price::from("0.05"));
-    assert_eq!(spread.multiplier, Quantity::from(1));
+    assert_eq!(spread.multiplier, quantity(1));
     assert_eq!(spread.ts_init, 0);
 }
 
@@ -964,7 +1075,7 @@ fn test_decode_definition_msg_option_contract() {
     assert_eq!(call.strike_price, Price::from("9600.00"));
     assert_eq!(call.underlying.as_str(), "ESU6");
     assert_eq!(call.currency, Currency::from("USD"));
-    assert_eq!(call.multiplier, Quantity::from(50));
+    assert_eq!(call.multiplier, quantity(50));
     // GLBX expirations carry an accurate intraday time (2026-09-18 13:30 UTC) and must not be
     // touched by the OPRA expiry correction.
     assert_eq!(
@@ -1009,7 +1120,7 @@ fn test_decode_definition_msg_option_spread() {
     assert_eq!(spread.asset_class, AssetClass::Commodity);
     assert_eq!(spread.strategy_type.as_str(), "SG");
     assert_eq!(spread.currency, Currency::from("USD"));
-    assert_eq!(spread.multiplier, Quantity::from(1));
+    assert_eq!(spread.multiplier, quantity(1));
     assert_eq!(spread.ts_init, 0);
 
     // Second record: mixed multi-leg spread ('M')
@@ -1024,6 +1135,94 @@ fn test_decode_definition_msg_option_spread() {
     assert_eq!(mixed.id, mixed_id);
     assert_eq!(mixed.raw_symbol.as_str(), "UD:T$:CFO 2632896");
     assert_eq!(mixed.strategy_type.as_str(), "CV:FO");
+}
+
+#[rstest]
+fn test_decode_opra_option_contract_uses_contract_multiplier() {
+    let msg = option_definition_msg(22, "XCBO", 100, 1_000_000_000);
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(option.multiplier, quantity(100));
+    assert_eq!(option.multiplier.precision, 0);
+}
+
+#[rstest]
+fn test_decode_non_opra_option_contract_uses_unit_of_measure_qty() {
+    let msg = option_definition_msg(1, "XCME", 1, 50_000_000_000);
+
+    let instrument_id = InstrumentId::from("ESU6 C9600.GLBX");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(option.multiplier, quantity(50));
+    assert_eq!(option.multiplier.precision, 0);
+}
+
+#[rstest]
+#[case(0)]
+#[case(i32::MAX)]
+fn test_decode_opra_option_contract_falls_back_when_contract_multiplier_missing(
+    #[case] contract_multiplier: i32,
+) {
+    let msg = option_definition_msg(22, "XCBO", contract_multiplier, 50_000_000_000);
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(option.multiplier, quantity(50));
+    assert_eq!(option.multiplier.precision, 0);
+}
+
+#[rstest]
+fn test_decode_opra_option_contract_rejects_negative_contract_multiplier() {
+    let msg = option_definition_msg(22, "XCBO", -1, 1_000_000_000);
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let error = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect_err("negative contract_multiplier should fail")
+        .to_string();
+    assert!(error.contains("Invalid negative `contract_multiplier`"));
+}
+
+fn option_definition_msg(
+    publisher_id: u16,
+    exchange: &str,
+    contract_multiplier: i32,
+    unit_of_measure_qty: i64,
+) -> dbn::InstrumentDefMsg {
+    dbn::InstrumentDefMsg {
+        hd: dbn::RecordHeader::new::<dbn::InstrumentDefMsg>(
+            dbn::enums::rtype::INSTRUMENT_DEF,
+            publisher_id,
+            1,
+            1_000_000_000,
+        ),
+        ts_recv: 1_000_000_000,
+        instrument_class: 'C' as c_char,
+        exchange: cstr::<5>(exchange),
+        cfi: cstr::<7>("OCXXXX"),
+        currency: cstr::<4>("USD"),
+        strike_price: 5_000_000_000_000,
+        min_price_increment: 10_000_000,
+        unit_of_measure_qty,
+        contract_multiplier,
+        min_lot_size_round_lot: 1,
+        expiration: 1_782_691_200_000_000_000,
+        ..Default::default()
+    }
 }
 
 #[rstest]
@@ -1101,8 +1300,10 @@ fn test_decode_imbalance_msg() {
     assert_eq!(imbalance.ref_price, Price::from("229.43"));
     assert_eq!(imbalance.cont_book_clr_price, Price::from("0.00"));
     assert_eq!(imbalance.auct_interest_clr_price, Price::from("0.00"));
-    assert_eq!(imbalance.paired_qty, Quantity::from("0"));
-    assert_eq!(imbalance.total_imbalance_qty, Quantity::from("2000"));
+    assert_eq!(imbalance.paired_qty, quantity_from_str("0"));
+    assert_eq!(imbalance.total_imbalance_qty, quantity_from_str("2000"));
+    assert_eq!(imbalance.paired_qty.precision, 0);
+    assert_eq!(imbalance.total_imbalance_qty.precision, 0);
     assert_eq!(imbalance.side, OrderSide::Buy);
     assert_eq!(imbalance.significant_imbalance, 126);
     assert_eq!(imbalance.ts_event, msg.hd.ts_event);
@@ -1435,7 +1636,7 @@ fn test_decode_tcbbo_msg() {
 
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3702.50"));
-    assert_eq!(trade.size, Quantity::from(10));
+    assert_eq!(trade.size, quantity(10));
     assert_eq!(trade.ts_event, tcbbo_msg.ts_recv);
     assert_eq!(trade.ts_init, 0);
 }
@@ -1466,7 +1667,7 @@ fn test_decode_record_routes_tcbbo_rtype_to_trade_decode() {
     };
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3702.50"));
-    assert_eq!(trade.size, Quantity::from(10));
+    assert_eq!(trade.size, quantity(10));
 }
 
 #[rstest]

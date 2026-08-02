@@ -166,19 +166,21 @@ impl Default for AtomicTime {
 impl AtomicTime {
     /// Creates a new [`AtomicTime`] instance.
     ///
-    /// - If `realtime` is `true`, the provided `time` is used only as an initial placeholder
-    ///   and will quickly be overridden by calls to [`AtomicTime::time_since_epoch`].
+    /// - If `realtime` is `true`, the provided `time` is ignored and the first read starts from
+    ///   the current system time.
     /// - If `realtime` is `false`, this clock starts in **static mode**, with the given `time`
     ///   as its current value.
     #[must_use]
     pub fn new(realtime: bool, time: UnixNanos) -> Self {
+        let timestamp_ns = if realtime { 0 } else { time.into() };
+
         Self {
             realtime: AtomicBool::new(realtime),
-            timestamp_ns: AtomicU64::new(time.into()),
+            timestamp_ns: AtomicU64::new(timestamp_ns),
         }
     }
 
-    /// Returns the current time in nanoseconds, based on the clock’s mode.
+    /// Returns the current time in nanoseconds, based on the clock's mode.
     ///
     /// - In **real-time mode**, calls [`AtomicTime::time_since_epoch`], ensuring strictly increasing
     ///   timestamps across threads, using `AcqRel` semantics for the underlying atomic.
@@ -299,7 +301,7 @@ impl AtomicTime {
         Ok(UnixNanos::from(previous + delta))
     }
 
-    /// Retrieves and updates the current “real-time” clock, returning a strictly increasing
+    /// Retrieves and updates the current "real-time" clock, returning a strictly increasing
     /// timestamp based on system time.
     ///
     /// Internally:
@@ -329,7 +331,7 @@ impl AtomicTime {
             // Acquire to observe the latest stored value
             let last = self.timestamp_ns.load(Ordering::Acquire);
 
-            // Ensure we never wrap past u64::MAX – treat that as a fatal error
+            // Ensure we never wrap past u64::MAX - treat that as a fatal error
             let incremented = last
                 .checked_add(1)
                 .expect("AtomicTime overflow: reached u64::MAX");
@@ -475,6 +477,17 @@ mod tests {
 
         // This call will attempt to add 1 and must panic
         let _ = clock.time_since_epoch();
+    }
+
+    #[rstest]
+    fn test_new_realtime_ignores_initial_time() {
+        let before = nanos_since_unix_epoch();
+        let clock = AtomicTime::new(true, UnixNanos::from(u64::MAX));
+        let timestamp = clock.get_time_ns().as_u64();
+        let after = nanos_since_unix_epoch();
+
+        assert!(timestamp >= before);
+        assert!(timestamp <= after);
     }
 
     #[rstest]

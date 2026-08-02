@@ -44,6 +44,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 #[derive(Clone)]
 pub(crate) struct LiveExecutionClient {
@@ -91,6 +92,23 @@ impl LiveExecutionClient {
         self.venue
     }
 
+    pub(crate) fn position_reconciliation_tolerance(&self) -> Decimal {
+        self.client.borrow().position_reconciliation_tolerance()
+    }
+
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "live report polling runs on the single-threaded node runtime"
+    )]
+    pub(crate) async fn generate_order_status_report(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let result = { self.client.borrow().generate_order_status_report(cmd).await };
+        self.flush_pending_instruments();
+        result
+    }
+
     #[expect(
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"
@@ -127,7 +145,7 @@ impl LiveExecutionClient {
         result
     }
 
-    fn flush_pending_instruments(&self) {
+    pub(crate) fn flush_pending_instruments(&self) {
         let mut pending = self.pending_instruments.borrow_mut();
         if pending.is_empty() {
             return;
@@ -166,6 +184,10 @@ impl ExecutionClient for LiveExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.client.borrow().get_account()
+    }
+
+    fn position_reconciliation_tolerance(&self) -> Decimal {
+        self.client.borrow().position_reconciliation_tolerance()
     }
 
     fn handles_order_venue(&self, venue: Venue) -> bool {
@@ -252,15 +274,11 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().query_order(cmd)
     }
 
-    #[expect(
-        clippy::await_holding_refcell_ref,
-        reason = "report generation uses a shared client handle while the live loop keeps running"
-    )]
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        self.client.borrow().generate_order_status_report(cmd).await
+        Self::generate_order_status_report(self, cmd).await
     }
 
     async fn generate_order_status_reports(

@@ -2,10 +2,14 @@
 
 import typing
 
+from nautilus_trader import core
+from nautilus_trader import model
+
 __all__ = [
     "PostgresCacheConfig",
     "PostgresConnectOptions",
     "RedisCacheConfig",
+    "RedisMessageBusBacking",
     "RedisMessageBusConfig",
 ]
 
@@ -25,6 +29,16 @@ class PostgresConnectOptions:
     def password(self) -> str: ...
     @property
     def database(self) -> str: ...
+
+@typing.final
+class RedisMessageBusBacking:
+    def __init__(
+        self, trader_id: model.TraderId, instance_id: core.UUID4, config_json: bytes
+    ) -> None: ...
+    def is_closed(self) -> bool: ...
+    def publish(self, topic: str, payload: bytes) -> None: ...
+    def stream(self, callback: typing.Any) -> typing.Any: ...
+    def close(self) -> None: ...
 
 @typing.final
 class RedisCacheConfig: ...

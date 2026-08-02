@@ -130,19 +130,19 @@ Parameters (defaults shown are the struct defaults; the example
 overrides `enter_strangle` to `false` and `iv_param_key` to
 `"order_iv"`):
 
-| Parameter                 | Default    | Example          | Description                                  |
-|---------------------------|------------|------------------|----------------------------------------------|
-| `option_family`           | required   | `"BTC"`          | Underlying filter for instrument discovery.  |
-| `hedge_instrument_id`     | required   | `BTCUSDT-LINEAR` | Perpetual used for delta hedging.            |
-| `client_id`               | required   | `"BYBIT"`        | Data and execution client identifier.        |
-| `target_call_delta`       | `0.20`     | -                | Target call delta for strike selection.      |
-| `target_put_delta`        | `-0.20`    | -                | Target put delta for strike selection.       |
-| `contracts`               | `1`        | -                | Contracts per leg.                           |
-| `rehedge_delta_threshold` | `0.5`      | -                | Portfolio delta that triggers a hedge.       |
-| `rehedge_interval_secs`   | `30`       | -                | Periodic rehedge timer interval.             |
-| `enter_strangle`          | `true`     | `false`          | Place entry orders when Greeks arrive.       |
-| `entry_iv_offset`         | `0.0`      | -                | Vol points below mark IV for entry pricing.  |
-| `iv_param_key`            | `"px_vol"` | `"order_iv"`     | Adapter‑specific IV parameter key.           |
+| Parameter                 | Default    | Example          | Description                                 |
+| ------------------------- | ---------- | ---------------- | ------------------------------------------- |
+| `option_family`           | required   | `"BTC"`          | Underlying filter for instrument discovery. |
+| `hedge_instrument_id`     | required   | `BTCUSDT-LINEAR` | Perpetual used for delta hedging.           |
+| `client_id`               | required   | `"BYBIT"`        | Data and execution client identifier.       |
+| `target_call_delta`       | `0.20`     | -                | Target call delta for strike selection.     |
+| `target_put_delta`        | `-0.20`    | -                | Target put delta for strike selection.      |
+| `contracts`               | `1`        | -                | Contracts per leg.                          |
+| `rehedge_delta_threshold` | `0.5`      | -                | Portfolio delta that triggers a hedge.      |
+| `rehedge_interval_secs`   | `30`       | -                | Periodic rehedge timer interval.            |
+| `enter_strangle`          | `true`     | `false`          | Place entry orders when Greeks arrive.      |
+| `entry_iv_offset`         | `0.0`      | -                | Vol points below mark IV for entry pricing. |
+| `iv_param_key`            | `"px_vol"` | `"order_iv"`     | Adapter‑specific IV parameter key.          |
 
 The `iv_param_key` is the key difference between venues. Bybit uses
 `order_iv`, which the adapter maps to the `orderIv` field in the

@@ -731,6 +731,21 @@ impl From<HyperliquidOrderStatus> for OrderStatus {
     }
 }
 
+impl HyperliquidOrderStatus {
+    /// Returns the venue rejection text represented by a structured status.
+    #[must_use]
+    pub const fn rejection_reason(self) -> Option<&'static str> {
+        match self {
+            Self::BadAloPxRejected => Some(HYPERLIQUID_POST_ONLY_WOULD_MATCH),
+            Self::ReduceOnlyRejected => Some("Reduce only order would increase position."),
+            Self::IocCancelRejected => {
+                Some("Order could not immediately match against any resting orders")
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Represents the direction of a fill (open/close position).
 ///
 /// For perpetuals:

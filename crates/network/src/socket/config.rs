@@ -23,6 +23,9 @@
 //! - Exponential backoff already prevents resource waste.
 //! - Automatic recovery can be useful when manual intervention is not desirable.
 //!
+//! A reconnect active for at least 10 seconds resets its attempt count and backoff delay.
+//! Shorter-lived connections continue the current reconnect cycle.
+//!
 //! Use `Some(n)` primarily for testing, development, or non-critical connections.
 
 use std::fmt::Debug;
@@ -68,7 +71,8 @@ pub struct SocketConfig {
     pub connection_max_retries: Option<u32>,
     /// The maximum number of reconnection attempts before giving up.
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
-    /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
+    /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
+    ///   failed or established connections active for less than 10 seconds.
     pub reconnect_max_attempts: Option<u32>,
     /// The idle timeout (milliseconds) for the read task.
     /// When set, the read task will break and trigger reconnection if no data
@@ -99,8 +103,8 @@ impl SocketConfig {
     /// # Errors
     ///
     /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval or a
-    /// reconnection timing field is not positive, `reconnect_backoff_factor` is not finite and
-    /// at least `1.0`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
+    /// reconnection timing field is not positive, `reconnect_backoff_factor` is outside
+    /// `[1.0, 100.0]`, or `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
 
@@ -139,11 +143,11 @@ impl SocketConfig {
         }
 
         if let Some(factor) = self.reconnect_backoff_factor
-            && !(factor.is_finite() && factor >= 1.0)
+            && !(1.0..=100.0).contains(&factor)
         {
             errors.push(NetworkConfigError::invalid(
                 "reconnect_backoff_factor",
-                format!("must be finite and >= 1.0, was {factor}"),
+                format!("must be in range [1.0, 100.0], was {factor}"),
             ));
         }
 
@@ -270,6 +274,7 @@ mod tests {
 
     #[rstest]
     #[case::too_small(0.5)]
+    #[case::too_large(100.1)]
     #[case::nan(f64::NAN)]
     #[case::infinite(f64::INFINITY)]
     fn test_validate_rejects_invalid_backoff_factor(#[case] factor: f64) {

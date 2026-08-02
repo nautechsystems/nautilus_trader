@@ -5,37 +5,22 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "OKX",
-    "OKXBalanceDetail",
-    "OKXContractType",
+    "OKX_CLIENT_ID",
+    "OKX_VENUE",
     "OKXDataClientConfig",
     "OKXDataClientFactory",
-    "OKXEndpointType",
     "OKXEnvironment",
     "OKXExecClientConfig",
     "OKXExecutionClientFactory",
-    "OKXGreeksType",
-    "OKXHttpClient",
-    "OKXInstrumentType",
-    "OKXMarginMode",
-    "OKXOrderStatus",
-    "OKXPositionMode",
-    "OKXRegion",
-    "OKXTradeMode",
-    "OKXVipLevel",
-    "OKXWebSocketClient",
-    "OKXWebSocketError",
-    "derive_okx_ws_url",
-    "get_okx_http_base_url",
-    "get_okx_ws_url_business",
-    "get_okx_ws_url_private",
-    "get_okx_ws_url_public",
-    "okx_requires_authentication",
 ]
 
 OKX: str
+OKX_CLIENT_ID: model.ClientId
+OKX_VENUE: model.Venue
 
 @typing.final
 class OKXBalanceDetail:
@@ -48,6 +33,40 @@ class OKXBalanceDetail:
 
 @typing.final
 class OKXDataClientConfig:
+    @property
+    def instrument_types(self) -> list[OKXInstrumentType]: ...
+    @property
+    def environment(self) -> OKXEnvironment: ...
+    @property
+    def region(self) -> OKXRegion: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws_public(self) -> str | None: ...
+    @property
+    def base_url_ws_business(self) -> str | None: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def max_retries(self) -> int: ...
+    @property
+    def retry_delay_initial_ms(self) -> int: ...
+    @property
+    def retry_delay_max_ms(self) -> int: ...
+    @property
+    def update_instruments_interval_mins(self) -> int: ...
+    @property
+    def book_stale_check_interval_secs(self) -> int: ...
+    @property
+    def book_stale_threshold_secs(self) -> int: ...
+    @property
+    def book_snapshot_timeout_secs(self) -> int: ...
+    @property
+    def vip_level(self) -> OKXVipLevel | None: ...
+    @property
+    def load_spreads(self) -> bool: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         instrument_types: typing.Sequence[OKXInstrumentType] | None = None,
@@ -65,9 +84,15 @@ class OKXDataClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         update_instruments_interval_mins: int | None = None,
+        book_stale_check_interval_secs: int | None = None,
+        book_stale_threshold_secs: int | None = None,
+        book_snapshot_timeout_secs: int | None = None,
         vip_level: OKXVipLevel | None = None,
         load_spreads: bool = False,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class OKXDataClientFactory:
@@ -76,6 +101,38 @@ class OKXDataClientFactory:
 
 @typing.final
 class OKXExecClientConfig:
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def account_id(self) -> model.AccountId: ...
+    @property
+    def instrument_types(self) -> list[OKXInstrumentType]: ...
+    @property
+    def environment(self) -> OKXEnvironment: ...
+    @property
+    def region(self) -> OKXRegion: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws_private(self) -> str | None: ...
+    @property
+    def base_url_ws_business(self) -> str | None: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def max_retries(self) -> int: ...
+    @property
+    def retry_delay_initial_ms(self) -> int: ...
+    @property
+    def retry_delay_max_ms(self) -> int: ...
+    @property
+    def margin_mode(self) -> OKXMarginMode | None: ...
+    @property
+    def load_spreads(self) -> bool: ...
+    @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         trader_id: model.TraderId,
@@ -96,7 +153,11 @@ class OKXExecClientConfig:
         retry_delay_max_ms: int | None = None,
         margin_mode: OKXMarginMode | None = None,
         load_spreads: bool = False,
+        auth_timeout_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class OKXExecutionClientFactory:
@@ -192,6 +253,7 @@ class OKXHttpClient:
         self, underlying: str, instrument_id: model.InstrumentId | None = None
     ) -> typing.Any: ...
     def request_mark_price(self, instrument_id: model.InstrumentId) -> typing.Any: ...
+    def request_price_limit(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def request_index_price(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def request_order_status_reports(
         self,
@@ -210,7 +272,7 @@ class OKXHttpClient:
         instrument_id: model.InstrumentId | None = None,
         algo_id: str | None = None,
         algo_client_order_id: model.ClientOrderId | None = None,
-        state: OKXOrderStatus | None = None,
+        state: OKXAlgoOrderStatus | None = None,
         limit: int | None = None,
     ) -> typing.Any: ...
     def request_algo_order_status_report(
@@ -461,6 +523,29 @@ class OKXWebSocketClient:
 
 @typing.final
 class OKXWebSocketError: ...
+
+@typing.final
+class OKXAlgoOrderStatus(enum.Enum):
+    LIVE = ...
+    PAUSE = ...
+    EFFECTIVE = ...
+    ORDER_PLACED = ...
+    PARTIALLY_EFFECTIVE = ...
+    CANCELED = ...
+    FILLED = ...
+    ORDER_FAILED = ...
+    PARTIALLY_FAILED = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @staticmethod
+    def variants() -> list[str]: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> OKXAlgoOrderStatus: ...
 
 @typing.final
 class OKXContractType(enum.Enum):

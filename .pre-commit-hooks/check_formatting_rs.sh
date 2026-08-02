@@ -40,6 +40,23 @@ fi
 
 if [[ -n "$output" ]]; then
 
+  match_guard_locations=$(
+    rg -0 -l --no-messages '^\s*if\s' crates tests examples docs --type rust |
+      xargs -0 awk '
+        FNR == 1 { in_if = 0 }
+        /^[[:space:]]*if[[:space:]]/ {
+          start = FNR
+          in_if = 1
+        }
+        in_if && /=>[[:space:]]*$/ {
+          printf "|%s:%d|", FILENAME, start
+          in_if = 0
+          next
+        }
+        in_if && /[{;]/ { in_if = 0 }
+      '
+  )
+
   has_prev=false
   prev_content=""
 
@@ -120,9 +137,16 @@ if [[ -n "$output" ]]; then
         continue
       fi
 
-      # Exempt: match arm guard (prev line is multi-alternative pattern with `|`)
+      # Exempt: match arm guard after a multi-alternative pattern
       if [[ "$prev_trimmed" =~ [[:alnum:]][[:space:]]*\|[[:space:]]*[[:alnum:]] ]] &&
         ! [[ "$prev_trimmed" =~ \|\| ]]; then
+        prev_content="$content"
+        continue
+      fi
+
+      # Exempt: match arm guard (`=>` terminates the condition before a block opens)
+      match_guard_location="|${file}:${line_num}|"
+      if [[ "$match_guard_locations" == *"$match_guard_location"* ]]; then
         prev_content="$content"
         continue
       fi
@@ -934,6 +958,195 @@ if [[ -n "$output" ]]; then
 
 fi
 
+# Check: module declaration ordering in `mod.rs`
+#
+# External module declarations must be alphabetized within these sections:
+# `#[macro_use]`, public, restricted, cfg-gated, private, and test-only.
+# Adjacent non-empty sections must have exactly one blank line between them.
+
+echo "Checking module declaration ordering (Rust)..."
+
+CONTROL_FLOW_VIOLATIONS=$VIOLATIONS
+MODULE_ORDER_VIOLATIONS=0
+
+while IFS= read -r file; do
+  module_output=$(LC_ALL=C awk '
+    function reset_block() {
+      previous_category = -1
+      highest_category = -1
+      previous_name = ""
+      blank_lines = 0
+      blank_run = 0
+      blank_run_max = 0
+      has_intervening_comment = 0
+    }
+
+    function category_name(category) {
+      if (category == 0) return "macro prelude"
+      if (category == 1) return "public"
+      if (category == 2) return "restricted"
+      if (category == 3) return "cfg-gated"
+      if (category == 4) return "private"
+      return "test-only"
+    }
+
+    function report(message) {
+      printf "%d\t%s\n", FNR, message
+    }
+
+    function has_direct_test(attributes, start, rest, position, character, depth, token) {
+      start = index(attributes, "#[cfg(all(")
+      while (start > 0) {
+        rest = substr(attributes, start + length("#[cfg(all("))
+        depth = 0
+        token = ""
+
+        for (position = 1; position <= length(rest); position++) {
+          character = substr(rest, position, 1)
+          if (depth > 0) {
+            if (character == "(") depth++
+            if (character == ")") depth--
+          } else if (character == "(") {
+            depth = 1
+            token = ""
+          } else if (character == "," || character == ")") {
+            if (token == "test") return 1
+            token = ""
+            if (character == ")") break
+          } else {
+            token = token character
+          }
+        }
+
+        attributes = substr(rest, position + 1)
+        start = index(attributes, "#[cfg(all(")
+      }
+
+      return 0
+    }
+
+    BEGIN {
+      reset_block()
+      attributes = ""
+      in_attribute = 0
+      in_block_comment = 0
+    }
+
+    {
+      line = $0
+
+      if (in_attribute) {
+        attributes = attributes line
+        if (line ~ /]/) in_attribute = 0
+        next
+      }
+
+      if (in_block_comment) {
+        if (line ~ /[*]\//) in_block_comment = 0
+        next
+      }
+
+      if (line ~ /^[[:space:]]*$/) {
+        if (previous_category >= 0) {
+          blank_lines++
+          blank_run++
+          if (blank_run > blank_run_max) blank_run_max = blank_run
+        }
+        next
+      }
+
+      if (line ~ /^\/\*/) {
+        if (previous_category >= 0) has_intervening_comment = 1
+        blank_run = 0
+        if (line !~ /[*]\//) in_block_comment = 1
+        next
+      }
+
+      if (line ~ /^\/\//) {
+        if (previous_category >= 0) has_intervening_comment = 1
+        blank_run = 0
+        next
+      }
+
+      if (line ~ /^#\[/) {
+        blank_run = 0
+        attributes = attributes line
+        if (line !~ /]/) in_attribute = 1
+        next
+      }
+
+      if (line ~ /^(pub(\([^)]*\))?[[:space:]]+)?mod[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*;([[:space:]]*\/\/.*)?$/) {
+        compact_attributes = attributes
+        gsub(/[[:space:]]/, "", compact_attributes)
+
+        name = line
+        sub(/[[:space:]]*\/\/.*$/, "", name)
+        sub(/[[:space:]]*;[[:space:]]*$/, "", name)
+        sub(/^.*mod[[:space:]]+/, "", name)
+
+        if (compact_attributes ~ /#\[macro_use\]/) {
+          category = 0
+        } else if (compact_attributes ~ /#\[cfg\(test\)\]/ || has_direct_test(compact_attributes)) {
+          category = 5
+        } else if (compact_attributes ~ /#\[cfg\(/) {
+          category = 3
+        } else if (line ~ /^pub[[:space:]]+mod[[:space:]]+/) {
+          category = 1
+        } else if (line ~ /^pub\([^)]*\)[[:space:]]+mod[[:space:]]+/) {
+          category = 2
+        } else {
+          category = 4
+        }
+
+        if (previous_category >= 0 && category != previous_category) {
+          valid_spacing = blank_lines == 1 ||
+                          (has_intervening_comment && blank_lines > 0 && blank_run_max == 1)
+          if (!valid_spacing) {
+            message = "Expected one blank line before " category_name(category)
+            report(message " module `" name "`, found " blank_lines)
+          }
+        }
+
+        if (category < highest_category) {
+          message = "Module `" name "` is in the wrong section; expected order: "
+          report(message "macro prelude, public, restricted, cfg-gated, private, test-only")
+        } else if (category > highest_category) {
+          highest_category = category
+        }
+
+        if (category == previous_category && name < previous_name) {
+          message = "Module `" name "` is not alphabetized in the "
+          report(message category_name(category) " section")
+        }
+
+        previous_category = category
+        previous_name = name
+        blank_lines = 0
+        blank_run = 0
+        blank_run_max = 0
+        has_intervening_comment = 0
+        attributes = ""
+        next
+      }
+
+      reset_block()
+      attributes = ""
+    }
+  ' "$file")
+
+  if [[ -z "$module_output" ]]; then
+    continue
+  fi
+
+  while IFS=$'\t' read -r line_num message; do
+    echo -e "${RED}Error:${NC} $message in $file:$line_num"
+    echo
+    MODULE_ORDER_VIOLATIONS=$((MODULE_ORDER_VIOLATIONS + 1))
+  done <<< "$module_output"
+done < <(rg --files crates tests examples docs -g 'mod.rs' -g '!**/generated/**' 2> /dev/null)
+
+VIOLATIONS=$((VIOLATIONS + MODULE_ORDER_VIOLATIONS))
+
 # ---------------------------------------------------------------------------
 # Report results
 # ---------------------------------------------------------------------------
@@ -941,8 +1154,13 @@ fi
 if [ $VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $VIOLATIONS formatting violation(s) (Rust)${NC}"
   echo
-  echo -e "${YELLOW}To fix:${NC} Add a blank line above control flow blocks (\`if\`, \`match\`, \`for\`, \`while\`, \`loop\`, \`spawn\`)"
-  echo "Exceptions: first expression in a block, or line above shares an identifier with the condition"
+  if [ $CONTROL_FLOW_VIOLATIONS -gt 0 ]; then
+    echo -e "${YELLOW}To fix control flow:${NC} Add a blank line above \`if\`, \`match\`, \`for\`, \`while\`, \`loop\`, and \`spawn\`"
+    echo "Exceptions: first expression in a block, or line above shares an identifier with the condition"
+  fi
+  if [ $MODULE_ORDER_VIOLATIONS -gt 0 ]; then
+    echo -e "${YELLOW}To fix modules:${NC} Order and alphabetize sections as public, restricted, cfg-gated, private, test-only"
+  fi
   exit 1
 fi
 

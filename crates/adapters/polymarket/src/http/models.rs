@@ -145,7 +145,7 @@ pub struct PolymarketTradeReport {
 /// A market response from the Gamma API `GET /markets`.
 ///
 /// References: <https://docs.polymarket.com/developers/gamma-markets-api/get-markets>
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GammaMarket {
     /// Internal Gamma market ID.
@@ -173,6 +173,12 @@ pub struct GammaMarket {
     pub active: Option<bool>,
     /// Whether market is closed.
     pub closed: Option<bool>,
+    /// Time when the market closed.
+    pub closed_time: Option<String>,
+    /// UMA resolution state reported by Gamma.
+    pub uma_resolution_status: Option<String>,
+    /// Source used to resolve the market.
+    pub resolution_source: Option<String>,
     /// Whether CLOB is accepting orders.
     pub accepting_orders: Option<bool>,
     /// Whether order book trading is enabled.
@@ -257,7 +263,7 @@ pub struct FeeSchedule {
 /// Events are parent containers grouping related markets (e.g., an election
 /// event contains multiple outcome markets). Each event's `markets` array
 /// contains full [`GammaMarket`] objects.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GammaEvent {
     pub id: String,
@@ -297,7 +303,7 @@ pub struct GammaEvent {
 }
 
 /// A tag from the Gamma API `GET /tags`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GammaTag {
     /// Tag identifier.
     pub id: String,
@@ -308,7 +314,7 @@ pub struct GammaTag {
 }
 
 /// Response from the Gamma API `GET /public-search`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SearchResponse {
     /// Matching markets.
     #[serde(default)]
@@ -353,7 +359,7 @@ pub struct ClobBookResponse {
 }
 
 /// A single outcome token in a CLOB market response.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClobMarketToken {
     pub token_id: String,
     pub outcome: String,
@@ -361,7 +367,7 @@ pub struct ClobMarketToken {
 }
 
 /// Response from CLOB `GET /markets/{condition_id}`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClobMarketResponse {
     pub condition_id: String,
     pub closed: bool,
@@ -374,9 +380,9 @@ pub struct DataApiPosition {
     pub asset: String,
     #[serde(alias = "conditionId", alias = "condition_id")]
     pub condition_id: String,
-    pub size: f64,
+    pub size: Decimal,
     #[serde(alias = "avgPrice", alias = "avg_price")]
-    pub avg_price: Option<f64>,
+    pub avg_price: Option<Decimal>,
 }
 
 /// A trade from the Polymarket Data API `GET /trades` endpoint.
@@ -834,24 +840,24 @@ mod tests {
             positions[0].condition_id,
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
         );
-        assert_eq!(positions[0].size, 150.5);
-        assert_eq!(positions[0].avg_price, Some(0.55));
+        assert_eq!(positions[0].size, dec!(150.5));
+        assert_eq!(positions[0].avg_price, Some(dec!(0.55)));
 
         // Zero-size position
-        assert_eq!(positions[1].size, 0.0);
-        assert_eq!(positions[1].avg_price, Some(0.45));
+        assert_eq!(positions[1].size, dec!(0));
+        assert_eq!(positions[1].avg_price, Some(dec!(0.45)));
 
         // Third position
         assert_eq!(
             positions[2].condition_id,
             "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
         );
-        assert_eq!(positions[2].size, 42.0);
-        assert_eq!(positions[2].avg_price, Some(0.3));
+        assert_eq!(positions[2].size, dec!(42));
+        assert_eq!(positions[2].avg_price, Some(dec!(0.3)));
 
         // Dust position (below DUST_POSITION_THRESHOLD)
-        assert_eq!(positions[3].size, 0.005);
-        assert_eq!(positions[3].avg_price, Some(0.7));
+        assert_eq!(positions[3].size, dec!(0.005));
+        assert_eq!(positions[3].avg_price, Some(dec!(0.7)));
     }
 
     #[rstest]

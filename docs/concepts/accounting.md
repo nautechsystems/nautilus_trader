@@ -7,18 +7,18 @@ consistent across venues.
 
 It applies equally to backtest and live trading. For backtest-specific
 configuration (starting balances, margin-model selection per venue), see
-[Backtesting](backtesting.md).
+[Backtesting](backtesting/).
 
 ## Account types
 
 When you attach a venue to the engine for either live trading or a backtest, you
 pick one of three accounting modes via `account_type`:
 
-| Account type | Typical use case                                 | What the engine locks                                                     |
-| ------------ | ------------------------------------------------ | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (e.g., BTC/USDT, stocks)            | Notional value for every position a pending order would open.             |
-| Margin       | Derivatives or any product that allows leverage  | Initial margin for each order plus maintenance margin for open positions. |
-| Betting      | Sports betting, bookmaking                       | Stake required by the venue; no leverage.                                 |
+| Account type | Typical use case                                | What the engine locks                                                     |
+| ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional value for every position a pending order would open.             |
+| Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
+| Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
 
 ### Cash accounts
 
@@ -78,6 +78,35 @@ constructors that enforce the invariant centrally; prefer them over
 The helpers clamp the derived field to `[0, total]` when `total >= 0`, so
 transient overshoots from venue rounding never leave the account in a broken
 state.
+
+## Currency and valuation contracts
+
+Accounting values retain their source currency until an explicit conversion succeeds. This prevents a valid
+number from being labeled with the wrong currency or an unavailable value from being treated as zero.
+
+| Value                        | Currency contract                                              |
+| ---------------------------- | -------------------------------------------------------------- |
+| Instrument cost currency     | Base for inverse, settlement for quanto, and quote otherwise.  |
+| Position PnL                 | Instrument cost currency captured when the position opens.     |
+| Calculated locks and margins | Each calculated amount's currency, converted independently.    |
+| Portfolio aggregates         | Native buckets, or the account base after conversion succeeds. |
+
+Aggregations combine only compatible `Money` values. An account without a base currency keeps separate native
+currency buckets. A single-instrument realized PnL query returns unavailable instead of combining mixed
+currencies.
+
+The accounting and valuation paths also follow these rules:
+
+- Invalid or unrepresentable notional, PnL, fee, locked-balance, and margin results produce an error,
+  unavailable value, or unpriced state. They do not substitute zero. A failed realized PnL recalculation also
+  clears any earlier cached result.
+- `equity()` counts a credited non-inverse base asset once for a multi-currency cash account without a base
+  currency. `mark_values()` remains a gross position-value query and includes that asset.
+- MTM snapshots distinguish carried stale inputs from positions that have never had complete valuation data.
+  Stale-price metadata covers only open instrument and position-side pairs.
+
+See [Portfolio](portfolio.md#equity-and-mark-to-market) for equity formulas, price and xrate selection, snapshot
+metadata, and missing-price query scope.
 
 ## Margin scopes
 
@@ -342,7 +371,9 @@ class RiskAdjustedMarginModel(MarginModel):
         self.risk_multiplier = Decimal(str(config.config.get("risk_multiplier", 1.0)))
         self.use_leverage = config.config.get("use_leverage", False)
 
-    def calculate_margin_init(self, instrument, quantity, price, leverage, use_quote_for_inverse=False):
+    def calculate_margin_init(
+        self, instrument, quantity, price, leverage, use_quote_for_inverse=False
+    ):
         notional = instrument.notional_value(quantity, price, use_quote_for_inverse)
 
         if self.use_leverage:
@@ -353,13 +384,17 @@ class RiskAdjustedMarginModel(MarginModel):
         margin = adjusted * instrument.margin_init * self.risk_multiplier
         return Money(margin, instrument.quote_currency)
 
-    def calculate_margin_maint(self, instrument, side, quantity, price, leverage, use_quote_for_inverse=False):
-        return self.calculate_margin_init(instrument, quantity, price, leverage, use_quote_for_inverse)
+    def calculate_margin_maint(
+        self, instrument, side, quantity, price, leverage, use_quote_for_inverse=False
+    ):
+        return self.calculate_margin_init(
+            instrument, quantity, price, leverage, use_quote_for_inverse
+        )
 ```
 
 For backtest-wide configuration of the margin model via `BacktestVenueConfig`
 and `MarginModelConfig`, see the margin-models section of
-[Backtesting](backtesting.md#margin-models).
+[Backtesting](backtesting/accounts-and-margin.md#margin-models).
 
 ## Adapter convention
 
@@ -391,7 +426,7 @@ are keyed by `currency`.
 
 ## Related guides
 
-- [Backtesting](backtesting.md): starting balances, `MarginModelConfig`, and
+- [Backtesting](backtesting/): starting balances, `MarginModelConfig`, and
   backtest-specific account setup.
 - [Portfolio](portfolio.md): portfolio-level PnL, exposures, and currency
   conversion.

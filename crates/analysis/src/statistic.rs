@@ -77,9 +77,9 @@ pub trait PortfolioStatistic: Debug {
     ///
     /// Defaults to `None`; only benchmark-relative statistics (beta, alpha, information
     /// ratio, tracking error, Treynor ratio) override this method. The `None` default
-    /// lets analyzer loops filter results by `Option` — non-benchmark statistics are
+    /// lets analyzer loops filter results by `Option` - non-benchmark statistics are
     /// simply skipped, as `get_performance_stats_general` already does with
-    /// `calculate_from_positions` results — rather than panicking.
+    /// `calculate_from_positions` results - rather than panicking.
     fn calculate_from_returns_with_benchmark(
         &self,
         returns: &Returns,

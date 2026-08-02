@@ -124,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
     let action_typehash: B256 = ACTION_TYPEHASH
         .parse()
         .map_err(|e| anyhow::anyhow!("failed to parse ACTION_TYPEHASH: {e}"))?;
-    let nonce_manager = NonceManager::default();
+    let nonce_manager = NonceManager;
 
     let instruments = client
         .get_instruments("ETH", DeriveInstrumentType::Erc20, false)
@@ -464,6 +464,7 @@ async fn cancel_if_open(
             .and_then(|o| o.get("order_status"))
             .and_then(|s| s.as_str())
             .is_some_and(|s| s == "open");
+
         if let Some(order_id) = extract_order_id(resp)
             && is_open
         {

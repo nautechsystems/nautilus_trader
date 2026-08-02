@@ -16,7 +16,10 @@
 use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_predicate_false},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -85,6 +88,8 @@ pub struct OrderInitialized {
     pub ts_init: UnixNanos,
     /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order activation price for trailing-stop orders.
+    pub activation_price: Option<Price>,
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
@@ -125,7 +130,109 @@ pub struct OrderInitialized {
 }
 
 impl OrderInitialized {
+    /// Creates a new [`OrderInitialized`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - A contingent order has no linked order IDs.
+    /// - An execution algorithm is set without an execution spawn ID.
+    #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "domain event constructor requires multiple boolean flags"
+    )]
+    pub fn new_checked(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        reconciliation: bool,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        price: Option<Price>,
+        activation_price: Option<Price>,
+        trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
+        limit_offset: Option<Decimal>,
+        trailing_offset: Option<Decimal>,
+        trailing_offset_type: Option<TrailingOffsetType>,
+        expire_time: Option<UnixNanos>,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+    ) -> Result<Self, OrderError> {
+        check_predicate_false(
+            contingency_type.is_some_and(|value| value != ContingencyType::NoContingency)
+                && linked_order_ids.as_ref().is_none_or(Vec::is_empty),
+            "`linked_order_ids` is required for contingent orders",
+        )?;
+        check_predicate_false(
+            exec_algorithm_id.is_some() && exec_spawn_id.is_none(),
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        )?;
+
+        Ok(Self {
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            order_type,
+            quantity,
+            time_in_force,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            reconciliation,
+            event_id,
+            ts_event,
+            ts_init,
+            price,
+            activation_price,
+            trigger_price,
+            trigger_type,
+            limit_offset,
+            trailing_offset,
+            trailing_offset_type,
+            expire_time,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            causation_id: None,
+        })
+    }
+
     /// Creates a new [`OrderInitialized`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any order metadata validation fails (see
+    /// [`OrderInitialized::new_checked`]).
     #[expect(clippy::too_many_arguments)]
     #[expect(
         clippy::fn_params_excessive_bools,
@@ -149,6 +256,7 @@ impl OrderInitialized {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         price: Option<Price>,
+        activation_price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_offset: Option<Decimal>,
@@ -167,7 +275,7 @@ impl OrderInitialized {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
     ) -> Self {
-        Self {
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -184,6 +292,7 @@ impl OrderInitialized {
             ts_event,
             ts_init,
             price,
+            activation_price,
             trigger_price,
             trigger_type,
             limit_offset,
@@ -201,8 +310,8 @@ impl OrderInitialized {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-            causation_id: None,
-        }
+        )
+        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
     }
 }
 
@@ -467,6 +576,10 @@ impl OrderEvent for OrderInitialized {
         None
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        self.activation_price
+    }
+
     fn trigger_price(&self) -> Option<Price> {
         self.trigger_price
     }
@@ -593,6 +706,21 @@ mod test {
         let original = OrderInitialized::default();
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrderInitialized = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_initialized_serialization_preserves_activation_price() {
+        use crate::types::Price;
+
+        let original = OrderInitialized {
+            activation_price: Some(Price::from("0.68500")),
+            ..OrderInitialized::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderInitialized = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.activation_price, Some(Price::from("0.68500")));
         assert_eq!(original, deserialized);
     }
 }

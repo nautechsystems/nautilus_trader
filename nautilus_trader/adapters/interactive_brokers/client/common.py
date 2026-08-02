@@ -527,7 +527,9 @@ class BaseMixin:
     _port: int
     _configured_client_id: int
     _client_id: int
-    _randomize_client_id_on_next_connect: bool
+    _client_id_collision_count: int
+    _client_id_reuse_limit: int
+    _max_client_id_offset: int
     _fetch_all_open_orders: bool
     _request_timeout_secs: int
     _requests: Requests
@@ -562,6 +564,9 @@ class BaseMixin:
     _max_reconnect_attempts: int
     _indefinite_reconnect: bool
     _last_disconnection_ns: int | None
+    _next_client_id: Callable
+    _data_farm_degraded_since_ns: int | None
+    _data_farm_resubscription_task: Any  # asyncio.Task | None
 
     # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]

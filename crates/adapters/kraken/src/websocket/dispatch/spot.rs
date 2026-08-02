@@ -34,6 +34,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::Quantity,
 };
+use rust_decimal::Decimal;
 
 use super::{
     OrderIdentity, WsDispatchState, ensure_accepted_emitted, fill_report_to_order_filled,
@@ -56,7 +57,7 @@ pub fn execution(
     emitter: &ExecutionEventEmitter,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
-    order_qty_cache: &Arc<AtomicMap<String, f64>>,
+    order_qty_cache: &Arc<AtomicMap<String, Decimal>>,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
@@ -88,7 +89,7 @@ fn execution_inner(
     emitter: &ExecutionEventEmitter,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
-    order_qty_cache: &Arc<AtomicMap<String, f64>>,
+    order_qty_cache: &Arc<AtomicMap<String, Decimal>>,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {

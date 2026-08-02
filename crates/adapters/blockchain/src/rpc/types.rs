@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::defi::Block;
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use nautilus_model::defi::{Block, DexType};
 
 use crate::events::{
-    burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent, swap::SwapEvent,
+    burn::BurnEvent, collect::CollectEvent, fee_protocol_collect::FeeProtocolCollectEvent,
+    fee_protocol_update::FeeProtocolUpdateEvent, flash::FlashEvent, mint::MintEvent,
+    swap::SwapEvent,
 };
 
 /// Represents normalized blockchain messages.
@@ -30,15 +30,22 @@ pub enum BlockchainMessage {
     BurnEvent(BurnEvent),
     CollectEvent(CollectEvent),
     FlashEvent(FlashEvent),
+    FeeProtocolUpdateEvent(FeeProtocolUpdateEvent),
+    FeeProtocolCollectEvent(FeeProtocolCollectEvent),
 }
 
 /// Represents the types of events that can be subscribed to via the blockchain RPC interface.
 ///
 /// This enum defines the various event types that the application can subscribe to using
 /// the WebSocket-based RPC subscription.
-#[derive(
-    Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq, Display, EnumString, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum RpcEventType {
     NewBlock,
+    PoolSwap(DexType),
+    PoolMint(DexType),
+    PoolBurn(DexType),
+    PoolCollect(DexType),
+    PoolFlash(DexType),
+    PoolFeeProtocolUpdate(DexType),
+    PoolFeeProtocolCollect(DexType),
 }

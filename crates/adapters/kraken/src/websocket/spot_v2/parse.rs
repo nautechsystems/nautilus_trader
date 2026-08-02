@@ -29,6 +29,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use super::{
     enums::{KrakenExecType, KrakenLiquidityInd, KrakenWsOrderStatus},
@@ -54,19 +55,21 @@ pub fn parse_quote_tick(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = Price::new_checked(ticker.bid, price_precision).with_context(|| {
+    let bid_price = Price::from_decimal_dp(ticker.bid, price_precision).with_context(|| {
         format!("Failed to construct bid Price with precision {price_precision}")
     })?;
-    let bid_size = Quantity::new_checked(ticker.bid_qty, size_precision).with_context(|| {
-        format!("Failed to construct bid Quantity with precision {size_precision}")
-    })?;
+    let bid_size =
+        Quantity::from_decimal_dp(ticker.bid_qty, size_precision).with_context(|| {
+            format!("Failed to construct bid Quantity with precision {size_precision}")
+        })?;
 
-    let ask_price = Price::new_checked(ticker.ask, price_precision).with_context(|| {
+    let ask_price = Price::from_decimal_dp(ticker.ask, price_precision).with_context(|| {
         format!("Failed to construct ask Price with precision {price_precision}")
     })?;
-    let ask_size = Quantity::new_checked(ticker.ask_qty, size_precision).with_context(|| {
-        format!("Failed to construct ask Quantity with precision {size_precision}")
-    })?;
+    let ask_size =
+        Quantity::from_decimal_dp(ticker.ask_qty, size_precision).with_context(|| {
+            format!("Failed to construct ask Quantity with precision {size_precision}")
+        })?;
 
     let ts_event = datetime_to_nanos(ticker.timestamp, "ticker.timestamp")?;
 
@@ -97,9 +100,9 @@ pub fn parse_trade_tick(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = Price::new_checked(trade.price, price_precision)
+    let price = Price::from_decimal_dp(trade.price, price_precision)
         .with_context(|| format!("Failed to construct Price with precision {price_precision}"))?;
-    let size = Quantity::new_checked(trade.qty, size_precision)
+    let size = Quantity::from_decimal_dp(trade.qty, size_precision)
         .with_context(|| format!("Failed to construct Quantity with precision {size_precision}"))?;
 
     let aggressor = match trade.side {
@@ -241,9 +244,9 @@ fn parse_book_level(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<OrderBookDelta>> {
-    let price = Price::new_checked(level.price, price_precision)
+    let price = Price::from_decimal_dp(level.price, price_precision)
         .with_context(|| format!("Failed to construct Price with precision {price_precision}"))?;
-    let size = Quantity::new_checked(level.qty, size_precision)
+    let size = Quantity::from_decimal_dp(level.qty, size_precision)
         .with_context(|| format!("Failed to construct Quantity with precision {size_precision}"))?;
 
     let action = if is_snapshot {
@@ -300,11 +303,11 @@ pub fn parse_ws_bar(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let open = Price::new_checked(ohlc.open, price_precision)?;
-    let high = Price::new_checked(ohlc.high, price_precision)?;
-    let low = Price::new_checked(ohlc.low, price_precision)?;
-    let close = Price::new_checked(ohlc.close, price_precision)?;
-    let volume = Quantity::new_checked(ohlc.volume, size_precision)?;
+    let open = Price::from_decimal_dp(ohlc.open, price_precision)?;
+    let high = Price::from_decimal_dp(ohlc.high, price_precision)?;
+    let low = Price::from_decimal_dp(ohlc.low, price_precision)?;
+    let close = Price::from_decimal_dp(ohlc.close, price_precision)?;
+    let volume = Quantity::from_decimal_dp(ohlc.volume, size_precision)?;
 
     let bar_spec = interval_to_bar_spec(ohlc.interval)?;
     let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
@@ -418,7 +421,7 @@ pub fn parse_ws_order_status_report(
     exec: &KrakenWsExecutionData,
     instrument: &InstrumentAny,
     account_id: AccountId,
-    cached_order_qty: Option<f64>,
+    cached_order_qty: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
@@ -434,13 +437,13 @@ pub fn parse_ws_order_status_report(
     // Quantity fallback: order_qty -> cached -> cum_qty -> last_qty (for trade snapshots)
     let last_qty = exec
         .last_qty
-        .map(|qty| Quantity::new_checked(qty, size_precision))
+        .map(|qty| Quantity::from_decimal_dp(qty, size_precision))
         .transpose()
         .context("Failed to parse last_qty")?;
 
     let filled_qty = exec
         .cum_qty
-        .map(|qty| Quantity::new_checked(qty, size_precision))
+        .map(|qty| Quantity::from_decimal_dp(qty, size_precision))
         .transpose()
         .context("Failed to parse cum_qty")?
         .or(last_qty)
@@ -449,7 +452,7 @@ pub fn parse_ws_order_status_report(
     let quantity = exec
         .order_qty
         .or(cached_order_qty)
-        .map(|qty| Quantity::new_checked(qty, size_precision))
+        .map(|qty| Quantity::from_decimal_dp(qty, size_precision))
         .transpose()
         .context("Failed to parse order_qty")?
         .unwrap_or(filled_qty);
@@ -484,28 +487,28 @@ pub fn parse_ws_order_status_report(
     // orders we submitted (engine already has the price from submission)
     let price_value = exec
         .limit_price
-        .filter(|&p| p > 0.0)
-        .or(exec.avg_price.filter(|&p| p > 0.0))
-        .or(exec.last_price.filter(|&p| p > 0.0));
+        .filter(|p| *p > Decimal::ZERO)
+        .or(exec.avg_price.filter(|p| *p > Decimal::ZERO))
+        .or(exec.last_price.filter(|p| *p > Decimal::ZERO));
 
     if let Some(px) = price_value {
         let price =
-            Price::new_checked(px, price_precision).context("Failed to parse order price")?;
+            Price::from_decimal_dp(px, price_precision).context("Failed to parse order price")?;
         report = report.with_price(price);
     }
 
     // avg_px fallback: avg_price -> cum_cost / cum_qty -> last_price (for single trades/snapshots)
     let avg_px = exec
         .avg_price
-        .filter(|&p| p > 0.0)
+        .filter(|p| *p > Decimal::ZERO)
         .or_else(|| match (exec.cum_cost, exec.cum_qty) {
-            (Some(cost), Some(qty)) if qty > 0.0 => Some(cost / qty),
+            (Some(cost), Some(qty)) if qty > Decimal::ZERO => Some(cost / qty),
             _ => None,
         })
-        .or_else(|| exec.last_price.filter(|&p| p > 0.0));
+        .or_else(|| exec.last_price.filter(|p| *p > Decimal::ZERO));
 
     if let Some(avg_price) = avg_px {
-        report = report.with_avg_px(avg_price)?;
+        report.avg_px = Some(avg_price);
     }
 
     if exec.post_only == Some(true) {
@@ -568,14 +571,14 @@ pub fn parse_ws_fill_report(
 
     let last_qty = exec
         .last_qty
-        .map(|qty| Quantity::new_checked(qty, size_precision))
+        .map(|qty| Quantity::from_decimal_dp(qty, size_precision))
         .transpose()
         .context("Failed to parse last_qty")?
         .context("Missing last_qty for trade execution")?;
 
     let last_px = exec
         .last_price
-        .map(|px| Price::new_checked(px, price_precision))
+        .map(|px| Price::from_decimal_dp(px, price_precision))
         .transpose()
         .context("Failed to parse last_price")?
         .context("Missing last_price for trade execution")?;
@@ -586,7 +589,7 @@ pub fn parse_ws_fill_report(
     let commission = if let Some(ref fees) = exec.fees {
         if let Some(fee) = fees.first() {
             let currency = Currency::get_or_create_crypto(&fee.asset);
-            Money::new(fee.qty.abs(), currency)
+            Money::from_decimal(fee.qty.abs(), currency).context("Failed to parse fill fee")?
         } else {
             Money::zero(instrument.quote_currency())
         }
@@ -652,10 +655,11 @@ pub fn parse_order_response(text: &str) -> anyhow::Result<Option<KrakenSpotWsMes
 mod tests {
     use nautilus_model::{identifiers::Symbol, types::Currency};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
-    use crate::{common::consts::KRAKEN_VENUE, websocket::spot_v2::messages::KrakenWsMessage};
+    use crate::{common::consts::KRAKEN_VENUE, websocket::spot_v2::messages::KrakenWsRawMessage};
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
@@ -708,17 +712,17 @@ mod tests {
     #[rstest]
     fn test_parse_quote_tick() {
         let json = load_test_json("ws_ticker_snapshot.json");
-        let message: KrakenWsMessage = serde_json::from_str(&json).unwrap();
-        let ticker: KrakenWsTickerData = serde_json::from_value(message.data[0].clone()).unwrap();
+        let message: KrakenWsRawMessage = serde_json::from_str(&json).unwrap();
+        let ticker: KrakenWsTickerData = serde_json::from_str(message.data[0].get()).unwrap();
 
         let instrument = create_mock_instrument();
         let quote_tick = parse_quote_tick(&ticker, &instrument, TS).unwrap();
 
         assert_eq!(quote_tick.instrument_id, instrument.id());
-        assert!(quote_tick.bid_price.as_f64() > 0.0);
-        assert!(quote_tick.ask_price.as_f64() > 0.0);
-        assert!(quote_tick.bid_size.as_f64() > 0.0);
-        assert!(quote_tick.ask_size.as_f64() > 0.0);
+        assert_eq!(quote_tick.bid_price, Price::from("105944.20"));
+        assert_eq!(quote_tick.ask_price, Price::from("105944.30"));
+        assert_eq!(quote_tick.bid_size, Quantity::from("2.5"));
+        assert_eq!(quote_tick.ask_size, Quantity::from("3.2"));
         assert_eq!(
             quote_tick.ts_event,
             UnixNanos::from(1_671_960_659_123_456_000)
@@ -729,15 +733,15 @@ mod tests {
     #[rstest]
     fn test_parse_trade_tick() {
         let json = load_test_json("ws_trade_update.json");
-        let message: KrakenWsMessage = serde_json::from_str(&json).unwrap();
-        let trade: KrakenWsTradeData = serde_json::from_value(message.data[0].clone()).unwrap();
+        let message: KrakenWsRawMessage = serde_json::from_str(&json).unwrap();
+        let trade: KrakenWsTradeData = serde_json::from_str(message.data[0].get()).unwrap();
 
         let instrument = create_mock_instrument();
         let trade_tick = parse_trade_tick(&trade, &instrument, TS).unwrap();
 
         assert_eq!(trade_tick.instrument_id, instrument.id());
-        assert!(trade_tick.price.as_f64() > 0.0);
-        assert!(trade_tick.size.as_f64() > 0.0);
+        assert_eq!(trade_tick.price, Price::from("105944.20"));
+        assert_eq!(trade_tick.size, Quantity::from("0.00027625"));
         assert!(matches!(
             trade_tick.aggressor_side,
             AggressorSide::Buyer | AggressorSide::Seller
@@ -752,8 +756,8 @@ mod tests {
     #[rstest]
     fn test_parse_book_deltas_snapshot() {
         let json = load_test_json("ws_book_snapshot.json");
-        let message: KrakenWsMessage = serde_json::from_str(&json).unwrap();
-        let book: KrakenWsBookData = serde_json::from_value(message.data[0].clone()).unwrap();
+        let message: KrakenWsRawMessage = serde_json::from_str(&json).unwrap();
+        let book: KrakenWsBookData = serde_json::from_str(message.data[0].get()).unwrap();
 
         let instrument = create_mock_instrument();
         let deltas = parse_book_deltas(&book, &instrument, 1, true, TS).unwrap();
@@ -799,8 +803,8 @@ mod tests {
     #[rstest]
     fn test_parse_book_deltas_update() {
         let json = load_test_json("ws_book_update.json");
-        let message: KrakenWsMessage = serde_json::from_str(&json).unwrap();
-        let book: KrakenWsBookData = serde_json::from_value(message.data[0].clone()).unwrap();
+        let message: KrakenWsRawMessage = serde_json::from_str(&json).unwrap();
+        let book: KrakenWsBookData = serde_json::from_str(message.data[0].get()).unwrap();
 
         let instrument = create_mock_instrument();
         let deltas = parse_book_deltas(&book, &instrument, 1, false, TS).unwrap();
@@ -811,7 +815,7 @@ mod tests {
         assert_eq!(first_delta.instrument_id, instrument.id());
         assert_eq!(first_delta.action, BookAction::Update);
         assert_eq!(first_delta.order.side, OrderSide::Buy);
-        assert!(first_delta.order.price.as_f64() > 0.0);
+        assert_eq!(first_delta.order.price, Price::from("105944.20"));
         assert!(RecordFlag::F_MBP.matches(first_delta.flags));
         assert!(RecordFlag::F_LAST.matches(first_delta.flags));
         assert!(!RecordFlag::F_SNAPSHOT.matches(first_delta.flags));
@@ -826,12 +830,12 @@ mod tests {
         let book = KrakenWsBookData {
             symbol: Ustr::from("BTC/USD"),
             bids: Some(vec![KrakenWsBookLevel {
-                price: 100.0,
-                qty: 0.0,
+                price: dec!(100),
+                qty: Decimal::ZERO,
             }]),
             asks: Some(vec![KrakenWsBookLevel {
-                price: 101.0,
-                qty: 2.0,
+                price: dec!(101),
+                qty: dec!(2),
             }]),
             checksum: Some(0),
             timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
@@ -861,8 +865,8 @@ mod tests {
         let book = KrakenWsBookData {
             symbol: Ustr::from("BTC/USD"),
             bids: Some(vec![KrakenWsBookLevel {
-                price: 100.0,
-                qty: 0.0,
+                price: dec!(100),
+                qty: Decimal::ZERO,
             }]),
             asks: Some(vec![]),
             checksum: Some(0),
@@ -882,6 +886,47 @@ mod tests {
         assert!(RecordFlag::F_MBP.matches(delete.flags));
         assert!(RecordFlag::F_LAST.matches(delete.flags));
         assert!(!RecordFlag::F_SNAPSHOT.matches(delete.flags));
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_preserves_decimal_avg_px() {
+        let execution = KrakenWsExecutionData {
+            exec_type: KrakenExecType::Status,
+            order_id: "ORDER-1".to_string(),
+            cl_ord_id: Some("CLIENT-1".to_string()),
+            symbol: Some("BTC/USD".to_string()),
+            side: Some(KrakenOrderSide::Buy),
+            order_type: Some(KrakenOrderType::Limit),
+            order_qty: Some(dec!(3)),
+            limit_price: None,
+            order_status: Some(KrakenWsOrderStatus::PartiallyFilled),
+            cum_qty: Some(dec!(3)),
+            cum_cost: Some(dec!(0.3703703670370370367037037034)),
+            avg_price: None,
+            time_in_force: Some(KrakenTimeInForce::GoodTilCancelled),
+            post_only: Some(false),
+            reduce_only: Some(false),
+            timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
+            exec_id: None,
+            last_qty: None,
+            last_price: None,
+            cost: None,
+            liquidity_ind: None,
+            fees: None,
+            fee_usd_equiv: None,
+            reason: None,
+        };
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.avg_px, Some(dec!(0.1234567890123456789012345678)));
     }
 
     #[rstest]
@@ -905,18 +950,18 @@ mod tests {
     #[rstest]
     fn test_parse_ws_bar() {
         let json = load_test_json("ws_ohlc_update.json");
-        let message: KrakenWsMessage = serde_json::from_str(&json).unwrap();
-        let ohlc: KrakenWsOhlcData = serde_json::from_value(message.data[0].clone()).unwrap();
+        let message: KrakenWsRawMessage = serde_json::from_str(&json).unwrap();
+        let ohlc: KrakenWsOhlcData = serde_json::from_str(message.data[0].get()).unwrap();
 
         let instrument = create_mock_instrument();
         let bar = parse_ws_bar(&ohlc, &instrument, TS).unwrap();
 
         assert_eq!(bar.bar_type.instrument_id(), instrument.id());
-        assert!(bar.open.as_f64() > 0.0);
-        assert!(bar.high.as_f64() > 0.0);
-        assert!(bar.low.as_f64() > 0.0);
-        assert!(bar.close.as_f64() > 0.0);
-        assert!(bar.volume.as_f64() > 0.0);
+        assert_eq!(bar.open, Price::from("106038.2"));
+        assert_eq!(bar.high, Price::from("106044.3"));
+        assert_eq!(bar.low, Price::from("106038.1"));
+        assert_eq!(bar.close, Price::from("106040.1"));
+        assert_eq!(bar.volume, Quantity::from("30927.68066226"));
 
         let spec = bar.bar_type.spec();
         assert_eq!(spec.step.get(), 1);

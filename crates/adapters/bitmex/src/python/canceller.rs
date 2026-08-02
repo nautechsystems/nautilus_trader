@@ -139,6 +139,10 @@ impl CancelBroadcaster {
     /// - `Ok(Some(report))` if successfully cancelled with a report.
     /// - `Ok(None)` if the order was already cancelled (idempotent success).
     /// - `Err` if all requests failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all cancel requests fail or no healthy clients are available.
     #[pyo3(name = "broadcast_cancel")]
     fn py_broadcast_cancel<'py>(
         &self,
@@ -162,6 +166,10 @@ impl CancelBroadcaster {
     }
 
     /// Broadcasts a batch cancel request to all healthy clients in parallel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all cancel requests fail or no healthy clients are available.
     #[pyo3(name = "broadcast_batch_cancel")]
     fn py_broadcast_batch_cancel<'py>(
         &self,
@@ -182,8 +190,7 @@ impl CancelBroadcaster {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = pyo3::types::PyList::new(py, py_reports?)
-                    .unwrap()
+                let pylist = pyo3::types::PyList::new(py, py_reports?)?
                     .into_any()
                     .unbind();
                 Ok(pylist)
@@ -192,6 +199,10 @@ impl CancelBroadcaster {
     }
 
     /// Broadcasts a cancel all request to all healthy clients in parallel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all cancel requests fail or no healthy clients are available.
     #[pyo3(name = "broadcast_cancel_all")]
     fn py_broadcast_cancel_all<'py>(
         &self,
@@ -211,8 +222,7 @@ impl CancelBroadcaster {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = pyo3::types::PyList::new(py, py_reports?)
-                    .unwrap()
+                let pylist = pyo3::types::PyList::new(py, py_reports?)?
                     .into_any()
                     .unbind();
                 Ok(pylist)

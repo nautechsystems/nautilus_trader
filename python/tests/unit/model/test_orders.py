@@ -22,6 +22,7 @@ from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitIfTouchedOrder
 from nautilus_trader.model import LimitOrder
@@ -34,6 +35,7 @@ from nautilus_trader.model import OrderAccepted
 from nautilus_trader.model import OrderCanceled
 from nautilus_trader.model import OrderDenied
 from nautilus_trader.model import OrderFilled
+from nautilus_trader.model import OrderInitialized
 from nautilus_trader.model import OrderRejected
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
@@ -82,6 +84,80 @@ def test_market_order_construction():
     assert order.is_reduce_only is False
     assert order.is_quote_quantity is False
     assert order.order_type == OrderType.MARKET
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {
+                "contingency_type": ContingencyType.OCO,
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {"exec_algorithm_id": ExecAlgorithmId("TWAP")},
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_direct_market_order_rejects_invalid_metadata(metadata, expected):
+    with pytest.raises(ValueError, match=expected):
+        _market_order(**metadata)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {"contingency_type": ContingencyType.OCO},
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {
+                "contingency_type": ContingencyType.OCO,
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {"exec_algorithm_id": ExecAlgorithmId("TWAP")},
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_direct_order_initialized_rejects_invalid_metadata(metadata, expected):
+    with pytest.raises(ValueError, match=expected):
+        _order_initialized(**metadata)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {
+                "contingency_type": "OCO",
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {
+                "exec_algorithm_id": "TWAP",
+                "exec_spawn_id": None,
+            },
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_market_order_reconstruction_rejects_invalid_metadata(metadata, expected):
+    values = _order_initialized().to_dict()
+    values.update(metadata)
+    event = OrderInitialized.from_dict(values)
+
+    with pytest.raises(ValueError, match=expected):
+        MarketOrder.create(event)
 
 
 def test_market_order_str_and_repr():
@@ -804,20 +880,327 @@ AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
 ACCOUNT_ID = AccountId("SIM-000")
 
 
-def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001"):
-    return MarketOrder(
+def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001", **metadata):
+    values = {
+        "trader_id": TRADER_ID,
+        "strategy_id": STRATEGY_ID,
+        "instrument_id": AUDUSD_SIM,
+        "client_order_id": ClientOrderId(client_order_id),
+        "order_side": side,
+        "quantity": Quantity.from_int(qty),
+        "init_id": UUID4(),
+        "ts_init": 0,
+        "time_in_force": TimeInForce.GTC,
+        "reduce_only": False,
+        "quote_quantity": False,
+    }
+    values.update(metadata)
+    return MarketOrder(**values)
+
+
+def _order_initialized(**metadata):
+    values = {
+        "trader_id": TRADER_ID,
+        "strategy_id": STRATEGY_ID,
+        "instrument_id": AUDUSD_SIM,
+        "client_order_id": ClientOrderId("O-001"),
+        "order_side": OrderSide.BUY,
+        "order_type": OrderType.MARKET,
+        "quantity": Quantity.from_int(100_000),
+        "time_in_force": TimeInForce.GTC,
+        "post_only": False,
+        "reduce_only": False,
+        "quote_quantity": False,
+        "reconciliation": False,
+        "event_id": UUID4(),
+        "ts_event": 0,
+        "ts_init": 0,
+        "contingency_type": ContingencyType.NO_CONTINGENCY,
+    }
+    values.update(metadata)
+    return OrderInitialized(**values)
+
+
+def _limit_order(client_order_id="O-002"):
+    return LimitOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
         instrument_id=AUDUSD_SIM,
         client_order_id=ClientOrderId(client_order_id),
-        order_side=side,
-        quantity=Quantity.from_int(qty),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(50_000),
+        price=Price.from_str("1.00010"),
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
         init_id=UUID4(),
         ts_init=0,
+        expire_time=0,
+        display_qty=None,
+    )
+
+
+def _stop_market_order(client_order_id="O-003"):
+    return StopMarketOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        trigger_price=Price.from_str("0.99500"),
+        trigger_type=TriggerType.DEFAULT,
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
     )
+
+
+def _stop_limit_order(client_order_id="O-004"):
+    return StopLimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("1.00100"),
+        trigger_price=Price.from_str("1.00050"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _market_if_touched_order(client_order_id="O-005"):
+    return MarketIfTouchedOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        trigger_price=Price.from_str("0.99000"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _limit_if_touched_order(client_order_id="O-006"):
+    return LimitIfTouchedOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("1.00500"),
+        trigger_price=Price.from_str("1.01000"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _market_to_limit_order(client_order_id="O-007"):
+    return MarketToLimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _trailing_stop_market_order(client_order_id="O-008"):
+    return TrailingStopMarketOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        trigger_price=Price.from_str("0.99000"),
+        trigger_type=TriggerType.DEFAULT,
+        trailing_offset=Decimal("0.00100"),
+        trailing_offset_type=TrailingOffsetType.PRICE,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _trailing_stop_limit_order(client_order_id="O-009"):
+    return TrailingStopLimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("0.98900"),
+        trigger_price=Price.from_str("0.99000"),
+        trigger_type=TriggerType.DEFAULT,
+        limit_offset=Decimal("0.00100"),
+        trailing_offset=Decimal("0.00200"),
+        trailing_offset_type=TrailingOffsetType.PRICE,
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+ORDER_FACTORIES = [
+    _market_order,
+    _limit_order,
+    _stop_market_order,
+    _stop_limit_order,
+    _market_if_touched_order,
+    _limit_if_touched_order,
+    _market_to_limit_order,
+    _trailing_stop_market_order,
+    _trailing_stop_limit_order,
+]
+
+
+@pytest.mark.parametrize(
+    "order_factory",
+    [
+        _limit_if_touched_order,
+        _market_to_limit_order,
+        _stop_limit_order,
+        _stop_market_order,
+    ],
+)
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            {
+                "contingency_type": "OCO",
+                "linked_order_ids": [],
+            },
+            "`linked_order_ids` is required for contingent orders",
+        ),
+        (
+            {
+                "exec_algorithm_id": "TWAP",
+                "exec_spawn_id": None,
+            },
+            "`exec_spawn_id` is required when `exec_algorithm_id` is set",
+        ),
+    ],
+)
+def test_order_from_dict_rejects_invalid_metadata(order_factory, metadata, expected):
+    order = order_factory()
+    values = order.to_dict()
+    values.update(metadata)
+
+    with pytest.raises(ValueError, match=expected):
+        type(order).from_dict(values)
+
+
+@pytest.mark.parametrize("order_factory", ORDER_FACTORIES)
+def test_order_inspection_properties_are_consistent(order_factory):
+    order = order_factory()
+
+    assert order.avg_px is None
+    assert order.event_count == 1
+    assert order.is_buy is (order.side == OrderSide.BUY)
+    assert order.is_sell is (order.side == OrderSide.SELL)
+    assert order.is_canceled is False
+    assert order.is_inflight is False
+    assert order.is_open is False
+    assert order.is_closed is False
+    assert order.is_pending_cancel is False
+    assert order.is_pending_update is False
+    assert isinstance(order.init_event, OrderInitialized)
+    assert isinstance(order.last_event, OrderInitialized)
+    assert order.leaves_qty == order.quantity
+    assert order.filled_qty == Quantity.from_int(0)
+    assert order.overfill_qty == Quantity.from_int(0)
+    assert order.slippage is None
+    assert order.trade_ids == []
+    assert order.venue_order_ids == []
+    assert order.ts_submitted is None
+    assert order.ts_accepted is None
+    assert order.ts_closed is None
+    assert order.ts_last == order.ts_init
+    assert order.venue_order_id is None
+    assert order.position_id is None
+    assert order.account_id is None
+    assert order.last_trade_id is None
+    assert order.liquidity_side == LiquiditySide.NO_LIQUIDITY_SIDE
+    assert order.is_active_local is True
+    assert order.is_emulated is False
+    assert order.is_primary is False
+    assert order.is_spawned is False
+
+
+@pytest.mark.parametrize(
+    "order_factory",
+    [
+        _stop_market_order,
+        _stop_limit_order,
+        _market_if_touched_order,
+        _limit_if_touched_order,
+        _trailing_stop_market_order,
+        _trailing_stop_limit_order,
+    ],
+)
+def test_trigger_order_inspection_properties_are_consistent(order_factory):
+    order = order_factory()
+
+    assert order.is_triggered is False
+    assert order.ts_triggered is None
+
+
+@pytest.mark.parametrize(
+    "order_factory",
+    [_trailing_stop_market_order, _trailing_stop_limit_order],
+)
+def test_trailing_order_activation_property_is_consistent(order_factory):
+    order = order_factory()
+
+    assert order.is_activated is False
+
+
+@pytest.mark.parametrize(
+    "order_factory",
+    ORDER_FACTORIES,
+)
+def test_apply_rejects_unsupported_event(order_factory):
+    order = order_factory()
+
+    with pytest.raises(ValueError, match="OrderEventAny"):
+        order.apply(object())
 
 
 def test_apply_submitted():
@@ -1017,6 +1400,16 @@ def test_apply_filled():
     assert order.status == OrderStatus.FILLED
     assert order.quantity == Quantity.from_int(100_000)
     assert len(order.events()) == 4
+    assert order.avg_px == Decimal("1.00000")
+    assert order.event_count == 4
+    assert isinstance(order.last_event, OrderFilled)
+    assert order.leaves_qty == Quantity.from_int(0)
+    assert order.filled_qty == Quantity.from_int(100_000)
+    assert order.trade_ids == [TradeId("T-001")]
+    assert order.venue_order_ids == [VenueOrderId("V-001")]
+    assert order.ts_submitted == 1
+    assert order.ts_accepted == 2
+    assert order.ts_closed == 3
 
 
 def test_apply_partial_fill():

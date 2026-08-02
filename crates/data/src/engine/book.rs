@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    cell::{Ref, RefCell},
-    num::NonZeroUsize,
-    rc::Rc,
-};
+use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use indexmap::IndexMap;
 use nautilus_common::{
@@ -229,6 +225,11 @@ impl BookSnapshotter {
         }
     }
 
+    /// Publishes a snapshot for each subscribed book.
+    ///
+    /// Books are cloned out of the cache inside a scoped borrow before publishing,
+    /// so subscribers can mutably borrow the cache (e.g. a strategy submitting an
+    /// order from `on_book`).
     pub fn snapshot(&self, _event: TimeEvent) {
         let snapshot_infos: Vec<BookSnapshotInfo> =
             self.snapshot_infos.borrow().values().cloned().collect();
@@ -239,29 +240,44 @@ impl BookSnapshotter {
             self.interval_ms,
         );
 
-        let cache = self.cache.borrow();
+        let books: Vec<(MStr<Topic>, OrderBook)> = {
+            let cache = self.cache.borrow();
+            let mut books = Vec::new();
 
-        for snap_info in snapshot_infos {
-            self.publish_snapshot(&snap_info, &cache);
+            for snap_info in &snapshot_infos {
+                self.collect_snapshot(snap_info, &cache, &mut books);
+            }
+
+            books
+        };
+
+        for (topic, book) in books {
+            msgbus::publish_book(topic, &book);
         }
     }
 
-    fn publish_snapshot(&self, snap_info: &BookSnapshotInfo, cache: &Ref<Cache>) {
+    fn collect_snapshot(
+        &self,
+        snap_info: &BookSnapshotInfo,
+        cache: &Cache,
+        books: &mut Vec<(MStr<Topic>, OrderBook)>,
+    ) {
         if let Some((root, class)) = snap_info.parent {
             let topic = snap_info.topic;
             for instrument in cache.instruments_by_parent(&snap_info.venue, &root, class) {
-                self.publish_order_book(&instrument.id(), topic, cache);
+                self.collect_order_book(&instrument.id(), topic, cache, books);
             }
         } else {
-            self.publish_order_book(&snap_info.instrument_id, snap_info.topic, cache);
+            self.collect_order_book(&snap_info.instrument_id, snap_info.topic, cache, books);
         }
     }
 
-    fn publish_order_book(
+    fn collect_order_book(
         &self,
         instrument_id: &InstrumentId,
         topic: MStr<Topic>,
-        cache: &Ref<Cache>,
+        cache: &Cache,
+        books: &mut Vec<(MStr<Topic>, OrderBook)>,
     ) {
         let book = match cache.try_order_book(instrument_id) {
             Ok(book) => book,
@@ -280,13 +296,19 @@ impl BookSnapshotter {
             book.update_count
         );
 
-        msgbus::publish_book(topic, book);
+        books.push((topic, book.clone()));
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::msgbus::TypedHandler;
     use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        data::BookOrder,
+        enums::{BookType, OrderSide},
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -322,5 +344,121 @@ mod tests {
         );
 
         snapshotter.snapshot(event);
+    }
+
+    #[rstest]
+    fn snapshot_allows_subscriber_to_mutably_borrow_cache() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let interval_ms = NonZeroUsize::new(100).unwrap();
+        let topic = switchboard::get_book_snapshots_topic(instrument_id, interval_ms);
+        let snapshot_infos = Rc::new(RefCell::new(IndexMap::new()));
+
+        snapshot_infos.borrow_mut().insert(
+            instrument_id,
+            BookSnapshotInfo {
+                instrument_id,
+                venue: Venue::new("SIM"),
+                parent: None,
+                topic,
+                interval_ms,
+            },
+        );
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        book.add(
+            BookOrder::new(OrderSide::Buy, Price::from("100.00"), Quantity::from(10), 0),
+            0,
+            1,
+            UnixNanos::default(),
+        );
+        cache.borrow_mut().add_order_book(book).unwrap();
+
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let handler = CacheWritingBookHandler {
+            id: Ustr::from("CacheWritingBookHandler"),
+            cache: cache.clone(),
+            received: received.clone(),
+        };
+        msgbus::subscribe_book_snapshots(topic.into(), TypedHandler::new(handler), None);
+
+        let snapshotter = BookSnapshotter::new(interval_ms, snapshot_infos, cache);
+        let event = TimeEvent::new(
+            Ustr::from("TEST"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        snapshotter.snapshot(event);
+
+        let received = received.borrow();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].instrument_id, instrument_id);
+        assert_eq!(received[0].best_bid_price(), Some(Price::from("100.00")));
+    }
+
+    #[rstest]
+    fn snapshot_skips_book_with_no_updates() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let interval_ms = NonZeroUsize::new(100).unwrap();
+        let topic = switchboard::get_book_snapshots_topic(instrument_id, interval_ms);
+        let snapshot_infos = Rc::new(RefCell::new(IndexMap::new()));
+
+        snapshot_infos.borrow_mut().insert(
+            instrument_id,
+            BookSnapshotInfo {
+                instrument_id,
+                venue: Venue::new("SIM"),
+                parent: None,
+                topic,
+                interval_ms,
+            },
+        );
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_order_book(OrderBook::new(instrument_id, BookType::L2_MBP))
+            .unwrap();
+
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let handler = CacheWritingBookHandler {
+            id: Ustr::from("CacheWritingBookHandler-NoUpdates"),
+            cache: cache.clone(),
+            received: received.clone(),
+        };
+        msgbus::subscribe_book_snapshots(topic.into(), TypedHandler::new(handler), None);
+
+        let snapshotter = BookSnapshotter::new(interval_ms, snapshot_infos, cache);
+        let event = TimeEvent::new(
+            Ustr::from("TEST"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        snapshotter.snapshot(event);
+
+        assert!(received.borrow().is_empty());
+    }
+
+    struct CacheWritingBookHandler {
+        id: Ustr,
+        cache: Rc<RefCell<Cache>>,
+        received: Rc<RefCell<Vec<OrderBook>>>,
+    }
+
+    impl Handler<OrderBook> for CacheWritingBookHandler {
+        fn id(&self) -> Ustr {
+            self.id
+        }
+
+        fn handle(&self, book: &OrderBook) {
+            // Mirrors a strategy writing to the cache from `on_book`
+            let mut cache = self.cache.borrow_mut();
+            let _ = cache.order_book_mut(&book.instrument_id);
+            self.received.borrow_mut().push(book.clone());
+        }
     }
 }

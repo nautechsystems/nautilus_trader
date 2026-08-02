@@ -30,8 +30,8 @@ use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
-    orders::{Order, OrderAny},
-    types::Price,
+    orders::{Order, OrderAny, OrderCore},
+    types::{Price, Quantity},
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -149,15 +149,7 @@ impl DataActor for ExecTester {
                 .close_positions_time_in_force
                 .or(Some(TimeInForce::Gtc));
 
-            if let Err(e) = self.close_all_positions(
-                instrument_id,
-                None,
-                client_id,
-                None,
-                time_in_force,
-                Some(self.config.reduce_only_on_stop),
-                None,
-            ) {
+            if let Err(e) = self.close_positions_on_stop(strategy_id, time_in_force) {
                 log::error!("Failed to close all positions: {e}");
             }
         }
@@ -1410,6 +1402,79 @@ impl ExecTester {
         }
     }
 
+    fn close_positions_on_stop(
+        &mut self,
+        strategy_id: StrategyId,
+        time_in_force: Option<TimeInForce>,
+    ) -> anyhow::Result<()> {
+        let instrument_id = self.config.instrument_id;
+        let client_id = self.config.client_id;
+        let reduce_only = Some(self.config.reduce_only_on_stop);
+        let Some(precision) = self.config.close_positions_qty_precision else {
+            return self.close_all_positions(
+                instrument_id,
+                None,
+                client_id,
+                None,
+                time_in_force,
+                reduce_only,
+                None,
+                None,
+            );
+        };
+
+        let positions =
+            self.cache()
+                .positions_open(None, Some(&instrument_id), Some(&strategy_id), None, None);
+
+        if positions.is_empty() {
+            log::info!("No {instrument_id} open positions to close");
+            return Ok(());
+        }
+
+        log::info!(
+            "Closing {} open position{}",
+            positions.len(),
+            if positions.len() == 1 { "" } else { "s" },
+        );
+
+        for position in positions {
+            let position_id = position.id;
+            let (close_quantity, residual) = split_position_quantity(position.quantity, precision)?;
+
+            if close_quantity.is_zero() {
+                log_warn!(
+                    "Position {position_id} has no venue-fillable close quantity at {precision}-decimal precision; exact residual remains {residual}"
+                );
+                continue;
+            }
+
+            if residual > Decimal::ZERO {
+                log_warn!(
+                    "Position {position_id} close quantity {close_quantity} leaves exact residual {residual} after a full fill"
+                );
+            }
+
+            let closing_side = OrderCore::closing_side(position.side);
+            let order = self.order_factory().market(
+                position.instrument_id,
+                closing_side,
+                close_quantity,
+                time_in_force,
+                reduce_only,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+
+            self.submit_order(order, Some(position_id), client_id, None)?;
+        }
+
+        Ok(())
+    }
+
     /// Open a position with a market order.
     ///
     /// # Errors
@@ -1597,6 +1662,18 @@ impl ExecTester {
             .map(|o| o.client_order_id())
             .collect()
     }
+}
+
+fn split_position_quantity(
+    quantity: Quantity,
+    precision: u8,
+) -> anyhow::Result<(Quantity, Decimal)> {
+    let quantity_decimal = quantity.as_decimal();
+    let close_decimal = quantity_decimal.trunc_with_scale(u32::from(precision));
+    let close_quantity = Quantity::from_decimal_dp(close_decimal, quantity.precision)
+        .map_err(|e| anyhow::anyhow!("Invalid position close quantity {close_decimal}: {e}"))?;
+    let residual = quantity_decimal - close_quantity.as_decimal();
+    Ok((close_quantity, residual))
 }
 
 fn add_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {

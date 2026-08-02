@@ -63,6 +63,14 @@ pub struct DatabentoLiveClientConfig {
     pub bars_timestamp_on_close: bool,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DatabentoLiveClientConfig {
+    publishers_filepath: PathBuf,
+    use_exchange_as_venue: bool,
+    bars_timestamp_on_close: bool,
+    venue_dataset_map: IndexMap<String, String>,
+});
+
 impl Debug for DatabentoLiveClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DatabentoLiveClientConfig))

@@ -51,7 +51,11 @@ use super::{
     subscription::topic_from_websocket_arg,
 };
 use crate::{
-    common::consts::{OKX_FIELD_SMSG, OKX_SUCCESS_CODE, should_retry_error_code},
+    common::{
+        consts::{OKX_FIELD_SMSG, OKX_SUCCESS_CODE, should_retry_error_code},
+        enums::{OKXOrderStatus, OKXOrderType},
+        parse::prefer_rpi_response_fields,
+    },
     websocket::client::OKX_RATE_LIMIT_KEY_SUBSCRIPTION,
 };
 
@@ -278,6 +282,9 @@ impl OKXWsFeedHandler {
                         OKXWsFrame::BookData { arg, action, data } => {
                             return Some(OKXWsMessage::BookData { arg, action, data });
                         }
+                        OKXWsFrame::RpiBookData { arg, action, data } => {
+                            return Some(OKXWsMessage::RpiBookData { arg, action, data });
+                        }
                         OKXWsFrame::OrderResponse {
                             id, op, code, msg, data,
                         } => {
@@ -322,7 +329,7 @@ impl OKXWsFeedHandler {
         }
     }
 
-    fn route_data_message(&self, arg: OKXWebSocketArg, data: Value) -> Option<OKXWsMessage> {
+    fn route_data_message(&self, arg: OKXWebSocketArg, mut data: Value) -> Option<OKXWsMessage> {
         let OKXWebSocketArg {
             channel, inst_id, ..
         } = arg;
@@ -340,6 +347,7 @@ impl OKXWsFeedHandler {
                 parse_array_items(data, "algo orders", false).map(OKXWsMessage::AlgoOrders)
             }
             OKXWsChannel::Instruments => {
+                prefer_rpi_response_fields(&mut data);
                 parse_array_items(data, "instruments", true).map(OKXWsMessage::Instruments)
             }
             _ => Some(OKXWsMessage::ChannelData {
@@ -513,7 +521,9 @@ impl OKXWsFeedHandler {
                             log::trace!("Ignoring ping event parsed from text payload");
                             None
                         }
-                        OKXWsFrame::Data { .. } | OKXWsFrame::BookData { .. } => Some(ws_event),
+                        OKXWsFrame::Data { .. }
+                        | OKXWsFrame::BookData { .. }
+                        | OKXWsFrame::RpiBookData { .. } => Some(ws_event),
                         OKXWsFrame::OrderResponse {
                             id, op, code, data, ..
                         } => {
@@ -593,6 +603,16 @@ pub fn is_post_only_auto_cancel(msg: &OKXOrderMsg) -> bool {
     msg.acc_fill_sz
         .as_ref()
         .is_none_or(|filled| filled == "0" || filled.is_empty())
+}
+
+/// Returns `true` when an RPI order update is canceled without any fill.
+pub fn is_unfilled_rpi_cancel(msg: &OKXOrderMsg) -> bool {
+    msg.ord_type == OKXOrderType::Rpi
+        && msg.state == OKXOrderStatus::Canceled
+        && msg
+            .acc_fill_sz
+            .as_ref()
+            .is_none_or(|filled| filled == "0" || filled.is_empty())
 }
 
 // Per-item deserialization so one malformed entry does not drop the batch.
@@ -680,7 +700,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::common::{consts::OKX_WS_TOPIC_DELIMITER, testing::load_test_json};
+    use crate::common::{
+        consts::OKX_WS_TOPIC_DELIMITER, enums::OKXRpiPermission, testing::load_test_json,
+    };
 
     fn create_handler() -> OKXWsFeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
@@ -769,6 +791,29 @@ mod tests {
             OKXWsMessage::Instruments(instruments) => {
                 assert_eq!(instruments.len(), 1);
                 assert_eq!(instruments[0].inst_id.as_str(), "BTC-USDT-SWAP");
+            }
+            other => panic!("Expected Instruments, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_route_instruments_prefers_rpi_over_legacy_alias() {
+        let handler = create_handler();
+        let mut frame: Value =
+            serde_json::from_str(&load_test_json("ws_instruments.json")).expect("valid fixture");
+        let instrument = &mut frame["data"][0];
+        instrument["rpi"] = json!("2");
+        instrument["elp"] = json!("1");
+
+        let arg: OKXWebSocketArg = serde_json::from_value(frame["arg"].clone()).expect("valid arg");
+        let msg = handler
+            .route_data_message(arg, frame["data"].clone())
+            .expect("instruments message");
+
+        match msg {
+            OKXWsMessage::Instruments(instruments) => {
+                assert_eq!(instruments.len(), 1);
+                assert_eq!(instruments[0].rpi, Some(OKXRpiPermission::Permitted));
             }
             other => panic!("Expected Instruments, was {other:?}"),
         }

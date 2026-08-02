@@ -54,7 +54,18 @@ impl ClientConfig for AxExecClientConfig {
 }
 
 /// Factory for creating AX Exchange data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
+)]
 pub struct AxDataClientFactory;
 
 impl AxDataClientFactory {
@@ -145,7 +156,18 @@ impl DataClientFactory for AxDataClientFactory {
 }
 
 /// Factory for creating AX Exchange execution clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
+)]
 pub struct AxExecutionClientFactory;
 
 impl AxExecutionClientFactory {

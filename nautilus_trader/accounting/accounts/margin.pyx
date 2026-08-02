@@ -745,14 +745,14 @@ cdef class MarginAccount(Account):
         # an inflated margin amount due to latency or rounding differences)
         # the calculated ``margin_raw`` can exceed the ``total_raw`` balance. This
         # would normally propagate to the ``AccountBalance`` constructor where
-        # the internal correctness checks would raise – ultimately causing the
+        # the internal correctness checks would raise - ultimately causing the
         # entire application to terminate. That fail-fast behaviour is useful
         # during development, but in live trading we prefer to degrade
         # gracefully whilst ensuring that balances remain internally
         # consistent.
         #
         # Therefore we clamp the margin amount to the total balance whenever it
-        # would otherwise exceed it. The resulting free balance is then zero –
+        # would otherwise exceed it. The resulting free balance is then zero -
         # indicating that no funds are currently available for trading.
         cdef MoneyRaw free_raw = total_raw - margin_raw
 

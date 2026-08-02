@@ -34,7 +34,7 @@
 //! 4. Synthetic `trade_id` and `venue_order_id` values are deterministic
 //!    functions of the logical event, so restart replays dedupe.
 //!
-//! See `docs/concepts/live.md` for the operator-facing description.
+//! See `docs/concepts/reconciliation.md` for the operator-facing description.
 
 mod ids;
 mod orders;
@@ -52,7 +52,8 @@ pub use ids::{
 pub use orders::{
     create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,
     create_reconciliation_triggered, generate_external_order_status_events,
-    generate_reconciliation_order_events, reconcile_fill_report, reconcile_order_report,
+    generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
+    generate_reconciliation_order_snapshot_events, reconcile_fill_report, reconcile_order_report,
     should_reconciliation_update,
 };
 pub use positions::{

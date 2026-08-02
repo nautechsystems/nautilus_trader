@@ -35,7 +35,7 @@ use crate::{
         parse::{
             parse_millis_to_nanos, parse_secs_to_nanos, price_from_decimal, quantity_from_decimal,
         },
-        symbol::MarketRegistry,
+        symbol::{MarketRegistry, format_instrument_id},
     },
     http::models::{
         LighterCandle, LighterFunding, LighterFundingDirection, LighterOrderBook,
@@ -72,7 +72,7 @@ pub fn register_spot_order_book_details(
 ///
 /// # Errors
 ///
-/// Returns an error if an instrument definition cannot be converted.
+/// Returns an error if metadata is nonempty but no instrument definition can be converted.
 pub fn parse_order_book_details_instruments(
     registry: &MarketRegistry,
     perp_details: &[LighterPerpOrderBookDetail],
@@ -92,7 +92,7 @@ pub fn parse_order_book_details_instruments(
 ///
 /// # Errors
 ///
-/// Returns an error if an instrument definition cannot be converted.
+/// Returns an error if metadata is nonempty but no instrument definition can be converted.
 pub fn parse_order_book_details_instruments_with_status(
     registry: &MarketRegistry,
     perp_details: &[LighterPerpOrderBookDetail],
@@ -100,19 +100,40 @@ pub fn parse_order_book_details_instruments_with_status(
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<(InstrumentAny, LighterMarketStatus)>> {
     let mut instruments = Vec::with_capacity(perp_details.len() + spot_details.len());
+    let mut first_error = None;
 
     for detail in perp_details {
-        instruments.push((
-            parse_perp_instrument(registry, detail, ts_init)?,
-            detail.order_book.status,
-        ));
+        match parse_perp_instrument(registry, detail, ts_init) {
+            Ok(instrument) => instruments.push((instrument, detail.order_book.status)),
+            Err(e) => {
+                log::warn!(
+                    "Skipping invalid Lighter perpetual instrument `{}`: {e}",
+                    detail.order_book.symbol,
+                );
+                first_error.get_or_insert_with(|| e.to_string());
+            }
+        }
     }
 
     for detail in spot_details {
-        instruments.push((
-            parse_spot_instrument(registry, detail, ts_init)?,
-            detail.order_book.status,
-        ));
+        match parse_spot_instrument(registry, detail, ts_init) {
+            Ok(instrument) => instruments.push((instrument, detail.order_book.status)),
+            Err(e) => {
+                log::warn!(
+                    "Skipping invalid Lighter spot instrument `{}`: {e}",
+                    detail.order_book.symbol,
+                );
+                first_error.get_or_insert_with(|| e.to_string());
+            }
+        }
+    }
+
+    let input_len = perp_details.len() + spot_details.len();
+    if input_len > 0 && instruments.is_empty() {
+        anyhow::bail!(
+            "failed to parse any of {input_len} Lighter instruments: {}",
+            first_error.as_deref().unwrap_or("unknown parse error"),
+        );
     }
 
     Ok(instruments)
@@ -163,6 +184,27 @@ pub fn parse_candle_bar(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
+    anyhow::ensure!(
+        candle.open > Decimal::ZERO,
+        "non-positive candle open `{}`",
+        candle.open
+    );
+    anyhow::ensure!(
+        candle.high > Decimal::ZERO,
+        "non-positive candle high `{}`",
+        candle.high
+    );
+    anyhow::ensure!(
+        candle.low > Decimal::ZERO,
+        "non-positive candle low `{}`",
+        candle.low
+    );
+    anyhow::ensure!(
+        candle.close > Decimal::ZERO,
+        "non-positive candle close `{}`",
+        candle.close
+    );
+
     let timestamp_ms =
         u64::try_from(candle.timestamp).context("negative Lighter candle timestamp")?;
     let ts_event = parse_millis_to_nanos(timestamp_ms)?;
@@ -405,11 +447,7 @@ fn parse_perp_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let order_book = &detail.order_book;
-    let instrument_id = registry.insert(
-        order_book.market_id,
-        order_book.symbol.as_str(),
-        order_book.market_type,
-    );
+    let instrument_id = format_instrument_id(order_book.symbol.as_str(), order_book.market_type);
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
     let (base_currency, quote_currency) = symbol_currencies(order_book.symbol.as_str(), "USDC");
     let settlement_currency = quote_currency;
@@ -446,6 +484,12 @@ fn parse_perp_instrument(
     )
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    registry.insert(
+        order_book.market_id,
+        order_book.symbol.as_str(),
+        order_book.market_type,
+    );
+
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
@@ -455,13 +499,9 @@ fn parse_spot_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let order_book = &detail.order_book;
-    let instrument_id = registry.insert(
-        order_book.market_id,
-        order_book.symbol.as_str(),
-        order_book.market_type,
-    );
+    let instrument_id = format_instrument_id(order_book.symbol.as_str(), order_book.market_type);
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
-    let (base_currency, quote_currency) = symbol_currencies(order_book.symbol.as_str(), "USDC");
+    let (base_currency, quote_currency) = spot_symbol_currencies(order_book.symbol.as_str())?;
     let price_increment = price_increment(detail.price_decimals)?;
     let size_increment = quantity_increment(detail.size_decimals)?;
 
@@ -493,7 +533,30 @@ fn parse_spot_instrument(
     )
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    registry.insert(
+        order_book.market_id,
+        order_book.symbol.as_str(),
+        order_book.market_type,
+    );
+
     Ok(InstrumentAny::CurrencyPair(instrument))
+}
+
+fn spot_symbol_currencies(symbol: &str) -> anyhow::Result<(Currency, Currency)> {
+    let (base, quote) = symbol
+        .split_once('/')
+        .context("Lighter spot symbol must use BASE/QUOTE format")?;
+    let base = base.trim();
+    let quote = quote.trim();
+    anyhow::ensure!(
+        !base.is_empty() && !quote.is_empty() && !quote.contains('/'),
+        "Lighter spot symbol must contain one nonempty BASE/QUOTE pair",
+    );
+
+    Ok((
+        Currency::get_or_create_crypto(base),
+        Currency::get_or_create_crypto(quote),
+    ))
 }
 
 fn symbol_currencies(symbol: &str, default_quote: &str) -> (Currency, Currency) {
@@ -672,6 +735,54 @@ mod tests {
         }
     }
 
+    fn stub_perp_detail(symbol: &str, market_id: i16) -> LighterPerpOrderBookDetail {
+        LighterPerpOrderBookDetail {
+            order_book: stub_order_book(symbol, market_id, LighterProductType::Perp),
+            size_decimals: 4,
+            price_decimals: 2,
+            quote_multiplier: 1,
+            default_initial_margin_fraction: 500,
+            min_initial_margin_fraction: 200,
+            maintenance_margin_fraction: 120,
+            closeout_margin_fraction: 80,
+            last_trade_price: Decimal::new(235_273, 2),
+            daily_trades_count: 0,
+            daily_base_token_volume: Decimal::ZERO,
+            daily_quote_token_volume: Decimal::ZERO,
+            daily_price_low: Decimal::ZERO,
+            daily_price_high: Decimal::ZERO,
+            daily_price_change: Decimal::ZERO,
+            open_interest: Decimal::ZERO,
+            daily_chart: Default::default(),
+            market_config: LighterMarketConfig {
+                market_margin_mode: LighterPositionMarginMode::Cross,
+                insurance_fund_account_index: 281474976710655,
+                liquidation_mode: 0,
+                force_reduce_only: false,
+                trading_hours: String::new(),
+                funding_fee_discounts_enabled: false,
+                hidden: false,
+            },
+            strategy_index: 2,
+        }
+    }
+
+    fn stub_spot_detail(symbol: &str, market_id: i16) -> LighterSpotOrderBookDetail {
+        LighterSpotOrderBookDetail {
+            order_book: stub_order_book(symbol, market_id, LighterProductType::Spot),
+            size_decimals: 6,
+            price_decimals: 6,
+            last_trade_price: Decimal::ONE,
+            daily_trades_count: 0,
+            daily_base_token_volume: Decimal::ZERO,
+            daily_quote_token_volume: Decimal::ZERO,
+            daily_price_low: Decimal::ZERO,
+            daily_price_high: Decimal::ZERO,
+            daily_price_change: Decimal::ZERO,
+            daily_chart: Default::default(),
+        }
+    }
+
     #[rstest]
     fn test_parse_trade_tick_maps_aggressor_from_maker_side() {
         let instrument = create_test_instrument();
@@ -829,6 +940,41 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("negative Lighter candle timestamp")
+        );
+    }
+
+    #[rstest]
+    #[case("open", Decimal::ZERO)]
+    #[case("open", Decimal::NEGATIVE_ONE)]
+    #[case("high", Decimal::ZERO)]
+    #[case("high", Decimal::NEGATIVE_ONE)]
+    #[case("low", Decimal::ZERO)]
+    #[case("low", Decimal::NEGATIVE_ONE)]
+    #[case("close", Decimal::ZERO)]
+    #[case("close", Decimal::NEGATIVE_ONE)]
+    fn test_parse_candle_bar_rejects_non_positive_ohlc(
+        #[case] field: &str,
+        #[case] value: Decimal,
+    ) {
+        let instrument = create_test_instrument();
+        let bar_type = test_bar_type(instrument.id());
+        let candles: LighterCandles = serde_json::from_str(HTTP_CANDLES).unwrap();
+        let mut candle = candles.candles[0].clone();
+        match field {
+            "open" => candle.open = value,
+            "high" => candle.high = value,
+            "low" => candle.low = value,
+            "close" => candle.close = value,
+            _ => unreachable!(),
+        }
+
+        let error =
+            parse_candle_bar(&candle, bar_type, &instrument, UnixNanos::from(1)).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("non-positive candle {field}")),
         );
     }
 
@@ -1269,24 +1415,58 @@ mod tests {
                 .unwrap_err();
 
         assert!(err.to_string().contains("negative quantity"));
+        assert!(registry.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_order_book_details_instruments_skips_invalid_row_without_registry_pollution() {
+        let registry = MarketRegistry::new();
+        let mut invalid = stub_perp_detail("ETH", 0);
+        invalid.order_book.min_base_amount = Decimal::NEGATIVE_ONE;
+        let valid = stub_perp_detail("BTC", 1);
+
+        let instruments = parse_order_book_details_instruments(
+            &registry,
+            &[invalid, valid],
+            &[],
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), instrument_id("BTC-PERP"));
+        assert_eq!(registry.market_index(&instrument_id("BTC-PERP")), Some(1));
+        assert_eq!(registry.market_index(&instrument_id("ETH-PERP")), None);
+    }
+
+    #[rstest]
+    fn test_parse_order_book_details_instruments_skips_invalid_spot_row() {
+        let registry = MarketRegistry::new();
+        let mut invalid = stub_spot_detail("ETH/USDC", 2048);
+        invalid.order_book.min_base_amount = Decimal::NEGATIVE_ONE;
+        let valid = stub_spot_detail("BTC/USDC", 2049);
+
+        let instruments = parse_order_book_details_instruments(
+            &registry,
+            &[],
+            &[invalid, valid],
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), instrument_id("BTC/USDC-SPOT"));
+        assert_eq!(
+            registry.market_index(&instrument_id("BTC/USDC-SPOT")),
+            Some(2049),
+        );
+        assert_eq!(registry.market_index(&instrument_id("ETH/USDC-SPOT")), None);
     }
 
     #[rstest]
     fn test_parse_order_book_details_instruments_parses_spot_pair() {
         let registry = MarketRegistry::new();
-        let details = vec![LighterSpotOrderBookDetail {
-            order_book: stub_order_book("ETH/USDC", 2048, LighterProductType::Spot),
-            size_decimals: 6,
-            price_decimals: 6,
-            last_trade_price: Decimal::ONE,
-            daily_trades_count: 0,
-            daily_base_token_volume: Decimal::ZERO,
-            daily_quote_token_volume: Decimal::ZERO,
-            daily_price_low: Decimal::ZERO,
-            daily_price_high: Decimal::ZERO,
-            daily_price_change: Decimal::ZERO,
-            daily_chart: Default::default(),
-        }];
+        let details = vec![stub_spot_detail("ETH/USDC", 2048)];
         let instrument_id = instrument_id("ETH/USDC-SPOT");
 
         let instruments =
@@ -1318,26 +1498,31 @@ mod tests {
     }
 
     #[rstest]
+    #[case::missing_quote_separator("ETH")]
+    #[case::missing_base("/USDC")]
+    #[case::missing_quote("ETH/")]
+    #[case::extra_component("ETH/USDC/EXTRA")]
+    fn test_parse_order_book_details_instruments_rejects_invalid_spot_pair(#[case] symbol: &str) {
+        let registry = MarketRegistry::new();
+        let details = vec![stub_spot_detail(symbol, 2048)];
+
+        let error =
+            parse_order_book_details_instruments(&registry, &[], &details, UnixNanos::from(1))
+                .unwrap_err();
+
+        assert!(error.to_string().contains("BASE/QUOTE"));
+        assert!(registry.is_empty());
+    }
+
+    #[rstest]
     fn test_register_spot_order_book_details_populates_market_registry() {
         let registry = MarketRegistry::new();
-        let details = vec![LighterSpotOrderBookDetail {
-            order_book: stub_order_book("USDC", 2048, LighterProductType::Spot),
-            size_decimals: 6,
-            price_decimals: 6,
-            last_trade_price: Decimal::ONE,
-            daily_trades_count: 0,
-            daily_base_token_volume: Decimal::ZERO,
-            daily_quote_token_volume: Decimal::ZERO,
-            daily_price_low: Decimal::ZERO,
-            daily_price_high: Decimal::ZERO,
-            daily_price_change: Decimal::ZERO,
-            daily_chart: Default::default(),
-        }];
+        let details = vec![stub_spot_detail("ETH/USDC", 2048)];
 
         register_spot_order_book_details(&registry, &details);
 
         assert_eq!(
-            registry.market_index(&instrument_id("USDC-SPOT")),
+            registry.market_index(&instrument_id("ETH/USDC-SPOT")),
             Some(2048)
         );
     }

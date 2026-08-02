@@ -162,7 +162,7 @@ mod tests {
     fn test_position_opened_create() {
         let instrument = audusd_sim();
         let fill = create_test_order_filled();
-        let position = Position::new(&InstrumentAny::CurrencyPair(instrument), fill);
+        let position = Position::new(&InstrumentAny::CurrencyPair(instrument), fill.clone());
         let event_id = UUID4::default();
         let ts_init = UnixNanos::from(3_000_000_000);
 

@@ -29,22 +29,27 @@
 //!
 //! All requests include:
 //! - `Accept: application/sbe`
-//! - `X-MBX-SBE: 3:4` (schema ID:version)
+//! - `X-MBX-SBE: 3:5` (schema ID:version)
 
 use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, hex, nanos::UnixNanos, time::AtomicTime,
+    collections::AtomicMap, consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, hex,
+    nanos::UnixNanos, time::AtomicTime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
-    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, TimeInForce},
+    data::{Bar, BarType, BookOrder, TradeTick},
+    enums::{
+        AggregationSource, BarAggregation, BookType, MarketStatusAction, OrderSide, OrderType,
+        TimeInForce,
+    },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
+    orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport},
     types::{Price, Quantity},
 };
@@ -52,62 +57,83 @@ use nautilus_network::{
     http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
 };
-use serde::Serialize;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::{
     error::{BinanceSpotHttpError, BinanceSpotHttpResult},
     models::{
-        AvgPrice, BatchCancelResult, BatchOrderResult, BinanceAccountInfo, BinanceAccountTrade,
-        BinanceCancelOrderResponse, BinanceDepth, BinanceKlines, BinanceNewOrderResponse,
-        BinanceOrderResponse, BinanceTrades, BookTicker, ListenKeyResponse,
-        NewOcoOrderListResponse, Ticker24hr, TickerPrice, TradeFee,
+        AvgPrice, BatchCancelResult, BatchOrderResult, BinanceAccountCommission,
+        BinanceAccountInfo, BinanceAccountRatesJson, BinanceAccountTrade, BinanceAggTrade,
+        BinanceAggTrades, BinanceBalance, BinanceCancelOrderResponse, BinanceDepth,
+        BinanceExchangeInfoJson, BinanceKline, BinanceKlines, BinanceNewOrderResponse,
+        BinanceOrderFill, BinanceOrderResponse, BinancePriceLevel, BinanceTrade, BinanceTrades,
+        BookTicker, ListenKeyResponse, NewOcoOrderListResponse, Ticker24hr, TickerPrice, TradeFee,
     },
     parse,
     query::{
-        AccountInfoParams, AccountTradesParams, AllOrdersParams, AvgPriceParams, BatchCancelItem,
-        BatchOrderItem, CancelOpenOrdersParams, CancelOrderParams, CancelReplaceOrderParams,
-        DepthParams, KlinesParams, ListenKeyParams, NewOcoOrderListParams, NewOrderParams,
-        OpenOrdersParams, QueryOrderParams, TickerParams, TradeFeeParams, TradesParams,
+        AccountCommissionParams, AccountInfoParams, AccountTradesParams, AggTradesParams,
+        AllOrdersParams, AvgPriceParams, BatchCancelItem, BatchOrderItem, CancelOpenOrdersParams,
+        CancelOrderParams, CancelReplaceOrderParams, DepthParams, KlinesParams, ListenKeyParams,
+        NewOcoOrderListParams, NewOrderParams, OpenOrdersParams, QueryOrderParams, TickerParams,
+        TradeFeeParams, TradesParams,
     },
 };
 use crate::{
     common::{
         consts::{
             BINANCE_API_KEY_HEADER, BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_NO_SUCH_ORDER_CODE,
-            BINANCE_SPOT_RATE_LIMITS, BinanceRateLimitQuota,
+            BINANCE_SPOT_RATE_LIMITS, BINANCE_VENUE, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
-        encoder::{decode_broker_id, encode_broker_id},
+        encoder::{decode_client_order_id, encode_broker_id},
         enums::{
-            BinanceEnvironment, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
-            BinanceSide, BinanceTimeInForce,
+            BinanceEnvironment, BinanceOrderStatus, BinanceProductType, BinanceRateLimitInterval,
+            BinanceRateLimitType, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
         },
+        fees::BINANCE_SPOT_FEE_DEFAULT,
+        instruments::BinanceInstrumentSelector,
         models::BinanceErrorResponse,
         parse::{
-            get_currency, parse_fill_report_sbe, parse_klines_to_bars,
-            parse_new_order_response_sbe, parse_order_status_report_sbe, parse_spot_instrument_sbe,
+            get_currency, parse_fill_report_sbe, parse_klines_to_binance_bars,
+            parse_new_order_response_sbe, parse_order_status_report_sbe,
+            parse_spot_instrument_json_with_fees, parse_spot_instrument_sbe_with_fees,
             parse_spot_trades_sbe,
         },
         urls::get_http_base_url,
     },
+    config::BinanceInstrumentProviderConfig,
     spot::{
         enums::{
             BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType,
             order_type_to_binance_spot, time_in_force_to_binance_spot,
         },
-        sbe::spot::{
-            ReadBuf, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION,
-            error_response_codec::{self, ErrorResponseDecoder},
-            message_header_codec::MessageHeaderDecoder,
+        sbe::{
+            generated::symbol_status::SymbolStatus,
+            spot::{
+                ReadBuf, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION,
+                error_response_codec::{self, ErrorResponseDecoder},
+                message_header_codec::MessageHeaderDecoder,
+                order_side::OrderSide as SbeOrderSide,
+                order_status::OrderStatus as SbeOrderStatus,
+                order_type::OrderType as SbeOrderType,
+                self_trade_prevention_mode::SelfTradePreventionMode as SbeSelfTradePreventionMode,
+                time_in_force::TimeInForce as SbeTimeInForce,
+            },
         },
     },
 };
 
-/// SBE schema header value for Spot API.
-pub const SBE_SCHEMA_HEADER: &str = "3:4";
+/// SBE schema header value (`X-MBX-SBE`) sent on Spot API requests.
+///
+/// Requests the current `3:5` schema. The decoder accepts any version within schema ID `3`
+/// (see `parse::MessageHeader::validate`), so compatible responses continue to decode.
+pub const SBE_SCHEMA_HEADER: &str = "3:5";
 
-use crate::common::consts::BINANCE_SPOT_API_PATH as SPOT_API_PATH;
+use crate::common::consts::{
+    BINANCE_SAPI_PATH as SAPI_PATH, BINANCE_SPOT_API_PATH as SPOT_API_PATH,
+};
 
 /// Global rate limit key.
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:spot:global";
@@ -120,6 +146,182 @@ struct RateLimitConfig {
     keyed_quotas: Vec<(String, Quota)>,
     order_keys: Vec<String>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotAccountJson {
+    #[serde(default)]
+    maker_commission: i64,
+    #[serde(default)]
+    taker_commission: i64,
+    #[serde(default)]
+    buyer_commission: i64,
+    #[serde(default)]
+    seller_commission: i64,
+    #[serde(default)]
+    commission_rates: Option<SpotCommissionRatesJson>,
+    can_trade: bool,
+    can_withdraw: bool,
+    can_deposit: bool,
+    #[serde(default)]
+    require_self_trade_prevention: bool,
+    #[serde(default)]
+    prevent_sor: bool,
+    update_time: i64,
+    account_type: String,
+    balances: Vec<SpotBalanceJson>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpotCommissionRatesJson {
+    maker: String,
+    taker: String,
+    buyer: String,
+    seller: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpotBalanceJson {
+    asset: String,
+    free: String,
+    locked: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotOrderJson {
+    symbol: String,
+    order_id: i64,
+    #[serde(default)]
+    order_list_id: Option<i64>,
+    client_order_id: String,
+    #[serde(default)]
+    orig_client_order_id: String,
+    #[serde(default)]
+    transact_time: i64,
+    #[serde(default)]
+    price: String,
+    #[serde(default)]
+    orig_qty: String,
+    #[serde(default)]
+    executed_qty: String,
+    #[serde(default, rename = "cummulativeQuoteQty")]
+    cummulative_quote_qty: String,
+    status: BinanceOrderStatus,
+    time_in_force: BinanceTimeInForce,
+    #[serde(rename = "type")]
+    order_type: BinanceSpotOrderType,
+    side: BinanceSide,
+    #[serde(default)]
+    stop_price: String,
+    #[serde(default)]
+    iceberg_qty: String,
+    #[serde(default)]
+    time: i64,
+    #[serde(default)]
+    update_time: i64,
+    #[serde(default)]
+    is_working: bool,
+    #[serde(default)]
+    working_time: Option<i64>,
+    #[serde(default)]
+    orig_quote_order_qty: String,
+    #[serde(default)]
+    self_trade_prevention_mode: Option<BinanceSelfTradePreventionMode>,
+    #[serde(default)]
+    fills: Vec<SpotOrderFillJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotCancelReplaceJson {
+    new_order_response: SpotOrderJson,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotOrderFillJson {
+    price: String,
+    qty: String,
+    commission: String,
+    commission_asset: String,
+    #[serde(default)]
+    trade_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotAccountTradeJson {
+    symbol: String,
+    id: i64,
+    order_id: i64,
+    #[serde(default)]
+    order_list_id: Option<i64>,
+    price: String,
+    qty: String,
+    quote_qty: String,
+    commission: String,
+    commission_asset: String,
+    time: i64,
+    is_buyer: bool,
+    is_maker: bool,
+    is_best_match: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotDepthJson {
+    last_update_id: i64,
+    bids: Vec<[String; 2]>,
+    asks: Vec<[String; 2]>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpotTradeJson {
+    id: i64,
+    price: String,
+    qty: String,
+    quote_qty: String,
+    time: i64,
+    is_buyer_maker: bool,
+    is_best_match: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpotAggTradeJson {
+    #[serde(rename = "a")]
+    id: i64,
+    #[serde(rename = "p")]
+    price: String,
+    #[serde(rename = "q")]
+    qty: String,
+    #[serde(rename = "f")]
+    first_trade_id: i64,
+    #[serde(rename = "l")]
+    last_trade_id: i64,
+    #[serde(rename = "T")]
+    time: i64,
+    #[serde(rename = "m")]
+    is_buyer_maker: bool,
+    #[serde(rename = "M")]
+    is_best_match: bool,
+}
+
+type SpotKlineJson = (
+    i64,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    i64,
+    String,
+    String,
+    String,
+);
 
 /// Low-level HTTP client for Binance Spot REST API with SBE encoding.
 ///
@@ -138,9 +340,16 @@ pub struct BinanceRawSpotHttpClient {
     credential: Option<SigningCredential>,
     recv_window: Option<u64>,
     order_rate_keys: Vec<String>,
+    json_responses: bool,
 }
 
 impl BinanceRawSpotHttpClient {
+    /// Returns whether signed requests can be made.
+    #[must_use]
+    pub fn has_credentials(&self) -> bool {
+        self.credential.is_some()
+    }
+
     /// Creates a new Binance Spot raw HTTP client.
     ///
     /// # Errors
@@ -154,6 +363,34 @@ impl BinanceRawSpotHttpClient {
         recv_window: Option<u64>,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
+    ) -> BinanceSpotHttpResult<Self> {
+        Self::new_with_json_responses(
+            environment,
+            api_key,
+            api_secret,
+            base_url_override,
+            recv_window,
+            timeout_secs,
+            proxy_url,
+            false,
+        )
+    }
+
+    /// Creates a raw Spot client with JSON responses instead of Global SBE responses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying [`HttpClient`] fails to build.
+    #[expect(clippy::too_many_arguments)]
+    pub fn new_with_json_responses(
+        environment: BinanceEnvironment,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url_override: Option<String>,
+        recv_window: Option<u64>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        json_responses: bool,
     ) -> BinanceSpotHttpResult<Self> {
         let RateLimitConfig {
             default_quota,
@@ -171,7 +408,7 @@ impl BinanceRawSpotHttpClient {
             get_http_base_url(BinanceProductType::Spot, environment).to_string()
         });
 
-        let headers = Self::default_headers(&credential);
+        let headers = Self::default_headers(&credential, json_responses);
 
         let client = HttpClient::new(
             headers,
@@ -188,6 +425,7 @@ impl BinanceRawSpotHttpClient {
             credential,
             recv_window,
             order_rate_keys: order_keys,
+            json_responses,
         })
     }
 
@@ -229,6 +467,33 @@ impl BinanceRawSpotHttpClient {
         P: Serialize + ?Sized,
     {
         self.request(Method::GET, path, params, true, false).await
+    }
+
+    /// Performs a signed GET request and requests a JSON response.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing or the request fails.
+    pub async fn get_signed_json<P>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+    ) -> BinanceSpotHttpResult<Vec<u8>>
+    where
+        P: Serialize + ?Sized,
+    {
+        self.request_with_extra_headers(
+            Method::GET,
+            path,
+            params,
+            true,
+            false,
+            Some(HashMap::from([(
+                "Accept".to_string(),
+                "application/json".to_string(),
+            )])),
+        )
+        .await
     }
 
     /// Performs a signed POST request and returns raw response bytes.
@@ -288,6 +553,33 @@ impl BinanceRawSpotHttpClient {
         P: Serialize + ?Sized,
     {
         self.request(Method::DELETE, path, params, true, true).await
+    }
+
+    /// Performs a signed DELETE request and requests a JSON response.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing or the request fails.
+    pub async fn delete_signed_json<P>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+    ) -> BinanceSpotHttpResult<Vec<u8>>
+    where
+        P: Serialize + ?Sized,
+    {
+        self.request_with_extra_headers(
+            Method::DELETE,
+            path,
+            params,
+            true,
+            true,
+            Some(HashMap::from([(
+                "Accept".to_string(),
+                "application/json".to_string(),
+            )])),
+        )
+        .await
     }
 
     async fn request<P>(
@@ -457,11 +749,18 @@ impl BinanceRawSpotHttpClient {
         Some((code, message))
     }
 
-    fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
+    fn default_headers(
+        credential: &Option<SigningCredential>,
+        json_responses: bool,
+    ) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
-        headers.insert("Accept".to_string(), "application/sbe".to_string());
-        headers.insert("X-MBX-SBE".to_string(), SBE_SCHEMA_HEADER.to_string());
+        if json_responses {
+            headers.insert("Accept".to_string(), "application/json".to_string());
+        } else {
+            headers.insert("Accept".to_string(), "application/sbe".to_string());
+            headers.insert("X-MBX-SBE".to_string(), SBE_SCHEMA_HEADER.to_string());
+        }
 
         if let Some(cred) = credential {
             headers.insert(
@@ -539,6 +838,19 @@ impl BinanceRawSpotHttpClient {
     ///
     /// Returns an error if the request fails or SBE decoding fails.
     pub async fn server_time(&self) -> BinanceSpotHttpResult<i64> {
+        if self.json_responses {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct ServerTimeJson {
+                server_time: i64,
+            }
+
+            let bytes = self.get_json("time", None::<&()>).await?;
+            let response: ServerTimeJson = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            return millis_to_micros(response.server_time);
+        }
+
         let bytes = self.get("time", None::<&()>).await?;
         let timestamp = parse::decode_server_time(&bytes)?;
         Ok(timestamp)
@@ -557,15 +869,31 @@ impl BinanceRawSpotHttpClient {
         Ok(info)
     }
 
+    /// Returns JSON exchange information for endpoints that do not support SBE.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request or JSON decode fails.
+    pub async fn exchange_info_json(&self) -> BinanceSpotHttpResult<BinanceExchangeInfoJson> {
+        let bytes = self.get_json("exchangeInfo", None::<&()>).await?;
+        serde_json::from_slice(&bytes).map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))
+    }
+
     /// Returns order book depth for a symbol.
     ///
     /// # Errors
     ///
     /// Returns an error if the request fails or SBE decoding fails.
     pub async fn depth(&self, params: &DepthParams) -> BinanceSpotHttpResult<BinanceDepth> {
-        let bytes = self.get("depth", Some(params)).await?;
-        let depth = parse::decode_depth(&bytes)?;
-        Ok(depth)
+        if self.json_responses {
+            let bytes = self.get_json("depth", Some(params)).await?;
+            let response: SpotDepthJson = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_depth_from_json(response)
+        } else {
+            let bytes = self.get("depth", Some(params)).await?;
+            Ok(parse::decode_depth(&bytes)?)
+        }
     }
 
     /// Returns recent trades for a symbol.
@@ -582,9 +910,48 @@ impl BinanceRawSpotHttpClient {
             symbol: symbol.to_string(),
             limit,
         };
-        let bytes = self.get("trades", Some(&params)).await?;
-        let trades = parse::decode_trades(&bytes)?;
-        Ok(trades)
+
+        if self.json_responses {
+            let bytes = self.get_json("trades", Some(&params)).await?;
+            let response: Vec<SpotTradeJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_trades_from_json(response)
+        } else {
+            let bytes = self.get("trades", Some(&params)).await?;
+            Ok(parse::decode_trades(&bytes)?)
+        }
+    }
+
+    /// Returns aggregate trades for a symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bounds are invalid or the request cannot be decoded.
+    pub async fn agg_trades(
+        &self,
+        params: &AggTradesParams,
+    ) -> BinanceSpotHttpResult<BinanceAggTrades> {
+        if params.limit.is_some_and(|limit| limit > 1000) {
+            return Err(BinanceSpotHttpError::ValidationError(
+                "aggregate trade limit must not exceed 1000".to_string(),
+            ));
+        }
+
+        if matches!((params.start_time, params.end_time), (Some(start), Some(end)) if start > end) {
+            return Err(BinanceSpotHttpError::ValidationError(
+                "aggregate trade startTime must not exceed endTime".to_string(),
+            ));
+        }
+
+        if self.json_responses {
+            let bytes = self.get_json("aggTrades", Some(params)).await?;
+            let response: Vec<SpotAggTradeJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_agg_trades_from_json(response)
+        } else {
+            let bytes = self.get("aggTrades", Some(params)).await?;
+            Ok(parse::decode_agg_trades(&bytes)?)
+        }
     }
 
     /// Returns kline (candlestick) data for a symbol.
@@ -608,9 +975,16 @@ impl BinanceRawSpotHttpClient {
             time_zone: None,
             limit,
         };
-        let bytes = self.get("klines", Some(&params)).await?;
-        let klines = parse::decode_klines(&bytes)?;
-        Ok(klines)
+
+        if self.json_responses {
+            let bytes = self.get_json("klines", Some(&params)).await?;
+            let response: Vec<SpotKlineJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_klines_from_json(response)
+        } else {
+            let bytes = self.get("klines", Some(&params)).await?;
+            Ok(parse::decode_klines(&bytes)?)
+        }
     }
 
     /// Performs a public GET request that returns JSON.
@@ -802,7 +1176,7 @@ impl BinanceRawSpotHttpClient {
             format!("/{path}")
         };
 
-        let mut url = format!("{}/sapi/v1{}", self.base_url, normalized_path);
+        let mut url = format!("{}{}{}", self.base_url, SAPI_PATH, normalized_path);
 
         if !query.is_empty() {
             url.push('?');
@@ -991,9 +1365,42 @@ impl BinanceRawSpotHttpClient {
         &self,
         params: &AccountInfoParams,
     ) -> BinanceSpotHttpResult<BinanceAccountInfo> {
-        let bytes = self.get_signed("account", Some(params)).await?;
-        let response = parse::decode_account(&bytes)?;
-        Ok(response)
+        if self.json_responses {
+            let bytes = self.get_signed_json("account", Some(params)).await?;
+            let response: SpotAccountJson = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_account_from_json(response)
+        } else {
+            let bytes = self.get_signed("account", Some(params)).await?;
+            Ok(parse::decode_account(&bytes)?)
+        }
+    }
+
+    /// Returns account-specific commission rates for one symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or JSON is malformed.
+    pub async fn account_commission(
+        &self,
+        symbol: &str,
+    ) -> BinanceSpotHttpResult<BinanceAccountCommission> {
+        let params = AccountCommissionParams::new(symbol);
+        let bytes = self
+            .get_signed_json("account/commission", Some(&params))
+            .await?;
+        serde_json::from_slice(&bytes).map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))
+    }
+
+    /// Returns the minimal JSON account commission view used by Binance US.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or JSON is malformed.
+    pub async fn account_rates_json(&self) -> BinanceSpotHttpResult<BinanceAccountRatesJson> {
+        let params = AccountInfoParams::default();
+        let bytes = self.get_signed_json("account", Some(&params)).await?;
+        serde_json::from_slice(&bytes).map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))
     }
 
     /// Returns account trade history for a symbol.
@@ -1009,17 +1416,40 @@ impl BinanceRawSpotHttpClient {
         end_time: Option<i64>,
         limit: Option<u32>,
     ) -> BinanceSpotHttpResult<Vec<BinanceAccountTrade>> {
+        self.account_trades_with_cursor(symbol, order_id, start_time, end_time, None, limit)
+            .await
+    }
+
+    async fn account_trades_with_cursor(
+        &self,
+        symbol: &str,
+        order_id: Option<i64>,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        from_id: Option<i64>,
+        limit: Option<u32>,
+    ) -> BinanceSpotHttpResult<Vec<BinanceAccountTrade>> {
         let params = AccountTradesParams {
             symbol: symbol.to_string(),
             order_id,
             start_time,
             end_time,
-            from_id: None,
+            from_id,
             limit,
         };
-        let bytes = self.get_signed("myTrades", Some(&params)).await?;
-        let response = parse::decode_account_trades(&bytes)?;
-        Ok(response)
+
+        if self.json_responses {
+            let bytes = self.get_signed_json("myTrades", Some(&params)).await?;
+            let response: Vec<SpotAccountTradeJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            response
+                .into_iter()
+                .map(spot_account_trade_from_json)
+                .collect()
+        } else {
+            let bytes = self.get_signed("myTrades", Some(&params)).await?;
+            Ok(parse::decode_account_trades(&bytes)?)
+        }
     }
 
     /// Queries an order's status.
@@ -1040,9 +1470,16 @@ impl BinanceRawSpotHttpClient {
             order_id,
             orig_client_order_id: client_order_id.map(|s| s.to_string()),
         };
-        let bytes = self.get_signed("order", Some(&params)).await?;
-        let response = parse::decode_order(&bytes)?;
-        Ok(response)
+
+        if self.json_responses {
+            let bytes = self.get_signed_json("order", Some(&params)).await?;
+            let response: SpotOrderJson = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_order_from_json(response)
+        } else {
+            let bytes = self.get_signed("order", Some(&params)).await?;
+            Ok(parse::decode_order(&bytes)?)
+        }
     }
 
     /// Returns all open orders for a symbol or all symbols.
@@ -1057,9 +1494,16 @@ impl BinanceRawSpotHttpClient {
         let params = OpenOrdersParams {
             symbol: symbol.map(|s| s.to_string()),
         };
-        let bytes = self.get_signed("openOrders", Some(&params)).await?;
-        let response = parse::decode_orders(&bytes)?;
-        Ok(response)
+
+        if self.json_responses {
+            let bytes = self.get_signed_json("openOrders", Some(&params)).await?;
+            let response: Vec<SpotOrderJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            response.into_iter().map(spot_order_from_json).collect()
+        } else {
+            let bytes = self.get_signed("openOrders", Some(&params)).await?;
+            Ok(parse::decode_orders(&bytes)?)
+        }
     }
 
     /// Returns all orders (including closed) for a symbol.
@@ -1081,9 +1525,16 @@ impl BinanceRawSpotHttpClient {
             end_time,
             limit,
         };
-        let bytes = self.get_signed("allOrders", Some(&params)).await?;
-        let response = parse::decode_orders(&bytes)?;
-        Ok(response)
+
+        if self.json_responses {
+            let bytes = self.get_signed_json("allOrders", Some(&params)).await?;
+            let response: Vec<SpotOrderJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            response.into_iter().map(spot_order_from_json).collect()
+        } else {
+            let bytes = self.get_signed("allOrders", Some(&params)).await?;
+            Ok(parse::decode_orders(&bytes)?)
+        }
     }
 
     /// Performs a signed POST request for order operations.
@@ -1091,7 +1542,11 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
-        self.post_signed(path, params).await
+        if self.json_responses {
+            self.post_signed_json(path, params).await
+        } else {
+            self.post_signed(path, params).await
+        }
     }
 
     /// Performs a signed DELETE request for cancel operations.
@@ -1103,7 +1558,11 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
-        self.delete_signed(path, params).await
+        if self.json_responses {
+            self.delete_signed_json(path, params).await
+        } else {
+            self.delete_signed(path, params).await
+        }
     }
 
     /// Creates a new order.
@@ -1141,8 +1600,7 @@ impl BinanceRawSpotHttpClient {
             strategy_type: None,
         };
         let bytes = self.post_order("order", Some(&params)).await?;
-        let response = parse::decode_new_order_full(&bytes)?;
-        Ok(response)
+        self.decode_new_order_response(&bytes)
     }
 
     /// Creates a new order with full parameter support.
@@ -1186,8 +1644,7 @@ impl BinanceRawSpotHttpClient {
             strategy_type: None,
         };
         let bytes = self.post_order("order", Some(&params)).await?;
-        let response = parse::decode_new_order_full(&bytes)?;
-        Ok(response)
+        self.decode_new_order_response(&bytes)
     }
 
     /// Creates a new OCO order list.
@@ -1242,8 +1699,14 @@ impl BinanceRawSpotHttpClient {
         let bytes = self
             .post_order("order/cancelReplace", Some(&params))
             .await?;
-        let response = parse::decode_new_order_full(&bytes)?;
-        Ok(response)
+
+        if self.json_responses {
+            let response: SpotCancelReplaceJson = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_new_order_from_json(response.new_order_response)
+        } else {
+            self.decode_new_order_response(&bytes)
+        }
     }
 
     /// Cancels an existing order.
@@ -1269,8 +1732,7 @@ impl BinanceRawSpotHttpClient {
             }
         };
         let bytes = self.delete_order("order", Some(&params)).await?;
-        let response = parse::decode_cancel_order(&bytes)?;
-        Ok(response)
+        self.decode_cancel_order_response(&bytes)
     }
 
     /// Cancels all open orders for a symbol.
@@ -1284,8 +1746,42 @@ impl BinanceRawSpotHttpClient {
     ) -> BinanceSpotHttpResult<Vec<BinanceCancelOrderResponse>> {
         let params = CancelOpenOrdersParams::new(symbol.to_string());
         let bytes = self.delete_order("openOrders", Some(&params)).await?;
-        let response = parse::decode_cancel_open_orders(&bytes)?;
-        Ok(response)
+        if self.json_responses {
+            let response: Vec<SpotOrderJson> = serde_json::from_slice(&bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            response
+                .into_iter()
+                .map(spot_cancel_order_from_json)
+                .collect()
+        } else {
+            Ok(parse::decode_cancel_open_orders(&bytes)?)
+        }
+    }
+
+    fn decode_new_order_response(
+        &self,
+        bytes: &[u8],
+    ) -> BinanceSpotHttpResult<BinanceNewOrderResponse> {
+        if self.json_responses {
+            let response: SpotOrderJson = serde_json::from_slice(bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_new_order_from_json(response)
+        } else {
+            Ok(parse::decode_new_order_full(bytes)?)
+        }
+    }
+
+    fn decode_cancel_order_response(
+        &self,
+        bytes: &[u8],
+    ) -> BinanceSpotHttpResult<BinanceCancelOrderResponse> {
+        if self.json_responses {
+            let response: SpotOrderJson = serde_json::from_slice(bytes)
+                .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
+            spot_cancel_order_from_json(response)
+        } else {
+            Ok(parse::decode_cancel_order(bytes)?)
+        }
     }
 
     /// Performs an API-key authenticated request (no signature) that returns JSON.
@@ -1385,6 +1881,461 @@ impl BinanceRawSpotHttpClient {
     }
 }
 
+fn spot_depth_from_json(response: SpotDepthJson) -> BinanceSpotHttpResult<BinanceDepth> {
+    let price_scale = decimal_common_scale(
+        response
+            .bids
+            .iter()
+            .chain(&response.asks)
+            .map(|level| level[0].as_str()),
+    )?;
+    let qty_scale = decimal_common_scale(
+        response
+            .bids
+            .iter()
+            .chain(&response.asks)
+            .map(|level| level[1].as_str()),
+    )?;
+    let parse_levels = |levels: Vec<[String; 2]>| {
+        levels
+            .into_iter()
+            .map(|level| {
+                Ok(BinancePriceLevel {
+                    price_mantissa: decimal_mantissa(&level[0], price_scale)?,
+                    qty_mantissa: decimal_mantissa(&level[1], qty_scale)?,
+                })
+            })
+            .collect::<BinanceSpotHttpResult<Vec<_>>>()
+    };
+
+    Ok(BinanceDepth {
+        last_update_id: response.last_update_id,
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        bids: parse_levels(response.bids)?,
+        asks: parse_levels(response.asks)?,
+    })
+}
+
+fn spot_trades_from_json(response: Vec<SpotTradeJson>) -> BinanceSpotHttpResult<BinanceTrades> {
+    let price_scale = decimal_common_scale(
+        response
+            .iter()
+            .flat_map(|trade| [trade.price.as_str(), trade.quote_qty.as_str()]),
+    )?;
+    let qty_scale = decimal_common_scale(response.iter().map(|trade| trade.qty.as_str()))?;
+    let trades = response
+        .into_iter()
+        .map(|trade| {
+            Ok(BinanceTrade {
+                id: trade.id,
+                price_mantissa: decimal_mantissa(&trade.price, price_scale)?,
+                qty_mantissa: decimal_mantissa(&trade.qty, qty_scale)?,
+                quote_qty_mantissa: decimal_mantissa(&trade.quote_qty, price_scale)?,
+                time: millis_to_micros(trade.time)?,
+                is_buyer_maker: trade.is_buyer_maker,
+                is_best_match: trade.is_best_match,
+            })
+        })
+        .collect::<BinanceSpotHttpResult<Vec<_>>>()?;
+
+    Ok(BinanceTrades {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        trades,
+    })
+}
+
+fn spot_agg_trades_from_json(
+    response: Vec<SpotAggTradeJson>,
+) -> BinanceSpotHttpResult<BinanceAggTrades> {
+    let price_scale = decimal_common_scale(response.iter().map(|trade| trade.price.as_str()))?;
+    let qty_scale = decimal_common_scale(response.iter().map(|trade| trade.qty.as_str()))?;
+    let trades = response
+        .into_iter()
+        .map(|trade| {
+            Ok(BinanceAggTrade {
+                id: trade.id,
+                price_mantissa: decimal_mantissa(&trade.price, price_scale)?,
+                qty_mantissa: decimal_mantissa(&trade.qty, qty_scale)?,
+                first_trade_id: trade.first_trade_id,
+                last_trade_id: trade.last_trade_id,
+                time: millis_to_micros(trade.time)?,
+                is_buyer_maker: trade.is_buyer_maker,
+                is_best_match: trade.is_best_match,
+            })
+        })
+        .collect::<BinanceSpotHttpResult<Vec<_>>>()?;
+
+    Ok(BinanceAggTrades {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        trades,
+    })
+}
+
+fn spot_klines_from_json(response: Vec<SpotKlineJson>) -> BinanceSpotHttpResult<BinanceKlines> {
+    let price_scale = decimal_common_scale(response.iter().flat_map(|kline| {
+        [
+            kline.1.as_str(),
+            kline.2.as_str(),
+            kline.3.as_str(),
+            kline.4.as_str(),
+            kline.7.as_str(),
+            kline.10.as_str(),
+        ]
+    }))?;
+    let qty_scale = decimal_common_scale(
+        response
+            .iter()
+            .flat_map(|kline| [kline.5.as_str(), kline.9.as_str()]),
+    )?;
+    let klines = response
+        .into_iter()
+        .map(|kline| {
+            let volume = decimal_i128_bytes(&kline.5, qty_scale)?;
+            let quote_volume = decimal_i128_bytes(&kline.7, price_scale)?;
+            let taker_buy_base_volume = decimal_i128_bytes(&kline.9, qty_scale)?;
+            let taker_buy_quote_volume = decimal_i128_bytes(&kline.10, price_scale)?;
+            Ok(BinanceKline {
+                open_time: millis_to_micros(kline.0)?,
+                open_price: decimal_mantissa(&kline.1, price_scale)?,
+                high_price: decimal_mantissa(&kline.2, price_scale)?,
+                low_price: decimal_mantissa(&kline.3, price_scale)?,
+                close_price: decimal_mantissa(&kline.4, price_scale)?,
+                volume,
+                close_time: millis_to_micros(kline.6)?,
+                quote_volume,
+                num_trades: kline.8,
+                taker_buy_base_volume,
+                taker_buy_quote_volume,
+            })
+        })
+        .collect::<BinanceSpotHttpResult<Vec<_>>>()?;
+
+    Ok(BinanceKlines {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        klines,
+    })
+}
+
+fn decimal_i128_bytes(value: &str, scale: u32) -> BinanceSpotHttpResult<[u8; 16]> {
+    let mut decimal = Decimal::from_str_exact(value)
+        .map_err(|e| BinanceSpotHttpError::ResponseParseError(e.to_string()))?;
+    decimal.rescale(scale);
+    Ok(decimal.mantissa().to_le_bytes())
+}
+
+fn spot_account_from_json(response: SpotAccountJson) -> BinanceSpotHttpResult<BinanceAccountInfo> {
+    let commission_rates = response.commission_rates.map_or_else(
+        || {
+            [
+                Decimal::new(response.maker_commission, 4).to_string(),
+                Decimal::new(response.taker_commission, 4).to_string(),
+                Decimal::new(response.buyer_commission, 4).to_string(),
+                Decimal::new(response.seller_commission, 4).to_string(),
+            ]
+        },
+        |rates| [rates.maker, rates.taker, rates.buyer, rates.seller],
+    );
+    let commission_scale = decimal_common_scale(commission_rates.iter().map(String::as_str))?;
+    let balances = response
+        .balances
+        .into_iter()
+        .map(|balance| {
+            let scale = decimal_common_scale([balance.free.as_str(), balance.locked.as_str()])?;
+            Ok(BinanceBalance {
+                asset: balance.asset,
+                free_mantissa: decimal_mantissa(&balance.free, scale)?,
+                locked_mantissa: decimal_mantissa(&balance.locked, scale)?,
+                exponent: decimal_exponent(scale)?,
+            })
+        })
+        .collect::<BinanceSpotHttpResult<Vec<_>>>()?;
+
+    Ok(BinanceAccountInfo {
+        commission_exponent: decimal_exponent(commission_scale)?,
+        maker_commission_mantissa: decimal_mantissa(&commission_rates[0], commission_scale)?,
+        taker_commission_mantissa: decimal_mantissa(&commission_rates[1], commission_scale)?,
+        buyer_commission_mantissa: decimal_mantissa(&commission_rates[2], commission_scale)?,
+        seller_commission_mantissa: decimal_mantissa(&commission_rates[3], commission_scale)?,
+        can_trade: response.can_trade,
+        can_withdraw: response.can_withdraw,
+        can_deposit: response.can_deposit,
+        require_self_trade_prevention: response.require_self_trade_prevention,
+        prevent_sor: response.prevent_sor,
+        update_time: millis_to_micros(response.update_time)?,
+        account_type: response.account_type,
+        balances,
+    })
+}
+
+fn spot_new_order_from_json(
+    response: SpotOrderJson,
+) -> BinanceSpotHttpResult<BinanceNewOrderResponse> {
+    let (price_scale, qty_scale) = spot_order_scales(&response)?;
+    let fills = response
+        .fills
+        .iter()
+        .map(|fill| {
+            let commission_scale = decimal_common_scale([fill.commission.as_str()])?;
+            Ok(BinanceOrderFill {
+                price_mantissa: decimal_mantissa(&fill.price, price_scale)?,
+                qty_mantissa: decimal_mantissa(&fill.qty, qty_scale)?,
+                commission_mantissa: decimal_mantissa(&fill.commission, commission_scale)?,
+                commission_exponent: decimal_exponent(commission_scale)?,
+                commission_asset: fill.commission_asset.clone(),
+                trade_id: fill.trade_id,
+            })
+        })
+        .collect::<BinanceSpotHttpResult<Vec<_>>>()?;
+
+    Ok(BinanceNewOrderResponse {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        order_id: response.order_id,
+        order_list_id: valid_order_list_id(response.order_list_id),
+        transact_time: millis_to_micros(response.transact_time)?,
+        price_mantissa: decimal_mantissa(&response.price, price_scale)?,
+        orig_qty_mantissa: decimal_mantissa(&response.orig_qty, qty_scale)?,
+        executed_qty_mantissa: decimal_mantissa(&response.executed_qty, qty_scale)?,
+        cummulative_quote_qty_mantissa: decimal_mantissa(
+            &response.cummulative_quote_qty,
+            price_scale + qty_scale,
+        )?,
+        status: spot_sbe_order_status(response.status),
+        time_in_force: spot_sbe_time_in_force(response.time_in_force),
+        order_type: spot_sbe_order_type(response.order_type),
+        side: spot_sbe_order_side(response.side),
+        stop_price_mantissa: decimal_optional_mantissa(&response.stop_price, price_scale)?,
+        working_time: response.working_time.map(millis_to_micros).transpose()?,
+        self_trade_prevention_mode: spot_sbe_stp(response.self_trade_prevention_mode),
+        client_order_id: response.client_order_id,
+        symbol: response.symbol,
+        fills,
+        expiry_reason: None,
+    })
+}
+
+fn spot_cancel_order_from_json(
+    response: SpotOrderJson,
+) -> BinanceSpotHttpResult<BinanceCancelOrderResponse> {
+    let (price_scale, qty_scale) = spot_order_scales(&response)?;
+    Ok(BinanceCancelOrderResponse {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        order_id: response.order_id,
+        order_list_id: valid_order_list_id(response.order_list_id),
+        transact_time: millis_to_micros(response.transact_time)?,
+        price_mantissa: decimal_mantissa(&response.price, price_scale)?,
+        orig_qty_mantissa: decimal_mantissa(&response.orig_qty, qty_scale)?,
+        executed_qty_mantissa: decimal_mantissa(&response.executed_qty, qty_scale)?,
+        cummulative_quote_qty_mantissa: decimal_mantissa(
+            &response.cummulative_quote_qty,
+            price_scale + qty_scale,
+        )?,
+        status: spot_sbe_order_status(response.status),
+        time_in_force: spot_sbe_time_in_force(response.time_in_force),
+        order_type: spot_sbe_order_type(response.order_type),
+        side: spot_sbe_order_side(response.side),
+        self_trade_prevention_mode: spot_sbe_stp(response.self_trade_prevention_mode),
+        client_order_id: response.client_order_id,
+        orig_client_order_id: response.orig_client_order_id,
+        symbol: response.symbol,
+    })
+}
+
+fn spot_order_from_json(response: SpotOrderJson) -> BinanceSpotHttpResult<BinanceOrderResponse> {
+    let (price_scale, qty_scale) = spot_order_scales(&response)?;
+    Ok(BinanceOrderResponse {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        order_id: response.order_id,
+        order_list_id: valid_order_list_id(response.order_list_id),
+        price_mantissa: decimal_mantissa(&response.price, price_scale)?,
+        orig_qty_mantissa: decimal_mantissa(&response.orig_qty, qty_scale)?,
+        executed_qty_mantissa: decimal_mantissa(&response.executed_qty, qty_scale)?,
+        cummulative_quote_qty_mantissa: decimal_mantissa(
+            &response.cummulative_quote_qty,
+            price_scale + qty_scale,
+        )?,
+        status: spot_sbe_order_status(response.status),
+        time_in_force: spot_sbe_time_in_force(response.time_in_force),
+        order_type: spot_sbe_order_type(response.order_type),
+        side: spot_sbe_order_side(response.side),
+        stop_price_mantissa: decimal_optional_mantissa(&response.stop_price, price_scale)?,
+        iceberg_qty_mantissa: decimal_optional_mantissa(&response.iceberg_qty, qty_scale)?,
+        time: millis_to_micros(response.time)?,
+        update_time: millis_to_micros(response.update_time)?,
+        is_working: response.is_working,
+        working_time: response.working_time.map(millis_to_micros).transpose()?,
+        orig_quote_order_qty_mantissa: decimal_mantissa(
+            &response.orig_quote_order_qty,
+            price_scale + qty_scale,
+        )?,
+        self_trade_prevention_mode: spot_sbe_stp(response.self_trade_prevention_mode),
+        client_order_id: response.client_order_id,
+        symbol: response.symbol,
+        expiry_reason: None,
+    })
+}
+
+fn spot_account_trade_from_json(
+    response: SpotAccountTradeJson,
+) -> BinanceSpotHttpResult<BinanceAccountTrade> {
+    let price_scale = decimal_common_scale([response.price.as_str()])?;
+    let qty_scale = decimal_common_scale([response.qty.as_str()])?;
+    let commission_scale = decimal_common_scale([response.commission.as_str()])?;
+    Ok(BinanceAccountTrade {
+        price_exponent: decimal_exponent(price_scale)?,
+        qty_exponent: decimal_exponent(qty_scale)?,
+        commission_exponent: decimal_exponent(commission_scale)?,
+        id: response.id,
+        order_id: response.order_id,
+        order_list_id: valid_order_list_id(response.order_list_id),
+        price_mantissa: decimal_mantissa(&response.price, price_scale)?,
+        qty_mantissa: decimal_mantissa(&response.qty, qty_scale)?,
+        quote_qty_mantissa: decimal_mantissa(&response.quote_qty, price_scale + qty_scale)?,
+        commission_mantissa: decimal_mantissa(&response.commission, commission_scale)?,
+        time: millis_to_micros(response.time)?,
+        is_buyer: response.is_buyer,
+        is_maker: response.is_maker,
+        is_best_match: response.is_best_match,
+        symbol: response.symbol,
+        commission_asset: response.commission_asset,
+    })
+}
+
+fn spot_order_scales(response: &SpotOrderJson) -> BinanceSpotHttpResult<(u32, u32)> {
+    let price_scale = decimal_common_scale(
+        [response.price.as_str(), response.stop_price.as_str()]
+            .into_iter()
+            .chain(response.fills.iter().map(|fill| fill.price.as_str())),
+    )?;
+    let qty_scale = decimal_common_scale(
+        [
+            response.orig_qty.as_str(),
+            response.executed_qty.as_str(),
+            response.iceberg_qty.as_str(),
+        ]
+        .into_iter()
+        .chain(response.fills.iter().map(|fill| fill.qty.as_str())),
+    )?;
+    Ok((price_scale, qty_scale))
+}
+
+fn decimal_common_scale<'a>(
+    values: impl IntoIterator<Item = &'a str>,
+) -> BinanceSpotHttpResult<u32> {
+    values
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .try_fold(0, |scale, value| {
+            let decimal = Decimal::from_str_exact(value)
+                .map_err(|e| BinanceSpotHttpError::ResponseParseError(e.to_string()))?;
+            Ok(scale.max(decimal.scale()))
+        })
+}
+
+fn decimal_mantissa(value: &str, scale: u32) -> BinanceSpotHttpResult<i64> {
+    if value.is_empty() {
+        return Ok(0);
+    }
+    let mut decimal = Decimal::from_str_exact(value)
+        .map_err(|e| BinanceSpotHttpError::ResponseParseError(e.to_string()))?;
+    decimal.rescale(scale);
+    i64::try_from(decimal.mantissa()).map_err(|_| {
+        BinanceSpotHttpError::ResponseParseError(format!(
+            "decimal mantissa is outside i64 range: {value}"
+        ))
+    })
+}
+
+fn decimal_optional_mantissa(value: &str, scale: u32) -> BinanceSpotHttpResult<Option<i64>> {
+    let mantissa = decimal_mantissa(value, scale)?;
+    Ok((mantissa != 0).then_some(mantissa))
+}
+
+fn decimal_exponent(scale: u32) -> BinanceSpotHttpResult<i8> {
+    i8::try_from(scale)
+        .map(|scale| -scale)
+        .map_err(|_| BinanceSpotHttpError::ResponseParseError("decimal scale exceeds i8".into()))
+}
+
+fn millis_to_micros(timestamp: i64) -> BinanceSpotHttpResult<i64> {
+    timestamp.checked_mul(1_000).ok_or_else(|| {
+        BinanceSpotHttpError::ResponseParseError(format!(
+            "timestamp overflows microseconds: {timestamp}"
+        ))
+    })
+}
+
+fn valid_order_list_id(order_list_id: Option<i64>) -> Option<i64> {
+    order_list_id.filter(|value| *value >= 0)
+}
+
+const fn spot_sbe_order_status(status: BinanceOrderStatus) -> SbeOrderStatus {
+    match status {
+        BinanceOrderStatus::New => SbeOrderStatus::New,
+        BinanceOrderStatus::PendingNew => SbeOrderStatus::PendingNew,
+        BinanceOrderStatus::PartiallyFilled => SbeOrderStatus::PartiallyFilled,
+        BinanceOrderStatus::Filled => SbeOrderStatus::Filled,
+        BinanceOrderStatus::Canceled => SbeOrderStatus::Canceled,
+        BinanceOrderStatus::PendingCancel => SbeOrderStatus::PendingCancel,
+        BinanceOrderStatus::Rejected => SbeOrderStatus::Rejected,
+        BinanceOrderStatus::Expired => SbeOrderStatus::Expired,
+        BinanceOrderStatus::ExpiredInMatch => SbeOrderStatus::ExpiredInMatch,
+        BinanceOrderStatus::NewInsurance
+        | BinanceOrderStatus::NewAdl
+        | BinanceOrderStatus::Unknown => SbeOrderStatus::Unknown,
+    }
+}
+
+const fn spot_sbe_time_in_force(time_in_force: BinanceTimeInForce) -> SbeTimeInForce {
+    match time_in_force {
+        BinanceTimeInForce::Gtc => SbeTimeInForce::Gtc,
+        BinanceTimeInForce::Ioc => SbeTimeInForce::Ioc,
+        BinanceTimeInForce::Fok => SbeTimeInForce::Fok,
+        BinanceTimeInForce::Gtx
+        | BinanceTimeInForce::Gtd
+        | BinanceTimeInForce::Rpi
+        | BinanceTimeInForce::Unknown => SbeTimeInForce::NonRepresentable,
+    }
+}
+
+const fn spot_sbe_order_type(order_type: BinanceSpotOrderType) -> SbeOrderType {
+    match order_type {
+        BinanceSpotOrderType::Market => SbeOrderType::Market,
+        BinanceSpotOrderType::Limit => SbeOrderType::Limit,
+        BinanceSpotOrderType::StopLoss => SbeOrderType::StopLoss,
+        BinanceSpotOrderType::StopLossLimit => SbeOrderType::StopLossLimit,
+        BinanceSpotOrderType::TakeProfit => SbeOrderType::TakeProfit,
+        BinanceSpotOrderType::TakeProfitLimit => SbeOrderType::TakeProfitLimit,
+        BinanceSpotOrderType::LimitMaker => SbeOrderType::LimitMaker,
+        BinanceSpotOrderType::Unknown => SbeOrderType::NonRepresentable,
+    }
+}
+
+const fn spot_sbe_order_side(side: BinanceSide) -> SbeOrderSide {
+    match side {
+        BinanceSide::Buy => SbeOrderSide::Buy,
+        BinanceSide::Sell => SbeOrderSide::Sell,
+    }
+}
+
+fn spot_sbe_stp(mode: Option<BinanceSelfTradePreventionMode>) -> SbeSelfTradePreventionMode {
+    match mode.unwrap_or(BinanceSelfTradePreventionMode::None) {
+        BinanceSelfTradePreventionMode::None => SbeSelfTradePreventionMode::None,
+        BinanceSelfTradePreventionMode::ExpireMaker => SbeSelfTradePreventionMode::ExpireMaker,
+        BinanceSelfTradePreventionMode::ExpireTaker => SbeSelfTradePreventionMode::ExpireTaker,
+        BinanceSelfTradePreventionMode::ExpireBoth => SbeSelfTradePreventionMode::ExpireBoth,
+        BinanceSelfTradePreventionMode::Decrement => SbeSelfTradePreventionMode::Decrement,
+        BinanceSelfTradePreventionMode::Transfer => SbeSelfTradePreventionMode::Transfer,
+        BinanceSelfTradePreventionMode::Unknown => SbeSelfTradePreventionMode::NonRepresentable,
+    }
+}
+
 /// High-level HTTP client for Binance Spot API.
 ///
 /// Wraps [`BinanceRawSpotHttpClient`] and provides domain-level methods:
@@ -1393,7 +2344,7 @@ impl BinanceRawSpotHttpClient {
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,
     clock: &'static AtomicTime,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
 }
 
 impl Clone for BinanceSpotHttpClient {
@@ -1432,7 +2383,37 @@ impl BinanceSpotHttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
     ) -> BinanceSpotHttpResult<Self> {
-        let inner = BinanceRawSpotHttpClient::new(
+        Self::new_with_json_responses(
+            environment,
+            clock,
+            api_key,
+            api_secret,
+            base_url_override,
+            recv_window,
+            timeout_secs,
+            proxy_url,
+            false,
+        )
+    }
+
+    /// Creates a Spot client for an endpoint that returns JSON REST payloads.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying HTTP client cannot be created.
+    #[expect(clippy::too_many_arguments)]
+    pub fn new_with_json_responses(
+        environment: BinanceEnvironment,
+        clock: &'static AtomicTime,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url_override: Option<String>,
+        recv_window: Option<u64>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        json_responses: bool,
+    ) -> BinanceSpotHttpResult<Self> {
+        let inner = BinanceRawSpotHttpClient::new_with_json_responses(
             environment,
             api_key,
             api_secret,
@@ -1440,12 +2421,13 @@ impl BinanceSpotHttpClient {
             recv_window,
             timeout_secs,
             proxy_url,
+            json_responses,
         )?;
 
         Ok(Self {
             inner: Arc::new(inner),
             clock,
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
         })
     }
 
@@ -1453,6 +2435,12 @@ impl BinanceSpotHttpClient {
     #[must_use]
     pub fn inner(&self) -> &BinanceRawSpotHttpClient {
         &self.inner
+    }
+
+    /// Returns whether signed requests can be made.
+    #[must_use]
+    pub fn has_credentials(&self) -> bool {
+        self.inner.has_credentials()
     }
 
     /// Returns the SBE schema ID.
@@ -1483,17 +2471,26 @@ impl BinanceSpotHttpClient {
     /// Retrieves an instrument from the cache.
     fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
-            .get(&symbol)
-            .map(|entry| entry.value().clone())
+            .get_cloned(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
     /// Caches multiple instruments.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst);
-        }
+        self.instruments_cache.rcu(move |cache| {
+            for instrument in &instruments {
+                cache.insert(instrument.raw_symbol().inner(), instrument.clone());
+            }
+        });
+    }
+
+    /// Replaces the complete instrument cache.
+    pub fn replace_instruments(&self, instruments: &[InstrumentAny]) {
+        let cache = instruments
+            .iter()
+            .map(|instrument| (instrument.raw_symbol().inner(), instrument.clone()))
+            .collect();
+        self.instruments_cache.store(cache);
     }
 
     /// Caches a single instrument.
@@ -1505,9 +2502,7 @@ impl BinanceSpotHttpClient {
     /// Gets an instrument from the cache by symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Tests connectivity to the API.
@@ -1541,6 +2536,38 @@ impl BinanceSpotHttpClient {
         self.inner.exchange_info().await
     }
 
+    /// Returns a fresh status snapshot for Global or US Spot symbols.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if exchange info cannot be requested or decoded.
+    pub async fn request_symbol_statuses(
+        &self,
+        us: bool,
+    ) -> BinanceSpotHttpResult<AHashMap<InstrumentId, MarketStatusAction>> {
+        let mut statuses = AHashMap::new();
+
+        if us {
+            let info = self.inner.exchange_info_json().await?;
+            for symbol in info.symbols {
+                let instrument_id =
+                    InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
+                statuses.insert(instrument_id, spot_json_market_status(&symbol.status));
+            }
+        } else {
+            let info = self.exchange_info().await?;
+            for symbol in info.symbols {
+                let instrument_id =
+                    InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
+                statuses.insert(
+                    instrument_id,
+                    MarketStatusAction::from(SymbolStatus::from(symbol.status)),
+                );
+            }
+        }
+        Ok(statuses)
+    }
+
     /// Requests Nautilus instruments for all trading symbols.
     ///
     /// Fetches exchange info via SBE and parses each symbol into a CurrencyPair.
@@ -1550,27 +2577,183 @@ impl BinanceSpotHttpClient {
     ///
     /// Returns an error if the request fails or SBE decoding fails.
     pub async fn request_instruments(&self) -> BinanceSpotHttpResult<Vec<InstrumentAny>> {
-        let info = self.exchange_info().await?;
-        let ts_init = self.generate_ts_init();
+        self.request_instruments_with_config(&BinanceInstrumentProviderConfig::default(), false)
+            .await
+    }
 
-        let mut instruments = Vec::with_capacity(info.symbols.len());
-        for symbol in &info.symbols {
-            match parse_spot_instrument_sbe(symbol, ts_init, ts_init) {
-                Ok(instrument) => instruments.push(instrument),
-                Err(e) => {
+    /// Requests configured Nautilus instruments with populated maker and taker fees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration, exchange info, or required parsing fails.
+    pub async fn request_instruments_with_config(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        us: bool,
+    ) -> BinanceSpotHttpResult<Vec<InstrumentAny>> {
+        config
+            .validate(BinanceProductType::Spot)
+            .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
+        let selector = BinanceInstrumentSelector::new(config)
+            .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
+        let ts_init = self.generate_ts_init();
+        let fallback_fees = self.spot_fallback_fees(us).await;
+
+        let mut instruments = if us {
+            if config.query_commission_rates {
+                if config.log_warnings {
+                    log::warn!(
+                        "Binance US does not expose the Global account/commission endpoint; using account-wide commission rates"
+                    );
+                } else {
                     log::debug!(
-                        "Skipping symbol during instrument parsing: symbol={}, error={e}",
-                        symbol.symbol
+                        "Binance US exact per-symbol commission query disabled; using account-wide rates"
                     );
                 }
             }
-        }
+            let info = self.inner.exchange_info_json().await?;
+            let mut instruments = Vec::with_capacity(info.symbols.len());
+            for symbol in &info.symbols {
+                let instrument_id =
+                    InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
 
-        // Cache instruments for use by other domain methods
-        self.cache_instruments(instruments.clone());
+                if !selector.includes(
+                    instrument_id,
+                    &symbol.symbol,
+                    &symbol.base_asset,
+                    &symbol.quote_asset,
+                    None,
+                ) {
+                    continue;
+                }
+
+                match parse_spot_instrument_json_with_fees(
+                    symbol,
+                    Some(fallback_fees.0),
+                    Some(fallback_fees.1),
+                    ts_init,
+                    ts_init,
+                ) {
+                    Ok(instrument) => instruments.push(instrument),
+                    Err(e) => log_instrument_parse_error(config, &symbol.symbol, &e),
+                }
+            }
+            instruments
+        } else {
+            let info = self.exchange_info().await?;
+            let mut instruments = Vec::with_capacity(info.symbols.len());
+            for symbol in &info.symbols {
+                let instrument_id =
+                    InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
+
+                if !selector.includes(
+                    instrument_id,
+                    &symbol.symbol,
+                    &symbol.base_asset,
+                    &symbol.quote_asset,
+                    None,
+                ) {
+                    continue;
+                }
+
+                let fees = self
+                    .spot_symbol_fees(config, &symbol.symbol, fallback_fees)
+                    .await;
+
+                match parse_spot_instrument_sbe_with_fees(
+                    symbol,
+                    Some(fees.0),
+                    Some(fees.1),
+                    ts_init,
+                    ts_init,
+                ) {
+                    Ok(instrument) => instruments.push(instrument),
+                    Err(e) => log_instrument_parse_error(config, &symbol.symbol, &e),
+                }
+            }
+            instruments
+        };
+
+        instruments.shrink_to_fit();
+        self.replace_instruments(&instruments);
 
         log::debug!("Loaded spot instruments: count={}", instruments.len());
         Ok(instruments)
+    }
+
+    async fn spot_fallback_fees(&self, us: bool) -> (Decimal, Decimal) {
+        if !self.has_credentials() {
+            return (BINANCE_SPOT_FEE_DEFAULT, BINANCE_SPOT_FEE_DEFAULT);
+        }
+
+        let result = if us {
+            self.inner.account_rates_json().await.map(|account| {
+                parse_commission_rates(
+                    &account.commission_rates.maker,
+                    &account.commission_rates.taker,
+                )
+            })
+        } else {
+            self.inner
+                .account(&AccountInfoParams::default())
+                .await
+                .map(|account| {
+                    Ok((
+                        decimal_from_mantissa_exponent(
+                            account.maker_commission_mantissa,
+                            account.commission_exponent,
+                        ),
+                        decimal_from_mantissa_exponent(
+                            account.taker_commission_mantissa,
+                            account.commission_exponent,
+                        ),
+                    ))
+                })
+        };
+
+        match result {
+            Ok(Ok(fees)) => fees,
+            Ok(Err(e)) => {
+                log::warn!("Invalid Binance Spot account commission rates: {e}; using fallback");
+                (BINANCE_SPOT_FEE_DEFAULT, BINANCE_SPOT_FEE_DEFAULT)
+            }
+            Err(e) => {
+                log::warn!("Binance Spot account commission query failed: {e}; using fallback");
+                (BINANCE_SPOT_FEE_DEFAULT, BINANCE_SPOT_FEE_DEFAULT)
+            }
+        }
+    }
+
+    async fn spot_symbol_fees(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        symbol: &str,
+        fallback: (Decimal, Decimal),
+    ) -> (Decimal, Decimal) {
+        if !config.query_commission_rates || !self.has_credentials() {
+            return fallback;
+        }
+
+        match self.inner.account_commission(symbol).await {
+            Ok(response) => match parse_commission_rates(
+                &response.standard_commission.maker,
+                &response.standard_commission.taker,
+            ) {
+                Ok(fees) => fees,
+                Err(e) => {
+                    log::warn!(
+                        "Invalid Binance Spot commission response for {symbol}: {e}; using fallback"
+                    );
+                    fallback
+                }
+            },
+            Err(e) => {
+                log::warn!(
+                    "Binance Spot commission query failed for {symbol}: {e}; using fallback"
+                );
+                fallback
+            }
+        }
     }
 
     /// Requests recent trades for an instrument.
@@ -1597,19 +2780,66 @@ impl BinanceSpotHttpClient {
         parse_spot_trades_sbe(&trades, &instrument, ts_init)
     }
 
+    /// Requests bounded aggregate trades for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the instrument is not cached, or parsing fails.
+    pub async fn request_agg_trades(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let symbol = instrument_id.symbol.inner();
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
+        let params = AggTradesParams {
+            symbol: symbol.to_string(),
+            from_id: None,
+            start_time: start.map(|dt| dt.timestamp_millis()),
+            end_time: end.map(|dt| dt.timestamp_millis()),
+            limit,
+        };
+        let response = self.inner.agg_trades(&params).await?;
+        let trades = BinanceTrades {
+            price_exponent: response.price_exponent,
+            qty_exponent: response.qty_exponent,
+            trades: response
+                .trades
+                .into_iter()
+                .map(|trade| super::models::BinanceTrade {
+                    id: trade.id,
+                    price_mantissa: trade.price_mantissa,
+                    qty_mantissa: trade.qty_mantissa,
+                    quote_qty_mantissa: 0,
+                    time: trade.time,
+                    is_buyer_maker: trade.is_buyer_maker,
+                    is_best_match: trade.is_best_match,
+                })
+                .collect(),
+        };
+
+        let mut parsed = parse_spot_trades_sbe(&trades, &instrument, UnixNanos::default())?;
+        for trade in &mut parsed {
+            trade.ts_init = trade.ts_event;
+        }
+        Ok(parsed)
+    }
+
     /// Requests bar (kline/candlestick) data.
     ///
     /// # Errors
     ///
     /// Returns an error if the bar type is not supported, instrument is not cached,
     /// or the request fails.
-    pub async fn request_bars(
+    pub async fn request_binance_bars(
         &self,
         bar_type: BarType,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
-    ) -> anyhow::Result<Vec<Bar>> {
+    ) -> anyhow::Result<Vec<crate::common::bar::BinanceBar>> {
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
             "Only EXTERNAL aggregation is supported"
@@ -1618,8 +2848,9 @@ impl BinanceSpotHttpClient {
         let spec = bar_type.spec();
         let step = spec.step.get();
         let interval = match spec.aggregation {
+            BarAggregation::Second if step == 1 => "1s".to_string(),
             BarAggregation::Second => {
-                anyhow::bail!("Binance Spot does not support second-level kline intervals")
+                anyhow::bail!("Binance Spot supports only the 1s kline interval")
             }
             BarAggregation::Minute => format!("{step}m"),
             BarAggregation::Hour => format!("{step}h"),
@@ -1632,8 +2863,6 @@ impl BinanceSpotHttpClient {
         let instrument_id = bar_type.instrument_id();
         let symbol = instrument_id.symbol;
         let instrument = self.instrument_from_cache_by_id(instrument_id)?;
-        let ts_init = self.generate_ts_init();
-
         let klines = self
             .inner
             .klines(
@@ -1646,7 +2875,114 @@ impl BinanceSpotHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        parse_klines_to_bars(&klines, bar_type, &instrument, ts_init)
+        let mut bars =
+            parse_klines_to_binance_bars(&klines, bar_type, &instrument, UnixNanos::default())?;
+        let now = self.clock.get_time_ns();
+        bars.retain(|bar| bar.ts_event < now);
+        for bar in &mut bars {
+            bar.ts_init = bar.ts_event;
+        }
+        Ok(bars)
+    }
+
+    /// Requests core bars for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bar type is unsupported or the request fails.
+    pub async fn request_bars(
+        &self,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        Ok(self
+            .request_binance_bars(bar_type, start, end, limit)
+            .await?
+            .into_iter()
+            .map(|bar| bar.bar())
+            .collect())
+    }
+
+    /// Requests an explicit L2 order-book snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid depth, missing instrument, request failure, or invalid level.
+    pub async fn request_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> anyhow::Result<OrderBook> {
+        if depth.is_some_and(|value| value == 0 || value > 5000) {
+            anyhow::bail!("Binance Spot order-book depth must be between 1 and 5000");
+        }
+        let instrument = self.instrument_from_cache_by_id(instrument_id)?;
+        let params = DepthParams {
+            symbol: instrument_id.symbol.to_string(),
+            limit: depth,
+        };
+        let snapshot = self.inner.depth(&params).await?;
+        let ts_event = self.generate_ts_init();
+        Self::parse_book_snapshot_response(instrument_id, &instrument, &snapshot, ts_event)
+    }
+
+    fn parse_book_snapshot_response(
+        instrument_id: InstrumentId,
+        instrument: &InstrumentAny,
+        snapshot: &BinanceDepth,
+        ts_event: UnixNanos,
+    ) -> anyhow::Result<OrderBook> {
+        let sequence = u64::try_from(snapshot.last_update_id)
+            .map_err(|_| anyhow::anyhow!("invalid negative order-book update ID"))?;
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let mut add_level = |level: &super::models::BinancePriceLevel,
+                             side: OrderSide,
+                             order_id: usize,
+                             name: &str|
+         -> anyhow::Result<()> {
+            let price = Price::from_mantissa_exponent_checked(
+                level.price_mantissa,
+                snapshot.price_exponent,
+                instrument.price_precision(),
+            )
+            .map_err(|e| anyhow::anyhow!("invalid {name} price: {e}"))?;
+            anyhow::ensure!(price.is_positive(), "invalid non-positive {name} price");
+            let qty_mantissa = u64::try_from(level.qty_mantissa)
+                .map_err(|_| anyhow::anyhow!("invalid negative {name} quantity"))?;
+            let quantity = Quantity::from_mantissa_exponent_checked(
+                qty_mantissa,
+                snapshot.qty_exponent,
+                instrument.size_precision(),
+            )
+            .map_err(|e| anyhow::anyhow!("invalid {name} quantity: {e}"))?;
+            anyhow::ensure!(
+                quantity.is_positive(),
+                "invalid non-positive {name} quantity"
+            );
+            let order = BookOrder::new(
+                side,
+                price,
+                quantity,
+                u64::try_from(order_id)
+                    .map_err(|_| anyhow::anyhow!("order-book level index overflow"))?,
+            );
+            book.add(order, 0, sequence, ts_event);
+            Ok(())
+        };
+
+        for (index, level) in snapshot.bids.iter().enumerate() {
+            add_level(level, OrderSide::Buy, index, "bid")?;
+        }
+        let bid_count = snapshot.bids.len();
+        for (index, level) in snapshot.asks.iter().enumerate() {
+            let order_id = bid_count
+                .checked_add(index)
+                .ok_or_else(|| anyhow::anyhow!("order-book level index overflow"))?;
+            add_level(level, OrderSide::Sell, order_id, "ask")?;
+        }
+        Ok(book)
     }
 
     fn instrument_from_cache_by_id(
@@ -1654,8 +2990,7 @@ impl BinanceSpotHttpClient {
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
-            .get(&instrument_id.symbol.inner())
-            .map(|entry| entry.value().clone())
+            .get_cloned(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id).into())
     }
 
@@ -1807,6 +3142,29 @@ impl BinanceSpotHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        self.request_fill_reports_with_cursor(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            start,
+            end,
+            None,
+            limit,
+        )
+        .await
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn request_fill_reports_with_cursor(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        from_id: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FillReport>> {
         let ts_init = self.generate_ts_init();
         let symbol = instrument_id.symbol.inner();
 
@@ -1817,11 +3175,12 @@ impl BinanceSpotHttpClient {
 
         let trades = self
             .inner
-            .account_trades(
+            .account_trades_with_cursor(
                 symbol.as_str(),
                 order_id,
                 start.map(|dt| dt.timestamp_millis()),
                 end.map(|dt| dt.timestamp_millis()),
+                from_id,
                 limit,
             )
             .await
@@ -1865,6 +3224,7 @@ impl BinanceSpotHttpClient {
         post_only: bool,
         quote_quantity: bool,
         display_qty: Option<Quantity>,
+        use_gtd: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.inner();
         let instrument = self
@@ -1916,7 +3276,7 @@ impl BinanceSpotHttpClient {
         );
         let binance_tif = if supports_tif {
             Some(
-                time_in_force_to_binance_spot(time_in_force)
+                time_in_force_to_binance_spot(time_in_force, use_gtd)
                     .map_err(|e| Self::command_validation_error(e.to_string()))?,
             )
         } else {
@@ -2013,6 +3373,7 @@ impl BinanceSpotHttpClient {
         quantity: Quantity,
         time_in_force: TimeInForce,
         price: Option<Price>,
+        use_gtd: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.inner();
         let instrument = self
@@ -2024,7 +3385,7 @@ impl BinanceSpotHttpClient {
             .map_err(|e| Self::command_validation_error(e.to_string()))?;
         let binance_order_type = order_type_to_binance_spot(order_type, false)
             .map_err(|e| Self::command_validation_error(e.to_string()))?;
-        let binance_tif = time_in_force_to_binance_spot(time_in_force)
+        let binance_tif = time_in_force_to_binance_spot(time_in_force, use_gtd)
             .map_err(|e| Self::command_validation_error(e.to_string()))?;
 
         let cancel_order_id: i64 = venue_order_id.inner().parse().map_err(|_| {
@@ -2139,46 +3500,339 @@ impl BinanceSpotHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        Ok(responses
+        responses
             .into_iter()
             .map(|r| {
-                (
+                Ok((
                     VenueOrderId::new(r.order_id.to_string()),
-                    ClientOrderId::new(decode_broker_id(
+                    decode_client_order_id(
                         &r.orig_client_order_id,
                         BINANCE_NAUTILUS_SPOT_BROKER_ID,
-                    )),
-                )
+                    )?,
+                ))
             })
-            .collect())
+            .collect()
+    }
+}
+
+fn parse_commission_rates(maker: &str, taker: &str) -> anyhow::Result<(Decimal, Decimal)> {
+    Ok((
+        Decimal::from_str_exact(maker)?,
+        Decimal::from_str_exact(taker)?,
+    ))
+}
+
+fn spot_json_market_status(status: &str) -> MarketStatusAction {
+    match status {
+        "TRADING" => MarketStatusAction::Trading,
+        "BREAK" => MarketStatusAction::Pause,
+        _ => MarketStatusAction::NotAvailableForTrading,
+    }
+}
+
+fn decimal_from_mantissa_exponent(mantissa: i64, exponent: i8) -> Decimal {
+    if exponent >= 0 {
+        Decimal::from(mantissa) * Decimal::from(10_i64.pow(exponent as u32))
+    } else {
+        Decimal::new(mantissa, (-exponent) as u32)
+    }
+}
+
+fn log_instrument_parse_error(
+    config: &BinanceInstrumentProviderConfig,
+    symbol: &str,
+    error: &anyhow::Error,
+) {
+    if config.log_warnings {
+        log::warn!("Skipping Binance Spot instrument {symbol}: {error}");
+    } else {
+        log::debug!("Skipping Binance Spot instrument {symbol}: {error}");
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::instruments::stubs::currency_pair_btcusdt;
     use rstest::rstest;
 
     use super::*;
+    use crate::spot::http::models::BinancePriceLevel;
 
     #[rstest]
     fn test_schema_constants() {
         assert_eq!(BinanceRawSpotHttpClient::schema_id(), 3);
-        assert_eq!(BinanceRawSpotHttpClient::schema_version(), 4);
+        assert_eq!(BinanceRawSpotHttpClient::schema_version(), 5);
         assert_eq!(BinanceSpotHttpClient::schema_id(), 3);
-        assert_eq!(BinanceSpotHttpClient::schema_version(), 4);
+        assert_eq!(BinanceSpotHttpClient::schema_version(), 5);
     }
 
     #[rstest]
     fn test_sbe_schema_header() {
-        assert_eq!(SBE_SCHEMA_HEADER, "3:4");
+        assert_eq!(SBE_SCHEMA_HEADER, "3:5");
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_response_rejects_negative_update_id() {
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let snapshot = BinanceDepth {
+            last_update_id: -1,
+            price_exponent: -2,
+            qty_exponent: -5,
+            bids: vec![],
+            asks: vec![],
+        };
+
+        let error = BinanceSpotHttpClient::parse_book_snapshot_response(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            &instrument,
+            &snapshot,
+            UnixNanos::from(1_700_000_000_000_000_001u64),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid negative order-book update ID");
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_response_rejects_negative_quantity() {
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let snapshot = BinanceDepth {
+            last_update_id: 12345,
+            price_exponent: -2,
+            qty_exponent: -5,
+            bids: vec![BinancePriceLevel {
+                price_mantissa: 4_200_001,
+                qty_mantissa: -1,
+            }],
+            asks: vec![],
+        };
+
+        let error = BinanceSpotHttpClient::parse_book_snapshot_response(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            &instrument,
+            &snapshot,
+            UnixNanos::from(1_700_000_000_000_000_001u64),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid negative bid quantity");
     }
 
     #[rstest]
     fn test_default_headers_include_sbe() {
-        let headers = BinanceRawSpotHttpClient::default_headers(&None);
+        let headers = BinanceRawSpotHttpClient::default_headers(&None, false);
 
         assert_eq!(headers.get("Accept"), Some(&"application/sbe".to_string()));
-        assert_eq!(headers.get("X-MBX-SBE"), Some(&"3:4".to_string()));
+        assert_eq!(headers.get("X-MBX-SBE"), Some(&"3:5".to_string()));
+    }
+
+    #[rstest]
+    fn test_json_headers_exclude_sbe() {
+        let headers = BinanceRawSpotHttpClient::default_headers(&None, true);
+
+        assert_eq!(headers.get("Accept"), Some(&"application/json".to_string()));
+        assert_eq!(headers.get("X-MBX-SBE"), None);
+    }
+
+    #[rstest]
+    fn test_spot_trades_from_json_preserves_all_fields() {
+        let response: Vec<SpotTradeJson> = serde_json::from_value(serde_json::json!([{
+            "id": 17,
+            "price": "123.45",
+            "qty": "0.06789",
+            "quoteQty": "8.3810205",
+            "time": 1_700_000_000_123_i64,
+            "isBuyerMaker": true,
+            "isBestMatch": false
+        }]))
+        .unwrap();
+
+        let parsed = spot_trades_from_json(response).unwrap();
+
+        assert_eq!(parsed.price_exponent, -7);
+        assert_eq!(parsed.qty_exponent, -5);
+        assert_eq!(parsed.trades.len(), 1);
+        assert_eq!(parsed.trades[0].id, 17);
+        assert_eq!(parsed.trades[0].price_mantissa, 1_234_500_000);
+        assert_eq!(parsed.trades[0].qty_mantissa, 6_789);
+        assert_eq!(parsed.trades[0].quote_qty_mantissa, 83_810_205);
+        assert_eq!(parsed.trades[0].time, 1_700_000_000_123_000);
+        assert!(parsed.trades[0].is_buyer_maker);
+        assert!(!parsed.trades[0].is_best_match);
+    }
+
+    #[rstest]
+    fn test_spot_agg_trades_from_json_preserves_all_fields() {
+        let response: Vec<SpotAggTradeJson> = serde_json::from_value(serde_json::json!([{
+            "a": 21,
+            "p": "432.10",
+            "q": "1.234",
+            "f": 31,
+            "l": 32,
+            "T": 1_700_000_000_456_i64,
+            "m": false,
+            "M": true
+        }]))
+        .unwrap();
+
+        let parsed = spot_agg_trades_from_json(response).unwrap();
+
+        assert_eq!(parsed.price_exponent, -2);
+        assert_eq!(parsed.qty_exponent, -3);
+        assert_eq!(parsed.trades.len(), 1);
+        assert_eq!(parsed.trades[0].id, 21);
+        assert_eq!(parsed.trades[0].price_mantissa, 43_210);
+        assert_eq!(parsed.trades[0].qty_mantissa, 1_234);
+        assert_eq!(parsed.trades[0].first_trade_id, 31);
+        assert_eq!(parsed.trades[0].last_trade_id, 32);
+        assert_eq!(parsed.trades[0].time, 1_700_000_000_456_000);
+        assert!(!parsed.trades[0].is_buyer_maker);
+        assert!(parsed.trades[0].is_best_match);
+    }
+
+    #[rstest]
+    fn test_spot_klines_from_json_preserves_all_fields() {
+        let response: Vec<SpotKlineJson> = serde_json::from_value(serde_json::json!([[
+            1_700_000_000_000_i64,
+            "10.10",
+            "11.20",
+            "9.30",
+            "10.40",
+            "12.345",
+            1_700_000_059_999_i64,
+            "128.765",
+            37,
+            "5.432",
+            "56.789",
+            "0"
+        ]]))
+        .unwrap();
+
+        let parsed = spot_klines_from_json(response).unwrap();
+        let kline = &parsed.klines[0];
+
+        assert_eq!(parsed.price_exponent, -3);
+        assert_eq!(parsed.qty_exponent, -3);
+        assert_eq!(parsed.klines.len(), 1);
+        assert_eq!(kline.open_time, 1_700_000_000_000_000);
+        assert_eq!(kline.open_price, 10_100);
+        assert_eq!(kline.high_price, 11_200);
+        assert_eq!(kline.low_price, 9_300);
+        assert_eq!(kline.close_price, 10_400);
+        assert_eq!(i128::from_le_bytes(kline.volume), 12_345);
+        assert_eq!(kline.close_time, 1_700_000_059_999_000);
+        assert_eq!(i128::from_le_bytes(kline.quote_volume), 128_765);
+        assert_eq!(kline.num_trades, 37);
+        assert_eq!(i128::from_le_bytes(kline.taker_buy_base_volume), 5_432);
+        assert_eq!(i128::from_le_bytes(kline.taker_buy_quote_volume), 56_789);
+    }
+
+    #[rstest]
+    fn test_spot_account_from_json_preserves_all_fields() {
+        let response: SpotAccountJson = serde_json::from_value(serde_json::json!({
+            "commissionRates": {
+                "maker": "0.0008",
+                "taker": "0.0011",
+                "buyer": "0.0002",
+                "seller": "0.0003"
+            },
+            "canTrade": true,
+            "canWithdraw": false,
+            "canDeposit": true,
+            "requireSelfTradePrevention": true,
+            "preventSor": false,
+            "updateTime": 1_700_000_000_789_i64,
+            "accountType": "SPOT",
+            "balances": [{"asset": "USD", "free": "123.45", "locked": "6.789"}]
+        }))
+        .unwrap();
+
+        let account = spot_account_from_json(response).unwrap();
+
+        assert_eq!(account.commission_exponent, -4);
+        assert_eq!(account.maker_commission_mantissa, 8);
+        assert_eq!(account.taker_commission_mantissa, 11);
+        assert_eq!(account.buyer_commission_mantissa, 2);
+        assert_eq!(account.seller_commission_mantissa, 3);
+        assert!(account.can_trade);
+        assert!(!account.can_withdraw);
+        assert!(account.can_deposit);
+        assert!(account.require_self_trade_prevention);
+        assert!(!account.prevent_sor);
+        assert_eq!(account.update_time, 1_700_000_000_789_000);
+        assert_eq!(account.account_type, "SPOT");
+        assert_eq!(account.balances.len(), 1);
+        assert_eq!(account.balances[0].asset, "USD");
+        assert_eq!(account.balances[0].free_mantissa, 123_450);
+        assert_eq!(account.balances[0].locked_mantissa, 6_789);
+        assert_eq!(account.balances[0].exponent, -3);
+    }
+
+    #[rstest]
+    fn test_spot_cancel_replace_json_uses_nested_new_order_response() {
+        let response: SpotCancelReplaceJson = serde_json::from_value(serde_json::json!({
+            "cancelResult": "SUCCESS",
+            "newOrderResult": "SUCCESS",
+            "cancelResponse": {},
+            "newOrderResponse": {
+                "symbol": "ETHUSD",
+                "orderId": 101,
+                "orderListId": -1,
+                "clientOrderId": "new-order",
+                "transactTime": 1_700_000_000_123_i64,
+                "price": "12.34",
+                "origQty": "5.678",
+                "executedQty": "1.234",
+                "cummulativeQuoteQty": "15.22756",
+                "status": "PARTIALLY_FILLED",
+                "timeInForce": "GTC",
+                "type": "LIMIT",
+                "side": "BUY",
+                "stopPrice": "11.11",
+                "workingTime": 1_700_000_000_124_i64,
+                "selfTradePreventionMode": "EXPIRE_MAKER",
+                "fills": [{
+                    "price": "12.34",
+                    "qty": "1.234",
+                    "commission": "0.001234",
+                    "commissionAsset": "USD",
+                    "tradeId": 44
+                }]
+            }
+        }))
+        .unwrap();
+
+        let order = spot_new_order_from_json(response.new_order_response).unwrap();
+
+        assert_eq!(order.price_exponent, -2);
+        assert_eq!(order.qty_exponent, -3);
+        assert_eq!(order.order_id, 101);
+        assert_eq!(order.order_list_id, None);
+        assert_eq!(order.transact_time, 1_700_000_000_123_000);
+        assert_eq!(order.price_mantissa, 1_234);
+        assert_eq!(order.orig_qty_mantissa, 5_678);
+        assert_eq!(order.executed_qty_mantissa, 1_234);
+        assert_eq!(order.cummulative_quote_qty_mantissa, 1_522_756);
+        assert_eq!(order.status, SbeOrderStatus::PartiallyFilled);
+        assert_eq!(order.time_in_force, SbeTimeInForce::Gtc);
+        assert_eq!(order.order_type, SbeOrderType::Limit);
+        assert_eq!(order.side, SbeOrderSide::Buy);
+        assert_eq!(order.stop_price_mantissa, Some(1_111));
+        assert_eq!(order.working_time, Some(1_700_000_000_124_000));
+        assert_eq!(
+            order.self_trade_prevention_mode,
+            SbeSelfTradePreventionMode::ExpireMaker
+        );
+        assert_eq!(order.client_order_id, "new-order");
+        assert_eq!(order.symbol, "ETHUSD");
+        assert_eq!(order.fills.len(), 1);
+        assert_eq!(order.fills[0].price_mantissa, 1_234);
+        assert_eq!(order.fills[0].qty_mantissa, 1_234);
+        assert_eq!(order.fills[0].commission_mantissa, 1_234);
+        assert_eq!(order.fills[0].commission_exponent, -6);
+        assert_eq!(order.fills[0].commission_asset, "USD");
+        assert_eq!(order.fills[0].trade_id, Some(44));
+        assert_eq!(order.expiry_reason, None);
     }
 
     #[rstest]
@@ -2200,5 +3854,52 @@ mod tests {
         };
 
         assert!(BinanceRawSpotHttpClient::quota_from(&quota).is_none());
+    }
+
+    fn create_test_raw_client() -> BinanceRawSpotHttpClient {
+        BinanceRawSpotHttpClient::new(
+            BinanceEnvironment::Live,
+            None,
+            None,
+            Some("http://127.0.0.1:1".to_string()),
+            None,
+            Some(1),
+            None,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::limit(
+        AggTradesParams {
+            symbol: "BTCUSDT".to_string(),
+            from_id: None,
+            start_time: None,
+            end_time: None,
+            limit: Some(1001),
+        },
+        "Validation error: aggregate trade limit must not exceed 1000"
+    )]
+    #[case::bounds(
+        AggTradesParams {
+            symbol: "BTCUSDT".to_string(),
+            from_id: None,
+            start_time: Some(2000),
+            end_time: Some(1000),
+            limit: Some(1000),
+        },
+        "Validation error: aggregate trade startTime must not exceed endTime"
+    )]
+    #[tokio::test]
+    async fn test_agg_trades_rejects_invalid_bounds(
+        #[case] params: AggTradesParams,
+        #[case] expected: &str,
+    ) {
+        let error = create_test_raw_client()
+            .agg_trades(&params)
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
     }
 }

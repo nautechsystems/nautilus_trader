@@ -193,7 +193,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
 ) -> anyhow::Result<()> {
     // Local/cached file path: accept the file if it exists, updating the
     // checksum record when it differs (e.g. after local regeneration).
-    // This is intentionally lenient — download verification below is strict.
+    // This is intentionally lenient - download verification below is strict.
     if filepath.exists() {
         println!("File already exists (local/cached): {}", filepath.display());
 

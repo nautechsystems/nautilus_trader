@@ -2970,7 +2970,7 @@ cdef class Portfolio(PortfolioFacade):
                 tracked.add(instrument_id)
                 self._log.warning(
                     f"No price available for open position {instrument_id}; "
-                    f"subscribe to quotes, trades or bars for continuous mark-to-market equity"
+                    f"subscribe to quotes, trades, or bars for continuous mark-to-market equity"
                 )
 
         # Instruments that are now priced should be removed so a future price drop re-warns

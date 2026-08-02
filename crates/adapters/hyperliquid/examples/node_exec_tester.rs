@@ -100,8 +100,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
-            // Hyperliquid supports hyphens in client order IDs.
-            use_hyphens_in_client_order_ids: true,
             ..Default::default()
         })
         .instrument_id(instrument_id)
@@ -109,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .order_qty(order_qty)
         .log_data(false)
         .open_position_on_start_qty(order_qty.as_decimal())
+        .tob_offset_ticks(1)
         .use_post_only(true)
         .build()?;
 

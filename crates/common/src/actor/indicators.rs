@@ -83,8 +83,7 @@ where
     }
 
     fn handle_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.borrow_mut().handle_quote(quote);
-        Ok(())
+        self.borrow_mut().handle_quote(quote)
     }
 
     fn handle_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {

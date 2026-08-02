@@ -26,11 +26,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 #[cfg(feature = "defi")]
-use crate::defi::{Blockchain, validation::validate_address};
+use crate::defi::{Blockchain, PoolIdentifier, validation::validate_address};
 use crate::{
     enums::InstrumentClass,
     identifiers::{Symbol, Venue},
 };
+
+/// Separates leg components in generic spread instrument IDs.
+pub const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
 
 /// Represents a valid instrument ID.
 ///
@@ -161,13 +164,22 @@ impl FromStr for InstrumentId {
         let symbol = {
             #[cfg(feature = "defi")]
             if venue.is_dex() {
-                let validated_address = validate_address(symbol_part).map_err(|e| {
-                    InstrumentIdError::InvalidAddress {
-                        value: value.clone(),
-                        reason: e.to_string(),
-                    }
-                })?;
-                Symbol::new_checked(validated_address.to_string()).map_err(|source| {
+                let validated_symbol = if symbol_part.len() == 66 {
+                    PoolIdentifier::new_checked(symbol_part)
+                        .map(|pool_id| pool_id.to_string())
+                        .map_err(|e| InstrumentIdError::InvalidAddress {
+                            value: value.clone(),
+                            reason: e.to_string(),
+                        })?
+                } else {
+                    validate_address(symbol_part)
+                        .map(|address| address.to_string())
+                        .map_err(|e| InstrumentIdError::InvalidAddress {
+                            value: value.clone(),
+                            reason: e.to_string(),
+                        })?
+                };
+                Symbol::new_checked(validated_symbol).map_err(|source| {
                     InstrumentIdError::InvalidSymbol {
                         value: value.clone(),
                         source: Box::new(source),
@@ -341,6 +353,26 @@ mod tests {
             "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443"
         );
         assert_eq!(id.venue.to_string(), "Arbitrum:UniswapV3");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_blockchain_instrument_id_valid_pool_id() {
+        let value = concat!(
+            "0xc9bc8043294146424a4e4607d8ad837d",
+            "6a659142822bbaaabc83bb57e7447461.Arbitrum:UniswapV4",
+        );
+
+        let id = InstrumentId::from(value);
+
+        assert_eq!(
+            id.symbol.to_string(),
+            concat!(
+                "0xc9bc8043294146424a4e4607d8ad837d",
+                "6a659142822bbaaabc83bb57e7447461",
+            )
+        );
+        assert_eq!(id.venue.to_string(), "Arbitrum:UniswapV4");
     }
 
     #[cfg(feature = "defi")]

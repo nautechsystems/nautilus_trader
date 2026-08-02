@@ -30,6 +30,13 @@ BINANCE_CLIENT_ID: Final[ClientId] = ClientId(BINANCE)
 BINANCE_MIN_CALLBACK_RATE: Final[Decimal] = Decimal("0.1")
 BINANCE_MAX_CALLBACK_RATE: Final[Decimal] = Decimal("10.0")
 
+BINANCE_FUTURES_ORDER_COUNT_10S_KEY: Final[str] = "binance:futures:orders:10s"
+BINANCE_FUTURES_ORDER_COUNT_1M_KEY: Final[str] = "binance:futures:orders:1m"
+BINANCE_FUTURES_ORDER_COUNT_KEYS: Final[tuple[str, str]] = (
+    BINANCE_FUTURES_ORDER_COUNT_10S_KEY,
+    BINANCE_FUTURES_ORDER_COUNT_1M_KEY,
+)
+
 # Binance Spot LIMIT_MAKER rejection message (error code -2010).
 # This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.
 BINANCE_SPOT_POST_ONLY_REJECT_MSG: Final[str] = "Order would immediately match and take."

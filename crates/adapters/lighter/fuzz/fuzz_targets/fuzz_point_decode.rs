@@ -11,8 +11,8 @@
 //! re-encoded and the round trip is asserted; the check pins the
 //! `decode -> encode` cycle on any input that decodes.
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::{curve::Point, field::Fp5};
+use nautilus_live::fuzz::fuzz_target;
 
 fn fp5_from_bytes(bytes: &[u8; 40]) -> Fp5 {
     let mut limbs = [0u64; 5];

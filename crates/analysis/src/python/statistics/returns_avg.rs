@@ -23,6 +23,10 @@ use crate::{statistic::PortfolioStatistic, statistics::returns_avg::ReturnsAvera
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ReturnsAverage {
+    /// Calculates the arithmetic mean of portfolio returns.
+    ///
+    /// All returns are included, so zero returns count toward the average.
+    /// Returns `NaN` for an empty series.
     #[new]
     fn py_new() -> Self {
         Self {}

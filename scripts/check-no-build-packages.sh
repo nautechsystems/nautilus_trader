@@ -20,7 +20,7 @@ for tool in awk sort comm uniq diff; do
   }
 done
 
-# Emit the names of third-party packages in a uv.lock — i.e. every package
+# Emit the names of third-party packages in a uv.lock - i.e. every package
 # whose source is a registry/git/url. Workspace members (source.editable or
 # source.virtual, or no source at all) are skipped.
 locked_third_party() {

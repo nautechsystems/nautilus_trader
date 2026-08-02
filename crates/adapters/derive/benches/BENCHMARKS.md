@@ -37,7 +37,7 @@ through the ticker-derived streams (quotes/mark/index/funding/bars), then the
 options-specific greeks stream last.
 
 | Bench                            | Median  | Throughput |
-|----------------------------------|---------|------------|
+| -------------------------------- | ------- | ---------- |
 | `inbound_pipeline/book_deltas`   | 473 ns  | 2.12 M/s   |
 | `inbound_pipeline/quotes`        | 1.64 µs | 610 k/s    |
 | `inbound_pipeline/trades`        | 742 ns  | 1.35 M/s   |
@@ -57,7 +57,7 @@ serialize). Derive supports only Limit and Market orders, so there is no
 stop-order row.
 
 | Bench                         | Median  | Throughput |
-|-------------------------------|---------|------------|
+| ----------------------------- | ------- | ---------- |
 | `exec_pipeline/submit_limit`  | 42.1 µs | 23.8 k/s   |
 | `exec_pipeline/submit_market` | 42.1 µs | 23.7 k/s   |
 | `exec_pipeline/modify`        | 42.1 µs | 23.7 k/s   |
@@ -71,7 +71,7 @@ EIP-191 timestamp signature the HTTP read path pays per request.
 `signer_from_key` is the secp256k1 key expansion, paid once at client startup.
 
 | Bench               | Median  |
-|---------------------|---------|
+| ------------------- | ------- |
 | `sign_trade_action` | 42.0 µs |
 | `rest_auth_headers` | 40.9 µs |
 | `signer_from_key`   | 31.6 µs |
@@ -88,7 +88,7 @@ registered identity); `orders_tracked` and `trades_fill` resolve a registered
 identity and emit `OrderAccepted` / `OrderFilled` events.
 
 | Bench                       | Median  | Throughput |
-|-----------------------------|---------|------------|
+| --------------------------- | ------- | ---------- |
 | `dispatch/orders_untracked` | 8.53 µs | 117 k/s    |
 | `dispatch/orders_tracked`   | 9.01 µs | 111 k/s    |
 | `dispatch/trades_fill`      | 8.45 µs | 118 k/s    |
@@ -103,7 +103,7 @@ domain cost; the two sum to the matching inbound number. `order_report` and
 end-to-end.
 
 | Bench                         | Median  |
-|-------------------------------|---------|
+| ----------------------------- | ------- |
 | `decode_only/orderbook`       | 423 ns  |
 | `decode_only/ticker`          | 1.56 µs |
 | `parse_only/orderbook_deltas` | 49.9 ns |

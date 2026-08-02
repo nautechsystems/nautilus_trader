@@ -1,0 +1,38 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "positionAmt": "0.005",
+    "entryPrice": "50000.0",
+    "markPrice": "51000.0",
+    "unRealizedProfit": "5.00000000",
+    "liquidationPrice": "45000.0",
+    "leverage": "20",
+    "maxNotionalValue": "250000",
+    "marginType": "cross",
+    "isolatedMargin": "0.00000000",
+    "isAutoAddMargin": "false",
+    "positionSide": "LONG",
+    "notional": "255.0",
+    "isolatedWallet": "0",
+    "updateTime": 1625474304765,
+    "breakEvenPrice": "50100.0"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "positionAmt": "-0.002",
+    "entryPrice": "52000.0",
+    "markPrice": "51000.0",
+    "unRealizedProfit": "2.00000000",
+    "liquidationPrice": "57000.0",
+    "leverage": "20",
+    "maxNotionalValue": "250000",
+    "marginType": "cross",
+    "isolatedMargin": "0.00000000",
+    "isAutoAddMargin": "false",
+    "positionSide": "SHORT",
+    "notional": "-102.0",
+    "isolatedWallet": "0",
+    "updateTime": 1625474304765,
+    "breakEvenPrice": "51900.0"
+  }
+]

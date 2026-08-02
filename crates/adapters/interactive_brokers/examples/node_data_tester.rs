@@ -37,7 +37,7 @@ use nautilus_interactive_brokers::{
     },
     factories::InteractiveBrokersDataClientFactory,
 };
-use nautilus_live::node::LiveNode;
+use nautilus_live::{config::RoutingConfig, node::LiveNode};
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{ClientId, InstrumentId, TraderId},
@@ -79,13 +79,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
+    let routing = RoutingConfig::builder().default(true).build();
+
     let mut node = LiveNode::builder(TraderId::from(TRADER_ID), Environment::Live)?
         .with_name(NODE_NAME.to_string())
         .with_delay_post_stop_secs(2)
-        .add_data_client(
+        .add_data_client_with_routing(
             None,
             Box::new(InteractiveBrokersDataClientFactory::new()),
             Box::new(data_config),
+            routing,
         )?
         .build()?;
 

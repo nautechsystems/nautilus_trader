@@ -1,0 +1,10 @@
+{
+  "account": 0,
+  "orderID": "f36a053b-a5b6-451a-a9c4-fa5d027b05db",
+  "ordRejReason": "Invalid orderID",
+  "ordStatus": "Rejected",
+  "text": "<redacted>",
+  "timestamp": "2026-07-20T21:23:23.167Z",
+  "transactTime": "2026-07-20T21:23:23.167Z",
+  "workingIndicator": false
+}

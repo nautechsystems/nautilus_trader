@@ -175,7 +175,7 @@ impl DataActor for GreeksTester {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        let ids: Vec<InstrumentId> = self.subscribed_instruments.drain(..).collect();
+        let ids: Vec<InstrumentId> = std::mem::take(&mut self.subscribed_instruments);
         let client_id = self.client_id;
         for instrument_id in ids {
             self.unsubscribe_option_greeks(instrument_id, Some(client_id), None);

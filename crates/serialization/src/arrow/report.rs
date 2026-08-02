@@ -48,6 +48,7 @@ const ORDER_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("contingency_type", false),
     JsonFieldSpec::u64("expire_time", true),
     JsonFieldSpec::utf8("price", true),
+    JsonFieldSpec::utf8("activation_price", true),
     JsonFieldSpec::utf8("trigger_price", true),
     JsonFieldSpec::utf8("trigger_type", true),
     JsonFieldSpec::utf8("limit_offset", true),
@@ -203,7 +204,7 @@ mod tests {
         enums::{OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
         reports::{OrderStatusReport, PositionStatusReport},
-        types::Quantity,
+        types::{Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -230,6 +231,7 @@ mod tests {
         )
         .with_linked_order_ids([ClientOrderId::from("O-19700101-000000-001-001-2")]);
         let report = OrderStatusReport {
+            activation_price: Some(Price::from("1.05000")),
             limit_offset: Some(Decimal::from_str("0.123456789123456789").unwrap()),
             trailing_offset: Some(Decimal::from_str("0.987654321987654321").unwrap()),
             avg_px: Some(Decimal::from_str("1.23456789123456789").unwrap()),

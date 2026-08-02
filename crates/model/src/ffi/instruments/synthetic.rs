@@ -198,15 +198,41 @@ pub unsafe extern "C" fn synthetic_instrument_change_formula(
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn synthetic_instrument_calculate(
+/// # Safety
+///
+/// `inputs_ptr` must describe initialized `f64` values that remain valid and immutable for the
+/// duration of this call.
+pub unsafe extern "C" fn synthetic_instrument_calculate(
     synth: &mut SyntheticInstrument_API,
     inputs_ptr: &CVec,
 ) -> Price {
-    let CVec { ptr, len, .. } = inputs_ptr;
-    let inputs: &[f64] = unsafe { std::slice::from_raw_parts((*ptr).cast::<f64>(), *len) };
+    let inputs = unsafe { inputs_ptr.as_slice::<f64>() };
 
     match synth.calculate(inputs) {
         Ok(price) => price,
         Err(_) => ERROR_PRICE,
+    }
+}
+
+#[cfg(test)]
+mod cvec_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_synthetic_calculate_borrows_inputs() {
+        let mut synth = SyntheticInstrument_API(Box::default());
+        let mut inputs = vec![100.0, 200.0];
+        let cvec = CVec {
+            ptr: inputs.as_mut_ptr().cast(),
+            len: inputs.len(),
+            cap: inputs.capacity(),
+        };
+
+        let price = unsafe { synthetic_instrument_calculate(&mut synth, &cvec) };
+
+        assert_eq!(price, Price::from("150.0"));
+        assert_eq!(inputs, [100.0, 200.0]);
     }
 }

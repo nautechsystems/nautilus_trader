@@ -177,6 +177,33 @@ pub struct BetfairDataConfig {
     pub subscribe_cricket_data: bool,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BetfairDataConfig {
+    account_currency: String,
+    username: Option<String>,
+    request_rate_per_second: u32,
+    default_min_notional: Option<Decimal>,
+    event_type_ids: Option<Vec<String>>,
+    event_type_names: Option<Vec<String>>,
+    event_ids: Option<Vec<String>>,
+    country_codes: Option<Vec<String>>,
+    market_types: Option<Vec<String>>,
+    market_ids: Option<Vec<String>>,
+    min_market_start_time: Option<String>,
+    max_market_start_time: Option<String>,
+    stream_host: Option<String>,
+    stream_port: Option<u16>,
+    stream_heartbeat_ms: u64,
+    stream_idle_timeout_ms: u64,
+    stream_reconnect_delay_initial_ms: u64,
+    stream_reconnect_delay_max_ms: u64,
+    stream_use_tls: bool,
+    stream_conflate_ms: Option<u64>,
+    subscription_delay_secs: u64,
+    subscribe_race_data: bool,
+    subscribe_cricket_data: bool,
+});
+
 impl Default for BetfairDataConfig {
     fn default() -> Self {
         Self::builder().build()
@@ -349,6 +376,31 @@ pub struct BetfairExecConfig {
     #[builder(default = 10)]
     pub stream_gap_recovery_lookback_mins: u64,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BetfairExecConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    account_currency: String,
+    username: Option<String>,
+    request_rate_per_second: u32,
+    order_request_rate_per_second: u32,
+    stream_host: Option<String>,
+    stream_port: Option<u16>,
+    stream_heartbeat_ms: u64,
+    stream_idle_timeout_ms: u64,
+    stream_reconnect_delay_initial_ms: u64,
+    stream_reconnect_delay_max_ms: u64,
+    stream_use_tls: bool,
+    stream_market_ids_filter: Option<Vec<String>>,
+    ignore_external_orders: bool,
+    calculate_account_state: bool,
+    request_account_state_secs: u64,
+    reconcile_market_ids_only: bool,
+    reconcile_market_ids: Option<Vec<String>>,
+    use_market_version: bool,
+    stream_gap_recovery_lookback_mins: u64,
+});
 
 impl Default for BetfairExecConfig {
     fn default() -> Self {

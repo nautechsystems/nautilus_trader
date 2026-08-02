@@ -148,7 +148,7 @@ point at the mock. Everything downstream of the factory (the client, both engine
 routing fork, the `ExecutionManager`) is the production path. A minimal `SubmitLimitOnStart` strategy
 submits one passive limit order on start and records each terminal order event into a shared
 `LifecycleProbe` (`Arc<AtomicBool>` flags), giving the driver task a deterministic signal without
-polling the cache (which is not `Send`). The five scenarios exercise the core lifecycle through the
+polling the cache (which is not `Send`). The six scenarios exercise the core lifecycle through the
 node:
 
 - boot -> connect -> stop clean
@@ -156,6 +156,7 @@ node:
 - a venue place-order error -> `Rejected`
 - a strategy-issued cancel (confirmed by an OCM frame) -> `Canceled`
 - a fed OCM fill -> `Filled`
+- a fed OCM fill followed by a cumulative void -> `Voided`
 
 Reconciliation is disabled so startup is deterministic and focused on the order lifecycle.
 

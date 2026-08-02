@@ -19,6 +19,7 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, time::Duratio
 
 use nautilus_common::{
     cache::CacheConfig,
+    clients::ExecutionClient,
     clock::Clock,
     enums::Environment,
     factories::{
@@ -33,18 +34,24 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{TraderId, Venue};
 use nautilus_portfolio::config::PortfolioConfig;
+#[cfg(feature = "python")]
+use nautilus_system::trader::Trader;
 use nautilus_system::{
     clock_factory::ClockFactory,
     config::StreamingConfig,
     event_store::{EventStoreFactory, KernelEventStore},
     kernel::{NautilusKernel, NautilusKernelDependencies},
 };
+use nautilus_trading::ImportableControllerConfig;
 
 use super::{
     LiveNode,
-    config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
+    config::{
+        LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
+        RoutingConfig, validate_live_environment,
+    },
 };
 use crate::{
     execution::{
@@ -85,6 +92,8 @@ pub struct LiveNodeBuilder {
     exec_client_factories: HashMap<String, ExecutionClientFactoryEntry>,
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
+    data_client_routing: HashMap<String, RoutingConfig>,
+    exec_client_routing: HashMap<String, RoutingConfig>,
     event_store_factory: Option<EventStoreFactory>,
     clock_factory: Option<ClockFactory>,
     external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
@@ -126,12 +135,7 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if `environment` is invalid (BACKTEST).
     pub fn new(trader_id: TraderId, environment: Environment) -> anyhow::Result<Self> {
-        match environment {
-            Environment::Sandbox | Environment::Live => {}
-            Environment::Backtest => {
-                anyhow::bail!("LiveNode cannot be used with Backtest environment");
-            }
-        }
+        validate_live_environment(environment)?;
 
         let config = LiveNodeConfig {
             environment,
@@ -146,6 +150,8 @@ impl LiveNodeBuilder {
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
+            data_client_routing: HashMap::new(),
+            exec_client_routing: HashMap::new(),
             event_store_factory: None,
             clock_factory: None,
             external_msgbus_factory: None,
@@ -160,12 +166,7 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if the config's environment is invalid (BACKTEST).
     pub fn from_config(config: LiveNodeConfig) -> anyhow::Result<Self> {
-        match config.environment {
-            Environment::Sandbox | Environment::Live => {}
-            Environment::Backtest => {
-                anyhow::bail!("LiveNode cannot be used with Backtest environment");
-            }
-        }
+        validate_live_environment(config.environment)?;
 
         Ok(Self {
             name: "LiveNode".to_string(),
@@ -174,6 +175,8 @@ impl LiveNodeBuilder {
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
+            data_client_routing: HashMap::new(),
+            exec_client_routing: HashMap::new(),
             event_store_factory: None,
             clock_factory: None,
             external_msgbus_factory: None,
@@ -213,6 +216,20 @@ impl LiveNodeBuilder {
     #[must_use]
     pub const fn with_save_state(mut self, save_state: bool) -> Self {
         self.config.save_state = save_state;
+        self
+    }
+
+    /// Set the importable controller configuration for the node.
+    ///
+    /// The controller is instantiated and registered with the trader during
+    /// [`LiveNodeBuilder::build`], enabling runtime strategy/actor management
+    /// (create, start, stop, remove) without restarting the node. This mirrors
+    /// the `controller` field on [`LiveNodeConfig`] used by the config-based
+    /// [`LiveNode::build`] path, so a builder that also registers client
+    /// factories can host a controller in a single node.
+    #[must_use]
+    pub fn with_controller(mut self, controller: ImportableControllerConfig) -> Self {
+        self.config.controller = Some(controller);
         self
     }
 
@@ -407,10 +424,25 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if a client with the same name is already registered.
     pub fn add_data_client(
+        self,
+        name: Option<String>,
+        factory: Box<dyn DataClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
+        self.add_data_client_with_routing(name, factory, config, RoutingConfig::default())
+    }
+
+    /// Adds a data client factory with configuration and explicit routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a client with the same name is already registered.
+    pub fn add_data_client_with_routing(
         mut self,
         name: Option<String>,
         factory: Box<dyn DataClientFactory>,
         config: Box<dyn ClientConfig>,
+        routing: RoutingConfig,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
@@ -419,20 +451,39 @@ impl LiveNodeBuilder {
         }
 
         self.data_client_factories.insert(name.clone(), factory);
-        self.data_client_configs.insert(name, config);
+        self.data_client_configs.insert(name.clone(), config);
+        self.data_client_routing.insert(name, routing);
         Ok(self)
     }
 
     /// Adds an execution client factory with configuration.
     ///
+    /// Equivalent to [`Self::add_exec_client_with_routing`] with default (empty)
+    /// routing.
+    ///
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
     pub fn add_exec_client(
+        self,
+        name: Option<String>,
+        factory: Box<dyn ExecutionClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
+        self.add_exec_client_with_routing(name, factory, config, RoutingConfig::default())
+    }
+
+    /// Adds an execution client factory with configuration and explicit routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a client with the same name is already registered.
+    pub fn add_exec_client_with_routing(
         mut self,
         name: Option<String>,
         factory: Box<dyn ExecutionClientFactory>,
         config: Box<dyn ClientConfig>,
+        routing: RoutingConfig,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
@@ -442,7 +493,8 @@ impl LiveNodeBuilder {
 
         self.exec_client_factories
             .insert(name.clone(), ExecutionClientFactoryEntry::Adapter(factory));
-        self.exec_client_configs.insert(name, config);
+        self.exec_client_configs.insert(name.clone(), config);
+        self.exec_client_routing.insert(name, routing);
         Ok(self)
     }
 
@@ -518,6 +570,17 @@ impl LiveNodeBuilder {
                 .with_clock_factory(self.clock_factory.take())
                 .with_event_store_factory(self.event_store_factory.take()),
         )?;
+        #[cfg(feature = "python")]
+        if let Some(controller) = self.config.controller.as_ref() {
+            Trader::add_controller_from_importable_config(&kernel.trader, controller)?;
+        }
+        #[cfg(not(feature = "python"))]
+        if let Some(controller) = self.config.controller.as_ref() {
+            anyhow::bail!(
+                "LiveNodeConfig.controller for importable controller '{}' requires the python feature",
+                controller.controller_path
+            );
+        }
 
         self.install_external_msgbus_factory(&kernel)?;
 
@@ -547,10 +610,25 @@ impl LiveNodeBuilder {
                     client,
                 );
 
-                kernel
-                    .data_engine
-                    .borrow_mut()
-                    .register_client(adapter, venue);
+                let routing = self.data_client_routing.remove(&name).unwrap_or_default();
+
+                {
+                    let mut data_engine = kernel.data_engine.borrow_mut();
+                    data_engine.register_client(adapter, venue);
+
+                    if routing.default {
+                        data_engine.set_default_client(client_id)?;
+                    }
+
+                    if let Some(venues) = &routing.venues {
+                        for venue_str in venues {
+                            data_engine.register_venue_routing(
+                                client_id,
+                                Venue::new(venue_str.as_str()),
+                            )?;
+                        }
+                    }
+                }
 
                 log::info!("Registered DataClient-{client_id}");
             } else {
@@ -576,10 +654,25 @@ impl LiveNodeBuilder {
                 let client_id = client.client_id();
                 let venue = client.venue();
 
-                kernel
-                    .exec_engine
-                    .borrow_mut()
-                    .register_client(Box::new(client.clone()))?;
+                let routing = self.exec_client_routing.remove(&name).unwrap_or_default();
+
+                {
+                    let mut exec_engine = kernel.exec_engine.borrow_mut();
+                    exec_engine.register_client(Box::new(client.clone()))?;
+
+                    if routing.default {
+                        exec_engine.set_default_client(client_id)?;
+                    }
+
+                    if let Some(venues) = &routing.venues {
+                        for venue_str in venues {
+                            exec_engine.register_venue_routing(
+                                client_id,
+                                Venue::new(venue_str.as_str()),
+                            )?;
+                        }
+                    }
+                }
                 ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
                 exec_clients.push(client);
 
@@ -591,11 +684,18 @@ impl LiveNodeBuilder {
 
         let exec_manager_config = ExecutionManagerConfig::from(&self.config.exec_engine)
             .with_trader_id(self.config.trader_id);
-        let exec_manager = ExecutionManager::new(
+        let mut exec_manager = ExecutionManager::new(
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
         );
+
+        for client in &exec_clients {
+            exec_manager.set_position_reconciliation_tolerance(
+                client.account_id(),
+                client.position_reconciliation_tolerance(),
+            );
+        }
 
         let node = LiveNode::new_from_builder(
             kernel,
@@ -650,5 +750,32 @@ impl ExternalMessageBusIngress {
 
     pub(crate) fn close(&mut self) {
         self.0.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use nautilus_common::enums::Environment;
+    use nautilus_model::identifiers::TraderId;
+    use nautilus_trading::ImportableControllerConfig;
+    use rstest::rstest;
+
+    use super::LiveNodeBuilder;
+
+    #[rstest]
+    fn test_with_controller_sets_config_controller() {
+        let controller = ImportableControllerConfig {
+            controller_path: "module:Controller".to_string(),
+            config_path: "module:ControllerConfig".to_string(),
+            config: HashMap::new(),
+        };
+
+        let builder = LiveNodeBuilder::new(TraderId::from("TRADER-001"), Environment::Live)
+            .unwrap()
+            .with_controller(controller);
+
+        assert!(builder.config.controller.is_some());
     }
 }

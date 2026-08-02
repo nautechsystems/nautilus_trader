@@ -30,7 +30,8 @@ use nautilus_bybit::{
         consts::BYBIT_VENUE,
         enums::{
             BybitAccountType, BybitBboSideType, BybitMarginMode, BybitOrderType, BybitPositionIdx,
-            BybitProductType, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
+            BybitProductType, BybitRepayStatus, BybitTpSlMode, BybitTriggerType,
+            BybitUnifiedMarginStatus,
         },
     },
     http::{
@@ -685,12 +686,70 @@ async fn handle_no_convert_repay(
             .into_response();
     }
 
-    // Return successful repay response
+    let result_status = if repay_req["coin"] == "FAIL" {
+        "FA"
+    } else {
+        "SU"
+    };
+
     Json(json!({
         "retCode": 0,
         "retMsg": "OK",
         "result": {
-            "resultStatus": "SU"
+            "resultStatus": result_status
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+#[allow(dead_code)]
+async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -> Response {
+    // Check for authentication headers
+    if !headers.contains_key("X-BAPI-API-KEY")
+        || !headers.contains_key("X-BAPI-SIGN")
+        || !headers.contains_key("X-BAPI-TIMESTAMP")
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    // Parse JSON body
+    let Ok(repay_req): Result<Value, _> = serde_json::from_slice(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Invalid JSON body",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    };
+
+    let result_status = if repay_req["coin"] == "FAIL" {
+        "FA"
+    } else {
+        "SU"
+    };
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "resultStatus": result_status
         },
         "retExtInfo": {},
         "time": 1704470400123i64
@@ -923,6 +982,7 @@ fn create_test_router(state: TestServerState) -> Router {
             "/v5/account/no-convert-repay",
             post(handle_no_convert_repay),
         )
+        .route("/v5/account/repay", post(handle_repay))
         .with_state(state)
 }
 
@@ -1209,9 +1269,9 @@ async fn test_rate_limiting_returns_error() {
         "test_api_secret".to_string(),
         Some(base_url),
         60,
-        3,
-        1000,
-        10_000,
+        0,
+        1,
+        1,
         5_000,
         None,
     )
@@ -1248,6 +1308,100 @@ async fn test_rate_limiting_returns_error() {
     assert!(last_error.is_some());
     let error = last_error.unwrap();
     assert!(error.to_string().contains("10006") || error.to_string().contains("Too many"));
+}
+
+/// Rejects the first two requests with a retryable status, then serves the order history.
+#[allow(dead_code)]
+async fn handle_get_orders_realtime_retry(State(state): State<TestServerState>) -> Response {
+    let mut count = state.request_count.lock().await;
+    *count += 1;
+
+    if *count <= 2 {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "retCode": 10006,
+                "retMsg": "Too many requests. Please retry after 1 second.",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    let orders = load_test_data("http_get_orders_history.json");
+    Json(orders).into_response()
+}
+
+#[allow(dead_code)]
+fn create_retry_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/order/realtime", get(handle_get_orders_realtime_retry))
+        .with_state(state)
+}
+
+#[allow(dead_code)]
+async fn start_retry_test_server()
+-> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = TestServerState::default();
+    let router = create_retry_test_router(state.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/v5/market/time").await;
+    Ok((addr, state))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rate_limiting_retries_then_succeeds() {
+    let (addr, state) = start_retry_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    // The 1ms delay bounds cap the jittered backoff, so both retries land immediately
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        2,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let response = client
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let request_count = *state.request_count.lock().await;
+
+    assert_eq!(request_count, 3);
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.list.len(), 1);
+    assert_eq!(response.result.list[0].order_id.as_str(), "abcdef123456");
+    assert_eq!(response.result.list[0].order_link_id.as_str(), "client-1");
 }
 
 #[rstest]
@@ -2041,7 +2195,7 @@ async fn test_repay_spot_borrow_with_amount() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
-    assert_eq!(response.result.result_status, "SU");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
 }
 
 #[rstest]
@@ -2068,7 +2222,7 @@ async fn test_repay_spot_borrow_without_amount() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
-    assert_eq!(response.result.result_status, "SU");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
 }
 
 #[rstest]
@@ -2082,6 +2236,118 @@ async fn test_repay_spot_borrow_requires_credentials() {
     let amount = Quantity::new_checked(0.5, 8).unwrap();
     let result = client.repay_spot_borrow("ETH", Some(amount)).await;
     assert!(result.is_err(), "Should fail without credentials");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_conversion_with_amount() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let amount = Quantity::new_checked(0.5, 8).unwrap();
+    let response = client
+        .repay_spot_borrow_with_conversion("ETH", Some(amount))
+        .await
+        .unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_conversion_without_amount() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    // Test repaying all outstanding borrows by passing None for amount
+    let response = client
+        .repay_spot_borrow_with_conversion("ETH", None)
+        .await
+        .unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.result_status, BybitRepayStatus::Success);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_conversion_requires_credentials() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
+
+    let amount = Quantity::new_checked(0.5, 8).unwrap();
+    let result = client
+        .repay_spot_borrow_with_conversion("ETH", Some(amount))
+        .await;
+    assert!(result.is_err(), "Should fail without credentials");
+}
+
+#[rstest]
+#[case::without_conversion(false)]
+#[case::with_conversion(true)]
+#[tokio::test]
+async fn test_repay_spot_borrow_rejects_failed_result_status(#[case] with_conversion: bool) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let amount = Some(Quantity::new_checked(0.5, 8).unwrap());
+
+    let result = if with_conversion {
+        client
+            .repay_spot_borrow_with_conversion("FAIL", amount)
+            .await
+            .map(|_| ())
+    } else {
+        client.repay_spot_borrow("FAIL", amount).await.map(|_| ())
+    };
+
+    let error = result.expect_err("failed result status should return an error");
+    assert!(
+        error.to_string().contains("result status FA"),
+        "Unexpected error: {error}"
+    );
 }
 
 #[rstest]
@@ -4168,9 +4434,9 @@ async fn test_update_sub_api_key_serializes_permissions_pascal_case() {
 #[rstest]
 #[tokio::test]
 async fn test_update_master_api_key_emits_renamed_permission_keys() {
-    // Regression guard: `NFT`, `FiatP2P` and `ByXPost` carry non-standard
+    // Regression guard: `NFT`, `FiatP2P`, and `ByXPost` carry non-standard
     // casing that the struct-level `rename_all = "PascalCase"` rule would
-    // otherwise mangle into `Nft`, `FiatP2p`, `ByxPost` — which Bybit would
+    // otherwise mangle into `Nft`, `FiatP2p`, `ByxPost` - which Bybit would
     // silently ignore.
     use nautilus_bybit::http::query::{
         BybitApiKeyPermissionUpdateBuilder, BybitUpdateMasterApiParamsBuilder,

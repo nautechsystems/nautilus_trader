@@ -767,7 +767,7 @@ cdef class Condition:
     @staticmethod
     cdef void valid_string(str argument, str param, ex_type = None):
         """
-        Check the string argument is valid (not ``None``, empty or whitespace).
+        Check the string argument is valid (not ``None``, empty, or whitespace).
 
         Parameters
         ----------
@@ -781,7 +781,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If `argument` is ``None``, empty or whitespace.
+              If `argument` is ``None``, empty, or whitespace.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -1320,7 +1320,7 @@ class PyCondition:
     @staticmethod
     def valid_string(str argument, str param, ex_type = None):
         """
-        Check the string argument is valid (not ``None``, empty or whitespace).
+        Check the string argument is valid (not ``None``, empty, or whitespace).
 
         Parameters
         ----------
@@ -1334,7 +1334,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If `argument` is ``None``, empty or whitespace.
+              If `argument` is ``None``, empty, or whitespace.
 
         """
         Condition.valid_string(argument, param, ex_type)

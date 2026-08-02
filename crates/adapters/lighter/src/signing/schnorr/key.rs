@@ -104,7 +104,7 @@ impl PrivateKey {
     /// distinct signatures under the same key (a repeated nonce reveals `sk`
     /// from any two signatures sharing it). Matching the Go reference
     /// `SchnorrSignHashedMessage2`, the caller-contract is enforced by the
-    /// caller — no runtime `k != 0` check is performed inside `sign`.
+    /// caller - no runtime `k != 0` check is performed inside `sign`.
     #[inline]
     #[must_use]
     pub fn sign(&self, hashed_msg: Fp5, k: Scalar) -> Signature {

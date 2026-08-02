@@ -83,7 +83,7 @@ Understanding the different messaging styles helps when building trading systems
 This guide explains the three primary messaging patterns available in NautilusTrader:
 
 | **Messaging Style**                          | **Purpose**                                 | **Best For**                                          |
-|:---------------------------------------------|:--------------------------------------------|:------------------------------------------------------|
+| :------------------------------------------- | :------------------------------------------ | :---------------------------------------------------- |
 | **MessageBus - Publish/Subscribe to topics** | Low‑level, direct access to the message bus | Custom events, system‑level communication             |
 | **Actor‑Based - Publish/Subscribe Data**     | Structured trading data exchange            | Trading metrics, indicators, data needing persistence |
 | **Actor‑Based - Publish/Subscribe Signal**   | Lightweight notifications                   | Simple alerts, flags, status updates                  |
@@ -119,11 +119,14 @@ The message bus approach is ideal when you need:
 ```python
 from nautilus_trader.core.message import Event
 
+
 # Define a custom event
 class Each10thBarEvent(Event):
     TOPIC = "each_10th_bar"  # Topic name
+
     def __init__(self, bar):
         self.bar = bar
+
 
 # Subscribe in a component (in Strategy)
 self.msgbus.subscribe(Each10thBarEvent.TOPIC, self.on_each_10th_bar)
@@ -131,6 +134,7 @@ self.msgbus.subscribe(Each10thBarEvent.TOPIC, self.on_each_10th_bar)
 # Publish an event (in Strategy)
 event = Each10thBarEvent(bar)
 self.msgbus.publish(Each10thBarEvent.TOPIC, event)
+
 
 # Handler (in Strategy)
 def on_each_10th_bar(self, event: Each10thBarEvent):
@@ -180,17 +184,22 @@ The Data publish/subscribe approach works well when you need:
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.custom import customdataclass
 
+
 @customdataclass
 class GreeksData(Data):
     delta: float
     gamma: float
 
+
 # Publish data (in Actor / Strategy)
-data = GreeksData(delta=0.75, gamma=0.1, ts_event=1_630_000_000_000_000_000, ts_init=1_630_000_000_000_000_000)
+data = GreeksData(
+    delta=0.75, gamma=0.1, ts_event=1_630_000_000_000_000_000, ts_init=1_630_000_000_000_000_000
+)
 self.publish_data(GreeksData, data)
 
 # Subscribe to receiving data  (in Actor / Strategy)
 self.subscribe_data(GreeksData)
+
 
 # Handler (this is static callback function with fixed name)
 def on_data(self, data: Data):
@@ -248,6 +257,7 @@ self.publish_signal(
     ts_event=bar.ts_event,  # timestamp from triggering event
 )
 
+
 # Handler (this is static callback function with fixed name)
 def on_signal(self, signal):
     # IMPORTANT: We match against signal.value, not signal.name
@@ -257,14 +267,14 @@ def on_signal(self, signal):
                 f"New highest price was reached. | "
                 f"Signal value: {signal.value} | "
                 f"Signal time: {unix_nanos_to_dt(signal.ts_event)}",
-                color=LogColor.GREEN
+                color=LogColor.GREEN,
             )
         case signals.NEW_LOWEST_PRICE:
             self.log.info(
                 f"New lowest price was reached. | "
                 f"Signal value: {signal.value} | "
                 f"Signal time: {unix_nanos_to_dt(signal.ts_event)}",
-                color=LogColor.RED
+                color=LogColor.RED,
             )
 ```
 
@@ -278,11 +288,11 @@ Here's a quick reference to help you decide which messaging style to use:
 
 #### Decision guide: Which style to choose?
 
-| **Use Case**                                | **Recommended Approach**                                                        | **Setup required** |
-|:--------------------------------------------|:--------------------------------------------------------------------------------|:-------------------|
-| Custom events or system‑level communication | `MessageBus` + Pub/Sub to topic                                                 | Topic + Handler management |
+| **Use Case**                                | **Recommended Approach**                                                        | **Setup required**                                                            |
+| :------------------------------------------ | :------------------------------------------------------------------------------ | :---------------------------------------------------------------------------- |
+| Custom events or system‑level communication | `MessageBus` + Pub/Sub to topic                                                 | Topic + Handler management                                                    |
 | Structured trading data                     | `Actor` + Pub/Sub Data + optional `@customdataclass` if serialization is needed | New class definition inheriting from `Data` (handler `on_data` is predefined) |
-| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only |
+| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only                                                              |
 
 ## External egress and ingress
 
@@ -347,8 +357,7 @@ def register_serializable_type(
     cls,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
-):
-    ...
+): ...
 ```
 
 - `cls`: The type to register.
@@ -403,6 +412,12 @@ The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and cons
 `LiveNodeBuilder::with_external_ingress`. The config names the external stream keys; the injected
 ingress is the concrete runtime source. Rust-native factory wiring from config to a backing remains
 the caller's responsibility.
+
+The built-in Redis ingress starts each configured stream at the current timestamp, so entries that
+already exist when the node starts are not replayed. After startup it advances the last-seen ID for
+each stream and preserves those IDs across connection retries. Use cache recovery or the event store
+when durable pre-start replay is required; `external_streams` provides live forwarding, not a
+consumer-group backlog.
 
 ### Encoding
 
@@ -500,15 +515,20 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 
 # Create a MessageBusConfig instance with types filtering
-message_bus = MessageBusConfig(
-    types_filter=[QuoteTick, TradeTick]
-)
+message_bus = MessageBusConfig(types_filter=[QuoteTick, TradeTick])
 ```
 
 ### Stream auto-trimming
 
-The `autotrim_mins` configuration parameter allows you to specify the lookback window in minutes for automatic stream trimming in your message streams.
-Automatic stream trimming helps manage the size of your message streams by removing older messages, ensuring that the streams remain manageable in terms of storage and performance.
+The `autotrim_maxlen` option is available only on the v2 Rust/PyO3 `MessageBusConfig`.
+
+Use `autotrim_mins` to set a lookback window in minutes and `autotrim_maxlen` to set an
+approximate maximum number of entries for each Redis stream. You can configure either policy or
+both. When both are set, the message bus removes entries that exceed either the time window or the
+entry-count threshold.
+
+Redis applies `autotrim_maxlen` with approximate trimming for better write performance, so a stream
+may contain slightly more entries than the configured threshold.
 
 :::info
 The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).

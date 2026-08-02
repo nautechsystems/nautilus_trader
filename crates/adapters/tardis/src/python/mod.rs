@@ -93,6 +93,13 @@ fn extract_tardis_data_config(
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<csv::TardisBatchedDeltasStreamIterator>()?;
+    m.add_class::<csv::TardisDeltaStreamIterator>()?;
+    m.add_class::<csv::TardisDepth10StreamIterator>()?;
+    m.add_class::<csv::TardisFundingRateStreamIterator>()?;
+    m.add_class::<csv::TardisOptionsChainStreamIterator>()?;
+    m.add_class::<csv::TardisQuoteStreamIterator>()?;
+    m.add_class::<csv::TardisTradeStreamIterator>()?;
     m.add_class::<super::machine::types::TardisInstrumentMiniInfo>()?;
     m.add_class::<super::machine::types::ReplayNormalizedRequestOptions>()?;
     m.add_class::<super::machine::types::StreamNormalizedRequestOptions>()?;

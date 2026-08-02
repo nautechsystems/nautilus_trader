@@ -74,8 +74,14 @@ pyo3-stub-gen = { workspace = true, optional = true }
 [dev-dependencies]
 criterion = { workspace = true }
 proptest = { workspace = true }
+serde_json = { workspace = true }
 
 [[bench]]
 name = "matching_core"
 path = "benches/matching_core.rs"
+harness = false
+
+[[bench]]
+name = "matching_engine"
+path = "benches/matching_engine.rs"
 harness = false

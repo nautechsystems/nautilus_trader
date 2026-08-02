@@ -18,9 +18,10 @@ https://codspeed.io/
 https://docs.rs/nautilus-bybit
 https://docs.rs/nautilus-hyperliquid
 
-# Documentation site URLs (these work when site is deployed, but return 404 for pre-deployment checks)
+# Documentation site URLs. Entries are substring regexes, so the root entry below also
+# suppresses every versioned docs link beneath it.
 https://nautilustrader.io/docs/
-https://nautilustrader.io/docs/developer_guide/
+# Pages relocated since the release notes referencing them were written
 https://nautilustrader.io/docs/latest/concepts/advanced/
 https://nautilustrader.io/docs/nightly/developer_guide/
 

@@ -183,7 +183,7 @@ class TestOrderMatchingEngine:
         ``clear(0, 0)`` therefore leaves the prior run's last timestamp in
         place. The L1 stale-event guard then drops every subsequent
         quote/trade whose ``ts_event < ts_last``, leaving the matching core's
-        bid/ask uninitialised — every market order on the next run is
+        bid/ask uninitialised - every market order on the next run is
         rejected with ``"no market for {instrument_id}"``.
 
         The Rust matching engine ``reset`` (``crates/execution/src/
@@ -193,7 +193,7 @@ class TestOrderMatchingEngine:
         behave identically to a fresh engine.
 
         """
-        # Arrange — seed the book with a quote so ts_last advances
+        # Arrange - seed the book with a quote so ts_last advances
         seed_quote = TestDataStubs.quote_tick(
             instrument=self.instrument,
             ts_event=100,
@@ -205,14 +205,14 @@ class TestOrderMatchingEngine:
         # Act
         self.matching_engine.reset()
 
-        # Assert — book ts_last must be zero after reset
+        # Assert - book ts_last must be zero after reset
         assert self.matching_engine.get_book().ts_last == 0, (
             "OrderMatchingEngine.reset leaked book.ts_last; subsequent "
             "quote/trade events with earlier ts_event will be silently "
             "dropped by the L1 stale-event guard"
         )
 
-        # And — a quote with an earlier ts_event than the previous run's
+        # And - a quote with an earlier ts_event than the previous run's
         # last must be accepted (not dropped as stale) and update the book
         replay_quote = TestDataStubs.quote_tick(
             instrument=self.instrument,
@@ -4458,7 +4458,7 @@ def test_bar_execution_bumps_trade_id_counter_per_tick() -> None:
 
     Regression for Rust/Python parity: the Python `_generate_trade_id_str`
     previously skipped the counter bump for high/low/close ticks, so the
-    four synthetic bar ticks all shared the same `TradeId` — and subsequent
+    four synthetic bar ticks all shared the same `TradeId` - and subsequent
     fills on the same matching engine landed on counter values lower than
     their Rust counterparts. Rust's `IdsGenerator::generate_trade_id` bumps
     on every call; this test pins the Python matching engine to that contract

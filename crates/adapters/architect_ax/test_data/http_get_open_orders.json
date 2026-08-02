@@ -32,5 +32,8 @@
       "cid": null,
       "tag": null
     }
-  ]
+  ],
+  "total_count": 2,
+  "limit": 100,
+  "offset": 0
 }

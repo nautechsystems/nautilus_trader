@@ -53,6 +53,7 @@ python = [
   "nautilus-persistence?/python",
   "nautilus-portfolio/python",
   "nautilus-risk/python",
+  "nautilus-system/python",
   "nautilus-trading/python",
   "pyo3",
   "pyo3-stub-gen",
@@ -101,7 +102,10 @@ serde_json = { workspace = true }
 [dev-dependencies]
 nautilus-indicators = { workspace = true }
 nautilus-persistence = { workspace = true }
-nautilus-testkit = { workspace = true }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "datasets",
+  "testers",
+] }
 nautilus-trading = { workspace = true, features = ["examples"] }
 
 criterion = { workspace = true }

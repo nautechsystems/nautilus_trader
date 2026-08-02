@@ -109,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Test 4: Recent Trades
     log::info!("=== Test 4: Trades (BTCUSDT) ===");
+
     match client.inner().trades("BTCUSDT", Some(5)).await {
         Ok(trades) => {
             log::info!(

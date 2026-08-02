@@ -1152,6 +1152,8 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -1303,12 +1305,12 @@ mod tests {
             symbol: Ustr::from("BTC/USD"),
             bids: Some(
                 (0..10)
-                    .map(|i| book_level(100.0 - f64::from(i), 1.0))
+                    .map(|i| book_level(Decimal::from(100 - i), Decimal::ONE))
                     .collect(),
             ),
             asks: Some(
                 (0..10)
-                    .map(|i| book_level(101.0 + f64::from(i), 1.0))
+                    .map(|i| book_level(Decimal::from(101 + i), Decimal::ONE))
                     .collect(),
             ),
             checksum: Some(0),
@@ -1334,7 +1336,7 @@ mod tests {
 
         let bid_update = KrakenWsBookData {
             symbol: Ustr::from("BTC/USD"),
-            bids: Some(vec![book_level(100.5, 1.0)]),
+            bids: Some(vec![book_level(dec!(100.5), Decimal::ONE)]),
             asks: Some(vec![]),
             checksum: Some(0),
             timestamp: "2024-01-01T00:00:01Z".parse().unwrap(),
@@ -1362,7 +1364,7 @@ mod tests {
         let ask_update = KrakenWsBookData {
             symbol: Ustr::from("BTC/USD"),
             bids: Some(vec![]),
-            asks: Some(vec![book_level(100.6, 1.0)]),
+            asks: Some(vec![book_level(dec!(100.6), Decimal::ONE)]),
             checksum: Some(0),
             timestamp: "2024-01-01T00:00:02Z".parse().unwrap(),
         };
@@ -1411,7 +1413,7 @@ mod tests {
         assert!(client.is_disconnected());
     }
 
-    fn book_level(price: f64, qty: f64) -> KrakenWsBookLevel {
+    fn book_level(price: Decimal, qty: Decimal) -> KrakenWsBookLevel {
         KrakenWsBookLevel { price, qty }
     }
 }

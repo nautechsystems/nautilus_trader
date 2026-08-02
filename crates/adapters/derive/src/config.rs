@@ -47,9 +47,9 @@ pub struct DeriveDataClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
-    /// WebSocket timeout in seconds.
-    #[builder(default = 30)]
-    pub ws_timeout_secs: u64,
+    /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
+    /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
+    pub ws_timeout_secs: Option<u64>,
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -68,6 +68,20 @@ pub struct DeriveDataClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DeriveDataClientConfig {
+    base_url_rest: Option<String>,
+    base_url_ws: Option<String>,
+    environment: DeriveEnvironment,
+    http_timeout_secs: u64,
+    ws_timeout_secs: Option<u64>,
+    update_instruments_interval_mins: u64,
+    currencies: Vec<String>,
+    include_expired: bool,
+    auto_load_missing_instruments: bool,
+    transport_backend: TransportBackend,
+});
 
 impl Default for DeriveDataClientConfig {
     fn default() -> Self {
@@ -146,7 +160,11 @@ pub struct DeriveExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
-    /// Per-contract USDC fee cap signed into every order.
+    /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
+    /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
+    pub ws_timeout_secs: Option<u64>,
+    /// Per-contract USDC fee cap signed into every order. Required for
+    /// execution and must be greater than zero.
     pub max_fee_per_contract: Option<Decimal>,
     /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
     #[builder(default)]
@@ -177,6 +195,28 @@ pub struct DeriveExecClientConfig {
     /// negotiated limits. See <https://docs.derive.xyz/reference/rate-limits>.
     pub max_matching_requests_per_second: Option<u32>,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DeriveExecClientConfig {
+    wallet_address: Option<String>,
+    subaccount_id: Option<u64>,
+    base_url_rest: Option<String>,
+    base_url_ws: Option<String>,
+    environment: DeriveEnvironment,
+    http_timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
+    ws_timeout_secs: Option<u64>,
+    max_fee_per_contract: Option<Decimal>,
+    domain_separator: Option<String>,
+    action_typehash: Option<String>,
+    trade_module_address: Option<String>,
+    signature_expiry_secs: u64,
+    market_order_slippage_bps: u32,
+    max_matching_requests_per_second: Option<u32>,
+    transport_backend: TransportBackend,
+});
 
 impl Default for DeriveExecClientConfig {
     fn default() -> Self {
@@ -239,6 +279,23 @@ impl DeriveExecClientConfig {
             && self.subaccount_id.is_some()
     }
 
+    /// Validates execution configuration invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `max_fee_per_contract` is missing or not greater
+    /// than zero.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let Some(max_fee_per_contract) = self.max_fee_per_contract else {
+            anyhow::bail!("max_fee_per_contract is required");
+        };
+
+        if max_fee_per_contract <= Decimal::ZERO {
+            anyhow::bail!("max_fee_per_contract must be greater than zero");
+        }
+        Ok(())
+    }
+
     /// Returns the REST API base URL, respecting environment and overrides.
     #[must_use]
     pub fn rest_url(&self) -> String {
@@ -267,7 +324,7 @@ mod tests {
         let config = DeriveDataClientConfig::default();
         assert_eq!(config.environment, DeriveEnvironment::Mainnet);
         assert_eq!(config.http_timeout_secs, 10);
-        assert_eq!(config.ws_timeout_secs, 30);
+        assert_eq!(config.ws_timeout_secs, None);
         assert_eq!(config.update_instruments_interval_mins, 60);
         assert!(config.currencies.is_empty());
         assert!(!config.include_expired);

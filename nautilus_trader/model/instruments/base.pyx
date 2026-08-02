@@ -569,7 +569,7 @@ cdef class Instrument(Data):
 
         Parameters
         ----------
-        value : integer, float, str or Decimal
+        value : integer, float, str, or Decimal
             The value of the price.
 
         Returns
@@ -757,7 +757,7 @@ cdef class Instrument(Data):
 
         Parameters
         ----------
-        value : integer, float, str or Decimal
+        value : integer, float, str, or Decimal
             The value of the quantity.
         round_down : bool, default False
             If True, always rounds down to the nearest valid increment.

@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 use pyo3::prelude::*;
 
 use crate::{indicator::Indicator, ratio::spread_analyzer::SpreadAnalyzer};
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl SpreadAnalyzer {
     /// An indicator which calculates the efficiency ratio across a rolling window.
     ///
@@ -47,6 +48,12 @@ impl SpreadAnalyzer {
     }
 
     #[getter]
+    #[pyo3(name = "instrument_id")]
+    const fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
     #[pyo3(name = "current")]
     const fn py_current(&self) -> f64 {
         self.current
@@ -71,8 +78,8 @@ impl SpreadAnalyzer {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
-        self.handle_quote(quote);
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "reset")]

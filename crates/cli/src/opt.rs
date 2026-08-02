@@ -20,7 +20,7 @@ use clap::Parser;
 #[clap(version, about, author)]
 pub struct NautilusCli {
     #[clap(subcommand)]
-    pub command: Commands,
+    pub(crate) command: Commands,
 }
 
 /// Available top-level commands for the NautilusTrader CLI.
@@ -36,7 +36,7 @@ pub enum Commands {
 #[command(about = "Postgres database operations", long_about = None)]
 pub struct DatabaseOpt {
     #[clap(subcommand)]
-    pub command: DatabaseCommand,
+    pub(crate) command: DatabaseCommand,
 }
 
 /// Configuration parameters for database connection and operations.
@@ -44,22 +44,22 @@ pub struct DatabaseOpt {
 pub struct DatabaseConfig {
     /// Hostname or IP address of the database server.
     #[arg(long)]
-    pub host: Option<String>,
+    pub(crate) host: Option<String>,
     /// Port number of the database server.
     #[arg(long)]
-    pub port: Option<u16>,
+    pub(crate) port: Option<u16>,
     /// Username for connecting to the database.
     #[arg(long)]
-    pub username: Option<String>,
+    pub(crate) username: Option<String>,
     /// Name of the database.
     #[arg(long)]
-    pub database: Option<String>,
+    pub(crate) database: Option<String>,
     /// Password for connecting to the database.
     #[arg(long)]
-    pub password: Option<String>,
+    pub(crate) password: Option<String>,
     /// Directory path to the schema files.
     #[arg(long)]
-    pub schema: Option<String>,
+    pub(crate) schema: Option<String>,
 }
 
 /// Available database management commands.
@@ -78,7 +78,7 @@ pub enum DatabaseCommand {
 #[command(about = "Blockchain operations", long_about = None)]
 pub struct BlockchainOpt {
     #[clap(subcommand)]
-    pub command: BlockchainCommand,
+    pub(crate) command: BlockchainCommand,
 }
 
 #[cfg(feature = "defi")]
@@ -162,6 +162,9 @@ pub enum BlockchainCommand {
         /// Skip on-chain validation and persist replay-derived snapshots without the multicall compare
         #[arg(long)]
         skip_validation: bool,
+        /// Build the snapshot from mint/burn history plus an RPC read, without full swap storage
+        #[arg(long)]
+        snapshot_from_rpc: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -212,6 +215,9 @@ pub enum BlockchainCommand {
         /// Skip on-chain validation and persist replay-derived snapshots without the multicall compare
         #[arg(long)]
         skip_validation: bool,
+        /// Build snapshots from mint/burn history plus RPC reads, without full swap storage
+        #[arg(long)]
+        snapshot_from_rpc: bool,
         /// Maximum number of pools to analyze concurrently (optional, defaults to 4)
         #[arg(long)]
         concurrency: Option<usize>,
@@ -285,6 +291,7 @@ mod tests {
                         require_existing_snapshot,
                         checkpoint_blocks,
                         skip_validation,
+                        snapshot_from_rpc,
                         concurrency,
                         multicall_calls_per_rpc_request,
                         database,
@@ -307,6 +314,7 @@ mod tests {
                 assert!(require_existing_snapshot);
                 assert!(checkpoint_blocks.is_empty());
                 assert!(!skip_validation);
+                assert!(!snapshot_from_rpc);
                 assert_eq!(concurrency, None);
                 assert_eq!(multicall_calls_per_rpc_request, Some(25));
                 assert_eq!(database.host.as_deref(), Some("localhost"));

@@ -17,6 +17,7 @@ from typing import Any
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_FUTURES_ORDER_COUNT_KEYS
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
@@ -672,7 +673,16 @@ class BinanceFuturesAlgoOrderHttp(BinanceHttpEndpoint):
 
     async def post(self, params: PostParameters) -> BinanceFuturesAlgoOrder:
         method_type = HttpMethod.POST
-        raw = await self._method(method_type, params)
+        ratelimiter_keys = (
+            list(BINANCE_FUTURES_ORDER_COUNT_KEYS)
+            if self.url_path == "/fapi/v1/algoOrder"
+            else None
+        )
+        raw = await self._method(
+            method_type,
+            params,
+            ratelimiter_keys=ratelimiter_keys,
+        )
         return self._post_resp_decoder.decode(raw)
 
 

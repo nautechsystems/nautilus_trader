@@ -3011,7 +3011,7 @@ cdef class Cache(CacheFacade):
             if mark_price is not None:
                 return mark_price.value
 
-        # Fall back to bar pricing for bid, ask and last
+        # Fall back to bar pricing for bid, ask, and last
         cdef Bar bar
         cdef list bar_types = self.bar_types(instrument_id, price_type, AggregationSource.EXTERNAL)
         if bar_types:

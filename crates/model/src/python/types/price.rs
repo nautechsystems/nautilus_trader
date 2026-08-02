@@ -25,11 +25,10 @@ use nautilus_core::python::{
 use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
-#[cfg(not(feature = "high-precision"))]
-use crate::types::fixed::fixed_i64_to_f64;
-#[cfg(feature = "high-precision")]
-use crate::types::fixed::fixed_i128_to_f64;
-use crate::types::price::{Price, PriceRaw};
+use crate::types::{
+    fixed::raw_scale,
+    price::{Price, PriceRaw},
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -300,8 +299,10 @@ impl Price {
         if self.raw < 0 { -*self } else { *self }
     }
 
-    fn __int__(&self) -> i64 {
-        self.as_f64() as i64
+    fn __int__(&self) -> PriceRaw {
+        let scale = PriceRaw::try_from(raw_scale(self.precision))
+            .expect("effective raw scale should fit in PriceRaw");
+        self.raw / scale
     }
 
     fn __float__(&self) -> f64 {
@@ -449,20 +450,10 @@ impl Price {
     fn py_checked_sub(&self, other: Self) -> Option<Self> {
         self.checked_sub(other)
     }
-}
 
-#[pymethods]
-impl Price {
-    #[cfg(feature = "high-precision")]
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
-        fixed_i128_to_f64(self.raw)
-    }
-
-    #[cfg(not(feature = "high-precision"))]
-    #[pyo3(name = "as_double")]
-    fn py_as_double(&self) -> f64 {
-        fixed_i64_to_f64(self.raw)
+        self.as_f64()
     }
 }
 
@@ -472,7 +463,51 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::types::price::{PRICE_RAW_MAX, PRICE_RAW_MIN};
+    use crate::types::{
+        fixed::FIXED_PRECISION,
+        price::{PRICE_RAW_MAX, PRICE_RAW_MIN},
+    };
+
+    #[rstest]
+    #[case("0", 0)]
+    #[case("0.000000001", 0)]
+    #[case("-0.000000001", 0)]
+    #[case("1.999999999", 1)]
+    #[case("-1.999999999", -1)]
+    #[case("50.25", 50)]
+    #[case("9007199253.999999999", 9_007_199_253)]
+    fn test_int_uses_exact_raw_value(#[case] value: &str, #[case] expected: i64) {
+        let price = Price::from_str(value).unwrap();
+
+        assert_eq!(price.__int__(), PriceRaw::from(expected));
+    }
+
+    #[rstest]
+    fn test_int_preserves_domain_boundaries() {
+        let expected_max: PriceRaw = if cfg!(feature = "high-precision") {
+            17_014_118_346_046
+        } else {
+            9_223_372_036
+        };
+        let expected_min = -expected_max;
+
+        assert_eq!(
+            Price::from_raw(PRICE_RAW_MAX, FIXED_PRECISION).__int__(),
+            expected_max
+        );
+        assert_eq!(
+            Price::from_raw(PRICE_RAW_MIN, FIXED_PRECISION).__int__(),
+            expected_min
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_int_uses_defi_raw_scale() {
+        let price = Price::from_raw(1_999_999_999_999_999_999, crate::defi::WEI_PRECISION);
+
+        assert_eq!(price.__int__(), 1);
+    }
 
     #[rstest]
     fn test_py_from_raw_rejects_out_of_range_raw_value() {

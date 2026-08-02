@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*};
 
 use crate::{
@@ -299,11 +299,11 @@ impl PoolSwap {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self == other,
-            CompareOp::Ne => self != other,
-            _ => panic!("Unsupported comparison for PoolSwap"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -488,11 +488,11 @@ impl PoolLiquidityUpdate {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: pyo3::pyclass::CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self == other,
-            CompareOp::Ne => self != other,
-            _ => panic!("Unsupported comparison for PoolLiquidityUpdate"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -672,11 +672,11 @@ impl PoolFeeCollect {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self == other,
-            CompareOp::Ne => self != other,
-            _ => panic!("Unsupported comparison for PoolFeeCollect"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -782,8 +782,9 @@ impl PoolFeeCollect {
 impl PoolFeeProtocolUpdate {
     /// Represents a protocol-fee configuration change in a Uniswap V3-style pool.
     ///
-    /// Emitted by `SetFeeProtocol`, this carries the new protocol-fee denominators for each token.
-    /// Only the new values are kept; the previous values in the event are not needed to rebuild state.
+    /// Emitted by `SetFeeProtocol`, this carries the new protocol-fee values for each token. Uniswap
+    /// V3 uses 4-bit denominators, while PancakeSwap V3 uses `uint32` basis-point shares. Only the new
+    /// values are kept; the previous values in the event are not needed to rebuild state.
     #[new]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
@@ -795,8 +796,8 @@ impl PoolFeeProtocolUpdate {
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
-        fee_protocol0_new: u8,
-        fee_protocol1_new: u8,
+        fee_protocol0_new: u32,
+        fee_protocol1_new: u32,
         timestamp: u64,
     ) -> PyResult<Self> {
         let pool_identifier = pool_identifier.parse().map_err(to_pyvalue_err)?;
@@ -832,11 +833,11 @@ impl PoolFeeProtocolUpdate {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self == other,
-            CompareOp::Ne => self != other,
-            _ => panic!("Unsupported comparison for PoolFeeProtocolUpdate"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -890,13 +891,13 @@ impl PoolFeeProtocolUpdate {
 
     #[getter]
     #[pyo3(name = "fee_protocol0_new")]
-    fn py_fee_protocol0_new(&self) -> u8 {
+    fn py_fee_protocol0_new(&self) -> u32 {
         self.fee_protocol0_new
     }
 
     #[getter]
     #[pyo3(name = "fee_protocol1_new")]
-    fn py_fee_protocol1_new(&self) -> u8 {
+    fn py_fee_protocol1_new(&self) -> u32 {
         self.fee_protocol1_new
     }
 
@@ -983,11 +984,11 @@ impl PoolFeeProtocolCollect {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self == other,
-            CompareOp::Ne => self != other,
-            _ => panic!("Unsupported comparison for PoolFeeProtocolCollect"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -1152,11 +1153,11 @@ impl PoolFlash {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self == other,
-            CompareOp::Ne => self != other,
-            _ => panic!("Unsupported comparison for PoolFlash"),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -1317,11 +1318,11 @@ impl Transaction {
         hasher.finish()
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.hash == other.hash,
-            CompareOp::Ne => self.hash != other.hash,
-            _ => panic!("Unsupported comparison for Transaction"),
+            CompareOp::Eq => self.hash.eq(&other.hash).into_py_any_unwrap(py),
+            CompareOp::Ne => self.hash.ne(&other.hash).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
         }
     }
 

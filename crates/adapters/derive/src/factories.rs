@@ -126,6 +126,13 @@ pub struct DeriveExecFactoryConfig {
     pub config: DeriveExecClientConfig,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DeriveExecFactoryConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    config: DeriveExecClientConfig,
+});
+
 impl ClientConfig for DeriveExecFactoryConfig {
     fn as_any(&self) -> &dyn Any {
         self

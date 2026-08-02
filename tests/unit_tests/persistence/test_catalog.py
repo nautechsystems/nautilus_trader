@@ -49,6 +49,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -680,6 +681,70 @@ def test_catalog_instrument_roundtrip_with_info_params(
     assert by_ts[2000].info == {"venue_extra": "v2", "count": 2, "enabled": False}
     assert by_ts[1000].id == inst1.id
     assert by_ts[2000].id == inst2.id
+
+
+def test_catalog_equity_roundtrip_preserves_quantity_constraints(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Quantity constraints must survive the catalog round trip (GH #4461)
+    base = TestInstrumentProvider.equity()
+    equity = Equity.from_dict(
+        {
+            **Equity.to_dict(base),
+            "max_quantity": "1000",
+            "min_quantity": "1",
+        },
+    )
+    catalog.write_data([equity])
+    read = catalog.instruments(instrument_ids=[equity.id.value])
+    assert len(read) == 1
+    assert read[0].max_quantity == Quantity.from_int(1000)
+    assert read[0].min_quantity == Quantity.from_int(1)
+
+
+def test_catalog_equity_mixed_schema_fragments(
+    catalog: ParquetDataCatalog,
+    monkeypatch,
+) -> None:
+    # Fragments written before the Equity schema gained max_quantity/min_quantity
+    # must not mask those fields on newer fragments in the same catalog (GH #4461)
+    from nautilus_trader.serialization.arrow.implementations import (
+        instruments as instruments_schemas,
+    )
+
+    new_schema = instruments_schemas.SCHEMAS[Equity]
+    old_schema = pa.schema(
+        {
+            field.name: field.type
+            for field in new_schema
+            if field.name not in ("max_quantity", "min_quantity")
+        },
+    )
+    base = TestInstrumentProvider.equity()
+
+    # write one fragment with the pre-fix schema, then one with the current schema
+    monkeypatch.setitem(instruments_schemas.SCHEMAS, Equity, old_schema)
+    catalog.write_data([Equity.from_dict({**Equity.to_dict(base), "ts_init": 0})])
+    monkeypatch.setitem(instruments_schemas.SCHEMAS, Equity, new_schema)
+    catalog.write_data(
+        [
+            Equity.from_dict(
+                {
+                    **Equity.to_dict(base),
+                    "max_quantity": "1000",
+                    "min_quantity": "1",
+                    "ts_event": 1,
+                    "ts_init": 1,
+                },
+            ),
+        ],
+    )
+
+    read = {equity.ts_init: equity for equity in catalog.instruments()}
+    assert read[0].max_quantity is None
+    assert read[0].min_quantity is None
+    assert read[1].max_quantity == Quantity.from_int(1000)
+    assert read[1].min_quantity == Quantity.from_int(1)
 
 
 def test_list_backtest_runs(
@@ -1730,6 +1795,217 @@ class TestConsolidateDataByPeriod:
         # Assert - second run must not destroy data
         assert len(self.catalog.get_intervals(Bar, bar_type_str)) == files_after_first
         assert len(self.catalog.bars(bar_types=[bar_type_str])) == bars_after_first
+
+    def test_consolidate_data_by_period_retains_skipped_target(self):
+        # Arrange - one file is alone in its window, followed by two files in a later window
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        day_ns = pd.Timedelta(days=1).value
+        minute_ns = pd.Timedelta(minutes=1).value
+        timestamp_batches = [
+            [start_ns + i * minute_ns for i in range(3)],
+            [start_ns + 5 * day_ns + i * minute_ns for i in range(3)],
+            [start_ns + 5 * day_ns + (10 + i) * minute_ns for i in range(3)],
+        ]
+
+        for timestamps in timestamp_batches:
+            self.catalog.write_data(self._create_test_bars(timestamps))
+
+        bar_type_str = self._get_bar_type_identifier()
+        expected_timestamps = sorted(ts for batch in timestamp_batches for ts in batch)
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # Assert - the skipped single-file target survives the later cleanup sweep
+        actual_timestamps = sorted(
+            bar.ts_init for bar in self.catalog.bars(bar_types=[bar_type_str])
+        )
+        assert actual_timestamps == expected_timestamps
+
+    def test_consolidate_data_by_period_retains_existing_boundary_target(self):
+        # Arrange - fragments surround an already-consolidated middle period
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        source_intervals = [(0, 4), (5, 9), (10, 19), (20, 24), (25, 29)]
+        for start_offset, end_offset in source_intervals:
+            timestamps = [start_ns + start_offset, start_ns + end_offset]
+            self.catalog.write_data(
+                self._create_test_bars(timestamps),
+                start=timestamps[0],
+                end=timestamps[-1],
+            )
+
+        bar_type_str = self._get_bar_type_identifier()
+        expected_timestamps = sorted(
+            start_ns + offset for interval in source_intervals for offset in interval
+        )
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(nanoseconds=10),
+            ensure_contiguous_files=True,
+        )
+
+        # Assert - cleanup around the existing 10..19 target keeps all rows
+        actual_timestamps = sorted(
+            bar.ts_init for bar in self.catalog.bars(bar_types=[bar_type_str])
+        )
+        assert actual_timestamps == expected_timestamps
+
+    def test_consolidate_data_by_period_retains_sources_overlapping_skipped_target(self):
+        # Arrange - the existing target overlaps a source with one additional row
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        day_ns = pd.Timedelta(days=1).value
+        minute_ns = pd.Timedelta(minutes=1).value
+        target_timestamps = [start_ns, start_ns + 10 * minute_ns]
+        supplemental_timestamp = start_ns + 5 * minute_ns
+
+        self.catalog.write_data(self._create_test_bars(target_timestamps))
+        self.catalog.write_data(
+            self._create_test_bars([supplemental_timestamp]),
+            start=start_ns,
+            end=supplemental_timestamp,
+            skip_disjoint_check=True,
+        )
+
+        spanning_timestamps = [start_ns + 8 * minute_ns, start_ns + 3 * day_ns]
+        self.catalog.write_data(
+            self._create_test_bars(spanning_timestamps),
+            skip_disjoint_check=True,
+        )
+        nested_timestamp = start_ns + 2 * day_ns + 5 * minute_ns
+        self.catalog.write_data(
+            self._create_test_bars([nested_timestamp]),
+            start=start_ns + 2 * day_ns,
+            end=nested_timestamp,
+            skip_disjoint_check=True,
+        )
+
+        later_batches = [
+            [start_ns + 5 * day_ns + i * minute_ns for i in range(3)],
+            [start_ns + 5 * day_ns + (10 + i) * minute_ns for i in range(3)],
+        ]
+
+        for timestamps in later_batches:
+            self.catalog.write_data(
+                self._create_test_bars(timestamps),
+                skip_disjoint_check=True,
+            )
+
+        bar_type_str = self._get_bar_type_identifier()
+        expected_timestamps = sorted(
+            [
+                *target_timestamps,
+                supplemental_timestamp,
+                *spanning_timestamps,
+                nested_timestamp,
+            ]
+            + [timestamp for batch in later_batches for timestamp in batch],
+        )
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # Assert - later cleanup must not remove data from the overlapping source
+        actual_timestamps = sorted(
+            bar.ts_init for bar in self.catalog.bars(bar_types=[bar_type_str])
+        )
+        assert actual_timestamps == expected_timestamps
+
+    def test_consolidate_data_by_period_does_not_write_before_overlapping_target(self):
+        # Arrange - an interrupted run left a middle-period target inside a spanning source
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        day_ns = pd.Timedelta(days=1).value
+        minute_ns = pd.Timedelta(minutes=1).value
+        spanning_timestamps = [start_ns + 5 * minute_ns, start_ns + 3 * day_ns + 5 * minute_ns]
+        target_timestamps = [start_ns + day_ns, start_ns + day_ns + 10 * minute_ns]
+
+        self.catalog.write_data(self._create_test_bars(spanning_timestamps))
+        self.catalog.write_data(
+            self._create_test_bars(target_timestamps),
+            skip_disjoint_check=True,
+        )
+
+        later_batches = [
+            [start_ns + 5 * day_ns + i * minute_ns for i in range(3)],
+            [start_ns + 5 * day_ns + (10 + i) * minute_ns for i in range(3)],
+        ]
+
+        for timestamps in later_batches:
+            self.catalog.write_data(
+                self._create_test_bars(timestamps),
+                skip_disjoint_check=True,
+            )
+
+        bar_type_str = self._get_bar_type_identifier()
+        expected_timestamps = sorted(
+            [*spanning_timestamps, *target_timestamps]
+            + [timestamp for batch in later_batches for timestamp in batch],
+        )
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # Assert - the interrupted component is unchanged while the later group is consolidated
+        actual_timestamps = sorted(
+            bar.ts_init for bar in self.catalog.bars(bar_types=[bar_type_str])
+        )
+        assert actual_timestamps == expected_timestamps
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3
+
+    def test_consolidate_data_by_period_protects_all_files_in_skipped_query(self):
+        # Arrange - one query contains an overlap component and a separate source file
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        day_ns = pd.Timedelta(days=1).value
+        minute_ns = pd.Timedelta(minutes=1).value
+        timestamp_batches = [
+            [start_ns, start_ns + 10 * minute_ns],
+            [start_ns + 5 * minute_ns],
+            [start_ns + 20 * minute_ns, start_ns + 25 * minute_ns],
+            [start_ns + 3 * day_ns + i * minute_ns for i in range(3)],
+            [start_ns + 3 * day_ns + (10 + i) * minute_ns for i in range(3)],
+        ]
+
+        for timestamps in timestamp_batches:
+            self.catalog.write_data(
+                self._create_test_bars(timestamps),
+                skip_disjoint_check=True,
+            )
+
+        bar_type_str = self._get_bar_type_identifier()
+        expected_timestamps = sorted(
+            timestamp for batch in timestamp_batches for timestamp in batch
+        )
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # Assert - later cleanup cannot delete the separate file from the skipped window
+        actual_timestamps = sorted(
+            bar.ts_init for bar in self.catalog.bars(bar_types=[bar_type_str])
+        )
+        assert actual_timestamps == expected_timestamps
 
     def test_consolidate_predicate_exact_boundary_cases(self):
         """

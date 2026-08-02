@@ -420,7 +420,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         if ib_orders is None:
             raise ConnectionError(
-                "get_open_orders() disconnected during reqOpenOrders — "
+                "get_open_orders() disconnected during reqOpenOrders - "
                 "skipping order status reconciliation to avoid false discrepancy",
             )
 
@@ -543,7 +543,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         if ib_orders is None:
             raise ConnectionError(
-                "get_open_orders() disconnected during reqOpenOrders — "
+                "get_open_orders() disconnected during reqOpenOrders - "
                 "skipping order status reconciliation to avoid false discrepancy",
             )
 
@@ -585,7 +585,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             if positions is None:
                 raise ConnectionError(
-                    "get_positions() disconnected during reqPositions — "
+                    "get_positions() disconnected during reqPositions - "
                     "skipping order status reconciliation to avoid false discrepancy",
                 )
 
@@ -706,7 +706,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             if execution_details is None:
                 raise ConnectionError(
-                    "get_executions() disconnected during reqExecutions — "
+                    "get_executions() disconnected during reqExecutions - "
                     "skipping fill report reconciliation to avoid missing fills",
                 )
 
@@ -795,7 +795,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         last_qty = Quantity(execution.shares, precision=instrument.size_precision)
         last_px = Price(converted_execution_price, precision=instrument.price_precision)
 
-        # Create commission — guard None/-1 (IB sends -1 or None for pending commissions)
+        # Create commission - guard None/-1 (IB sends -1 or None for pending commissions)
         commission_fees = commission_report.commissionAndFees
         if commission_fees is None or commission_fees == -1.0:
             commission_fees = 0.0
@@ -838,7 +838,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         if positions is None:
             raise ConnectionError(
-                "get_positions() disconnected during reqPositions — "
+                "get_positions() disconnected during reqPositions - "
                 "skipping position status reconciliation to avoid false discrepancy",
             )
 
@@ -918,7 +918,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Parameters
         ----------
         lookback_mins : int, optional
-            The maximum lookback for querying closed orders, trades and positions.
+            The maximum lookback for querying closed orders, trades, and positions.
 
         Returns
         -------

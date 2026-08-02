@@ -21,8 +21,6 @@ pub mod close;
 pub mod custom;
 pub mod delta;
 pub mod depth;
-#[cfg(feature = "display")]
-pub mod display;
 pub mod funding;
 pub mod index_price;
 pub mod instrument;
@@ -36,6 +34,9 @@ pub mod quote;
 pub mod report;
 pub mod snapshot;
 pub mod trade;
+
+#[cfg(feature = "display")]
+pub mod display;
 
 use std::{
     collections::HashMap,
@@ -55,6 +56,7 @@ use nautilus_model::{
         close::InstrumentClose, delta::OrderBookDelta, depth::OrderBookDepth10,
         option_chain::OptionGreeks, quote::QuoteTick, trade::TradeTick,
     },
+    enums::BookAction,
     types::{
         PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
         fixed::{PRECISION_BYTES, correct_price_raw, correct_quantity_raw},
@@ -87,6 +89,10 @@ pub enum DataStreamingError {
 pub enum EncodingError {
     #[error("Empty data")]
     EmptyData,
+    #[error(
+        "Mixed metadata at row {index}; encode each instrument, bar type, or precision separately"
+    )]
+    MixedMetadata { index: usize },
     #[error("Missing metadata key: `{0}`")]
     MissingMetadata(&'static str),
     #[error("Missing data column: `{0}` at index {1}")]
@@ -288,7 +294,10 @@ where
     /// Returns the metadata for this data element.
     fn metadata(&self) -> HashMap<String, String>;
 
-    /// Returns the metadata for the first element in a chunk.
+    /// Returns the metadata selected for a chunk.
+    ///
+    /// The default uses the first element. Implementations may override this when leading sentinel
+    /// values do not carry meaningful metadata.
     ///
     /// # Panics
     ///
@@ -545,16 +554,30 @@ pub fn validate_precision_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Instrument IDs differ, or non-clear precision metadata differs:
+///   `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 pub fn book_deltas_to_arrow_record_batch_bytes(
     data: &[OrderBookDelta],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
+    let Some(first) = data.first() else {
         return Err(EncodingError::EmptyData);
+    };
+
+    let metadata = OrderBookDelta::chunk_metadata(data);
+    let instrument_id = data
+        .iter()
+        .find(|delta| delta.action != BookAction::Clear)
+        .unwrap_or(first)
+        .instrument_id;
+
+    if let Some(index) = data.iter().position(|delta| {
+        delta.instrument_id != instrument_id
+            || (delta.action != BookAction::Clear && delta.metadata() != metadata)
+    }) {
+        return Err(EncodingError::MixedMetadata { index });
     }
 
-    // Extract metadata from chunk
-    let metadata = OrderBookDelta::chunk_metadata(data);
     OrderBookDelta::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
@@ -564,19 +587,43 @@ pub fn book_deltas_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn book_depth10_to_arrow_record_batch_bytes(
     data: &[OrderBookDepth10],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
+    let Some(first) = data.first() else {
         return Err(EncodingError::EmptyData);
+    };
+    let precision = data
+        .iter()
+        .flat_map(|depth| depth.bids.iter().chain(&depth.asks))
+        .find(|order| !order.price.is_undefined() && !order.size.is_undefined())
+        .map_or(
+            (first.bids[0].price.precision, first.bids[0].size.precision),
+            |order| (order.price.precision, order.size.precision),
+        );
+
+    if let Some(index) = data.iter().position(|depth| {
+        depth.instrument_id != first.instrument_id || !depth_precision_is_uniform(depth, precision)
+    }) {
+        return Err(EncodingError::MixedMetadata { index });
     }
 
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
+    let metadata = OrderBookDepth10::get_metadata(&first.instrument_id, precision.0, precision.1);
     OrderBookDepth10::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+}
+
+fn depth_precision_is_uniform(depth: &OrderBookDepth10, precision: (u8, u8)) -> bool {
+    depth.bids.iter().chain(&depth.asks).all(|order| {
+        match (order.price.is_undefined(), order.size.is_undefined()) {
+            (true, true) => true,
+            (false, false) => {
+                order.price.precision == precision.0 && order.size.precision == precision.1
+            }
+            _ => false,
+        }
+    })
 }
 
 /// Converts a vector of `QuoteTick` into an Arrow `RecordBatch`.
@@ -585,19 +632,12 @@ pub fn book_depth10_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn quotes_to_arrow_record_batch_bytes(
     data: &[QuoteTick],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    QuoteTick::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `TradeTick` into an Arrow `RecordBatch`.
@@ -606,19 +646,12 @@ pub fn quotes_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn trades_to_arrow_record_batch_bytes(
     data: &[TradeTick],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    TradeTick::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `Bar` into an Arrow `RecordBatch`.
@@ -627,17 +660,10 @@ pub fn trades_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn bars_to_arrow_record_batch_bytes(data: &[Bar]) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    Bar::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `MarkPriceUpdate` into an Arrow `RecordBatch`.
@@ -646,19 +672,12 @@ pub fn bars_to_arrow_record_batch_bytes(data: &[Bar]) -> Result<RecordBatch, Enc
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn mark_prices_to_arrow_record_batch_bytes(
     data: &[MarkPriceUpdate],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    MarkPriceUpdate::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `IndexPriceUpdate` into an Arrow `RecordBatch`.
@@ -667,19 +686,12 @@ pub fn mark_prices_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn index_prices_to_arrow_record_batch_bytes(
     data: &[IndexPriceUpdate],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
-        return Err(EncodingError::EmptyData);
-    }
-
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    IndexPriceUpdate::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    encode_batch_with_metadata(data)
 }
 
 /// Converts a vector of `InstrumentStatus` into an Arrow `RecordBatch`.
@@ -728,17 +740,425 @@ pub fn option_greeks_to_arrow_record_batch_bytes(
 ///
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn instrument_closes_to_arrow_record_batch_bytes(
     data: &[InstrumentClose],
 ) -> Result<RecordBatch, EncodingError> {
+    encode_batch_with_metadata(data)
+}
+
+fn encode_batch_with_metadata<T>(data: &[T]) -> Result<RecordBatch, EncodingError>
+where
+    T: EncodeToRecordBatch,
+{
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
     }
 
-    // Take first element and extract metadata
-    let first = data.first().unwrap();
-    let metadata = first.metadata();
-    InstrumentClose::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+    let metadata = T::chunk_metadata(data);
+    if let Some(index) = data.iter().position(|value| value.metadata() != metadata) {
+        return Err(EncodingError::MixedMetadata { index });
+    }
+
+    T::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        data::{
+            Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDepth10, QuoteTick,
+            depth::DEPTH10_LEN,
+        },
+        enums::{AggregationSource, BarAggregation, BookAction, OrderSide, PriceType},
+        identifiers::InstrumentId,
+        types::{PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_quotes_to_arrow_record_batch_rejects_mixed_instruments() {
+        let first = QuoteTick::new(
+            InstrumentId::from("AAPL.XNAS"),
+            Price::from("100.01"),
+            Price::from("100.02"),
+            Quantity::from("10"),
+            Quantity::from("11"),
+            1.into(),
+            1.into(),
+        );
+        let second = QuoteTick::new(
+            InstrumentId::from("MSFT.XNAS"),
+            Price::from("200.01"),
+            Price::from("200.02"),
+            Quantity::from("20"),
+            Quantity::from("21"),
+            2.into(),
+            2.into(),
+        );
+
+        let result = quotes_to_arrow_record_batch_bytes(&[first, second]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 1 })
+        ));
+    }
+
+    #[rstest]
+    fn test_quotes_to_arrow_record_batch_rejects_mixed_precision() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let first = QuoteTick::new(
+            instrument_id,
+            Price::from("100.01"),
+            Price::from("100.02"),
+            Quantity::from("10.00"),
+            Quantity::from("11.00"),
+            1.into(),
+            1.into(),
+        );
+        let second = QuoteTick::new(
+            instrument_id,
+            Price::from("100.010"),
+            Price::from("100.020"),
+            Quantity::from("10.000"),
+            Quantity::from("11.000"),
+            2.into(),
+            2.into(),
+        );
+
+        let result = quotes_to_arrow_record_batch_bytes(&[first, second]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 1 })
+        ));
+    }
+
+    #[rstest]
+    fn test_bars_to_arrow_record_batch_rejects_mixed_bar_types() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let first_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let second_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(5, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let first = Bar::new(
+            first_type,
+            Price::from("100.01"),
+            Price::from("100.02"),
+            Price::from("100.00"),
+            Price::from("100.01"),
+            Quantity::from("10"),
+            1.into(),
+            1.into(),
+        );
+        let second = Bar::new(
+            second_type,
+            Price::from("100.01"),
+            Price::from("100.02"),
+            Price::from("100.00"),
+            Price::from("100.01"),
+            Quantity::from("11"),
+            2.into(),
+            2.into(),
+        );
+
+        let result = bars_to_arrow_record_batch_bytes(&[first, second]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 1 })
+        ));
+    }
+
+    #[rstest]
+    fn test_depth10_to_arrow_record_batch_rejects_mixed_level_price_precision() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.23"),
+            Quantity::from("100.00"),
+            1,
+        );
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.24"),
+            Quantity::from("100.00"),
+            2,
+        );
+        let mut asks = [ask; DEPTH10_LEN];
+        asks[1].price = Price::from("1.241");
+        let depth = OrderBookDepth10::new(
+            instrument_id,
+            [bid; DEPTH10_LEN],
+            asks,
+            [1; DEPTH10_LEN],
+            [1; DEPTH10_LEN],
+            0,
+            1,
+            1.into(),
+            1.into(),
+        );
+
+        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 0 })
+        ));
+    }
+
+    #[rstest]
+    fn test_depth10_to_arrow_record_batch_rejects_mixed_level_size_precision() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.23"),
+            Quantity::from("100.00"),
+            1,
+        );
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.24"),
+            Quantity::from("100.00"),
+            2,
+        );
+        let mut bids = [bid; DEPTH10_LEN];
+        bids[1].size = Quantity::from("100.000");
+        let depth = OrderBookDepth10::new(
+            instrument_id,
+            bids,
+            [ask; DEPTH10_LEN],
+            [1; DEPTH10_LEN],
+            [1; DEPTH10_LEN],
+            0,
+            1,
+            1.into(),
+            1.into(),
+        );
+
+        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 0 })
+        ));
+    }
+
+    #[rstest]
+    fn test_depth10_to_arrow_record_batch_uses_first_defined_level_precision() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.23"),
+            Quantity::from("100.00"),
+            1,
+        );
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.24"),
+            Quantity::from("100.00"),
+            2,
+        );
+        let mut bids = [bid; DEPTH10_LEN];
+        bids[0].price = Price::from_raw(PRICE_UNDEF, 0);
+        bids[0].size = Quantity::from_raw(QUANTITY_UNDEF, 0);
+        let depth = OrderBookDepth10::new(
+            instrument_id,
+            bids,
+            [ask; DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            [1; DEPTH10_LEN],
+            0,
+            1,
+            1.into(),
+            1.into(),
+        );
+
+        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]).unwrap();
+
+        assert_eq!(
+            result.schema().metadata().get(KEY_PRICE_PRECISION).unwrap(),
+            "2"
+        );
+        assert_eq!(
+            result.schema().metadata().get(KEY_SIZE_PRECISION).unwrap(),
+            "2"
+        );
+    }
+
+    #[rstest]
+    #[case::price(true)]
+    #[case::size(false)]
+    fn test_depth10_to_arrow_record_batch_rejects_partial_undefined_level(
+        #[case] price_undefined: bool,
+    ) {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.23"),
+            Quantity::from("100.00"),
+            1,
+        );
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.24"),
+            Quantity::from("100.00"),
+            2,
+        );
+        let mut asks = [ask; DEPTH10_LEN];
+        if price_undefined {
+            asks[1].price = Price::from_raw(PRICE_UNDEF, 0);
+        } else {
+            asks[1].size = Quantity::from_raw(QUANTITY_UNDEF, 0);
+        }
+        let depth = OrderBookDepth10::new(
+            instrument_id,
+            [bid; DEPTH10_LEN],
+            asks,
+            [1; DEPTH10_LEN],
+            [1; DEPTH10_LEN],
+            0,
+            1,
+            1.into(),
+            1.into(),
+        );
+
+        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 0 })
+        ));
+    }
+
+    #[rstest]
+    fn test_deltas_to_arrow_record_batch_skips_leading_clears_for_precision() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let first = OrderBookDelta::clear(instrument_id, 0, 1.into(), 1.into());
+        let second = OrderBookDelta::clear(instrument_id, 1, 2.into(), 2.into());
+        let third = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.23"),
+                Quantity::from("100.000000"),
+                1,
+            ),
+            0,
+            2,
+            3.into(),
+            3.into(),
+        );
+        let expected = vec![first, second, third];
+
+        let batch = book_deltas_to_arrow_record_batch_bytes(&expected).unwrap();
+        let metadata = batch.schema().metadata().clone();
+        assert_eq!(
+            metadata.get(KEY_PRICE_PRECISION).map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            metadata.get(KEY_SIZE_PRECISION).map(String::as_str),
+            Some("6")
+        );
+
+        let decoded = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded, expected);
+        assert_eq!(decoded[2].order.price.precision, 2);
+        assert_eq!(decoded[2].order.size.precision, 6);
+    }
+
+    #[rstest]
+    fn test_deltas_to_arrow_record_batch_all_clear_roundtrip() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let expected = vec![
+            OrderBookDelta::clear(instrument_id, 0, 1.into(), 1.into()),
+            OrderBookDelta::clear(instrument_id, 1, 2.into(), 2.into()),
+        ];
+
+        let batch = book_deltas_to_arrow_record_batch_bytes(&expected).unwrap();
+        let metadata = batch.schema().metadata().clone();
+        let decoded = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded, expected);
+    }
+
+    #[rstest]
+    fn test_deltas_to_arrow_record_batch_rejects_mixed_precision() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let first = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.23"),
+                Quantity::from("100.00"),
+                1,
+            ),
+            0,
+            1,
+            1.into(),
+            1.into(),
+        );
+        let second = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Update,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.234"),
+                Quantity::from("100.000"),
+                1,
+            ),
+            0,
+            2,
+            2.into(),
+            2.into(),
+        );
+
+        let result = book_deltas_to_arrow_record_batch_bytes(&[first, second]);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 1 })
+        ));
+    }
+
+    #[rstest]
+    fn test_deltas_to_arrow_record_batch_rejects_mixed_instruments() {
+        let first = OrderBookDelta::clear(InstrumentId::from("AUD/USD.SIM"), 0, 1.into(), 1.into());
+        let second = OrderBookDelta::new(
+            InstrumentId::from("EUR/USD.SIM"),
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.23"),
+                Quantity::from("100.00"),
+                1,
+            ),
+            0,
+            1,
+            2.into(),
+            2.into(),
+        );
+
+        let result = book_deltas_to_arrow_record_batch_bytes(&[first, second]);
+
+        // The first non-clear delta supplies metadata, so the leading clear is the mismatched row.
+        assert!(matches!(
+            result,
+            Err(EncodingError::MixedMetadata { index: 0 })
+        ));
+    }
 }

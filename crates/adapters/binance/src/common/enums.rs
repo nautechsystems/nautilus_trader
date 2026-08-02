@@ -557,6 +557,22 @@ pub enum BinanceTradingStatus {
     AuctionMatch,
     /// Break period.
     Break,
+    /// Pre-delivering.
+    PreDelivering,
+    /// Delivering.
+    Delivering,
+    /// Delivered.
+    Delivered,
+    /// Pre-settlement.
+    PreSettle,
+    /// Settling.
+    Settling,
+    /// Closed.
+    Close,
+    /// Trading is halted for an otherwise active contract.
+    TradingHalt,
+    /// New orders are blocked while cancellation remains available.
+    TradingCancelOnly,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -574,6 +590,14 @@ impl From<BinanceTradingStatus> for MarketStatusAction {
             BinanceTradingStatus::Halt => Self::Halt,
             BinanceTradingStatus::AuctionMatch => Self::Cross,
             BinanceTradingStatus::Break => Self::Pause,
+            BinanceTradingStatus::PreDelivering | BinanceTradingStatus::PreSettle => Self::PreClose,
+            BinanceTradingStatus::Delivering
+            | BinanceTradingStatus::Delivered
+            | BinanceTradingStatus::Settling
+            | BinanceTradingStatus::Close => Self::Close,
+            BinanceTradingStatus::TradingHalt | BinanceTradingStatus::TradingCancelOnly => {
+                Self::Halt
+            }
             BinanceTradingStatus::Unknown => Self::NotAvailableForTrading,
         }
     }
@@ -607,6 +631,8 @@ pub enum BinanceContractStatus {
     Delisting,
     /// Contract down.
     Down,
+    /// New orders are blocked while cancellation remains available.
+    TradingCancelOnly,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -616,7 +642,9 @@ impl From<BinanceContractStatus> for MarketStatusAction {
     fn from(status: BinanceContractStatus) -> Self {
         match status {
             BinanceContractStatus::Trading => Self::Trading,
-            BinanceContractStatus::TradingHalt => Self::Halt,
+            BinanceContractStatus::TradingHalt | BinanceContractStatus::TradingCancelOnly => {
+                Self::Halt
+            }
             BinanceContractStatus::PendingTrading => Self::PreOpen,
             BinanceContractStatus::PreDelivering
             | BinanceContractStatus::PreDelisting

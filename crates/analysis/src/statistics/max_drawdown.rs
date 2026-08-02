@@ -29,6 +29,14 @@ use crate::statistic::PortfolioStatistic;
 /// a specified time period.
 ///
 /// Formula: Max((Peak - Trough) / Peak) for all peak-trough sequences
+///
+/// The equity curve compounds returns from a starting value of `1.0`, and the
+/// result is reported as a negative fraction (e.g. `-0.20` is a 20% drawdown).
+///
+/// # References
+///
+/// - Bacon, C. R. (2008). *Practical Portfolio Performance Measurement and Attribution*
+///   (2nd ed.). Wiley.
 #[repr(C)]
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
@@ -97,6 +105,7 @@ impl PortfolioStatistic for MaxDrawdown {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -137,25 +146,24 @@ mod tests {
     fn test_simple_drawdown() {
         let stat = MaxDrawdown::new();
         // Start at 1.0, go to 1.1 (+10%), then drop to 0.99 (-10% from peak)
-        // Max DD = (1.1 - 0.99) / 1.1 = 0.1 / 1.1 = 0.0909 (9.09%)
+        // Max DD = (1.1 - 0.99) / 1.1 = 0.11 / 1.1 = 0.10, reported as -0.10
         let returns = create_returns(&[0.10, -0.10]);
         let result = stat.calculate_from_returns(&returns).unwrap();
 
-        // Should be approximately -0.10 (reported as negative)
-        assert!((result + 0.10).abs() < 0.01);
+        assert!(approx_eq!(f64, result, -0.10, epsilon = 1e-12));
     }
 
     #[rstest]
     fn test_multiple_drawdowns() {
         let stat = MaxDrawdown::new();
-        // Peak at 1.5, trough at 1.0
-        // DD1: 10% from 1.0
-        // DD2: 20% from 1.5
+        // equity = [1.1, 0.99, 1.485, 1.188, 1.3068]
+        // DD1: (1.1 - 0.99) / 1.1 = 0.10
+        // DD2: (1.485 - 1.188) / 1.485 = 0.20
         let returns = create_returns(&[0.10, -0.10, 0.50, -0.20, 0.10]);
         let result = stat.calculate_from_returns(&returns).unwrap();
 
         // Max DD should be the larger one (20%)
-        assert!((result + 0.20).abs() < 0.01);
+        assert!(approx_eq!(f64, result, -0.20, epsilon = 1e-12));
     }
 
     #[rstest]
@@ -166,7 +174,7 @@ mod tests {
         let result = stat.calculate_from_returns(&returns).unwrap();
 
         // From 1.0 -> 0.6 -> 0.54
-        // Max DD from initial 1.0 is 46%
-        assert!((result + 0.46).abs() < 0.01);
+        // Max DD from the initial 1.0 peak is (1.0 - 0.54) / 1.0 = 0.46
+        assert!(approx_eq!(f64, result, -0.46, epsilon = 1e-12));
     }
 }

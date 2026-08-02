@@ -166,14 +166,14 @@ Fees are explicit backtest assumptions. Check
 to consume quotes and maintain its own L1 book in cache rather than
 subscribing to L2 deltas.
 
-| Parameter                      | Value     | Description                                   |
-| ------------------------------ | --------- | --------------------------------------------- |
-| `max_trade_size`               | `10`      | Cap on contracts per FOK order.               |
-| `trigger_min_size`             | `1.0`     | Larger side must hold at least one contract.  |
-| `trigger_imbalance_ratio`      | `0.10`    | Trigger when smaller / larger < 10%.          |
-| `min_seconds_between_triggers` | `5.0`     | Cooldown between consecutive triggers.        |
-| `book_type`                    | `L1_MBP`  | Top of book only.                             |
-| `use_quote_ticks`              | `True`    | Drive the strategy from quote ticks.          |
+| Parameter                      | Value    | Description                                  |
+| ------------------------------ | -------- | -------------------------------------------- |
+| `max_trade_size`               | `10`     | Cap on contracts per FOK order.              |
+| `trigger_min_size`             | `1.0`    | Larger side must hold at least one contract. |
+| `trigger_imbalance_ratio`      | `0.10`   | Trigger when smaller / larger < 10%.         |
+| `min_seconds_between_triggers` | `5.0`    | Cooldown between consecutive triggers.       |
+| `book_type`                    | `L1_MBP` | Top of book only.                            |
+| `use_quote_ticks`              | `True`   | Drive the strategy from quote ticks.         |
 
 ```python
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance

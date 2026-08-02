@@ -928,7 +928,7 @@ async def test_submit_order_with_invalid_tp_trigger_type_emits_order_denied(
 ):
     """
     An unrecognised tp_trigger_by value must emit generate_order_denied before
-    generate_order_submitted — the order must never reach the exchange.
+    generate_order_submitted - the order must never reach the exchange.
     """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 

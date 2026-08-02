@@ -865,7 +865,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if not trigger_price and order.has_trigger_price:
             trigger_price = order.trigger_price
 
-        # StopMarket/MarketIfTouched have no limit price — derive a
+        # StopMarket/MarketIfTouched have no limit price - derive a
         # slippage-adjusted limit from the trigger, matching submit path
         if price is None and trigger_price is not None:
             price = self._derive_limit_from_trigger(order, trigger_price)

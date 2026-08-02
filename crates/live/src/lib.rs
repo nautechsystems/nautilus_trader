@@ -41,6 +41,7 @@
 //! - `node` (default): Enables the full live node, builder, config, and execution manager.
 //! - `plugin` (default): Keeps compatibility stubs for plug-in config validation.
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! - `fuzz`: Provides shared libFuzzer integration for adapter fuzz binaries.
 //! - `streaming`: Enables `persistence` dependency for streaming configuration (requires `node`).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `node` and `streaming`).
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
@@ -109,6 +110,14 @@
 
 pub mod execution;
 pub mod runner;
+
+#[cfg(feature = "fuzz")]
+#[doc(hidden)]
+pub mod fuzz;
+
+#[cfg(feature = "fuzz")]
+#[doc(hidden)]
+pub use fuzz::Corpus;
 
 #[cfg(feature = "node")]
 pub mod node;

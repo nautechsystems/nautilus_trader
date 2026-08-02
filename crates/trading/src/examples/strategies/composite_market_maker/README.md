@@ -75,19 +75,19 @@ position back down is the only exit path.
 
 ## Configuration
 
-| Parameter               | Type                 | Default    | Description                                                                          |
-|-------------------------|----------------------|------------|--------------------------------------------------------------------------------------|
-| `instrument_id`         | `InstrumentId`       | *required* | Target instrument the strategy quotes on.                                            |
-| `signal_instrument_id`  | `InstrumentId`       | *required* | Signal instrument (typically a synthetic) whose mid drives the signal residual.      |
-| `max_position`          | `Quantity`           | *required* | Hard cap on net exposure (long or short).                                            |
-| `trade_size`            | `Option<Quantity>`   | `None`     | Size per quote. When `None`, resolves from the instrument's `min_quantity`.          |
-| `half_spread_bps`       | `u32`                | `5`        | Half the desired quoted spread, in basis points of the anchor.                       |
-| `inventory_skew_factor` | `f64`                | `0.0`      | Price units per unit of net position. Both sides shift down by this times position.  |
-| `signal_skew_factor`    | `f64`                | `0.0`      | Price units per unit of normalized signal residual. Both sides shift up.             |
-| `signal_baseline`       | `Option<f64>`        | `None`     | Baseline price for the signal residual. When `None`, captured from the first signal. |
-| `requote_threshold_bps` | `u32`                | `5`        | Minimum anchor or signal-residual price-impact move in bps before re-quoting.        |
-| `expire_time_secs`      | `Option<u64>`        | `None`     | Order expiry in seconds. When set, orders use GTD time-in-force.                     |
-| `on_cancel_resubmit`    | `bool`               | `false`    | Resubmit on the next quote after an external cancel.                                 |
+| Parameter               | Type               | Default    | Description                                                                          |
+| ----------------------- | ------------------ | ---------- | ------------------------------------------------------------------------------------ |
+| `instrument_id`         | `InstrumentId`     | *required* | Target instrument the strategy quotes on.                                            |
+| `signal_instrument_id`  | `InstrumentId`     | *required* | Signal instrument (typically a synthetic) whose mid drives the signal residual.      |
+| `max_position`          | `Quantity`         | *required* | Hard cap on net exposure (long or short).                                            |
+| `trade_size`            | `Option<Quantity>` | `None`     | Size per quote. When `None`, resolves from the instrument's `min_quantity`.          |
+| `half_spread_bps`       | `u32`              | `5`        | Half the desired quoted spread, in basis points of the anchor.                       |
+| `inventory_skew_factor` | `f64`              | `0.0`      | Price units per unit of net position. Both sides shift down by this times position.  |
+| `signal_skew_factor`    | `f64`              | `0.0`      | Price units per unit of normalized signal residual. Both sides shift up.             |
+| `signal_baseline`       | `Option<f64>`      | `None`     | Baseline price for the signal residual. When `None`, captured from the first signal. |
+| `requote_threshold_bps` | `u32`              | `5`        | Minimum anchor or signal-residual price-impact move in bps before re-quoting.        |
+| `expire_time_secs`      | `Option<u64>`      | `None`     | Order expiry in seconds. When set, orders use GTD time-in-force.                     |
+| `on_cancel_resubmit`    | `bool`             | `false`    | Resubmit on the next quote after an external cancel.                                 |
 
 ### Tuning guidelines
 

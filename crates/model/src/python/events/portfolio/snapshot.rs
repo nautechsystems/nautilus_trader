@@ -19,25 +19,27 @@ use pyo3::{basic::CompareOp, prelude::*};
 use crate::{
     enums::AccountType,
     events::PortfolioSnapshot,
-    identifiers::AccountId,
+    identifiers::{AccountId, InstrumentId},
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PortfolioSnapshot {
-    /// Represents a point-in-time snapshot of portfolio state for a single account,
-    /// emitted periodically while the account holds open positions.
+    /// Represents a point-in-time snapshot of portfolio state for a single account.
     ///
     /// Unlike `AccountState`, which fires only on
     /// balance or margin changes, `PortfolioSnapshot` carries a continuous
     /// mark-to-market view by folding open-position valuations into the totals.
+    /// The default equity curve records one snapshot at account registration, at every
+    /// UTC midnight, and at shutdown, including while the account is flat. An optional
+    /// fine-grained stream records additional snapshots while positions are open.
     /// Totals span every venue the account holds positions on, so multi-venue
     /// accounts (e.g., a prime broker routing across exchanges) produce a single
     /// account-wide snapshot rather than per-venue slices.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (account_id, account_type, balances, margins, unrealized_pnls, realized_pnls, total_equity, event_id, ts_event, ts_init, base_currency=None))]
+    #[pyo3(signature = (account_id, account_type, balances, margins, unrealized_pnls, realized_pnls, total_equity, event_id, ts_event, ts_init, base_currency=None, base_currency_equity=None, is_stale=false, stale_instruments=None, stale_currencies=None, unpriced_instruments=None))]
     fn py_new(
         account_id: AccountId,
         account_type: AccountType,
@@ -50,6 +52,11 @@ impl PortfolioSnapshot {
         ts_event: u64,
         ts_init: u64,
         base_currency: Option<Currency>,
+        base_currency_equity: Option<Money>,
+        is_stale: bool,
+        stale_instruments: Option<Vec<InstrumentId>>,
+        stale_currencies: Option<Vec<Currency>>,
+        unpriced_instruments: Option<Vec<InstrumentId>>,
     ) -> Self {
         Self::new(
             account_id,
@@ -60,6 +67,11 @@ impl PortfolioSnapshot {
             unrealized_pnls,
             realized_pnls,
             total_equity,
+            base_currency_equity,
+            is_stale,
+            stale_instruments.unwrap_or_default(),
+            stale_currencies.unwrap_or_default(),
+            unpriced_instruments.unwrap_or_default(),
             event_id,
             ts_event.into(),
             ts_init.into(),
@@ -104,6 +116,31 @@ impl PortfolioSnapshot {
     #[getter]
     fn total_equity(&self) -> Vec<Money> {
         self.total_equity.clone()
+    }
+
+    #[getter]
+    fn base_currency_equity(&self) -> Option<Money> {
+        self.base_currency_equity
+    }
+
+    #[getter]
+    fn is_stale(&self) -> bool {
+        self.is_stale
+    }
+
+    #[getter]
+    fn stale_instruments(&self) -> Vec<InstrumentId> {
+        self.stale_instruments.clone()
+    }
+
+    #[getter]
+    fn stale_currencies(&self) -> Vec<Currency> {
+        self.stale_currencies.clone()
+    }
+
+    #[getter]
+    fn unpriced_instruments(&self) -> Vec<InstrumentId> {
+        self.unpriced_instruments.clone()
     }
 
     #[getter]

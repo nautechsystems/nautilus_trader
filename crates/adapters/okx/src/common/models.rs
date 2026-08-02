@@ -15,12 +15,20 @@
 
 //! Data models representing OKX API payloads consumed by the adapter.
 
-use serde::{Deserialize, Serialize};
+use nautilus_core::serialization::{
+    deserialize_decimal_from_str, deserialize_optional_decimal_from_str, deserialize_string_to_u64,
+    serialize_decimal_as_str, serialize_optional_decimal_as_str,
+};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
 use super::enums::{OKXOptionType, OKXTriggerType};
 use crate::common::{
-    enums::{OKXContractType, OKXInstrumentCategory, OKXInstrumentStatus, OKXInstrumentType},
+    enums::{
+        OKXContractType, OKXInstrumentCategory, OKXInstrumentStatus, OKXInstrumentType,
+        OKXRpiPermission,
+    },
     parse::{deserialize_empty_ustr_as_none, deserialize_optional_string_to_u64},
 };
 
@@ -63,6 +71,42 @@ pub struct OKXAttachedAlgoOrd {
     pub active_px: String,
 }
 
+/// Represents a Retail Price Improvement order book level.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OKXRpiBookLevel(
+    /// Price.
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub Decimal,
+    /// Total quantity, including RPI liquidity.
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub Decimal,
+    /// Quantity excluding RPI liquidity.
+    #[serde(
+        serialize_with = "serialize_decimal_as_str",
+        deserialize_with = "deserialize_decimal_from_str"
+    )]
+    pub Decimal,
+    /// Number of orders at this price.
+    #[serde(
+        serialize_with = "serialize_u64_as_str",
+        deserialize_with = "deserialize_string_to_u64"
+    )]
+    pub u64,
+);
+
+fn serialize_u64_as_str<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&value.to_string())
+}
+
 /// Represents an instrument on the OKX exchange.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +130,15 @@ pub struct OKXInstrument {
     /// `category` field is intentionally ignored).
     #[serde(default)]
     pub inst_category: Option<OKXInstrumentCategory>,
+    /// Initial price-limit band for newly listed contracts.
+    #[serde(default)]
+    pub init_px_lmt_pct: String,
+    /// Floating price-limit band during normal trading.
+    #[serde(default)]
+    pub float_px_lmt_pct: String,
+    /// Maximum price-limit cap.
+    #[serde(default)]
+    pub max_px_lmt_pct: String,
     /// Base currency, e.g. "BTC" in BTC-USDT. Applicable to SPOT/MARGIN.
     pub base_ccy: Ustr,
     /// Quote currency, e.g. "USDT" in BTC-USDT.
@@ -146,4 +199,17 @@ pub struct OKXInstrument {
     /// Maximum stop order size.
     #[serde(default)]
     pub max_stop_sz: String,
+    /// RPI maker permission: 0 disabled, 1 enabled without permission, 2 permitted.
+    #[serde(default, alias = "elp")]
+    pub rpi: Option<OKXRpiPermission>,
+    /// Minimum number of price levels between RPI buy and sell orders.
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub rpi_min_level: Option<u64>,
+    /// Minimum distance from the opposite organic best price, in basis points.
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub rpi_min_px_band: Option<Decimal>,
 }

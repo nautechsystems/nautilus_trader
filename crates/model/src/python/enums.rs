@@ -1072,6 +1072,7 @@ impl OrderStatus {
     ///  - `CANCELED`
     ///  - `EXPIRED`
     ///  - `FILLED`
+    ///  - `VOIDED`
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

@@ -66,7 +66,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.40.0 # Pinned to 1.40.0 for security (autoupdate bumps to moving v1 tag)
+    rev: v1.48.0
     hooks:
       - id: typos
         description: Checks for common typos
@@ -74,7 +74,7 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.2
+    rev: v2.4.3
     hooks:
       - id: codespell
         description: Checks for common misspellings
@@ -100,7 +100,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.26.1
+    rev: v1.28.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -113,6 +113,38 @@ repos:
   ##############################################################################
   - repo: local
     hooks:
+      - id: check-github-action-shas
+        name: check GitHub Action SHAs
+        description: Verifies action SHAs match their documented release tags
+        entry: bash scripts/ci/check-github-action-shas.sh
+        language: system
+        files: ^\.github/(actions/.+/action\.ya?ml|workflows/.+\.ya?ml)$
+
+      - id: test-github-action-shas
+        name: test GitHub Action SHA check
+        description: Verifies action SHA parsing, tag comments, and mismatch failures
+        entry: bash scripts/ci/test-github-action-shas.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            scripts/ci/(check-github-action-shas\.sh|test-github-action-shas\.bash)
+          )$
+        pass_filenames: false
+
+      - id: test-cli-r2-upload-installer
+        name: test CLI R2 installer upload
+        description: Verifies installer uploads fail after retry exhaustion
+        entry: bash scripts/ci/test-publish-cli-r2-upload-installer.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.github/workflows/cli-binaries\.yml|
+            \.pre-commit-config\.yaml|
+            scripts/ci/(publish-cli-r2-upload-installer\.sh|test-publish-cli-r2-upload-installer\.bash)
+          )$
+        pass_filenames: false
+
       - id: check-hidden-chars
         name: check hidden unicode/control chars
         description: Fail on hidden control or zero-width unicode characters in source
@@ -120,6 +152,21 @@ repos:
         language: system
         types_or: [rust, python, cython, toml, markdown, yaml, json, text]
         files: "\\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*"
+
+      - id: check-unicode-typography
+        name: check Unicode typography
+        description: Reject typographic dashes, curly quotes, and emoji-style check/cross marks
+        entry: bash .pre-commit-hooks/check_unicode_typography.sh
+        language: system
+        types: [text]
+
+      - id: test-unicode-typography
+        name: test Unicode typography hook
+        description: Verifies rejected characters, allowed characters, and exceptions
+        entry: bash .pre-commit-hooks/test_check_unicode_typography.sh
+        language: system
+        files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_unicode_typography\.sh)$
+        pass_filenames: false
 
       - id: check-non-latin-text
         name: check non-Latin text
@@ -156,6 +203,30 @@ repos:
             rust-toolchain\.toml|
             scripts/(uv-version|rust-toolchain)\.sh|
             scripts/ci/check-docker-toolchain-pins\.bash
+          )$
+        pass_filenames: false
+
+      - id: check-rust-toolchain
+        name: check Rust toolchain
+        description: Ensures the Rust toolchain parser requires an exact pinned channel
+        entry: bash scripts/ci/test-rust-toolchain.bash
+        language: system
+        files: ^(rust-toolchain\.toml|scripts/rust-toolchain\.sh|scripts/ci/test-rust-toolchain\.bash)$
+        pass_filenames: false
+
+      - id: check-miri-toolchain
+        name: check Miri toolchain
+        description: Ensures the pinned Miri compiler supports the workspace Rust version
+        entry: bash scripts/ci/test-check-miri-toolchain.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.github/workflows/nightly-miri\.yml|
+            Cargo\.toml|
+            Makefile|
+            tools\.toml|
+            scripts/tool-version\.sh|
+            scripts/ci/(check-miri-toolchain|test-check-miri-toolchain)\.bash
           )$
         pass_filenames: false
 
@@ -259,6 +330,14 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
+      - id: test-formatting-rs
+        name: test Rust formatting hook
+        description: Verifies blank-line and module-ordering rules
+        entry: bash .pre-commit-hooks/test_check_formatting_rs.sh
+        language: system
+        files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_formatting_rs\.sh)$
+        pass_filenames: false
+
       - id: check-formatting-py
         name: check formatting (Python)
         description: Enforces formatting conventions in Python code
@@ -281,6 +360,20 @@ repos:
         entry: bash .pre-commit-hooks/check_cargo_conventions.sh
         language: system
         files: "Cargo\\.toml$"
+        pass_filenames: false
+
+      - id: check-workspace-test-coverage
+        name: check workspace test coverage
+        description: Reconciles workspace members with Rust test selection
+        entry: bash scripts/ci/check-workspace-test-coverage.sh
+        language: system
+        files: >-
+          (?x)^(
+            (?:.*/)?Cargo\.toml|
+            .*\.rs|
+            Makefile|
+            scripts/ci/check-workspace-test-coverage\.sh
+          )$
         pass_filenames: false
 
       - id: check-cargo-crates-publish
@@ -361,7 +454,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.18
+    rev: v0.16.0
     hooks:
       - id: ruff
         name: ruff
@@ -408,7 +501,7 @@ repos:
         additional_dependencies: [msgspec, types-frozendict, types-pytz, types-redis, types-requests, types-toml]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.25 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.33 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
         files: ^(uv\.lock|python/uv\.lock)$
@@ -422,7 +515,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.22.1
+    rev: v0.23.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint
@@ -432,4 +525,22 @@ repos:
           - .markdownlint.jsonc
           - --fix
         files: "\\.md$"
-        exclude: "^(CLA\\.md|CONTRIBUTING\\.md|RELEASES\\.md)$"
+        exclude: "^(CLA\\.md|RELEASES\\.md)$"
+
+  - repo: local
+    hooks:
+      - id: check-markdown-tables
+        name: normalize markdown table padding
+        description: Pads GFM table columns to their widest cell, which MD060 does not check
+        entry: python3 -B scripts/check-markdown-tables.py
+        language: system
+        types: [markdown]
+
+      - id: mermaid-lint
+        name: mermaid lint
+        description: Validates Mermaid diagrams embedded in Markdown files
+        entry: mermaid-lint
+        language: node
+        additional_dependencies: ["@mermaid-lint/cli@0.35.0"]
+        args: [--fix, --no-semantic, --quiet]
+        types: [markdown]

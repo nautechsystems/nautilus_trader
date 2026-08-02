@@ -45,7 +45,7 @@ use super::{
         BinanceFuturesTradeLiteMsg, BinanceFuturesWsStreamsMessage, OrderUpdateData,
     },
     parse_exec::{
-        decode_algo_client_id, parse_futures_account_update,
+        decode_algo_client_id, decode_order_client_id, parse_futures_account_update,
         parse_futures_algo_update_to_order_status, parse_futures_order_update_to_fill,
         parse_futures_order_update_to_order_status,
     },
@@ -54,12 +54,12 @@ use crate::{
     common::{
         consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
         dispatch::{OrderIdentity, WsDispatchState, ensure_accepted_emitted},
-        encoder::decode_broker_id,
+        encoder::decode_client_order_id,
         enums::{BinancePositionSide, BinanceProductType},
         parse::{
-            parse_price_at_precision, parse_quantity_at_precision, parse_required_decimal,
-            parse_required_price_at_precision, parse_required_quantity_at_precision,
-            price_at_precision, quantity_at_precision,
+            parse_millis_or_init, parse_price_at_precision, parse_quantity_at_precision,
+            parse_required_decimal, parse_required_price_at_precision,
+            parse_required_quantity_at_precision, price_at_precision, quantity_at_precision,
         },
         symbol::format_instrument_id,
     },
@@ -305,7 +305,8 @@ pub(crate) fn dispatch_order_update(
     let order = &msg.order;
     let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.event_time, "Futures order dispatch event time", ts_init);
 
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
@@ -326,10 +327,13 @@ pub(crate) fn dispatch_order_update(
         (id, 8, 8)
     };
 
-    let client_order_id = ClientOrderId::new(decode_broker_id(
-        &order.client_order_id,
-        BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-    ));
+    let client_order_id = match decode_order_client_id(order) {
+        Ok(client_order_id) => client_order_id,
+        Err(e) => {
+            log::warn!("Skipping Futures order update with invalid client order ID: {e}");
+            return;
+        }
+    };
 
     // Exchange-generated orders (liquidation/ADL/settlement) are routed through
     // reconciliation reports regardless of tracked/untracked state, because
@@ -496,6 +500,7 @@ pub(crate) fn dispatch_order_update(
                                 false,
                                 None,
                                 commission,
+                                None,
                             );
 
                             dispatch_state.insert_filled(client_order_id);
@@ -966,7 +971,7 @@ pub(crate) fn dispatch_trade_lite(
 ) {
     let symbol_ustr = ustr::Ustr::from(msg.symbol.as_str());
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Futures TRADE_LITE event time", ts_init);
 
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
@@ -987,10 +992,14 @@ pub(crate) fn dispatch_trade_lite(
         (id, 8, 8)
     };
 
-    let client_order_id = ClientOrderId::new(decode_broker_id(
-        &msg.client_order_id,
-        BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-    ));
+    let client_order_id =
+        match decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID) {
+            Ok(client_order_id) => client_order_id,
+            Err(e) => {
+                log::warn!("Skipping Futures TRADE_LITE with invalid client order ID: {e}");
+                return;
+            }
+        };
 
     let Some(identity) = dispatch_state
         .order_identities
@@ -1069,6 +1078,7 @@ pub(crate) fn dispatch_trade_lite(
         ts_event,
         ts_init,
         false,
+        None,
         None,
         None,
     );
@@ -1272,8 +1282,15 @@ pub(crate) fn dispatch_algo_update(
 
     let algo_data = &msg.algo_order;
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
-    let client_order_id = decode_algo_client_id(algo_data);
+    let ts_event =
+        parse_millis_or_init(msg.event_time, "Futures algo dispatch event time", ts_init);
+    let client_order_id = match decode_algo_client_id(algo_data) {
+        Ok(client_order_id) => client_order_id,
+        Err(e) => {
+            log::warn!("Skipping Futures algo update with invalid client order ID: {e}");
+            return;
+        }
+    };
 
     let symbol_ustr = ustr::Ustr::from(algo_data.symbol.as_str());
     let (instrument_id, _price_precision, _size_precision) =
@@ -1701,6 +1718,66 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_invalid_client_order_id_emits_nothing() {
+        let clock = get_atomic_clock_realtime();
+        let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
+        msg.order.client_order_id = "x-aHRE4BCj-R".to_string();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            Currency::USDT(),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+
+        assert!(collect_events(&mut rx).is_empty());
+        assert!(dispatch_state.order_identities.is_empty());
+    }
+
+    #[rstest]
+    fn test_dispatch_algo_update_invalid_client_order_id_emits_nothing() {
+        let clock = get_atomic_clock_realtime();
+        let mut msg: BinanceFuturesAlgoUpdateMsg =
+            load_user_data_fixture("algo_update_canceled.json");
+        msg.algo_order.client_algo_id = "x-aHRE4BCj-Tinvalid".to_string();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+        let triggered_algo_ids = Arc::new(AtomicSet::new());
+        let algo_client_ids = Arc::new(AtomicSet::new());
+
+        dispatch_algo_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            &triggered_algo_ids,
+            &algo_client_ids,
+        );
+
+        assert!(collect_events(&mut rx).is_empty());
+        assert!(triggered_algo_ids.is_empty());
+        assert!(algo_client_ids.is_empty());
+        assert!(dispatch_state.order_identities.is_empty());
     }
 
     #[rstest]
@@ -2721,6 +2798,29 @@ mod tests {
 
         let events = collect_events(&mut rx);
         assert!(events.is_empty(), "untracked TRADE_LITE should not emit");
+    }
+
+    #[rstest]
+    fn test_dispatch_trade_lite_invalid_client_order_id_emits_nothing() {
+        let clock = get_atomic_clock_realtime();
+        let mut msg: BinanceFuturesTradeLiteMsg = load_user_data_fixture("trade_lite.json");
+        msg.client_order_id = "client-é".to_string();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+
+        dispatch_trade_lite(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+        );
+
+        assert!(collect_events(&mut rx).is_empty());
+        assert!(dispatch_state.order_identities.is_empty());
     }
 
     #[rstest]

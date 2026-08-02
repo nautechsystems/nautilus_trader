@@ -1,0 +1,22 @@
+{
+    "table": "order",
+    "action": "insert",
+    "data": [
+        {
+            "orderID": "550e8400-e29b-41d4-a716-446655440001",
+            "account": 1234567,
+            "symbol": "XBTUSD",
+            "side": "Buy",
+            "orderQty": 1,
+            "currency": "USD",
+            "settlCurrency": "XBt",
+            "ordStatus": "Filled",
+            "workingIndicator": false,
+            "leavesQty": 0,
+            "cumQty": 1,
+            "avgPx": 30000.500000000004,
+            "transactTime": "2024-11-25T10:30:00.000Z",
+            "timestamp": "2024-11-25T10:30:00.123Z"
+        }
+    ]
+}

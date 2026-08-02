@@ -145,22 +145,16 @@ impl EncodeToRecordBatch for OrderBookDelta {
         )
     }
 
-    /// Extract metadata from first two deltas
+    /// Extracts metadata from the first non-clear delta, falling back to the first clear.
     ///
-    /// Use the second delta if the first one has 0 precision
+    /// Clear deltas use sentinel values whose precision does not describe the following book data.
     fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
-        let delta = chunk
-            .first()
-            .expect("Chunk should have at least one element to encode");
-
-        if delta.order.price.precision == 0
-            && delta.order.size.precision == 0
-            && let Some(delta) = chunk.get(1)
-        {
-            return EncodeToRecordBatch::metadata(delta);
-        }
-
-        EncodeToRecordBatch::metadata(delta)
+        chunk
+            .iter()
+            .find(|delta| delta.action != BookAction::Clear)
+            .or_else(|| chunk.first())
+            .map(EncodeToRecordBatch::metadata)
+            .expect("Chunk must have at least one element to encode")
     }
 }
 

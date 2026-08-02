@@ -64,6 +64,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
+use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -244,7 +245,7 @@ impl KrakenSpotWebSocketClient {
 
             get_runtime().spawn(async move {
                 tokio::pin!(stream);
-                let order_qty_cache: Arc<AtomicMap<String, f64>> =
+                let order_qty_cache: Arc<AtomicMap<String, Decimal>> =
                     Arc::new(AtomicMap::new());
                 let order_instrument_cache: Arc<AtomicMap<String, InstrumentAny>> =
                     Arc::new(AtomicMap::new());
@@ -767,6 +768,10 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Subscribes to bar/OHLC updates for the given bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bar aggregation is not supported by Kraken.
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -861,6 +866,10 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Unsubscribes from bar/OHLC updates for the given bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bar aggregation is not supported by Kraken.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,

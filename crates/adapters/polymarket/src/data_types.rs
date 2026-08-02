@@ -54,7 +54,7 @@ pub struct PolymarketRtdsEquityPrice {
     /// Spot price rounded to the venue's float payload precision.
     #[custom_data_field(serde)]
     pub value: Price,
-    /// Full-precision spot price emitted by the venue.
+    /// Full-precision spot price when supplied, otherwise the venue's `value`.
     #[custom_data_field(serde)]
     pub full_accuracy_value: Price,
     /// Price measurement timestamp in Unix milliseconds.

@@ -27,7 +27,9 @@ runs:
 
     - name: Get Rust toolchain version
       shell: bash
-      run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+      run: |
+        TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
+        echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain

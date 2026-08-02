@@ -24,6 +24,8 @@
     },
     {
       "symbol": "XAU-PERP",
+      "product": "XAU",
+      "expiration": null,
       "multiplier": "1",
       "price_scale": 10,
       "minimum_order_size": "1",

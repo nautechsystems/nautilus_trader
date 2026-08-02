@@ -17,6 +17,7 @@
 
 use ahash::AHashMap;
 use nautilus_model::enums::OrderSide;
+use rust_decimal::Decimal;
 
 use super::parse::CachedL3Order;
 
@@ -41,20 +42,20 @@ fn format_raw(raw: &str) -> String {
 /// by insertion sequence (FIFO queue priority). Each order contributes
 /// `format_raw(price_raw) + format_raw(size_raw)` to the string.
 pub(crate) fn build_checksum_string(open_orders: &AHashMap<u64, CachedL3Order>) -> String {
-    let mut asks: Vec<(f64, u64, &str, &str)> = open_orders
+    let mut asks: Vec<(Decimal, u64, &str, &str)> = open_orders
         .iter()
         .filter(|(_, v)| v.side == OrderSide::Sell)
         .map(|(_, v)| (v.price, v.seq, v.price_raw.as_str(), v.size_raw.as_str()))
         .collect();
 
-    let mut bids: Vec<(f64, u64, &str, &str)> = open_orders
+    let mut bids: Vec<(Decimal, u64, &str, &str)> = open_orders
         .iter()
         .filter(|(_, v)| v.side == OrderSide::Buy)
         .map(|(_, v)| (v.price, v.seq, v.price_raw.as_str(), v.size_raw.as_str()))
         .collect();
 
-    asks.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-    bids.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+    asks.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    bids.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
 
     let mut s = String::new();
     append_top_10_levels(&asks, &mut s);
@@ -70,18 +71,17 @@ pub(crate) fn compute_checksum(open_orders: &AHashMap<u64, CachedL3Order>) -> u3
 }
 
 /// Appends the top-10 price levels (all orders per level, FIFO) to `s`.
-fn append_top_10_levels(sorted: &[(f64, u64, &str, &str)], s: &mut String) {
+fn append_top_10_levels(sorted: &[(Decimal, u64, &str, &str)], s: &mut String) {
     let mut level_count = 0u32;
-    let mut last_price_bits: Option<u64> = None;
+    let mut last_price: Option<Decimal> = None;
 
     for &(price, _, price_raw, size_raw) in sorted {
-        let price_bits = price.to_bits();
-        if Some(price_bits) != last_price_bits {
+        if Some(price) != last_price {
             if level_count == 10 {
                 break;
             }
             level_count += 1;
-            last_price_bits = Some(price_bits);
+            last_price = Some(price);
         }
         s.push_str(&format_raw(price_raw));
         s.push_str(&format_raw(size_raw));
@@ -107,6 +107,7 @@ fn crc32_ieee(data: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::websocket::spot_v2::level_3::parse::CachedL3Order;
@@ -154,7 +155,7 @@ mod tests {
         // Asks: top-10 levels ascending, bids: top-10 levels descending; FIFO within each level.
         let mut orders: AHashMap<u64, CachedL3Order> = AHashMap::new();
 
-        // BID side — 10 levels, 21 orders total, descending price
+        // BID side - 10 levels, 21 orders total, descending price
         // Level 1: 44939.4 × 8 orders
         for (key, (size_raw, seq)) in [
             ("0.88968699", 1u64),
@@ -172,9 +173,9 @@ mod tests {
             orders.insert(
                 *seq,
                 CachedL3Order {
-                    price: 44939.4,
+                    price: dec!(44939.4),
                     price_raw: "44939.4".to_string(),
-                    size: 0.0,
+                    size: Decimal::ZERO,
                     size_raw: (*size_raw).to_string(),
                     side: OrderSide::Buy,
                     seq: *seq,
@@ -186,9 +187,9 @@ mod tests {
         orders.insert(
             9,
             CachedL3Order {
-                price: 44937.1,
+                price: dec!(44937.1),
                 price_raw: "44937.1".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.3346877".to_string(),
                 side: OrderSide::Buy,
                 seq: 9,
@@ -198,9 +199,9 @@ mod tests {
         orders.insert(
             10,
             CachedL3Order {
-                price: 44934.7,
+                price: dec!(44934.7),
                 price_raw: "44934.7".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.35630000".to_string(),
                 side: OrderSide::Buy,
                 seq: 10,
@@ -217,9 +218,9 @@ mod tests {
             orders.insert(
                 seq,
                 CachedL3Order {
-                    price: 44930.2,
+                    price: dec!(44930.2),
                     price_raw: "44930.2".to_string(),
-                    size: 0.0,
+                    size: Decimal::ZERO,
                     size_raw: size_raw.to_string(),
                     side: OrderSide::Buy,
                     seq,
@@ -230,9 +231,9 @@ mod tests {
         orders.insert(
             16,
             CachedL3Order {
-                price: 44928.0,
+                price: dec!(44928.0),
                 price_raw: "44928.0".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.105240".to_string(),
                 side: OrderSide::Buy,
                 seq: 16,
@@ -242,9 +243,9 @@ mod tests {
         orders.insert(
             17,
             CachedL3Order {
-                price: 44919.6,
+                price: dec!(44919.6),
                 price_raw: "44919.6".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.33870000".to_string(),
                 side: OrderSide::Buy,
                 seq: 17,
@@ -254,9 +255,9 @@ mod tests {
         orders.insert(
             18,
             CachedL3Order {
-                price: 44919.5,
+                price: dec!(44919.5),
                 price_raw: "44919.5".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.7610000".to_string(),
                 side: OrderSide::Buy,
                 seq: 18,
@@ -266,9 +267,9 @@ mod tests {
         orders.insert(
             19,
             CachedL3Order {
-                price: 44912.0,
+                price: dec!(44912.0),
                 price_raw: "44912.0".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.35630000".to_string(),
                 side: OrderSide::Buy,
                 seq: 19,
@@ -278,9 +279,9 @@ mod tests {
         orders.insert(
             20,
             CachedL3Order {
-                price: 44909.7,
+                price: dec!(44909.7),
                 price_raw: "44909.7".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.6690000".to_string(),
                 side: OrderSide::Buy,
                 seq: 20,
@@ -290,16 +291,16 @@ mod tests {
         orders.insert(
             21,
             CachedL3Order {
-                price: 44901.9,
+                price: dec!(44901.9),
                 price_raw: "44901.9".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.88982".to_string(),
                 side: OrderSide::Buy,
                 seq: 21,
             },
         );
 
-        // ASK side — 10 levels, 14 orders total, ascending price
+        // ASK side - 10 levels, 14 orders total, ascending price
         // Level 1: 44939.5 × 4 orders
         for (size_raw, seq) in [
             ("4.52308393", 22u64),
@@ -310,9 +311,9 @@ mod tests {
             orders.insert(
                 seq,
                 CachedL3Order {
-                    price: 44939.5,
+                    price: dec!(44939.5),
                     price_raw: "44939.5".to_string(),
-                    size: 0.0,
+                    size: Decimal::ZERO,
                     size_raw: size_raw.to_string(),
                     side: OrderSide::Sell,
                     seq,
@@ -323,9 +324,9 @@ mod tests {
         orders.insert(
             26,
             CachedL3Order {
-                price: 44950.0,
+                price: dec!(44950.0),
                 price_raw: "44950.0".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "1.0334926".to_string(),
                 side: OrderSide::Sell,
                 seq: 26,
@@ -335,9 +336,9 @@ mod tests {
         orders.insert(
             27,
             CachedL3Order {
-                price: 44953.0,
+                price: dec!(44953.0),
                 price_raw: "44953.0".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.64537".to_string(),
                 side: OrderSide::Sell,
                 seq: 27,
@@ -347,9 +348,9 @@ mod tests {
         orders.insert(
             28,
             CachedL3Order {
-                price: 44955.0,
+                price: dec!(44955.0),
                 price_raw: "44955.0".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.250000".to_string(),
                 side: OrderSide::Sell,
                 seq: 28,
@@ -359,9 +360,9 @@ mod tests {
         orders.insert(
             29,
             CachedL3Order {
-                price: 44959.6,
+                price: dec!(44959.6),
                 price_raw: "44959.6".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.35630000".to_string(),
                 side: OrderSide::Sell,
                 seq: 29,
@@ -370,9 +371,9 @@ mod tests {
         orders.insert(
             30,
             CachedL3Order {
-                price: 44959.6,
+                price: dec!(44959.6),
                 price_raw: "44959.6".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.35630000".to_string(),
                 side: OrderSide::Sell,
                 seq: 30,
@@ -382,9 +383,9 @@ mod tests {
         orders.insert(
             31,
             CachedL3Order {
-                price: 44960.1,
+                price: dec!(44960.1),
                 price_raw: "44960.1".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "3.38072".to_string(),
                 side: OrderSide::Sell,
                 seq: 31,
@@ -394,9 +395,9 @@ mod tests {
         orders.insert(
             32,
             CachedL3Order {
-                price: 44960.2,
+                price: dec!(44960.2),
                 price_raw: "44960.2".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.88967575".to_string(),
                 side: OrderSide::Sell,
                 seq: 32,
@@ -406,9 +407,9 @@ mod tests {
         orders.insert(
             33,
             CachedL3Order {
-                price: 44967.0,
+                price: dec!(44967.0),
                 price_raw: "44967.0".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "3.14392283".to_string(),
                 side: OrderSide::Sell,
                 seq: 33,
@@ -418,9 +419,9 @@ mod tests {
         orders.insert(
             34,
             CachedL3Order {
-                price: 44978.5,
+                price: dec!(44978.5),
                 price_raw: "44978.5".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.6778960".to_string(),
                 side: OrderSide::Sell,
                 seq: 34,
@@ -430,9 +431,9 @@ mod tests {
         orders.insert(
             35,
             CachedL3Order {
-                price: 44979.2,
+                price: dec!(44979.2),
                 price_raw: "44979.2".to_string(),
-                size: 0.0,
+                size: Decimal::ZERO,
                 size_raw: "0.35630000".to_string(),
                 side: OrderSide::Sell,
                 seq: 35,
@@ -457,9 +458,9 @@ mod tests {
         orders.insert(
             1_u64,
             CachedL3Order {
-                price: 42001.0,
+                price: dec!(42001.0),
                 price_raw: "42001.0".to_string(),
-                size: 0.5,
+                size: dec!(0.5),
                 size_raw: "0.50000000".to_string(),
                 side: OrderSide::Sell,
                 seq: 0,
@@ -469,9 +470,9 @@ mod tests {
         orders.insert(
             2_u64,
             CachedL3Order {
-                price: 41999.0,
+                price: dec!(41999.0),
                 price_raw: "41999.0".to_string(),
-                size: 0.3,
+                size: dec!(0.3),
                 size_raw: "0.30000000".to_string(),
                 side: OrderSide::Buy,
                 seq: 1,

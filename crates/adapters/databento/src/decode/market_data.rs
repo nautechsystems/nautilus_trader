@@ -83,7 +83,7 @@ fn fnv1a_mix(hash: &mut u64, bytes: &[u8]) {
 /// Derives a deterministic [`TradeId`] for Databento schemas that do not
 /// publish a native trade identifier (e.g. CMBP1, TCBBO).
 ///
-/// The hash combines the instrument, timestamps, price, size and aggressor
+/// The hash combines the instrument, timestamps, price, size, and aggressor
 /// side so that replayed data yields the same identifier across runs.
 pub(super) fn derive_cmbp_trade_id(
     instrument_id: InstrumentId,
@@ -172,6 +172,17 @@ pub fn decode_mbo_msg(
             return Ok((None, Some(trade)));
         }
 
+        return Ok((None, None));
+    }
+
+    // `Action::Fill` and `Action::None` never affect the book: a fill is
+    // attribution for a resting order, and its book impact arrives as the
+    // explicit Cancel/Modify records of the same match event (CME MDP3
+    // semantics as normalized by Databento). Decoding fills as deltas
+    // corrupts the book - an iceberg hidden-part fill carries an order ID
+    // that was never Added, so `BookAction::Update` materializes a phantom
+    // order which nothing ever deletes (observed as a crossed book on GLBX).
+    if matches!(msg.action(), Ok(dbn::Action::Fill | dbn::Action::None)) {
         return Ok((None, None));
     }
 

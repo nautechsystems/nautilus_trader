@@ -16,7 +16,6 @@
 import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
-from unittest.mock import patch
 
 import pytest
 from ibapi.const import NO_VALID_ID
@@ -85,23 +84,62 @@ def test_initialize_connection_params_uses_configured_client_id(ib_client):
     assert ib_client._eclient.clientId == 0
 
 
-def test_initialize_connection_params_randomizes_client_id_after_326(ib_client):
+def test_initialize_connection_params_reuses_configured_id_within_reuse_limit(ib_client):
+    # A single/occasional collision (within the reuse limit) retries the SAME configured id,
+    # giving the gateway time to release it and preserving order isolation.
     # Arrange
     ib_client._configured_client_id = 4321
     ib_client._client_id = 8765
-    ib_client._randomize_client_id_on_next_connect = True
+    ib_client._client_id_reuse_limit = 3
+    ib_client._fetch_all_open_orders = False
 
-    # Act
-    with patch(
-        "nautilus_trader.adapters.interactive_brokers.client.connection.secrets.randbelow",
-        side_effect=[3321, 7765, 1357],
-    ):
+    for collision_count in (1, 3):  # single, and at the reuse limit
+        ib_client._client_id_collision_count = collision_count
+
+        # Act
         ib_client._initialize_connection_params()
 
-    # Assert
-    assert ib_client._client_id == 2357
-    assert ib_client._eclient.clientId == 2357
-    assert ib_client._randomize_client_id_on_next_connect is False
+        # Assert: configured id reused, no order re-fetch (isolation preserved)
+        assert ib_client._client_id == 4321
+        assert ib_client._eclient.clientId == 4321
+        assert ib_client._fetch_all_open_orders is False
+
+
+def test_initialize_connection_params_increments_after_consistent_326(ib_client):
+    # A consistent collision (beyond the reuse limit) falls back to a deterministic id within the
+    # band and re-fetches open orders (order isolation is lost under the fallback id).
+    # Arrange
+    ib_client._configured_client_id = 4321
+    ib_client._client_id = 8765
+    ib_client._client_id_reuse_limit = 3
+    ib_client._max_client_id_offset = 4
+    ib_client._client_id_collision_count = 5
+    ib_client._fetch_all_open_orders = False
+
+    # Act
+    ib_client._initialize_connection_params()
+
+    # Assert: offset = min(5 - 3, 4) = 2 -> 4321 + 2 = 4323 (deterministic, never random)
+    assert ib_client._client_id == 4323
+    assert ib_client._eclient.clientId == 4323
+    assert ib_client._fetch_all_open_orders is True
+
+
+def test_initialize_connection_params_bounds_client_id_offset(ib_client):
+    # The deterministic offset is capped so the fallback stays within the allocated band.
+    # Arrange
+    ib_client._configured_client_id = 100
+    ib_client._client_id = 8765
+    ib_client._client_id_reuse_limit = 3
+    ib_client._max_client_id_offset = 4
+    ib_client._client_id_collision_count = 50
+
+    # Act
+    ib_client._initialize_connection_params()
+
+    # Assert: offset capped at _max_client_id_offset (4) -> 100 + 4 = 104
+    assert ib_client._client_id == 104
+    assert ib_client._eclient.clientId == 104
 
 
 # Test for successful reconnection

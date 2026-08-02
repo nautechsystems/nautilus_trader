@@ -58,11 +58,7 @@ impl VolumeWeightedAveragePrice {
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.py_update_raw(
-            (&bar.close).into(),
-            (&bar.volume).into(),
-            bar.ts_init.as_f64(),
-        );
+        self.handle_bar(bar);
     }
 
     #[pyo3(name = "reset")]

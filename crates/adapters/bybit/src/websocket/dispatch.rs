@@ -20,10 +20,14 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use ahash::AHashMap;
 use anyhow::Context;
+use arc_swap::ArcSwapOption;
 use dashmap::{DashMap, DashSet};
 use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
@@ -53,13 +57,14 @@ use super::{
 };
 use crate::{
     common::{
-        enums::BybitOrderStatus,
+        enums::{BybitOrderSide, BybitOrderStatus, BybitProductType},
         parse::{
-            make_bybit_symbol, parse_millis_timestamp, parse_price_with_precision,
-            parse_quantity_with_precision,
+            bybit_rejection_due_post_only, get_currency, make_bybit_symbol, parse_millis_timestamp,
+            parse_price_with_precision, parse_quantity_with_precision,
         },
     },
     http::error::is_bybit_ambiguous_order_error_code,
+    repay::RepayRequest,
 };
 
 const DEDUP_CAPACITY: usize = 10_000;
@@ -108,6 +113,12 @@ pub struct OrderStateSnapshot {
     pub trigger_price: Option<Price>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SpotRepayFill {
+    quantity: Quantity,
+    base_fee: Decimal,
+}
+
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
@@ -116,6 +127,8 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
+    spot_repay_fills: DashMap<ClientOrderId, SpotRepayFill>,
+    repay_tx: ArcSwapOption<tokio::sync::mpsc::UnboundedSender<RepayRequest>>,
     clearing: AtomicBool,
 }
 
@@ -128,6 +141,8 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
+            spot_repay_fills: DashMap::new(),
+            repay_tx: ArcSwapOption::empty(),
             clearing: AtomicBool::new(false),
         }
     }
@@ -159,6 +174,22 @@ impl WsDispatchState {
     fn insert_triggered(&self, cid: ClientOrderId) {
         self.evict_if_full(&self.triggered_orders);
         self.triggered_orders.insert(cid);
+    }
+
+    pub(crate) fn set_repay_sender(&self, tx: tokio::sync::mpsc::UnboundedSender<RepayRequest>) {
+        self.repay_tx.store(Some(Arc::new(tx)));
+    }
+
+    pub(crate) fn clear_repay_sender(&self) {
+        self.repay_tx.store(None);
+    }
+
+    fn enqueue_repay(&self, req: RepayRequest) {
+        if let Some(tx) = self.repay_tx.load_full()
+            && let Err(e) = tx.send(req)
+        {
+            log::warn!("Failed to enqueue spot borrow repayment: {e}");
+        }
     }
 }
 
@@ -459,7 +490,7 @@ fn dispatch_order_update(
                         client_order_id,
                         reason.as_str(),
                         ts_init,
-                        false,
+                        bybit_rejection_due_post_only(reason.as_str()),
                     );
                 }
             }
@@ -548,29 +579,53 @@ fn dispatch_order_update(
             BybitOrderStatus::Canceled
             | BybitOrderStatus::PartiallyFilledCanceled
             | BybitOrderStatus::Deactivated => {
-                ensure_accepted_emitted(
-                    client_order_id,
-                    account_id,
-                    venue_order_id,
-                    &identity,
-                    emitter,
-                    state,
-                    ts_init,
-                );
-                let canceled = OrderCanceled::new(
-                    emitter.trader_id(),
-                    identity.strategy_id,
-                    identity.instrument_id,
-                    client_order_id,
-                    UUID4::new(),
-                    ts_init,
-                    ts_init,
-                    false,
-                    Some(venue_order_id),
-                    Some(account_id),
-                );
-                cleanup_terminal(client_order_id, state);
-                emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                let filled_qty = parse_quantity_with_precision(
+                    &order.cum_exec_qty,
+                    instrument.size_precision(),
+                    "order.cumExecQty",
+                )
+                .unwrap_or_default();
+
+                // Bybit reports a post-only order that would take liquidity as
+                // Cancelled with rejectReason=EC_PostOnlyWillTakeLiquidity,
+                // not Rejected. Surface it as OrderRejected carrying due_post_only.
+                if filled_qty.is_zero()
+                    && bybit_rejection_due_post_only(order.reject_reason.as_str())
+                {
+                    cleanup_terminal(client_order_id, state);
+                    emitter.emit_order_rejected_event(
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        order.reject_reason.as_str(),
+                        ts_init,
+                        true,
+                    );
+                } else {
+                    ensure_accepted_emitted(
+                        client_order_id,
+                        account_id,
+                        venue_order_id,
+                        &identity,
+                        emitter,
+                        state,
+                        ts_init,
+                    );
+                    let canceled = OrderCanceled::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        UUID4::new(),
+                        ts_init,
+                        ts_init,
+                        false,
+                        Some(venue_order_id),
+                        Some(account_id),
+                    );
+                    cleanup_terminal(client_order_id, state);
+                    emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                }
             }
         }
     } else {
@@ -632,11 +687,21 @@ fn dispatch_execution_fill(
 
         match parse_order_filled(exec, instrument, &identity, emitter, account_id, ts_init) {
             Ok(filled) => {
+                let is_spot_buy =
+                    exec.category == BybitProductType::Spot && exec.side == BybitOrderSide::Buy;
+
+                if is_spot_buy {
+                    record_spot_repay_fill(client_order_id, &filled, instrument, state);
+                }
+
                 state.insert_filled(client_order_id);
                 state.triggered_orders.remove(&client_order_id);
                 emitter.send_order_event(OrderEventAny::Filled(filled));
 
                 if exec.leaves_qty == "0" {
+                    if is_spot_buy {
+                        enqueue_spot_repay(client_order_id, instrument, state);
+                    }
                     cleanup_terminal(client_order_id, state);
                 }
             }
@@ -730,7 +795,7 @@ fn parse_order_filled(
         .exec_fee
         .parse()
         .with_context(|| format!("failed to parse execFee='{}'", exec.exec_fee))?;
-    let commission_currency = instrument.quote_currency();
+    let commission_currency = get_currency(&exec.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
             "failed to create commission from execFee='{}'",
@@ -760,6 +825,7 @@ fn parse_order_filled(
         false,
         identity.venue_position_id,
         Some(commission),
+        None,
     ))
 }
 
@@ -1085,6 +1151,7 @@ fn cleanup_terminal(client_order_id: ClientOrderId, state: &WsDispatchState) {
     state.emitted_accepted.remove(&client_order_id);
     state.triggered_orders.remove(&client_order_id);
     state.filled_orders.remove(&client_order_id);
+    state.spot_repay_fills.remove(&client_order_id);
 }
 
 /// Tries to extract `orderLinkId` from the response data Value.
@@ -1101,6 +1168,55 @@ fn extract_venue_order_id_from_data(data: &serde_json::Value) -> Option<VenueOrd
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(VenueOrderId::new)
+}
+
+fn record_spot_repay_fill(
+    client_order_id: ClientOrderId,
+    filled: &OrderFilled,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+) {
+    let Some(base_currency) = instrument.base_currency() else {
+        return;
+    };
+
+    let base_fee = filled
+        .commission
+        .filter(|fee| fee.currency.code == base_currency.code)
+        .map_or(Decimal::ZERO, |fee| fee.as_decimal().max(Decimal::ZERO));
+    let fill = SpotRepayFill {
+        quantity: filled.last_qty,
+        base_fee,
+    };
+    state
+        .spot_repay_fills
+        .entry(client_order_id)
+        .and_modify(|total| {
+            total.quantity = total.quantity + fill.quantity;
+            total.base_fee += fill.base_fee;
+        })
+        .or_insert(fill);
+}
+
+/// Enqueues an auto-repay for a fully-filled SPOT BUY.
+fn enqueue_spot_repay(
+    client_order_id: ClientOrderId,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+) {
+    let Some(base_currency) = instrument.base_currency() else {
+        return;
+    };
+    let Some((_, fill)) = state.spot_repay_fills.remove(&client_order_id) else {
+        return;
+    };
+
+    state.enqueue_repay(RepayRequest {
+        coin: base_currency.code,
+        quantity: fill.quantity,
+        base_fee: fill.base_fee,
+        repayment_precision: fill.quantity.precision.max(base_currency.precision),
+    });
 }
 
 #[cfg(test)]
@@ -1126,11 +1242,11 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::{BybitOrderSide, BybitProductType},
-            parse::parse_linear_instrument,
+            enums::{BybitExecType, BybitOrderSide, BybitProductType},
+            parse::{parse_linear_instrument, parse_spot_instrument},
             testing::load_test_json,
         },
-        http::models::{BybitFeeRate, BybitInstrumentLinearResponse},
+        http::models::{BybitFeeRate, BybitInstrumentLinearResponse, BybitInstrumentSpotResponse},
         websocket::messages::{
             BybitWsAccountExecutionFastMsg, BybitWsMessage, BybitWsOrderResponse,
         },
@@ -1157,6 +1273,15 @@ mod tests {
         let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
         parse_linear_instrument(instrument, &fee_rate, ts, ts).unwrap()
+    }
+
+    fn spot_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.0006", "0.0001", Some("BTC"));
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        parse_spot_instrument(instrument, &fee_rate, ts, ts).unwrap()
     }
 
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {
@@ -1193,6 +1318,85 @@ mod tests {
             order_type: OrderType::Limit,
             venue_position_id: None,
         }
+    }
+
+    #[rstest]
+    #[case::base_fee("BTC", "0.0000015", "0.0000025", "0.000004")]
+    #[case::base_rebate("BTC", "-0.0000015", "-0.0000025", "0")]
+    #[case::quote_fee("USDT", "0.075", "0.125", "0")]
+    fn test_spot_repay_uses_accumulated_execution_quantity(
+        #[case] fee_currency: &str,
+        #[case] first_fee: &str,
+        #[case] second_fee: &str,
+        #[case] expected_base_fee: &str,
+    ) {
+        let instrument = spot_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, _rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+        let (repay_tx, mut repay_rx) = tokio::sync::mpsc::unbounded_channel();
+        state.set_repay_sender(repay_tx);
+
+        let json = load_test_json("ws_account_execution.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["category"] = serde_json::Value::String("spot".to_string());
+        value["data"][0]["symbol"] = serde_json::Value::String("BTCUSDT".to_string());
+        value["data"][0]["side"] = serde_json::Value::String("Buy".to_string());
+        value["data"][0]["orderType"] = serde_json::Value::String("Market".to_string());
+        value["data"][0]["orderQty"] = serde_json::Value::String("100".to_string());
+        value["data"][0]["execQty"] = serde_json::Value::String("0.0015".to_string());
+        value["data"][0]["leavesQty"] = serde_json::Value::String("0.0025".to_string());
+        value["data"][0]["execFee"] = serde_json::Value::String(first_fee.to_string());
+        value["data"][0]["feeCurrency"] = serde_json::Value::String(fee_currency.to_string());
+
+        let first: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(value.clone()).unwrap();
+        let client_order_id = ClientOrderId::new(first.data[0].order_link_id.as_str());
+        state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id: InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
+                order_type: OrderType::Market,
+                ..default_identity()
+            },
+        );
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(first),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+        assert!(repay_rx.try_recv().is_err());
+
+        value["data"][0]["execId"] = serde_json::Value::String("second-execution".to_string());
+        value["data"][0]["execQty"] = serde_json::Value::String("0.0025".to_string());
+        value["data"][0]["leavesQty"] = serde_json::Value::String("0".to_string());
+        value["data"][0]["execFee"] = serde_json::Value::String(second_fee.to_string());
+        let second: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(value).unwrap();
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(second),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        let repay = repay_rx.try_recv().expect("expected a repay request");
+        assert_eq!(repay.coin.as_str(), "BTC");
+        assert_eq!(repay.quantity, Quantity::from("0.0040"));
+        assert_eq!(
+            repay.base_fee,
+            expected_base_fee.parse::<Decimal>().unwrap()
+        );
+        assert_eq!(repay.repayment_precision, 8);
+        assert!(repay_rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -1238,6 +1442,48 @@ mod tests {
             matches!(event2, ExecutionEvent::Order(OrderEventAny::Canceled(_))),
             "Expected Canceled, found {event2:?}"
         );
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_post_only_cancel_emits_rejected() {
+        const BYBIT_POST_ONLY_REJECT_REASON: &str = "EC_PostOnlyWillTakeLiquidity";
+
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        // Bybit reports a post-only order that would take liquidity as
+        // orderStatus=Cancelled with rejectReason=EC_PostOnlyWillTakeLiquidity.
+        let json = load_test_json("ws_account_order.json");
+        let mut msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let order = msg.data.first_mut().expect("fixture has an order");
+        order.reject_reason = Ustr::from(BYBIT_POST_ONLY_REJECT_REASON);
+        order.cum_exec_qty = "0".to_string();
+        let cid = ClientOrderId::new(order.order_link_id.as_str());
+        state.order_identities.insert(cid, default_identity());
+
+        let ws_msg = BybitWsMessage::AccountOrder(msg);
+        dispatch_ws_message(
+            &ws_msg,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        let event = rx.try_recv().unwrap();
+        let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+            panic!("Expected Rejected, found {event:?}");
+        };
+        assert!(rejected.due_post_only);
+        assert_eq!(rejected.reason.as_str(), BYBIT_POST_ONLY_REJECT_REASON);
+        assert_eq!(rejected.client_order_id, cid);
+        assert!(rx.try_recv().is_err(), "expected only a single event");
     }
 
     #[rstest]
@@ -1317,6 +1563,32 @@ mod tests {
             }
             other => panic!("Expected Filled event, found {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn parse_order_filled_uses_payload_fee_currency() {
+        let instrument = linear_instrument();
+        let (emitter, _rx) = create_emitter();
+
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let mut exec = msg.data[0].clone();
+        exec.fee_currency = Ustr::from("BTC");
+
+        let filled = parse_order_filled(
+            &exec,
+            &instrument,
+            &default_identity(),
+            &emitter,
+            test_account_id(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let commission = filled.commission.expect("commission present");
+        assert_eq!(commission.currency.code.as_str(), "BTC");
     }
 
     #[rstest]
@@ -1495,6 +1767,48 @@ mod tests {
             event,
             ExecutionEvent::Report(ExecutionReport::Fill(_))
         ));
+    }
+
+    #[rstest]
+    fn test_dispatch_corporate_action_execution_emits_only_fill_report() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        let json = load_test_json("ws_account_execution_adl.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["execType"] = serde_json::Value::String("CorporateAction".to_string());
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(value).unwrap();
+        let execution = &msg.data[0];
+
+        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
+        assert!(execution.exec_type.is_exchange_generated());
+        assert!(execution.order_link_id.is_empty());
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(msg),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.client_order_id, None);
+                assert_eq!(
+                    report.venue_order_id,
+                    VenueOrderId::from("9aac161b-8ed6-450d-9cab-c5cc67c21785")
+                );
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

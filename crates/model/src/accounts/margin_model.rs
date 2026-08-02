@@ -163,8 +163,11 @@ impl MarginModel for StandardMarginModel {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let use_quote = use_quote_for_inverse.unwrap_or(false);
-        let notional = instrument.calculate_notional_value(quantity, price, Some(use_quote));
-        let margin = notional.as_decimal() * instrument.margin_init();
+        let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        let margin = notional
+            .as_decimal()
+            .checked_mul(instrument.margin_init())
+            .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
         let currency = margin_currency(instrument, use_quote)?;
         Money::from_decimal(margin, currency).map_err(Into::into)
     }
@@ -178,8 +181,11 @@ impl MarginModel for StandardMarginModel {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let use_quote = use_quote_for_inverse.unwrap_or(false);
-        let notional = instrument.calculate_notional_value(quantity, price, Some(use_quote));
-        let margin = notional.as_decimal() * instrument.margin_maint();
+        let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        let margin = notional
+            .as_decimal()
+            .checked_mul(instrument.margin_maint())
+            .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
         let currency = margin_currency(instrument, use_quote)?;
         Money::from_decimal(margin, currency).map_err(Into::into)
     }
@@ -214,9 +220,12 @@ impl MarginModel for LeveragedMarginModel {
             anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
         }
         let use_quote = use_quote_for_inverse.unwrap_or(false);
-        let notional = instrument.calculate_notional_value(quantity, price, Some(use_quote));
-        let adjusted = notional.as_decimal() / leverage;
-        let margin = adjusted * instrument.margin_init();
+        let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        let margin = notional
+            .as_decimal()
+            .checked_div(leverage)
+            .and_then(|adjusted| adjusted.checked_mul(instrument.margin_init()))
+            .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
         let currency = margin_currency(instrument, use_quote)?;
         Money::from_decimal(margin, currency).map_err(Into::into)
     }
@@ -233,9 +242,12 @@ impl MarginModel for LeveragedMarginModel {
             anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
         }
         let use_quote = use_quote_for_inverse.unwrap_or(false);
-        let notional = instrument.calculate_notional_value(quantity, price, Some(use_quote));
-        let adjusted = notional.as_decimal() / leverage;
-        let margin = adjusted * instrument.margin_maint();
+        let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        let margin = notional
+            .as_decimal()
+            .checked_div(leverage)
+            .and_then(|adjusted| adjusted.checked_mul(instrument.margin_maint()))
+            .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
         let currency = margin_currency(instrument, use_quote)?;
         Money::from_decimal(margin, currency).map_err(Into::into)
     }
@@ -308,6 +320,25 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_leveraged_margin_decimal_overflow_returns_error() {
+        let model = LeveragedMarginModel;
+        let instrument = ethusdt();
+
+        let result = model.calculate_initial_margin(
+            &instrument,
+            Quantity::from("1.000"),
+            Price::from("5000.00"),
+            Decimal::new(1, 28),
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "initial margin calculation overflow"
+        );
     }
 
     #[rstest]

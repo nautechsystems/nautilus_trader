@@ -34,7 +34,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::consts::DERIBIT,
+    common::consts::{DERIBIT, DERIBIT_CLIENT_ID, DERIBIT_VENUE},
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     data_types::{DeribitVolatilityIndex, register_deribit_custom_data},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
@@ -99,6 +99,9 @@ fn extract_deribit_exec_config(
 /// Returns an error if any bindings fail to register with the Python module.
 #[pymodule]
 pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(DERIBIT), DERIBIT)?;
+    m.add(stringify!(DERIBIT_CLIENT_ID), *DERIBIT_CLIENT_ID)?;
+    m.add(stringify!(DERIBIT_VENUE), *DERIBIT_VENUE)?;
     m.add_class::<super::http::client::DeribitHttpClient>()?;
     m.add_class::<super::websocket::client::DeribitWebSocketClient>()?;
     m.add_class::<crate::common::enums::DeribitCurrency>()?;

@@ -171,7 +171,7 @@ impl KrakenSpotHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let pylist = PyList::new(py, py_instruments?).unwrap();
+                let pylist = PyList::new(py, py_instruments?)?;
                 Ok(pylist.unbind())
             })
         })
@@ -234,7 +234,7 @@ impl KrakenSpotHttpClient {
                     .into_iter()
                     .map(|trade| trade.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_trades?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -283,7 +283,7 @@ impl KrakenSpotHttpClient {
             Python::attach(|py| {
                 let py_bars: PyResult<Vec<_>> =
                     bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
-                let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_bars?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -433,7 +433,7 @@ impl KrakenSpotHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -463,7 +463,7 @@ impl KrakenSpotHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -505,7 +505,7 @@ impl KrakenSpotHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -514,6 +514,15 @@ impl KrakenSpotHttpClient {
     /// Submits a new order to the Kraken Spot exchange.
     ///
     /// Returns the venue order ID on success. WebSocket handles all execution events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The instrument is not found in cache.
+    /// - The order type or time in force is not supported.
+    /// - The request fails.
+    /// - The order is rejected.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, trigger_type=None, trailing_offset=None, limit_offset=None, reduce_only=false, post_only=false, quote_quantity=false, display_qty=None, leverage=None, account_type=AccountType::Cash))]
     #[expect(clippy::too_many_arguments)]
@@ -586,6 +595,14 @@ impl KrakenSpotHttpClient {
     }
 
     /// Cancels an order on the Kraken Spot exchange.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - Neither client_order_id nor venue_order_id is provided.
+    /// - The request fails.
+    /// - The order cancellation is rejected.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -642,6 +659,13 @@ impl KrakenSpotHttpClient {
     ///
     /// Uses the AmendOrder endpoint which modifies the order in-place,
     /// keeping the same order ID and queue position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Neither `client_order_id` nor `venue_order_id` is provided.
+    /// - The instrument is not found in cache.
+    /// - The request fails.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
     #[expect(clippy::too_many_arguments)]
@@ -676,7 +700,8 @@ impl KrakenSpotHttpClient {
 }
 
 // Separate block to avoid pyo3_stub_gen trait bound issues with batch-order tuples.
-// Stub is maintained manually in nautilus_pyo3.pyi.
+// These methods are registered in DEFERRED_RUNTIME_METHODS until the generator
+// supports complex tuple parameter types.
 #[pymethods]
 impl KrakenSpotHttpClient {
     /// Submits multiple orders to the Kraken Spot exchange.

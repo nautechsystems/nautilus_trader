@@ -17,6 +17,8 @@
 
 use std::collections::BTreeMap;
 
+use rust_decimal::Decimal;
+
 use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide, OrderSideSpecified},
@@ -80,7 +82,7 @@ pub fn get_levels_for_price(
                 }
             }
         }
-        let level_size = Quantity::new(level.size(), size_precision);
+        let level_size = Quantity::from_raw(level.size_raw(), size_precision);
         result.push((level.price.value, level_size));
     }
 
@@ -89,15 +91,22 @@ pub fn get_levels_for_price(
 
 /// Calculates the estimated average price for a specified quantity from a set of
 /// order book levels.
+///
+/// # Panics
+///
+/// Panics if the calculated average price cannot be parsed as an `f64`.
 #[must_use]
 pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookLevel>) -> f64 {
     let mut cumulative_size_raw: QuantityRaw = 0;
-    let mut cumulative_value = 0.0;
+    let mut cumulative_size = Decimal::ZERO;
+    let mut cumulative_value = Decimal::ZERO;
 
     for (book_price, level) in levels {
         let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
+        let size_this_level_decimal = Quantity::raw_as_decimal(size_this_level);
         cumulative_size_raw += size_this_level;
-        cumulative_value += book_price.value.as_f64() * size_this_level as f64;
+        cumulative_size += size_this_level_decimal;
+        cumulative_value += book_price.value.as_decimal() * size_this_level_decimal;
 
         if cumulative_size_raw >= qty.raw {
             break;
@@ -107,7 +116,10 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookL
     if cumulative_size_raw == 0 {
         0.0
     } else {
-        cumulative_value / cumulative_size_raw as f64
+        (cumulative_value / cumulative_size)
+            .to_string()
+            .parse::<f64>()
+            .expect("Decimal average price must parse as f64")
     }
 }
 

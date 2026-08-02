@@ -39,6 +39,8 @@ pub enum BinanceSpotPublicWsMessage {
     DepthDiff(BinanceSpotDepthDiffMsg),
     /// Kline/candlestick stream event.
     Kline(BinanceSpotKlineMsg),
+    /// Rolling 24-hour ticker stream event.
+    Ticker(BinanceSpotTickerMsg),
     /// Server shutdown notice.
     ServerShutdown(BinanceSpotServerShutdownMsg),
     /// Raw JSON message (unhandled or unknown event).
@@ -279,6 +281,64 @@ pub struct BinanceSpotKlineData {
     /// Is this kline closed.
     #[serde(rename = "x")]
     pub is_closed: bool,
+    /// Quote asset volume.
+    #[serde(rename = "q")]
+    pub quote_volume: String,
+    /// Taker buy base asset volume.
+    #[serde(rename = "V")]
+    pub taker_buy_base_volume: String,
+    /// Taker buy quote asset volume.
+    #[serde(rename = "Q")]
+    pub taker_buy_quote_volume: String,
+}
+
+/// Rolling 24-hour ticker stream message.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceSpotTickerMsg {
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    #[serde(rename = "s")]
+    pub symbol: Ustr,
+    #[serde(rename = "p")]
+    pub price_change: String,
+    #[serde(rename = "P")]
+    pub price_change_percent: String,
+    #[serde(rename = "w")]
+    pub weighted_avg_price: String,
+    #[serde(rename = "x")]
+    pub prev_close_price: String,
+    #[serde(rename = "c")]
+    pub last_price: String,
+    #[serde(rename = "Q")]
+    pub last_qty: String,
+    #[serde(rename = "b")]
+    pub bid_price: String,
+    #[serde(rename = "B")]
+    pub bid_qty: String,
+    #[serde(rename = "a")]
+    pub ask_price: String,
+    #[serde(rename = "A")]
+    pub ask_qty: String,
+    #[serde(rename = "o")]
+    pub open_price: String,
+    #[serde(rename = "h")]
+    pub high_price: String,
+    #[serde(rename = "l")]
+    pub low_price: String,
+    #[serde(rename = "v")]
+    pub volume: String,
+    #[serde(rename = "q")]
+    pub quote_volume: String,
+    #[serde(rename = "O")]
+    pub open_time: i64,
+    #[serde(rename = "C")]
+    pub close_time: i64,
+    #[serde(rename = "F")]
+    pub first_trade_id: i64,
+    #[serde(rename = "L")]
+    pub last_trade_id: i64,
+    #[serde(rename = "n")]
+    pub num_trades: i64,
 }
 
 /// Server shutdown event sent before Binance disconnects clients.

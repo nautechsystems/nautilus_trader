@@ -36,6 +36,12 @@ pub enum LighterHttpError {
     /// Venue returned a structured error code.
     #[error("venue error {code}: {message}")]
     Venue { code: i64, message: String },
+    /// Historical pagination stopped before satisfying the request.
+    #[error("{data_type} history incomplete after {pages} pages")]
+    HistoryIncomplete {
+        data_type: &'static str,
+        pages: usize,
+    },
     /// Failed to parse a venue response.
     #[error("parse error: {0}")]
     Parse(String),
@@ -62,13 +68,15 @@ impl From<anyhow::Error> for LighterHttpError {
 /// Returns `true` if a request producing this error should be retried.
 ///
 /// Retryable shapes are transport-layer failures, server-side 5xx, and rate limits.
-/// Venue-semantic errors (4xx other than 429, `Venue`, `Parse`) are surfaced unchanged.
+/// Venue-semantic and incomplete-history errors are surfaced unchanged.
 #[must_use]
 pub fn should_retry_lighter_http_error(error: &LighterHttpError) -> bool {
     match error {
         LighterHttpError::Network(_) | LighterHttpError::RateLimit(_) => true,
         LighterHttpError::Http { status, .. } => *status >= 500,
-        LighterHttpError::Venue { .. } | LighterHttpError::Parse(_) => false,
+        LighterHttpError::Venue { .. }
+        | LighterHttpError::HistoryIncomplete { .. }
+        | LighterHttpError::Parse(_) => false,
     }
 }
 
@@ -92,6 +100,13 @@ mod tests {
     #[case::client_400_does_not_retry(LighterHttpError::Http { status: 400, body: "bad".into() }, false)]
     #[case::client_404_does_not_retry(LighterHttpError::Http { status: 404, body: "missing".into() }, false)]
     #[case::venue_does_not_retry(LighterHttpError::Venue { code: 20001, message: "invalid".into() }, false)]
+    #[case::incomplete_history_does_not_retry(
+        LighterHttpError::HistoryIncomplete {
+            data_type: "funding rate",
+            pages: 500,
+        },
+        false
+    )]
     #[case::parse_does_not_retry(LighterHttpError::Parse("bad json".into()), false)]
     fn test_should_retry_lighter_http_error(
         #[case] error: LighterHttpError,

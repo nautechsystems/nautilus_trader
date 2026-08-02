@@ -77,6 +77,6 @@ impl HyperliquidExecFactoryConfig {
     }
 
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(HyperliquidExecFactoryConfig).to_string()
     }
 }

@@ -28,7 +28,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -277,7 +277,7 @@ pub struct CoinbaseExecutionClient {
     http_client: CoinbaseHttpClient,
     ws_user: CoinbaseWebSocketClient,
     ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
     instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
     fill_dedup: Arc<Mutex<FillDedup>>,
     cumulative_state: Arc<Mutex<CumulativeStateMap>>,
@@ -359,7 +359,7 @@ impl CoinbaseExecutionClient {
             http_client,
             ws_user,
             ws_stream_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
             instruments_cache: Arc::new(AHashMap::new()),
             fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
             cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
@@ -381,16 +381,11 @@ impl CoinbaseExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|h| !h.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     // Returns true when the exec client was created with a Margin account,
@@ -2492,8 +2487,20 @@ mod tests {
         }
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
+        let next_update = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
+        process_user_order_update(
+            make_carrier(next_update),
+            None,
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
         let fills = drain_fill_reports(&mut rx);
-        assert_eq!(fills.len(), 1, "replay should be deduplicated");
+        assert_eq!(fills.len(), 2, "replay should be deduplicated");
+        assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
+        assert_eq!(fills[1].last_qty, Quantity::from("0.50000000"));
     }
 
     #[rstest]

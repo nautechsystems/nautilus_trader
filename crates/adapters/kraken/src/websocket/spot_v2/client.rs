@@ -1052,7 +1052,7 @@ impl KrakenSpotWebSocketClient {
     /// the per-client `l3_depths` map so the message handler and `resync_book_l3`
     /// can recover it without a separate side-table.
     ///
-    /// If the symbol is already subscribed, the existing depth must match — Kraken
+    /// If the symbol is already subscribed, the existing depth must match - Kraken
     /// streams one depth per `(symbol, channel)` pair, so a second subscribe with
     /// a different depth would corrupt the local runtime state. Mismatch returns
     /// an error without mutating state.
@@ -1154,7 +1154,7 @@ impl KrakenSpotWebSocketClient {
     /// never received; the next reconnect's payload replay will not include the
     /// topic (it was removed from `subscription_payloads`). Tightening this to
     /// roll-back-on-send-fail is a codebase-wide pattern change (every channel
-    /// has it) and is out of scope for this PR — the L3 path matches the
+    /// has it) and is out of scope for this PR - the L3 path matches the
     /// existing surface area rather than introducing an inconsistent improvement.
     ///
     /// # Errors
@@ -1226,7 +1226,7 @@ impl KrakenSpotWebSocketClient {
         let new_token = refresh_auth_token(&self.config).await?;
         *self.auth_token.write().await = Some(new_token.clone());
 
-        // Re-check after the await — the user may have unsubscribed while we
+        // Re-check after the await - the user may have unsubscribed while we
         // were minting a fresh token.
         if !self.subscriptions_contains(&key) {
             log::debug!(
@@ -1253,7 +1253,7 @@ impl KrakenSpotWebSocketClient {
         };
         self.send_command(&unsub).await?;
 
-        // Final check before issuing the resubscribe — same race window.
+        // Final check before issuing the resubscribe - same race window.
         if !self.subscriptions_contains(&key) {
             log::debug!("Skipping L3 resync resubscribe: cancelled before send, symbol={symbol}",);
             return Ok(());

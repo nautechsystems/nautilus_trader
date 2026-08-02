@@ -98,6 +98,8 @@ pub struct BinanceSpotWsTradingClient {
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
+    recv_window_ms: Option<u64>,
 }
 
 impl Debug for BinanceSpotWsTradingClient {
@@ -139,7 +141,23 @@ impl BinanceSpotWsTradingClient {
             request_id_counter: Arc::new(AtomicU64::new(1)),
             cancellation_token: CancellationToken::new(),
             transport_backend,
+            proxy_url: None,
+            recv_window_ms: None,
         }
+    }
+
+    /// Configures the proxy used by the WebSocket connection.
+    #[must_use]
+    pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
+        self.proxy_url = proxy_url;
+        self
+    }
+
+    /// Configures the receive window added to signed WebSocket API requests.
+    #[must_use]
+    pub const fn with_recv_window(mut self, recv_window_ms: Option<u64>) -> Self {
+        self.recv_window_ms = recv_window_ms;
+        self
     }
 
     /// Creates a new client with credentials sourced from environment variables.
@@ -234,7 +252,7 @@ impl BinanceSpotWsTradingClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: None,
+            proxy_url: self.proxy_url.clone(),
         };
 
         // Configure rate limits for order operations
@@ -272,7 +290,8 @@ impl BinanceSpotWsTradingClient {
         let signal = self.signal.clone();
         let credential = self.credential.clone();
         let mut handler =
-            BinanceSpotWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential);
+            BinanceSpotWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential)
+                .with_recv_window(self.recv_window_ms);
 
         self.cmd_tx
             .read()
@@ -465,5 +484,31 @@ impl BinanceSpotWsTradingClient {
             .await
             .send(cmd)
             .map_err(|e| BinanceWsApiError::HandlerUnavailable(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_operational_options_are_preserved() {
+        let client = BinanceSpotWsTradingClient::new(
+            None,
+            "api-key".to_string(),
+            "hmac-secret".to_string(),
+            None,
+            TransportBackend::default(),
+        )
+        .with_proxy(Some("http://proxy.example:8080".to_string()))
+        .with_recv_window(Some(45_000));
+
+        assert_eq!(
+            client.proxy_url.as_deref(),
+            Some("http://proxy.example:8080")
+        );
+        assert_eq!(client.recv_window_ms, Some(45_000));
     }
 }

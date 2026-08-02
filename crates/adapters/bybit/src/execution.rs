@@ -17,7 +17,7 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    UnixNanos,
     env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -65,8 +65,8 @@ use crate::{
             resolve_trigger_type,
         },
         parse::{
-            BybitTpSlParams, extract_raw_symbol, get_price_str, make_hedge_venue_position_id,
-            nanos_to_millis, parse_bybit_tp_sl_params,
+            BybitTpSlParams, bybit_rejection_due_post_only, extract_raw_symbol, get_price_str,
+            make_hedge_venue_position_id, nanos_to_millis, parse_bybit_tp_sl_params,
             resolve_position_idx as resolve_bybit_position_idx, spot_leverage, spot_market_unit,
             trigger_direction,
         },
@@ -103,7 +103,8 @@ pub struct BybitExecutionClient {
     ws_trade: BybitWebSocketClient,
     ws_private_stream_handle: Option<JoinHandle<()>>,
     ws_trade_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    repay_handle: Option<JoinHandle<()>>,
+    pending_tasks: TaskHandles,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     dispatch_state: Arc<WsDispatchState>,
 }
@@ -131,7 +132,7 @@ impl BybitExecutionClient {
             config.proxy_url.clone(),
         )?;
 
-        let ws_private = BybitWebSocketClient::new_private(
+        let mut ws_private = BybitWebSocketClient::new_private(
             config.environment,
             Some(api_key.clone()),
             Some(api_secret.clone()),
@@ -141,7 +142,11 @@ impl BybitExecutionClient {
             config.proxy_url.clone(),
         );
 
-        let ws_trade = BybitWebSocketClient::new_trade(
+        if let Some(secs) = config.auth_timeout_secs {
+            ws_private.set_auth_wait_timeout(Duration::from_secs(secs));
+        }
+
+        let mut ws_trade = BybitWebSocketClient::new_trade(
             config.environment,
             Some(api_key),
             Some(api_secret),
@@ -150,6 +155,10 @@ impl BybitExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
+
+        if let Some(secs) = config.auth_timeout_secs {
+            ws_trade.set_auth_wait_timeout(Duration::from_secs(secs));
+        }
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -170,7 +179,8 @@ impl BybitExecutionClient {
             ws_trade,
             ws_private_stream_handle: None,
             ws_trade_stream_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            repay_handle: None,
+            pending_tasks: TaskHandles::default(),
             instruments_cache: Arc::new(AHashMap::new()),
             dispatch_state: Arc::new(WsDispatchState::default()),
         })
@@ -210,16 +220,11 @@ impl BybitExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -684,6 +689,18 @@ impl ExecutionClient for BybitExecutionClient {
             }
         }
 
+        if self.config.auto_repay_spot_borrows && self.repay_handle.is_none() {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            self.dispatch_state.set_repay_sender(tx);
+
+            let http_client = self.http_client.clone();
+            let clock = self.clock;
+            let handle = get_runtime().spawn(async move {
+                crate::repay::run_spot_repay_consumer(rx, http_client, clock).await;
+            });
+            self.repay_handle = Some(handle);
+        }
+
         self.ws_private.subscribe_orders().await?;
         self.ws_private.subscribe_executions().await?;
         self.ws_private.subscribe_positions().await?;
@@ -733,6 +750,12 @@ impl ExecutionClient for BybitExecutionClient {
         }
 
         if let Some(handle) = self.ws_trade_stream_handle.take() {
+            handle.abort();
+        }
+
+        self.dispatch_state.clear_repay_sender();
+
+        if let Some(handle) = self.repay_handle.take() {
             handle.abort();
         }
 
@@ -864,6 +887,13 @@ impl ExecutionClient for BybitExecutionClient {
         if let Some(handle) = self.ws_trade_stream_handle.take() {
             handle.abort();
         }
+
+        self.dispatch_state.clear_repay_sender();
+
+        if let Some(handle) = self.repay_handle.take() {
+            handle.abort();
+        }
+
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
@@ -1256,7 +1286,7 @@ impl ExecutionClient for BybitExecutionClient {
                             client_order_id,
                             reason,
                             ts_event,
-                            false,
+                            bybit_rejection_due_post_only(reason),
                         );
                         anyhow::bail!("submit order rejected: {reason}");
                     }
@@ -1559,7 +1589,7 @@ impl ExecutionClient for BybitExecutionClient {
                                 cid,
                                 reason,
                                 ts_event,
-                                false,
+                                bybit_rejection_due_post_only(reason),
                             );
                             continue;
                         }
@@ -2174,13 +2204,7 @@ mod tests {
 
     async fn wait_for_spawned_tasks(client: &BybitExecutionClient) {
         for _ in 0..20 {
-            if client
-                .pending_tasks
-                .lock()
-                .expect(MUTEX_POISONED)
-                .iter()
-                .all(tokio::task::JoinHandle::is_finished)
-            {
+            if client.pending_tasks.all_finished() {
                 return;
             }
 

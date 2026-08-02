@@ -30,7 +30,7 @@ through derived streams (mark/index/funding/bars), then the private user
 streams (live order / fill) at the end.
 
 | Bench                           | Median  | Throughput |
-|---------------------------------|---------|------------|
+| ------------------------------- | ------- | ---------- |
 | `inbound_pipeline/book_deltas`  | 4.01 µs | 250 k/s    |
 | `inbound_pipeline/book_depth10` | 4.21 µs | 237 k/s    |
 | `inbound_pipeline/quotes`       | 852 ns  | 1.17 M/s   |
@@ -58,7 +58,7 @@ emit the production WS payload (`OKXWsRequest<WsPostOrderParams>`,
 `WsCancelOrderParams`, `WsAmendOrderParams`).
 
 | Bench                              | Median  | Throughput |
-|------------------------------------|---------|------------|
+| ---------------------------------- | ------- | ---------- |
 | `exec_pipeline/submit_market`      | 145 ns  | 6.90 M/s   |
 | `exec_pipeline/submit_limit`       | 152 ns  | 6.58 M/s   |
 | `exec_pipeline/submit_stop_market` | 167 ns  | 5.99 M/s   |
@@ -72,7 +72,7 @@ HMAC-SHA256 over `(timestamp + method + path + body)`, base64-encoded.
 Only the HTTP path signs; the WS exec path does not.
 
 | Bench              | Median |
-|--------------------|--------|
+| ------------------ | ------ |
 | `sign_get_no_body` | 266 ns |
 | `sign_order`       | 339 ns |
 | `sign_order_algo`  | 394 ns |
@@ -89,7 +89,7 @@ exercised here; numbers below therefore exclude the per-event construction
 cost the tracked path adds.
 
 | Bench                      | Median  | Throughput |
-|----------------------------|---------|------------|
+| -------------------------- | ------- | ---------- |
 | `dispatch/fill`            | 16.7 µs | 59.9 k/s   |
 | `dispatch/status_accepted` | 11.9 µs | 84.1 k/s   |
 | `dispatch/status_canceled` | 11.7 µs | 85.2 k/s   |
@@ -101,7 +101,7 @@ Diagnostic benches that decompose the pipeline numbers above. Use these to
 localise where time goes when a pipeline bench regresses.
 
 | Bench                        | Median  |
-|------------------------------|---------|
+| ---------------------------- | ------- |
 | `decode_only/trade`          | 614 ns  |
 | `decode_only/book`           | 3.26 µs |
 | `parse_only/trade`           | 48.3 ns |

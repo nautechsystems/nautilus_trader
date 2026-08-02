@@ -124,8 +124,8 @@ impl DataActor for EmaCross {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.ema_fast.handle_quote(quote);
-        self.ema_slow.handle_quote(quote);
+        self.ema_fast.handle_quote(quote)?;
+        self.ema_slow.handle_quote(quote)?;
 
         if !self.ema_fast.initialized() || !self.ema_slow.initialized() {
             return Ok(());

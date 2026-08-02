@@ -5,7 +5,7 @@ Nautilus provides two Rust APIs for backtesting: `BacktestEngine`
 guide covers both.
 
 For background on backtesting concepts, fill models, and matching engine
-behavior, see the [Backtesting](../concepts/backtesting.md) concept guide.
+behavior, see the [Backtesting](../concepts/backtesting/) concept guide.
 For project setup and feature flags, see the
 [Rust](../concepts/rust.md#project-setup) concept guide.
 
@@ -17,11 +17,11 @@ Add the following to your `Cargo.toml`. The `streaming` and
 
 ```toml
 [dependencies]
-nautilus-backtest = { version = "0.59", features = ["streaming"] }
-nautilus-execution = "0.59"
-nautilus-model = { version = "0.59", features = ["stubs"] }
-nautilus-persistence = "0.59"
-nautilus-trading = { version = "0.59", features = ["examples"] }
+nautilus-backtest = { version = "0.60", features = ["streaming"] }
+nautilus-execution = "0.60"
+nautilus-model = { version = "0.60", features = ["stubs"] }
+nautilus-persistence = "0.60"
+nautilus-trading = { version = "0.60", features = ["examples"] }
 
 ahash = "0.8"
 anyhow = "1"

@@ -31,6 +31,17 @@ fn bench_orderbook_add() {
     black_box(());
 }
 
+fn bench_orderbook_readd() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let order = BookOrder::new(OrderSide::Buy, Price::from("100.0"), Quantity::from(100), 1);
+    book.add(order, 0, 1, 1.into());
+
+    let moved = BookOrder::new(OrderSide::Buy, Price::from("101.0"), Quantity::from(2), 1);
+    book.add(moved, 0, 2, 2.into());
+    black_box(());
+}
+
 fn bench_orderbook_update() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
@@ -84,6 +95,7 @@ fn bench_orderbook_apply_deltas() {
 
 iai::main!(
     bench_orderbook_add,
+    bench_orderbook_readd,
     bench_orderbook_update,
     bench_orderbook_delete,
     bench_orderbook_apply_deltas,

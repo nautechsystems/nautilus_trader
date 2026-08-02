@@ -71,9 +71,10 @@ impl Indicator for AroonOscillator {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        let price = quote.extract_price(PriceType::Mid).into();
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        let price = quote.extract_price(PriceType::Mid)?.into();
         self.update_raw(price, price);
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {

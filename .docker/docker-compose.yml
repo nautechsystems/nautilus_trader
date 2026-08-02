@@ -1,7 +1,7 @@
 services:
   postgres:
     container_name: nautilus-database
-    image: postgres
+    image: public.ecr.aws/docker/library/postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nautilus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
@@ -35,7 +35,7 @@ services:
 
   redis:
     container_name: nautilus-redis
-    image: redis
+    image: public.ecr.aws/docker/library/redis
     security_opt:
       - no-new-privileges:true
     ports:

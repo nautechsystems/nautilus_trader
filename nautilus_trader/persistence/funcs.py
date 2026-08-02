@@ -106,25 +106,26 @@ def parse_filters_expr(s: str | None) -> Expression | None:
     """
     Parse a pyarrow.dataset filter expression from a string safely.
 
-    >>> parse_filters_expr('field("Currency") == "CHF"')
-    <pyarrow.dataset.Expression (Currency == "CHF")>
+    >>> str(parse_filters_expr('field("Currency") == "CHF"'))
+    '(Currency == "CHF")'
 
     >>> # Supports numeric comparisons and multi-character operators
-    >>> parse_filters_expr('field("Price") >= 150.50')
-    <pyarrow.dataset.Expression (Price >= 150.5)>
+    >>> str(parse_filters_expr('field("Price") >= 150.50'))
+    '(Price >= 150.5)'
 
     >>> # Supports logical AND/OR with parentheses
-    >>> parse_filters_expr('(field("Qty") > 0) & (field("Symbol") != "BTC")')
-    <pyarrow.dataset.Expression ((Qty > 0) & (Symbol != "BTC"))>
+    >>> str(parse_filters_expr('(field("Qty") > 0) & (field("Symbol") != "BTC")'))
+    '((Qty > 0) and (Symbol != "BTC"))'
 
     >>> # Returns None for empty input
     >>> parse_filters_expr(None)
 
     >>> # Fails on unauthorized Python code
-    >>> parse_filters_expr("print('hello')")
-    Traceback (most recent call last):
-    ...
-    ValueError: Filter expression 'print('hello')' is not allowed...
+    >>> try:
+    ...     parse_filters_expr("print('hello')")
+    ... except ValueError as exc:
+    ...     "is not allowed" in str(exc)
+    True
 
     """
     if not s:

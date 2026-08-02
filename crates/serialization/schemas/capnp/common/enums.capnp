@@ -85,6 +85,7 @@ enum OrderStatus {
     pendingCancel @11;
     partiallyFilled @12;
     filled @13;
+    voided @14;
 }
 
 enum TimeInForce {

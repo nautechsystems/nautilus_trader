@@ -20,6 +20,7 @@ from nautilus_trader.common import DataActorConfig
 from nautilus_trader.common import FileWriterConfig
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import LoggerConfig
+from nautilus_trader.common import LogLevel
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.model import ActorId
 
@@ -119,6 +120,31 @@ def test_data_actor_config_accepts_explicit_kwargs():
     )
 
     assert isinstance(config, DataActorConfig)
+    assert config.actor_id == ActorId("ACTOR-001")
+    assert config.log_events is False
+    assert config.log_commands is True
+
+
+def test_data_actor_config_defaults_are_readable():
+    config = DataActorConfig()
+
+    assert config.actor_id is None
+    assert config.log_events is True
+    assert config.log_commands is True
+
+
+def test_data_actor_config_fields_are_writable_from_python_subclasses():
+    class PythonDataActorConfig(DataActorConfig):
+        def __init__(self):
+            self.actor_id = ActorId("ACTOR-002")
+            self.log_events = False
+            self.log_commands = False
+
+    config = PythonDataActorConfig()
+
+    assert config.actor_id == ActorId("ACTOR-002")
+    assert config.log_events is False
+    assert config.log_commands is False
 
 
 def test_file_writer_config_construction(tmp_path):
@@ -129,7 +155,10 @@ def test_file_writer_config_construction(tmp_path):
         file_rotate=(1, 2),
     )
 
-    assert type(config).__name__ == "FileWriterConfig"
+    assert config.directory == str(tmp_path)
+    assert config.file_name == "common.log"
+    assert config.file_format == "json"
+    assert config.file_rotate == (1, 2)
 
 
 def test_importable_actor_config_fields():
@@ -150,12 +179,43 @@ def test_logger_config_from_spec():
     assert type(config).__name__ == "LoggerConfig"
 
 
+def test_logger_config_readback(tmp_path):
+    file_config = FileWriterConfig(directory=str(tmp_path), file_name="events.log")
+    config = LoggerConfig(
+        stdout_level=LogLevel.DEBUG,
+        fileout_level=LogLevel.ERROR,
+        component_levels={"RiskEngine": "WARNING"},
+        is_colored=False,
+        print_config=True,
+        bypass_logging=True,
+        log_components_only=True,
+        file_config=file_config,
+        clear_log_file=True,
+        fileout_sync_on_flush=False,
+        buffered_stdout=True,
+    )
+
+    assert config.stdout_level == LogLevel.DEBUG
+    assert config.fileout_level == LogLevel.ERROR
+    assert config.component_levels == {"RiskEngine": "WARN"}
+    assert config.is_colored is False
+    assert config.print_config is True
+    assert config.bypass_logging is True
+    assert config.log_components_only is True
+    assert config.file_config is not None
+    assert config.file_config.file_name == "events.log"
+    assert config.clear_log_file is True
+    assert config.fileout_sync_on_flush is False
+    assert config.buffered_stdout is True
+
+
 def test_message_bus_config_defaults():
     config = MessageBusConfig()
 
     assert config.timestamps_as_iso8601 is False
     assert config.buffer_interval_ms is None
     assert config.autotrim_mins is None
+    assert config.autotrim_maxlen is None
     assert config.use_trader_prefix is True
     assert config.use_trader_id is True
     assert config.use_instance_id is False
@@ -171,6 +231,7 @@ def test_message_bus_config_accepts_explicit_kwargs():
         timestamps_as_iso8601=True,
         buffer_interval_ms=7,
         autotrim_mins=8,
+        autotrim_maxlen=1_000,
         use_trader_prefix=False,
         use_trader_id=False,
         use_instance_id=True,
@@ -184,6 +245,7 @@ def test_message_bus_config_accepts_explicit_kwargs():
     assert config.timestamps_as_iso8601 is True
     assert config.buffer_interval_ms == 7
     assert config.autotrim_mins == 8
+    assert config.autotrim_maxlen == 1_000
     assert config.use_trader_prefix is False
     assert config.use_trader_id is False
     assert config.use_instance_id is True

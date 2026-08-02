@@ -50,8 +50,8 @@ fn coerce_bar_interval_type(value: &Py<PyAny>) -> PyResult<BarIntervalType> {
     })
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl DataEngineConfig {
     /// Configuration for `DataEngine` instances.
     #[new]
@@ -143,6 +143,15 @@ impl DataEngineConfig {
     }
 
     #[getter]
+    #[pyo3(name = "time_bars_origin_offset")]
+    fn py_time_bars_origin_offset(&self) -> HashMap<BarAggregation, u64> {
+        self.time_bars_origin_offset
+            .iter()
+            .map(|(aggregation, offset)| (*aggregation, offset.as_nanos() as u64))
+            .collect()
+    }
+
+    #[getter]
     #[pyo3(name = "validate_data_sequence")]
     const fn py_validate_data_sequence(&self) -> bool {
         self.validate_data_sequence
@@ -170,6 +179,12 @@ impl DataEngineConfig {
     #[pyo3(name = "disable_historical_cache")]
     const fn py_disable_historical_cache(&self) -> bool {
         self.disable_historical_cache
+    }
+
+    #[getter]
+    #[pyo3(name = "external_clients")]
+    fn py_external_clients(&self) -> Option<Vec<ClientId>> {
+        self.external_clients.clone()
     }
 
     #[getter]

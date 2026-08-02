@@ -1410,6 +1410,7 @@ impl DydxDataClient {
                     .status
                     .as_ref()
                     .is_none_or(|s| matches!(s, crate::common::enums::DydxMarketStatus::Active));
+
                 if ctx.instrument_cache.get_by_market(ticker).is_some() {
                     ctx.seen_tickers.insert(ticker_ustr);
                 } else if is_active {

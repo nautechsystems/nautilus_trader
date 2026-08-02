@@ -54,7 +54,7 @@ use crate::{
 pub struct TrailingStopMarketOrder {
     core: OrderCore,
     pub activation_price: Option<Price>,
-    pub trigger_price: Price,
+    pub trigger_price: Option<Price>,
     pub trigger_type: TriggerType,
     pub trailing_offset: Decimal,
     pub trailing_offset_type: TrailingOffsetType,
@@ -75,6 +75,7 @@ impl TrailingStopMarketOrder {
     /// - The `quantity` is not positive.
     /// - The `display_qty` (when provided) exceeds `quantity`.
     /// - The `time_in_force` is `GTD` **and** `expire_time` is `None` or zero.
+    /// - The order metadata violates an [`OrderInitialized::new_checked`] invariant.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -83,7 +84,8 @@ impl TrailingStopMarketOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
-        trigger_price: Price,
+        activation_price: Option<Price>,
+        trigger_price: Option<Price>,
         trigger_type: TriggerType,
         trailing_offset: Decimal,
         trailing_offset_type: TrailingOffsetType,
@@ -109,7 +111,7 @@ impl TrailingStopMarketOrder {
         check_display_qty(display_qty, quantity)?;
         check_time_in_force(time_in_force, expire_time)?;
 
-        let init_order = OrderInitialized::new(
+        let init_order = OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -126,7 +128,8 @@ impl TrailingStopMarketOrder {
             ts_init,
             ts_init,
             /*price=*/ None,
-            Some(trigger_price),
+            activation_price,
+            trigger_price,
             Some(trigger_type),
             /*limit_offset=*/ None,
             Some(trailing_offset),
@@ -143,11 +146,11 @@ impl TrailingStopMarketOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        );
+        )?;
 
         Ok(Self {
             core: OrderCore::new(init_order),
-            activation_price: None,
+            activation_price,
             trigger_price,
             trigger_type,
             trailing_offset,
@@ -175,6 +178,7 @@ impl TrailingStopMarketOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
+        activation_price: Option<Price>,
         trigger_price: Price,
         trigger_type: TriggerType,
         trailing_offset: Decimal,
@@ -204,7 +208,8 @@ impl TrailingStopMarketOrder {
             client_order_id,
             order_side,
             quantity,
-            trigger_price,
+            activation_price,
+            Some(trigger_price),
             trigger_type,
             trailing_offset,
             trailing_offset_type,
@@ -333,7 +338,7 @@ impl Order for TrailingStopMarketOrder {
     }
 
     fn trigger_price(&self) -> Option<Price> {
-        Some(self.trigger_price)
+        self.trigger_price
     }
 
     fn activation_price(&self) -> Option<Price> {
@@ -424,6 +429,10 @@ impl Order for TrailingStopMarketOrder {
         self.filled_qty
     }
 
+    fn voided_qty(&self) -> Quantity {
+        self.voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -432,11 +441,11 @@ impl Order for TrailingStopMarketOrder {
         self.overfill_qty
     }
 
-    fn avg_px(&self) -> Option<f64> {
+    fn avg_px(&self) -> Option<Decimal> {
         self.avg_px
     }
 
-    fn slippage(&self) -> Option<f64> {
+    fn slippage(&self) -> Option<Decimal> {
         self.slippage
     }
 
@@ -500,8 +509,8 @@ impl Order for TrailingStopMarketOrder {
             self.ts_triggered = ts_event;
         }
 
-        if was_filled {
-            self.core.set_slippage(self.trigger_price);
+        if was_filled && let Some(trigger_price) = self.trigger_price {
+            self.core.set_slippage(trigger_price);
         }
 
         Ok(())
@@ -510,8 +519,8 @@ impl Order for TrailingStopMarketOrder {
     fn update(&mut self, event: &OrderUpdated) {
         assert!(event.price.is_none(), "{}", OrderError::InvalidOrderEvent);
 
-        if let Some(trigger_price) = event.trigger_price {
-            self.trigger_price = trigger_price;
+        if event.trigger_price.is_some() {
+            self.trigger_price = event.trigger_price;
         }
 
         self.quantity = event.quantity;
@@ -586,14 +595,6 @@ impl TryFrom<OrderInitialized> for TrailingStopMarketOrder {
     type Error = OrderError;
 
     fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
-        let trigger_price =
-            event
-                .trigger_price
-                .ok_or_else(|| CorrectnessError::PredicateViolation {
-                    message:
-                        "`trigger_price` is required for `TrailingStopMarketOrder` initialization"
-                            .to_string(),
-                })?;
         let trigger_type =
             event
                 .trigger_type
@@ -623,7 +624,8 @@ impl TryFrom<OrderInitialized> for TrailingStopMarketOrder {
             event.client_order_id,
             event.order_side,
             event.quantity,
-            trigger_price,
+            event.activation_price,
+            event.trigger_price,
             trigger_type,
             trailing_offset,
             trailing_offset_type,
@@ -784,6 +786,38 @@ mod tests {
     }
 
     #[rstest]
+    fn test_trailing_stop_market_order_rejects_invalid_update_atomically() {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .trigger_price(Price::new(100.0, 2))
+            .trailing_offset(Decimal::new(5, 1))
+            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .build();
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+        let state = (
+            accepted_order.status(),
+            accepted_order.previous_status(),
+            accepted_order.ts_last(),
+            accepted_order.events().len(),
+        );
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            price: Some(Price::new(95.0, 2)),
+            ..Default::default()
+        };
+
+        let result = accepted_order.apply(OrderEventAny::Updated(event));
+
+        assert!(matches!(result, Err(OrderError::InvalidOrderEvent)));
+        assert_eq!(accepted_order.status(), state.0);
+        assert_eq!(accepted_order.previous_status(), state.1);
+        assert_eq!(accepted_order.ts_last(), state.2);
+        assert_eq!(accepted_order.events().len(), state.3);
+    }
+
+    #[rstest]
     fn test_trailing_stop_market_order_expire_time() {
         // Create a new TrailingStopMarketOrder with an expire time
         let expire_time = UnixNanos::from(1_234_567_890);
@@ -840,10 +874,7 @@ mod tests {
         assert_eq!(order.quantity(), order_initialized.quantity);
 
         // Assert specific fields for TrailingStopMarketOrder
-        assert_eq!(
-            order.trigger_price,
-            order_initialized.trigger_price.unwrap()
-        );
+        assert_eq!(order.trigger_price, order_initialized.trigger_price);
         assert_eq!(order.trigger_type, order_initialized.trigger_type.unwrap());
         assert_eq!(
             order.trailing_offset,
@@ -853,6 +884,43 @@ mod tests {
             order.trailing_offset_type,
             order_initialized.trailing_offset_type.unwrap()
         );
+    }
+
+    #[rstest]
+    fn test_activation_price_round_trips_through_event(audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .activation_price(Price::from("0.68500"))
+            .trigger_price(Price::from("0.68000"))
+            .trailing_offset(dec!(10))
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.activation_price(), Some(Price::from("0.68500")));
+
+        // The seed event carries `activation_price`, so a replay preserves it
+        let init = order.init_event().clone();
+        assert_eq!(init.activation_price, Some(Price::from("0.68500")));
+
+        let rebuilt: TrailingStopMarketOrder = init.try_into().unwrap();
+        assert_eq!(rebuilt.activation_price, Some(Price::from("0.68500")));
+        assert_eq!(rebuilt.trigger_price, Some(Price::from("0.68000")));
+    }
+
+    #[rstest]
+    fn test_reconstruct_with_trigger_and_activation_none() {
+        let init = OrderInitializedSpec::builder()
+            .order_type(OrderType::TrailingStopMarket)
+            .trigger_type(TriggerType::Default)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+
+        let order: TrailingStopMarketOrder = init.try_into().unwrap();
+
+        assert_eq!(order.trigger_price(), None);
+        assert_eq!(order.activation_price(), None);
     }
 
     #[rstest]
@@ -890,16 +958,7 @@ mod tests {
             .apply(OrderEventAny::Filled(order_filled_event))
             .unwrap();
 
-        // The slippage calculation should be triggered by the filled event
-        assert!(accepted_order.slippage().is_some());
-
-        // We can also check the actual slippage value
-        let expected_slippage = 98.50 - 90.0; // For buy order: execution price - trigger price
-        let actual_slippage = accepted_order.slippage().unwrap();
-
-        assert!(
-            (actual_slippage - expected_slippage).abs() < 0.001,
-            "Expected slippage around {expected_slippage}, was {actual_slippage}"
-        );
+        // The fill triggers the slippage calculation: 98.50 - 90.0 for a buy order
+        assert_eq!(accepted_order.slippage(), Some(dec!(8.50)));
     }
 }

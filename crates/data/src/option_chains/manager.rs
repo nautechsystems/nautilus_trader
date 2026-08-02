@@ -67,7 +67,7 @@ pub struct OptionChainManager {
     msgbus_priority: u32,
     /// Whether the first ATM price has been received and the active set bootstrapped.
     bootstrapped: bool,
-    /// Shared deferred command queue — the `DataEngine` drains this on each data tick.
+    /// Shared deferred command queue - the `DataEngine` drains this on each data tick.
     deferred_cmd_queue: DeferredCommandQueue,
     /// Clock reference for constructing command timestamps.
     clock: Rc<RefCell<dyn Clock>>,
@@ -111,7 +111,7 @@ impl OptionChainManager {
             OptionChainAggregator::new(series_id, cmd.strike_range.clone(), tracker, instruments);
 
         // Initial active set for msgbus handlers (subset of all instruments).
-        // When ATM is unknown (ATM-based ranges), this is empty — deferred until bootstrap.
+        // When ATM is unknown (ATM-based ranges), this is empty - deferred until bootstrap.
         let active_instrument_ids = aggregator.instrument_ids();
         let all_instrument_ids = aggregator.all_instrument_ids();
         // If active set is already populated (Fixed range or ATM provided), we're bootstrapped
@@ -148,7 +148,7 @@ impl OptionChainManager {
         );
 
         // Forward wire-level subscriptions for the active set.
-        // When ATM is unknown, active set is empty — deferred until bootstrap.
+        // When ATM is unknown, active set is empty - deferred until bootstrap.
         Self::forward_client_subscriptions(
             client,
             &active_instrument_ids,
@@ -485,7 +485,7 @@ impl OptionChainManager {
             return;
         }
 
-        // First ATM received — compute active set and register handlers
+        // First ATM received - compute active set and register handlers
         let active_ids = self.aggregator.recompute_active_set();
         self.register_handlers_for_instruments_bulk(&active_ids);
 
@@ -867,7 +867,7 @@ mod tests {
     fn test_manager_handle_quote_no_instrument() {
         let (mut manager, _queue) = make_manager();
 
-        // Should not panic — quote for unknown instrument
+        // Should not panic - quote for unknown instrument
         let quote = QuoteTick::new(
             InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             Price::from("100.00"),
@@ -883,7 +883,7 @@ mod tests {
     #[rstest]
     fn test_manager_publish_slice_empty() {
         let (mut manager, _queue) = make_manager();
-        // Should not panic — empty slice skips publish
+        // Should not panic - empty slice skips publish
         manager.publish_slice(UnixNanos::from(100u64));
     }
 
@@ -891,7 +891,7 @@ mod tests {
     fn test_manager_teardown_no_handlers() {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let (mut manager, _queue) = make_manager();
-        // Should not panic — no handlers to unregister
+        // Should not panic - no handlers to unregister
         manager.teardown(&clock);
         assert!(manager.quote_handlers.is_empty());
     }
@@ -955,7 +955,7 @@ mod tests {
         // Initially no instruments active (ATM unknown, deferred)
         assert_eq!(manager.aggregator.instrument_ids().len(), 0);
 
-        // Feed ATM near 50000 via greeks — bootstrap computes active set (3 strikes × 2 = 6)
+        // Feed ATM near 50000 via greeks - bootstrap computes active set (3 strikes × 2 = 6)
         bootstrap_via_greeks(&mut manager);
         assert!(manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 6); // 3 strikes × 2
@@ -1030,7 +1030,7 @@ mod tests {
         assert!(manager.bootstrapped);
         let count = manager.aggregator.instrument_ids().len();
 
-        // Feed another ATM update — bootstrap should not fire again
+        // Feed another ATM update - bootstrap should not fire again
         let greeks2 = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             underlying_price: Some(50200.0),
@@ -1232,7 +1232,7 @@ mod tests {
         bootstrap_via_greeks(&mut manager);
         queue.borrow_mut().clear();
 
-        // Publish at the expiration timestamp — should push ExpireSeries, not publish
+        // Publish at the expiration timestamp - should push ExpireSeries, not publish
         let expiry_ns = manager.aggregator.series_id().expiration_ns;
         manager.publish_slice(expiry_ns);
 

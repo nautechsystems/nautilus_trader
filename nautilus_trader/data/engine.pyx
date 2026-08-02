@@ -26,7 +26,7 @@ The engine employs a simple fan-in fan-out messaging pattern to execute
 objects.
 
 Alternative implementations can be written on top of the generic engine - which
-just need to override the `execute`, `process`, `send` and `receive` methods.
+just need to override the `execute`, `process`, `send`, and `receive` methods.
 """
 
 from dataclasses import dataclass
@@ -377,7 +377,7 @@ cdef class DataEngine(Component):
 
         """
         # Avoid importing `BacktestMarketDataClient` from the `backtest` subpackage at
-        # module import time – doing so creates a circular import between
+        # module import time - doing so creates a circular import between
         # `nautilus_trader.data` and `nautilus_trader.backtest`.
         from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 

@@ -46,7 +46,7 @@ impl PyDydxClientOrderIdEncoder {
 impl PyDydxClientOrderIdEncoder {
     /// Create a new ClientOrderIdEncoder.
     #[new]
-    fn new() -> Self {
+    fn py_new() -> Self {
         Self {
             inner: Arc::new(ClientOrderIdEncoder::new()),
         }

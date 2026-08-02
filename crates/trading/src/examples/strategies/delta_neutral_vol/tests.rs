@@ -20,11 +20,15 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{QuoteTick, greeks::OptionGreekValues, option_chain::OptionGreeks},
     enums::{OrderSide, TimeInForce},
-    identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
+    events::{
+        OrderDenied, OrderExpired, OrderRejected,
+        order::spec::{OrderDeniedSpec, OrderExpiredSpec, OrderRejectedSpec},
+    },
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     types::{Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
@@ -94,6 +98,39 @@ fn register_strategy(strategy: &mut DeltaNeutralVol) {
         .core
         .register(trader_id, clock, cache, portfolio)
         .unwrap();
+}
+
+fn make_order_rejected(instrument_id: InstrumentId) -> OrderRejected {
+    OrderRejectedSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("DELTA_NEUTRAL_VOL-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-HEDGE-1"))
+        .account_id(AccountId::from("ACC-001"))
+        .reason("Test rejection".into())
+        .event_id(UUID4::default())
+        .build()
+}
+
+fn make_order_denied(instrument_id: InstrumentId) -> OrderDenied {
+    OrderDeniedSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("DELTA_NEUTRAL_VOL-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-HEDGE-1"))
+        .reason("Test denial".into())
+        .build()
+}
+
+fn make_order_expired(instrument_id: InstrumentId) -> OrderExpired {
+    OrderExpiredSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("DELTA_NEUTRAL_VOL-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-HEDGE-1"))
+        .account_id(AccountId::from("ACC-001"))
+        .event_id(UUID4::default())
+        .build()
 }
 
 #[rstest]
@@ -523,6 +560,48 @@ fn test_fill_on_unknown_instrument_ignored() {
     assert!((strategy.call_position - original_call).abs() < 1e-10);
     assert!((strategy.put_position - original_put).abs() < 1e-10);
     assert!((strategy.hedge_position - original_hedge).abs() < 1e-10);
+}
+
+#[rstest]
+fn test_on_order_rejected_clears_hedge_pending() {
+    let mut strategy = create_strategy();
+    strategy.hedge_pending = true;
+
+    strategy.on_order_rejected(make_order_rejected(strategy.config.hedge_instrument_id));
+
+    assert!(!strategy.hedge_pending);
+}
+
+#[rstest]
+fn test_on_order_rejected_keeps_hedge_pending_for_other_instrument() {
+    let mut strategy = create_strategy();
+    strategy.hedge_pending = true;
+
+    strategy.on_order_rejected(make_order_rejected(InstrumentId::from(
+        "BTC-USD-260327-75000-C.OKX",
+    )));
+
+    assert!(strategy.hedge_pending);
+}
+
+#[rstest]
+fn test_on_order_denied_clears_hedge_pending() {
+    let mut strategy = create_strategy();
+    strategy.hedge_pending = true;
+
+    strategy.on_order_denied(make_order_denied(strategy.config.hedge_instrument_id));
+
+    assert!(!strategy.hedge_pending);
+}
+
+#[rstest]
+fn test_on_order_expired_clears_hedge_pending() {
+    let mut strategy = create_strategy();
+    strategy.hedge_pending = true;
+
+    strategy.on_order_expired(make_order_expired(strategy.config.hedge_instrument_id));
+
+    assert!(!strategy.hedge_pending);
 }
 
 #[rstest]

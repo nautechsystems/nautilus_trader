@@ -1,12 +1,17 @@
 # Version pins for external binaries without a native manifest.
 #
 # Rust toolchain: rust-toolchain.toml
+# Miri toolchain: tools.toml [miri]
 # Cargo CLIs:     Cargo.toml [workspace.metadata.tools]
 # Python CLIs:    tools.toml
 # uv:             pyproject.toml [tool.uv]
 
+[miri]
+version = "nightly-2026-07-15"
+rustc-version = "1.99.0"
+
 [prek]
-version = "0.4.5"
+version = "0.4.10"
 
 [pip-audit]
 version = "2.10.1"
@@ -18,5 +23,5 @@ version = "0.0.29"
 version = "2.4.0"
 
 [capnp]
-version = "1.4.0"
+version = "1.5.0"
 optional = true

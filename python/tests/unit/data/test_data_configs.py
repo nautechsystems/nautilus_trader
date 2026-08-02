@@ -16,7 +16,9 @@
 import pytest
 
 from nautilus_trader.data import DataEngineConfig
+from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarIntervalType
+from nautilus_trader.model import ClientId
 
 
 def test_data_engine_config_defaults():
@@ -34,6 +36,7 @@ def test_data_engine_config_defaults():
 
 
 def test_data_engine_config_with_overrides():
+    client_id = ClientId("DATA-001")
     config = DataEngineConfig(
         time_bars_build_with_no_updates=False,
         time_bars_timestamp_on_close=False,
@@ -43,6 +46,8 @@ def test_data_engine_config_with_overrides():
         buffer_deltas=True,
         emit_quotes_from_book=True,
         emit_quotes_from_book_depths=True,
+        time_bars_origin_offset={BarAggregation.MINUTE: 1_000},
+        external_clients=[client_id],
         debug=True,
     )
     assert config.time_bars_build_with_no_updates is False
@@ -53,6 +58,8 @@ def test_data_engine_config_with_overrides():
     assert config.buffer_deltas is True
     assert config.emit_quotes_from_book is True
     assert config.emit_quotes_from_book_depths is True
+    assert config.time_bars_origin_offset == {BarAggregation.MINUTE: 1_000}
+    assert config.external_clients == [client_id]
     assert config.debug is True
 
 

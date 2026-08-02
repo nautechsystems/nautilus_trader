@@ -4,7 +4,7 @@ set -uo pipefail
 # Retry a command up to MAX_RETRIES times if the failure matches known macOS
 # runner filesystem corruption patterns (null bytes in Python sources, corrupt
 # build-script binaries, invalid archives, and bad cached files). On a
-# corruption match the script purges the Cargo target dir and UV build cache
+# corruption match the script resets build artifacts and uses a fresh uv cache
 # before retrying.
 #
 # Usage: retry-on-corruption.sh <command> [args...]
@@ -23,7 +23,21 @@ CORRUPTION_PATTERNS=(
 )
 
 log_file="$(mktemp)"
-trap 'rm -f "$log_file"' EXIT
+temp_uv_cache_dirs=()
+
+# shellcheck disable=SC2317,SC2329
+# ShellCheck does not follow EXIT trap callbacks
+cleanup_temp_files() {
+  rm -f "$log_file"
+
+  if [ "${#temp_uv_cache_dirs[@]}" -gt 0 ]; then
+    for uv_cache_dir in "${temp_uv_cache_dirs[@]}"; do
+      rm -rf "$uv_cache_dir" 2> /dev/null || true
+    done
+  fi
+}
+
+trap cleanup_temp_files EXIT
 
 run_and_check() {
   echo "Running: $*"
@@ -54,18 +68,38 @@ clean_artifacts() {
     rm -rf "$CARGO_TARGET_DIR"
   fi
 
-  # Prune the full uv cache (wheels, archives, and builds) so corrupted
-  # metadata from installed packages or cached wheels is not reused.
   if command -v uv > /dev/null 2>&1; then
-    echo "Pruning uv cache"
-    uv cache prune
+    reset_uv_cache
+  fi
+
+  if { [ "${1:-}" != "uv" ] || [ "${2:-}" != "pip" ]; } && [ -d ".venv" ]; then
+    echo "Removing virtual environment: .venv"
+    rm -rf .venv
+  fi
+}
+
+reset_uv_cache() {
+  previous_uv_cache_dir="${UV_CACHE_DIR:-}"
+  uv_cache_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+  fresh_uv_cache_dir="$(mktemp -d "$uv_cache_parent/uv-cache-retry.XXXXXX")"
+
+  temp_uv_cache_dirs+=("$fresh_uv_cache_dir")
+  export UV_CACHE_DIR="$fresh_uv_cache_dir"
+  echo "Using fresh uv cache: $UV_CACHE_DIR"
+
+  if [ -n "$previous_uv_cache_dir" ] &&
+    [ "$previous_uv_cache_dir" != "$UV_CACHE_DIR" ] &&
+    [ "$previous_uv_cache_dir" != "/" ] &&
+    [ "$previous_uv_cache_dir" != "." ]; then
+    echo "Removing previous uv cache: $previous_uv_cache_dir"
+    rm -rf "$previous_uv_cache_dir" 2> /dev/null || true
   fi
 }
 
 for attempt in $(seq 0 "$MAX_RETRIES"); do
   if [ "$attempt" -gt 0 ]; then
     echo "Retry $attempt/$MAX_RETRIES..."
-    clean_artifacts
+    clean_artifacts "$@"
   fi
 
   if run_and_check "$@"; then

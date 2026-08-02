@@ -31,6 +31,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_http_retry_manager},
 };
+use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
@@ -60,8 +61,7 @@ use crate::{
         parse::{
             parse_candle_bar, parse_funding_rate_update,
             parse_order_book_details_instruments_with_status, parse_order_book_snapshot,
-            parse_trade_tick, register_order_books, register_perp_order_book_details,
-            register_spot_order_book_details,
+            parse_trade_tick, register_order_books,
         },
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
@@ -555,11 +555,15 @@ impl LighterRawHttpClient {
             return Err(LighterHttpError::Http { status, body });
         }
 
-        if let Ok(result) = serde_json::from_slice::<LighterResultCode>(&response.body) {
-            Self::check_response(&result)?;
-        }
-
-        let payload: T = serde_json::from_slice(&response.body)?;
+        let payload: T = match serde_json::from_slice(&response.body) {
+            Ok(payload) => payload,
+            Err(payload_error) => {
+                if let Ok(result) = serde_json::from_slice::<LighterResultCode>(&response.body) {
+                    Self::check_response(&result)?;
+                }
+                return Err(payload_error.into());
+            }
+        };
         Self::check_response(&payload)?;
         Ok(payload)
     }
@@ -741,8 +745,12 @@ impl LighterHttpClient {
         query: &LighterOrderBookDetailsQuery,
     ) -> LighterHttpResult<LighterOrderBookDetails> {
         let response = self.inner.get_order_book_details(query).await?;
-        register_perp_order_book_details(&self.market_registry, &response.order_book_details);
-        register_spot_order_book_details(&self.market_registry, &response.spot_order_book_details);
+        parse_order_book_details_instruments_with_status(
+            &self.market_registry,
+            &response.order_book_details,
+            &response.spot_order_book_details,
+            self.generate_ts_init(),
+        )?;
         Ok(response)
     }
 
@@ -956,7 +964,8 @@ impl LighterHttpClient {
     /// # Errors
     ///
     /// Returns an error if the instrument has not been registered, the bar
-    /// type is unsupported, the request fails, or a candle cannot be parsed.
+    /// type is unsupported, the request fails, the page cap leaves part of the
+    /// requested range uncovered, or a candle cannot be parsed.
     pub async fn request_bars(
         &self,
         instrument: &InstrumentAny,
@@ -1043,6 +1052,7 @@ impl LighterHttpClient {
             for bar in page {
                 let bar_start_ms = i64::try_from(bar.ts_event.as_u64() / 1_000_000)
                     .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
+
                 if bar_start_ms < cursor_ms
                     || bar_start_ms >= end_ms
                     || bar_start_ms.saturating_add(interval_ms) > now_ms
@@ -1070,8 +1080,13 @@ impl LighterHttpClient {
             pages += 1;
         }
 
-        if pages >= MAX_BAR_REQUEST_PAGES {
-            log::warn!("Stopped Lighter bar request after {MAX_BAR_REQUEST_PAGES} pages");
+        let limit_satisfied =
+            !start_was_unspecified && requested_limit.is_some_and(|limit| bars.len() >= limit);
+        if pages >= MAX_BAR_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
+            return Err(LighterHttpError::HistoryIncomplete {
+                data_type: "bar",
+                pages,
+            });
         }
 
         if start_was_unspecified && bars.len() > target_limit {
@@ -1090,8 +1105,8 @@ impl LighterHttpClient {
     /// # Errors
     ///
     /// Returns an error if the instrument is not a perpetual, the instrument
-    /// has not been registered, the request range is invalid, or a row cannot
-    /// be parsed.
+    /// has not been registered, the request range is invalid, the page cap
+    /// leaves part of the requested range uncovered, or a row cannot be parsed.
     pub async fn request_funding_rates(
         &self,
         instrument: &InstrumentAny,
@@ -1188,6 +1203,7 @@ impl LighterHttpClient {
                     .map_err(LighterHttpError::from)?;
                 let timestamp_ms = i64::try_from(update.ts_event.as_u64() / 1_000_000)
                     .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
+
                 if timestamp_ms < cursor_ms || timestamp_ms > end_ms {
                     continue;
                 }
@@ -1216,8 +1232,13 @@ impl LighterHttpClient {
             pages += 1;
         }
 
-        if pages >= MAX_FUNDING_REQUEST_PAGES {
-            log::warn!("Stopped Lighter funding request after {MAX_FUNDING_REQUEST_PAGES} pages");
+        let limit_satisfied = !start_was_unspecified
+            && requested_limit.is_some_and(|limit| funding_rates.len() >= limit);
+        if pages >= MAX_FUNDING_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
+            return Err(LighterHttpError::HistoryIncomplete {
+                data_type: "funding rate",
+                pages,
+            });
         }
 
         if start_was_unspecified && funding_rates.len() > target_limit {
@@ -1233,7 +1254,7 @@ impl LighterHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or an instrument cannot be parsed.
+    /// Returns an error if the request fails or nonempty metadata contains no valid instruments.
     pub async fn request_instruments(&self) -> LighterHttpResult<Vec<InstrumentAny>> {
         self.request_instruments_for_query(&LighterOrderBookDetailsQuery::default())
             .await
@@ -1243,7 +1264,7 @@ impl LighterHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or an instrument cannot be parsed.
+    /// Returns an error if the request fails or nonempty metadata contains no valid instruments.
     pub async fn request_instruments_with_status(
         &self,
     ) -> LighterHttpResult<Vec<(InstrumentAny, LighterMarketStatus)>> {
@@ -1337,7 +1358,7 @@ impl LighterHttpClient {
         &self,
         query: &LighterOrderBookDetailsQuery,
     ) -> LighterHttpResult<Vec<(InstrumentAny, LighterMarketStatus)>> {
-        let response = self.get_order_book_details(query).await?;
+        let response = self.inner.get_order_book_details(query).await?;
         let ts_init = self.generate_ts_init();
         parse_order_book_details_instruments_with_status(
             &self.market_registry,
@@ -1369,8 +1390,21 @@ impl LighterHttpClient {
         let ts_init = self.generate_ts_init();
         candles
             .iter()
-            .map(|candle| {
-                parse_candle_bar(candle, bar_type, instrument, ts_init).map_err(Into::into)
+            .filter_map(|candle| {
+                let has_positive_ohlc = candle.open > Decimal::ZERO
+                    && candle.high > Decimal::ZERO
+                    && candle.low > Decimal::ZERO
+                    && candle.close > Decimal::ZERO;
+
+                if !has_positive_ohlc {
+                    log::warn!(
+                        "Skipping Lighter candle at timestamp {} with non-positive OHLC values",
+                        candle.timestamp,
+                    );
+                    return None;
+                }
+
+                Some(parse_candle_bar(candle, bar_type, instrument, ts_init).map_err(Into::into))
             })
             .collect()
     }

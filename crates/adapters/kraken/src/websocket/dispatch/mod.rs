@@ -16,7 +16,7 @@
 //! WebSocket execution dispatch for the Kraken Spot and Futures clients.
 //!
 //! Implements the two-tier execution dispatch contract from
-//! `docs/developer_guide/adapters.md` (lines 1232-1296):
+//! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates`:
 //!
 //! 1. The execution client registers an [`OrderIdentity`] in [`WsDispatchState`]
 //!    when it submits an order.
@@ -54,6 +54,7 @@ use nautilus_model::{
     reports::FillReport,
     types::{Currency, Quantity},
 };
+use rust_decimal::Decimal;
 
 const DEDUP_CAPACITY: usize = 10_000;
 
@@ -66,29 +67,29 @@ const DEDUP_CAPACITY: usize = 10_000;
 pub struct DeltaSnapshot {
     pub qty: Quantity,
     pub filled: Quantity,
-    pub limit_price_bits: Option<u64>,
-    pub stop_price_bits: Option<u64>,
+    pub limit_price: Option<Decimal>,
+    pub stop_price: Option<Decimal>,
 }
 
 impl DeltaSnapshot {
     pub(crate) fn new(
         qty: Quantity,
         filled: Quantity,
-        limit_price: Option<f64>,
-        stop_price: Option<f64>,
+        limit_price: Option<Decimal>,
+        stop_price: Option<Decimal>,
     ) -> Self {
         Self {
             qty,
             filled,
-            limit_price_bits: limit_price.map(f64::to_bits),
-            stop_price_bits: stop_price.map(f64::to_bits),
+            limit_price,
+            stop_price,
         }
     }
 
     pub(crate) fn non_fill_fields_match(&self, other: &Self) -> bool {
         self.qty == other.qty
-            && self.limit_price_bits == other.limit_price_bits
-            && self.stop_price_bits == other.stop_price_bits
+            && self.limit_price == other.limit_price
+            && self.stop_price == other.stop_price
     }
 }
 
@@ -131,7 +132,7 @@ pub struct WsDispatchState {
     ///
     /// Kraken's spot v2 executions channel sends a `pending_new` frame with
     /// full order details, then follow-up frames (`new`, `amended`,
-    /// `restated`, `status`) that omit fields which have not changed —
+    /// `restated`, `status`) that omit fields which have not changed -
     /// Kraken's docs show `symbol` omitted on the `new` delta. The dispatch
     /// needs the symbol to resolve the instrument, so we cache it here from
     /// any frame that carries it (first writer wins). Keyed by venue
@@ -158,7 +159,7 @@ pub struct WsDispatchState {
     /// delta frames (`new`, `amended`, `restated`, `status`) routinely omit
     /// it. Without this mapping the dispatch cannot resolve the tracked
     /// order from a delta and falls back to the untracked report path,
-    /// which loses the typed `OrderAccepted` event — the symptom behind
+    /// which loses the typed `OrderAccepted` event - the symptom behind
     /// issue #4051.
     ///
     /// Populated whenever a frame resolves a `cl_ord_id` (first writer
@@ -254,7 +255,7 @@ impl WsDispatchState {
     /// Caches the symbol for a venue `order_id` if not already present.
     ///
     /// Atomic via [`DashMap::entry`] so concurrent callers cannot overwrite an
-    /// existing cached value — first writer wins, all later writers no-op.
+    /// existing cached value - first writer wins, all later writers no-op.
     /// The cheap `contains_key` fast path skips the key allocation when the
     /// entry already exists; the `or_insert_with` covers the race that opens
     /// between that check and the insert.
@@ -286,7 +287,7 @@ impl WsDispatchState {
     /// already present.
     ///
     /// Atomic via [`DashMap::entry`] so concurrent callers cannot overwrite an
-    /// existing cached value — first writer wins. The cheap `contains_key`
+    /// existing cached value - first writer wins. The cheap `contains_key`
     /// fast path skips the key allocation when the entry already exists.
     pub fn cache_order_client_id(&self, order_id: &str, client_order_id: ClientOrderId) {
         if self.order_client_id_cache.contains_key(order_id) {
@@ -490,6 +491,7 @@ pub(crate) fn fill_report_to_order_filled(
         false,
         report.venue_position_id,
         Some(report.commission),
+        None,
     )
 }
 

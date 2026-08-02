@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::identifiers::{
-    AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId,
+    AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId,
 };
 use thiserror::Error;
 use ustr::Ustr;
@@ -45,6 +45,21 @@ pub const ORDER_LIST_NOT_FOUND: &str = "order list not found in cache";
 
 /// Message used for a missing position lookup.
 pub const POSITION_NOT_FOUND: &str = "position not found in cache";
+
+/// Error returned when a venue order ID is already owned by another client order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error(
+    "Venue order ID {venue_order_id} is already owned by client order \
+     {existing_client_order_id} and cannot be claimed by {claimant_client_order_id}"
+)]
+pub struct VenueOrderIdOwnershipError {
+    /// The venue order ID whose ownership conflicts.
+    pub venue_order_id: VenueOrderId,
+    /// The client order which already owns the venue order ID.
+    pub existing_client_order_id: ClientOrderId,
+    /// The client order attempting to claim the venue order ID.
+    pub claimant_client_order_id: ClientOrderId,
+}
 
 /// Error returned when an account cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]

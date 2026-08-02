@@ -116,6 +116,10 @@ def test_lighter_exec_tester_limit_sells_stay_disabled(
             captured["reconciliation"] = reconciliation
             return self
 
+        def with_exec_engine_config(self, config: object) -> "CapturingBuilder":
+            captured["exec_engine_config"] = config
+            return self
+
         def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> "CapturingBuilder":
             captured["risk_engine_config"] = config
             return self

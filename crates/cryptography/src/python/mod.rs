@@ -15,11 +15,6 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![expect(
-    clippy::missing_errors_doc,
-    reason = "errors documented on underlying Rust methods"
-)]
-
 pub mod signing;
 
 use pyo3::prelude::*;

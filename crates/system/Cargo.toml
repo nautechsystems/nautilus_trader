@@ -26,9 +26,12 @@ defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [
+  "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-persistence/python",
+  "nautilus-trading/python",
   "pyo3",
+  "pyo3-stub-gen",
   "streaming",
 ]
 streaming = ["nautilus-persistence"]
@@ -59,17 +62,23 @@ nautilus-persistence = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 bon = { workspace = true }
+futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "testers",
+] }
+
 async-trait = { workspace = true }
 bytes = { workspace = true }
 rstest = { workspace = true }
-serde_json = { workspace = true }
 toml = { workspace = true }

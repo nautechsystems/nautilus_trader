@@ -1,0 +1,38 @@
+{
+  "type": "book_snapshot",
+  "symbol": "BTCUSDT",
+  "exchange": "mexc",
+  "name": "book_snapshot_5000_10s",
+  "depth": 5000,
+  "interval": 10000,
+  "bids": [
+    {
+      "price": 100.0,
+      "amount": 1.0
+    },
+    {
+      "price": 99.0,
+      "amount": 2.0
+    },
+    {
+      "price": 98.0,
+      "amount": 3.0
+    }
+  ],
+  "asks": [
+    {
+      "price": 101.0,
+      "amount": 1.5
+    },
+    {
+      "price": 102.0,
+      "amount": 2.5
+    },
+    {
+      "price": 103.0,
+      "amount": 3.5
+    }
+  ],
+  "timestamp": "2026-07-01T00:00:00.000Z",
+  "localTimestamp": "2026-07-01T00:00:00.100Z"
+}

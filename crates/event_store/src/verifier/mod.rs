@@ -186,13 +186,28 @@ impl Verifier {
                 Ok(None) | Err(EventStoreError::Gap { .. }) => {
                     extend_pending_gap(seq, &mut gap_cursor);
                 }
-                Err(EventStoreError::HashMismatch { seq: bad }) => {
+                Err(scan_err) => {
+                    let finding = match scan_err {
+                        EventStoreError::HashMismatch { seq: bad } => {
+                            VerifyFinding::HashMismatch { seq: bad }
+                        }
+                        EventStoreError::SeqMismatch {
+                            table_key,
+                            embedded_seq,
+                        } => VerifyFinding::SeqMismatch {
+                            table_key,
+                            embedded_seq,
+                        },
+                        EventStoreError::Corrupted(reason) => {
+                            VerifyFinding::Undecodable { seq, reason }
+                        }
+                        other => return Err(VerifyError::Backend(other)),
+                    };
                     flush_pending_gap(seq, &mut gap_cursor, findings);
-                    findings.push(VerifyFinding::HashMismatch { seq: bad });
+                    findings.push(finding);
                     corrupted_seqs.insert(seq);
                     scanned += 1;
                 }
-                Err(other) => return Err(VerifyError::Backend(other)),
             }
         }
 
@@ -407,6 +422,15 @@ pub enum VerifyFinding {
         table_key: u64,
         /// The seq embedded inside the decoded entry value.
         embedded_seq: u64,
+    },
+    /// The row stored at `seq` failed to decode into an entry.
+    ///
+    /// Recorded per slot so one bad row cannot mask every other finding.
+    Undecodable {
+        /// The sequence number whose stored bytes failed to decode.
+        seq: u64,
+        /// Operator-readable explanation of the decode failure.
+        reason: String,
     },
     /// A stored sidecar index entry diverges from the projection rebuilt from the
     /// entry table.
@@ -1003,6 +1027,109 @@ mod tests {
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
             self.inner.high_watermark()
         }
+    }
+
+    /// Test backend that fails `scan_seq` for one slot with a decode-style
+    /// `Corrupted` error, exercising the accumulate-don't-abort contract.
+    struct UndecodableBackend {
+        inner: MemoryBackend,
+        target_key: u64,
+    }
+
+    impl EventStore for UndecodableBackend {
+        fn open_run(&mut self, m: RunManifest) -> Result<(), EventStoreError> {
+            self.inner.open_run(m)
+        }
+        fn append_batch(&mut self, e: &[AppendEntry]) -> Result<u64, EventStoreError> {
+            self.inner.append_batch(e)
+        }
+        fn scan_range(
+            &self,
+            from: u64,
+            to: u64,
+            direction: ScanDirection,
+        ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
+            self.inner.scan_range(from, to, direction)
+        }
+        fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
+            if seq == self.target_key {
+                return Err(EventStoreError::Corrupted(format!(
+                    "decode entry seq={seq}: bad length prefix",
+                )));
+            }
+            self.inner.scan_seq(seq)
+        }
+        fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
+            self.inner.lookup(kind, key)
+        }
+        fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            self.inner.iter_index_keys(kind)
+        }
+        fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
+            self.inner.seal(status)
+        }
+        fn manifest(&self) -> Result<RunManifest, EventStoreError> {
+            self.inner.manifest()
+        }
+        fn high_watermark(&self) -> Result<u64, EventStoreError> {
+            self.inner.high_watermark()
+        }
+    }
+
+    #[rstest]
+    fn undecodable_row_is_recorded_and_scan_continues() {
+        // One row fails to decode at seq 2; the walk must continue so later entries
+        // still count and indices pointing at the bad row classify as TargetCorrupted.
+        let mut inner = MemoryBackend::new();
+        inner
+            .open_run(manifest("run-undecodable"))
+            .expect("open run");
+        inner
+            .append_batch(&[
+                append_with(1, 10, Vec::new()),
+                AppendEntry::new(
+                    build_entry(2, Headers::empty(), 11),
+                    vec![IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string())],
+                ),
+                append_with(3, 12, Vec::new()),
+            ])
+            .expect("append");
+        inner.seal(RunStatus::Ended).expect("seal");
+
+        let backend = UndecodableBackend {
+            inner,
+            target_key: 2,
+        };
+
+        let report = Verifier::new(Box::new(backend)).verify().expect("verify");
+
+        assert!(!report.is_clean());
+        assert_eq!(report.entries_scanned, 3);
+        assert_eq!(
+            report.findings.len(),
+            2,
+            "findings was: {:?}",
+            report.findings,
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| matches!(f, VerifyFinding::Undecodable { seq: 2, .. },)),
+            "findings was: {:?}",
+            report.findings,
+        );
+        assert!(
+            report.findings.iter().any(|f| matches!(
+                f,
+                VerifyFinding::IndexDrift {
+                    drift: IndexDrift::TargetCorrupted { stored_seq: 2 },
+                    ..
+                },
+            )),
+            "findings was: {:?}",
+            report.findings,
+        );
     }
 
     #[rstest]

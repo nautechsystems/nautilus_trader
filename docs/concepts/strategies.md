@@ -61,6 +61,7 @@ At minimum, initialize the base class:
 ```python
 from nautilus_trader.trading.strategy import Strategy
 
+
 class MyStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__()  # <-- the superclass must be called to initialize the strategy
@@ -250,7 +251,8 @@ def on_start(self) -> None:
 ```
 
 Live bars are subscribed via the `request_bars()` `callback` so the stream starts only
-once history has loaded; see [Working with bars: request vs. subscribe](data.md#working-with-bars-request-vs-subscribe)
+once history has loaded; see
+[Working with bars: request vs. subscribe](data/index.md#working-with-bars-request-vs-subscribe)
 for why this matters under `validate_data_sequence=True`.
 
 ### Clock and timers
@@ -463,7 +465,7 @@ If the order is already *closed* or already pending cancel, then a warning will 
 
 If the order is currently *open* then the status will become `PENDING_CANCEL`.
 
-The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command will flow to for execution depends on the following:
+The component a `CancelOrder`, `CancelAllOrders`, or `BatchCancelOrders` command will flow to for execution depends on the following:
 
 - If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecAlgorithm`.
@@ -612,8 +614,8 @@ from nautilus_trader.trading.strategy import Strategy
 
 # Configuration definition
 class MyStrategyConfig(StrategyConfig):
-    instrument_id: InstrumentId   # example value: "ETHUSDT-PERP.BINANCE"
-    bar_type: BarType             # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-EXTERNAL"
+    instrument_id: InstrumentId  # example value: "ETHUSDT-PERP.BINANCE"
+    bar_type: BarType  # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-EXTERNAL"
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
@@ -632,11 +634,13 @@ class MyStrategy(Strategy):
         self.count_of_processed_bars: int = 0
 
     def on_start(self) -> None:
-        self.time_started = self.clock.utc_now()    # Remember time, when strategy started
-        self.subscribe_bars(self.config.bar_type)   # See how configuration data are exposed via `self.config`
+        self.time_started = self.clock.utc_now()  # Remember time, when strategy started
+        self.subscribe_bars(
+            self.config.bar_type
+        )  # See how configuration data are exposed via `self.config`
 
     def on_bar(self, bar: Bar):
-        self.count_of_processed_bars += 1           # Update count of processed bars
+        self.count_of_processed_bars += 1  # Update count of processed bars
 
 
 # Instantiate configuration with specific values. By setting:
@@ -726,6 +730,6 @@ See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.h
 ## Related guides
 
 - [Actors](actors.md) - Base class that strategies extend.
-- [Events](events.md) - Event types and handler dispatch.
+- [Events](events/) - Event types and handler dispatch.
 - [Orders](orders/) - Order types and management from strategies.
-- [Backtesting](backtesting.md) - Test strategies with historical data.
+- [Backtesting](backtesting/) - Test strategies with historical data.

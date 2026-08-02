@@ -19,6 +19,7 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import Money
 from nautilus_trader.model import OrderFilled
@@ -93,6 +94,9 @@ def test_position_long_properties(long_position):
     last = Price.from_str("1.00050")
 
     assert long_position.instrument_id == AUDUSD_SIM.id
+    assert long_position.account_id == AccountId("SIM-000")
+    assert long_position.instrument_class == InstrumentClass.SPOT
+    assert long_position.is_spot_currency is True
     assert long_position.symbol == AUDUSD_SIM.id.symbol
     assert long_position.venue == AUDUSD_SIM.id.venue
     assert long_position.opening_order_id == ClientOrderId("O-20210410-022422-001-001-1")
@@ -103,6 +107,7 @@ def test_position_long_properties(long_position):
     assert long_position.entry == OrderSide.BUY
     assert long_position.side == PositionSide.LONG
     assert long_position.ts_opened == 0
+    assert long_position.ts_last == 0
     assert long_position.duration_ns == 0
     assert long_position.avg_px_open == 1.00001
     assert long_position.event_count == 1

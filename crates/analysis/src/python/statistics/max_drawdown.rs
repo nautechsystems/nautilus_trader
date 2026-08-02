@@ -30,6 +30,14 @@ impl MaxDrawdown {
     /// a specified time period.
     ///
     /// Formula: Max((Peak - Trough) / Peak) for all peak-trough sequences
+    ///
+    /// The equity curve compounds returns from a starting value of `1.0`, and the
+    /// result is reported as a negative fraction (e.g. `-0.20` is a 20% drawdown).
+    ///
+    /// # References
+    ///
+    /// - Bacon, C. R. (2008). *Practical Portfolio Performance Measurement and Attribution*
+    ///   (2nd ed.). Wiley.
     #[new]
     fn py_new() -> Self {
         Self::new()

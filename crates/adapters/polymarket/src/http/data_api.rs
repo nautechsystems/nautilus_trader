@@ -17,14 +17,17 @@
 
 use std::{collections::HashMap, result::Result as StdResult};
 
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::{
     data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
-use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
+use nautilus_network::{
+    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    websocket::proxy::ProxyUrl,
+};
 
 use crate::{
     common::enums::PolymarketOrderSide,
@@ -84,6 +87,19 @@ impl PolymarketDataApiHttpClient {
     ///
     /// Returns an error if the HTTP client cannot be created.
     pub fn new(base_url: Option<String>, timeout_secs: u64) -> StdResult<Self, HttpClientError> {
+        Self::new_with_proxy(base_url, timeout_secs, None)
+    }
+
+    /// Creates a new client with an optional validated proxy URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new_with_proxy(
+        base_url: Option<String>,
+        timeout_secs: u64,
+        proxy_url: Option<ProxyUrl>,
+    ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::new(
                 HashMap::from([
@@ -94,7 +110,7 @@ impl PolymarketDataApiHttpClient {
                 vec![],
                 None,
                 Some(timeout_secs),
-                None,
+                proxy_url.map(|url| url.expose().to_string()),
             )?,
             base_url: base_url
                 .unwrap_or_else(|| POLYMARKET_DATA_API_URL.to_string())
@@ -158,6 +174,19 @@ impl PolymarketDataApiHttpClient {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<Vec<DataApiTrade>> {
+        self.get_trades_in_window(condition_id, limit, offset, None, None)
+            .await
+    }
+
+    /// Fetches trades from the Data API within an inclusive epoch-second window.
+    pub async fn get_trades_in_window(
+        &self,
+        condition_id: &str,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        start: Option<i64>,
+        end: Option<i64>,
+    ) -> Result<Vec<DataApiTrade>> {
         let mut params = vec![("market".to_string(), condition_id.to_string())];
 
         if let Some(l) = limit {
@@ -166,6 +195,14 @@ impl PolymarketDataApiHttpClient {
 
         if let Some(o) = offset {
             params.push(("offset".to_string(), o.to_string()));
+        }
+
+        if let Some(start) = start {
+            params.push(("start".to_string(), start.to_string()));
+        }
+
+        if let Some(end) = end {
+            params.push(("end".to_string(), end.to_string()));
         }
 
         let url = format!("{}/trades", self.base_url);
@@ -195,6 +232,7 @@ impl PolymarketDataApiHttpClient {
     /// The Polymarket Data API caps offset-based pagination on high-activity
     /// markets; when this ceiling is hit a warning is logged and the trades
     /// fetched so far are returned.
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_trade_ticks(
         &self,
         instrument_id: InstrumentId,
@@ -202,19 +240,39 @@ impl PolymarketDataApiHttpClient {
         token_id: &str,
         price_precision: u8,
         size_precision: u8,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const PAGE_SIZE: u32 = 500;
-        // Polymarket Data API rejects offsets at or beyond this value
-        const MAX_OFFSET: u32 = 3000;
+        const MAX_OFFSET: u32 = 10_000;
 
-        let page_size = limit.map_or(PAGE_SIZE, |l| l.min(PAGE_SIZE));
+        if let (Some(start), Some(end)) = (start, end)
+            && start > end
+        {
+            anyhow::bail!("start must not be later than end");
+        }
+
+        if limit == Some(0) {
+            anyhow::bail!("limit must be greater than zero");
+        }
+
+        let start_secs = start.map(|value| (value.as_u64() / 1_000_000_000) as i64);
+        let end_secs = end.map(|value| (value.as_u64() / 1_000_000_000) as i64);
+        let page_size = PAGE_SIZE;
         let mut all_trades: Vec<DataApiTrade> = Vec::new();
         let mut offset: u32 = 0;
+        let mut offset_ceiling_reached = false;
 
         loop {
             let page = match self
-                .get_trades(condition_id, Some(page_size), Some(offset))
+                .get_trades_in_window(
+                    condition_id,
+                    Some(page_size),
+                    Some(offset),
+                    start_secs,
+                    end_secs,
+                )
                 .await
             {
                 Ok(page) => page,
@@ -224,8 +282,9 @@ impl PolymarketDataApiHttpClient {
                         log::warn!(
                             "Polymarket public trades API hit its historical offset \
                              ceiling for condition {condition_id}; returning partial \
-                             results: {e}",
+                            results: {e}",
                         );
+                        offset_ceiling_reached = true;
                         break;
                     }
                     anyhow::bail!(e);
@@ -235,36 +294,76 @@ impl PolymarketDataApiHttpClient {
             let count = page.len() as u32;
             all_trades.extend(page);
 
-            // Partial page means no more data available
             if count < page_size {
                 break;
             }
-            // If we've collected enough for the caller's target, stop
-            if let Some(target) = limit
-                && all_trades.len() as u32 >= target
+
+            if start.is_none()
+                && limit.is_some_and(|target| {
+                    count_matching_trades_within_end(&all_trades, token_id, end) >= target as usize
+                })
             {
                 break;
             }
             offset += count;
-            // API hard limit on offset
             if offset >= MAX_OFFSET {
+                log::warn!(
+                    "Polymarket public trades API reached the historical offset ceiling for condition {condition_id}; returning partial results"
+                );
+                offset_ceiling_reached = true;
                 break;
             }
         }
 
-        // Apply final truncation to honour the caller's limit
-        if let Some(target) = limit {
-            all_trades.truncate(target as usize);
+        if offset_ceiling_reached && start.is_some() {
+            anyhow::bail!(
+                "Polymarket public trades API reached the historical offset ceiling for condition {condition_id}; cannot guarantee complete start-anchored results, narrow the time window"
+            );
         }
 
-        Ok(parse_trade_ticks(
+        let mut trades = parse_trade_ticks(
             all_trades,
             instrument_id,
             token_id,
             price_precision,
             size_precision,
-        ))
+        );
+        trades.retain(|trade| {
+            let event_secs = trade.ts_event.as_u64() / 1_000_000_000;
+            start_secs.is_none_or(|start| event_secs >= start as u64)
+                && end_secs.is_none_or(|end| event_secs <= end as u64)
+        });
+
+        if let Some(target) = limit.map(|value| value as usize)
+            && trades.len() > target
+        {
+            if start.is_some() {
+                trades.truncate(target);
+            } else {
+                trades.drain(..trades.len() - target);
+            }
+        }
+
+        Ok(trades)
     }
+}
+
+fn count_matching_trades_within_end(
+    trades: &[DataApiTrade],
+    token_id: &str,
+    end: Option<UnixNanos>,
+) -> usize {
+    let Some(end) = end else {
+        return trades
+            .iter()
+            .filter(|trade| trade.asset == token_id)
+            .count();
+    };
+    let end_secs = (end.as_u64() / 1_000_000_000) as i64;
+    trades
+        .iter()
+        .filter(|trade| trade.asset == token_id && trade.timestamp <= end_secs)
+        .count()
 }
 
 // Extracted from `request_trade_ticks` so the parse behavior can be
@@ -330,7 +429,7 @@ mod tests {
         identifiers::{AccountId, InstrumentId},
     };
     use rstest::rstest;
-    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -356,8 +455,8 @@ mod tests {
         let positions = load_positions();
 
         assert_eq!(positions.len(), 4);
-        assert_eq!(positions[0].size, 150.5);
-        assert_eq!(positions[0].avg_price, Some(0.55));
+        assert_eq!(positions[0].size, dec!(150.5));
+        assert_eq!(positions[0].avg_price, Some(dec!(0.55)));
         assert_eq!(
             positions[0].condition_id,
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
@@ -388,14 +487,8 @@ mod tests {
         let reports = build_position_reports(&positions, account_id, ts_now);
 
         assert_eq!(reports.len(), 2);
-        assert_eq!(
-            reports[0].avg_px_open,
-            Some(Decimal::try_from(0.55).unwrap())
-        );
-        assert_eq!(
-            reports[1].avg_px_open,
-            Some(Decimal::try_from(0.3).unwrap())
-        );
+        assert_eq!(reports[0].avg_px_open, Some(dec!(0.55)));
+        assert_eq!(reports[1].avg_px_open, Some(dec!(0.3)));
     }
 
     #[rstest]
@@ -416,7 +509,7 @@ mod tests {
         let positions = vec![DataApiPosition {
             asset: "123".to_string(),
             condition_id: "0xabc".to_string(),
-            size: 10.0,
+            size: dec!(10),
             avg_price: None,
         }];
         let account_id = AccountId::from("POLYMARKET-001");

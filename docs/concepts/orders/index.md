@@ -43,6 +43,7 @@ Instead, it logs a clear, explanatory error.
   - `CANCELED`
   - `EXPIRED`
   - `FILLED`
+  - `VOIDED`
 
 ### Order state flow
 
@@ -74,6 +75,7 @@ flowchart TB
         Canceled
         Expired
         Filled
+        Voided
     end
 
     Initialized -->|"Emulation trigger"| Emulated
@@ -100,6 +102,9 @@ flowchart TB
     Accepted --> Filled
     Triggered --> Filled
     PartiallyFilled --> Filled
+    Filled -->|"Fill correction"| Voided
+    Filled -->|"Explicit reopened correction"| Accepted
+    Filled -->|"Reopened correction with surviving fill"| PartiallyFilled
     PartiallyFilled --> Canceled
     Accepted --> Expired
 ```
@@ -107,7 +112,7 @@ flowchart TB
 ### Order status definitions
 
 | Status             | Description                                                                               |
-|--------------------|-------------------------------------------------------------------------------------------|
+| ------------------ | ----------------------------------------------------------------------------------------- |
 | `INITIALIZED`      | Order is instantiated within the Nautilus system.                                         |
 | `DENIED`           | Order was denied by Nautilus for being invalid, unprocessable, or exceeding a risk limit. |
 | `EMULATED`         | Order is being emulated by the `OrderEmulator` component.                                 |
@@ -122,6 +127,7 @@ flowchart TB
 | `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                     |
 | `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                             |
 | `FILLED`           | Order has been completely filled (terminal).                                              |
+| `VOIDED`           | Order is terminal after an authoritative fill correction.                                 |
 
 ## Execution instructions
 
@@ -219,17 +225,17 @@ See the [`OrderFactory` API Reference](/docs/python-api-latest/common.html#nauti
 NautilusTrader supports the following order types. Each links to a dedicated guide with a code
 example; optional parameters are marked with a comment showing the default value.
 
-| Order type                                         | Category             | Description                                                              |
-|----------------------------------------------------|----------------------|--------------------------------------------------------------------------|
-| [`MARKET`](market.md)                              | Aggressive           | Trades the quantity immediately at the best available price.             |
-| [`LIMIT`](limit.md)                                | Passive              | Rests in the book and trades only at the limit price or better.          |
-| [`STOP_MARKET`](stop_market.md)                    | Conditional          | Once the trigger price is hit, places a *Market* order.                  |
-| [`STOP_LIMIT`](stop_limit.md)                      | Conditional          | Once the trigger price is hit, places a *Limit* order at the set price.  |
-| [`MARKET_TO_LIMIT`](market_to_limit.md)            | Hybrid               | Submits as *Market*; any remainder rests as a *Limit* at the fill price. |
-| [`MARKET_IF_TOUCHED`](market_if_touched.md)        | Conditional          | Once the trigger price is touched, places a *Market* order.              |
-| [`LIMIT_IF_TOUCHED`](limit_if_touched.md)          | Conditional          | Once the trigger price is touched, places a *Limit* order at the set price. |
-| [`TRAILING_STOP_MARKET`](trailing_stop_market.md)  | Conditional trailing | Trails the trigger by an offset, then places a *Market* order.           |
-| [`TRAILING_STOP_LIMIT`](trailing_stop_limit.md)    | Conditional trailing | Trails the trigger by an offset, then places a *Limit* order.            |
+| Order type                                        | Category             | Description                                                                 |
+| ------------------------------------------------- | -------------------- | --------------------------------------------------------------------------- |
+| [`MARKET`](market.md)                             | Aggressive           | Trades the quantity immediately at the best available price.                |
+| [`LIMIT`](limit.md)                               | Passive              | Rests in the book and trades only at the limit price or better.             |
+| [`STOP_MARKET`](stop_market.md)                   | Conditional          | Once the trigger price is hit, places a *Market* order.                     |
+| [`STOP_LIMIT`](stop_limit.md)                     | Conditional          | Once the trigger price is hit, places a *Limit* order at the set price.     |
+| [`MARKET_TO_LIMIT`](market_to_limit.md)           | Hybrid               | Submits as *Market*; any remainder rests as a *Limit* at the fill price.    |
+| [`MARKET_IF_TOUCHED`](market_if_touched.md)       | Conditional          | Once the trigger price is touched, places a *Market* order.                 |
+| [`LIMIT_IF_TOUCHED`](limit_if_touched.md)         | Conditional          | Once the trigger price is touched, places a *Limit* order at the set price. |
+| [`TRAILING_STOP_MARKET`](trailing_stop_market.md) | Conditional trailing | Trails the trigger by an offset, then places a *Market* order.              |
+| [`TRAILING_STOP_LIMIT`](trailing_stop_limit.md)   | Conditional trailing | Trails the trigger by an offset, then places a *Limit* order.               |
 
 ### FIX OrdType mapping
 
@@ -237,7 +243,7 @@ Each type maps to the nearest FIX 5.0 SP2 [`OrdType <40>`](https://www.onixs.biz
 value, where the protocol defines one:
 
 | Order type           | FIX `OrdType <40>`                   |
-|----------------------|--------------------------------------|
+| -------------------- | ------------------------------------ |
 | Market               | `1` (Market)                         |
 | Limit                | `2` (Limit)                          |
 | Stop‑Market          | `3` (Stop)                           |
@@ -266,7 +272,7 @@ the emulation lifecycle, supported types, querying, and best practices.
 
 ## Related guides
 
-- [Events](../events.md) - Order events, position events, and handler dispatch.
+- [Events](../events/) - Order events, position events, and handler dispatch.
 - [Execution](../execution.md) - Order execution and fill handling.
 - [Positions](../positions.md) - Positions created from order fills.
 - [Strategies](../strategies.md) - Order management from strategies.

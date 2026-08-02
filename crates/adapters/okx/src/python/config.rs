@@ -16,6 +16,7 @@
 //! Python bindings for OKX configuration.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -44,8 +45,12 @@ impl OKXDataClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         update_instruments_interval_mins = None,
+        book_stale_check_interval_secs = None,
+        book_stale_threshold_secs = None,
+        book_snapshot_timeout_secs = None,
         vip_level = None,
         load_spreads = false,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -64,8 +69,12 @@ impl OKXDataClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        book_stale_check_interval_secs: Option<u64>,
+        book_stale_threshold_secs: Option<u64>,
+        book_snapshot_timeout_secs: Option<u64>,
         vip_level: Option<OKXVipLevel>,
         load_spreads: bool,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -89,13 +98,24 @@ impl OKXDataClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
+            book_stale_check_interval_secs: book_stale_check_interval_secs
+                .unwrap_or(defaults.book_stale_check_interval_secs),
+            book_stale_threshold_secs: book_stale_threshold_secs
+                .unwrap_or(defaults.book_stale_threshold_secs),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             vip_level,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(OKXDataClientConfig).to_string()
     }
 }
 
@@ -123,6 +143,8 @@ impl OKXExecClientConfig {
         retry_delay_max_ms = None,
         margin_mode = None,
         load_spreads = false,
+        auth_timeout_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -144,6 +166,8 @@ impl OKXExecClientConfig {
         retry_delay_max_ms: Option<u64>,
         margin_mode: Option<OKXMarginMode>,
         load_spreads: bool,
+        auth_timeout_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -171,12 +195,18 @@ impl OKXExecClientConfig {
             margin_mode,
             load_spreads,
             use_spot_margin: defaults.use_spot_margin,
-            transport_backend: defaults.transport_backend,
+            auth_timeout_secs,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(OKXExecClientConfig).to_string()
     }
 }
 
@@ -190,10 +220,13 @@ mod tests {
     fn test_data_config_py_new_load_spreads() {
         let config = OKXDataClientConfig::py_new(
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None, None, true,
+            None, None, None, None, None, true, None,
         );
 
         assert!(config.load_spreads);
+        assert_eq!(config.book_stale_check_interval_secs, 5);
+        assert_eq!(config.book_stale_threshold_secs, 30);
+        assert_eq!(config.book_snapshot_timeout_secs, 3);
     }
 
     #[rstest]
@@ -217,8 +250,11 @@ mod tests {
             None,
             None,
             true,
+            None,
+            None,
         );
 
         assert!(config.load_spreads);
+        assert_eq!(config.auth_timeout_secs, None);
     }
 }

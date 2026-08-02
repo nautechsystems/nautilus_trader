@@ -55,6 +55,7 @@ pub fn order_status_report_schema() -> Schema {
         utf8_field("contingency_type", false),
         timestamp_field("expire_time", true),
         float64_field("price", true),
+        float64_field("activation_price", true),
         float64_field("trigger_price", true),
         utf8_field("trigger_type", true),
         float64_field("limit_offset", true),
@@ -102,6 +103,7 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
     let mut contingency_type = StringBuilder::new();
     let mut expire_time = TimestampNanosecondBuilder::with_capacity(data.len());
     let mut price = Float64Builder::with_capacity(data.len());
+    let mut activation_price = Float64Builder::with_capacity(data.len());
     let mut trigger_price = Float64Builder::with_capacity(data.len());
     let mut trigger_type = StringBuilder::new();
     let mut limit_offset = Float64Builder::with_capacity(data.len());
@@ -139,6 +141,7 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
         contingency_type.append_value(format!("{}", report.contingency_type));
         expire_time.append_option(report.expire_time.map(|v| unix_nanos_to_i64(v.as_u64())));
         price.append_option(report.price.map(|v| v.as_f64()));
+        activation_price.append_option(report.activation_price.map(|v| v.as_f64()));
         trigger_price.append_option(report.trigger_price.map(|v| v.as_f64()));
         trigger_type.append_option(report.trigger_type.map(|v| format!("{v}")));
         limit_offset.append_option(report.limit_offset.and_then(|v| v.to_f64()));
@@ -176,6 +179,7 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
             Arc::new(contingency_type.finish()),
             Arc::new(expire_time.finish()),
             Arc::new(price.finish()),
+            Arc::new(activation_price.finish()),
             Arc::new(trigger_price.finish()),
             Arc::new(trigger_type.finish()),
             Arc::new(limit_offset.finish()),
@@ -232,6 +236,7 @@ mod tests {
             contingency_type: ContingencyType::NoContingency,
             expire_time: None,
             price: Some(Price::from("100.50")),
+            activation_price: None,
             trigger_price: None,
             trigger_type: None,
             limit_offset: None,
@@ -251,7 +256,7 @@ mod tests {
         let batch = encode_order_status_reports(&[]).unwrap();
         let schema = batch.schema();
         let fields = schema.fields();
-        assert_eq!(fields.len(), 32);
+        assert_eq!(fields.len(), 33);
         assert_eq!(fields[0].name(), "account_id");
         assert_eq!(fields[0].data_type(), &DataType::Utf8);
         assert_eq!(fields[8].name(), "quantity");
@@ -261,8 +266,10 @@ mod tests {
             fields[11].data_type(),
             &DataType::Timestamp(TimeUnit::Nanosecond, None)
         );
-        assert_eq!(fields[28].name(), "post_only");
-        assert_eq!(fields[28].data_type(), &DataType::Boolean);
+        assert_eq!(fields[21].name(), "activation_price");
+        assert_eq!(fields[21].data_type(), &DataType::Float64);
+        assert_eq!(fields[29].name(), "post_only");
+        assert_eq!(fields[29].data_type(), &DataType::Boolean);
     }
 
     #[rstest]
@@ -288,7 +295,7 @@ mod tests {
             .downcast_ref::<Float64Array>()
             .unwrap();
         let post_only_col = batch
-            .column(28)
+            .column(29)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();
@@ -343,7 +350,7 @@ mod tests {
         let batch = encode_order_status_reports(&reports).unwrap();
 
         let trigger_price_col = batch
-            .column(21)
+            .column(22)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
@@ -361,7 +368,7 @@ mod tests {
     fn test_encode_order_status_reports_empty() {
         let batch = encode_order_status_reports(&[]).unwrap();
         assert_eq!(batch.num_rows(), 0);
-        assert_eq!(batch.schema().fields().len(), 32);
+        assert_eq!(batch.schema().fields().len(), 33);
     }
 
     #[rstest]

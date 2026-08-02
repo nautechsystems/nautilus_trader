@@ -100,11 +100,49 @@ def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
         return {"type": "string", "format": "date-time"}
     if type_ == pd.Timedelta:
         return {"type": "string"}
+    if _is_pyo3_enum_type(type_):
+        return {"type": "string"}
     if type_ in (Environment, TimeInForce):
         return {"type": "string"}
     if type_ is type:  # Handle <class 'type'>
         return {"type": "string"}  # Represent type objects as strings
     raise TypeError(f"Unsupported type for schema generation: {type_}")
+
+
+def _is_pyo3_enum_type(type_: type[Any]) -> bool:
+    module = getattr(type_, "__module__", "")
+    if "nautilus_pyo3" not in module:
+        return False
+
+    return _pyo3_enum_member_name_from_type(type_, None) is not None
+
+
+def _is_pyo3_enum_instance(obj: Any) -> bool:
+    return _pyo3_enum_member_name(obj) is not None
+
+
+def _pyo3_enum_member_name(obj: Any) -> str | None:
+    return _pyo3_enum_member_name_from_type(type(obj), obj)
+
+
+def _pyo3_enum_member_name_from_type(type_: type[Any], value: Any) -> str | None:
+    for attr in dir(type_):
+        if not attr.isupper():
+            continue
+
+        member = getattr(type_, attr, None)
+        if value is None or member is value:
+            return attr
+
+        try:
+            equals = member == value
+        except (NotImplementedError, TypeError, ValueError):
+            continue
+
+        if isinstance(equals, bool) and equals:
+            return attr
+
+    return None
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
@@ -129,6 +167,8 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return obj.isoformat()
     if isinstance(obj, Environment):
         return obj.value
+    if _is_pyo3_enum_instance(obj):
+        return _pyo3_enum_member_name(obj)
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
@@ -171,6 +211,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return TriggerType[obj]
     if obj_type == Environment:
         return obj_type(obj)
+    if _is_pyo3_enum_type(obj_type):
+        return getattr(obj_type, obj.split(".")[-1].upper())
     if obj_type in CUSTOM_DECODINGS:
         func = CUSTOM_DECODINGS[obj_type]
         return func(obj)
@@ -677,4 +719,4 @@ class ImportableConfig(NautilusConfig, frozen=True):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config, enc_hook=msgspec_encoding_hook)
-        return msgspec.json.decode(cfg, type=cls)
+        return msgspec.json.decode(cfg, type=cls, dec_hook=msgspec_decoding_hook)

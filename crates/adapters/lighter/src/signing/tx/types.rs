@@ -194,7 +194,7 @@ pub trait LighterTx {
     }
 }
 
-/// `CreateOrder` (`tx_type = 14`) — submits a new order to the sequencer.
+/// `CreateOrder` (`tx_type = 14`) - submits a new order to the sequencer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CreateOrderTxInfo {
     /// Common preamble fields.
@@ -260,7 +260,7 @@ impl LighterTx for CancelOrderTxInfo {
     }
 }
 
-/// `ModifyOrder` (`tx_type = 17`) — amends size / price on a live order.
+/// `ModifyOrder` (`tx_type = 17`) - amends size / price on a live order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ModifyOrderTxInfo {
     /// Common preamble fields.

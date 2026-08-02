@@ -316,7 +316,47 @@ mod tests {
     use crate::{
         defi::{SharedPool, stubs::rain_pool},
         enums::OrderSide,
+        types::{Price, Quantity, fixed::FIXED_PRECISION},
     };
+
+    #[rstest]
+    fn test_metric_errors_propagate_from_trade_info(rain_pool: SharedPool) {
+        let mut swap_quote = SwapQuote::new(
+            rain_pool.instrument_id,
+            I256::from_str("2").unwrap(),
+            I256::from_str("-1").unwrap(),
+            U160::from(3),
+            U160::from(4),
+            -5,
+            -4,
+            6,
+            U256::from(7),
+            U256::from(8),
+            U256::from(9),
+            vec![],
+        );
+        swap_quote.trade_info = Some(SwapTradeInfo {
+            order_side: OrderSide::Buy,
+            quantity_base: Quantity::from("10"),
+            quantity_quote: Quantity::from("11"),
+            spot_price: Price::from_raw(12, FIXED_PRECISION),
+            execution_price: Price::from_raw(13, FIXED_PRECISION),
+            is_inverted: true,
+            spot_price_before: Some(Price::zero(FIXED_PRECISION)),
+        });
+
+        let price_impact_error = swap_quote.get_price_impact_bps().unwrap_err();
+        let slippage_error = swap_quote.get_slippage_bps().unwrap_err();
+
+        assert_eq!(
+            price_impact_error.to_string(),
+            "Cannot calculate price impact, the spot price before is zero"
+        );
+        assert_eq!(
+            slippage_error.to_string(),
+            "Cannot calculate slippage, the spot price before is zero"
+        );
+    }
 
     #[rstest]
     fn test_swap_quote_sell(rain_pool: SharedPool) {

@@ -246,6 +246,7 @@ class AxLiveExecClientFactory(LiveExecClientFactory):
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
+            orders_base_url=config.base_url_orders,
             environment=config.environment,
             timeout_secs=config.http_timeout_secs,
             max_retries=config.max_retries,

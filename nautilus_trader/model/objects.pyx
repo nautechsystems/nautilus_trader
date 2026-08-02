@@ -416,13 +416,13 @@ cdef class Quantity:
     cdef Quantity from_str_c(str value):
         value = value.replace('_', '')
 
+        decimal_value = decimal.Decimal(value)
+
         cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
         if precision > FIXED_PRECISION:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
-
-        decimal_value = decimal.Decimal(value)
 
         if decimal_value < 0:
             raise ValueError(
@@ -668,7 +668,7 @@ cdef class Price:
 
     Parameters
     ----------
-    value : integer, float, string or Decimal
+    value : integer, float, string, or Decimal
         The value of the price.
     precision : uint8_t
         The precision for the price. Use a precision of 0 for whole numbers
@@ -913,13 +913,14 @@ cdef class Price:
     cdef Price from_str_c(str value):
         value = value.replace('_', '')
 
+        decimal_value = decimal.Decimal(value)
+
         cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
         if precision > FIXED_PRECISION:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
 
-        decimal_value = decimal.Decimal(value)
         scaled = decimal_value * (10 ** precision)
         integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
 
@@ -1172,7 +1173,7 @@ cdef class Money:
 
     Parameters
     ----------
-    value : integer, float, string or Decimal
+    value : integer, float, string, or Decimal
         The amount of money in the currency denomination.
     currency : Currency
         The currency of the money.

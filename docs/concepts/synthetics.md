@@ -26,7 +26,7 @@ Formulas can reference component `InstrumentId` values directly, including IDs t
 and `-`.
 
 | Construct           | Example                                        | Notes                                                                 |
-|---------------------|------------------------------------------------|-----------------------------------------------------------------------|
+| ------------------- | ---------------------------------------------- | --------------------------------------------------------------------- |
 | Component reference | `BTCUSDT.BINANCE`                              | Use the raw `InstrumentId` text.                                      |
 | Component reference | `AUD/USD.SIM`                                  | IDs containing `/` are valid.                                         |
 | Component reference | `ETH-USDT-SWAP.OKX`                            | IDs containing `-` are valid.                                         |
@@ -49,7 +49,7 @@ The expression engine evaluates operators in the following order, from highest p
 lowest precedence:
 
 | Level   | Operators            | Notes                                                        |
-|---------|----------------------|--------------------------------------------------------------|
+| ------- | -------------------- | ------------------------------------------------------------ |
 | Highest | `^`                  | Exponentiation. Right associative.                           |
 |         | Unary `-`, unary `!` | `-2 ^ 2` evaluates as `-(2 ^ 2)`.                            |
 |         | `*`, `/`, `%`        | Multiplication, division, and modulo.                        |
@@ -63,14 +63,14 @@ statement the value you want the synthetic to produce.
 
 ### Built-in functions
 
-| Function | Signature                              | Notes                                                |
-|----------|----------------------------------------|------------------------------------------------------|
-| `abs`    | `abs(x)`                               | Absolute value.                                      |
-| `ceil`   | `ceil(x)`                              | Ceiling.                                             |
-| `floor`  | `floor(x)`                             | Floor.                                               |
-| `round`  | `round(x)`                             | Round to the nearest integer using Rust `f64` rules. |
-| `min`    | `min(x1, x2, ...)`                     | Accepts one or more numeric arguments.               |
-| `max`    | `max(x1, x2, ...)`                     | Accepts one or more numeric arguments.               |
+| Function | Signature                              | Notes                                                                                   |
+| -------- | -------------------------------------- | --------------------------------------------------------------------------------------- |
+| `abs`    | `abs(x)`                               | Absolute value.                                                                         |
+| `ceil`   | `ceil(x)`                              | Ceiling.                                                                                |
+| `floor`  | `floor(x)`                             | Floor.                                                                                  |
+| `round`  | `round(x)`                             | Round to the nearest integer using Rust `f64` rules.                                    |
+| `min`    | `min(x1, x2, ...)`                     | Accepts one or more numeric arguments.                                                  |
+| `max`    | `max(x1, x2, ...)`                     | Accepts one or more numeric arguments.                                                  |
 | `if`     | `if(condition, when_true, when_false)` | The condition must be boolean. Both branches match. Only the selected branch evaluates. |
 
 ### Type rules
@@ -92,10 +92,10 @@ statement the value you want the synthetic to produce.
 The expression engine enforces the following compile-time limits. Formulas that exceed them
 produce a clear error at construction time.
 
-| Limit            | Value | Description                                                    |
-|------------------|-------|----------------------------------------------------------------|
-| Stack depth      | 32    | Maximum number of intermediate values on the evaluation stack. |
-| Local variables  | 16    | Maximum number of distinct local variable names.               |
+| Limit           | Value | Description                                                    |
+| --------------- | ----- | -------------------------------------------------------------- |
+| Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack. |
+| Local variables | 16    | Maximum number of distinct local variable names.               |
 
 These limits are generous for any realistic pricing formula. A weighted sum of 8 components
 uses a peak stack depth of 3 and zero locals.
@@ -195,7 +195,7 @@ Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 ### Evaluation (hot path)
 
 | Formula pattern                         | Time  |
-|-----------------------------------------|-------|
+| --------------------------------------- | ----- |
 | `(A + B) / 2.0`                         | 12 ns |
 | `A * 0.4 + B * 0.3 + C * 0.2 + D * 0.1` | 18 ns |
 | `if(A > B, A - B, B - A)`               | 12 ns |
@@ -205,20 +205,20 @@ Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 ### Evaluation scaling (weighted sum)
 
 | Components | Time  |
-|------------|-------|
+| ---------- | ----- |
 | 2          | 14 ns |
 | 4          | 18 ns |
 | 8          | 28 ns |
 
 ### Compilation (cold path)
 
-| Formula pattern    | Time   |
-|--------------------|--------|
-| Simple average     | 675 ns |
-| 4-input weighted   | 1.4 us |
-| Conditional        | 1.0 us |
-| With locals        | 1.3 us |
-| Hyphenated IDs     | 755 ns |
+| Formula pattern  | Time   |
+| ---------------- | ------ |
+| Simple average   | 675 ns |
+| 4-input weighted | 1.4 us |
+| Conditional      | 1.0 us |
+| With locals      | 1.3 us |
+| Hyphenated IDs   | 755 ns |
 
 ## Error handling
 
@@ -233,5 +233,5 @@ for input requirements and exceptions.
 ## Related guides
 
 - [Instruments](instruments/) - Instrument definitions and venue-specific instrument types.
-- [Data](data.md) - Market data types that reference instruments.
+- [Data](data/) - Market data types that reference instruments.
 - [Orders](orders/) - Orders can use synthetic instrument IDs for emulation triggers.

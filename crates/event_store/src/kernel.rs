@@ -19,8 +19,9 @@
 //! instance directory for crashed predecessors before a fresh run opens, seals each
 //! survivor, opens the new run, blocks `start()` until the writer acknowledges the
 //! `RunStarted` entry, and seals the manifest with a final `RunEnded` entry on graceful
-//! stop. The writer's halt callback is wrapped in a typed [`HaltSignal`] that the kernel
-//! caller polls to convert a fail-stop into kernel shutdown rather than a panic.
+//! stop. The writer's halt callback is wrapped in a typed [`HaltSignal`] that records
+//! the first fail-stop reason for supervision; no runtime component polls it to stop
+//! the trader.
 
 use std::{
     any::Any,
@@ -219,9 +220,10 @@ pub enum BootError {
 
 /// A thread-safe halt signal the kernel registers with the writer.
 ///
-/// The writer thread fires the callback once on the first unrecoverable condition;
-/// the kernel polls [`HaltSignal::is_halted`] and converts it into a typed kernel
-/// shutdown rather than letting the writer-thread error escape as a panic.
+/// Each fail-stop source fires the shared callback at most once: the submitting
+/// thread on a backpressure stall, the writer thread on a backend failure, and the
+/// capture adapter on a rejected submit. The signal records the first reason for
+/// supervision; no runtime component polls it to stop the trader.
 #[derive(Clone, Debug)]
 pub struct HaltSignal {
     halted: Arc<AtomicBool>,
@@ -248,8 +250,9 @@ impl HaltSignal {
     /// occurs.
     ///
     /// The callback records the [`HaltReason`] (preserving only the first one when
-    /// multiple submits race past the halt threshold) and then flips the halted flag,
-    /// so a poller that observes `is_halted()` never reads back an empty reason.
+    /// the writer and the capture adapter both signal) and then flips the halted
+    /// flag, so a poller that observes `is_halted()` never reads back an empty
+    /// reason.
     #[must_use]
     pub fn callback(&self) -> HaltCallback {
         let halted = Arc::clone(&self.halted);
@@ -838,6 +841,7 @@ pub fn recover_predecessors(
                 }
                 Err(
                     EventStoreError::HashMismatch { .. }
+                    | EventStoreError::SeqMismatch { .. }
                     | EventStoreError::Corrupted(_)
                     | EventStoreError::Gap { .. },
                 ) => RunStatus::Quarantined,
@@ -1520,26 +1524,6 @@ mod tests {
         registry
     }
 
-    fn wait_for_high_watermark(store: &EventStoreLifecycle, expected: u64) {
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= expected {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "event store high_watermark did not reach {expected} within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-    }
-
     #[derive(Debug, Clone)]
     struct SharedMemoryBackend(Arc<Mutex<MemoryBackend>>);
 
@@ -1765,9 +1749,7 @@ mod tests {
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.test.audit");
         msgbus::publish_any(topic, &TestAuditMessage { value: 42 });
-        wait_for_high_watermark(&store, 2);
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -1815,8 +1797,6 @@ mod tests {
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.test.memory");
         msgbus::publish_any(topic, &TestAuditMessage { value: 7 });
-        wait_for_high_watermark(&store, 2);
-
         store.seal(UnixNanos::from(1_000));
 
         let backend = memory.lock().expect("memory backend");
@@ -2189,6 +2169,81 @@ mod tests {
             .find(|m| m.run_id == run_id)
             .expect("manifest present");
         assert_eq!(manifest.status, RunStatus::Ended);
+    }
+
+    #[rstest]
+    fn recovery_quarantines_run_with_rows_swapped_between_keys() {
+        // A row moved under a different table key still hashes correctly; the sweep
+        // must quarantine rather than chain the next run through a tampered parent.
+        let tmp = TempDir::new().expect("tempdir");
+        let config = make_config(tmp.path().to_path_buf());
+        let run_id = "1700000000-swapped1";
+
+        let path = {
+            let mut backend = RedbBackend::new(config.base_dir.clone());
+            backend.open_run(manifest_for(run_id)).expect("open run");
+            backend
+                .append_batch(&[
+                    append_entry(
+                        1,
+                        "events.order.1",
+                        "OrderAccepted",
+                        Bytes::from_static(b"\x01"),
+                    ),
+                    append_entry(
+                        2,
+                        "events.order.2",
+                        "OrderFilled",
+                        Bytes::from_static(b"\x02"),
+                    ),
+                ])
+                .expect("append");
+            config
+                .base_dir
+                .join(INSTANCE_ID)
+                .join(format!("{run_id}.redb"))
+        };
+
+        {
+            let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+            let db = redb::Database::create(&path).expect("open redb");
+            let txn = db.begin_write().expect("begin write");
+            {
+                let mut table = txn.open_table(entries).expect("open table");
+                let bytes_1 = table
+                    .remove(1_u64)
+                    .expect("remove seq 1")
+                    .expect("seq 1 present")
+                    .value()
+                    .to_vec();
+                let bytes_2 = table
+                    .remove(2_u64)
+                    .expect("remove seq 2")
+                    .expect("seq 2 present")
+                    .value()
+                    .to_vec();
+                table
+                    .insert(1_u64, bytes_2.as_slice())
+                    .expect("insert under key 1");
+                table
+                    .insert(2_u64, bytes_1.as_slice())
+                    .expect("insert under key 2");
+            }
+            txn.commit().expect("commit swap");
+        }
+
+        let outcome = recover_predecessors(&config.base_dir, INSTANCE_ID).expect("recover sweep");
+
+        assert_eq!(outcome.recovered.len(), 1);
+        assert_eq!(outcome.recovered[0].run_id, run_id);
+        assert_eq!(outcome.recovered[0].status, RunStatus::Quarantined);
+        assert!(
+            outcome.parent_run_id.is_none(),
+            "quarantined runs must not become parents",
+        );
+
+        let manifests = RedbBackend::list_runs(&config.base_dir, INSTANCE_ID).expect("list");
+        assert_eq!(manifests[0].status, RunStatus::Quarantined);
     }
 
     #[rstest]
@@ -2776,28 +2831,7 @@ mod tests {
         let endpoint = MStr::<Endpoint>::from("test.exec.engine.process");
         msgbus::send_any_value(endpoint, &submit_order);
 
-        // RunStarted is seq=1; the captured SubmitOrder lands at seq=2 once the
-        // writer commits.
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured SubmitOrder did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        // Seal cleanly so we can re-open the run read-only
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -2851,7 +2885,6 @@ mod tests {
 
         let second = make_submit_order(ClientOrderId::from("O-marker-2"));
         msgbus::send_any_value(MStr::<Endpoint>::from("test.exec.process"), &second);
-        wait_for_high_watermark(&store, 3);
         store.seal(UnixNanos::from(500));
 
         let marker_path = tmp
@@ -2972,16 +3005,6 @@ mod tests {
                 UnixNanos::from(5_001),
             )
             .expect("capture");
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        while session.high_watermark() < 2 {
-            assert!(
-                Instant::now() < deadline,
-                "event-store high_watermark {} did not reach 2 within deadline",
-                session.high_watermark(),
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
         session
             .close(UnixNanos::from(6_000))
             .expect("close session");
@@ -3110,25 +3133,7 @@ mod tests {
         let callback = TimeEventCallback::from(|_: TimeEvent| {});
         TimeEventHandler::new(event, callback).run();
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured TimeEvent did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3240,25 +3245,7 @@ mod tests {
         let endpoint = MStr::<Endpoint>::from("test.exec.engine.envelope");
         msgbus::send_trading_command(endpoint, command);
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured TradingCommand did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3327,30 +3314,12 @@ mod tests {
             .ts_init(UnixNanos::from(11))
             .commission(Money::new(0.10, Currency::USDT()))
             .build();
-        let event = OrderEventAny::Filled(filled);
+        let event = OrderEventAny::Filled(filled.clone());
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.order.ETHUSDT-PERP.BINANCE");
         msgbus::publish_order_event(topic, &event);
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured OrderEventAny did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3438,25 +3407,7 @@ mod tests {
             DataCommand::Subscribe(subscribe.clone()),
         );
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 3 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured DataCommand entries did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");
@@ -3550,26 +3501,8 @@ mod tests {
         );
         msgbus::send_response(&correlation_id, &DataResponse::Quotes(response.clone()));
 
-        let deadline = Instant::now() + Duration::from_secs(2);
-
-        loop {
-            let hwm = store
-                .session
-                .as_ref()
-                .map_or(0, EventStoreSession::high_watermark);
-
-            if hwm >= 2 {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "captured DataResponse did not commit within deadline (hwm={hwm})",
-            );
-            thread::sleep(Duration::from_millis(2));
-        }
-
         assert!(*handler_called.borrow());
-        drop(store);
+        store.seal(UnixNanos::from(0));
 
         let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
             .expect("open sealed");

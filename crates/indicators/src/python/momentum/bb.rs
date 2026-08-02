@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
@@ -87,8 +88,8 @@ impl BollingerBands {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
-        self.handle_quote(quote);
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]

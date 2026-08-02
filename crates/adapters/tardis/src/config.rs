@@ -134,6 +134,15 @@ pub struct TardisDataClientConfig {
     pub stream_options: Vec<StreamNormalizedRequestOptions>,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(TardisDataClientConfig {
+    tardis_ws_url: Option<String>,
+    normalize_symbols: bool,
+    extract_bbo_as_quotes: bool,
+    options: Vec<ReplayNormalizedRequestOptions>,
+    stream_options: Vec<StreamNormalizedRequestOptions>,
+});
+
 impl Default for TardisDataClientConfig {
     fn default() -> Self {
         Self::builder().build()

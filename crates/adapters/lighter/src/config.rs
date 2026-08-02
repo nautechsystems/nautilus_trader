@@ -28,6 +28,8 @@ use crate::common::{
     urls::{lighter_http_base_url, lighter_ws_url},
 };
 
+const WS_READONLY_QUERY_PARAM: &str = "readonly";
+
 /// Configuration for the Lighter data client.
 #[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
@@ -61,7 +63,7 @@ pub struct LighterDataClientConfig {
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// WebSocket connect timeout in seconds.
+    /// WebSocket connection and reconnection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
     /// Refresh interval for instrument metadata in minutes.
@@ -74,6 +76,20 @@ pub struct LighterDataClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(LighterDataClientConfig {
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    environment: LighterEnvironment,
+    account_index: Option<u64>,
+    api_key_index: Option<u8>,
+    http_timeout_secs: u64,
+    ws_timeout_secs: u64,
+    update_instruments_interval_mins: u64,
+    rest_quota_per_min: Option<u32>,
+    transport_backend: TransportBackend,
+});
 
 impl Default for LighterDataClientConfig {
     fn default() -> Self {
@@ -156,7 +172,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
 
     let pairs = parsed
         .query_pairs()
-        .filter(|(key, _)| key != "readonly")
+        .filter(|(key, _)| key != WS_READONLY_QUERY_PARAM)
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect::<Vec<_>>();
 
@@ -166,7 +182,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
         for (key, value) in pairs {
             query.append_pair(&key, &value);
         }
-        query.append_pair("readonly", "true");
+        query.append_pair(WS_READONLY_QUERY_PARAM, "true");
     }
 
     parsed.to_string()
@@ -216,7 +232,7 @@ pub struct LighterExecClientConfig {
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// WebSocket connect timeout in seconds.
+    /// WebSocket connection and reconnection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
     /// Slippage buffer in basis points for market-style orders.
@@ -232,6 +248,23 @@ pub struct LighterExecClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(LighterExecClientConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    account_index: Option<u64>,
+    api_key_index: Option<u8>,
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    environment: LighterEnvironment,
+    http_timeout_secs: u64,
+    ws_timeout_secs: u64,
+    market_order_slippage_bps: u32,
+    rest_quota_per_min: Option<u32>,
+    sendtx_quota_per_min: Option<u32>,
+    transport_backend: TransportBackend,
+});
 
 impl Default for LighterExecClientConfig {
     fn default() -> Self {

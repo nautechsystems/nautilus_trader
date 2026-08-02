@@ -10,11 +10,11 @@
 
 ## Overview
 
-[AX Exchange](https://architect.exchange) is the world's first centralized and regulated exchange
-for perpetual futures on traditional underlying asset classes (FX, rates, metals, energy, stock
-indexes). Designed for institutional and professional traders, it combines innovations from digital
-asset perpetual exchanges with the safety and risk management of traditional futures exchanges.
-Licensed under the [Bermuda Monetary Authority (BMA)](https://www.bma.bm/).
+[AX Exchange](https://architect.exchange) is a centralized and regulated derivatives exchange for
+traditional underlying asset classes. Its production catalog lists perpetual contracts across FX,
+equities, energy ETFs, metals, energy, treasuries, and compute. Its sandbox also exposes dated
+futures. AX is licensed by the
+[Bermuda Monetary Authority (BMA)](https://www.bma.bm/).
 
 ## NautilusTrader
 
@@ -47,7 +47,7 @@ AX Exchange uses bearer token authentication via HTTP headers:
 ## API endpoints
 
 | Environment | HTTP API (market data)                           | HTTP API (orders)                                   | Market Data WS                                   | Orders WS                                            |
-|-------------|--------------------------------------------------|-----------------------------------------------------|--------------------------------------------------|------------------------------------------------------|
+| ----------- | ------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
 | Sandbox     | `https://gateway.sandbox.architect.exchange/api` | `https://gateway.sandbox.architect.exchange/orders` | `wss://gateway.sandbox.architect.exchange/md/ws` | `wss://gateway.sandbox.architect.exchange/orders/ws` |
 | Production  | `https://gateway.architect.exchange/api`         | `https://gateway.architect.exchange/orders`         | `wss://gateway.architect.exchange/md/ws`         | `wss://gateway.architect.exchange/orders/ws`         |
 

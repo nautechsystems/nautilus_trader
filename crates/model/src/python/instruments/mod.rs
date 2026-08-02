@@ -20,9 +20,11 @@ use pyo3::{
     IntoPyObjectExt, Py, PyAny, PyResult, Python,
     types::{PyAnyMethods, PyDict, PyDictMethods},
 };
+use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
 
 use crate::{
+    enums::{AssetClass, InstrumentClass},
     instruments::{
         BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
         CryptoOptionSpread, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread,
@@ -95,10 +97,10 @@ fn instrument_dict_with_tick_scheme_alias(
 
 macro_rules! impl_instrument_common_pymethods {
     ($type:ty) => {
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         #[pyo3::pymethods]
         impl $type {
             fn __repr__(&self) -> String {
-                use crate::instruments::Instrument;
                 format!(
                     "{}(id={}, price_precision={}, size_precision={})",
                     stringify!($type),
@@ -111,7 +113,6 @@ macro_rules! impl_instrument_common_pymethods {
             #[getter]
             #[pyo3(name = "tick_scheme")]
             fn py_tick_scheme(&self) -> Option<String> {
-                use crate::instruments::Instrument;
                 self.tick_scheme().map(|name| name.to_string())
             }
 
@@ -119,7 +120,6 @@ macro_rules! impl_instrument_common_pymethods {
             #[pyo3(name = "next_bid_price")]
             #[pyo3(signature = (value, num_ticks=0))]
             fn py_next_bid_price(&self, value: f64, num_ticks: i32) -> Option<Price> {
-                use crate::instruments::Instrument;
                 self.next_bid_price(value, num_ticks)
             }
 
@@ -127,7 +127,6 @@ macro_rules! impl_instrument_common_pymethods {
             #[pyo3(name = "next_ask_price")]
             #[pyo3(signature = (value, num_ticks=0))]
             fn py_next_ask_price(&self, value: f64, num_ticks: i32) -> Option<Price> {
-                use crate::instruments::Instrument;
                 self.next_ask_price(value, num_ticks)
             }
 
@@ -139,7 +138,6 @@ macro_rules! impl_instrument_common_pymethods {
                 value: f64,
                 num_ticks: usize,
             ) -> Vec<rust_decimal::Decimal> {
-                use crate::instruments::Instrument;
                 self.next_bid_prices(value, num_ticks)
                     .into_iter()
                     .map(|price| price.as_decimal())
@@ -154,7 +152,6 @@ macro_rules! impl_instrument_common_pymethods {
                 value: f64,
                 num_ticks: usize,
             ) -> Vec<rust_decimal::Decimal> {
-                use crate::instruments::Instrument;
                 self.next_ask_prices(value, num_ticks)
                     .into_iter()
                     .map(|price| price.as_decimal())
@@ -163,8 +160,7 @@ macro_rules! impl_instrument_common_pymethods {
 
             /// Returns a price rounded to the instruments price precision.
             #[pyo3(name = "make_price")]
-            fn py_make_price(&self, value: f64) -> pyo3::PyResult<Price> {
-                use crate::instruments::Instrument;
+            fn py_make_price(&self, value: f64) -> PyResult<Price> {
                 self.try_make_price(value)
                     .map_err(nautilus_core::python::to_pyvalue_err)
             }
@@ -172,8 +168,7 @@ macro_rules! impl_instrument_common_pymethods {
             /// Returns a quantity rounded to the instruments size precision.
             #[pyo3(name = "make_qty")]
             #[pyo3(signature = (value, round_down=false))]
-            fn py_make_qty(&self, value: f64, round_down: bool) -> pyo3::PyResult<Quantity> {
-                use crate::instruments::Instrument;
+            fn py_make_qty(&self, value: f64, round_down: bool) -> PyResult<Quantity> {
                 self.try_make_qty(value, Some(round_down))
                     .map_err(nautilus_core::python::to_pyvalue_err)
             }
@@ -186,11 +181,43 @@ macro_rules! impl_instrument_common_pymethods {
                 quantity: Quantity,
                 price: Price,
                 use_quote_for_inverse: bool,
-            ) -> Money {
-                use crate::instruments::Instrument;
-                self.calculate_notional_value(quantity, price, Some(use_quote_for_inverse))
+            ) -> PyResult<Money> {
+                self.try_calculate_notional_value(quantity, price, Some(use_quote_for_inverse))
+                    .map_err(nautilus_core::python::to_pyvalue_err)
             }
         }
+    };
+}
+
+macro_rules! impl_instrument_getter {
+    ($name:literal, $getter:ident, $return_type:ty, $method:ident, $($type:ty),+ $(,)?) => {
+        $(
+            #[pyo3_stub_gen::derive::gen_stub_pymethods]
+            #[pyo3::pymethods]
+            impl $type {
+                #[getter]
+                #[pyo3(name = $name)]
+                fn $getter(&self) -> $return_type {
+                    Instrument::$method(self)
+                }
+            }
+        )+
+    };
+}
+
+macro_rules! impl_instrument_isin_getter {
+    ($($type:ty),+ $(,)?) => {
+        $(
+            #[pyo3_stub_gen::derive::gen_stub_pymethods]
+            #[pyo3::pymethods]
+            impl $type {
+                #[getter]
+                #[pyo3(name = "isin")]
+                fn py_isin(&self) -> Option<String> {
+                    Instrument::isin(self).map(|value| value.to_string())
+                }
+            }
+        )+
     };
 }
 
@@ -212,6 +239,219 @@ impl_instrument_common_pymethods!(OptionContract);
 impl_instrument_common_pymethods!(OptionSpread);
 impl_instrument_common_pymethods!(PerpetualContract);
 impl_instrument_common_pymethods!(TokenizedAsset);
+
+impl_instrument_getter!(
+    "asset_class",
+    py_asset_class,
+    AssetClass,
+    asset_class,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    CryptoPerpetual,
+    CurrencyPair,
+    Equity,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "instrument_class",
+    py_instrument_class,
+    InstrumentClass,
+    instrument_class,
+    BinaryOption,
+    Cfd,
+    Commodity,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    CryptoPerpetual,
+    CurrencyPair,
+    Equity,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+    PerpetualContract,
+    TokenizedAsset,
+);
+impl_instrument_getter!(
+    "is_inverse",
+    py_is_inverse,
+    bool,
+    is_inverse,
+    BettingInstrument,
+    BinaryOption,
+    Cfd,
+    Commodity,
+    CurrencyPair,
+    Equity,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+    TokenizedAsset,
+);
+impl_instrument_getter!(
+    "is_quanto",
+    py_is_quanto,
+    bool,
+    is_quanto,
+    BettingInstrument,
+    BinaryOption,
+    Cfd,
+    Commodity,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    CryptoPerpetual,
+    CurrencyPair,
+    Equity,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+    PerpetualContract,
+    TokenizedAsset,
+);
+impl_instrument_isin_getter!(
+    BettingInstrument,
+    BinaryOption,
+    Cfd,
+    Commodity,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    CryptoPerpetual,
+    CurrencyPair,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+    PerpetualContract,
+);
+impl_instrument_getter!(
+    "lot_size",
+    py_lot_size,
+    Option<Quantity>,
+    lot_size,
+    BettingInstrument,
+    BinaryOption,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "maker_fee",
+    py_maker_fee,
+    Decimal,
+    maker_fee,
+    IndexInstrument
+);
+impl_instrument_getter!(
+    "margin_init",
+    py_margin_init,
+    Decimal,
+    margin_init,
+    BettingInstrument,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "margin_maint",
+    py_margin_maint,
+    Decimal,
+    margin_maint,
+    BettingInstrument,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "max_notional",
+    py_max_notional,
+    Option<Money>,
+    max_notional,
+    Equity,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+);
+impl_instrument_getter!(
+    "max_price",
+    py_max_price,
+    Option<Price>,
+    max_price,
+    IndexInstrument
+);
+impl_instrument_getter!(
+    "max_quantity",
+    py_max_quantity,
+    Option<Quantity>,
+    max_quantity,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "min_notional",
+    py_min_notional,
+    Option<Money>,
+    min_notional,
+    Equity,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+);
+impl_instrument_getter!(
+    "min_price",
+    py_min_price,
+    Option<Price>,
+    min_price,
+    IndexInstrument
+);
+impl_instrument_getter!(
+    "min_quantity",
+    py_min_quantity,
+    Option<Quantity>,
+    min_quantity,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "multiplier",
+    py_multiplier,
+    Quantity,
+    multiplier,
+    BettingInstrument,
+    BinaryOption,
+    Cfd,
+    Commodity,
+    Equity,
+    IndexInstrument,
+);
+impl_instrument_getter!(
+    "quote_currency",
+    py_quote_currency,
+    Currency,
+    quote_currency,
+    BettingInstrument,
+    BinaryOption,
+    FuturesContract,
+    FuturesSpread,
+    OptionContract,
+    OptionSpread,
+);
+impl_instrument_getter!(
+    "taker_fee",
+    py_taker_fee,
+    Decimal,
+    taker_fee,
+    IndexInstrument
+);
 
 pub mod betting;
 pub mod binary_option;

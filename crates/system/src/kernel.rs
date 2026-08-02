@@ -24,7 +24,7 @@ use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::Clock,
     component::Component,
-    enums::Environment,
+    enums::{ComponentState, Environment},
     logging::{
         arm_shutdown_on_error, disarm_shutdown_on_error, headers, init_logging,
         logger::{LogGuard, LoggerConfig},
@@ -95,6 +95,7 @@ pub struct NautilusKernel {
     shutdown_requested: Rc<Cell<bool>>,
     event_store: Option<Box<dyn KernelEventStore>>,
     event_store_replay: bool,
+    state_save_armed: bool,
 }
 
 /// Optional construction-time dependencies for [`NautilusKernel`].
@@ -321,6 +322,7 @@ impl NautilusKernel {
             ts_shutdown: None,
             shutdown_requested,
             event_store_replay: false,
+            state_save_armed: false,
         })
     }
 
@@ -656,13 +658,40 @@ impl NautilusKernel {
     /// Starts the trader (strategies and actors).
     ///
     /// This should be called after clients are connected and instruments are cached.
-    pub fn start_trader(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trader or a registered component fails to start. A failed partial
+    /// start is stopped immediately before the error is returned.
+    pub fn start_trader(&mut self) -> anyhow::Result<()> {
         log::info!("Starting trader...");
-        self.order_emulator.start();
-        if let Err(e) = self.trader.borrow_mut().start() {
-            log::error!("Error starting trader: {e:?}");
+
+        if self.config.load_state() {
+            Trader::load_state(&self.trader)
+                .map_err(|e| anyhow::anyhow!("Failed to load actor and strategy state: {e:#}"))?;
         }
+
+        self.state_save_armed = self.config.save_state();
+        self.order_emulator.start();
+
+        if let Err(start_err) = Trader::start_with_component_callbacks(&self.trader) {
+            let stop_result = self.stop_trader_after_start_failure();
+            self.order_emulator.stop();
+            let save_result = self.save_trader_state();
+
+            let mut errors = vec![format!("Failed to start trader: {start_err}")];
+            if let Err(e) = stop_result {
+                errors.push(format!("failed to stop partial trader start: {e}"));
+            }
+
+            if let Err(e) = save_result {
+                errors.push(format!("failed to save partial trader state: {e}"));
+            }
+            anyhow::bail!("{}", errors.join("; "));
+        }
+
         log::info!("Trader started");
+        Ok(())
     }
 
     /// Stops the trader and its registered components.
@@ -684,19 +713,46 @@ impl NautilusKernel {
         }
     }
 
+    /// Stops a partially started trader without deferring managed strategy shutdown.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any active trader component cannot be stopped.
+    pub fn stop_trader_after_start_failure(&mut self) -> anyhow::Result<()> {
+        disarm_shutdown_on_error();
+
+        if !matches!(
+            self.trader.borrow().state(),
+            ComponentState::Starting | ComponentState::Running
+        ) {
+            return Ok(());
+        }
+
+        log::info!("Stopping trader immediately...");
+        self.trader.borrow_mut().stop_after_start_failure()
+    }
+
     /// Finalizes the kernel shutdown after the grace period.
     ///
     /// This method should be called after the residual events grace period has elapsed
     /// and all remaining events have been processed. It disconnects clients and stops engines.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if actor or strategy state cannot be saved.
+    #[allow(unknown_lints)]
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "keeps the public async kernel API shape stable"
     )]
-    pub async fn finalize_stop(&mut self) {
+    pub async fn finalize_stop(&mut self) -> anyhow::Result<()> {
         disarm_shutdown_on_error();
 
         // Execution and data clients are stopped by their engines via `stop_engines` below
 
+        let save_result = self.save_trader_state();
+        self.portfolio.borrow_mut().finalize_equity_curve();
         self.stop_engines();
         self.cancel_timers();
 
@@ -708,6 +764,20 @@ impl NautilusKernel {
         }
         self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
+        save_result
+    }
+
+    /// Saves actor and strategy state at most once for the current trader run.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a component callback or cache persistence operation fails.
+    pub fn save_trader_state(&mut self) -> anyhow::Result<()> {
+        if !std::mem::take(&mut self.state_save_armed) {
+            return Ok(());
+        }
+
+        Trader::save_state(&self.trader)
     }
 
     /// Returns the kernel-managed event-store integration, when one was injected.
@@ -751,6 +821,7 @@ impl NautilusKernel {
 
         self.ts_started = None;
         self.ts_shutdown = None;
+        self.state_save_armed = false;
 
         log::info!("Reset");
     }
@@ -760,8 +831,34 @@ impl NautilusKernel {
         disarm_shutdown_on_error();
         log::info!("Disposing");
 
-        if let Err(e) = self.trader.borrow_mut().dispose() {
-            log::error!("Error disposing trader: {e:?}");
+        let trader_state = self.trader.borrow().state();
+        match trader_state {
+            ComponentState::Running => self.stop_trader(),
+            ComponentState::Starting => {
+                if let Err(e) = self.stop_trader_after_start_failure() {
+                    log::error!("Error stopping partial trader start during disposal: {e:?}");
+                }
+            }
+            _ => {}
+        }
+
+        if let Err(e) = self.save_trader_state() {
+            log::error!("Error saving trader state during disposal: {e:?}");
+        }
+
+        {
+            let mut trader = self.trader.borrow_mut();
+            if trader.state() == ComponentState::PreInitialized
+                && let Err(e) = trader.initialize()
+            {
+                log::error!("Error initializing trader for disposal: {e:?}");
+            }
+
+            if !trader.is_disposed()
+                && let Err(e) = trader.dispose()
+            {
+                log::error!("Error disposing trader: {e:?}");
+            }
         }
 
         self.stop_engines();
@@ -831,9 +928,20 @@ impl NautilusKernel {
     #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     pub async fn disconnect_clients(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting clients...");
-        self.data_engine.borrow_mut().disconnect().await?;
-        self.exec_engine.borrow_mut().disconnect().await?;
-        Ok(())
+        let mut data_engine = self.data_engine.borrow_mut();
+        let mut exec_engine = self.exec_engine.borrow_mut();
+        let (data_result, exec_result) =
+            futures::join!(data_engine.disconnect(), exec_engine.disconnect());
+
+        match (data_result, exec_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(data_err), Ok(())) => Err(data_err),
+            (Ok(()), Err(exec_err)) => Err(exec_err),
+            (Err(data_err), Err(exec_err)) => anyhow::bail!(
+                "Failed to disconnect data clients: {data_err}; failed to disconnect execution \
+                 clients: {exec_err}"
+            ),
+        }
     }
 
     /// Returns `true` if all engine clients are connected.
@@ -948,24 +1056,109 @@ mod tests {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use futures::FutureExt;
+    use indexmap::IndexMap;
     use nautilus_common::{
+        actor::registry::get_actor_unchecked,
+        cache::Cache,
         messages::data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
         msgbus::stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     };
+    use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, OrderType, TriggerType},
-        identifiers::ClientOrderId,
+        identifiers::{ActorId, ClientOrderId, ComponentId, StrategyId},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
         orders::{Order, OrderAny, OrderTestBuilder},
         types::{Price, Quantity},
     };
+    use nautilus_testkit::{
+        cache::TestCacheDatabaseControl,
+        components::{StateActor, StateStrategy},
+    };
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
-    use crate::builder::NautilusKernelBuilder;
+    use crate::{
+        builder::NautilusKernelBuilder,
+        event_store::{KernelEventStore, RegisteredComponents},
+    };
+
+    #[derive(Debug)]
+    struct RecordingEventStore {
+        control: TestCacheDatabaseControl,
+        opened: bool,
+    }
+
+    impl KernelEventStore for RecordingEventStore {
+        fn restore_parent_cache(
+            &mut self,
+            _instance_id: UUID4,
+            _cache: &mut Cache,
+        ) -> anyhow::Result<()> {
+            self.control.record("event_store.restore");
+            Ok(())
+        }
+
+        fn open(
+            &mut self,
+            _instance_id: UUID4,
+            _components: &RegisteredComponents,
+            _environment: Environment,
+        ) -> anyhow::Result<()> {
+            self.control.record("event_store.open");
+            self.opened = true;
+            Ok(())
+        }
+
+        fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+            None
+        }
+
+        fn seal(&mut self, _ts_init: UnixNanos) {
+            if self.opened {
+                self.control.record("event_store.seal");
+                self.opened = false;
+            }
+        }
+
+        fn run_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn parent_run_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn is_halted(&self) -> bool {
+            false
+        }
+    }
+
+    fn state(key: &str, value: &[u8]) -> IndexMap<String, Vec<u8>> {
+        IndexMap::from([(key.to_string(), value.to_vec())])
+    }
+
+    fn finalize(kernel: &mut NautilusKernel) -> anyhow::Result<()> {
+        kernel
+            .finalize_stop()
+            .now_or_never()
+            .expect("kernel finalization must not yield")
+    }
+
+    fn add_state_components(
+        kernel: &NautilusKernel,
+        control: &TestCacheDatabaseControl,
+        actor: StateActor,
+        strategy: StateStrategy,
+    ) {
+        kernel.trader.borrow_mut().add_actor(actor).unwrap();
+        kernel.trader.borrow_mut().add_strategy(strategy).unwrap();
+        control.record("components.registered");
+    }
 
     fn create_stop_market_order(instrument: &CryptoPerpetual, client_order_id: &str) -> OrderAny {
         OrderTestBuilder::new(OrderType::StopMarket)
@@ -986,6 +1179,376 @@ mod lifecycle_tests {
             handler,
         );
         saving_handler
+    }
+
+    #[rstest]
+    fn test_state_persistence_orders_restore_load_start_stop_save_seal_and_dispose() {
+        let actor_id = ActorId::from("STATE-ACTOR");
+        let strategy_id = StrategyId::from("STATE-STRATEGY-001");
+        let actor_load = state("actor-loaded", b"actor-load-value");
+        let strategy_load = state("strategy-loaded", b"strategy-load-value");
+        let actor_save = state("actor-saved", b"actor-save-value");
+        let strategy_save = state("strategy-saved", b"strategy-save-value");
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+        control.set_strategy_state(strategy_id, &strategy_load);
+
+        let event_store_control = control.clone();
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .with_event_store(move |_instance_id, _clock| {
+                Ok(Box::new(RecordingEventStore {
+                    control: event_store_control,
+                    opened: false,
+                }))
+            })
+            .build()
+            .unwrap();
+
+        let actor = StateActor::new(actor_id, control.clone(), actor_save.clone());
+        let strategy = StateStrategy::new(strategy_id, control.clone(), strategy_save.clone());
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+
+        let actor_state = get_actor_unchecked::<StateActor>(&actor_id.inner())
+            .state_load()
+            .cloned();
+        let strategy_state = get_actor_unchecked::<StateStrategy>(&strategy_id.inner())
+            .state_load()
+            .cloned();
+        assert_eq!(actor_state, Some(actor_load));
+        assert_eq!(strategy_state, Some(strategy_load));
+
+        kernel.stop_trader();
+        kernel.stop_trader();
+        finalize(&mut kernel).unwrap();
+        finalize(&mut kernel).unwrap();
+        kernel.dispose();
+
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "event_store.restore",
+                "event_store.open",
+                "actor.load:STATE-ACTOR",
+                "actor.on_load",
+                "strategy.load:STATE-STRATEGY-001",
+                "strategy.on_load",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:STATE-ACTOR",
+                "strategy.on_save",
+                "strategy.update:STATE-STRATEGY-001",
+                "event_store.seal",
+                "database.close",
+            ]
+        );
+        assert_eq!(
+            control.actor_state(&ComponentId::from(actor_id.as_str())),
+            Some(actor_save)
+        );
+        assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
+    }
+
+    #[rstest]
+    fn test_state_persistence_skips_callbacks_without_cache_backing() {
+        let actor_id = ActorId::from("NO-BACKING-ACTOR");
+        let strategy_id = StrategyId::from("NO-BACKING-STRATEGY-001");
+        let control = TestCacheDatabaseControl::default();
+        let mut kernel = NautilusKernelBuilder::default().build().unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), state("actor", b"save"));
+        let strategy = StateStrategy::new(strategy_id, control.clone(), state("strategy", b"save"));
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+        finalize(&mut kernel).unwrap();
+        kernel.dispose();
+
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_state_persistence_skips_empty_load_and_persists_empty_save() {
+        let actor_id = ActorId::from("EMPTY-STATE-ACTOR");
+        let strategy_id = StrategyId::from("EMPTY-STATE-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), IndexMap::new());
+        let strategy = StateStrategy::new(strategy_id, control.clone(), IndexMap::new());
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+        finalize(&mut kernel).unwrap();
+
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "actor.load:EMPTY-STATE-ACTOR",
+                "strategy.load:EMPTY-STATE-STRATEGY-001",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:EMPTY-STATE-ACTOR",
+                "strategy.on_save",
+                "strategy.update:EMPTY-STATE-STRATEGY-001",
+            ]
+        );
+        assert_eq!(
+            control.actor_state(&ComponentId::from(actor_id.as_str())),
+            Some(IndexMap::new())
+        );
+        assert_eq!(control.strategy_state(&strategy_id), Some(IndexMap::new()));
+        kernel.dispose();
+    }
+
+    #[rstest]
+    fn test_state_save_reports_all_callback_errors_and_continues_shutdown() {
+        let actor_id = ActorId::from("FAIL-SAVE-ACTOR");
+        let strategy_id = StrategyId::from("FAIL-SAVE-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let event_store_control = control.clone();
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .with_event_store(move |_instance_id, _clock| {
+                Ok(Box::new(RecordingEventStore {
+                    control: event_store_control,
+                    opened: false,
+                }))
+            })
+            .build()
+            .unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), IndexMap::new()).with_fail_save();
+        let strategy =
+            StateStrategy::new(strategy_id, control.clone(), IndexMap::new()).with_fail_save();
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+        let expected_shutdown = kernel.clock.borrow().timestamp_ns();
+        let error = finalize(&mut kernel).unwrap_err();
+        kernel.dispose();
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to save component state: actor FAIL-SAVE-ACTOR callback: test actor on_save \
+             failure; strategy FAIL-SAVE-STRATEGY-001 callback: test strategy on_save failure"
+        );
+        assert_eq!(kernel.ts_shutdown, Some(expected_shutdown));
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "event_store.restore",
+                "event_store.open",
+                "actor.load:FAIL-SAVE-ACTOR",
+                "strategy.load:FAIL-SAVE-STRATEGY-001",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "strategy.on_save",
+                "event_store.seal",
+                "database.close",
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_state_load_callback_failure_prevents_start_and_save() {
+        let actor_id = ActorId::from("FAIL-LOAD-ACTOR");
+        let strategy_id = StrategyId::from("FAIL-LOAD-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_actor_state(
+            ComponentId::from(actor_id.as_str()),
+            &state("actor", b"load"),
+        );
+        control.set_strategy_state(strategy_id, &state("strategy", b"load"));
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), IndexMap::new()).with_fail_load();
+        let strategy = StateStrategy::new(strategy_id, control.clone(), IndexMap::new());
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        let error = kernel.start_trader().unwrap_err();
+        kernel.dispose();
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to load actor and strategy state: Failed to restore actor FAIL-LOAD-ACTOR \
+             state: test actor on_load failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "actor.load:FAIL-LOAD-ACTOR",
+                "actor.on_load",
+                "database.close",
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_state_save_reports_all_persistence_errors() {
+        let actor_id = ActorId::from("FAIL-UPDATE-ACTOR");
+        let strategy_id = StrategyId::from("FAIL-UPDATE-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_fail_update_actor(true);
+        control.set_fail_update_strategy(true);
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), state("actor", b"save"));
+        let strategy = StateStrategy::new(strategy_id, control.clone(), state("strategy", b"save"));
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+        let error = finalize(&mut kernel).unwrap_err();
+        kernel.dispose();
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to save component state: actor FAIL-UPDATE-ACTOR persistence: test actor \
+             update failure; strategy FAIL-UPDATE-STRATEGY-001 persistence: test strategy update \
+             failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "actor.load:FAIL-UPDATE-ACTOR",
+                "strategy.load:FAIL-UPDATE-STRATEGY-001",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:FAIL-UPDATE-ACTOR",
+                "strategy.on_save",
+                "strategy.update:FAIL-UPDATE-STRATEGY-001",
+                "database.close",
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_partial_startup_stops_and_saves_once() {
+        let actor_id = ActorId::from("PARTIAL-ACTOR");
+        let strategy_id = StrategyId::from("PARTIAL-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), state("actor", b"partial"));
+        let strategy =
+            StateStrategy::new(strategy_id, control.clone(), state("strategy", b"partial"))
+                .with_fail_start();
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        let error = kernel.start_trader().unwrap_err();
+        kernel.dispose();
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to start trader: test strategy on_start failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "actor.load:PARTIAL-ACTOR",
+                "strategy.load:PARTIAL-STRATEGY-001",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:PARTIAL-ACTOR",
+                "strategy.on_save",
+                "strategy.update:PARTIAL-STRATEGY-001",
+                "database.close",
+            ]
+        );
+        assert_eq!(
+            control.actor_state(&ComponentId::from(actor_id.as_str())),
+            Some(state("actor", b"partial"))
+        );
+        assert_eq!(
+            control.strategy_state(&strategy_id),
+            Some(state("strategy", b"partial"))
+        );
+    }
+
+    #[rstest]
+    fn test_forced_dispose_stops_and_saves_once() {
+        let actor_id = ActorId::from("FORCED-ACTOR");
+        let strategy_id = StrategyId::from("FORCED-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        let actor = StateActor::new(actor_id, control.clone(), state("actor", b"forced"));
+        let strategy =
+            StateStrategy::new(strategy_id, control.clone(), state("strategy", b"forced"));
+        add_state_components(&kernel, &control, actor, strategy);
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.dispose();
+
+        assert_eq!(
+            control.events(),
+            vec![
+                "components.registered",
+                "actor.load:FORCED-ACTOR",
+                "strategy.load:FORCED-STRATEGY-001",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+                "actor.on_save",
+                "actor.update:FORCED-ACTOR",
+                "strategy.on_save",
+                "strategy.update:FORCED-STRATEGY-001",
+                "database.close",
+            ]
+        );
     }
 
     #[rstest]
@@ -1022,7 +1585,7 @@ mod lifecycle_tests {
                 .get_matching_core(&instrument_id)
                 .is_none()
         );
-        kernel.start_trader();
+        kernel.start_trader().unwrap();
 
         let commands = data_commands.get_messages();
         let cache = kernel.cache.borrow();
@@ -1075,7 +1638,7 @@ mod lifecycle_tests {
             .unwrap();
 
         kernel.start();
-        kernel.start_trader();
+        kernel.start_trader().unwrap();
         assert!(
             kernel
                 .order_emulator

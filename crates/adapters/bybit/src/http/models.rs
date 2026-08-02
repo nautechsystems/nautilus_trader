@@ -24,9 +24,9 @@ use crate::common::{
         BybitAccountType, BybitApiKeyType, BybitCancelType, BybitContractType, BybitCreateType,
         BybitExecType, BybitInnovationFlag, BybitInstrumentStatus, BybitMarginMode,
         BybitMarginTrading, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
-        BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType,
-        BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
-        BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
+        BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType,
+        BybitRepayStatus, BybitSmpType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce,
+        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
     },
     models::{
         BybitCursorList, BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
@@ -1401,7 +1401,7 @@ pub type BybitBorrowResponse = BybitResponse<BybitBorrowResult>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitNoConvertRepayResult {
-    pub result_status: String,
+    pub result_status: BybitRepayStatus,
 }
 
 /// Response alias for no-convert repay requests.
@@ -1410,6 +1410,20 @@ pub struct BybitNoConvertRepayResult {
 ///
 /// - <https://bybit-exchange.github.io/docs/v5/account/no-convert-repay>
 pub type BybitNoConvertRepayResponse = BybitResponse<BybitNoConvertRepayResult>;
+
+/// Result from a manual repay (with conversion) operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitRepayResult {
+    pub result_status: BybitRepayStatus,
+}
+
+/// Response alias for manual repay requests.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/repay>
+pub type BybitRepayResponse = BybitResponse<BybitRepayResult>;
 
 /// API key permissions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1446,11 +1460,11 @@ pub struct BybitApiKeyPermissions {
     #[serde(default)]
     pub affiliate: Vec<String>,
     // Newer permission buckets. Master-account responses populate them, sub-key
-    // responses typically omit or return empty arrays — both cases deserialize
+    // responses typically omit or return empty arrays - both cases deserialize
     // to an empty `Vec` via `serde(default)`.
     #[serde(default)]
     pub earn: Vec<String>,
-    // Bybit uses `"FiatP2P"` — PascalCase rename would emit `"FiatP2p"`.
+    // Bybit uses `"FiatP2P"` - PascalCase rename would emit `"FiatP2p"`.
     #[serde(rename = "FiatP2P", default)]
     pub fiat_p2p: Vec<String>,
     #[serde(default)]
@@ -1463,7 +1477,7 @@ pub struct BybitApiKeyPermissions {
     pub fiat_convert_broker: Vec<String>,
     #[serde(default)]
     pub bit_card: Vec<String>,
-    // Bybit uses `"ByXPost"` — PascalCase rename would emit `"ByxPost"`.
+    // Bybit uses `"ByXPost"` - PascalCase rename would emit `"ByxPost"`.
     #[serde(rename = "ByXPost", default)]
     pub byx_post: Vec<String>,
 }
@@ -2145,7 +2159,26 @@ mod tests {
 
         assert_eq!(response.ret_code, 0);
         assert_eq!(response.ret_msg, "OK");
-        assert_eq!(response.result.result_status, "SU");
+        assert_eq!(response.result.result_status, BybitRepayStatus::Success);
+    }
+
+    #[rstest]
+    fn deserialize_repay_response() {
+        let json = r#"{
+            "retCode": 0,
+            "retMsg": "success",
+            "result": {
+                "resultStatus": "P"
+            },
+            "retExtInfo": {},
+            "time": 1756295680801
+        }"#;
+
+        let response: BybitRepayResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.ret_code, 0);
+        assert_eq!(response.ret_msg, "success");
+        assert_eq!(response.result.result_status, BybitRepayStatus::Processing);
     }
 
     #[rstest]

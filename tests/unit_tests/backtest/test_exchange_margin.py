@@ -61,6 +61,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -69,6 +70,7 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
@@ -560,6 +562,57 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.avg_px == 90.005  # No slippage
+
+    def test_submit_mixed_instrument_order_list_fills_each_leg_from_own_book(self) -> None:
+        # Arrange: Prepare market
+        self.exchange.add_instrument(_AUDUSD_SIM)
+        usd_jpy_quote = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        aud_usd_quote = TestDataStubs.quote_tick(
+            instrument=_AUDUSD_SIM,
+            bid_price=0.70002,
+            ask_price=0.70005,
+        )
+        self.data_engine.process(usd_jpy_quote)
+        self.data_engine.process(aud_usd_quote)
+        self.exchange.process_quote_tick(usd_jpy_quote)
+        self.exchange.process_quote_tick(aud_usd_quote)
+
+        usd_jpy_order = self.strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        aud_usd_order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order_list = OrderList(
+            OrderListId("OL-MIXED-001"),
+            [usd_jpy_order, aud_usd_order],
+        )
+
+        # Act
+        self.strategy.submit_order_list(order_list)
+        self.exchange.process(0)
+
+        # Assert
+        fill_prices = {
+            event.client_order_id: event.last_px
+            for event in self.strategy.store
+            if isinstance(event, OrderFilled)
+        }
+
+        assert usd_jpy_order.status == OrderStatus.FILLED
+        assert aud_usd_order.status == OrderStatus.FILLED
+        assert fill_prices == {
+            usd_jpy_order.client_order_id: Price.from_str("90.005"),
+            aud_usd_order.client_order_id: Price.from_str("0.70005"),
+        }
 
     def test_submit_market_order_with_bar(self) -> None:
         # Arrange: Prepare market
@@ -3402,7 +3455,7 @@ class TestSimulatedExchangeMarginAccount:
         position_open = self.cache.positions_open()[0]
         assert position_open.side == PositionSide.SHORT
         assert position_open.quantity == Quantity.from_int(50_000)
-        assert self.exchange.get_account().balance_total(USD) == Money(1_011_105.53, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(1_011_105.41, USD)
 
     def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self) -> None:
         # Arrange: Prepare market

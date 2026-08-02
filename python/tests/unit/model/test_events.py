@@ -30,6 +30,7 @@ from nautilus_trader.model import OrderDenied
 from nautilus_trader.model import OrderEmulated
 from nautilus_trader.model import OrderExpired
 from nautilus_trader.model import OrderFilled
+from nautilus_trader.model import OrderFillVoided
 from nautilus_trader.model import OrderModifyRejected
 from nautilus_trader.model import OrderPendingCancel
 from nautilus_trader.model import OrderPendingUpdate
@@ -40,6 +41,8 @@ from nautilus_trader.model import OrderSubmitted
 from nautilus_trader.model import OrderTriggered
 from nautilus_trader.model import OrderType
 from nautilus_trader.model import OrderUpdated
+from nautilus_trader.model import PortfolioSnapshot
+from nautilus_trader.model import PositionId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import TradeId
@@ -59,6 +62,43 @@ def client_order_id():
 @pytest.fixture
 def venue_order_id():
     return VenueOrderId("123456")
+
+
+@pytest.fixture
+def order_fill_voided(
+    trader_id,
+    strategy_id,
+    audusd_id,
+    account_id,
+    client_order_id,
+    venue_order_id,
+    uuid,
+):
+    return OrderFillVoided(
+        trader_id=trader_id,
+        strategy_id=strategy_id,
+        instrument_id=audusd_id,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        account_id=account_id,
+        correction_id="CORRECTION-001",
+        trade_id=TradeId("1"),
+        voided_qty=Quantity.from_int(100_000),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        last_px=Price.from_str("1.00000"),
+        currency=Currency.from_str("USD"),
+        liquidity_side=LiquiditySide.MAKER,
+        event_id=uuid,
+        ts_event=1,
+        ts_init=2,
+        reconciliation=False,
+        is_reopened=True,
+        commission_voided=Money.from_str("2.00 USD"),
+        position_id=PositionId("P-001"),
+        reason="VENUE_VOID",
+        info={"source": "test"},
+    )
 
 
 def test_account_state_construction(account_id, uuid):
@@ -82,6 +122,10 @@ def test_account_state_construction(account_id, uuid):
     assert state.account_id == account_id
     assert state.account_type == AccountType.CASH
     assert len(state.balances) == 1
+    assert state.is_reported is True
+    assert state.event_id == uuid
+    assert state.ts_event == 0
+    assert state.ts_init == 0
 
 
 def test_account_state_to_dict_and_from_dict_roundtrip(account_id, uuid):
@@ -107,6 +151,34 @@ def test_account_state_to_dict_and_from_dict_roundtrip(account_id, uuid):
     restored = AccountState.from_dict(d)
 
     assert restored == state
+
+
+def test_portfolio_snapshot_valuation_metadata(account_id, audusd_id, uuid):
+    usd = Currency.from_str("USD")
+    snapshot = PortfolioSnapshot(
+        account_id=account_id,
+        account_type=AccountType.CASH,
+        balances=[],
+        margins=[],
+        unrealized_pnls=[],
+        realized_pnls=[],
+        total_equity=[Money.from_str("1_100 USD")],
+        event_id=uuid,
+        ts_event=1,
+        ts_init=2,
+        base_currency=usd,
+        base_currency_equity=Money.from_str("1_100 USD"),
+        is_stale=True,
+        stale_instruments=[audusd_id],
+        stale_currencies=[Currency.from_str("AUD")],
+        unpriced_instruments=[],
+    )
+
+    assert snapshot.base_currency_equity == Money.from_str("1_100 USD")
+    assert snapshot.is_stale is True
+    assert snapshot.stale_instruments == [audusd_id]
+    assert snapshot.stale_currencies == [Currency.from_str("AUD")]
+    assert snapshot.unpriced_instruments == []
 
 
 def test_order_denied(trader_id, strategy_id, audusd_id, client_order_id, uuid):
@@ -821,3 +893,38 @@ def test_order_filled_to_dict_roundtrip(
     restored = OrderFilled.from_dict(event.to_dict())
 
     assert restored == event
+
+
+def test_order_fill_voided_to_dict_roundtrip(order_fill_voided):
+    restored = OrderFillVoided.from_dict(order_fill_voided.to_dict())
+
+    assert restored == order_fill_voided
+    assert order_fill_voided.correction_id == "CORRECTION-001"
+    assert order_fill_voided.trade_id == TradeId("1")
+    assert order_fill_voided.voided_qty == Quantity.from_int(100_000)
+    assert order_fill_voided.commission_voided == Money.from_str("2.00 USD")
+    assert order_fill_voided.order_side == OrderSide.BUY
+    assert order_fill_voided.order_type == OrderType.LIMIT
+    assert order_fill_voided.last_px == Price.from_str("1.00000")
+    assert order_fill_voided.currency == Currency.from_str("USD")
+    assert order_fill_voided.liquidity_side == LiquiditySide.MAKER
+    assert order_fill_voided.position_id == PositionId("P-001")
+    assert order_fill_voided.reason == "VENUE_VOID"
+    assert order_fill_voided.ts_event == 1
+    assert order_fill_voided.ts_init == 2
+    assert order_fill_voided.reconciliation is False
+    assert order_fill_voided.is_reopened is True
+    assert order_fill_voided.info == {"source": "test"}
+
+
+def test_order_fill_voided_from_dict_rejects_malformed_order_side(order_fill_voided):
+    values = order_fill_voided.to_dict()
+    values["order_side"] = "NOT_A_SIDE"
+
+    with pytest.raises(ValueError, match="Matching variant not found"):
+        OrderFillVoided.from_dict(values)
+
+
+def test_order_fill_voided_ordering_raises(order_fill_voided):
+    with pytest.raises(TypeError):
+        _ = order_fill_voided < order_fill_voided

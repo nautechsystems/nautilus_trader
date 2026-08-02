@@ -1,0 +1,132 @@
+{
+  "timezone": "UTC",
+  "serverTime": 1784577617554,
+  "rateLimits": [],
+  "exchangeFilters": [],
+  "assets": [],
+  "symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "pair": "BTCUSDT",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1569398400000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0500",
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "minPrice": "0.10",
+          "maxPrice": "1000000",
+          "tickSize": "0.10"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "minQty": "0.001",
+          "maxQty": "1000",
+          "stepSize": "0.001"
+        },
+        {
+          "filterType": "MIN_NOTIONAL",
+          "notional": "5"
+        }
+      ],
+      "orderTypes": ["LIMIT", "MARKET"],
+      "timeInForce": ["GTC", "IOC", "FOK", "GTD"]
+    },
+    {
+      "symbol": "BTCUSDT_260925",
+      "pair": "BTCUSDT",
+      "contractType": "CURRENT_QUARTER",
+      "deliveryDate": 1790323200000,
+      "onboardDate": 1774598400000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 1,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0500",
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "minPrice": "556.8",
+          "maxPrice": "4529764",
+          "tickSize": "0.1"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "minQty": "0.001",
+          "maxQty": "1000",
+          "stepSize": "0.001"
+        },
+        {
+          "filterType": "MIN_NOTIONAL",
+          "notional": "5"
+        }
+      ],
+      "orderTypes": ["LIMIT", "MARKET"],
+      "timeInForce": ["GTC", "IOC", "FOK", "GTD"]
+    },
+    {
+      "symbol": "XAUUSDT",
+      "pair": "XAUUSDT",
+      "contractType": "TRADIFI_PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1740726000000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "XAU",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COMMODITY",
+      "underlyingSubType": ["TradFi"],
+      "settlePlan": 0,
+      "triggerProtect": "0.0500",
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "minPrice": "1.00",
+          "maxPrice": "100000",
+          "tickSize": "0.10"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "minQty": "0.001",
+          "maxQty": "1000",
+          "stepSize": "0.001"
+        },
+        {
+          "filterType": "MIN_NOTIONAL",
+          "notional": "5"
+        }
+      ],
+      "orderTypes": ["LIMIT", "MARKET"],
+      "timeInForce": ["GTC", "IOC", "FOK", "GTD"]
+    }
+  ]
+}

@@ -38,6 +38,8 @@ const BAR_TYPES: &str = "bar_types";
 pub(super) struct RequestBarAggregation {
     pub(super) bar_types: Vec<BarType>,
     pub(super) update_subscriptions: bool,
+    pub(super) disable_build_with_no_updates: bool,
+    pub(super) skip_first_non_full_bar: Option<bool>,
 }
 
 impl RequestBarAggregation {
@@ -302,10 +304,13 @@ pub(super) fn request_bar_aggregation_from_params(
     }
 
     let update_subscriptions = params.get_bool("update_subscriptions").unwrap_or(false);
+    let skip_first_non_full_bar = params.get_bool("skip_first_non_full_bar");
 
     Ok(Some(RequestBarAggregation {
         bar_types: unique_bar_types,
         update_subscriptions,
+        disable_build_with_no_updates: false,
+        skip_first_non_full_bar,
     }))
 }
 
@@ -419,6 +424,9 @@ fn parse_continuous_future(
         request_bar_aggregation: RequestBarAggregation {
             bar_types,
             update_subscriptions: false,
+            // Roll gaps and weekends must not emit synthetic last-close bars (v1 parity)
+            disable_build_with_no_updates: true,
+            skip_first_non_full_bar: None,
         },
         transitions,
         adjustment_mode,

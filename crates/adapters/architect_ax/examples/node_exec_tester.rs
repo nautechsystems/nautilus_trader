@@ -50,7 +50,7 @@ const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "AX-001";
 const NODE_NAME: &str = "AX-EXEC-TESTER-001";
 const STRATEGY_ID: &str = "EXEC_TESTER-001";
-const SYMBOL: &str = "XAU-PERP";
+const SYMBOL: &str = "XAG-PERP";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -111,7 +111,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .client_id(client_id)
         .order_qty(order_qty)
         .open_position_on_start_qty(order_qty.as_decimal())
+        .tob_offset_ticks(1)
         .use_post_only(true)
+        .reduce_only_on_stop(false)
         .log_data(false)
         .build()?;
 

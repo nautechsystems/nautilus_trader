@@ -232,12 +232,12 @@ impl CashAccount {
     fn py_calculate_pnls(
         &self,
         instrument: Py<PyAny>,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         position: Option<Position>,
         py: Python,
     ) -> PyResult<Vec<Money>> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        self.calculate_pnls(&instrument, &fill, position)
+        self.calculate_pnls(&instrument, fill, position)
             .map_err(to_pyvalue_err)
     }
 
@@ -247,7 +247,7 @@ impl CashAccount {
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
         let events_list: PyResult<Vec<Py<PyAny>>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();
-        dict.set_item("events", events_list.unwrap())?;
+        dict.set_item("events", events_list?)?;
         Ok(dict.into())
     }
 }

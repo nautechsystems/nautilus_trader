@@ -17,7 +17,7 @@
 import os
 
 from nautilus_trader.common import Environment
-from nautilus_trader.common import ImportableActorConfig
+from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.infrastructure import PostgresConnectOptions
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId

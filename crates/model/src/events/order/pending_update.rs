@@ -56,7 +56,7 @@ pub struct OrderPendingUpdate {
     /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
     /// The account ID associated with the event.
-    pub account_id: AccountId,
+    pub account_id: Option<AccountId>,
     /// The unique identifier for the event.
     pub event_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the event occurred.
@@ -81,7 +81,7 @@ impl OrderPendingUpdate {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        account_id: AccountId,
+        account_id: Option<AccountId>,
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -118,7 +118,8 @@ impl Debug for OrderPendingUpdate {
                 || "None".to_string(),
                 |venue_order_id| format!("{venue_order_id}")
             ),
-            self.account_id,
+            self.account_id
+                .map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.event_id,
             self.ts_event,
             self.ts_init
@@ -138,7 +139,8 @@ impl Display for OrderPendingUpdate {
                 .map_or("None".to_string(), |venue_order_id| format!(
                     "{venue_order_id}"
                 )),
-            self.account_id,
+            self.account_id
+                .map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.ts_event
         )
     }
@@ -229,6 +231,10 @@ impl OrderEvent for OrderPendingUpdate {
         None
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
+
     fn trigger_price(&self) -> Option<Price> {
         None
     }
@@ -294,7 +300,7 @@ impl OrderEvent for OrderPendingUpdate {
     }
 
     fn account_id(&self) -> Option<AccountId> {
-        Some(self.account_id)
+        self.account_id
     }
 
     fn position_id(&self) -> Option<PositionId> {
@@ -334,6 +340,18 @@ mod test {
         let original = OrderPendingUpdate::default();
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrderPendingUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_pending_update_none_account_serialization() {
+        let original = OrderPendingUpdate {
+            account_id: None,
+            ..OrderPendingUpdate::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderPendingUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.account_id, None);
         assert_eq!(original, deserialized);
     }
 }

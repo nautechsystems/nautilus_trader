@@ -34,9 +34,9 @@ pub mod time {
     pub use std::time::Duration;
 
     #[cfg(all(feature = "simulation", madsim))]
-    pub use madsim::time::{Instant, sleep, timeout};
+    pub use madsim::time::{Instant, sleep, sleep_until, timeout};
     #[cfg(not(all(feature = "simulation", madsim)))]
-    pub use tokio::time::{Instant, sleep, timeout};
+    pub use tokio::time::{Instant, sleep, sleep_until, timeout};
 }
 
 #[cfg(test)]

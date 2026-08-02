@@ -36,7 +36,7 @@ class BinanceOrderBookDeltaDataLoader:
 
         Parameters
         ----------
-        file_path : str, path object or file-like object
+        file_path : str, path object, or file-like object
             The path to the CSV file.
         nrows : int, optional
             The maximum number of rows to load.

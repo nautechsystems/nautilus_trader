@@ -340,9 +340,9 @@ impl GreeksCalculator {
     /// Calculates option or underlying greeks for a given instrument and a quantity of 1.
     ///
     /// Additional features:
-    /// - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
+    /// - Apply shocks to the spot value of the instrument's underlying, implied volatility, or time to expiry.
     /// - Compute percent greeks.
-    /// - Compute beta-weighted delta, gamma and vega with respect to an index.
+    /// - Compute beta-weighted delta, gamma, and vega with respect to an index.
     ///
     /// # Errors
     ///
@@ -779,7 +779,7 @@ impl GreeksCalculator {
         anyhow::bail!("No price available for {underlying_instrument_id}")
     }
 
-    /// Modifies delta, gamma and vega based on beta weighting and percentage calculations.
+    /// Modifies delta, gamma, and vega based on beta weighting and percentage calculations.
     ///
     /// The beta weighting of delta and gamma follows this equation linking the returns of a stock x to the ones of an index I:
     /// (x - x0) / x0 = alpha + beta (I - I0) / I0 + epsilon
@@ -924,9 +924,9 @@ impl GreeksCalculator {
     /// Aggregates the Greeks data for all open positions that match the specified criteria.
     ///
     /// Additional features:
-    /// - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
+    /// - Apply shocks to the spot value of an instrument's underlying, implied volatility, or time to expiry.
     /// - Compute percent greeks.
-    /// - Compute beta-weighted delta, gamma and vega with respect to an index.
+    /// - Compute beta-weighted delta, gamma, and vega with respect to an index.
     ///
     /// # Errors
     ///

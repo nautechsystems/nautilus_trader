@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! (De)serialization utilities bridging Rust ↔︎ Python types.
+//! (De)serialization utilities bridging Rust ↔ Python types.
 
 use std::{
     collections::HashMap,

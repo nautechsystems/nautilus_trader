@@ -57,6 +57,8 @@ pub mod factories;
 pub mod http;
 pub mod websocket;
 
+mod book_sync;
+
 #[cfg(feature = "python")]
 pub mod python;
 

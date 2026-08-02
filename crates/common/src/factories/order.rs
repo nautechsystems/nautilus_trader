@@ -85,6 +85,18 @@ impl OrderFactory {
         }
     }
 
+    /// Returns the trader ID.
+    #[must_use]
+    pub const fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    /// Returns the strategy ID.
+    #[must_use]
+    pub const fn strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
     /// Sets the client order ID generator count.
     pub const fn set_client_order_id_count(&mut self, count: usize) {
         self.order_id_generator.set_count(count);
@@ -814,7 +826,7 @@ impl OrderFactory {
     ///
     /// # Panics
     ///
-    /// If neither `trigger_price` nor `activation_price` is provided.
+    /// Panics if the order parameters fail validation.
     #[expect(clippy::too_many_arguments)]
     pub fn trailing_stop_market(
         &mut self,
@@ -892,12 +904,9 @@ impl OrderFactory {
             Some(client_order_id)
         };
 
-        // Trailing stops need an initial trigger level: prefer explicit trigger_price,
-        // fall back to activation_price which serves as the initial trigger on OKX
-        let trigger_price = trigger_price.or(activation_price).ok_or_else(|| {
-            anyhow::anyhow!("TrailingStopMarket requires either trigger_price or activation_price")
-        })?;
-
+        // Both `trigger_price` and `activation_price` may be `None`: the order then activates at
+        // market and its initial trigger materializes from `trailing_offset` on the first update.
+        // To make activation serve as the initial trigger (OKX), pass it explicitly as `trigger_price`.
         let order = TrailingStopMarketOrder::new_checked(
             self.trader_id,
             self.strategy_id,
@@ -905,6 +914,7 @@ impl OrderFactory {
             client_order_id,
             order_side,
             quantity,
+            activation_price,
             trigger_price,
             trigger_type.unwrap_or(TriggerType::Default),
             trailing_offset,
@@ -928,29 +938,21 @@ impl OrderFactory {
             self.clock.borrow().timestamp_ns(),
         )?;
 
-        let mut order = OrderAny::TrailingStopMarket(order);
-
-        if let (Some(activation_price), OrderAny::TrailingStopMarket(tsm)) =
-            (activation_price, &mut order)
-        {
-            tsm.activation_price = Some(activation_price);
-        }
-
-        Ok(order)
+        Ok(OrderAny::TrailingStopMarket(order))
     }
 
     /// Creates a new trailing-stop-limit order.
     ///
     /// # Panics
     ///
-    /// If neither `trigger_price` nor `activation_price` is provided.
+    /// Panics if the order parameters fail validation.
     #[expect(clippy::too_many_arguments)]
     pub fn trailing_stop_limit(
         &mut self,
         instrument_id: InstrumentId,
         order_side: OrderSide,
         quantity: Quantity,
-        price: Price,
+        price: Option<Price>,
         limit_offset: Decimal,
         trailing_offset: Decimal,
         trailing_offset_type: Option<TrailingOffsetType>,
@@ -1003,7 +1005,7 @@ impl OrderFactory {
         instrument_id: InstrumentId,
         order_side: OrderSide,
         quantity: Quantity,
-        price: Price,
+        price: Option<Price>,
         limit_offset: Decimal,
         trailing_offset: Decimal,
         trailing_offset_type: Option<TrailingOffsetType>,
@@ -1030,12 +1032,9 @@ impl OrderFactory {
             Some(client_order_id)
         };
 
-        // Trailing stops need an initial trigger level: prefer explicit trigger_price,
-        // fall back to activation_price which serves as the initial trigger on OKX
-        let trigger_price = trigger_price.or(activation_price).ok_or_else(|| {
-            anyhow::anyhow!("TrailingStopLimit requires either trigger_price or activation_price")
-        })?;
-
+        // Both `trigger_price` and `activation_price` may be `None`: the order then activates at
+        // market and its initial trigger (and limit price) materialize from the offsets on the first
+        // update. To make activation serve as the initial trigger (OKX), pass it as `trigger_price`.
         let order = TrailingStopLimitOrder::new_checked(
             self.trader_id,
             self.strategy_id,
@@ -1043,6 +1042,7 @@ impl OrderFactory {
             client_order_id,
             order_side,
             quantity,
+            activation_price,
             price,
             trigger_price,
             trigger_type.unwrap_or(TriggerType::Default),
@@ -1069,15 +1069,7 @@ impl OrderFactory {
             self.clock.borrow().timestamp_ns(),
         )?;
 
-        let mut order = OrderAny::TrailingStopLimit(order);
-
-        if let (Some(activation_price), OrderAny::TrailingStopLimit(tsl)) =
-            (activation_price, &mut order)
-        {
-            tsl.activation_price = Some(activation_price);
-        }
-
-        Ok(order)
+        Ok(OrderAny::TrailingStopLimit(order))
     }
 
     /// Creates a new [`OrderList`] from the given orders, generating a fresh
@@ -1583,14 +1575,15 @@ impl OrderFactory {
                     tp_trigger_price.or(tp_activation_price),
                     "TRAILING_STOP_MARKET take-profit requires `tp_trigger_price` or `tp_activation_price`",
                 )?;
-                let mut order = TrailingStopMarketOrder::new_checked(
+                let order = TrailingStopMarketOrder::new_checked(
                     self.trader_id,
                     self.strategy_id,
                     instrument_id,
                     tp_client_order_id,
                     sl_tp_side,
                     quantity,
-                    trigger_price,
+                    tp_activation_price,
+                    Some(trigger_price),
                     tp_trigger_type,
                     tp_trailing_offset,
                     tp_trailing_offset_type,
@@ -1612,7 +1605,6 @@ impl OrderFactory {
                     UUID4::new(),
                     ts_init,
                 )?;
-                order.activation_price = tp_activation_price;
                 OrderAny::TrailingStopMarket(order)
             }
             OrderType::TrailingStopLimit => {
@@ -1632,15 +1624,16 @@ impl OrderFactory {
                     tp_price,
                     "`tp_price` is required for a TRAILING_STOP_LIMIT take-profit",
                 )?;
-                let mut order = TrailingStopLimitOrder::new_checked(
+                let order = TrailingStopLimitOrder::new_checked(
                     self.trader_id,
                     self.strategy_id,
                     instrument_id,
                     tp_client_order_id,
                     sl_tp_side,
                     quantity,
-                    price,
-                    trigger_price,
+                    tp_activation_price,
+                    Some(price),
+                    Some(trigger_price),
                     tp_trigger_type,
                     tp_limit_offset,
                     tp_trailing_offset,
@@ -1664,7 +1657,6 @@ impl OrderFactory {
                     UUID4::new(),
                     ts_init,
                 )?;
-                order.activation_price = tp_activation_price;
                 OrderAny::TrailingStopLimit(order)
             }
             other => anyhow::bail!("invalid `tp_order_type`, was {other}"),
@@ -1715,14 +1707,15 @@ impl OrderFactory {
                     sl_trigger_price.or(sl_activation_price),
                     "TRAILING_STOP_MARKET stop-loss requires `sl_trigger_price` or `sl_activation_price`",
                 )?;
-                let mut order = TrailingStopMarketOrder::new_checked(
+                let order = TrailingStopMarketOrder::new_checked(
                     self.trader_id,
                     self.strategy_id,
                     instrument_id,
                     sl_client_order_id,
                     sl_tp_side,
                     quantity,
-                    trigger_price,
+                    sl_activation_price,
+                    Some(trigger_price),
                     sl_trigger_type,
                     sl_trailing_offset,
                     sl_trailing_offset_type,
@@ -1744,7 +1737,6 @@ impl OrderFactory {
                     UUID4::new(),
                     ts_init,
                 )?;
-                order.activation_price = sl_activation_price;
                 OrderAny::TrailingStopMarket(order)
             }
             other => anyhow::bail!("invalid `sl_order_type`, was {other}"),
@@ -1762,13 +1754,14 @@ fn required<T>(value: Option<T>, message: &'static str) -> anyhow::Result<T> {
 pub mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use indexmap::IndexMap;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{
             ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
         },
         identifiers::{
-            ClientOrderId, InstrumentId, OrderListId,
+            ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
             stubs::{strategy_id_ema_cross, trader_id},
         },
         orders::Order,
@@ -1794,6 +1787,12 @@ pub mod tests {
             false, // use_uuids_for_client_order_ids
             true,  // use_hyphens_in_client_order_ids
         )
+    }
+
+    #[rstest]
+    fn test_order_factory_identity(order_factory: OrderFactory) {
+        assert_eq!(order_factory.trader_id(), trader_id());
+        assert_eq!(order_factory.strategy_id(), strategy_id_ema_cross());
     }
 
     #[rstest]
@@ -1963,6 +1962,35 @@ pub mod tests {
             ClientOrderId::new("O-19700101-000000-001-001-1")
         );
         // assert_eq!(market_order.order_list_id(), None);
+    }
+
+    #[rstest]
+    fn test_market_order_preserves_primary_exec_algorithm_metadata(
+        mut order_factory: OrderFactory,
+    ) {
+        let client_order_id = ClientOrderId::from("O-PRIMARY");
+        let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+        let exec_algorithm_params =
+            IndexMap::from([(Ustr::from("interval_secs"), Ustr::from("10"))]);
+        let order = order_factory.market(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Buy,
+            100.into(),
+            Some(TimeInForce::Gtc),
+            Some(false),
+            Some(false),
+            Some(exec_algorithm_id),
+            Some(exec_algorithm_params.clone()),
+            None,
+            Some(client_order_id),
+        );
+
+        assert_eq!(order.client_order_id(), client_order_id);
+        assert_eq!(order.exec_algorithm_id(), Some(exec_algorithm_id));
+        assert_eq!(order.exec_algorithm_params(), Some(&exec_algorithm_params));
+        assert_eq!(order.exec_spawn_id(), Some(client_order_id));
+        assert!(order.is_primary());
+        assert!(!order.is_spawned());
     }
 
     #[rstest]
@@ -2200,11 +2228,11 @@ pub mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Sell,
             100.into(),
-            Price::from("45100.00"), // limit price
-            Decimal::new(10, 2),     // limit_offset
-            Decimal::new(50, 2),     // trailing_offset
+            Some(Price::from("45100.00")), // limit price
+            Decimal::new(10, 2),           // limit_offset
+            Decimal::new(50, 2),           // trailing_offset
             Some(TrailingOffsetType::Price),
-            Some(Price::from("45000.00")), // activation_price
+            Some(Price::from("45000.00")),
             Some(Price::from("45000.00")), // trigger_price
             Some(TriggerType::LastPrice),
             Some(TimeInForce::Gtc),
@@ -2225,8 +2253,8 @@ pub mod tests {
         assert_eq!(tsl_order.order_side(), OrderSide::Sell);
         assert_eq!(tsl_order.order_type(), OrderType::TrailingStopLimit);
         assert_eq!(tsl_order.price(), Some(Price::from("45100.00")));
-        assert_eq!(tsl_order.trigger_price(), Some(Price::from("45000.00")));
         assert_eq!(tsl_order.activation_price(), Some(Price::from("45000.00")));
+        assert_eq!(tsl_order.trigger_price(), Some(Price::from("45000.00")));
         assert_eq!(tsl_order.trigger_type(), Some(TriggerType::LastPrice));
         assert_eq!(tsl_order.trailing_offset(), Some(Decimal::new(50, 2)));
         assert_eq!(tsl_order.limit_offset(), Some(Decimal::new(10, 2)));

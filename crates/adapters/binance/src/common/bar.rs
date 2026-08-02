@@ -15,9 +15,14 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use nautilus_core::UnixNanos;
+use anyhow::Context;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    data::{HasTsInit, bar::BarType, custom::CustomDataTrait},
+    data::{
+        DataType, HasTsInit,
+        bar::{Bar, BarType},
+        custom::CustomDataTrait,
+    },
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -121,12 +126,53 @@ impl BinanceBar {
     pub fn taker_sell_quote_volume(&self) -> Decimal {
         self.quote_volume - self.taker_buy_quote_volume
     }
+
+    /// Returns the core bar representation.
+    #[must_use]
+    pub fn bar(&self) -> Bar {
+        Bar::new(
+            self.bar_type,
+            self.open,
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            self.ts_event,
+            self.ts_init,
+        )
+    }
 }
 
 impl HasTsInit for BinanceBar {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
+}
+
+pub(crate) fn binance_bar_data_type(bar_type: BarType) -> DataType {
+    let mut metadata = Params::new();
+    metadata.insert(
+        "bar_type".to_string(),
+        serde_json::Value::String(bar_type.to_string()),
+    );
+    metadata.insert(
+        "instrument_id".to_string(),
+        serde_json::Value::String(bar_type.instrument_id().to_string()),
+    );
+    DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
+}
+
+pub(crate) fn parse_binance_bar_type(data_type: &DataType) -> anyhow::Result<BarType> {
+    let raw = data_type
+        .metadata()
+        .as_ref()
+        .and_then(|metadata| metadata.get("bar_type"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .context("BinanceBar custom data requires `bar_type` metadata")?;
+    raw.parse()
+        .with_context(|| format!("invalid bar_type metadata `{raw}`"))
 }
 
 impl CustomDataTrait for BinanceBar {

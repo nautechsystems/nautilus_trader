@@ -68,8 +68,9 @@ impl Indicator for RelativeStrengthIndex {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(PriceType::Mid).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -95,15 +96,16 @@ impl RelativeStrengthIndex {
     /// Creates a new [`RelativeStrengthIndex`] instance.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
         Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
+            ma_type,
             value: 0.0,
             last_value: 0.0,
             count: 0,
             has_inputs: false,
-            average_gain: MovingAverageFactory::create(MovingAverageType::Exponential, period),
-            average_loss: MovingAverageFactory::create(MovingAverageType::Exponential, period),
+            average_gain: MovingAverageFactory::create(ma_type, period),
+            average_loss: MovingAverageFactory::create(ma_type, period),
             rsi_max: 1.0,
             initialized: false,
         }
@@ -132,6 +134,7 @@ impl RelativeStrengthIndex {
 
         if self.average_loss.value() == 0.0 {
             self.value = self.rsi_max;
+            self.last_value = value;
             return;
         }
 
@@ -150,7 +153,10 @@ mod tests {
     use nautilus_model::data::{Bar, QuoteTick, TradeTick};
     use rstest::rstest;
 
-    use crate::{indicator::Indicator, momentum::rsi::RelativeStrengthIndex, stubs::*};
+    use crate::{
+        average::MovingAverageType, indicator::Indicator, momentum::rsi::RelativeStrengthIndex,
+        stubs::*,
+    };
 
     #[rstest]
     fn test_rsi_initialized(rsi_10: RelativeStrengthIndex) {
@@ -236,7 +242,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_quote_tick(mut rsi_10: RelativeStrengthIndex, stub_quote: QuoteTick) {
-        rsi_10.handle_quote(&stub_quote);
+        rsi_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(rsi_10.count, 1);
         assert_eq!(rsi_10.value, 1.0);
     }
@@ -270,5 +276,72 @@ mod tests {
         rsi_10.reset();
         assert!(!rsi_10.has_inputs());
         assert_eq!(rsi_10.value, 0.0);
+    }
+
+    // Feeds `values` through a fresh RSI of the given `ma_type` and returns the final value.
+    fn run_rsi(values: &[f64], period: usize, ma_type: MovingAverageType) -> f64 {
+        let mut rsi = RelativeStrengthIndex::new(period, Some(ma_type));
+        for &v in values {
+            rsi.update_raw(v);
+        }
+        rsi.value
+    }
+
+    #[rstest]
+    fn test_ma_type_is_plumbed_into_inner_averages() {
+        // The `ma_type` argument must reach the inner gain/loss averages, so distinct
+        // moving-average types must produce distinct output on the same series.
+        // Previously all types collapsed onto Exponential (see issue: v2 RSI ignores ma_type).
+        let series = [
+            44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03,
+            45.61, 46.28, 46.28,
+        ];
+
+        let wilder = run_rsi(&series, 14, MovingAverageType::Wilder);
+        let simple = run_rsi(&series, 14, MovingAverageType::Simple);
+        let exponential = run_rsi(&series, 14, MovingAverageType::Exponential);
+
+        assert_ne!(wilder, simple);
+        assert_ne!(wilder, exponential);
+        assert_ne!(simple, exponential);
+    }
+
+    #[rstest]
+    fn test_recovers_below_max_after_losses() {
+        // Regression for the flat-1.0 defect (mirrors Cython fix #2703): once real down-moves
+        // arrive, RSI must fall below `rsi_max` rather than staying pinned at 1.0 because
+        // `last_value` was never advanced on zero-loss bars.
+        let mut values: Vec<f64> = (1..=15).map(f64::from).collect();
+        values.extend([14.0, 12.0, 9.0, 5.0, 2.0]);
+
+        let value = run_rsi(&values, 14, MovingAverageType::Wilder);
+        assert!(
+            value < 1.0,
+            "RSI should drop below rsi_max after losses, was {value}"
+        );
+    }
+
+    #[rstest]
+    fn test_wilder_golden_series() {
+        // Golden reference: up 1..15 then down 14, 12, 9, 5, 2 with period 14, Wilder MA.
+        // Expected Wilder RSI values (×100) after each down-move, per the published reference.
+        let base: Vec<f64> = (1..=15).map(f64::from).collect();
+        let downs = [14.0, 12.0, 9.0, 5.0, 2.0];
+        let expected = [0.8935, 0.7269, 0.5586, 0.4192, 0.3489];
+
+        let mut rsi = RelativeStrengthIndex::new(14, Some(MovingAverageType::Wilder));
+        for &v in &base {
+            rsi.update_raw(v);
+        }
+
+        for (i, &v) in downs.iter().enumerate() {
+            rsi.update_raw(v);
+            assert!(
+                (rsi.value - expected[i]).abs() < 1e-4,
+                "step {i}: expected {}, was {}",
+                expected[i],
+                rsi.value
+            );
+        }
     }
 }

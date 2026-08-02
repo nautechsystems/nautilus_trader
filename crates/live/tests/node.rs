@@ -19,11 +19,12 @@
 //! Run with cargo-nextest for process isolation, or use --test-threads=1.
 
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     fmt::Debug,
+    rc::Rc,
     sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -32,11 +33,17 @@ use async_trait::async_trait;
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     cache::CacheView,
-    clients::ExecutionClient,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+    component::Component,
     enums::Environment,
-    factories::{ClientConfig, ExecutionClientFactory},
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    live::dst,
     messages::{
-        execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder},
+        execution::{
+            CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, QueryOrder,
+        },
         system::ShutdownSystem,
     },
     msgbus::{self, MessagingSwitchboard, switchboard},
@@ -51,20 +58,20 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderType},
+    enums::{OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
         Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
-    orders::{OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
-    reports::{OrderStatusReport, PositionStatusReport},
+    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Price, Quantity},
 };
 use nautilus_trading::{
     ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_execution_algorithm,
     nautilus_strategy,
-    strategy::{StrategyConfig, StrategyCore},
+    strategy::{Strategy, StrategyConfig, StrategyCore},
 };
 use rstest::rstest;
 
@@ -101,6 +108,65 @@ impl TestStrategy {
 impl DataActor for TestStrategy {}
 
 nautilus_strategy!(TestStrategy);
+
+#[derive(Debug)]
+struct FailingStartStrategy {
+    core: StrategyCore,
+}
+
+impl FailingStartStrategy {
+    fn new(config: StrategyConfig) -> Self {
+        Self {
+            core: StrategyCore::new(config),
+        }
+    }
+}
+
+impl DataActor for FailingStartStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("simulated live node strategy start failure")
+    }
+}
+
+nautilus_strategy!(FailingStartStrategy);
+
+#[derive(Debug)]
+struct StopOnStartStrategy {
+    core: StrategyCore,
+    handle: LiveNodeHandle,
+    instrument_id: InstrumentId,
+    stop_count: Arc<AtomicUsize>,
+}
+
+impl StopOnStartStrategy {
+    fn new(
+        config: StrategyConfig,
+        handle: LiveNodeHandle,
+        instrument_id: InstrumentId,
+        stop_count: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            core: StrategyCore::new(config),
+            handle,
+            instrument_id,
+            stop_count,
+        }
+    }
+}
+
+impl DataActor for StopOnStartStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.handle.stop();
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.stop_count.fetch_add(1, Ordering::Relaxed);
+        self.cancel_all_orders(self.instrument_id, None, None, None)
+    }
+}
+
+nautilus_strategy!(StopOnStartStrategy);
 
 #[derive(Debug)]
 struct ClaimingTestStrategy {
@@ -230,30 +296,660 @@ fn test_builder_accepts_live() {
 mod serial_tests {
     use super::*;
 
+    #[derive(Clone, Debug, Default)]
+    struct StartupMassStatusClientState {
+        connected: Arc<AtomicBool>,
+        disconnect_attempted: Arc<AtomicBool>,
+        mass_status_requested: Arc<AtomicBool>,
+        cancel_all_orders_received: Arc<AtomicUsize>,
+        cancel_all_orders_while_connected: Arc<AtomicBool>,
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct FailingDisconnectDataClientState {
+        disconnect_attempted: Arc<AtomicBool>,
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct LifecycleClientState {
+        connected: Arc<AtomicBool>,
+        connect_attempted: Arc<AtomicBool>,
+        disconnect_attempted: Arc<AtomicBool>,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum LifecycleClientBehavior {
+        Connects,
+        ConnectPending,
+        ReadinessPending,
+        ConnectDelayedReadinessPending,
+        DisconnectPending,
+        DisconnectKeepsConnected,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum StartupMassStatusBehavior {
+        Unavailable,
+        Error,
+        Pending,
+    }
+
+    struct StartupMassStatusExecutionClient {
+        state: StartupMassStatusClientState,
+        behavior: StartupMassStatusBehavior,
+    }
+
+    struct FailingDisconnectDataClient {
+        state: FailingDisconnectDataClientState,
+    }
+
+    struct LifecycleDataClient {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
+    struct LifecycleExecutionClient {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
+    impl StartupMassStatusExecutionClient {
+        const CLIENT_ID: &'static str = "STARTUP-MASS-STATUS";
+
+        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    impl FailingDisconnectDataClient {
+        const CLIENT_ID: &'static str = "FAILING-DISCONNECT-DATA";
+
+        fn new(state: FailingDisconnectDataClientState) -> Self {
+            Self { state }
+        }
+    }
+
+    #[derive(Debug)]
+    struct StartupMassStatusExecutionClientConfig;
+
+    #[derive(Debug)]
+    struct FailingDisconnectDataClientConfig;
+
+    #[derive(Debug)]
+    struct LifecycleDataClientConfig;
+
+    #[derive(Debug)]
+    struct LifecycleExecutionClientConfig;
+
+    impl ClientConfig for StartupMassStatusExecutionClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl ClientConfig for FailingDisconnectDataClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl ClientConfig for LifecycleDataClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl ClientConfig for LifecycleExecutionClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Debug)]
+    struct StartupMassStatusExecutionClientFactory {
+        state: StartupMassStatusClientState,
+        behavior: StartupMassStatusBehavior,
+    }
+
+    #[derive(Debug)]
+    struct FailingDisconnectDataClientFactory {
+        state: FailingDisconnectDataClientState,
+    }
+
+    #[derive(Debug)]
+    struct LifecycleDataClientFactory {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
+    #[derive(Debug)]
+    struct LifecycleExecutionClientFactory {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
+    impl StartupMassStatusExecutionClientFactory {
+        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    impl FailingDisconnectDataClientFactory {
+        fn new(state: FailingDisconnectDataClientState) -> Self {
+            Self { state }
+        }
+    }
+
+    impl LifecycleDataClientFactory {
+        fn new(state: LifecycleClientState, behavior: LifecycleClientBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    impl LifecycleExecutionClientFactory {
+        fn new(state: LifecycleClientState, behavior: LifecycleClientBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    impl ExecutionClientFactory for StartupMassStatusExecutionClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Ok(Box::new(StartupMassStatusExecutionClient::new(
+                self.state.clone(),
+                self.behavior,
+            )))
+        }
+
+        fn name(&self) -> &'static str {
+            "startup-mass-status"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(StartupMassStatusExecutionClientConfig)
+        }
+    }
+
+    impl DataClientFactory for FailingDisconnectDataClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn DataClient>> {
+            Ok(Box::new(FailingDisconnectDataClient::new(
+                self.state.clone(),
+            )))
+        }
+
+        fn name(&self) -> &'static str {
+            "failing-disconnect-data"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(FailingDisconnectDataClientConfig)
+        }
+    }
+
+    impl DataClientFactory for LifecycleDataClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn DataClient>> {
+            Ok(Box::new(LifecycleDataClient {
+                state: self.state.clone(),
+                behavior: self.behavior,
+            }))
+        }
+
+        fn name(&self) -> &'static str {
+            "lifecycle-data"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(LifecycleDataClientConfig)
+        }
+    }
+
+    impl ExecutionClientFactory for LifecycleExecutionClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Ok(Box::new(LifecycleExecutionClient {
+                state: self.state.clone(),
+                behavior: self.behavior,
+            }))
+        }
+
+        fn name(&self) -> &'static str {
+            "lifecycle-exec"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(LifecycleExecutionClientConfig)
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for FailingDisconnectDataClient {
+        fn client_id(&self) -> ClientId {
+            ClientId::from(Self::CLIENT_ID)
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            None
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            false
+        }
+
+        fn is_disconnected(&self) -> bool {
+            true
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+            anyhow::bail!("simulated data client disconnect failure")
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for LifecycleDataClient {
+        fn client_id(&self) -> ClientId {
+            ClientId::from("LIFECYCLE-DATA")
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            None
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            self.state.connected.load(Ordering::Relaxed)
+        }
+
+        fn is_disconnected(&self) -> bool {
+            !self.state.connected.load(Ordering::Relaxed)
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.state.connect_attempted.store(true, Ordering::Relaxed);
+
+            match self.behavior {
+                LifecycleClientBehavior::ConnectPending => {
+                    std::future::pending::<anyhow::Result<()>>().await
+                }
+                LifecycleClientBehavior::ReadinessPending => Ok(()),
+                LifecycleClientBehavior::ConnectDelayedReadinessPending => {
+                    dst::time::sleep(Duration::from_millis(25)).await;
+                    Ok(())
+                }
+                LifecycleClientBehavior::Connects
+                | LifecycleClientBehavior::DisconnectPending
+                | LifecycleClientBehavior::DisconnectKeepsConnected => {
+                    self.state.connected.store(true, Ordering::Relaxed);
+                    Ok(())
+                }
+            }
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+
+            if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
+                return std::future::pending::<anyhow::Result<()>>().await;
+            }
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::DisconnectKeepsConnected
+            ) {
+                return Ok(());
+            }
+            self.state.connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    fn live_node_with_startup_mass_status_client(
+        name: &str,
+        config: LiveNodeConfig,
+        behavior: StartupMassStatusBehavior,
+    ) -> (LiveNode, StartupMassStatusClientState) {
+        let state = StartupMassStatusClientState::default();
+        let factory = StartupMassStatusExecutionClientFactory::new(state.clone(), behavior);
+
+        let node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name(name)
+            .add_exec_client(
+                Some("startup-mass-status".to_string()),
+                Box::new(factory),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        (node, state)
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for StartupMassStatusExecutionClient {
+        fn is_connected(&self) -> bool {
+            self.state.connected.load(Ordering::Relaxed)
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from(Self::CLIENT_ID)
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("STARTUP-MASS-STATUS-001")
+        }
+
+        fn venue(&self) -> Venue {
+            crypto_perpetual_ethusdt().id().venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Hedging
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
+            self.state
+                .cancel_all_orders_received
+                .fetch_add(1, Ordering::Relaxed);
+            self.state.cancel_all_orders_while_connected.store(
+                self.state.connected.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            Ok(())
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.state.connected.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+            self.state.connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn generate_mass_status(
+            &self,
+            _lookback_mins: Option<u64>,
+        ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+            self.state
+                .mass_status_requested
+                .store(true, Ordering::Relaxed);
+
+            match self.behavior {
+                StartupMassStatusBehavior::Unavailable => Ok(None),
+                StartupMassStatusBehavior::Error => Err(anyhow::anyhow!("mass status failed")),
+                StartupMassStatusBehavior::Pending => {
+                    std::future::pending::<anyhow::Result<Option<ExecutionMassStatus>>>().await
+                }
+            }
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for LifecycleExecutionClient {
+        fn is_connected(&self) -> bool {
+            self.state.connected.load(Ordering::Relaxed)
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from("LIFECYCLE-EXEC")
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("LIFECYCLE-EXEC-001")
+        }
+
+        fn venue(&self) -> Venue {
+            crypto_perpetual_ethusdt().id().venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Hedging
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.state.connect_attempted.store(true, Ordering::Relaxed);
+
+            match self.behavior {
+                LifecycleClientBehavior::ConnectPending => {
+                    std::future::pending::<anyhow::Result<()>>().await
+                }
+                LifecycleClientBehavior::ReadinessPending => Ok(()),
+                LifecycleClientBehavior::ConnectDelayedReadinessPending => {
+                    dst::time::sleep(Duration::from_millis(25)).await;
+                    Ok(())
+                }
+                LifecycleClientBehavior::Connects
+                | LifecycleClientBehavior::DisconnectPending
+                | LifecycleClientBehavior::DisconnectKeepsConnected => {
+                    self.state.connected.store(true, Ordering::Relaxed);
+                    Ok(())
+                }
+            }
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+
+            if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
+                return std::future::pending::<anyhow::Result<()>>().await;
+            }
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::DisconnectKeepsConnected
+            ) {
+                return Ok(());
+            }
+            self.state.connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    fn live_node_with_lifecycle_clients(
+        name: &str,
+        data_behavior: LifecycleClientBehavior,
+        exec_behavior: LifecycleClientBehavior,
+    ) -> (LiveNode, LifecycleClientState, LifecycleClientState) {
+        live_node_with_lifecycle_clients_timeout(
+            name,
+            data_behavior,
+            exec_behavior,
+            Duration::from_millis(50),
+        )
+    }
+
+    fn live_node_with_lifecycle_clients_timeout(
+        name: &str,
+        data_behavior: LifecycleClientBehavior,
+        exec_behavior: LifecycleClientBehavior,
+        timeout_connection: Duration,
+    ) -> (LiveNode, LifecycleClientState, LifecycleClientState) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let data_state = LifecycleClientState::default();
+        let exec_state = LifecycleClientState::default();
+        let node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name(name)
+            .add_data_client(
+                Some("lifecycle-data".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    data_state.clone(),
+                    data_behavior,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("lifecycle-exec".to_string()),
+                Box::new(LifecycleExecutionClientFactory::new(
+                    exec_state.clone(),
+                    exec_behavior,
+                )),
+                Box::new(LifecycleExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        (node, data_state, exec_state)
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct BlockingReportClientState {
+        query_order_received: Arc<AtomicBool>,
+        query_order_ids: Arc<Mutex<Vec<ClientOrderId>>>,
+        bulk_order_report_requested: Arc<AtomicBool>,
+        bulk_order_report_count: Arc<AtomicUsize>,
+        targeted_order_report_ids: Arc<Mutex<Vec<ClientOrderId>>>,
+        position_report_requested: Arc<AtomicBool>,
+        position_report_count: Arc<AtomicUsize>,
+        instrument_received: Arc<AtomicBool>,
+    }
+
     struct BlockingReportExecutionClient {
         connected: Cell<bool>,
-        query_order_received: Arc<AtomicBool>,
-        blocking_order_report_requested: Arc<AtomicBool>,
-        position_report_requested: Arc<AtomicBool>,
-        instrument_received: Arc<AtomicBool>,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        state: BlockingReportClientState,
+        order_reports: Vec<OrderStatusReport>,
+        order_reports_complete: bool,
+        block_every_second_order_report: bool,
+        position_reports_complete: bool,
+        block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl BlockingReportExecutionClient {
-        fn new(
-            query_order_received: Arc<AtomicBool>,
-            blocking_order_report_requested: Arc<AtomicBool>,
-            position_report_requested: Arc<AtomicBool>,
-            instrument_received: Arc<AtomicBool>,
-            report_release: Option<Arc<tokio::sync::Notify>>,
-        ) -> Self {
+        fn new(factory: &BlockingReportExecutionClientFactory) -> Self {
             Self {
                 connected: Cell::new(false),
-                query_order_received,
-                blocking_order_report_requested,
-                position_report_requested,
-                instrument_received,
-                report_release,
+                client_id: factory.client_id,
+                account_id: factory.account_id,
+                venue: factory.venue,
+                state: factory.state.clone(),
+                order_reports: factory.order_reports.clone(),
+                order_reports_complete: factory.order_reports_complete,
+                block_every_second_order_report: factory.block_every_second_order_report,
+                position_reports_complete: factory.position_reports_complete,
+                block_every_second_targeted_report: factory.block_every_second_targeted_report,
+                report_release: factory.report_release.clone(),
             }
         }
     }
@@ -269,10 +965,15 @@ mod serial_tests {
 
     #[derive(Debug)]
     struct BlockingReportExecutionClientFactory {
-        query_order_received: Arc<AtomicBool>,
-        blocking_order_report_requested: Arc<AtomicBool>,
-        position_report_requested: Arc<AtomicBool>,
-        instrument_received: Arc<AtomicBool>,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        state: BlockingReportClientState,
+        order_reports: Vec<OrderStatusReport>,
+        order_reports_complete: bool,
+        block_every_second_order_report: bool,
+        position_reports_complete: bool,
+        block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
@@ -285,12 +986,68 @@ mod serial_tests {
             report_release: Option<Arc<tokio::sync::Notify>>,
         ) -> Self {
             Self {
-                query_order_received,
-                blocking_order_report_requested,
-                position_report_requested,
-                instrument_received,
+                client_id: ClientId::from("BLOCKING-REPORT"),
+                account_id: AccountId::from("BLOCKING-REPORT-001"),
+                venue: crypto_perpetual_ethusdt().id().venue,
+                state: BlockingReportClientState {
+                    query_order_received,
+                    bulk_order_report_requested: blocking_order_report_requested,
+                    position_report_requested,
+                    instrument_received,
+                    ..Default::default()
+                },
+                order_reports: Vec::new(),
+                order_reports_complete: false,
+                block_every_second_order_report: false,
+                position_reports_complete: false,
+                block_every_second_targeted_report: false,
                 report_release,
             }
+        }
+
+        fn configurable(
+            client_id: ClientId,
+            account_id: AccountId,
+            state: BlockingReportClientState,
+        ) -> Self {
+            Self {
+                client_id,
+                account_id,
+                venue: crypto_perpetual_ethusdt().id().venue,
+                state,
+                order_reports: Vec::new(),
+                order_reports_complete: false,
+                block_every_second_order_report: false,
+                position_reports_complete: false,
+                block_every_second_targeted_report: false,
+                report_release: None,
+            }
+        }
+
+        fn with_order_reports(mut self, reports: Vec<OrderStatusReport>) -> Self {
+            self.order_reports = reports;
+            self.order_reports_complete = true;
+            self
+        }
+
+        fn with_venue(mut self, venue: Venue) -> Self {
+            self.venue = venue;
+            self
+        }
+
+        fn with_position_reports_complete(mut self) -> Self {
+            self.position_reports_complete = true;
+            self
+        }
+
+        fn with_block_every_second_order_report(mut self) -> Self {
+            self.block_every_second_order_report = true;
+            self
+        }
+
+        fn with_block_every_second_targeted_report(mut self) -> Self {
+            self.block_every_second_targeted_report = true;
+            self
         }
     }
 
@@ -301,13 +1058,7 @@ mod serial_tests {
             _config: &dyn ClientConfig,
             _cache: CacheView,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-            Ok(Box::new(BlockingReportExecutionClient::new(
-                self.query_order_received.clone(),
-                self.blocking_order_report_requested.clone(),
-                self.position_report_requested.clone(),
-                self.instrument_received.clone(),
-                self.report_release.clone(),
-            )))
+            Ok(Box::new(BlockingReportExecutionClient::new(self)))
         }
 
         fn name(&self) -> &'static str {
@@ -356,15 +1107,15 @@ mod serial_tests {
         }
 
         fn client_id(&self) -> ClientId {
-            ClientId::from("BLOCKING-REPORT")
+            self.client_id
         }
 
         fn account_id(&self) -> AccountId {
-            AccountId::from("BLOCKING-REPORT-001")
+            self.account_id
         }
 
         fn venue(&self) -> Venue {
-            crypto_perpetual_ethusdt().id().venue
+            self.venue
         }
 
         fn oms_type(&self) -> OmsType {
@@ -393,13 +1144,22 @@ mod serial_tests {
             Ok(())
         }
 
-        fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
-            self.query_order_received.store(true, Ordering::Relaxed);
+        fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+            self.state
+                .query_order_received
+                .store(true, Ordering::Relaxed);
+            self.state
+                .query_order_ids
+                .lock()
+                .unwrap()
+                .push(cmd.client_order_id);
             Ok(())
         }
 
         fn on_instrument(&mut self, _instrument: InstrumentAny) {
-            self.instrument_received.store(true, Ordering::Relaxed);
+            self.state
+                .instrument_received
+                .store(true, Ordering::Relaxed);
         }
 
         async fn connect(&mut self) -> anyhow::Result<()> {
@@ -416,8 +1176,22 @@ mod serial_tests {
             &self,
             _cmd: &GenerateOrderStatusReports,
         ) -> anyhow::Result<Vec<OrderStatusReport>> {
-            self.blocking_order_report_requested
+            self.state
+                .bulk_order_report_requested
                 .store(true, Ordering::Relaxed);
+            let request_count = self
+                .state
+                .bulk_order_report_count
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
+
+            if self.block_every_second_order_report && request_count.is_multiple_of(2) {
+                return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await;
+            }
+
+            if self.order_reports_complete {
+                return Ok(self.order_reports.clone());
+            }
 
             if let Some(release) = &self.report_release {
                 release.notified().await;
@@ -427,12 +1201,40 @@ mod serial_tests {
             }
         }
 
+        async fn generate_order_status_report(
+            &self,
+            cmd: &GenerateOrderStatusReport,
+        ) -> anyhow::Result<Option<OrderStatusReport>> {
+            let client_order_id = cmd
+                .client_order_id
+                .expect("targeted report command must carry a client order ID");
+            let request_count = {
+                let mut ids = self.state.targeted_order_report_ids.lock().unwrap();
+                ids.push(client_order_id);
+                ids.len()
+            };
+
+            if self.block_every_second_targeted_report && request_count.is_multiple_of(2) {
+                return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
+            }
+
+            Ok(None)
+        }
+
         async fn generate_position_status_reports(
             &self,
             _cmd: &GeneratePositionStatusReports,
         ) -> anyhow::Result<Vec<PositionStatusReport>> {
-            self.position_report_requested
+            self.state
+                .position_report_requested
                 .store(true, Ordering::Relaxed);
+            self.state
+                .position_report_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            if self.position_reports_complete {
+                return Ok(Vec::new());
+            }
 
             if let Some(release) = &self.report_release {
                 release.notified().await;
@@ -441,6 +1243,77 @@ mod serial_tests {
                 std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
             }
         }
+    }
+
+    fn add_accepted_test_order(
+        node: &LiveNode,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        client_id: ClientId,
+    ) {
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let account_id = AccountId::from("BLOCKING-REPORT-001");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+    }
+
+    fn canceled_order_report(
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderStatusReport {
+        test_order_report(
+            AccountId::from("BLOCKING-REPORT-001"),
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Canceled,
+        )
+    }
+
+    fn test_order_report(
+        account_id: AccountId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        order_status: OrderStatus,
+    ) -> OrderStatusReport {
+        OrderStatusReport::new(
+            account_id,
+            crypto_perpetual_ethusdt().id(),
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            order_status,
+            Quantity::from("10.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+        .with_price(Price::from("100.0"))
     }
 
     #[rstest]
@@ -453,7 +1326,7 @@ mod serial_tests {
     }
 
     #[rstest]
-    fn test_live_node_build_overrides_environment_to_live() {
+    fn test_live_node_build_preserves_sandbox_environment() {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             trader_id: TraderId::from("TESTER-001"),
@@ -462,9 +1335,24 @@ mod serial_tests {
 
         let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
 
-        // Environment is overridden to Live when using build()
-        assert_eq!(node.environment(), Environment::Live);
+        assert_eq!(node.environment(), Environment::Sandbox);
         assert_eq!(node.trader_id(), TraderId::from("TESTER-001"));
+    }
+
+    #[rstest]
+    fn test_live_node_build_rejects_backtest_environment() {
+        let config = LiveNodeConfig {
+            environment: Environment::Backtest,
+            ..Default::default()
+        };
+
+        let err = LiveNode::build("TestNode".to_string(), Some(config))
+            .expect_err("build should reject Backtest");
+
+        assert!(
+            err.to_string().contains("Backtest"),
+            "unexpected error: {err:#}"
+        );
     }
 
     #[rstest]
@@ -489,6 +1377,33 @@ mod serial_tests {
         let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
 
         assert_eq!(node.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_live_node_builds_reject_invalid_exec_interval() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                open_check_interval_secs: Some(f64::INFINITY),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let direct_error = LiveNode::build("DirectNode".to_string(), Some(config.clone()))
+            .expect_err("direct build should reject an invalid execution interval");
+        let builder_error = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .build()
+            .expect_err("builder should reject an invalid execution interval");
+
+        for error in [direct_error, builder_error] {
+            assert!(
+                error
+                    .to_string()
+                    .contains("LiveExecEngineConfig.open_check_interval_secs"),
+                "unexpected error: {error:#}"
+            );
+        }
     }
 
     #[rstest]
@@ -609,6 +1524,434 @@ mod serial_tests {
     }
 
     #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_hung_data_connect_times_out_fail_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "StartHungDataConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!exec_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_hung_data_connect_times_out_fail_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "RunHungDataConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!exec_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_hung_exec_connect_times_out_fail_closed() {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "StartHungExecConnectNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::ConnectPending,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on an exec-connect timeout");
+
+        assert!(
+            err.to_string().contains("exec-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(exec_state.connect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_hung_exec_connect_times_out_fail_closed() {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "RunHungExecConnectNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::ConnectPending,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on an exec-connect timeout");
+
+        assert!(
+            err.to_string().contains("exec-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_readiness_timeout_fails_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "StartReadinessTimeoutNode",
+            LifecycleClientBehavior::ReadinessPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on a readiness timeout");
+
+        assert!(
+            err.to_string().contains("readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_readiness_timeout_fails_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "RunReadinessTimeoutNode",
+            LifecycleClientBehavior::ReadinessPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on a readiness timeout");
+
+        assert!(
+            err.to_string().contains("readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_zero_timeout_connection_starts_without_clients() {
+        // A zero `timeout_connection` with no clients must still start: the empty
+        // connect completes on the first poll. Regression for the pre-stage bail
+        // that rejected a zero budget before ever attempting the connect.
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("ZeroTimeoutNoClientsNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+        assert_eq!(handle.state(), NodeState::Running);
+
+        node.stop().await.unwrap();
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_zero_timeout_connection_still_bounds_hung_data_connect() {
+        // Zero `timeout_connection` must still fail closed on a hung connect: the
+        // bound is not disabled by a zero budget.
+        let (mut node, data_state, _exec_state) = live_node_with_lifecycle_clients_timeout(
+            "ZeroTimeoutHungConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+            Duration::ZERO,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_zero_timeout_connection_still_bounds_hung_data_connect() {
+        let (mut node, data_state, _exec_state) = live_node_with_lifecycle_clients_timeout(
+            "RunZeroTimeoutHungConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+            Duration::ZERO,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        // The connect was polled (attempt marked) before the zero-budget timeout,
+        // distinguishing the fix from the old pre-stage bail that never polled.
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_readiness_timeout_uses_shared_connection_budget() {
+        let (mut node, _data_state, _exec_state) = live_node_with_lifecycle_clients(
+            "SharedConnectionBudgetNode",
+            LifecycleClientBehavior::ConnectDelayedReadinessPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+        let started_at = dst::time::Instant::now();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let elapsed = dst::time::Instant::now() - started_at;
+        let err = result.expect_err("start should fail on a readiness timeout");
+
+        assert!(
+            err.to_string().contains("readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert!(
+            elapsed <= Duration::from_millis(60),
+            "readiness timeout exceeded the shared 50ms connection budget: {elapsed:?}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_stop_fails_when_disconnect_readiness_poll_times_out() {
+        let (mut node, data_state, _exec_state) = live_node_with_lifecycle_clients(
+            "DisconnectReadinessPollNode",
+            LifecycleClientBehavior::DisconnectKeepsConnected,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+        node.start().await.unwrap();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.stop())
+            .await
+            .expect("stop should finish within the lifecycle timeout");
+        let err = result.expect_err("stop should fail on a disconnect readiness timeout");
+
+        assert!(
+            err.to_string().contains("disconnect readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_hung_data_disconnect_still_attempts_execution_disconnect() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "HungDataDisconnectNode",
+            LifecycleClientBehavior::DisconnectPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+        node.start().await.unwrap();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.stop())
+            .await
+            .expect("stop should finish within the lifecycle timeout");
+        let err = result.expect_err("stop should fail on a disconnect timeout");
+
+        assert!(
+            err.to_string().contains("disconnect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!exec_state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_stop_dispose_releases_resources() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("LifecycleNode".to_string(), Some(config)).unwrap();
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("LIFECYCLE-001")),
+            ..Default::default()
+        }))
+        .unwrap();
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+        let trader_running = node.kernel().trader().borrow().is_running();
+        let running_component_count = node.kernel().trader().borrow().component_count();
+        node.stop().await.unwrap();
+        let trader_stopped = node.kernel().trader().borrow().is_stopped();
+        node.dispose();
+        node.dispose();
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(trader_running);
+        assert_eq!(running_component_count, 1);
+        assert!(trader_stopped);
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_without_cache_backing_preserves_staged_cache() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("NoBackingNode".to_string(), Some(config)).unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument)
+            .unwrap();
+
+        node.start().await.unwrap();
+        let retained = node
+            .kernel()
+            .cache()
+            .borrow()
+            .instrument(&instrument_id)
+            .is_some();
+        node.stop().await.unwrap();
+        node.dispose();
+
+        assert!(retained);
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_run_twice_returns_error() {
         let config = LiveNodeConfig {
@@ -622,7 +1965,6 @@ mod serial_tests {
         let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
 
-        // Must stop after node enters Running (stop flag is cleared on Running transition)
         let stop_handle = handle.clone();
 
         tokio::spawn(async move {
@@ -794,6 +2136,372 @@ mod serial_tests {
             "run() should complete within 5 seconds after stop"
         );
         assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_continues_when_mass_status_unavailable() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartupMassStatusUnavailableNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+
+        let result = node.start().await;
+
+        assert!(result.is_ok(), "unexpected error: {result:#?}");
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Running);
+        assert!(state.connected.load(Ordering::Relaxed));
+
+        node.stop().await.unwrap();
+
+        node.dispose();
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_strategy_start_failure_stops_partial_start_and_disposes_resources() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StrategyStartFailureNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("MANAGED-STOP-001")),
+            manage_stop: true,
+            ..Default::default()
+        }))
+        .unwrap();
+        node.add_strategy(FailingStartStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("FAILING-START-001")),
+            order_id_tag: Some("002".to_string()),
+            ..Default::default()
+        }))
+        .unwrap();
+        let handle = node.handle();
+
+        let err = node.start().await.expect_err("strategy start should fail");
+
+        assert!(
+            err.to_string()
+                .contains("simulated live node strategy start failure"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+        assert!(node.kernel().trader().borrow().is_stopped());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 2);
+
+        node.dispose();
+
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_strategy_stop_request_during_start_aborts_running_transition(#[case] run: bool) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(10),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StrategyStopDuringStartNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+        let strategy_id = StrategyId::from("STOP-ON-START-001");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let account_id = AccountId::from("STARTUP-MASS-STATUS-001");
+        let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
+        let stop_count = Arc::new(AtomicUsize::new(0));
+
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-STOP-001"));
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+
+        node.add_strategy(StopOnStartStrategy::new(
+            StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            },
+            handle.clone(),
+            instrument_id,
+            stop_count.clone(),
+        ))
+        .unwrap();
+
+        let result = if run {
+            node.run().await
+        } else {
+            node.start().await
+        };
+
+        assert!(result.is_ok(), "unexpected error: {result:#?}");
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(handle.should_stop());
+        assert!(!state.connected.load(Ordering::Relaxed));
+        assert!(node.kernel().trader().borrow().is_stopped());
+        assert_eq!(stop_count.load(Ordering::Relaxed), 1);
+        assert_eq!(state.cancel_all_orders_received.load(Ordering::Relaxed), 1);
+        assert!(
+            state
+                .cancel_all_orders_while_connected
+                .load(Ordering::Relaxed)
+        );
+
+        node.dispose();
+
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_data_disconnect_failure_still_attempts_execution_disconnect() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let data_state = FailingDisconnectDataClientState::default();
+        let exec_state = StartupMassStatusClientState::default();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("DisconnectFailureNode")
+            .add_data_client(
+                Some("failing-disconnect-data".to_string()),
+                Box::new(FailingDisconnectDataClientFactory::new(data_state.clone())),
+                Box::new(FailingDisconnectDataClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("startup-mass-status".to_string()),
+                Box::new(StartupMassStatusExecutionClientFactory::new(
+                    exec_state.clone(),
+                    StartupMassStatusBehavior::Unavailable,
+                )),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let err = node
+            .kernel_mut()
+            .disconnect_clients()
+            .await
+            .expect_err("data client disconnect should fail");
+        node.dispose();
+
+        assert!(
+            err.to_string()
+                .contains("simulated data client disconnect failure"),
+            "unexpected error: {err:#}"
+        );
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_continues_when_mass_status_unavailable() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "RunStartupMassStatusUnavailableNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = node.run().await;
+
+        assert!(result.is_ok(), "unexpected error: {result:#?}");
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_aborts_startup_when_mass_status_errors() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartStartupMassStatusErrorNode",
+            config,
+            StartupMassStatusBehavior::Error,
+        );
+        let handle = node.handle();
+
+        let err = node.start().await.expect_err("start should fail");
+        let err = format!("{err:#}");
+
+        assert!(
+            err.contains("Failed to get mass status from") && err.contains("mass status failed"),
+            "unexpected error: {err}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_aborts_startup_when_mass_status_errors() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartupMassStatusErrorNode",
+            config,
+            StartupMassStatusBehavior::Error,
+        );
+        let handle = node.handle();
+
+        let err = node.run().await.expect_err("run should fail");
+        let err = format!("{err:#}");
+
+        assert!(
+            err.contains("Failed to get mass status from") && err.contains("mass status failed"),
+            "unexpected error: {err}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread")
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_startup_reconciliation_times_out_waiting_for_mass_status() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(50),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartupMassStatusTimeoutNode",
+            config,
+            StartupMassStatusBehavior::Pending,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_secs(1), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "startup reconciliation timeout should fire before the test timeout"
+        );
+        let err = result
+            .unwrap()
+            .expect_err("run should fail on startup reconciliation timeout");
+        let err = format!("{err:#}");
+        assert!(
+            err.contains("Startup reconciliation timeout reached"),
+            "unexpected error: {err}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
     }
 
     // The maintenance dispatcher is a single `select!` arm in `LiveNode::run`
@@ -1315,6 +3023,433 @@ mod serial_tests {
         assert!(!query_order_received.load(Ordering::Relaxed));
         assert!(!blocking_order_report_requested.load(Ordering::Relaxed));
         assert!(position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_hung_open_report_task_times_out_and_position_check_starts() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("OpenReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let position_report_requested = state.position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { position_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "hung open report task should release its slot"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_hung_position_report_task_times_out_and_open_check_starts() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.2),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("PositionReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let bulk_order_report_requested = state.bulk_order_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { bulk_order_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "hung position report task should release its slot"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_hung_targeted_report_task_cleans_markers_and_checks_resume() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 200,
+                inflight_check_threshold_ms: 0,
+                inflight_check_retries: 100,
+                open_check_interval_secs: Some(0.1),
+                open_check_lookback_mins: None,
+                open_check_threshold_ms: 0,
+                open_check_missing_retries: 1,
+                open_check_open_only: false,
+                max_single_order_queries_per_cycle: 2,
+                single_order_query_delay_ms: 0,
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_position_reports_complete()
+        .with_block_every_second_targeted_report();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("TargetedReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let order_a = ClientOrderId::from("O-TARGETED-A");
+        let order_b = ClientOrderId::from("O-TARGETED-B");
+        let order_c = ClientOrderId::from("O-TARGETED-C");
+        add_accepted_test_order(
+            &node,
+            order_a,
+            VenueOrderId::from("V-TARGETED-A"),
+            client_id,
+        );
+        add_accepted_test_order(
+            &node,
+            order_b,
+            VenueOrderId::from("V-TARGETED-B"),
+            client_id,
+        );
+        add_accepted_test_order(
+            &node,
+            order_c,
+            VenueOrderId::from("V-TARGETED-C"),
+            client_id,
+        );
+        node.exec_manager_mut().register_inflight(order_a);
+        assert_eq!(
+            node.kernel()
+                .cache
+                .borrow()
+                .orders_open(None, None, None, None, None)
+                .len(),
+            3,
+        );
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let targeted_order_report_ids = state.targeted_order_report_ids.clone();
+        let query_order_received = state.query_order_received.clone();
+        let query_order_ids = state.query_order_ids.clone();
+        let position_report_requested = state.position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { targeted_order_report_ids.lock().unwrap().len() >= 2 },
+                Duration::from_secs(1),
+            )
+            .await;
+            query_order_received.store(false, Ordering::Relaxed);
+            query_order_ids.lock().unwrap().clear();
+            wait_until_async(
+                || async {
+                    query_order_received.load(Ordering::Relaxed)
+                        && position_report_requested.load(Ordering::Relaxed)
+                        && targeted_order_report_ids.lock().unwrap().len() >= 5
+                },
+                Duration::from_secs(2),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(3), node.run()).await;
+        let observed_targeted_ids = state.targeted_order_report_ids.lock().unwrap().clone();
+
+        assert!(
+            result.is_ok(),
+            "hung targeted report tasks should release their slot: bulk={}, targeted={observed_targeted_ids:?}, position={}, inflight={}, open={}, retries=[{}, {}, {}]",
+            state.bulk_order_report_count.load(Ordering::Relaxed),
+            state.position_report_count.load(Ordering::Relaxed),
+            state.query_order_received.load(Ordering::Relaxed),
+            node.kernel()
+                .cache
+                .borrow()
+                .orders_open(None, None, None, None, None)
+                .len(),
+            node.exec_manager().recon_check_retry_count(&order_a),
+            node.exec_manager().recon_check_retry_count(&order_b),
+            node.exec_manager().recon_check_retry_count(&order_c),
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.query_order_received.load(Ordering::Relaxed));
+        assert!(
+            state.query_order_ids.lock().unwrap().contains(&order_a),
+            "check_inflight_orders should query the planned order after its marker times out"
+        );
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        let targeted_ids = observed_targeted_ids;
+        assert_eq!(
+            &targeted_ids[..5],
+            &[order_a, order_b, order_c, order_b, order_b],
+            "all planned markers should clear while query recency remains"
+        );
+        assert!(node.exec_manager().recon_check_retry_count(&order_a) > 0);
+        assert!(node.exec_manager().recon_check_retry_count(&order_b) > 0);
+        assert!(node.exec_manager().recon_check_retry_count(&order_c) > 0);
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_timed_out_open_report_task_discards_earlier_client_reports() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(50),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let client_order_id = ClientOrderId::from("O-PARTIAL-DISCARD");
+        let venue_order_id = VenueOrderId::from("V-PARTIAL-DISCARD");
+        let partial_state = BlockingReportClientState::default();
+        let responsive_factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("RESPONSIVE-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            partial_state.clone(),
+        )
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)])
+        .with_position_reports_complete()
+        .with_block_every_second_order_report();
+        let blocking_factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            partial_state.clone(),
+        )
+        .with_venue(Venue::from("ROUTING"))
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)])
+        .with_position_reports_complete()
+        .with_block_every_second_order_report();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("PartialReportDiscardNode")
+            .add_exec_client(
+                Some("responsive-report".to_string()),
+                Box::new(responsive_factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(blocking_factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("RESPONSIVE-REPORT"),
+        );
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let position_report_requested = partial_state.position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { position_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(result.is_ok(), "timed-out batch should release its slot");
+        assert!(result.unwrap().is_ok());
+        assert!(
+            partial_state
+                .bulk_order_report_requested
+                .load(Ordering::Relaxed)
+        );
+        assert_eq!(
+            partial_state
+                .bulk_order_report_count
+                .load(Ordering::Relaxed),
+            2,
+            "one client should report before the later client hangs"
+        );
+        assert_eq!(
+            node.kernel()
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted,
+            "reports collected before the expiry should not be reconciled"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_timed_out_report_task_flushes_deferred_instrument_update() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(50),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("ReportTimeoutInstrumentFlushNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let bulk_order_report_requested = state.bulk_order_report_requested.clone();
+        let instrument_received = state.instrument_received.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { bulk_order_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let topic = switchboard::get_instrument_topic(instrument.id());
+            msgbus::publish_instrument(topic, &instrument);
+            wait_until_async(
+                || async { instrument_received.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "timeout cancellation should flush deferred instruments"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert!(state.instrument_received.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 }

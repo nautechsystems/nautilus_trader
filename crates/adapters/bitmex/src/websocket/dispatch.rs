@@ -44,7 +44,10 @@ use crate::{
     http::parse::{InstrumentParseResult, parse_instrument_any},
     websocket::{
         enums::BitmexAction,
-        messages::{BitmexExecutionMsg, BitmexTableMessage, BitmexWsMessage, OrderData},
+        messages::{
+            BitmexExecutionMsg, BitmexTableMessage, BitmexWsMessage, OrderData, OrderRowCache,
+            ResolvedOrderData,
+        },
         parse::{
             ParsedOrderEvent, parse_execution_msg, parse_margin_account_state, parse_order_event,
             parse_order_msg, parse_order_update_msg, parse_position_msg, parse_wallet_msg,
@@ -129,6 +132,7 @@ impl GenerationalDedupSet {
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
+    order_rows: Mutex<OrderRowCache>,
     emitted_accepted: GenerationalDedupSet,
     triggered_orders: GenerationalDedupSet,
     filled_orders: GenerationalDedupSet,
@@ -140,6 +144,7 @@ impl Default for WsDispatchState {
     fn default() -> Self {
         Self {
             order_identities: DashMap::new(),
+            order_rows: Mutex::new(OrderRowCache::default()),
             emitted_accepted: GenerationalDedupSet::default(),
             triggered_orders: GenerationalDedupSet::default(),
             filled_orders: GenerationalDedupSet::default(),
@@ -219,9 +224,9 @@ pub fn dispatch_ws_message(
 ) {
     match message {
         BitmexWsMessage::Table(table_msg) => match table_msg {
-            BitmexTableMessage::Order { data, .. } => {
+            BitmexTableMessage::Order { action, data } => {
                 dispatch_order_messages(
-                    data,
+                    state.order_rows_apply(action, data),
                     emitter,
                     state,
                     instruments_by_symbol,
@@ -315,6 +320,7 @@ pub fn dispatch_ws_message(
             }
         },
         BitmexWsMessage::Reconnected => {
+            state.order_rows_clear();
             order_type_cache.clear();
             order_symbol_cache.clear();
             log::info!("BitMEX execution websocket reconnected");
@@ -325,11 +331,31 @@ pub fn dispatch_ws_message(
     }
 }
 
+impl WsDispatchState {
+    pub(crate) fn order_rows_apply(
+        &self,
+        action: BitmexAction,
+        data: Vec<OrderData>,
+    ) -> Vec<ResolvedOrderData> {
+        self.order_rows
+            .lock()
+            .expect("order row cache lock poisoned")
+            .apply(action, data)
+    }
+
+    pub(crate) fn order_rows_clear(&self) {
+        self.order_rows
+            .lock()
+            .expect("order row cache lock poisoned")
+            .clear();
+    }
+}
+
 /// Dispatches order messages, routing tracked orders to events and untracked
 /// orders to reports.
 #[expect(clippy::too_many_arguments)]
 fn dispatch_order_messages(
-    data: Vec<OrderData>,
+    data: Vec<ResolvedOrderData>,
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
@@ -339,8 +365,28 @@ fn dispatch_order_messages(
     ts_init: UnixNanos,
 ) {
     for order_data in data {
+        let order_data = match order_data {
+            ResolvedOrderData::Terminal(order_msg) => {
+                let tracked = order_msg.cl_ord_id.as_ref().is_some_and(|cl_ord_id| {
+                    state
+                        .order_identities
+                        .contains_key(&ClientOrderId::new(cl_ord_id))
+                });
+
+                if !tracked {
+                    log::debug!(
+                        "Skipping terminal update for untracked order: order_id={}",
+                        order_msg.order_id,
+                    );
+                    continue;
+                }
+                ResolvedOrderData::Full(order_msg)
+            }
+            order_data => order_data,
+        };
+
         match order_data {
-            OrderData::Full(order_msg) => {
+            ResolvedOrderData::Full(order_msg) => {
                 let Some(instrument) = instruments_by_symbol.get(&order_msg.symbol) else {
                     log::error!(
                         "Instrument cache miss: order dropped for symbol={}, order_id={}",
@@ -434,11 +480,18 @@ fn dispatch_order_messages(
                     }
                 }
             }
-            OrderData::Update(msg) => {
-                let Some(instrument) = instruments_by_symbol.get(&msg.symbol) else {
+            ResolvedOrderData::Update(msg) => {
+                let Some(symbol) = msg.symbol else {
+                    log::warn!(
+                        "Order update missing cached symbol: order_id={}",
+                        msg.order_id,
+                    );
+                    continue;
+                };
+                let Some(instrument) = instruments_by_symbol.get(&symbol) else {
                     log::error!(
                         "Instrument cache miss: order update dropped for symbol={}, order_id={}",
-                        msg.symbol,
+                        symbol,
                         msg.order_id,
                     );
                     continue;
@@ -447,7 +500,7 @@ fn dispatch_order_messages(
                 // Populate cache for execution message routing
                 if let Some(cl_ord_id) = &msg.cl_ord_id {
                     let client_order_id = ClientOrderId::new(cl_ord_id);
-                    order_symbol_cache.insert(client_order_id, msg.symbol);
+                    order_symbol_cache.insert(client_order_id, symbol);
                 }
 
                 let identity = msg.cl_ord_id.as_ref().and_then(|cl| {
@@ -503,6 +556,7 @@ fn dispatch_order_messages(
                     );
                 }
             }
+            ResolvedOrderData::Terminal(_) => unreachable!("terminal order update was normalized"),
         }
     }
 }
@@ -760,5 +814,6 @@ pub(crate) fn fill_report_to_order_filled(
         false,
         report.venue_position_id,
         Some(report.commission),
+        None,
     )
 }

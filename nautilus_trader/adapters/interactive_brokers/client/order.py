@@ -125,7 +125,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Returns
         -------
         list[IBOrder] or None
-            None if the request failed (socket error / timeout) — callers must not
+            None if the request failed (socket error / timeout) - callers must not
             treat None as "confirmed zero open orders".  An empty list means IB
             explicitly confirmed no open orders.
 
@@ -157,7 +157,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         )
 
         if all_orders is None:
-            return None  # request failed — caller must not infer "no open orders"
+            return None  # request failed - caller must not infer "no open orders"
         if not all_orders:
             return []
 
@@ -181,7 +181,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Returns
         -------
         list[dict] or None
-            None if the request failed (socket error / timeout) — callers must not
+            None if the request failed (socket error / timeout) - callers must not
             treat None as "confirmed zero executions".  An empty list means IB
             explicitly confirmed no executions matched the filter.
             Each dict contains 'execution', 'contract', and 'commission_report' keys.
@@ -220,7 +220,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         )
 
         if execution_details is None:
-            return None  # request failed — caller must not infer "no executions"
+            return None  # request failed - caller must not infer "no executions"
         if not execution_details:
             return []
 

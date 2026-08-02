@@ -36,8 +36,6 @@
 //!
 //! See [`core`] module documentation for design decisions and performance details.
 
-mod api;
-mod backing;
 pub mod config;
 pub mod core;
 pub mod matching;
@@ -50,6 +48,9 @@ pub mod typed_handler;
 pub mod typed_router;
 
 pub(crate) mod external;
+
+mod api;
+mod backing;
 
 use std::{
     any::Any,

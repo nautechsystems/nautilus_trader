@@ -26,7 +26,7 @@ use nautilus_core::python::{
 use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{Quantity, quantity::QuantityRaw};
+use crate::types::{Quantity, fixed::raw_scale, quantity::QuantityRaw};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -307,8 +307,10 @@ impl Quantity {
         *self
     }
 
-    fn __int__(&self) -> u64 {
-        self.as_f64() as u64
+    fn __int__(&self) -> QuantityRaw {
+        let scale = QuantityRaw::try_from(raw_scale(self.precision))
+            .expect("effective raw scale should fit in QuantityRaw");
+        self.raw / scale
     }
 
     fn __float__(&self) -> f64 {
@@ -476,7 +478,41 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::types::quantity::QUANTITY_RAW_MAX;
+    use crate::types::{fixed::FIXED_PRECISION, quantity::QUANTITY_RAW_MAX};
+
+    #[rstest]
+    #[case("0", 0)]
+    #[case("0.000000001", 0)]
+    #[case("1.999999999", 1)]
+    #[case("50.25", 50)]
+    #[case("9007199253.999999999", 9_007_199_253)]
+    fn test_int_uses_exact_raw_value(#[case] value: &str, #[case] expected: u64) {
+        let quantity = Quantity::from_str(value).unwrap();
+
+        assert_eq!(quantity.__int__(), QuantityRaw::from(expected));
+    }
+
+    #[rstest]
+    fn test_int_preserves_domain_maximum() {
+        let expected: QuantityRaw = if cfg!(feature = "high-precision") {
+            34_028_236_692_093
+        } else {
+            18_446_744_073
+        };
+
+        assert_eq!(
+            Quantity::from_raw(QUANTITY_RAW_MAX, FIXED_PRECISION).__int__(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_int_uses_defi_raw_scale() {
+        let quantity = Quantity::from_raw(1_999_999_999_999_999_999, crate::defi::WEI_PRECISION);
+
+        assert_eq!(quantity.__int__(), 1);
+    }
 
     #[rstest]
     fn test_py_from_raw_rejects_out_of_range_raw_value() {

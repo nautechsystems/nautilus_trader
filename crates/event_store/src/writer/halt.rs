@@ -22,6 +22,8 @@
 //! signal to fail-stop trading; it is fired exactly once before the writer ceases to accept
 //! further entries.
 
+#[cfg(not(madsim))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{sync::Arc, time::Duration};
 
 use crate::error::EventStoreError;
@@ -62,6 +64,18 @@ impl HaltReason {
 ///
 /// Cloneable so submit, the writer thread, and tests can share the same fail-stop sink.
 pub type HaltCallback = Arc<dyn Fn(HaltReason) + Send + Sync + 'static>;
+
+/// Fires `halt` only when `halted` transitions from unset, so the callback runs
+/// exactly once across every failure path; the first condition wins the reason.
+#[cfg(not(madsim))]
+pub(crate) fn fire_once(halt: &HaltCallback, halted: &AtomicBool, reason: HaltReason) {
+    if halted
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        halt(reason);
+    }
+}
 
 /// Returns a [`HaltCallback`] that performs no action.
 ///

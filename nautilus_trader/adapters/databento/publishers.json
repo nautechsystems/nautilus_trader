@@ -655,8 +655,8 @@
     },
     {
         "publisher_id": 110,
-        "dataset": "CGIF.TITANIUM",
-        "venue": "CGIF",
+        "dataset": "MAIN.CGIF",
+        "venue": "MAIN",
         "description": "Cboe Global Indices Feed"
     },
     {
@@ -808,5 +808,47 @@
         "dataset": "EQUS.SIP",
         "venue": "UTP",
         "description": "US Equities SIP - UTP"
+    },
+    {
+        "publisher_id": 136,
+        "dataset": "MSCI.CGIF",
+        "venue": "MSCI",
+        "description": "CGIF - Morgan Stanley Capital International"
+    },
+    {
+        "publisher_id": 137,
+        "dataset": "FTSE.CGIF",
+        "venue": "FTSE",
+        "description": "CGIF - FTSE Russell"
+    },
+    {
+        "publisher_id": 138,
+        "dataset": "INAV.CGIF",
+        "venue": "INAV",
+        "description": "CGIF - Intraday Net Asset Values"
+    },
+    {
+        "publisher_id": 139,
+        "dataset": "MSTAR.CGIF",
+        "venue": "MSTAR",
+        "description": "CGIF - Morning Star"
+    },
+    {
+        "publisher_id": 140,
+        "dataset": "CCCY.CGIF",
+        "venue": "CCCY",
+        "description": "CGIF - Crypto Currency"
+    },
+    {
+        "publisher_id": 141,
+        "dataset": "CGI.CGIF",
+        "venue": "CGI",
+        "description": "CGIF - CBOE Global Indices"
+    },
+    {
+        "publisher_id": 142,
+        "dataset": "MAIN.CGIF",
+        "venue": "DEF",
+        "description": "CGIF - Definitions"
     }
 ]

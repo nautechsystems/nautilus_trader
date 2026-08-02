@@ -35,9 +35,16 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
     """
 
     WARNING_CODES: Final[set[int]] = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
-    CLIENT_ERRORS: Final[set[int]] = {502, 503, 504, 10038, 10182, 1100, 2110}
-    CONNECTIVITY_LOST_CODES: Final[set[int]] = {326, 1100, 1300, 2103, 2110}
-    CONNECTIVITY_RESTORED_CODES: Final[set[int]] = {1101, 1102, 2104}
+    CLIENT_ERRORS: Final[set[int]] = {502, 503, 504, 10038, 1100, 2110}
+    CONNECTIVITY_LOST_CODES: Final[set[int]] = {326, 1100, 1300, 2110}
+    CONNECTIVITY_RESTORED_CODES: Final[set[int]] = {1101, 1102}
+    # Transient data-farm status notifications. A "broken" code degrades only the affected data
+    # feeds (market-data farm 2103, historical/HMDS farm 2105); the matching "OK" code resumes
+    # them (market-data farm 2104, HMDS farm 2106). Per IB these are expected during the nightly
+    # maintenance restart and must NOT be treated as full connectivity loss (which would tear
+    # down the whole socket, including the order/execution channel).
+    DATA_FARM_BROKEN_CODES: Final[set[int]] = {2103, 2105}
+    DATA_FARM_OK_CODES: Final[set[int]] = {2104, 2106}
     ORDER_REJECTION_CODES: Final[set[int]] = {201, 203, 321, 10289, 10293}
     SUPPRESS_ERROR_LOGGING_CODES: Final[set[int]] = {200}
 
@@ -111,12 +118,35 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 await self._handle_order_error(req_id, error_code, error_string)
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
+        else:
+            self._handle_connectivity_message(error_code)
+
+    def _handle_connectivity_message(self, error_code: int) -> None:
+        """
+        Handle a general (non request-specific) status or connectivity message.
+
+        Transient data-farm notifications degrade only the data feeds (keeping the socket, and
+        so the order/execution channel, alive); genuine connectivity-lost codes clear the
+        connection so the watchdog can reconnect; connectivity-restored codes set it again.
+
+        Parameters
+        ----------
+        error_code : int
+            The status or error code (dispatched with req_id == -1).
+
+        """
+        if error_code in self.DATA_FARM_BROKEN_CODES:
+            self._mark_data_farm_degraded(error_code)
+        elif error_code in self.DATA_FARM_OK_CODES:
+            self._handle_data_farm_ok(error_code)
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
             if error_code == 326:
-                self._randomize_client_id_on_next_connect = True
-                self._fetch_all_open_orders = True
+                self._client_id_collision_count += 1
                 self._log.warning(
-                    "Enabling `fetch_all_open_orders` for client ID fallback after IB error 326",
+                    f"IB error 326 (client id already in use), collision "
+                    f"#{self._client_id_collision_count}: backing off and retrying with the same "
+                    f"client id (falls back to a bounded id band after "
+                    f"{self._client_id_reuse_limit} consecutive collisions)",
                 )
 
             if self._is_ib_connected.is_set():
@@ -132,6 +162,63 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             )
             self._is_ib_connected.set()
             self._had_ib_connection = True
+
+    def _mark_data_farm_degraded(self, error_code: int) -> None:
+        """
+        Flag the data feeds as degraded after a transient data-farm "broken"
+        notification.
+
+        Records the time of the first degradation (used to backfill bars missed during the
+        outage) and keeps the socket, including the order/execution channel, alive. The
+        connection watchdog is only tripped by genuine socket loss, never by a data-farm blip.
+
+        Parameters
+        ----------
+        error_code : int
+            The data-farm error code which triggered the degradation.
+
+        """
+        if self._data_farm_degraded_since_ns is None:
+            self._data_farm_degraded_since_ns = self._clock.timestamp_ns()
+
+        self._log.debug(
+            f"Data farm degraded by code {error_code}; feeds will resubscribe on farm-OK",
+            LogColor.BLUE,
+        )
+
+    def _handle_data_farm_ok(self, error_code: int) -> None:
+        """
+        Resume degraded data feeds after a data-farm "OK" notification.
+
+        Resubscribes the affected feeds without a socket teardown. Bars that completed during
+        the outage are recovered via the historical backfill (gated on the farm being OK, not
+        merely on the socket being up). A no-op when no degradation is outstanding.
+
+        Parameters
+        ----------
+        error_code : int
+            The data-farm error code which signalled recovery.
+
+        """
+        if self._data_farm_degraded_since_ns is None:
+            return
+
+        if (
+            self._data_farm_resubscription_task is not None
+            and not self._data_farm_resubscription_task.done()
+        ):
+            return
+
+        self._log.info(f"Data farm connection is OK (code {error_code}); resubscribing feeds")
+        self._data_farm_resubscription_task = self._create_task(
+            self._resubscribe_after_farm_recovery(),
+        )
+
+    async def _resubscribe_after_farm_recovery(self) -> None:
+        try:
+            await self._resubscribe_all()
+        finally:
+            self._data_farm_degraded_since_ns = None
 
     async def _handle_subscription_error(
         self,
@@ -169,14 +256,13 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             else:
                 subscription.handle()
         elif error_code == 10182:
-            # Handle disconnection error
+            # "Failed to request live updates (disconnected)" - a data-farm level drop of this
+            # subscription, typically during a farm outage. Do NOT treat it as full connectivity
+            # loss (which would tear down the whole socket, including the order/execution
+            # channel); keep the socket alive and mark the data feeds degraded so they
+            # resubscribe once the farm recovers (2104/2106).
             self._log.warning(f"{error_code}: {error_string}")
-
-            if self._is_ib_connected.is_set():
-                self._log.info(
-                    f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`",
-                )
-                self._is_ib_connected.clear()
+            self._mark_data_farm_degraded(error_code)
         else:
             # Log unknown subscription errors
             self._log.warning(

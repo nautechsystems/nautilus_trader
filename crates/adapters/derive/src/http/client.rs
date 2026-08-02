@@ -34,26 +34,31 @@ use ahash::AHashMap;
 use alloy::signers::local::PrivateKeySigner;
 use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse},
+    ratelimiter::{RateLimiter, clock::MonotonicClock},
     retry::{RetryConfig, RetryManager},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use ustr::Ustr;
 
 use crate::{
     common::{
         consts::{HEADER_LYRA_SIGNATURE, HEADER_LYRA_TIMESTAMP, HEADER_LYRA_WALLET, HTTP_TIMEOUT},
         enums::DeriveInstrumentType,
-        rate_limit::{self, DERIVE_NON_MATCHING_RATE_KEY},
+        rate_limit::{
+            self, DERIVE_CANCEL_ALL_RATE_KEY, DERIVE_CANCEL_BY_LABEL_RATE_KEY,
+            DERIVE_MATCHING_RATE_KEY,
+        },
         retry::{http_retry_config, should_retry_http_error},
     },
     http::{
         error::{DeriveHttpError, Result},
         models::{
-            DeriveEmptyResult, DeriveInstrument, DeriveOpenOrdersResult, DeriveOrder,
-            DeriveOrderResult, DeriveOrdersResult, DerivePositionsResult, DerivePublicCandle,
-            DerivePublicFundingRateHistoryResult, DerivePublicTradesResult, DeriveReplaceResult,
-            DeriveSubaccount, DeriveTickerSnapshot, DeriveTickersResult, DeriveTradesResult,
-            JsonRpcResponse,
+            DeriveCancelByLabelResult, DeriveEmptyResult, DeriveInstrument, DeriveOpenOrdersResult,
+            DeriveOrder, DeriveOrderResult, DeriveOrdersResult, DerivePositionsResult,
+            DerivePublicCandle, DerivePublicFundingRateHistoryResult, DerivePublicTradesResult,
+            DeriveReplaceResult, DeriveSubaccount, DeriveTickerSnapshot, DeriveTickersResult,
+            DeriveTradesResult, JsonRpcResponse,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -119,6 +124,7 @@ pub struct DeriveHttpClient {
     next_id: Arc<AtomicU64>,
     timeout_secs: u64,
     retry_manager: Arc<RetryManager<DeriveHttpError>>,
+    rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
 }
 
 impl DeriveHttpClient {
@@ -137,7 +143,7 @@ impl DeriveHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> Result<Self> {
         let timeout_secs = timeout_secs.unwrap_or_else(|| HTTP_TIMEOUT.as_secs());
-        let client = build_client(timeout_secs, proxy_url)?;
+        let (client, rate_limiter) = build_client(timeout_secs, proxy_url)?;
         let retry_config = retry_config.unwrap_or_else(|| http_retry_config(3, 100, 5_000));
         Ok(Self {
             client,
@@ -146,6 +152,7 @@ impl DeriveHttpClient {
             next_id: Arc::new(AtomicU64::new(1)),
             timeout_secs,
             retry_manager: Arc::new(RetryManager::new(retry_config)),
+            rate_limiter,
         })
     }
 
@@ -497,7 +504,7 @@ impl DeriveHttpClient {
     pub async fn cancel_by_label(
         &self,
         params: &DeriveCancelByLabelParams,
-    ) -> Result<DeriveEmptyResult> {
+    ) -> Result<DeriveCancelByLabelResult> {
         self.send_private_once("private/cancel_by_label", params)
             .await
     }
@@ -626,15 +633,15 @@ impl DeriveHttpClient {
         let body_value = serde_json::to_value(params).map_err(DeriveHttpError::from)?;
         let body = serde_json::to_vec(&body_value).map_err(DeriveHttpError::from)?;
 
-        // Every REST call is a non-matching read; gate it on the shared
-        // non-matching quota. A non-empty key is required: the limiter skips
-        // requests sent with no keys even when a default quota is configured.
-        let rate_keys = vec![DERIVE_NON_MATCHING_RATE_KEY.to_string()];
+        let rate_key = Ustr::from(rate_limit::rate_limit_key_for_method(method));
 
         // Sign per-attempt so the venue never sees a stale `X-LYRATIMESTAMP`
         // after a long backoff window; single-shot writes still run the
         // closure once and use freshly built headers.
         let attempt = || async {
+            let rate_keys = [rate_key];
+            self.rate_limiter.await_keys_ready(Some(&rate_keys)).await;
+
             let mut headers: AHashMap<String, String> = AHashMap::with_capacity(4);
             headers.insert("Content-Type".to_string(), "application/json".to_string());
 
@@ -653,7 +660,7 @@ impl DeriveHttpClient {
                     Some(headers.into_iter().collect()),
                     Some(body.clone()),
                     Some(self.timeout_secs),
-                    Some(rate_keys.clone()),
+                    None,
                 )
                 .await
                 .map_err(DeriveHttpError::from)?;
@@ -734,18 +741,32 @@ fn ticker_request(instrument_name: &str) -> Result<TickerRequest<'_>> {
 fn build_client(
     timeout_secs: u64,
     proxy_url: Option<String>,
-) -> std::result::Result<HttpClient, HttpClientError> {
-    // Every REST endpoint this client calls is a non-matching read, so a single
-    // default quota (keyed by `DERIVE_NON_MATCHING_RATE_KEY` at the call site)
-    // covers them; no per-endpoint keyed quotas are needed.
-    HttpClient::new(
+) -> std::result::Result<(HttpClient, Arc<RateLimiter<Ustr, MonotonicClock>>), HttpClientError> {
+    let rate_limiter = Arc::new(RateLimiter::new_with_quota(
+        Some(rate_limit::non_matching_quota()),
+        vec![
+            (
+                Ustr::from(DERIVE_MATCHING_RATE_KEY),
+                rate_limit::matching_quota(None),
+            ),
+            (
+                Ustr::from(DERIVE_CANCEL_ALL_RATE_KEY),
+                rate_limit::cancel_all_quota(),
+            ),
+            (
+                Ustr::from(DERIVE_CANCEL_BY_LABEL_RATE_KEY),
+                rate_limit::cancel_by_label_quota(),
+            ),
+        ],
+    ));
+    let client = HttpClient::new_with_rate_limiter(
         HashMap::new(),
         Vec::new(),
-        Vec::new(),
-        Some(rate_limit::non_matching_quota()),
         Some(timeout_secs),
         proxy_url,
-    )
+        Arc::clone(&rate_limiter),
+    )?;
+    Ok((client, rate_limiter))
 }
 
 fn trim_trailing_slash(url: String) -> String {
@@ -901,6 +922,13 @@ mod tests {
         let resp = test_response(200, &serde_json::json!({"id": 1, "result": {"ok": true}}));
         let value: Value = decode_envelope("public/get_instruments", 1, resp).unwrap();
         assert_eq!(value["ok"], true);
+    }
+
+    #[rstest]
+    fn test_decode_envelope_accepts_null_empty_result() {
+        let resp = test_response(200, &serde_json::json!({"id": 1, "result": null}));
+        let result: DeriveEmptyResult = decode_envelope("private/cancel", 1, resp).unwrap();
+        assert_eq!(result, DeriveEmptyResult {});
     }
 
     #[rstest]

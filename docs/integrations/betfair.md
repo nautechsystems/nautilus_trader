@@ -1,6 +1,6 @@
 # Betfair
 
-Founded in 2000, Betfair operates the world’s largest online betting exchange,
+Founded in 2000, Betfair operates the world's largest online betting exchange,
 with its headquarters in London and satellite offices across the globe.
 
 NautilusTrader provides an adapter for integrating with the Betfair REST API and
@@ -22,7 +22,7 @@ uv sync --all-extras
 
 ## Examples
 
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/).
+You can find live example scripts in the [examples/live/betfair](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/) directory.
 
 ## Betfair documentation
 
@@ -132,27 +132,27 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 
 ### Order types
 
-| Order Type             | Supported | Notes                               |
-|------------------------|-----------|-------------------------------------|
+| Order Type             | Supported | Notes                                                                                           |
+| ---------------------- | --------- | ----------------------------------------------------------------------------------------------- |
 | `MARKET`               | ✓*        | Python maps regular market orders to aggressive `LIMIT`; Rust supports BSP `AT_THE_CLOSE` only. |
-| `LIMIT`                | ✓         | Orders placed at specific odds.     |
-| `STOP_MARKET`          | -         | *Not supported*.                    |
-| `STOP_LIMIT`           | -         | *Not supported*.                    |
-| `MARKET_IF_TOUCHED`    | -         | *Not supported*.                    |
-| `LIMIT_IF_TOUCHED`     | -         | *Not supported*.                    |
-| `TRAILING_STOP_MARKET` | -         | *Not supported*.                    |
+| `LIMIT`                | ✓         | Orders placed at specific odds.                                                                 |
+| `STOP_MARKET`          | -         | *Not supported*.                                                                                |
+| `STOP_LIMIT`           | -         | *Not supported*.                                                                                |
+| `MARKET_IF_TOUCHED`    | -         | *Not supported*.                                                                                |
+| `LIMIT_IF_TOUCHED`     | -         | *Not supported*.                                                                                |
+| `TRAILING_STOP_MARKET` | -         | *Not supported*.                                                                                |
 
 ### Execution instructions
 
 | Instruction   | Supported | Notes                               |
-|---------------|-----------|-------------------------------------|
+| ------------- | --------- | ----------------------------------- |
 | `post_only`   | -         | Not applicable to betting exchange. |
 | `reduce_only` | -         | Not applicable to betting exchange. |
 
 ### Time in force options
 
 | Time in force | Supported | Notes                                      |
-|---------------|-----------|--------------------------------------------|
+| ------------- | --------- | ------------------------------------------ |
 | `GTC`         | ✓         | Maps to Betfair `PERSIST` persistence.     |
 | `GTD`         | -         | *Not supported*.                           |
 | `DAY`         | ✓         | Maps to Betfair `LAPSE` persistence.       |
@@ -171,62 +171,62 @@ Betfair `LIMIT_ON_CLOSE` instructions.
 ### Advanced order features
 
 | Feature            | Supported | Notes                                    |
-|--------------------|-----------|------------------------------------------|
+| ------------------ | --------- | ---------------------------------------- |
 | Order Modification | ✓         | Limited to non‑exposure changing fields. |
 | Bracket/OCO Orders | -         | *Not supported*.                         |
 | Iceberg Orders     | -         | *Not supported*.                         |
 
 ### Batch operations
 
-| Operation          | Supported | Notes                |
-|--------------------|-----------|----------------------|
-| Batch Submit       | ✓         | Supports `SubmitOrderList` in Python and Rust. |
-| Batch Modify       | -         | *Not supported*.     |
-| Batch Cancel       | ✓         | Supports batched cancel requests in Python and Rust. |
+| Operation    | Supported | Notes                                                |
+| ------------ | --------- | ---------------------------------------------------- |
+| Batch Submit | ✓         | Supports `SubmitOrderList` in Python and Rust.       |
+| Batch Modify | -         | *Not supported*.                                     |
+| Batch Cancel | ✓         | Supports batched cancel requests in Python and Rust. |
 
 ### Position management
 
-| Feature             | Supported | Notes                                   |
-|---------------------|-----------|-----------------------------------------|
-| Query positions     | -         | Betting exchange model differs.         |
-| Position mode       | -         | Not applicable to betting exchange.     |
-| Leverage control    | -         | No leverage in betting exchange.        |
-| Margin mode         | -         | No margin in betting exchange.          |
+| Feature          | Supported | Notes                               |
+| ---------------- | --------- | ----------------------------------- |
+| Query positions  | -         | Betting exchange model differs.     |
+| Position mode    | -         | Not applicable to betting exchange. |
+| Leverage control | -         | No leverage in betting exchange.    |
+| Margin mode      | -         | No margin in betting exchange.      |
 
 ### Order querying
 
-| Feature              | Supported | Notes                                  |
-|----------------------|-----------|----------------------------------------|
-| Query open orders    | ✓         | List all active bets.                  |
-| Query order history  | ✓         | Historical betting data.               |
-| Order status updates | ✓         | Real‑time bet state changes.           |
-| Trade history        | ✓         | Bet matching and settlement reports.   |
+| Feature              | Supported | Notes                                |
+| -------------------- | --------- | ------------------------------------ |
+| Query open orders    | ✓         | List all active bets.                |
+| Query order history  | ✓         | Historical betting data.             |
+| Order status updates | ✓         | Real‑time bet state changes.         |
+| Trade history        | ✓         | Bet matching and settlement reports. |
 
 ### Contingent orders
 
-| Feature             | Supported | Notes                                   |
-|---------------------|-----------|-----------------------------------------|
-| Order lists         | -         | *Not supported*.                        |
-| OCO orders          | -         | *Not supported*.                        |
-| Bracket orders      | -         | *Not supported*.                        |
-| Conditional orders  | -         | Basic bet conditions only.              |
+| Feature            | Supported | Notes                      |
+| ------------------ | --------- | -------------------------- |
+| Order lists        | -         | *Not supported*.           |
+| OCO orders         | -         | *Not supported*.           |
+| Bracket orders     | -         | *Not supported*.           |
+| Conditional orders | -         | Basic bet conditions only. |
 
 ## Tick scheme and pricing
 
 Betfair uses a tiered tick scheme with varying increments across price ranges:
 
-| Price Range   | Tick Size |
-|---------------|-----------|
-| 1.01 - 2.00   | 0.01      |
-| 2.00 - 3.00   | 0.02      |
-| 3.00 - 4.00   | 0.05      |
-| 4.00 - 6.00   | 0.10      |
-| 6.00 - 10.00  | 0.20      |
-| 10.00 - 20.00 | 0.50      |
-| 20.00 - 30.00 | 1.00      |
-| 30.00 - 50.00 | 2.00      |
-| 50.00 - 100.00 | 5.00     |
-| 100.00 - 1000.00 | 10.00  |
+| Price Range      | Tick Size |
+| ---------------- | --------- |
+| 1.01 - 2.00      | 0.01      |
+| 2.00 - 3.00      | 0.02      |
+| 3.00 - 4.00      | 0.05      |
+| 4.00 - 6.00      | 0.10      |
+| 6.00 - 10.00     | 0.20      |
+| 10.00 - 20.00    | 0.50      |
+| 20.00 - 30.00    | 1.00      |
+| 30.00 - 50.00    | 2.00      |
+| 50.00 - 100.00   | 5.00      |
+| 100.00 - 1000.00 | 10.00     |
 
 The minimum price is 1.01 and the maximum is 1000.00.
 
@@ -279,11 +279,11 @@ does not yet perform the same full-image cache check.
 
 When `ignore_external_orders=True`, the Python adapter skips orders and fills not found in cache:
 
-| Scenario                       | Description                                         |
-|--------------------------------|-----------------------------------------------------|
-| Unknown order in stream update | No venue‑to‑client order ID mapping exists.         |
-| Unknown order in full image    | Order not found in cache during image sync.         |
-| Unknown fill in full image     | Fill does not match any known order during sync.    |
+| Scenario                       | Description                                      |
+| ------------------------------ | ------------------------------------------------ |
+| Unknown order in stream update | No venue‑to‑client order ID mapping exists.      |
+| Unknown order in full image    | Order not found in cache during image sync.      |
+| Unknown fill in full image     | Fill does not match any known order during sync. |
 
 :::info
 For multi-node setups sharing a Betfair account, set both `stream_market_ids_filter` (your markets only)
@@ -312,21 +312,21 @@ The adapter handles several edge cases when processing fills from the stream:
 The adapter uses separate rate limit buckets so that account state polling and
 reconciliation do not throttle order placement:
 
-| Bucket  | Default | Endpoints                                            | Configurable                     |
-|---------|---------|------------------------------------------------------|----------------------------------|
-| General | 5/s     | Account state, reconciliation, keep‑alive.           |                                  |
-| Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`.      | `order_request_rate_per_second`. |
+| Bucket  | Default | Endpoints                                       | Configurable                     |
+| ------- | ------- | ----------------------------------------------- | -------------------------------- |
+| General | 5/s     | Account state, reconciliation, keep‑alive.      |                                  |
+| Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. | `order_request_rate_per_second`. |
 
 Order status and fill report queries retry once on `TOO_MANY_REQUESTS` errors
 after a 1-second delay; order operations reject with the error message.
 
 Betfair's actual API limits are more nuanced:
 
-| Category                 | Limit                | Notes                                                |
-|--------------------------|----------------------|------------------------------------------------------|
-| Order operations         | 1,000 transactions/s | Total instructions across `placeOrders`, `cancelOrders`, `replaceOrders`. |
+| Category                 | Limit                | Notes                                                                                      |
+| ------------------------ | -------------------- | ------------------------------------------------------------------------------------------ |
+| Order operations         | 1,000 transactions/s | Total instructions across `placeOrders`, `cancelOrders`, `replaceOrders`.                  |
 | Order projection queries | 3 concurrent         | `listMarketBook` (with `OrderProjection`), `listCurrentOrders`, `listMarketProfitAndLoss`. |
-| Best practice            | 5 requests/s         | Recommended for `listMarketBook` per market.         |
+| Best practice            | 5 requests/s         | Recommended for `listMarketBook` per market.                                               |
 
 :::info
 For details on rate limits, see [Why am I receiving the TOO_MANY_REQUESTS error?](https://support.developer.betfair.com/hc/en-us/articles/360000406111)
@@ -343,20 +343,20 @@ though strategies can register handlers for specific data types.
 
 Real-time ticker data for a betting selection.
 
-| Field                 | Type    | Description                     |
-|-----------------------|---------|---------------------------------|
-| `instrument_id`       | str     | Nautilus instrument identifier. |
-| `last_traded_price`   | float   | Last matched price (odds).      |
-| `traded_volume`       | float   | Total matched volume.           |
-| `starting_price_near` | float   | Near‑side BSP indicator.        |
-| `starting_price_far`  | float   | Far‑side BSP indicator.         |
+| Field                 | Type  | Description                     |
+| --------------------- | ----- | ------------------------------- |
+| `instrument_id`       | str   | Nautilus instrument identifier. |
+| `last_traded_price`   | float | Last matched price (odds).      |
+| `traded_volume`       | float | Total matched volume.           |
+| `starting_price_near` | float | Near‑side BSP indicator.        |
+| `starting_price_far`  | float | Far‑side BSP indicator.         |
 
 ### BetfairStartingPrice
 
 The realized Betfair Starting Price (BSP) after market close.
 
 | Field           | Type  | Description                     |
-|-----------------|-------|---------------------------------|
+| --------------- | ----- | ------------------------------- |
 | `instrument_id` | str   | Nautilus instrument identifier. |
 | `bsp`           | float | Final starting price (odds).    |
 
@@ -366,7 +366,7 @@ Live GPS tracking data for individual horses (Total Performance Data).
 Available for supported UK and Irish races.
 
 | Field              | Type  | Description                             |
-|--------------------|-------|-----------------------------------------|
+| ------------------ | ----- | --------------------------------------- |
 | `race_id`          | str   | Betfair race identifier.                |
 | `market_id`        | str   | Betfair market identifier.              |
 | `selection_id`     | int   | Betfair selection (runner) identifier.  |
@@ -381,7 +381,7 @@ Available for supported UK and Irish races.
 Race summary data with sectional times and running order.
 
 | Field            | Type       | Description                                   |
-|------------------|------------|-----------------------------------------------|
+| ---------------- | ---------- | --------------------------------------------- |
 | `race_id`        | str        | Betfair race identifier.                      |
 | `market_id`      | str        | Betfair market identifier.                    |
 | `gate_name`      | str        | Timing gate (e.g., "1f", "2f", "Finish").     |
@@ -403,6 +403,7 @@ from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
 from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.model.data import DataType
+
 
 class MyStrategy(Strategy):
     def on_start(self):
@@ -465,20 +466,20 @@ for data in parse_betfair_rcm_file("path/to/rcm_data.json"):
 
 ### Data client configuration options
 
-| Option                    | Default   | Description |
-|---------------------------|-----------|-------------|
-| `account_currency`        | Required  | Betfair account currency for data and price feeds. |
-| `username`                | `None`    | Betfair account username; taken from environment when omitted. |
-| `password`                | `None`    | Betfair account password; taken from environment when omitted. |
-| `app_key`                 | `None`    | Betfair application key used for API authentication. |
-| `certs_dir`               | `None`    | Directory containing Betfair SSL certificates for login. |
-| `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
-| `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
-| `keep_alive_secs`         | `36,000`  | Keep‑alive interval (seconds) for the Betfair session. |
-| `subscribe_race_data`     | `False`   | When `True`, subscribe to Race Change Messages (RCM) for live GPS tracking data. |
-| `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
-| `stream_heartbeat_ms`     | `5,000`    | Stream heartbeat interval in milliseconds (500-5000). `None` to omit. |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP requests. |
+| Option                    | Default  | Description                                                                      |
+| ------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `account_currency`        | Required | Betfair account currency for data and price feeds.                               |
+| `username`                | `None`   | Betfair account username; taken from environment when omitted.                   |
+| `password`                | `None`   | Betfair account password; taken from environment when omitted.                   |
+| `app_key`                 | `None`   | Betfair application key used for API authentication.                             |
+| `certs_dir`               | `None`   | Directory containing Betfair SSL certificates for login.                         |
+| `instrument_config`       | `None`   | Optional `BetfairInstrumentProviderConfig` to scope available markets.           |
+| `subscription_delay_secs` | `3`      | Delay (seconds) before initial market subscription request is sent.              |
+| `keep_alive_secs`         | `36,000` | Keep‑alive interval (seconds) for the Betfair session.                           |
+| `subscribe_race_data`     | `False`  | When `True`, subscribe to Race Change Messages (RCM) for live GPS tracking data. |
+| `stream_conflate_ms`      | `None`   | Explicit stream conflation interval in milliseconds (`0` disables conflation).   |
+| `stream_heartbeat_ms`     | `5,000`  | Stream heartbeat interval in milliseconds (500-5000). `None` to omit.            |
+| `proxy_url`               | `None`   | Optional proxy URL for HTTP requests.                                            |
 
 :::warning
 When `stream_conflate_ms` is `None`, Betfair applies its default conflation behavior (typically enabled).
@@ -497,24 +498,24 @@ Current Rust differences:
 
 ### Execution client configuration options
 
-| Option                       | Default  | Description |
-|------------------------------|----------|-------------|
-| `account_currency`           | Required | Betfair account currency for order placement and balances. |
-| `username`                   | `None`   | Betfair account username; taken from environment when omitted. |
-| `password`                   | `None`   | Betfair account password; taken from environment when omitted. |
-| `app_key`                    | `None`   | Betfair application key used for API authentication. |
-| `certs_dir`                  | `None`   | Directory containing Betfair SSL certificates for login. |
-| `instrument_config`          | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation. |
-| `calculate_account_state`    | `True`   | Calculate account state locally from events when `True`. |
-| `request_account_state_secs` | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables). |
-| `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset). |
-| `reconcile_market_ids`       | `None`   | Rust only. Explicit market IDs to use for reconciliation when `reconcile_market_ids_only=True`. |
-| `stream_market_ids_filter`   | `None`   | List of market IDs to process from stream; others are silently skipped. |
-| `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
-| `use_market_version`         | `False`  | When `True`, attach the latest market version to order requests for price protection. |
-| `order_request_rate_per_second` | `20`  | Rate limit (requests/second) for order endpoints, separate from general API endpoints. |
-| `stream_heartbeat_ms`        | `5,000`   | Order stream heartbeat interval in milliseconds (500-5000). `None` to omit. |
-| `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
+| Option                          | Default  | Description                                                                                     |
+| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `account_currency`              | Required | Betfair account currency for order placement and balances.                                      |
+| `username`                      | `None`   | Betfair account username; taken from environment when omitted.                                  |
+| `password`                      | `None`   | Betfair account password; taken from environment when omitted.                                  |
+| `app_key`                       | `None`   | Betfair application key used for API authentication.                                            |
+| `certs_dir`                     | `None`   | Directory containing Betfair SSL certificates for login.                                        |
+| `instrument_config`             | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation.                             |
+| `calculate_account_state`       | `True`   | Calculate account state locally from events when `True`.                                        |
+| `request_account_state_secs`    | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables).                            |
+| `reconcile_market_ids_only`     | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset).    |
+| `reconcile_market_ids`          | `None`   | Rust only. Explicit market IDs to use for reconciliation when `reconcile_market_ids_only=True`. |
+| `stream_market_ids_filter`      | `None`   | List of market IDs to process from stream; others are silently skipped.                         |
+| `ignore_external_orders`        | `False`  | When `True`, ignore stream orders missing from the local cache.                                 |
+| `use_market_version`            | `False`  | When `True`, attach the latest market version to order requests for price protection.           |
+| `order_request_rate_per_second` | `20`     | Rate limit (requests/second) for order endpoints, separate from general API endpoints.          |
+| `stream_heartbeat_ms`           | `5,000`  | Order stream heartbeat interval in milliseconds (500-5000). `None` to omit.                     |
+| `proxy_url`                     | `None`   | Optional proxy URL for HTTP requests.                                                           |
 
 :::warning
 If you set `stream_market_ids_filter`, ensure it includes all markets you trade. Orders placed on

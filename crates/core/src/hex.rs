@@ -89,7 +89,7 @@ pub fn decode(data: impl AsRef<[u8]>) -> Result<Vec<u8>, DecodeError> {
         return Err(DecodeError::OddLength);
     }
     let mut out = Vec::with_capacity(hex.len() / 2);
-    for pair in hex.chunks_exact(2) {
+    for pair in hex.as_chunks::<2>().0 {
         let hi = DECODE_NIBBLE[pair[0] as usize];
         let lo = DECODE_NIBBLE[pair[1] as usize];
         if (hi | lo) & 0xF0 != 0 {
@@ -120,7 +120,7 @@ pub fn decode_array<const N: usize>(data: impl AsRef<[u8]>) -> Result<[u8; N], D
     }
     let mut out = [0u8; N];
 
-    for (i, pair) in hex.chunks_exact(2).enumerate() {
+    for (i, pair) in hex.as_chunks::<2>().0.iter().enumerate() {
         let hi = DECODE_NIBBLE[pair[0] as usize];
         let lo = DECODE_NIBBLE[pair[1] as usize];
         if (hi | lo) & 0xF0 != 0 {

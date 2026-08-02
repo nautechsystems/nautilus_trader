@@ -17,10 +17,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+from strategies.backtest_surface import DoubleSpawnExecutionAlgorithm
 from strategies.backtest_surface import MarketDataAuditActor
 from strategies.backtest_surface import MarketDataAuditActorConfig
+from strategies.backtest_surface import OversizedSpawnExecutionAlgorithm
 from strategies.backtest_surface import RoutedOrderExecAlgorithm
 from strategies.backtest_surface import RoutedOrderExecAlgorithmConfig
+from strategies.backtest_surface import RoutedOrderExecutionAlgorithm
 from strategies.backtest_surface import RoutedOrderProbe
 from strategies.backtest_surface import RoutedOrderProbeConfig
 from strategies.backtest_surface import StreamingWhipsaw
@@ -63,17 +67,27 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 from nautilus_trader.trading import BookImbalanceActorConfig
 from nautilus_trader.trading import CompositeMarketMakerConfig
+from nautilus_trader.trading import Controller
 from nautilus_trader.trading import EmaCrossConfig
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import GridMarketMakerConfig
+from nautilus_trader.trading import ImportableControllerConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import ActorLifecycleController
+from tests.unit.common.actor import ControllerCreatedActor
+from tests.unit.common.actor import ControllerCreatedStrategy
+from tests.unit.common.actor import NonStartingStrategyCreatingController
+from tests.unit.common.actor import StrategyCreatingController
+from tests.unit.common.actor import StrategyLifecycleController
+from tests.unit.common.actor import TestControllerConfig
 
 
 USD = Currency.from_str("USD")
@@ -194,7 +208,7 @@ def test_native_ema_cross_trades_whipsaw_quote_data():
     engine.dispose()
 
 
-def test_builtin_book_imbalance_actor_consumes_quotes():
+def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd):
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
@@ -203,19 +217,28 @@ def test_builtin_book_imbalance_actor_consumes_quotes():
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, USDT)],
         base_currency=USDT,
+        book_type=BookType.L2_MBP,
     )
     engine.add_instrument(instrument)
     engine.add_builtin_actor(
         "BookImbalanceActor",
-        BookImbalanceActorConfig(instrument_ids=[instrument.id], log_interval=0),
+        BookImbalanceActorConfig(instrument_ids=[instrument.id], log_interval=1),
     )
 
-    engine.add_data(_crypto_quotes(instrument, count=12, mid_start=Decimal("2000.00")))
+    engine.add_data(_book_deltas(instrument))
     engine.run()
     result = engine.get_result()
+    captured = capfd.readouterr()
 
-    assert result.iterations == 12
+    assert (
+        "ETHUSDT.BINANCE  updates: 5  bid_vol: 50.00  ask_vol: 50.00  imbalance: 0.0000"
+        in captured.out
+    )
+    assert result.iterations == 5
     assert result.total_orders == 0
+    assert result.total_positions == 0
+    assert result.summary["orders.open"] == "0"
+    assert result.summary["positions.open"] == "0"
     assert result.summary["venues.total"] == "1"
     engine.dispose()
 
@@ -259,6 +282,167 @@ def test_importable_actor_receives_quotes_and_depth_snapshot_books():
     assert MarketDataAuditActor.last_book_bid == Price.from_str("2000.20")
     assert MarketDataAuditActor.last_book_ask == Price.from_str("2000.40")
     engine.dispose()
+
+
+def test_importable_controller_creates_strategy_on_start():
+    StrategyCreatingController.reset()
+    ControllerCreatedStrategy.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:StrategyCreatingController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    assert StrategyCreatingController.started == 1
+    assert str(StrategyCreatingController.created_strategy_id) == "ControllerCreatedStrategy-001"
+    assert ControllerCreatedStrategy.started == 1
+    engine.dispose()
+
+
+def test_importable_controller_preserves_strategy_start_flag_on_start():
+    NonStartingStrategyCreatingController.reset()
+    ControllerCreatedStrategy.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:NonStartingStrategyCreatingController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    assert NonStartingStrategyCreatingController.started == 1
+    assert (
+        str(NonStartingStrategyCreatingController.created_strategy_id)
+        == "ControllerCreatedStrategy-001"
+    )
+    assert ControllerCreatedStrategy.started == 0
+    engine.dispose()
+
+
+def test_importable_controller_drives_actor_lifecycle_through_id_aliases():
+    ActorLifecycleController.reset()
+    ControllerCreatedActor.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:ActorLifecycleController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    assert ActorLifecycleController.steps == [
+        "created",
+        "started",
+        "stopped",
+        "self_remove_ignored",
+        "removed",
+        "controller_stopped",
+    ]
+    assert str(ActorLifecycleController.created_actor_id) == "ControllerCreatedActor-001"
+    assert ControllerCreatedActor.started == 1
+    assert ControllerCreatedActor.stopped == 1
+    engine.dispose()
+
+
+def test_importable_controller_drives_strategy_lifecycle():
+    StrategyLifecycleController.reset()
+    ControllerCreatedStrategy.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:StrategyLifecycleController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    assert StrategyLifecycleController.steps == ["created", "started", "stopped", "removed"]
+    assert str(StrategyLifecycleController.created_strategy_id) == "ControllerCreatedStrategy-001"
+    assert ControllerCreatedStrategy.started == 1
+    assert ControllerCreatedStrategy.stopped == 1
+    engine.dispose()
+
+
+def test_importable_controller_rejects_non_controller_class():
+    with pytest.raises(RuntimeError, match="must inherit from"):
+        BacktestEngine(
+            BacktestEngineConfig(
+                bypass_logging=True,
+                run_analysis=False,
+                controller=ImportableControllerConfig(
+                    controller_path="tests.unit.common.actor:TestActor",
+                    config_path="tests.unit.common.actor:TestControllerConfig",
+                    config={"actor_id": "Controller-001"},
+                ),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("method_name", "target"),
+    [
+        ("start_actor", ActorId("Actor-001")),
+        ("start_actor_from_id", ActorId("Actor-001")),
+        ("stop_actor", ActorId("Actor-001")),
+        ("stop_actor_from_id", ActorId("Actor-001")),
+        ("remove_actor", ActorId("Actor-001")),
+        ("remove_actor_from_id", ActorId("Actor-001")),
+        ("start_strategy", StrategyId("Strategy-001")),
+        ("start_strategy_from_id", StrategyId("Strategy-001")),
+        ("stop_strategy", StrategyId("Strategy-001")),
+        ("stop_strategy_from_id", StrategyId("Strategy-001")),
+        ("market_exit_strategy", StrategyId("Strategy-001")),
+        ("market_exit_strategy_from_id", StrategyId("Strategy-001")),
+        ("remove_strategy", StrategyId("Strategy-001")),
+        ("remove_strategy_from_id", StrategyId("Strategy-001")),
+        (
+            "create_actor_from_config",
+            ImportableActorConfig(
+                actor_path="tests.unit.common.actor:ControllerCreatedActor",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "ControllerCreatedActor-001"},
+            ),
+        ),
+        (
+            "create_strategy_from_config",
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:ControllerCreatedStrategy",
+                config_path="tests.unit.common.actor:TestStrategyConfig",
+                config={"strategy_id": "ControllerCreatedStrategy-001"},
+            ),
+        ),
+    ],
+)
+def test_controller_control_methods_require_registration(method_name, target):
+    controller = Controller(TestControllerConfig(actor_id=ActorId("Controller-001")))
+
+    with pytest.raises(RuntimeError, match="Controller is not registered with a trader"):
+        getattr(controller, method_name)(target)
 
 
 def test_importable_strategy_routes_synthetic_bars_through_native_twap():
@@ -311,23 +495,31 @@ def test_importable_strategy_routes_synthetic_bars_through_native_twap():
     engine.run()
     result = engine.get_result()
     orders = engine.cache.orders()
-    primary_orders = [order for order in orders if order.exec_spawn_id is None]
-    spawned_orders = [order for order in orders if order.exec_spawn_id is not None]
+    primary_orders = [order for order in orders if order.is_primary]
+    spawned_orders = [order for order in orders if order.is_spawned]
+    open_positions = engine.cache.positions_open(instrument_id=instrument.id)
 
     assert result.iterations == len(closes)
-    assert primary_orders
-    assert spawned_orders
+    assert result.elapsed_time_secs == 420.0
+    assert len(orders) == 20
+    assert len(primary_orders) == 5
+    assert len(spawned_orders) == 15
     assert all(order.exec_algorithm_id == algo_id for order in orders)
     assert all(order.status == OrderStatus.FILLED for order in orders)
+    assert not engine.cache.orders_open(instrument_id=instrument.id)
+    assert len(open_positions) == 1
+    assert open_positions[0].quantity.as_decimal() == Decimal("0.010000")
+    assert open_positions[0].event_count == 4
+    assert not engine.cache.positions_closed(instrument_id=instrument.id)
 
     for primary in primary_orders:
         children = [
             order for order in spawned_orders if order.exec_spawn_id == primary.client_order_id
         ]
-        sequence_qty = primary.quantity.as_decimal() + sum(
-            order.quantity.as_decimal() for order in children
+        assert len(children) == 3
+        assert all(
+            order.quantity.as_decimal() == Decimal("0.002500") for order in [primary, *children]
         )
-        assert sequence_qty == Decimal("0.010000")
     engine.dispose()
 
 
@@ -379,6 +571,153 @@ def test_importable_strategy_routes_orders_through_importable_exec_algorithm():
     assert RoutedOrderExecAlgorithm.received_client_order_ids == [str(orders[0].client_order_id)]
     assert RoutedOrderExecAlgorithm.received_exec_algorithm_ids == [algo_id]
     assert RoutedOrderExecAlgorithm.signal_values == [str(orders[0].client_order_id)]
+    engine.dispose()
+
+
+def test_importable_strategy_routes_orders_through_importable_execution_algorithm():
+    RoutedOrderExecutionAlgorithm.reset_observations()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    algo_id = ExecAlgorithmId("PY-EXEC-ROUTE")
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USDT)],
+        base_currency=USDT,
+    )
+    engine.add_instrument(instrument)
+    engine.add_exec_algorithm_from_config(
+        ImportableExecAlgorithmConfig(
+            exec_algorithm_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithm",
+            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+            config={
+                "exec_algorithm_id": str(algo_id),
+                "log_events": False,
+                "log_commands": False,
+            },
+        ),
+    )
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="strategies.backtest_surface:RoutedOrderProbe",
+            config_path="strategies.backtest_surface:RoutedOrderProbeConfig",
+            config={
+                "instrument_id": str(instrument.id),
+                "trade_size": "0.10000",
+                "exec_algorithm_id": str(algo_id),
+            },
+        ),
+    )
+
+    engine.add_data(_crypto_quotes(instrument, count=3, mid_start=Decimal("2000.00")))
+    engine.run()
+    result = engine.get_result()
+    orders = engine.cache.orders()
+
+    assert result.iterations == 3
+    assert result.total_orders == 1
+    assert orders[0].exec_algorithm_id == algo_id
+    assert orders[0].status == OrderStatus.INITIALIZED
+    assert RoutedOrderExecutionAlgorithm.received_client_order_ids == [
+        str(orders[0].client_order_id),
+    ]
+    assert RoutedOrderExecutionAlgorithm.received_exec_algorithm_ids == [algo_id]
+    assert RoutedOrderExecutionAlgorithm.cache_instrument_ids == [str(instrument.id)]
+    assert RoutedOrderExecutionAlgorithm.greeks_types == ["GreeksCalculator"]
+    assert RoutedOrderExecutionAlgorithm.portfolio_initialized == [False]
+    assert RoutedOrderExecutionAlgorithm.running_states == [True]
+    assert RoutedOrderExecutionAlgorithm.signal_counts_after_unsubscribe == [1]
+    assert RoutedOrderExecutionAlgorithm.signal_values == [str(orders[0].client_order_id)]
+    engine.dispose()
+
+
+def test_execution_algorithm_spawn_reuses_cached_primary_order_state():
+    DoubleSpawnExecutionAlgorithm.reset_observations()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    algo_id = ExecAlgorithmId("PY-EXEC-SPAWN")
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USDT)],
+        base_currency=USDT,
+    )
+    engine.add_instrument(instrument)
+    engine.add_exec_algorithm_from_config(
+        ImportableExecAlgorithmConfig(
+            exec_algorithm_path="strategies.backtest_surface:DoubleSpawnExecutionAlgorithm",
+            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+            config={
+                "exec_algorithm_id": str(algo_id),
+                "log_events": False,
+                "log_commands": False,
+            },
+        ),
+    )
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="strategies.backtest_surface:RoutedOrderProbe",
+            config_path="strategies.backtest_surface:RoutedOrderProbeConfig",
+            config={
+                "instrument_id": str(instrument.id),
+                "trade_size": "0.10000",
+                "exec_algorithm_id": str(algo_id),
+            },
+        ),
+    )
+
+    engine.add_data(_crypto_quotes(instrument, count=3, mid_start=Decimal("2000.00")))
+    engine.run()
+
+    assert DoubleSpawnExecutionAlgorithm.cached_primary_quantities == [Decimal("0.05000")]
+    assert DoubleSpawnExecutionAlgorithm.spawned_exec_algorithm_ids == [algo_id, algo_id]
+    engine.dispose()
+
+
+def test_execution_algorithm_spawn_rejects_quantity_above_primary_leaves_qty():
+    OversizedSpawnExecutionAlgorithm.reset_observations()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    algo_id = ExecAlgorithmId("PY-EXEC-SPAWN-REJECT")
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USDT)],
+        base_currency=USDT,
+    )
+    engine.add_instrument(instrument)
+    engine.add_exec_algorithm_from_config(
+        ImportableExecAlgorithmConfig(
+            exec_algorithm_path="strategies.backtest_surface:OversizedSpawnExecutionAlgorithm",
+            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+            config={
+                "exec_algorithm_id": str(algo_id),
+                "log_events": False,
+                "log_commands": False,
+            },
+        ),
+    )
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="strategies.backtest_surface:RoutedOrderProbe",
+            config_path="strategies.backtest_surface:RoutedOrderProbeConfig",
+            config={
+                "instrument_id": str(instrument.id),
+                "trade_size": "0.10000",
+                "exec_algorithm_id": str(algo_id),
+            },
+        ),
+    )
+
+    engine.add_data(_crypto_quotes(instrument, count=3, mid_start=Decimal("2000.00")))
+    engine.run()
+
+    assert OversizedSpawnExecutionAlgorithm.error_messages == [
+        "Spawn quantity 0.11000 exceeds primary leaves_qty 0.10000",
+    ]
     engine.dispose()
 
 

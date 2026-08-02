@@ -13,13 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import inspect
+
 import pytest
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.common import ComponentState
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import DataActorConfig
+from nautilus_trader.core import UUID4
+from nautilus_trader.model import ActorId
+from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ExecAlgorithmId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import MarketOrder
+from nautilus_trader.model import OrderDenied
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TraderId
+from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 
@@ -44,6 +60,388 @@ class RequiredConfigBacktestExecAlgorithm(DataActor):
     def __init__(self, config: RequiredConfigBacktestExecAlgorithmConfig):
         super().__init__()
         type(self).received_exec_algorithm_id = config.exec_algorithm_id
+
+
+class CustomExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
+    def __init__(
+        self,
+        horizon_secs: str,
+        interval_secs: str,
+        **_kwargs,
+    ):
+        self.horizon_secs = horizon_secs
+        self.interval_secs = interval_secs
+
+
+class CustomExecutionAlgorithm(ExecutionAlgorithm):
+    received_config: CustomExecutionAlgorithmConfig | None = None
+
+    def __init__(self, config: CustomExecutionAlgorithmConfig):
+        super().__init__(config)
+        type(self).received_config = config
+
+
+class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class SecondDefaultExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class NonForwardingExecutionAlgorithm(ExecutionAlgorithm):
+    def __init__(self, config):
+        super().__init__()
+
+
+class InternalConfigExecutionAlgorithm(ExecutionAlgorithm):
+    def __init__(self):
+        super().__init__(
+            ExecutionAlgorithmConfig(
+                exec_algorithm_id=ExecAlgorithmId("INTERNAL-CONFIG"),
+            ),
+        )
+
+
+class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
+    def __init__(self):
+        super().__init__(
+            DataActorConfig(
+                actor_id=ActorId("INTERNAL-ACTOR-ID"),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("method_name", "parameter_names"),
+    [
+        ("execute", ["self", "command"]),
+        ("on_order", ["self", "order"]),
+        ("on_order_list", ["self", "order_list", "orders"]),
+        ("on_order_event", ["self", "event"]),
+        ("on_order_initialized", ["self", "event"]),
+        ("on_order_denied", ["self", "event"]),
+        ("on_order_emulated", ["self", "event"]),
+        ("on_order_released", ["self", "event"]),
+        ("on_order_submitted", ["self", "event"]),
+        ("on_order_rejected", ["self", "event"]),
+        ("on_order_accepted", ["self", "event"]),
+        ("on_order_canceled", ["self", "event"]),
+        ("on_order_expired", ["self", "event"]),
+        ("on_order_triggered", ["self", "event"]),
+        ("on_order_pending_update", ["self", "event"]),
+        ("on_order_pending_cancel", ["self", "event"]),
+        ("on_order_modify_rejected", ["self", "event"]),
+        ("on_order_cancel_rejected", ["self", "event"]),
+        ("on_order_updated", ["self", "event"]),
+        ("on_order_filled", ["self", "event"]),
+        ("on_position_event", ["self", "event"]),
+        ("on_position_opened", ["self", "event"]),
+        ("on_position_changed", ["self", "event"]),
+        ("on_position_closed", ["self", "event"]),
+        (
+            "spawn_market",
+            [
+                "self",
+                "primary",
+                "quantity",
+                "time_in_force",
+                "reduce_only",
+                "tags",
+                "reduce_primary",
+            ],
+        ),
+        (
+            "spawn_limit",
+            [
+                "self",
+                "primary",
+                "quantity",
+                "price",
+                "time_in_force",
+                "expire_time",
+                "post_only",
+                "reduce_only",
+                "display_qty",
+                "emulation_trigger",
+                "tags",
+                "reduce_primary",
+            ],
+        ),
+        (
+            "spawn_market_to_limit",
+            [
+                "self",
+                "primary",
+                "quantity",
+                "time_in_force",
+                "expire_time",
+                "reduce_only",
+                "display_qty",
+                "emulation_trigger",
+                "tags",
+                "reduce_primary",
+            ],
+        ),
+        ("deny_order", ["self", "order", "reason"]),
+        ("submit_order", ["self", "order", "position_id", "client_id"]),
+        ("modify_order", ["self", "order", "quantity", "price", "trigger_price", "client_id"]),
+        ("modify_order_in_place", ["self", "order", "quantity", "price", "trigger_price"]),
+        ("cancel_order", ["self", "order", "client_id"]),
+        ("subscribe_signal", ["self", "name", "priority"]),
+        ("unsubscribe_signal", ["self", "name"]),
+        ("on_signal", ["self", "signal"]),
+        ("to_importable_config", ["self"]),
+        ("is_ready", ["self"]),
+        ("is_running", ["self"]),
+        ("is_stopped", ["self"]),
+        ("is_disposed", ["self"]),
+        ("is_degraded", ["self"]),
+        ("is_faulted", ["self"]),
+        ("start", ["self"]),
+        ("stop", ["self"]),
+        ("resume", ["self"]),
+        ("reset", ["self"]),
+        ("dispose", ["self"]),
+        ("degrade", ["self"]),
+        ("fault", ["self"]),
+    ],
+)
+def test_execution_algorithm_authoring_surface_parameters(method_name, parameter_names):
+    method = getattr(ExecutionAlgorithm, method_name)
+
+    assert list(inspect.signature(method).parameters) == parameter_names
+
+
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        "greeks",
+        "msgbus",
+        "registered_indicators",
+        "register_indicator",
+        "subscribe_data",
+        "unsubscribe_data",
+        "on_data",
+        "subscribe_instruments",
+        "subscribe_quotes",
+        "subscribe_trades",
+        "subscribe_bars",
+        "register",
+    ],
+)
+def test_execution_algorithm_keeps_routed_order_surface(attribute):
+    assert not hasattr(ExecutionAlgorithm, attribute)
+
+
+def test_execution_algorithm_pre_registration_surface():
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
+    )
+
+    assert exec_algorithm.state == ComponentState.PRE_INITIALIZED
+    assert exec_algorithm.is_registered() is False
+    assert exec_algorithm.is_ready() is False
+    assert exec_algorithm.is_running() is False
+    assert exec_algorithm.is_stopped() is False
+    assert exec_algorithm.is_disposed() is False
+    assert exec_algorithm.is_degraded() is False
+    assert exec_algorithm.is_faulted() is False
+
+    with pytest.raises(RuntimeError, match="registered with a trader"):
+        _ = exec_algorithm.portfolio
+
+    with pytest.raises(RuntimeError, match="ExecutionAlgorithm not registered"):
+        exec_algorithm.deny_order(
+            create_market_order(),
+            "VALIDATION_FAILED: invalid Python execution schedule",
+        )
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"],
+)
+def test_execution_algorithm_lifecycle_methods_reject_pre_initialized_state(method_name):
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-LIFECYCLE")),
+    )
+
+    with pytest.raises(RuntimeError, match="Invalid state trigger PRE_INITIALIZED"):
+        getattr(exec_algorithm, method_name)()
+
+
+def test_execution_algorithm_config_defaults():
+    config = ExecutionAlgorithmConfig()
+
+    assert config.exec_algorithm_id is None
+    assert config.log_events is True
+    assert config.log_commands is True
+
+
+def test_execution_algorithm_config_supports_custom_fields():
+    config = CustomExecutionAlgorithmConfig(
+        horizon_secs="73.5",
+        interval_secs="2.25",
+        exec_algorithm_id=ExecAlgorithmId("CUSTOM-CONFIG"),
+        log_events=False,
+        log_commands=True,
+    )
+
+    assert config.exec_algorithm_id == ExecAlgorithmId("CUSTOM-CONFIG")
+    assert config.horizon_secs == "73.5"
+    assert config.interval_secs == "2.25"
+    assert config.log_events is False
+    assert config.log_commands is True
+
+
+def test_execution_algorithm_to_importable_config_round_trips_custom_config():
+    CustomExecutionAlgorithm.received_config = None
+    config = CustomExecutionAlgorithmConfig(
+        horizon_secs="91.5",
+        interval_secs="3.75",
+        exec_algorithm_id=ExecAlgorithmId("IMPORTABLE-CONFIG"),
+        log_events=False,
+        log_commands=True,
+    )
+    exec_algorithm = CustomExecutionAlgorithm(config)
+
+    importable = exec_algorithm.to_importable_config()
+
+    assert importable.exec_algorithm_path == (
+        "tests.unit.backtest.test_backtest_engine_exec_algorithms:CustomExecutionAlgorithm"
+    )
+    assert importable.config_path == (
+        "tests.unit.backtest.test_backtest_engine_exec_algorithms:CustomExecutionAlgorithmConfig"
+    )
+    assert importable.config == {
+        "exec_algorithm_id": "IMPORTABLE-CONFIG",
+        "horizon_secs": "91.5",
+        "interval_secs": "3.75",
+        "log_commands": True,
+        "log_events": False,
+    }
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_exec_algorithm_from_config(importable)
+
+    received = CustomExecutionAlgorithm.received_config
+    assert received is not None
+    assert received.exec_algorithm_id == ExecAlgorithmId("IMPORTABLE-CONFIG")
+    assert received.horizon_secs == "91.5"
+    assert received.interval_secs == "3.75"
+    assert received.log_events is False
+    assert received.log_commands is True
+    engine.dispose()
+
+
+def test_execution_algorithm_to_importable_config_round_trips_without_config():
+    exec_algorithm = FirstDefaultExecutionAlgorithm()
+
+    importable = exec_algorithm.to_importable_config()
+
+    assert importable.exec_algorithm_path == (
+        "tests.unit.backtest.test_backtest_engine_exec_algorithms:FirstDefaultExecutionAlgorithm"
+    )
+    assert importable.config_path == ""
+    assert importable.config == {}
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_exec_algorithm_from_config(importable)
+
+    with pytest.raises(
+        RuntimeError,
+        match="'FirstDefaultExecutionAlgorithm' is already registered",
+    ):
+        engine.add_exec_algorithm_from_config(importable)
+    engine.dispose()
+
+
+def test_execution_algorithm_config_with_explicit_values():
+    config = ExecutionAlgorithmConfig(
+        exec_algorithm_id=ExecAlgorithmId("TWAP-001"),
+        log_events=False,
+        log_commands=False,
+    )
+
+    assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
+    assert config.log_events is False
+    assert config.log_commands is False
+
+
+def test_execution_algorithm_derives_default_id_from_runtime_class():
+    base = ExecutionAlgorithm()
+    first = FirstDefaultExecutionAlgorithm()
+    second = SecondDefaultExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=None),
+    )
+
+    assert base.exec_algorithm_id == ExecAlgorithmId("ExecutionAlgorithm")
+    assert first.exec_algorithm_id == ExecAlgorithmId("FirstDefaultExecutionAlgorithm")
+    assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultExecutionAlgorithm")
+
+
+def test_execution_algorithm_preserves_explicit_id_without_forwarding_config():
+    exec_algorithm_id = ExecAlgorithmId("NON-FORWARDING")
+    exec_algorithm = NonForwardingExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=exec_algorithm_id),
+    )
+
+    assert exec_algorithm.exec_algorithm_id == exec_algorithm_id
+
+
+def test_execution_algorithm_preserves_explicit_id_created_inside_subclass():
+    exec_algorithm = InternalConfigExecutionAlgorithm()
+
+    assert exec_algorithm.exec_algorithm_id == ExecAlgorithmId("INTERNAL-CONFIG")
+
+
+def test_execution_algorithm_uses_actor_id_created_inside_subclass():
+    exec_algorithm = InternalActorIdExecutionAlgorithm()
+
+    assert exec_algorithm.exec_algorithm_id == ExecAlgorithmId("INTERNAL-ACTOR-ID")
+
+
+def test_execution_algorithm_rejects_non_ascii_derived_id():
+    non_ascii_algorithm = type("Strategy\u00e9", (ExecutionAlgorithm,), {})
+
+    with pytest.raises(ValueError, match="non-ASCII char"):
+        non_ascii_algorithm()
+
+
+def test_add_exec_algorithms_registers_distinct_class_derived_ids():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = FirstDefaultExecutionAlgorithm()
+    second = SecondDefaultExecutionAlgorithm()
+
+    engine.add_exec_algorithms([first, second])
+
+    assert first.exec_algorithm_id == ExecAlgorithmId("FirstDefaultExecutionAlgorithm")
+    assert first.is_registered() is True
+    assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultExecutionAlgorithm")
+    assert second.is_registered() is True
+    engine.dispose()
+
+
+def test_execution_algorithm_deny_order_updates_cache_once():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-DENY")),
+    )
+    engine.add_exec_algorithm(exec_algorithm)
+    order = create_market_order()
+    reason = "VALIDATION_FAILED: invalid Python execution schedule"
+
+    exec_algorithm.deny_order(order, reason)
+    exec_algorithm.deny_order(order, reason)
+
+    cached_order = exec_algorithm.cache.order(order.client_order_id)
+    assert cached_order.status == OrderStatus.DENIED
+    assert cached_order.event_count == 2
+    assert isinstance(cached_order.last_event, OrderDenied)
+    assert cached_order.last_event.reason == reason
+    assert cached_order.last_event.strategy_id == order.strategy_id
+    engine.dispose()
 
 
 def test_add_native_exec_algorithm_rejects_unknown_type():
@@ -188,6 +586,22 @@ def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_
     engine.dispose()
 
 
+def test_add_exec_algorithm_registers_constructed_v2_instance():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    exec_algorithm_id = ExecAlgorithmId("BACKTEST-V2-INSTANCE")
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=exec_algorithm_id),
+    )
+
+    engine.add_exec_algorithm(exec_algorithm)
+
+    assert exec_algorithm.exec_algorithm_id == exec_algorithm_id
+    assert exec_algorithm.is_registered() is True
+    assert exec_algorithm.is_ready() is True
+    assert exec_algorithm.portfolio.is_initialized() is False
+    engine.dispose()
+
+
 def test_add_exec_algorithm_registers_non_forwarding_instance_under_config_id():
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_exec_algorithm(
@@ -253,3 +667,19 @@ def test_add_exec_algorithms_from_configs_registers_multiple_algorithms():
     with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-B' is already registered"):
         engine.add_exec_algorithm_from_config(configs[1])
     engine.dispose()
+
+
+def create_market_order():
+    return MarketOrder(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("DENY-001"),
+        instrument_id=InstrumentId.from_str("AUD/USD.SIM"),
+        client_order_id=ClientOrderId("O-PY-DENY"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        init_id=UUID4(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+    )

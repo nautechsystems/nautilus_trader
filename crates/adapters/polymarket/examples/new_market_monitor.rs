@@ -18,10 +18,10 @@
 //! Configures the Polymarket data client with `subscribe_new_markets: true` so
 //! the WebSocket connection receives `new_market` events. A [`SearchFilter`]
 //! pre-populates the configured query's markets from the Gamma search API at
-//! startup — these serve as the initial instrument set. Any new market created
+//! startup - these serve as the initial instrument set. Any new market created
 //! on Polymarket is then fetched from the Gamma API and emitted alongside the
 //! initial instruments. A custom [`DataActor`] subscribes to all instruments
-//! from the POLYMARKET venue and logs every instrument that arrives — including
+//! from the POLYMARKET venue and logs every instrument that arrives - including
 //! newly created markets pushed in real time.
 //!
 //! Edit the constants below to change the initial market search query.
@@ -108,7 +108,7 @@ impl DataActor for NewMarketMonitor {
 
         self.instrument_count = cached_instruments.len();
 
-        // Subscribe to all instruments from the venue — this will deliver
+        // Subscribe to all instruments from the venue - this will deliver
         // both existing and any new instruments pushed by the data client
         // when subscribe_new_markets is enabled.
         self.subscribe_instruments(venue, client_id, None);
@@ -122,7 +122,7 @@ impl DataActor for NewMarketMonitor {
         self.instrument_count += 1;
         let label = PolymarketLabel::from_instrument(instrument);
         log::info!(
-            "Instrument received (total={}): {} — {label} | tick_size={} price_prec={} size_prec={}",
+            "Instrument received (total={}): {} - {label} | tick_size={} price_prec={} size_prec={}",
             self.instrument_count,
             instrument.id(),
             instrument.price_increment(),

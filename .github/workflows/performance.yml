@@ -104,7 +104,7 @@ jobs:
 
       - name: Install Nautilus CLI
         env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -155,8 +155,8 @@ jobs:
       # Run codspeed once only
       - name: Run benchmarks
         # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@c145068895e045cc725ee76fcd2307624b65c3af # v4.17.5
+        uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          mode: instrumentation
+          mode: simulation
           run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed

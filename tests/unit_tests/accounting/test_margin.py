@@ -513,7 +513,7 @@ class TestMarginAccount:
         assert account.balance_free(USD) == Money(1_000_000 - expected_locked, USD)
 
     def test_accounts_manager_generate_account_state_survives_round_trip(self):
-        # Arrange — regenerating and re-applying must not drop account-wide margins.
+        # Arrange - regenerating and re-applying must not drop account-wide margins.
         clock = TestClock()
         logger = Logger("TestAccountsManager")
         cache = Cache()

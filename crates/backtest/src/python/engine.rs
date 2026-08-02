@@ -22,7 +22,7 @@ use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     enums::ComponentState,
     python::{
-        actor::{PyDataActor, register_python_exec_algorithm_endpoint},
+        actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
         cache::PyCache,
         config_error_to_pyvalue_err,
     },
@@ -32,30 +32,21 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_execution::{
-    models::{
-        fill::{
-            BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
-            LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
-            ProbabilisticFillModel, SizeAwareFillModel, ThreeTierFillModel, TwoTierFillModel,
-            VolumeSensitiveFillModel,
-        },
-        latency::{LatencyModelAny, StaticLatencyModel},
-    },
-    python::fee::pyobject_to_fee_model_any,
+    models::latency::{LatencyModelAny, StaticLatencyModel},
+    python::{fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
-        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{
-        AccountId, ActorId, ClientId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId,
-        TraderId, Venue,
+        AccountId, ActorId, ClientId, ComponentId, ExecAlgorithmId, InstrumentId, TraderId, Venue,
     },
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money, Price},
@@ -73,7 +64,7 @@ use nautilus_trading::examples::{
 use nautilus_trading::{
     ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     algorithm::{TwapAlgorithm, TwapAlgorithmConfig},
-    python::strategy::{PyStrategy, PyStrategyInner},
+    python::algorithm::PyExecutionAlgorithm,
 };
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -234,11 +225,11 @@ impl PyBacktestEngine {
             .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
             .transpose()?;
         let fill_model = fill_model
-            .map(|obj| Python::attach(|py| pyobject_to_fill_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_fill_model_handle(obj.bind(py))))
             .transpose()?
             .unwrap_or_default();
         let fee_model = fee_model
-            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_fee_model_handle(obj.bind(py))))
             .transpose()?
             .unwrap_or_default();
         let latency_model = latency_model
@@ -317,7 +308,7 @@ impl PyBacktestEngine {
         venue: Venue,
         fill_model: Py<PyAny>,
     ) -> PyResult<()> {
-        let fill_model = pyobject_to_fill_model_any(py, fill_model.bind(py))?;
+        let fill_model = pyobject_to_fill_model_handle(fill_model.bind(py))?;
         self.0.change_fill_model(venue, fill_model);
         Ok(())
     }
@@ -587,8 +578,8 @@ impl PyBacktestEngine {
 
     /// Ends the backtest run, finalizing results.
     #[pyo3(name = "end")]
-    fn py_end(&mut self) {
-        self.0.end();
+    fn py_end(&mut self) -> PyResult<()> {
+        self.0.end_with_result().map_err(to_pyruntime_err)
     }
 
     /// Resets the engine state for a new run.
@@ -785,14 +776,14 @@ impl PyBacktestEngine {
     #[getter]
     #[pyo3(name = "cache")]
     fn py_cache(&self) -> PyCache {
-        PyCache::from_rc(self.0.kernel().cache.clone())
+        engine_cache(&self.0)
     }
 
     /// Returns the portfolio shared with the kernel and registered components.
     #[getter]
     #[pyo3(name = "portfolio")]
     fn py_portfolio(&self) -> PyPortfolio {
-        PyPortfolio::from_rc(self.0.kernel().portfolio.clone())
+        engine_portfolio(&self.0)
     }
 
     /// Generates an orders report as a pandas `DataFrame`.
@@ -802,8 +793,7 @@ impl PyBacktestEngine {
     /// Returns an error if the Python `ReportProvider` import or call fails.
     #[pyo3(name = "generate_orders_report")]
     fn py_generate_orders_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let orders = self.cache_bound(py)?.call_method0("orders")?;
-        Self::report_provider(py)?.call_method1("generate_orders_report", (orders,))
+        generate_orders_report(&self.0, py)
     }
 
     /// Generates an order fills report as a pandas `DataFrame`.
@@ -813,8 +803,7 @@ impl PyBacktestEngine {
     /// Returns an error if the Python `ReportProvider` import or call fails.
     #[pyo3(name = "generate_order_fills_report")]
     fn py_generate_order_fills_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let orders = self.cache_bound(py)?.call_method0("orders")?;
-        Self::report_provider(py)?.call_method1("generate_order_fills_report", (orders,))
+        generate_order_fills_report(&self.0, py)
     }
 
     /// Generates a fills report as a pandas `DataFrame`.
@@ -824,8 +813,7 @@ impl PyBacktestEngine {
     /// Returns an error if the Python `ReportProvider` import or call fails.
     #[pyo3(name = "generate_fills_report")]
     fn py_generate_fills_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let orders = self.cache_bound(py)?.call_method0("orders")?;
-        Self::report_provider(py)?.call_method1("generate_fills_report", (orders,))
+        generate_fills_report(&self.0, py)
     }
 
     /// Generates a positions report as a pandas `DataFrame`.
@@ -835,10 +823,7 @@ impl PyBacktestEngine {
     /// Returns an error if the Python `ReportProvider` import or call fails.
     #[pyo3(name = "generate_positions_report")]
     fn py_generate_positions_report<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let cache = self.cache_bound(py)?;
-        let positions = cache.call_method0("positions")?;
-        let snapshots = cache.call_method0("position_snapshots")?;
-        Self::report_provider(py)?.call_method1("generate_positions_report", (positions, snapshots))
+        generate_positions_report(&self.0, py)
     }
 
     /// Generates an account report as a pandas `DataFrame`.
@@ -856,21 +841,7 @@ impl PyBacktestEngine {
         venue: Option<Venue>,
         account_id: Option<AccountId>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let cache = self.cache_bound(py)?;
-        let account = match (account_id, venue) {
-            (Some(aid), _) => cache.call_method1("account", (aid,))?,
-            (None, Some(v)) => cache.call_method1("account_for_venue", (v,))?,
-            (None, None) => {
-                return Err(to_pyvalue_err(
-                    "At least one of 'venue' or 'account_id' must be provided",
-                ));
-            }
-        };
-
-        if account.is_none() {
-            return py.import("pandas")?.call_method0("DataFrame");
-        }
-        Self::report_provider(py)?.call_method1("generate_account_report", (account,))
+        generate_account_report(&self.0, py, venue, account_id)
     }
 
     fn __repr__(&self) -> String {
@@ -878,16 +849,81 @@ impl PyBacktestEngine {
     }
 }
 
+pub(super) fn engine_cache(engine: &BacktestEngine) -> PyCache {
+    PyCache::from_rc(engine.kernel().cache.clone())
+}
+
+pub(super) fn engine_portfolio(engine: &BacktestEngine) -> PyPortfolio {
+    PyPortfolio::from_rc(engine.kernel().portfolio.clone())
+}
+
+pub(super) fn generate_orders_report<'py>(
+    engine: &BacktestEngine,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let orders = cache_bound(engine, py)?.call_method0("orders")?;
+    report_provider(py)?.call_method1("generate_orders_report", (orders,))
+}
+
+pub(super) fn generate_order_fills_report<'py>(
+    engine: &BacktestEngine,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let orders = cache_bound(engine, py)?.call_method0("orders")?;
+    report_provider(py)?.call_method1("generate_order_fills_report", (orders,))
+}
+
+pub(super) fn generate_fills_report<'py>(
+    engine: &BacktestEngine,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let orders = cache_bound(engine, py)?.call_method0("orders")?;
+    report_provider(py)?.call_method1("generate_fills_report", (orders,))
+}
+
+pub(super) fn generate_positions_report<'py>(
+    engine: &BacktestEngine,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let cache = cache_bound(engine, py)?;
+    let positions = cache.call_method0("positions")?;
+    let snapshots = cache.call_method0("position_snapshots")?;
+    report_provider(py)?.call_method1("generate_positions_report", (positions, snapshots))
+}
+
+pub(super) fn generate_account_report<'py>(
+    engine: &BacktestEngine,
+    py: Python<'py>,
+    venue: Option<Venue>,
+    account_id: Option<AccountId>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let cache = cache_bound(engine, py)?;
+    let account = match (account_id, venue) {
+        (Some(aid), _) => cache.call_method1("account", (aid,))?,
+        (None, Some(v)) => cache.call_method1("account_for_venue", (v,))?,
+        (None, None) => {
+            return Err(to_pyvalue_err(
+                "At least one of 'venue' or 'account_id' must be provided",
+            ));
+        }
+    };
+
+    if account.is_none() {
+        return py.import("pandas")?.call_method0("DataFrame");
+    }
+    report_provider(py)?.call_method1("generate_account_report", (account,))
+}
+
+fn cache_bound<'py>(engine: &BacktestEngine, py: Python<'py>) -> PyResult<Bound<'py, PyCache>> {
+    Ok(Py::new(py, engine_cache(engine))?.into_bound(py))
+}
+
+fn report_provider(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    py.import("nautilus_trader.analysis.reporter")?
+        .getattr("ReportProvider")
+}
+
 impl PyBacktestEngine {
-    fn cache_bound<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyCache>> {
-        Ok(Py::new(py, self.py_cache())?.into_bound(py))
-    }
-
-    fn report_provider(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-        py.import("nautilus_trader.analysis.reporter")?
-            .getattr("ReportProvider")
-    }
-
     /// Provides access to the inner [`BacktestEngine`].
     #[must_use]
     pub fn inner(&self) -> &BacktestEngine {
@@ -910,119 +946,33 @@ impl PyBacktestEngine {
         reason = "Required for Python strategy component registration"
     )]
     fn add_python_strategy(&mut self, strategy: &Py<PyAny>) -> PyResult<()> {
-        let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
-            let bound = strategy.bind(py);
-
-            let config_instance = bound
-                .getattr("config")
-                .ok()
-                .filter(|config| !config.is_none());
-
-            let mut py_strategy_ref = bound
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            if let Some(config_obj) = config_instance.as_ref() {
-                if let Ok(strategy_id) = config_obj.getattr("strategy_id")
-                    && !strategy_id.is_none()
-                {
-                    let strategy_id_val = if let Ok(sid) = strategy_id.extract::<StrategyId>() {
-                        sid
-                    } else if let Ok(sid_str) = strategy_id.extract::<String>() {
-                        StrategyId::new_checked(&sid_str)?
-                    } else {
-                        anyhow::bail!("Invalid `strategy_id` type");
-                    };
-                    py_strategy_ref.set_strategy_id(strategy_id_val)?;
-                }
-
-                if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
-                    && !order_id_tag.is_none()
-                {
-                    let order_id_tag_val = order_id_tag
-                        .extract::<String>()
-                        .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
-                    py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
-                }
-
-                if let Ok(log_events) = config_obj.getattr("log_events")
-                    && let Ok(log_events_val) = log_events.extract::<bool>()
-                {
-                    py_strategy_ref.set_log_events(log_events_val);
-                }
-
-                if let Ok(log_commands) = config_obj.getattr("log_commands")
-                    && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                {
-                    py_strategy_ref.set_log_commands(log_commands_val);
-                }
-            }
-
-            py_strategy_ref.set_python_instance(strategy.clone_ref(py));
-            let strategy_id = py_strategy_ref.strategy_id();
-
-            Ok(strategy_id)
-        })
-        .map_err(to_pyruntime_err)?;
-
-        if self
-            .0
-            .kernel()
-            .trader
-            .borrow()
-            .strategy_ids()
-            .contains(&strategy_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Strategy '{strategy_id}' is already registered"
-            )));
-        }
-
-        let trader_id = self.0.kernel().config.trader_id();
-        let cache = self.0.kernel().cache.clone();
-        let portfolio = self.0.kernel().portfolio.clone();
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
-        let clock = self
+        let strategy_id = self
             .0
             .kernel_mut()
             .trader
             .borrow_mut()
-            .create_component_clock(component_id);
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        self.0
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+            .add_python_strategy_instance(strategy)
             .map_err(to_pyruntime_err)?;
 
-        log::info!("Registered Python strategy {strategy_id}");
+        let oms_type = Python::attach(|py| -> PyResult<Option<OmsType>> {
+            Ok(strategy
+                .bind(py)
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none())
+                .and_then(|cfg| cfg.getattr("oms_type").ok())
+                .filter(|value| !value.is_none())
+                .and_then(|value| value.extract::<OmsType>().ok()))
+        })?;
+
+        if let Some(oms_type) = oms_type {
+            self.0
+                .kernel()
+                .exec_engine
+                .borrow_mut()
+                .register_oms_type(strategy_id, oms_type);
+        }
+
         Ok(())
     }
 
@@ -1135,7 +1085,7 @@ impl PyBacktestEngine {
             .kernel_mut()
             .trader
             .borrow_mut()
-            .add_actor_id_for_lifecycle(actor_id)
+            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python actor {actor_id}");
@@ -1153,6 +1103,10 @@ impl PyBacktestEngine {
     )]
     fn add_python_exec_algorithm(&mut self, exec_algorithm: &Py<PyAny>) -> PyResult<()> {
         self.ensure_can_add_exec_algorithm()?;
+
+        if self.try_add_py_execution_algorithm(exec_algorithm)? {
+            return Ok(());
+        }
 
         let actor_id = Python::attach(|py| -> anyhow::Result<ActorId> {
             let bound = exec_algorithm.bind(py);
@@ -1268,6 +1222,45 @@ impl PyBacktestEngine {
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
+    }
+
+    fn try_add_py_execution_algorithm(&mut self, exec_algorithm: &Py<PyAny>) -> PyResult<bool> {
+        let py_exec_algorithm =
+            Python::attach(|py| -> anyhow::Result<Option<PyExecutionAlgorithm>> {
+                let bound = exec_algorithm.bind(py);
+
+                let config_instance = bound
+                    .getattr("config")
+                    .ok()
+                    .filter(|config| !config.is_none());
+
+                let Ok(mut py_exec_algorithm_ref) =
+                    bound.extract::<PyRefMut<PyExecutionAlgorithm>>()
+                else {
+                    return Ok(None);
+                };
+
+                if let Some(config_obj) = config_instance.as_ref() {
+                    py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
+                }
+
+                py_exec_algorithm_ref.set_python_instance(exec_algorithm.clone_ref(py));
+
+                Ok(Some(py_exec_algorithm_ref.clone()))
+            })
+            .map_err(to_pyruntime_err)?;
+
+        let Some(py_exec_algorithm) = py_exec_algorithm else {
+            return Ok(false);
+        };
+
+        let exec_algorithm_id = py_exec_algorithm.exec_algorithm_id();
+        self.0
+            .add_exec_algorithm(py_exec_algorithm)
+            .map_err(to_pyruntime_err)?;
+
+        log::info!("Registered Python exec algorithm {exec_algorithm_id}");
+        Ok(true)
     }
 
     /// Rejects adding an execution algorithm when the trader is running or disposed.
@@ -1668,60 +1661,6 @@ mod tests {
     }
 }
 
-pub(crate) fn pyobject_to_fill_model_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<FillModelAny> {
-    if let Ok(m) = obj.extract::<DefaultFillModel>() {
-        return Ok(FillModelAny::Default(m));
-    }
-
-    if let Ok(m) = obj.extract::<BestPriceFillModel>() {
-        return Ok(FillModelAny::BestPrice(m));
-    }
-
-    if let Ok(m) = obj.extract::<OneTickSlippageFillModel>() {
-        return Ok(FillModelAny::OneTickSlippage(m));
-    }
-
-    if let Ok(m) = obj.extract::<ProbabilisticFillModel>() {
-        return Ok(FillModelAny::Probabilistic(m));
-    }
-
-    if let Ok(m) = obj.extract::<TwoTierFillModel>() {
-        return Ok(FillModelAny::TwoTier(m));
-    }
-
-    if let Ok(m) = obj.extract::<ThreeTierFillModel>() {
-        return Ok(FillModelAny::ThreeTier(m));
-    }
-
-    if let Ok(m) = obj.extract::<LimitOrderPartialFillModel>() {
-        return Ok(FillModelAny::LimitOrderPartialFill(m));
-    }
-
-    if let Ok(m) = obj.extract::<SizeAwareFillModel>() {
-        return Ok(FillModelAny::SizeAware(m));
-    }
-
-    if let Ok(m) = obj.extract::<CompetitionAwareFillModel>() {
-        return Ok(FillModelAny::CompetitionAware(m));
-    }
-
-    if let Ok(m) = obj.extract::<VolumeSensitiveFillModel>() {
-        return Ok(FillModelAny::VolumeSensitive(m));
-    }
-
-    if let Ok(m) = obj.extract::<MarketHoursFillModel>() {
-        return Ok(FillModelAny::MarketHours(m));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to FillModel"
-    )))
-}
-
 pub(crate) fn pyobject_to_simulation_module_any(
     _py: Python,
     obj: &Bound<'_, PyAny>,
@@ -1818,6 +1757,10 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::InstrumentClose(close));
     }
 
+    if let Ok(custom) = obj.extract::<CustomData>() {
+        return Ok(Data::Custom(custom));
+    }
+
     #[cfg(feature = "defi")]
     if let Ok(defi) = obj.extract::<DefiData>() {
         return Ok(Data::Defi(Box::new(defi)));
@@ -1866,4 +1809,193 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 
     let type_name = obj.get_type().name()?;
     Err(to_pytype_err(format!("Cannot convert {type_name} to Data")))
+}
+
+#[cfg(test)]
+mod model_tests {
+    use nautilus_execution::python::{fee::PyFeeModel, fill::PyFillModel};
+    use nautilus_model::{
+        data::{Data, stubs::stub_custom_data},
+        enums::{AccountType, BookType, OmsType, OtoTriggerMode},
+        identifiers::Venue,
+        types::{Currency, Money},
+    };
+    use pyo3::{
+        IntoPyObjectExt, Python,
+        ffi::c_str,
+        types::{PyAnyMethods, PyDict, PyDictMethods},
+    };
+    use rstest::rstest;
+
+    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    fn test_pyobject_to_data_accepts_custom_data() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let custom = stub_custom_data(2, 42, None, None);
+            let obj = custom.into_py_any(py).unwrap();
+            let converted = super::pyobject_to_data(py, obj.bind(py)).unwrap();
+
+            let Data::Custom(converted) = converted else {
+                panic!("Expected Data::Custom");
+            };
+            assert_eq!(converted.data_type.type_name(), "StubCustomData");
+            assert_eq!(converted.data.ts_init().as_u64(), 2);
+        });
+    }
+
+    #[rstest]
+    fn test_add_venue_accepts_python_defined_fee_and_fill_models() {
+        Python::initialize();
+
+        let mut engine =
+            super::PyBacktestEngine(BacktestEngine::new(BacktestEngineConfig::default()).unwrap());
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals
+                .set_item("FeeModel", py.get_type::<PyFeeModel>())
+                .unwrap();
+            locals
+                .set_item("FillModel", py.get_type::<PyFillModel>())
+                .unwrap();
+
+            let fill_model = py
+                .eval(
+                    c_str!(
+                        "type('CustomFillModel', (FillModel,), {\
+                            'is_limit_filled': lambda self: True, \
+                            'is_slipped': lambda self: False\
+                        })()"
+                    ),
+                    None,
+                    Some(&locals),
+                )
+                .unwrap();
+            let fee_model = py
+                .eval(
+                    c_str!(
+                        "type('CustomFeeModel', (FeeModel,), {\
+                            'get_commission': \
+                                lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                        })()"
+                    ),
+                    None,
+                    Some(&locals),
+                )
+                .unwrap();
+            fee_model
+                .setattr("commission", Money::from("0 USD").into_py_any(py).unwrap())
+                .unwrap();
+
+            engine
+                .py_add_venue(
+                    Venue::from("SIM"),
+                    OmsType::Netting,
+                    AccountType::Margin,
+                    vec![Money::from("1_000_000 USD")],
+                    None::<Currency>,
+                    None,
+                    None,
+                    None,
+                    Some(fill_model.unbind()),
+                    Some(fee_model.unbind()),
+                    None,
+                    None,
+                    BookType::L1_MBP,
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    false,
+                    true,
+                    true,
+                    false,
+                    true,
+                    false,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    OtoTriggerMode::Partial,
+                    None,
+                    None,
+                    false,
+                    None,
+                    true,
+                )
+                .unwrap();
+
+            assert_eq!(engine.0.list_venues(), vec![Venue::from("SIM")]);
+        });
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use indexmap::IndexMap;
+    use nautilus_model::identifiers::ActorId;
+    use nautilus_testkit::{cache::TestCacheDatabaseControl, components::StateActor};
+    use pyo3::{Python, exceptions::PyRuntimeError};
+    use rstest::rstest;
+
+    use super::PyBacktestEngine;
+    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    fn test_end_reports_state_persistence_error() {
+        Python::initialize();
+
+        let actor_id = ActorId::from("PY-END-FAIL-SAVE-ACTOR");
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_fail_update_actor(true);
+        let config = BacktestEngineConfig {
+            save_state: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = PyBacktestEngine(BacktestEngine::new(config).unwrap());
+        engine
+            .0
+            .kernel_mut()
+            .cache
+            .borrow_mut()
+            .set_database(Box::new(database));
+        engine
+            .0
+            .add_actor(StateActor::new(
+                actor_id,
+                control.clone(),
+                IndexMap::from([("state".to_string(), b"value".to_vec())]),
+            ))
+            .unwrap();
+        engine.0.kernel_mut().start();
+        engine.0.kernel_mut().start_trader().unwrap();
+        engine.0.kernel_mut().stop_trader();
+
+        let error = engine.py_end().unwrap_err();
+        engine.0.dispose();
+
+        Python::attach(|py| {
+            assert!(error.is_instance_of::<PyRuntimeError>(py));
+        });
+        assert_eq!(
+            error.to_string(),
+            "RuntimeError: Failed to save component state: actor PY-END-FAIL-SAVE-ACTOR \
+             persistence: test actor update failure"
+        );
+        assert_eq!(
+            control.events(),
+            vec![
+                "actor.on_start",
+                "actor.on_stop",
+                "actor.on_save",
+                "actor.update:PY-END-FAIL-SAVE-ACTOR",
+                "database.close",
+            ]
+        );
+    }
 }

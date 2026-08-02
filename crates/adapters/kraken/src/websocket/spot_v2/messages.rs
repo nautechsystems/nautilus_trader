@@ -16,8 +16,9 @@
 //! Data models for Kraken WebSocket v2 API messages.
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 use ustr::Ustr;
 
 use super::enums::{
@@ -25,7 +26,10 @@ use super::enums::{
     KrakenWsOrderStatus,
 };
 use crate::{
-    common::enums::{KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce},
+    common::{
+        enums::{KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce},
+        serialization::{decimal, optional_decimal},
+    },
     websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData},
 };
 
@@ -110,14 +114,19 @@ pub struct KrakenWsAddOrderParams {
     /// Order side (buy or sell).
     pub side: KrakenOrderSide,
     /// Order quantity in base currency.
-    pub order_qty: f64,
+    #[serde(with = "decimal")]
+    pub order_qty: Decimal,
     /// Trading pair symbol (e.g. `"BTC/USD"`).
     pub symbol: String,
     /// Authentication token.
     pub token: String,
     /// Limit price (required for limit orders).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub limit_price: Option<Decimal>,
     /// Time in force policy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<KrakenTimeInForce>,
@@ -158,14 +167,26 @@ pub struct KrakenWsAmendOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
     /// New order quantity (replaces the existing quantity).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub order_qty: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub order_qty: Option<Decimal>,
     /// New limit price.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub limit_price: Option<Decimal>,
     /// New trigger price (for conditional orders).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trigger_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub trigger_price: Option<Decimal>,
 }
 
 /// Parameters for the `cancel_order` WebSocket method.
@@ -200,10 +221,15 @@ pub struct KrakenWsBatchAddOrder {
     /// Order side.
     pub side: KrakenOrderSide,
     /// Order quantity.
-    pub order_qty: f64,
+    #[serde(with = "decimal")]
+    pub order_qty: Decimal,
     /// Limit price (required for limit orders).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub limit_price: Option<Decimal>,
     /// Client-assigned order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
@@ -234,7 +260,8 @@ pub struct KrakenWsTriggerParams {
     /// Reference price for the trigger.
     pub reference: KrakenSpotTrigger,
     /// Trigger price level.
-    pub price: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
     /// Price direction for the trigger (above or below).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price_type: Option<String>,
@@ -246,11 +273,19 @@ pub struct KrakenWsConditionalParams {
     /// Order type for the conditional leg.
     pub order_type: KrakenOrderType,
     /// Limit price for the conditional leg.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub limit_price: Option<Decimal>,
     /// Stop price for the conditional leg.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trigger_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub trigger_price: Option<Decimal>,
 }
 
 /// Response envelope for order-method WebSocket responses.
@@ -371,20 +406,39 @@ pub struct KrakenWsMessage {
     pub timestamp: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct KrakenWsRawMessage {
+    pub channel: KrakenWsChannel,
+    #[serde(rename = "type")]
+    pub event_type: KrakenWsMessageType,
+    pub data: Vec<Box<RawValue>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsTickerData {
     pub symbol: Ustr,
-    pub bid: f64,
-    pub bid_qty: f64,
-    pub ask: f64,
-    pub ask_qty: f64,
-    pub last: f64,
-    pub volume: f64,
-    pub vwap: f64,
-    pub low: f64,
-    pub high: f64,
-    pub change: f64,
-    pub change_pct: f64,
+    #[serde(with = "decimal")]
+    pub bid: Decimal,
+    #[serde(with = "decimal")]
+    pub bid_qty: Decimal,
+    #[serde(with = "decimal")]
+    pub ask: Decimal,
+    #[serde(with = "decimal")]
+    pub ask_qty: Decimal,
+    #[serde(with = "decimal")]
+    pub last: Decimal,
+    #[serde(with = "decimal")]
+    pub volume: Decimal,
+    #[serde(with = "decimal")]
+    pub vwap: Decimal,
+    #[serde(with = "decimal")]
+    pub low: Decimal,
+    #[serde(with = "decimal")]
+    pub high: Decimal,
+    #[serde(with = "decimal")]
+    pub change: Decimal,
+    #[serde(with = "decimal")]
+    pub change_pct: Decimal,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -392,8 +446,10 @@ pub struct KrakenWsTickerData {
 pub struct KrakenWsTradeData {
     pub symbol: Ustr,
     pub side: KrakenOrderSide,
-    pub price: f64,
-    pub qty: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
     pub ord_type: KrakenOrderType,
     pub trade_id: i64,
     pub timestamp: DateTime<Utc>,
@@ -412,8 +468,10 @@ pub struct KrakenWsBookData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsBookLevel {
-    pub price: f64,
-    pub qty: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -421,12 +479,18 @@ pub struct KrakenWsOhlcData {
     pub symbol: Ustr,
     pub interval: u32,
     pub interval_begin: DateTime<Utc>,
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: f64,
-    pub vwap: f64,
+    #[serde(with = "decimal")]
+    pub open: Decimal,
+    #[serde(with = "decimal")]
+    pub high: Decimal,
+    #[serde(with = "decimal")]
+    pub low: Decimal,
+    #[serde(with = "decimal")]
+    pub close: Decimal,
+    #[serde(with = "decimal")]
+    pub volume: Decimal,
+    #[serde(with = "decimal")]
+    pub vwap: Decimal,
     pub trades: i64,
 }
 
@@ -450,23 +514,43 @@ pub struct KrakenWsExecutionData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_type: Option<KrakenOrderType>,
     /// Order quantity.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub order_qty: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub order_qty: Option<Decimal>,
     /// Limit price.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub limit_price: Option<Decimal>,
     /// Order status.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_status: Option<KrakenWsOrderStatus>,
     /// Cumulative filled quantity.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cum_qty: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub cum_qty: Option<Decimal>,
     /// Cumulative cost.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cum_cost: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub cum_cost: Option<Decimal>,
     /// Average fill price.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avg_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub avg_price: Option<Decimal>,
     /// Time in force.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<KrakenTimeInForce>,
@@ -482,14 +566,26 @@ pub struct KrakenWsExecutionData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exec_id: Option<String>,
     /// Last fill quantity.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_qty: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub last_qty: Option<Decimal>,
     /// Last fill price.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_price: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub last_price: Option<Decimal>,
     /// Trade cost.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub cost: Option<Decimal>,
     /// Liquidity indicator.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub liquidity_ind: Option<KrakenLiquidityInd>,
@@ -497,8 +593,12 @@ pub struct KrakenWsExecutionData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fees: Option<Vec<KrakenWsFee>>,
     /// Fee in USD equivalent.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fee_usd_equiv: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub fee_usd_equiv: Option<Decimal>,
     /// Cancel reason (when exec_type is Canceled/Expired).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -510,12 +610,14 @@ pub struct KrakenWsFee {
     /// Fee asset.
     pub asset: String,
     /// Fee quantity.
-    pub qty: f64,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
 }
 
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -559,7 +661,7 @@ mod tests {
     #[rstest]
     fn test_parse_ticker_snapshot() {
         let data = load_test_data("ws_ticker_snapshot.json");
-        let message: KrakenWsMessage =
+        let message: KrakenWsRawMessage =
             serde_json::from_str(&data).expect("Failed to parse ticker snapshot");
 
         assert_eq!(message.channel, KrakenWsChannel::Ticker);
@@ -567,11 +669,11 @@ mod tests {
         assert!(!message.data.is_empty());
 
         let ticker: KrakenWsTickerData =
-            serde_json::from_value(message.data[0].clone()).expect("Failed to parse ticker data");
+            serde_json::from_str(message.data[0].get()).expect("Failed to parse ticker data");
         assert_eq!(ticker.symbol.as_str(), "BTC/USD");
-        assert!(ticker.bid.is_finite() && ticker.bid > 0.0);
-        assert!(ticker.ask.is_finite() && ticker.ask > 0.0);
-        assert!(ticker.last.is_finite() && ticker.last > 0.0);
+        assert_eq!(ticker.bid, dec!(105944.20));
+        assert_eq!(ticker.ask, dec!(105944.30));
+        assert_eq!(ticker.last, dec!(105899.40));
         assert_eq!(
             ticker.timestamp.timestamp_nanos_opt().unwrap(),
             1_671_960_659_123_456_000
@@ -579,9 +681,40 @@ mod tests {
     }
 
     #[rstest]
+    fn test_optional_decimal_fields_default_when_missing() {
+        let execution: KrakenWsExecutionData = serde_json::from_str(&load_test_data(
+            "ws_execution_missing_optional_decimals.json",
+        ))
+        .unwrap();
+        let amend: KrakenWsAmendOrderParams = serde_json::from_str(&load_test_data(
+            "ws_amend_order_missing_optional_decimals.json",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            (
+                execution.order_qty,
+                execution.limit_price,
+                execution.cum_qty,
+                execution.cum_cost,
+                execution.avg_price,
+                execution.last_qty,
+                execution.last_price,
+                execution.cost,
+                execution.fee_usd_equiv,
+            ),
+            (None, None, None, None, None, None, None, None, None)
+        );
+        assert_eq!(
+            (amend.order_qty, amend.limit_price, amend.trigger_price),
+            (None, None, None)
+        );
+    }
+
+    #[rstest]
     fn test_parse_trade_update() {
         let data = load_test_data("ws_trade_update.json");
-        let message: KrakenWsMessage =
+        let message: KrakenWsRawMessage =
             serde_json::from_str(&data).expect("Failed to parse trade update");
 
         assert_eq!(message.channel, KrakenWsChannel::Trade);
@@ -589,24 +722,24 @@ mod tests {
         assert_eq!(message.data.len(), 2);
 
         let trade: KrakenWsTradeData =
-            serde_json::from_value(message.data[0].clone()).expect("Failed to parse trade data");
+            serde_json::from_str(message.data[0].get()).expect("Failed to parse trade data");
         assert_eq!(trade.symbol.as_str(), "BTC/USD");
-        assert!(trade.price.is_finite() && trade.price > 0.0);
-        assert!(trade.qty.is_finite() && trade.qty > 0.0);
+        assert_eq!(trade.price, dec!(105944.20));
+        assert_eq!(trade.qty, dec!(0.00027625));
         assert!(trade.trade_id > 0);
     }
 
     #[rstest]
     fn test_parse_book_snapshot() {
         let data = load_test_data("ws_book_snapshot.json");
-        let message: KrakenWsMessage =
+        let message: KrakenWsRawMessage =
             serde_json::from_str(&data).expect("Failed to parse book snapshot");
 
         assert_eq!(message.channel, KrakenWsChannel::Book);
         assert_eq!(message.event_type, KrakenWsMessageType::Snapshot);
 
         let book: KrakenWsBookData =
-            serde_json::from_value(message.data[0].clone()).expect("Failed to parse book data");
+            serde_json::from_str(message.data[0].get()).expect("Failed to parse book data");
         assert_eq!(book.symbol.as_str(), "BTC/USD");
         assert!(book.bids.is_some());
         assert!(book.asks.is_some());
@@ -618,21 +751,21 @@ mod tests {
 
         let bids = book.bids.unwrap();
         assert_eq!(bids.len(), 3);
-        assert!(bids[0].price.is_finite() && bids[0].price > 0.0);
-        assert!(bids[0].qty.is_finite() && bids[0].qty > 0.0);
+        assert_eq!(bids[0].price, dec!(105944.20));
+        assert_eq!(bids[0].qty, dec!(0.136));
     }
 
     #[rstest]
     fn test_parse_book_update() {
         let data = load_test_data("ws_book_update.json");
-        let message: KrakenWsMessage =
+        let message: KrakenWsRawMessage =
             serde_json::from_str(&data).expect("Failed to parse book update");
 
         assert_eq!(message.channel, KrakenWsChannel::Book);
         assert_eq!(message.event_type, KrakenWsMessageType::Update);
 
         let book: KrakenWsBookData =
-            serde_json::from_value(message.data[0].clone()).expect("Failed to parse book data");
+            serde_json::from_str(message.data[0].get()).expect("Failed to parse book data");
         assert_eq!(
             book.timestamp.timestamp_nanos_opt().unwrap(),
             1_696_613_755_440_295_000
@@ -643,19 +776,19 @@ mod tests {
     #[rstest]
     fn test_parse_ohlc_update() {
         let data = load_test_data("ws_ohlc_update.json");
-        let message: KrakenWsMessage =
+        let message: KrakenWsRawMessage =
             serde_json::from_str(&data).expect("Failed to parse OHLC update");
 
         assert_eq!(message.channel, KrakenWsChannel::Ohlc);
         assert_eq!(message.event_type, KrakenWsMessageType::Update);
 
         let ohlc: KrakenWsOhlcData =
-            serde_json::from_value(message.data[0].clone()).expect("Failed to parse OHLC data");
+            serde_json::from_str(message.data[0].get()).expect("Failed to parse OHLC data");
         assert_eq!(ohlc.symbol.as_str(), "BTC/USD");
-        assert!(ohlc.open.is_finite() && ohlc.open > 0.0);
-        assert!(ohlc.high.is_finite() && ohlc.high > 0.0);
-        assert!(ohlc.low.is_finite() && ohlc.low > 0.0);
-        assert!(ohlc.close.is_finite() && ohlc.close > 0.0);
+        assert_eq!(ohlc.open, dec!(106038.2));
+        assert_eq!(ohlc.high, dec!(106044.3));
+        assert_eq!(ohlc.low, dec!(106038.1));
+        assert_eq!(ohlc.close, dec!(106040.1));
         assert_eq!(ohlc.interval, 1);
         assert!(ohlc.trades > 0);
     }
@@ -667,9 +800,9 @@ mod tests {
             params: Some(KrakenWsParams::AddOrder(KrakenWsAddOrderParams {
                 order_type: KrakenOrderType::Limit,
                 side: KrakenOrderSide::Buy,
-                order_qty: 0.01,
+                order_qty: dec!(0.01),
                 symbol: "BTC/USD".to_string(),
-                limit_price: Some(30000.0),
+                limit_price: Some(dec!(30000.0)),
                 time_in_force: Some(KrakenTimeInForce::GoodTilCancelled),
                 expire_time: None,
                 cl_ord_id: Some("O-20260505-000001".to_string()),
@@ -693,13 +826,38 @@ mod tests {
     }
 
     #[rstest]
+    fn test_serialize_add_order_request_preserves_decimal_precision() {
+        let request = KrakenWsAddOrderParams {
+            order_type: KrakenOrderType::Limit,
+            side: KrakenOrderSide::Buy,
+            order_qty: dec!(0.1234567890123456789012345678),
+            symbol: "BTC/USD".to_string(),
+            token: "TESTTOKEN".to_string(),
+            limit_price: Some(dec!(123456789.123456789)),
+            time_in_force: None,
+            expire_time: None,
+            cl_ord_id: None,
+            post_only: None,
+            reduce_only: None,
+            leverage: None,
+            trigger: None,
+            conditional: None,
+        };
+
+        let serialized = serde_json::to_string(&request).unwrap();
+
+        assert!(serialized.contains("\"order_qty\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"limit_price\":123456789.123456789"));
+    }
+
+    #[rstest]
     fn test_serialize_amend_order_request() {
         let request = KrakenWsRequest {
             method: KrakenWsMethod::AmendOrder,
             params: Some(KrakenWsParams::AmendOrder(KrakenWsAmendOrderParams {
                 order_id: Some("OABCDE-12345-FGHIJ".to_string()),
                 cl_ord_id: None,
-                order_qty: Some(0.005),
+                order_qty: Some(dec!(0.005)),
                 limit_price: None,
                 trigger_price: None,
                 token: "TESTTOKEN".to_string(),
@@ -747,8 +905,8 @@ mod tests {
                     KrakenWsBatchAddOrder {
                         order_type: KrakenOrderType::Limit,
                         side: KrakenOrderSide::Buy,
-                        order_qty: 0.01,
-                        limit_price: Some(30000.0),
+                        order_qty: dec!(0.01),
+                        limit_price: Some(dec!(30000.0)),
                         cl_ord_id: Some("O-A".to_string()),
                         time_in_force: None,
                         expire_time: None,
@@ -760,8 +918,8 @@ mod tests {
                     KrakenWsBatchAddOrder {
                         order_type: KrakenOrderType::Limit,
                         side: KrakenOrderSide::Sell,
-                        order_qty: 0.01,
-                        limit_price: Some(31000.0),
+                        order_qty: dec!(0.01),
+                        limit_price: Some(dec!(31000.0)),
                         cl_ord_id: Some("O-B".to_string()),
                         time_in_force: None,
                         expire_time: None,
@@ -790,10 +948,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.01,
+            order_qty: dec!(0.01),
             symbol: "BTC/USD".to_string(),
             token: "TKN".to_string(),
-            limit_price: Some(30000.0),
+            limit_price: Some(dec!(30000.0)),
             time_in_force: Some(KrakenTimeInForce::GoodTilDate),
             expire_time: Some("2026-12-31T23:59:59+00:00".to_string()),
             cl_ord_id: None,
@@ -816,10 +974,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.01,
+            order_qty: dec!(0.01),
             symbol: "BTC/USD".to_string(),
             token: "TKN".to_string(),
-            limit_price: Some(30000.0),
+            limit_price: Some(dec!(30000.0)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: None,
@@ -841,8 +999,8 @@ mod tests {
         let order = KrakenWsBatchAddOrder {
             order_type: KrakenOrderType::StopLossLimit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.01,
-            limit_price: Some(31000.0),
+            order_qty: dec!(0.01),
+            limit_price: Some(dec!(31000.0)),
             cl_ord_id: Some("O-CONDITIONAL".to_string()),
             time_in_force: None,
             expire_time: None,
@@ -851,7 +1009,7 @@ mod tests {
             leverage: Some(2),
             trigger: Some(KrakenWsTriggerParams {
                 reference: KrakenSpotTrigger::Last,
-                price: 30500.0,
+                price: dec!(30500.0),
                 price_type: None,
             }),
         };
@@ -867,7 +1025,7 @@ mod tests {
             "trigger must be serialized for conditional batch legs",
         );
         assert_eq!(value["trigger"]["reference"], "last");
-        assert_eq!(value["trigger"]["price"], 30500.0);
+        assert_eq!(value["trigger"]["price"].to_string(), "30500.0");
     }
 
     #[rstest]
@@ -875,8 +1033,8 @@ mod tests {
         let order = KrakenWsBatchAddOrder {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.01,
-            limit_price: Some(30000.0),
+            order_qty: dec!(0.01),
+            limit_price: Some(dec!(30000.0)),
             cl_ord_id: Some("O-PLAIN".to_string()),
             time_in_force: None,
             expire_time: None,

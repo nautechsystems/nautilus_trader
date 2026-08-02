@@ -212,6 +212,7 @@ pub fn parse_derive_trade_to_fill_report(
     let liquidity_side = match trade.liquidity_role {
         DeriveLiquidityRole::Maker => LiquiditySide::Maker,
         DeriveLiquidityRole::Taker => LiquiditySide::Taker,
+        DeriveLiquidityRole::Unknown => LiquiditySide::NoLiquiditySide,
     };
 
     let client_order_id = if trade.label.as_str().is_empty() {
@@ -715,6 +716,21 @@ mod tests {
             parse_derive_trade_to_fill_report(&trade, account_id, usdc, UnixNanos::from(2))
                 .unwrap();
         assert!(report.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_trade_report_degrades_unknown_liquidity_role() {
+        let mut trade = sample_trade();
+        trade.liquidity_role = DeriveLiquidityRole::Unknown;
+        let account_id = AccountId::new("DERIVE-001");
+        let usdc = Currency::USDC();
+
+        let report =
+            parse_derive_trade_to_fill_report(&trade, account_id, usdc, UnixNanos::from(2))
+                .unwrap()
+                .expect("unknown liquidity role must still emit the fill");
+
+        assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
     }
 
     #[rstest]

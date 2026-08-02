@@ -963,6 +963,7 @@ mod tests {
             ts_init: 0.into(),
             client_order_id: None,
             avg_px: None,
+            activation_price: None,
             trigger_price: None,
             trigger_type: None,
             contingency_type: ContingencyType::NoContingency,
@@ -1049,10 +1050,7 @@ mod tests {
     async fn test_broadcast_submit_duplicate_clordid_expected() {
         let transports = vec![
             create_stub_transport("client-0", || async { anyhow::bail!("Duplicate clOrdID") }),
-            create_stub_transport("client-1", || async {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                anyhow::bail!("Should be aborted")
-            }),
+            create_stub_transport("client-1", || async { anyhow::bail!("Connection timeout") }),
         ];
 
         let config = SubmitBroadcasterConfig::default();
@@ -1637,10 +1635,7 @@ mod tests {
             create_stub_transport("client-0", || async {
                 anyhow::bail!("Duplicate clOrdID: O-123 already exists")
             }),
-            create_stub_transport("client-1", || async {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                anyhow::bail!("Should be aborted")
-            }),
+            create_stub_transport("client-1", || async { anyhow::bail!("Connection timeout") }),
         ];
 
         let config = SubmitBroadcasterConfig::default();

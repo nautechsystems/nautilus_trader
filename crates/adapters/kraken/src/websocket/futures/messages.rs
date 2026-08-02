@@ -15,25 +15,31 @@
 
 //! Data models for Kraken Futures WebSocket v1 API messages.
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString};
 use ustr::Ustr;
 
-use crate::common::enums::{KrakenFillType, KrakenFuturesOrderType, KrakenOrderSide};
+use crate::common::{
+    enums::{KrakenFillType, KrakenFuturesOrderType, KrakenOrderSide},
+    serialization::{decimal, optional_decimal},
+};
 
-// Normalizes a float price field so `0.0` is treated as "no price set".
+// Normalizes a price field so `0.0` is treated as "no price set"
 // Kraken Futures wire messages send a literal `0.0` for absent prices
 // (e.g. `stop_price: 0.0` on pure limit orders) rather than omitting the
 // field or sending `null`. Without this, downstream code would see
 // `Some(0.0)` and emit bogus trigger prices on `OrderUpdated` events,
 // which the order model rejects for non-stop order types.
-fn deserialize_optional_price_zero_as_none<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+fn deserialize_optional_price_zero_as_none<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<f64>::deserialize(deserializer)?;
-    Ok(value.filter(|v| *v != 0.0))
+    let value = optional_decimal::deserialize(deserializer)?;
+    Ok(value.filter(|v| !v.is_zero()))
 }
 
 /// Output message types from the Futures WebSocket handler.
@@ -216,42 +222,42 @@ pub struct KrakenFuturesTickerData {
     pub product_id: Ustr,
     #[serde(default)]
     pub time: Option<i64>,
-    #[serde(default)]
-    pub bid: Option<f64>,
-    #[serde(default)]
-    pub ask: Option<f64>,
-    #[serde(default)]
-    pub bid_size: Option<f64>,
-    #[serde(default)]
-    pub ask_size: Option<f64>,
-    #[serde(default)]
-    pub last: Option<f64>,
-    #[serde(default)]
-    pub volume: Option<f64>,
-    #[serde(default)]
-    pub volume_quote: Option<f64>,
-    #[serde(default, rename = "openInterest")]
-    pub open_interest: Option<f64>,
-    #[serde(default)]
-    pub index: Option<f64>,
-    #[serde(default, rename = "markPrice")]
-    pub mark_price: Option<f64>,
-    #[serde(default)]
-    pub change: Option<f64>,
-    #[serde(default)]
-    pub open: Option<f64>,
-    #[serde(default)]
-    pub high: Option<f64>,
-    #[serde(default)]
-    pub low: Option<f64>,
-    #[serde(default)]
-    pub funding_rate: Option<f64>,
-    #[serde(default)]
-    pub funding_rate_prediction: Option<f64>,
-    #[serde(default)]
-    pub relative_funding_rate: Option<f64>,
-    #[serde(default)]
-    pub relative_funding_rate_prediction: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub bid: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub ask: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub bid_size: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub ask_size: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub last: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub volume: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub volume_quote: Option<Decimal>,
+    #[serde(default, rename = "openInterest", with = "optional_decimal")]
+    pub open_interest: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub index: Option<Decimal>,
+    #[serde(default, rename = "markPrice", with = "optional_decimal")]
+    pub mark_price: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub change: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub open: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub high: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub low: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub funding_rate_prediction: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub relative_funding_rate: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub relative_funding_rate_prediction: Option<Decimal>,
     #[serde(default)]
     pub next_funding_rate_time: Option<f64>,
     #[serde(default)]
@@ -282,8 +288,10 @@ pub struct KrakenFuturesTradeData {
     pub trade_type: Option<String>,
     pub seq: i64,
     pub time: i64,
-    pub qty: f64,
-    pub price: f64,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
 }
 
 /// Trade snapshot from Kraken Futures WebSocket (sent on subscription).
@@ -301,8 +309,8 @@ pub struct KrakenFuturesBookSnapshot {
     pub product_id: Ustr,
     pub timestamp: i64,
     pub seq: i64,
-    #[serde(default, rename = "tickSize")]
-    pub tick_size: Option<f64>,
+    #[serde(default, rename = "tickSize", with = "optional_decimal")]
+    pub tick_size: Option<Decimal>,
     pub bids: Vec<KrakenFuturesBookLevel>,
     pub asks: Vec<KrakenFuturesBookLevel>,
 }
@@ -314,16 +322,20 @@ pub struct KrakenFuturesBookDelta {
     pub product_id: Ustr,
     pub side: KrakenOrderSide,
     pub seq: i64,
-    pub price: f64,
-    pub qty: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
     pub timestamp: i64,
 }
 
 /// Price level in order book.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesBookLevel {
-    pub price: f64,
-    pub qty: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
 }
 
 /// Challenge request for WebSocket authentication.
@@ -356,13 +368,23 @@ pub struct KrakenFuturesOpenOrder {
     pub instrument: Ustr,
     pub time: i64,
     pub last_update_time: i64,
-    pub qty: f64,
-    pub filled: f64,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
+    #[serde(with = "decimal")]
+    pub filled: Decimal,
     /// Limit price. Optional for stop/trigger orders which only have stop_price.
-    #[serde(default, deserialize_with = "deserialize_optional_price_zero_as_none")]
-    pub limit_price: Option<f64>,
-    #[serde(default, deserialize_with = "deserialize_optional_price_zero_as_none")]
-    pub stop_price: Option<f64>,
+    #[serde(
+        default,
+        serialize_with = "optional_decimal::serialize",
+        deserialize_with = "deserialize_optional_price_zero_as_none"
+    )]
+    pub limit_price: Option<Decimal>,
+    #[serde(
+        default,
+        serialize_with = "optional_decimal::serialize",
+        deserialize_with = "deserialize_optional_price_zero_as_none"
+    )]
+    pub stop_price: Option<Decimal>,
     #[serde(rename = "type")]
     pub order_type: KrakenFuturesOrderType,
     pub order_id: String,
@@ -428,8 +450,10 @@ pub struct KrakenFuturesFill {
     #[serde(alias = "product_id")]
     pub instrument: Option<Ustr>,
     pub time: i64,
-    pub price: f64,
-    pub qty: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
+    #[serde(with = "decimal")]
+    pub qty: Decimal,
     pub order_id: String,
     #[serde(default)]
     pub cli_ord_id: Option<String>,
@@ -437,8 +461,8 @@ pub struct KrakenFuturesFill {
     pub fill_type: KrakenFillType,
     /// true = buy, false = sell
     pub buy: bool,
-    #[serde(default)]
-    pub fee_paid: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub fee_paid: Option<Decimal>,
     #[serde(default)]
     pub fee_currency: Option<String>,
 }
@@ -465,6 +489,7 @@ pub struct KrakenFuturesFillsDelta {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -490,11 +515,11 @@ mod tests {
         let ticker: KrakenFuturesTickerData = serde_json::from_str(json).unwrap();
         assert_eq!(ticker.feed, KrakenFuturesFeed::Ticker);
         assert_eq!(ticker.product_id, Ustr::from("PI_XBTUSD"));
-        assert_eq!(ticker.bid, Some(90650.5));
-        assert_eq!(ticker.ask, Some(90651.0));
-        assert_eq!(ticker.index, Some(90648.5));
-        assert_eq!(ticker.mark_price, Some(90649.2));
-        assert_eq!(ticker.funding_rate, Some(0.0001));
+        assert_eq!(ticker.bid, Some(dec!(90650.5)));
+        assert_eq!(ticker.ask, Some(dec!(90651)));
+        assert_eq!(ticker.index, Some(dec!(90648.5)));
+        assert_eq!(ticker.mark_price, Some(dec!(90649.2)));
+        assert_eq!(ticker.funding_rate, Some(dec!(0.0001)));
     }
 
     #[rstest]
@@ -518,12 +543,12 @@ mod tests {
 
         assert_eq!(ticker.feed, KrakenFuturesFeed::Ticker);
         assert_eq!(ticker.product_id, Ustr::from("PI_XBTUSD"));
-        assert_eq!(ticker.bid, Some(21978.5));
-        assert_eq!(ticker.ask, Some(21987.0));
-        assert_eq!(ticker.bid_size, Some(2536.0));
-        assert_eq!(ticker.ask_size, Some(13948.0));
-        assert_eq!(ticker.index, Some(21984.54));
-        assert_eq!(ticker.mark_price, Some(21979.68641534714));
+        assert_eq!(ticker.bid, Some(dec!(21978.5)));
+        assert_eq!(ticker.ask, Some(dec!(21987)));
+        assert_eq!(ticker.bid_size, Some(dec!(2536)));
+        assert_eq!(ticker.ask_size, Some(dec!(13948)));
+        assert_eq!(ticker.index, Some(dec!(21984.54)));
+        assert_eq!(ticker.mark_price, Some(dec!(21979.68641534714)));
         assert!(ticker.funding_rate.is_some());
     }
 
@@ -535,8 +560,8 @@ mod tests {
         assert_eq!(trade.feed, KrakenFuturesFeed::Trade);
         assert_eq!(trade.product_id, Ustr::from("PI_XBTUSD"));
         assert_eq!(trade.side, KrakenOrderSide::Sell);
-        assert_eq!(trade.qty, 15000.0);
-        assert_eq!(trade.price, 34969.5);
+        assert_eq!(trade.qty, dec!(15000));
+        assert_eq!(trade.price, dec!(34969.5));
         assert_eq!(trade.seq, 653355);
     }
 
@@ -548,8 +573,8 @@ mod tests {
         assert_eq!(snapshot.feed, KrakenFuturesFeed::TradeSnapshot);
         assert_eq!(snapshot.product_id, Ustr::from("PI_XBTUSD"));
         assert_eq!(snapshot.trades.len(), 2);
-        assert_eq!(snapshot.trades[0].price, 34893.0);
-        assert_eq!(snapshot.trades[1].price, 34891.0);
+        assert_eq!(snapshot.trades[0].price, dec!(34893));
+        assert_eq!(snapshot.trades[1].price, dec!(34891));
     }
 
     #[rstest]
@@ -561,8 +586,8 @@ mod tests {
         assert_eq!(snapshot.product_id, Ustr::from("PI_XBTUSD"));
         assert_eq!(snapshot.bids.len(), 2);
         assert_eq!(snapshot.asks.len(), 2);
-        assert_eq!(snapshot.bids[0].price, 34892.5);
-        assert_eq!(snapshot.asks[0].price, 34911.5);
+        assert_eq!(snapshot.bids[0].price, dec!(34892.5));
+        assert_eq!(snapshot.asks[0].price, dec!(34911.5));
     }
 
     #[rstest]
@@ -573,8 +598,8 @@ mod tests {
         assert_eq!(delta.feed, KrakenFuturesFeed::Book);
         assert_eq!(delta.product_id, Ustr::from("PI_XBTUSD"));
         assert_eq!(delta.side, KrakenOrderSide::Sell);
-        assert_eq!(delta.price, 34981.0);
-        assert_eq!(delta.qty, 0.0); // Delete action
+        assert_eq!(delta.price, dec!(34981));
+        assert_eq!(delta.qty, Decimal::ZERO); // Delete action
     }
 
     #[rstest]
@@ -585,7 +610,7 @@ mod tests {
         assert_eq!(snapshot.feed, KrakenFuturesFeed::OpenOrdersSnapshot);
         assert_eq!(snapshot.orders.len(), 1);
         assert_eq!(snapshot.orders[0].instrument, Ustr::from("PI_XBTUSD"));
-        assert_eq!(snapshot.orders[0].qty, 1000.0);
+        assert_eq!(snapshot.orders[0].qty, dec!(1000));
         assert_eq!(
             snapshot.orders[0].order_type,
             KrakenFuturesOrderType::StopLower
@@ -600,8 +625,8 @@ mod tests {
         assert_eq!(delta.feed, KrakenFuturesFeed::OpenOrders);
         assert!(!delta.is_cancel);
         assert_eq!(delta.order.instrument, Ustr::from("PI_XBTUSD"));
-        assert_eq!(delta.order.qty, 304.0);
-        assert_eq!(delta.order.limit_price, Some(10640.0));
+        assert_eq!(delta.order.qty, dec!(304));
+        assert_eq!(delta.order.limit_price, Some(dec!(10640)));
         // Kraken sends stop_price: 0.0 on pure limit orders. The zero-as-none
         // deserializer maps that back to None so downstream code does not emit
         // a bogus trigger_price, which the order model rejects for limit types.
@@ -619,8 +644,8 @@ mod tests {
 
         assert!(delta.is_cancel);
         assert_eq!(delta.reason.as_deref(), Some("full_fill"));
-        assert_eq!(delta.order.qty, 0.0);
-        assert_eq!(delta.order.filled, 0.0001);
+        assert_eq!(delta.order.qty, Decimal::ZERO);
+        assert_eq!(delta.order.filled, dec!(0.0001));
         assert!(delta.is_fill_driven_cancel());
     }
 
@@ -642,9 +667,9 @@ mod tests {
                 instrument: Ustr::from("PF_XBTUSD"),
                 time: 0,
                 last_update_time: 0,
-                qty: 0.0001,
-                filled: 0.0,
-                limit_price: Some(70_000.0),
+                qty: dec!(0.0001),
+                filled: Decimal::ZERO,
+                limit_price: Some(dec!(70000)),
                 stop_price: None,
                 order_type: KrakenFuturesOrderType::Limit,
                 order_id: "test".to_string(),

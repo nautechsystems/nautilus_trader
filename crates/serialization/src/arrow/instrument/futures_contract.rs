@@ -91,6 +91,10 @@ impl ArrowSchemaProvider for FuturesContract {
             Field::new("lot_size", DataType::Utf8, false),
             Field::new("activation_ns", DataType::UInt64, false),
             Field::new("expiration_ns", DataType::UInt64, false),
+            Field::new("max_quantity", DataType::Utf8, true), // nullable
+            Field::new("min_quantity", DataType::Utf8, true), // nullable
+            Field::new("max_price", DataType::Utf8, true),    // nullable
+            Field::new("min_price", DataType::Utf8, true),    // nullable
             Field::new("margin_init", DataType::Utf8, false),
             Field::new("margin_maint", DataType::Utf8, false),
             Field::new("maker_fee", DataType::Utf8, false),
@@ -131,6 +135,10 @@ impl EncodeToRecordBatch for FuturesContract {
         let mut lot_size_builder = StringBuilder::new();
         let mut activation_ns_builder = UInt64Array::builder(data.len());
         let mut expiration_ns_builder = UInt64Array::builder(data.len());
+        let mut max_quantity_builder = StringBuilder::new();
+        let mut min_quantity_builder = StringBuilder::new();
+        let mut max_price_builder = StringBuilder::new();
+        let mut min_price_builder = StringBuilder::new();
         let mut margin_init_builder = StringBuilder::new();
         let mut margin_maint_builder = StringBuilder::new();
         let mut maker_fee_builder = StringBuilder::new();
@@ -161,6 +169,31 @@ impl EncodeToRecordBatch for FuturesContract {
             lot_size_builder.append_value(fc.lot_size.to_string());
             activation_ns_builder.append_value(fc.activation_ns.as_u64());
             expiration_ns_builder.append_value(fc.expiration_ns.as_u64());
+
+            if let Some(max_quantity) = fc.max_quantity {
+                max_quantity_builder.append_value(max_quantity.to_string());
+            } else {
+                max_quantity_builder.append_null();
+            }
+
+            if let Some(min_quantity) = fc.min_quantity {
+                min_quantity_builder.append_value(min_quantity.to_string());
+            } else {
+                min_quantity_builder.append_null();
+            }
+
+            if let Some(max_price) = fc.max_price {
+                max_price_builder.append_value(max_price.to_string());
+            } else {
+                max_price_builder.append_null();
+            }
+
+            if let Some(min_price) = fc.min_price {
+                min_price_builder.append_value(min_price.to_string());
+            } else {
+                min_price_builder.append_null();
+            }
+
             margin_init_builder.append_value(fc.margin_init.to_string());
             margin_maint_builder.append_value(fc.margin_maint.to_string());
             maker_fee_builder.append_value(fc.maker_fee.to_string());
@@ -212,6 +245,10 @@ impl EncodeToRecordBatch for FuturesContract {
                 Arc::new(lot_size_builder.finish()),
                 Arc::new(activation_ns_builder.finish()),
                 Arc::new(expiration_ns_builder.finish()),
+                Arc::new(max_quantity_builder.finish()),
+                Arc::new(min_quantity_builder.finish()),
+                Arc::new(max_price_builder.finish()),
+                Arc::new(min_price_builder.finish()),
                 Arc::new(margin_init_builder.finish()),
                 Arc::new(margin_maint_builder.finish()),
                 Arc::new(maker_fee_builder.finish()),
@@ -274,25 +311,29 @@ pub fn decode_futures_contract_batch(
         extract_column::<UInt64Array>(cols, "activation_ns", 12, DataType::UInt64)?;
     let expiration_ns_values =
         extract_column::<UInt64Array>(cols, "expiration_ns", 13, DataType::UInt64)?;
+    let max_quantity_values = extract_optional_string_column_by_name(record_batch, "max_quantity")?;
+    let min_quantity_values = extract_optional_string_column_by_name(record_batch, "min_quantity")?;
+    let max_price_values = extract_optional_string_column_by_name(record_batch, "max_price")?;
+    let min_price_values = extract_optional_string_column_by_name(record_batch, "min_price")?;
     let margin_init_values =
-        extract_column::<StringArray>(cols, "margin_init", 14, DataType::Utf8)?;
+        extract_column::<StringArray>(cols, "margin_init", 18, DataType::Utf8)?;
     let margin_maint_values =
-        extract_column::<StringArray>(cols, "margin_maint", 15, DataType::Utf8)?;
-    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 16, DataType::Utf8)?;
-    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 17, DataType::Utf8)?;
+        extract_column::<StringArray>(cols, "margin_maint", 19, DataType::Utf8)?;
+    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 20, DataType::Utf8)?;
+    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 21, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values =
-        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 18, DataType::Binary)?;
+        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 23, DataType::Binary)?;
     let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_event",
-        19,
+        24,
         DataType::UInt64,
     )?;
     let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_init",
-        20,
+        25,
         DataType::UInt64,
     )?;
 
@@ -387,10 +428,10 @@ pub fn decode_futures_contract_batch(
             price_increment,
             multiplier,
             lot_size,
-            None, // max_quantity - not in Python schema
-            None, // min_quantity - not in Python schema
-            None, // max_price - not in Python schema
-            None, // min_price - not in Python schema
+            super::optional_quantity_value(max_quantity_values, "max_quantity", i)?,
+            super::optional_quantity_value(min_quantity_values, "min_quantity", i)?,
+            super::optional_price_value(max_price_values, "max_price", i)?,
+            super::optional_price_value(min_price_values, "min_price", i)?,
             Some(margin_init),
             Some(margin_maint),
             Some(maker_fee),

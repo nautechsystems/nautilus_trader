@@ -23,24 +23,26 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use super::common::commissions_from_vec;
 use crate::{
-    enums::{OrderSide, PositionSide},
+    enums::{InstrumentClass, OrderSide, PositionSide},
     events::{OrderFilled, PositionAdjusted},
     identifiers::{
-        ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
+        Venue, VenueOrderId,
     },
     position::{self, Position},
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money, Price, Quantity},
 };
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl Position {
     /// Represents a position in a market.
     ///
     /// The position ID may be assigned at the trading venue, or can be system
     /// generated depending on a strategies OMS (Order Management System) settings.
+    /// Replay events and cumulative fill corrections preserve derived state across close and reopen
+    /// cycles.
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -85,6 +87,12 @@ impl Position {
     #[pyo3(name = "id")]
     fn py_id(&self) -> PositionId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
     }
 
     /// Returns the instrument symbol.
@@ -168,6 +176,18 @@ impl Position {
     }
 
     #[getter]
+    #[pyo3(name = "instrument_class")]
+    fn py_instrument_class(&self) -> InstrumentClass {
+        self.instrument_class
+    }
+
+    #[getter]
+    #[pyo3(name = "is_spot_currency")]
+    fn py_is_spot_currency(&self) -> bool {
+        self.is_currency_pair
+    }
+
+    #[getter]
     #[pyo3(name = "base_currency")]
     fn py_base_currency(&self) -> Option<Currency> {
         self.base_currency
@@ -195,6 +215,12 @@ impl Position {
     #[pyo3(name = "ts_opened")]
     fn py_ts_opened(&self) -> u64 {
         self.ts_opened.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_last")]
+    fn py_ts_last(&self) -> u64 {
+        self.ts_last.as_u64()
     }
 
     #[getter]
@@ -312,14 +338,16 @@ impl Position {
 
     /// Returns unrealized P&L based on the last price.
     #[pyo3(name = "unrealized_pnl")]
-    fn py_unrealized_pnl(&self, last: Price) -> Money {
-        self.unrealized_pnl(last)
+    fn py_unrealized_pnl(&self, last: Price) -> PyResult<Money> {
+        self.try_unrealized_pnl(last)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Returns total P&L (realized + unrealized) based on the last price.
     #[pyo3(name = "total_pnl")]
-    fn py_total_pnl(&self, last: Price) -> Money {
-        self.total_pnl(last)
+    fn py_total_pnl(&self, last: Price) -> PyResult<Money> {
+        self.try_total_pnl(last)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Returns the cumulative commissions for the position as a vector.
@@ -366,14 +394,21 @@ impl Position {
 
     /// Calculates profit and loss from the given prices and quantity.
     #[pyo3(name = "calculate_pnl")]
-    fn py_calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
-        self.calculate_pnl(avg_px_open, avg_px_close, quantity)
+    fn py_calculate_pnl(
+        &self,
+        avg_px_open: f64,
+        avg_px_close: f64,
+        quantity: Quantity,
+    ) -> PyResult<Money> {
+        self.try_calculate_pnl(avg_px_open, avg_px_close, quantity)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Calculates the notional value based on the last price.
     #[pyo3(name = "notional_value")]
-    fn py_notional_value(&self, price: Price) -> Money {
-        self.notional_value(price)
+    fn py_notional_value(&self, price: Price) -> PyResult<Money> {
+        self.try_notional_value(price)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Constructs a [`Position`] from a Python dict.
@@ -454,11 +489,9 @@ impl Position {
             None => dict.set_item("realized_pnl", py.None())?,
         }
         let venue_order_ids_list =
-            PyList::new(py, self.venue_order_ids().iter().map(ToString::to_string))
-                .expect("Invalid `ExactSizeIterator`");
+            PyList::new(py, self.venue_order_ids().iter().map(ToString::to_string))?;
         dict.set_item("venue_order_ids", venue_order_ids_list)?;
-        let trade_ids_list = PyList::new(py, self.trade_ids().iter().map(ToString::to_string))
-            .expect("Invalid `ExactSizeIterator`");
+        let trade_ids_list = PyList::new(py, self.trade_ids().iter().map(ToString::to_string))?;
         dict.set_item("trade_ids", trade_ids_list)?;
         dict.set_item("buy_qty", self.buy_qty.to_string())?;
         dict.set_item("sell_qty", self.sell_qty.to_string())?;

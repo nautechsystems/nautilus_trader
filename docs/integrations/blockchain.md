@@ -3,15 +3,13 @@
 ## Overview
 
 The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
-NautilusTrader data model. It combines three services:
+NautilusTrader data model. It uses three backends:
 
-- HyperSync for high-throughput historical blocks and contract logs.
-- HTTP RPC for contract calls, Multicall reads, and final on-chain state hydration.
-- Postgres for optional durable cache state, pool metadata, decoded events, and snapshots.
-
-HyperSync and RPC serve different roles. HyperSync is the fast event source. HTTP RPC remains the
-source of truth for current contract state, including Uniswap V3 slot state, active ticks, and
-positions.
+- HyperSync: high-throughput historical blocks and contract logs. See the
+  [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
+  pagination, and tuning.
+- HTTP RPC: contract calls, Multicall reads, and final on-chain state hydration.
+- Postgres: optional durable cache state, pool metadata, decoded events, and snapshots.
 
 ## Core primitives
 
@@ -21,29 +19,41 @@ The DeFi domain model lives in `nautilus_model::defi`.
 
 `Chain` defines the target blockchain and its default service endpoints.
 
-| Field                       | Type         | Description                                                        |
-|-----------------------------|--------------|--------------------------------------------------------------------|
-| `name`                      | `Blockchain` | Chain enum value, such as `Ethereum` or `Arbitrum`.                |
-| `chain_id`                  | `u32`        | EVM chain ID, such as `1` for Ethereum.                            |
-| `hypersync_url`             | `String`     | HyperSync endpoint, by default `https://{chain_id}.hypersync.xyz`. |
-| `rpc_url`                   | `Option`     | Optional direct RPC endpoint stored on the chain model.            |
-| `native_currency_decimals`  | `u8`         | Native gas token decimal precision, usually `18`.                  |
+| Field                      | Type         | Description                                                        |
+| -------------------------- | ------------ | ------------------------------------------------------------------ |
+| `name`                     | `Blockchain` | Chain enum value, such as `Ethereum` or `Arbitrum`.                |
+| `chain_id`                 | `u32`        | EVM chain ID, such as `1` for Ethereum.                            |
+| `hypersync_url`            | `String`     | HyperSync endpoint, by default `https://{chain_id}.hypersync.xyz`. |
+| `rpc_url`                  | `Option`     | Optional direct RPC endpoint stored on the chain model.            |
+| `native_currency_decimals` | `u8`         | Native gas token decimal precision, usually `18`.                  |
 
 Chains can be loaded by numeric ID with `Chain::from_chain_id` or by name with
 `Chain::from_chain_name`.
 
-| Chain family                | Code | Name         | Decimals |
-|-----------------------------|------|--------------|----------|
-| Ethereum and L2s            | ETH  | Ethereum     | 18       |
-| Polygon                     | POL  | Polygon      | 18       |
-| Avalanche                   | AVAX | Avalanche    | 18       |
-| BSC                         | BNB  | Binance Coin | 18       |
+| Chain family     | Code | Name         | Decimals |
+| ---------------- | ---- | ------------ | -------- |
+| Ethereum and L2s | ETH  | Ethereum     | 18       |
+| Polygon          | POL  | Polygon      | 18       |
+| Avalanche        | AVAX | Avalanche    | 18       |
+| BSC              | BNB  | Binance Coin | 18       |
 
 ### DEX and pools
 
-DEX integrations register factory addresses, event signatures, parser functions, and AMM type.
-Pool definitions bind a chain, DEX, pool contract, token pair, fee tier, tick spacing, and creation
-block into a stable Nautilus instrument ID.
+DEX integrations register:
+
+- Factory addresses.
+- Event signatures and parser functions.
+- AMM type.
+
+Pool definitions bind the chain and DEX to a pool contract address or protocol pool ID to form a
+stable Nautilus instrument ID. The token pair, fee tier, tick spacing, and creation block remain
+pool metadata.
+
+When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under
+the same pool instrument ID. The instrument keeps the raw pool `token0`/`token1` order as base/quote,
+derives price and size precision from token decimals up to `FIXED_PRECISION`, and exposes the fee
+tier divided by 1,000,000 as `taker_fee`. Distinct pool identifiers let same‑token pools coexist in
+the cache and on the message bus.
 
 Uniswap V3 and compatible concentrated-liquidity pools also use:
 
@@ -55,7 +65,7 @@ Uniswap V3 and compatible concentrated-liquidity pools also use:
 ## Configuration
 
 | Option                            | Default            | Description                                            |
-|-----------------------------------|--------------------|--------------------------------------------------------|
+| --------------------------------- | ------------------ | ------------------------------------------------------ |
 | `chain`                           | Required           | Target `Chain`, such as Ethereum or Arbitrum.          |
 | `dex_ids`                         | `[]`               | DEX integrations to register and sync.                 |
 | `http_rpc_url`                    | Required           | HTTP RPC endpoint for contract reads and Multicall.    |
@@ -77,8 +87,7 @@ cache database path.
 
 ## Environment
 
-Set the HyperSync token and RPC URLs outside the repository. Do not commit `.env` files containing
-secrets.
+Set credentials outside the repository:
 
 ```bash
 export ENVIO_API_TOKEN="<envio-token>"
@@ -86,7 +95,7 @@ export RPC_HTTP_URL="https://your-rpc.example"
 export RPC_WSS_URL="wss://your-rpc.example"
 ```
 
-For local `.env` usage:
+For local `.env` usage, keep the file out of version control:
 
 ```dotenv
 ENVIO_API_TOKEN=<envio-token>
@@ -94,15 +103,19 @@ RPC_HTTP_URL=https://your-rpc.example
 RPC_WSS_URL=wss://your-rpc.example
 ```
 
-`ENVIO_API_TOKEN` is required by the Rust HyperSync client. Missing or malformed tokens fail client
-construction before any query is sent.
+- `ENVIO_API_TOKEN` is required by the Rust HyperSync client. Missing or malformed tokens fail
+  client construction before any query is sent.
+- `RPC_HTTP_URL` or `--rpc-url` is required for contract reads and snapshot hydration.
+- `RPC_WSS_URL` is only needed for WSS RPC live streams.
+
+For token setup and quota details, see Envio's
+[HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens).
 
 ### RPC endpoints
 
-`RPC_HTTP_URL` (or `--rpc-url`) must point at an EVM JSON-RPC endpoint for the target chain. It is
-required, not optional: the data client resolves it at construction, and a first-time pool sync reads
-on-chain state through it. The HyperSync endpoint is derived per chain (`https://{chain_id}.hypersync.xyz`)
-and needs no separate URL.
+`RPC_HTTP_URL` or `--rpc-url` must point at an EVM JSON-RPC endpoint for the target chain.
+The data client resolves it at construction, and first-time pool syncs read on-chain state through it.
+The HyperSync endpoint is derived from the chain ID (`https://{chain_id}.hypersync.xyz`).
 
 Verified free public HTTP endpoints (June 2026, no API key):
 
@@ -112,18 +125,18 @@ Verified free public HTTP endpoints (June 2026, no API key):
 | Arbitrum One | `https://arbitrum.gateway.tenderly.co` | Yes     |
 | Ethereum     | `https://ethereum-rpc.publicnode.com`  | No      |
 
-Free archive endpoints exist (for example Tenderly above, Blast `https://arbitrum-one.public.blastapi.io`,
-and dRPC `https://arbitrum.drpc.org`). They are rate-limited, but snapshot validation hydrates only a
-handful of `eth_call`s per pool, so a free archive endpoint is enough to get `validation_state = on_chain`.
+Free archive endpoints exist, but availability and limits change. Snapshot validation usually needs
+only a small number of `eth_call`s per pool, so a free archive endpoint can be enough to get
+`validation_state = on_chain`.
 
-Archive vs non-archive controls snapshot validation, not whether the sync runs:
+Archive support affects validation, not whether event sync runs:
 
-- On an archive node a historical-block snapshot validates against on-chain state and is stored with
+- On an archive node, a historical-block snapshot validates against on-chain state and is stored with
   `validation_state = on_chain`.
-- On a non-archive node the historical read fails and the snapshot is kept `validation_state = replay`,
+- On a non-archive node, the historical read fails and the snapshot stays `validation_state = replay`,
   which is still usable as a replay start point.
-- A first-time sync on a non-archive node must run to a recent `--to-block`, because the bootstrap
-  reads on-chain state at the target block; only recent state is served.
+- A first-time sync on a non-archive node must run to a recent `--to-block`, because non-archive
+  nodes only serve recent state and bootstrap reads on-chain state at the target block.
 
 For other chains or archive access, use a directory such as [chainlist.org](https://chainlist.org) or
 [comparenodes.com](https://www.comparenodes.com), or a keyed provider (Infura, Alchemy, dRPC).
@@ -137,8 +150,12 @@ make start-services
 make init-db
 ```
 
-The default Postgres service listens on `127.0.0.1:5432` with database `nautilus`, user
-`nautilus`, and password `pass`.
+Default Postgres connection:
+
+- Host: `127.0.0.1:5432`
+- Database: `nautilus`
+- User: `nautilus`
+- Password: `pass`
 
 Check that the schema exists:
 
@@ -147,18 +164,16 @@ docker exec nautilus-database psql -U nautilus -d nautilus -Atc \
     "select count(*) from information_schema.tables where table_schema='public'"
 ```
 
-For destructive DeFi test runs, use a separate database or resettable Docker volume. Pool discovery
-and snapshot tests can write many rows to `token`, `pool`, `pool_*_event`, `pool_snapshot`,
+For destructive DeFi tests, use a separate database or resettable Docker volume. Pool discovery and
+snapshot tests can write many rows to `token`, `pool`, `pool_*_event`, `pool_snapshot`,
 `pool_position`, and `pool_tick`.
 
 ## Data flow
 
 ### Architecture
 
-The adapter draws on three backends: HyperSync (Envio) for high-throughput logs and events, HTTP RPC
-with Multicall3 for on-chain reads, and Postgres for the durable cache. `sync-dex` discovers and
-registers pools once; `analyze-pool(s)` then generates `pool_snapshot` rows, each carrying a
-`validation_state`.
+`sync-dex` discovers pools and tokens once. `analyze-pool(s)` then generates `pool_snapshot` rows.
+The diagram shows the default replay path and the `--snapshot-from-rpc` path.
 
 ```mermaid
 flowchart TD
@@ -176,15 +191,21 @@ flowchart TD
 
     subgraph analyze["analyze-pool(s) (snapshot generation, one task per pool)"]
         direction TB
-        A1["sync_pool_events: Mint / Burn"]
-        A2["Bootstrap profiler: seed from latest usable snapshot, replay events forward"]
-        A3["extract_snapshot per --checkpoint-blocks"]
-        A4["Persist snapshot + ticks + positions"]
-        A5{"check_snapshot_validity"}
-        A1 --> A2 --> A3 --> A4 --> A5
-        A5 -->|"matches chain"| V1["validation_state = on_chain"]
-        A5 -->|"RPC cannot reach block, or --skip-validation"| V2["validation_state = replay"]
-        A5 -->|"structural mismatch"| V3["validation_state = invalid"]
+        AP0{"Mode"}
+        AP1["Default: sync full pool events"]
+        AP2["Bootstrap from cache snapshot, replay events"]
+        AP3["extract_snapshot per --checkpoint-blocks"]
+        AP4["Persist snapshot + ticks + positions"]
+        AP5{"check_snapshot_validity"}
+        RP1["--snapshot-from-rpc: stream state events"]
+        RP2["Hydrate checkpoint from RPC"]
+        RP3["Persist snapshot + ticks + positions"]
+        AP0 --> AP1 --> AP2 --> AP3 --> AP4 --> AP5
+        AP0 --> RP1 --> RP2 --> RP3
+        AP5 -->|"matches chain"| V1["validation_state = on_chain"]
+        AP5 -->|"RPC cannot reach block, or --skip-validation"| V2["validation_state = replay"]
+        AP5 -->|"structural mismatch"| V3["validation_state = invalid"]
+        RP3 -->|"validated from RPC"| V1
     end
 
     R["Backtest replay: load latest usable snapshot (not invalid), replay forward"]
@@ -192,73 +213,88 @@ flowchart TD
     HS --> D1
     RPC --> D2
     D3 --> PG
-    HS --> A1
-    PG --> A2
-    A4 --> PG
-    RPC --> A5
+    HS --> AP1
+    HS --> RP1
+    PG --> AP2
+    AP4 --> PG
+    RP3 --> PG
+    RPC --> AP5
+    RPC --> RP2
     PG --> R
 ```
 
-`analyze-pools` runs each pool through the analyze pipeline concurrently, bounded by `--concurrency`;
-each pool uses its own data client and shares no state. A snapshot is usable as a replay start point
-unless its `validation_state` is `invalid`.
+`analyze-pools` runs one task per pool, bounded by `--concurrency`. Each task owns its data client.
+A snapshot is usable as a replay start point unless its `validation_state` is `invalid`.
 
 ### Pool discovery
 
-Pool discovery streams DEX factory events from HyperSync, fetches ERC-20 metadata through RPC, and
-stores valid tokens and pools in the cache. Pools with invalid or empty token metadata can be
-filtered out through `DexPoolFilters`.
+Pool discovery:
+
+- Streams DEX factory events from HyperSync.
+- Fetches ERC-20 metadata through RPC.
+- Stores valid tokens and pools in the cache.
+- Can skip pools with invalid or empty token metadata via `DexPoolFilters`.
 
 ### Live data
 
-When `use_hypersync_for_live_data` is true, the adapter subscribes to blocks through HyperSync and
-then fetches matching DEX contract events for subscribed pools. When false, WSS RPC is used where a
-streaming implementation exists.
+- `use_hypersync_for_live_data = true`: subscribe to blocks through HyperSync for live timestamps
+  and hold one open-ended HyperSync DEX-event stream per subscribed DEX filter.
+- `use_hypersync_for_live_data = false`: use WSS RPC block and pool-log subscriptions for live
+  swaps, liquidity updates, fee collections, flash events, and fee-protocol events.
 
 ### Snapshot bootstrap
 
-For Uniswap V3 snapshots, bootstrap uses a two-stage process:
+For Uniswap V3-compatible snapshots, bootstrap:
 
 - Replay historical Initialize, Mint, and Burn events from HyperSync to rebuild ticks and
   positions.
 - Fetch the final on-chain state through HTTP RPC and Multicall, then restore the profiler from
   that snapshot.
 
+Bootstrap modes:
+
+- Default: store the full pool event history up to the target block, then bootstrap from the
+  database.
+- `--snapshot-from-rpc`: skip full swap storage, stream Initialize, Mint, Burn, SetFeeProtocol, and
+  CollectProtocol events from HyperSync to enumerate ticks and positions, then hydrate the exact
+  checkpoint block from RPC.
+
+Use `--snapshot-from-rpc` for old high-volume pools when the required output is the final snapshot,
+not a stored swap history. It cannot be combined with `--from-block`, `--reset`, or
+`--require-existing-snapshot`.
+
 If final RPC hydration fails, the adapter must fail closed. It must not emit a snapshot built from
 replayed events with stale price state.
 
 ### Snapshot validation
 
-Before marking a snapshot valid, the bootstrap compares the replayed profiler against the on-chain
-state. Structural state must match exactly: the current tick, active liquidity, per-tick net and
-gross liquidity, and position liquidity. A mismatch in any of these fails closed, and the snapshot
-is not marked valid.
+Before marking a snapshot valid, bootstrap compares the replayed profiler against on-chain state.
+These structural fields must match exactly:
 
-Three kinds of mismatch are tolerated as non-blocking and logged as a warning rather than an error:
+- Current tick.
+- Active liquidity.
+- Per-tick net and gross liquidity.
+- Position liquidity.
+
+A structural mismatch fails closed and the snapshot is not marked valid.
+
+Non-structural mismatches are accepted with a warning:
 
 - Sqrt price, which differs when replay is event-scoped but the RPC snapshot is block-scoped.
-- Fee protocol, retained as a non-blocking safety net. Uniswap V3 `SetFeeProtocol` events are indexed
-  and applied during replay, so the replayed `fee_protocol` matches the on-chain value for Uniswap V3
-  pools. The tolerance covers residual differences, such as an event not yet synced or a fork's
-  non-Uniswap-V3 fee-protocol semantics.
-- Protocol-fee balances (`protocol_fees_token0` and `protocol_fees_token1`), which can diverge when
-  per-step rounding during replay accrual differs from the on-chain accumulator. The on-chain
-  snapshot reads `protocolFees()` directly, and Uniswap V3 `CollectProtocol` withdrawals are indexed
-  and applied during replay (each withdrawal decrements the tracked balances), so the replayed
-  balances track the on-chain ones.
+- Fee protocol, which can differ on forks or when a fee-protocol event is not in the replayed range.
+- Protocol-fee balances, which can differ from replay rounding while the RPC snapshot reads the
+  on-chain accumulator directly.
 
-A non-structural-only mismatch still accepts the snapshot, matching backtest replay behavior. Because
-`SetFeeProtocol` is applied during both the analyze-pool bootstrap and backtest replay-forward, the
-accepted snapshot carries the replayed `fee_protocol` consistent with the events that produced it, so
-a profiler restored from it splits protocol and LP fees with that setting.
+If only non-structural fields differ, the snapshot is accepted. This matches backtest replay behavior.
 
 ### Snapshot bootstrap guard
 
-Use `--require-existing-snapshot` when a pool analysis job should prepare a bounded replay only from
-the local snapshot cache. The command checks for the latest valid `pool_snapshot` at or before the
-target block before syncing pool events. If no usable snapshot exists, or the only match is the
-empty creation-block snapshot with no positions or ticks, it returns `needs_bootstrap` and skips the
-creation-to-target bootstrap for that pool.
+Use `--require-existing-snapshot` when analysis should run only from the local snapshot cache:
+
+- Checks for the latest usable `pool_snapshot` at or before the target block.
+- Returns `needs_bootstrap` if no usable snapshot exists.
+- Treats an empty creation-block snapshot with no positions or ticks as unusable.
+- Skips the creation-to-target bootstrap for that pool.
 
 ```bash
 nautilus blockchain analyze-pools \
@@ -270,9 +306,12 @@ nautilus blockchain analyze-pools \
     --rpc-url "$RPC_HTTP_URL"
 ```
 
-Both `analyze-pool` and `analyze-pools` print one JSON result per requested `--checkpoint-blocks`
-entry, or a single result at `--to-block` when none are given. A pool that needs a first-time
-bootstrap (under `--require-existing-snapshot`) has this shape:
+`analyze-pool(s)` prints:
+
+- One JSON result per `--checkpoint-blocks` entry.
+- One JSON result at `--to-block` when no checkpoints are given.
+
+A pool that needs a first-time bootstrap has this shape:
 
 ```json
 {
@@ -284,9 +323,11 @@ bootstrap (under `--require-existing-snapshot`) has this shape:
 }
 ```
 
-A successful analysis reports `validation_state`, one of `on_chain` (hydrated and matched against
-chain), `replay` (replay-derived, not checked, still usable as a replay start point), or `invalid`
-(hydrated and mismatched, not usable):
+A successful result includes `validation_state`:
+
+- `on_chain`: hydrated and matched against chain.
+- `replay`: replay-derived or unchecked, still usable as a replay start point.
+- `invalid`: hydrated and mismatched, not usable.
 
 ```json
 {
@@ -306,20 +347,26 @@ chain), `replay` (replay-derived, not checked, still usable as a replay start po
 
 ### Checkpoints and concurrency
 
-`--checkpoint-blocks b1,b2,...` produces a `pool_snapshot` at each block in a single bootstrap pass
-(sorted, deduped, clamped to `--to-block`), instead of one run per block. `analyze-pools` analyzes
-pools concurrently up to `--concurrency` (default 4), each with its own data client. `--skip-validation`
-skips the on-chain compare and keeps snapshots `replay`.
+- `--checkpoint-blocks b1,b2,...`: produces snapshots in one bootstrap pass. Blocks are sorted,
+  deduped, and clamped to `--to-block`.
+- `--concurrency`: controls `analyze-pools` parallelism. Default: `4`.
+- `--skip-validation`: skips the on-chain compare and keeps replay-derived snapshots as `replay`.
+- `--snapshot-from-rpc`: hydrates from chain at the checkpoint block and records snapshots as
+  `on_chain`.
 
-Each snapshot is keyed to the last liquidity event at or before its checkpoint, so checkpoints with no
-events between them resolve to the same snapshot: every requested checkpoint still prints a result
-line, but they share one stored row (deduped on insert).
+Snapshot keys:
+
+- Default mode: keyed to the last pool event at or before the checkpoint. Checkpoints with no events
+  between them can share one stored row.
+- `--snapshot-from-rpc`: keyed to the requested checkpoint block with a block-scoped sentinel
+  transaction/log index.
 
 ### Backtest replay
 
-In backtest mode the adapter does not service live snapshot requests, so the pool profiler must
-initialize from a snapshot supplied in the replay data. `load_pool_snapshot` reads a pool snapshot
-from the Postgres cache, reconstructed with its full position and tick state, as of a chosen block:
+Backtest replay needs a snapshot in the input data. The adapter does not service live snapshot
+requests during backtests.
+
+`load_pool_snapshot` reads a full snapshot, including positions and ticks, from Postgres:
 
 ```python
 from nautilus_trader.adapters.blockchain import load_pool_snapshot
@@ -332,14 +379,15 @@ snapshot = load_pool_snapshot(
 )
 ```
 
-By default only snapshots validated against on-chain state are returned; pass `require_valid=False`
-to accept unvalidated snapshots. The function returns `None` when the cache holds no matching
-snapshot, which should be treated as a setup error rather than replayed without profiler state. Wrap
-the snapshot as `DefiData.PoolSnapshot(snapshot)` and pass it to `BacktestEngine.add_defi_data`
-alongside the events to replay. The data engine restores the profiler from the snapshot, buffering
-any pool events that precede it in the stream and applying them once the profiler is ready. Replay
-every pool event from the snapshot's block forward: a snapshot earlier than the first replayed event
-leaves the profiler stale.
+Replay rules:
+
+- By default, only `on_chain` snapshots are returned. Pass `require_valid=False` to accept replay
+  snapshots.
+- Treat `None` as setup failure. Do not replay without profiler state.
+- Wrap the result as `DefiData.PoolSnapshot(snapshot)` and pass it to
+  `BacktestEngine.add_defi_data` with the pool events.
+- Replay every pool event from the snapshot block forward. Starting after the snapshot block can leave
+  the profiler stale.
 
 Cached block timestamps load into Nautilus data objects as UNIX nanoseconds. Cache rows written with
 second-resolution block timestamps are normalized to nanoseconds when snapshots and pool events are
@@ -349,8 +397,8 @@ loaded, while nanosecond rows preserve their stored precision.
 
 ### Base contract and Multicall3
 
-`BaseContract` batches contract calls through Multicall3 at
-`0xcA11bde05977b3631167028862bE2a173976CA11`.
+`BaseContract` batches contract calls through Multicall3
+(`0xcA11bde05977b3631167028862bE2a173976CA11`):
 
 - Calls use `allow_failure: true` so individual contract call failures can be reported.
 - Reads execute against a single block context.
@@ -358,24 +406,25 @@ loaded, while nanosecond rows preserve their stored precision.
 
 ### ERC-20 metadata
 
-`Erc20Contract` reads `name`, `symbol`, and `decimals` through Multicall. Non-standard token
-contracts may return malformed strings, raw bytes, or empty fields. The adapter can skip pools with
-tokens that fail metadata validation.
+`Erc20Contract` reads `name`, `symbol`, and `decimals` through Multicall. The adapter can skip pools
+whose token metadata is malformed, raw bytes, or empty.
 
 ### Uniswap V3 pools
 
-`UniswapV3PoolContract` reads global pool state, active ticks, and positions. Large pools can exceed
-provider limits if too many ticks or positions are packed into a single RPC call. The current safety
-behavior is fail-closed on hydration failure; successful delivery for very large pools depends on
-provider limits or future chunked/minimal hydration work.
+`UniswapV3PoolContract` reads global pool state, active ticks, and positions.
 
-PancakeSwap V3 reuses `UniswapV3PoolContract` for on-chain hydration because its pool read functions
-(`slot0`, `ticks`, `positions`, `liquidity`, `feeGrowthGlobal0X128`, `feeGrowthGlobal1X128`) share the
-Uniswap V3 ABI. The one
-difference is `slot0.feeProtocol`: PancakeSwap V3 returns a `uint32` (it packs both token protocol
-fees), which the Uniswap V3 `uint8` binding decodes to its low byte, so the recorded fee protocol
-differs from the on-chain value. A fee-protocol-only mismatch is non-blocking for validation, so the
-structural state (tick, liquidity, ticks, positions) still validates to `on_chain`.
+- Large pools can exceed provider payload, gas, or timeout limits.
+- Hydration fails closed if the final-state read fails.
+- Very large pools may need a stronger provider or future chunked/minimal hydration.
+
+PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `positions`,
+`liquidity`, and fee-growth reads share the same ABI. Fee-protocol encoding differs:
+
+- Uniswap V3 packs two 4-bit fee denominators into one `uint8`.
+- PancakeSwap V3 stores two 16-bit basis-point shares in `slot0.feeProtocol` and emits
+  `SetFeeProtocol(uint32,uint32,uint32,uint32)`.
+- PancakeSwap V3 snapshots store `fee_protocol0_basis_points` and
+  `fee_protocol1_basis_points`, and replay computes protocol fees as `fee * basis_points / 10000`.
 
 ## Smoke tests
 
@@ -413,9 +462,8 @@ cargo check -p nautilus-blockchain --features hypersync
 
 ### Live fail-closed regression
 
-This ignored test uses real HyperSync replay for the Ethereum WETH/USDT Uniswap V3 pool and a
-deliberately invalid local HTTP RPC URL. It verifies that final RPC hydration failure returns an
-error instead of allowing a stale snapshot through the construction path.
+This ignored test uses real HyperSync replay plus an invalid local HTTP RPC URL. It verifies that
+final RPC hydration fails closed instead of emitting a stale snapshot.
 
 ```bash
 cargo test -p nautilus-blockchain --features hypersync \
@@ -423,11 +471,13 @@ cargo test -p nautilus-blockchain --features hypersync \
     -- --ignored --nocapture
 ```
 
-Expected result: one ignored test passes. On a live network this can take several minutes.
+Expected result: one ignored test passes. This can take several minutes.
 
 ## Operational notes
 
-- Use HyperSync for high-volume historical log scans.
+- Use HyperSync for high-volume historical log scans. See
+  [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for request shape and
+  tuning details.
 - Use HTTP RPC for final contract state and validation.
 - Use a paid or high-limit RPC provider for large Uniswap V3 pools.
 - Keep `ENVIO_API_TOKEN`, RPC keys, and Postgres credentials outside version control.
@@ -446,25 +496,22 @@ first.
 
 #### Unsupported DEX combinations fail before sync
 
-A DEX can be registered for a chain yet lack the event parsers a command needs. `analyze-pool(s)`
-rejects such a DEX up front with `missing pool-event parser(s) for ...`, listing the absent families
-(analysis needs Initialize, Swap, Mint, Burn, and Collect parsers). `sync-dex` likewise rejects a DEX
-that cannot parse `PoolCreated` logs for discovery. This fails fast instead of syncing and erroring
-deep in profiling.
-
-The two commands need different parsers, so a DEX can support one and not the other:
+A DEX can be registered for a chain yet lack the parsers a command needs. The CLI fails fast:
 
 - `sync-dex` (discovery) needs a `PoolCreated` parser.
-- `analyze-pool(s)` (snapshots) need the Initialize, Swap, Mint, Burn, and Collect parsers, seeding
-  the starting price from Initialize.
-- Replay-ready DEXes additionally parse `SetFeeProtocol`, so replay keeps `fee_protocol` correct.
+- `analyze-pool(s)` (snapshots) need Initialize, Swap, Mint, Burn, and Collect parsers.
+- Replay-ready DEXes additionally parse `SetFeeProtocol`, so replay keeps fee-protocol settings
+  correct.
+- DEXes that also parse `CollectProtocol` can replay protocol-fee balance withdrawals.
 
-Uniswap V3 is replay-ready on Ethereum, Base, Arbitrum, and BSC. PancakeSwap V3 is snapshot-capable on
-the same four chains, but has no `SetFeeProtocol` parser, so it is not replay-ready. Aerodrome
-Slipstream is snapshot-capable on Base, but has no `PoolCreated` parser, so `sync-dex` cannot discover
-its pools; register an Aerodrome Slipstream pool another way before `analyze-pool(s)`. Other
-registered DEXes (for example Uniswap V2/V4, Camelot, Fluid) support discovery only. Polygon is a
-valid chain for `sync-blocks`, but has no DEX registrations, so the DEX commands reject it.
+Current support:
+
+- Uniswap V3 is replay-ready on Ethereum, Base, Arbitrum, and BSC.
+- PancakeSwap V3 is replay-ready on Ethereum, Base, Arbitrum, and BSC.
+- Aerodrome Slipstream is snapshot-capable on Base, but has no `PoolCreated` parser. Register pools
+  another way before `analyze-pool(s)`.
+- Uniswap V2/V4, Camelot, and Fluid currently support discovery only.
+- Polygon works for `sync-blocks`, but has no DEX registrations.
 
 `blockchain analyze-pool --help` and `blockchain sync-dex --help` print the current supported chain
 and DEX combinations, derived from the registered parsers.
@@ -488,19 +535,22 @@ state, so historical targets fail the on-chain read. See [RPC endpoints](#rpc-en
 
 #### HyperSync rate limits are shared per token
 
-A free Envio token caps requests per window (for example 40), and `--concurrency` makes all pools draw
-from that one budget at once, so high concurrency on a free token spends most of its time backing off
-(`rate limited by server (remaining=0/40 ...)`). Keep `--concurrency` low (or `1`) on a free token, or
-raise the limit with a paid plan. A full first-time sync of a large, long-lived pool needs many
-thousands of requests, so it is impractical on a free token regardless of concurrency.
+HyperSync rate limits apply per token. See Envio's
+[HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens) for token and usage
+details.
+
+- Keep `--concurrency` low on free or low-quota tokens.
+- A full first-time sync of a large old pool can need thousands of requests.
+- Use `--snapshot-from-rpc` when an exact checkpoint snapshot is enough and full swap storage is not
+  needed.
 
 #### Pools with no liquidity events fail cleanly
 
-A pool with no processed Mint/Burn events up to the target block has no state to snapshot, so
-snapshot extraction returns an error instead of a snapshot. Under `analyze-pools` the pool is
-reported as a JSON line with `"status": "failure"` while the other pools still complete; under
-single-pool `analyze-pool` the command returns the error. Choose pools with liquidity activity to
-avoid the per-pool failure.
+A pool with no processed Mint/Burn events up to the target block has no state to snapshot:
+
+- `analyze-pools` emits a per-pool `"status": "failure"` JSON line and keeps other pools running.
+- `analyze-pool` returns the error.
+- Choose pools with liquidity activity to avoid this failure.
 
 #### Exit code reflects per-pool failures
 
@@ -510,23 +560,19 @@ each result line's `status` for per-pool detail.
 
 ## Runbook: live pool-sync smoke test
 
-A reproducible end-to-end check that pool discovery, event parsing, and snapshot generation work for a
-DEX on a chain. The example uses PancakeSwap V3 on Arbitrum (the smallest PancakeSwap V3 deployment,
-about 935 pools).
+Use this to check pool discovery, event parsing, and snapshot generation for one DEX on one chain.
+The example uses PancakeSwap V3 on Arbitrum.
 
 ### Prerequisites
 
-- `ENVIO_API_TOKEN` exported. The HyperSync client panics at construction without it.
-- An RPC HTTP URL for the chain (`--rpc-url` or `RPC_HTTP_URL`). Arbitrum: `https://arb1.arbitrum.io/rpc`.
-- Postgres up with the schema (`make start-services && make init-db`). Defaults: `127.0.0.1:5432`,
-  database `nautilus`, user `nautilus`, password `pass`.
-- A built CLI: `cargo build -p nautilus-cli --features defi --bin nautilus`. The `defi` feature pulls
-  in `nautilus-blockchain/hypersync`, which gates the `exchanges` parsers.
+- `ENVIO_API_TOKEN` exported.
+- RPC HTTP URL for the chain (`--rpc-url` or `RPC_HTTP_URL`).
+- Postgres up with schema (`make start-services && make init-db`).
+- Built CLI: `cargo build -p nautilus-cli --features defi --bin nautilus`.
 
 ### Steps
 
-Discover pools first (cheap: `PoolCreated` is sparse, token metadata batches through Multicall3),
-then analyze specific pools:
+Discover pools first, then analyze specific pools:
 
 ```bash
 ./target/debug/nautilus blockchain sync-dex --chain arbitrum --dex PancakeSwapV3 \
@@ -540,7 +586,7 @@ then analyze specific pools:
     --concurrency 1
 ```
 
-Verify by counting rows in these tables:
+Verify by counting rows in:
 
 - `pool_swap_event`
 - `pool_liquidity_event`
@@ -552,48 +598,39 @@ Verify by counting rows in these tables:
 - `pool_position`
 - `pool_tick`
 
-The `pool_fee_protocol_update_event` and `pool_fee_protocol_collect_event` tables stay small, since
-`SetFeeProtocol` and `CollectProtocol` fire rarely (often zero to a handful of times per pool).
+Fee-protocol tables are often empty or small because `SetFeeProtocol` and `CollectProtocol` rarely
+fire.
 
-### Gotchas found running this
+### Gotchas
 
-- A free Envio token caps requests per window (for example 40). Discovery is cheap, but analyzing a
-  high-activity pool from its creation block spends most of its time backing off
-  (`rate limited by server (remaining=0/40 ...)`). Pick short-history or low-event pools, or bound the
-  range (see below). Probe a pool's size with a HyperSync log query before a full run.
-- The development Postgres can be emptied out-of-band mid-session (the schema stays, the data goes),
-  which surfaces later as `Pool <address> is not registered` because `load_pool` finds nothing. Run
-  `sync-dex` immediately before `analyze-pool(s)`; do not assume pools persist across a session.
-- On-chain snapshot validation covers Uniswap V3 and PancakeSwap V3 (both share the V3 pool read ABI).
-  Other forks with a different pool ABI (for example Algebra-based DEXes) still log
-  `Could not validate snapshot against on-chain state ... Fetching on-chain snapshot for Dex protocol
-  <name> is not supported yet` and keep `validation_state = replay`. The compare reads pool state at
-  the snapshot block, so an archive RPC is only needed when that block predates a non-archive node's
-  retention; recent targets reach `on_chain` on a non-archive node.
-- `--from-block` at a mid-life block skips the creation-block `Initialize` event, so the profiler
-  bootstrap fails with `Pool is not initialized and it doesn't contain initial price, cannot bootstrap
-  profiler`. Sync from creation when you need a snapshot. A bounded window still parses and persists
-  the events it covers (this is how a single `Flash` event was captured), only the snapshot step fails.
-- Addresses must be EIP-55 checksummed; the `pool.address` column is a custom domain, so plain text
-  equality from an external SQL client is unreliable. Use the CLI or `count(*)` to inspect.
-- The capability guard fails an unregistered combination before any sync: `sync-dex` needs a
-  `PoolCreated` parser, and `analyze-pool(s)` need `Initialize`, `Swap`, `Mint`, `Burn`, and `Collect`
-  parsers (see [Unsupported DEX combinations fail before sync](#unsupported-dex-combinations-fail-before-sync)).
+- Free or low-quota Envio tokens can spend most time backing off on high-activity pools. Pick
+  short-history pools, lower `--concurrency`, or use `--snapshot-from-rpc`.
+- Development Postgres data can disappear mid-session while the schema remains. Run `sync-dex`
+  immediately before `analyze-pool(s)` when in doubt.
+- `--from-block` at a mid-life block skips `Initialize`, so snapshot bootstrap can fail with
+  `Pool is not initialized and it doesn't contain initial price, cannot bootstrap profiler`. Sync
+  from creation when a snapshot is required.
+- Addresses must be EIP-55 checksummed. Use the CLI or `count(*)` to inspect pool rows.
+- Capability guards fail unsupported DEX/parser combinations before sync. See
+  [Unsupported DEX combinations fail before sync](#unsupported-dex-combinations-fail-before-sync).
 
 ## Extending the adapter
 
-The event model targets Uniswap V3 concentrated-liquidity pools. `DexPoolData` and its structs encode
-V3 semantics directly: `PoolSwap` carries `sqrt_price_x96` and `tick`, `PoolLiquidityUpdate` carries
-`tick_lower` and `tick_upper`. The `DexType` and `AmmType` enums name other families (Uniswap V2,
-Uniswap V4, Curve, Balancer, Maverick), but only Uniswap V2 (pool discovery) and Uniswap V4
-(`Initialize`) are wired at all.
+The event model currently targets Uniswap V3 concentrated-liquidity pools:
+
+- `PoolSwap` carries `sqrt_price_x96` and `tick`.
+- `PoolLiquidityUpdate` carries `tick_lower` and `tick_upper`.
+- Other `DexType` and `AmmType` families exist, but most are not wired beyond discovery.
 
 ### Adding an event or protocol family
 
-Design the taxonomy before writing a parser. Most families do not fit the V3 structs: Uniswap V2
-emits `Sync`, Uniswap V4 replaces mint and burn with `ModifyLiquidity` plus `Donate`, and Curve and
-Balancer pools hold more than two tokens. Adding events piecemeal forces optional fields, duplicate
-variants, and renames.
+Design the taxonomy before writing a parser. Most families do not fit the V3 structs:
+
+- Uniswap V2 emits `Sync`.
+- Uniswap V4 uses `ModifyLiquidity` and `Donate`.
+- Curve and Balancer pools can hold more than two tokens.
+
+Adding events piecemeal tends to create optional fields, duplicate variants, and later renames.
 
 The design pass should:
 
@@ -617,14 +654,18 @@ Then wire each event through the full path, mirroring an existing one such as `f
 
 Cover it with a parser round-trip test, a profiler apply test, and the parser-parity test.
 
-Incremental sync resumes from each pool's last-synced block, so adding an event type does not
-backfill pools already synced past those blocks: the new event tables stay empty for historical
-ranges. Re-sync a pool from its creation block (a reset sync) to populate them.
+Incremental sync resumes from each pool's last-synced block. Adding an event type does not backfill
+already-synced history; run a reset sync from creation to populate the new table.
 
 ### Adding a chain
 
-A new chain is registration only, provided its DEXes reuse modeled events: add the `Chain`, its RPC
-client, and the per-DEX registrations. A chain that brings a new family needs the design pass above.
+A new chain is registration only if its DEXes reuse modeled events:
+
+- Add the `Chain`.
+- Add its RPC client.
+- Add per-DEX registrations.
+
+A new protocol family needs the design pass above.
 
 ## Current limitations
 

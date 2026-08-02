@@ -246,7 +246,7 @@ async fn handle_get_orders_realtime(
             .and_then(|list| list.first_mut())
             .expect("orders realtime fixture has first order");
         order["orderId"] = json!("test-order-id-12345");
-        order["orderStatus"] = json!("Rejected");
+        order["orderStatus"] = json!("Cancelled");
         order["cumExecQty"] = json!("0");
         order["rejectReason"] = json!("EC_PostOnlyWillTakeLiquidity");
 
@@ -663,10 +663,12 @@ fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
         recv_window_ms: 5000,
         account_id: None,
         use_spot_position_reports: false,
+        auto_repay_spot_borrows: false,
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -1041,10 +1043,12 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
         recv_window_ms: 5000,
         account_id: None,
         use_spot_position_reports: false,
+        auto_repay_spot_borrows: false,
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     };
 
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1216,10 +1220,12 @@ async fn test_exec_client_submit_order_list_demo() {
         recv_window_ms: 5000,
         account_id: None,
         use_spot_position_reports: false,
+        auto_repay_spot_borrows: false,
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1782,7 +1788,7 @@ async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected()
     assert_eq!(event.client_order_id, cid);
     assert_eq!(event.reason.to_string(), "EC_PostOnlyWillTakeLiquidity");
     assert!(!event.reconciliation);
-    assert!(!event.due_post_only);
+    assert!(event.due_post_only);
 
     client.disconnect().await.unwrap();
 }
@@ -1831,10 +1837,12 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         recv_window_ms: 5000,
         account_id: None,
         use_spot_position_reports: false,
+        auto_repay_spot_borrows: false,
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1889,6 +1897,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         cid2,
         OrderSide::Sell,
         Quantity::from("0.01"),
+        None,
         Price::from("1500.00"),
         TriggerType::LastPrice,
         rust_decimal::Decimal::new(100, 0),
@@ -2043,6 +2052,7 @@ async fn test_exec_client_submit_order_unsupported_order_type_emits_order_denied
         cid,
         OrderSide::Buy,
         Quantity::from("0.01"),
+        None,
         Price::from("1500.00"),
         TriggerType::LastPrice,
         rust_decimal::Decimal::new(100, 0),

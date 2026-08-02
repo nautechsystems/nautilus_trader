@@ -54,7 +54,7 @@ use nautilus_model::{
     data::DataType,
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderEventAny, OrderExpired, OrderFilled, OrderInitialized,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
         OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
         OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
         PositionClosed, PositionEvent, PositionOpened,
@@ -126,6 +126,8 @@ pub const PAYLOAD_TYPE_ORDER_CANCEL_REJECTED: &str = "OrderCancelRejected";
 pub const PAYLOAD_TYPE_ORDER_UPDATED: &str = "OrderUpdated";
 /// The canonical `payload_type` tag for [`OrderFilled`].
 pub const PAYLOAD_TYPE_ORDER_FILLED: &str = "OrderFilled";
+/// The canonical `payload_type` tag for [`OrderFillVoided`].
+pub const PAYLOAD_TYPE_ORDER_FILL_VOIDED: &str = "OrderFillVoided";
 /// The canonical `payload_type` tag for [`OrderStatusReport`].
 pub const PAYLOAD_TYPE_ORDER_STATUS_REPORT: &str = "OrderStatusReport";
 /// The canonical `payload_type` tag for [`FillReport`].
@@ -231,6 +233,7 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
     PAYLOAD_TYPE_ORDER_UPDATED,
     PAYLOAD_TYPE_ORDER_FILLED,
+    PAYLOAD_TYPE_ORDER_FILL_VOIDED,
     PAYLOAD_TYPE_ORDER_STATUS_REPORT,
     PAYLOAD_TYPE_FILL_REPORT,
     PAYLOAD_TYPE_ORDER_WITH_FILLS,
@@ -365,8 +368,9 @@ fn register_default_headers(registry: &mut EncoderRegistry) {
 
 /// Attaches identity extractors for the types production dispatch pushes through more
 /// than one tap-visible boundary (portfolio endpoint send plus strategy topic publish,
-/// command hops through risk to execution, account states on both dispatch paths), so
-/// the adapter captures each logical message exactly once. The venue report types
+/// command hops through risk to execution, account states on both dispatch paths, data
+/// commands through the queue endpoint and the drained execute endpoint), so the
+/// adapter captures each logical message exactly once. The venue report types
 /// deliberately carry no extractor: the raw `reconciliation.raw.*` publish and the
 /// engine-bound dispatch are distinct capture boundaries.
 fn register_default_identities(registry: &mut EncoderRegistry) {
@@ -375,6 +379,23 @@ fn register_default_identities(registry: &mut EncoderRegistry) {
     registry.register_identity::<TradingCommand, _>(|c| Some(extract_trading_command_identity(c)));
     registry.register_identity::<OrderEventAny, _>(|e| Some(extract_order_event_any_identity(e)));
     registry.register_identity::<AccountState, _>(|state| Some(state.event_id));
+    registry.register_identity::<DataCommand, _>(extract_data_command_identity);
+}
+
+fn extract_data_command_identity(command: &DataCommand) -> Option<UUID4> {
+    match command {
+        DataCommand::Request(cmd) => Some(*cmd.request_id()),
+        DataCommand::Subscribe(cmd) => Some(cmd.command_id()),
+        DataCommand::Unsubscribe(cmd) => Some(cmd.command_id()),
+        #[cfg(feature = "defi")]
+        DataCommand::DefiRequest(cmd) => Some(*cmd.request_id()),
+        #[cfg(feature = "defi")]
+        DataCommand::DefiSubscribe(cmd) => Some(cmd.command_id()),
+        #[cfg(feature = "defi")]
+        DataCommand::DefiUnsubscribe(cmd) => Some(cmd.command_id()),
+        // `DataCommand` is `#[non_exhaustive]`; future variants capture per dispatch
+        _ => None,
+    }
 }
 
 fn extract_trading_command_identity(command: &TradingCommand) -> UUID4 {
@@ -409,6 +430,7 @@ fn extract_order_event_any_identity(event: &OrderEventAny) -> UUID4 {
         OrderEventAny::CancelRejected(e) => e.event_id,
         OrderEventAny::Updated(e) => e.event_id,
         OrderEventAny::Filled(e) => e.event_id,
+        OrderEventAny::FillVoided(e) => e.event_id,
     }
 }
 
@@ -597,6 +619,7 @@ pub fn encode_order_event_any(event: &OrderEventAny) -> Result<EncodedPayload, E
         OrderEventAny::CancelRejected(e) => encode_order_cancel_rejected(e),
         OrderEventAny::Updated(e) => encode_order_updated(e),
         OrderEventAny::Filled(e) => Ok(retag(encode_order_filled(e)?, PAYLOAD_TYPE_ORDER_FILLED)),
+        OrderEventAny::FillVoided(e) => encode_order_fill_voided(e),
     }
 }
 
@@ -1126,6 +1149,15 @@ fn encode_order_updated(e: &OrderUpdated) -> Result<EncodedPayload, EncodeError>
     )
 }
 
+fn encode_order_fill_voided(e: &OrderFillVoided) -> Result<EncodedPayload, EncodeError> {
+    encode_with_order_ids(
+        e,
+        PAYLOAD_TYPE_ORDER_FILL_VOIDED,
+        e.client_order_id.to_string(),
+        Some(e.venue_order_id.to_string()),
+    )
+}
+
 fn encode_with_order_ids<T: Serialize>(
     value: &T,
     tag: &str,
@@ -1501,7 +1533,9 @@ mod tests {
         },
         events::{
             PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
-            order::spec::{OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec},
+            order::spec::{
+                OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec,
+            },
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -1722,6 +1756,57 @@ mod tests {
 
         let decoded: SubmitOrder = rmp_serde::from_slice(&encoded.payload).expect("decode");
         assert_eq!(decoded, cmd);
+    }
+
+    #[rstest]
+    fn default_registry_data_command_identity_dedupes_dispatch_hops() {
+        // Production pushes every queued data command through two tapped sends
+        // (queue, then drained execute); the identity must key both hops to the
+        // same command.
+        let registry = default_registry();
+
+        let request = make_request_command();
+        let expected_request = *request.request_id();
+        let subscribe = make_subscribe_command();
+        let expected_subscribe = subscribe.command_id();
+        let unsubscribe = make_unsubscribe_command();
+        let expected_unsubscribe = unsubscribe.command_id();
+
+        let cases = [
+            (DataCommand::Request(request), expected_request),
+            (DataCommand::Subscribe(subscribe), expected_subscribe),
+            (DataCommand::Unsubscribe(unsubscribe), expected_unsubscribe),
+        ];
+
+        for (command, expected) in cases {
+            assert_eq!(registry.identity_for_any(&command), Some(expected));
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn default_registry_defi_data_command_identity_dedupes_dispatch_hops() {
+        let registry = default_registry();
+
+        let request = make_defi_request_command();
+        let expected_request = *request.request_id();
+        let subscribe = make_defi_subscribe_command();
+        let expected_subscribe = subscribe.command_id();
+        let unsubscribe = make_defi_unsubscribe_command();
+        let expected_unsubscribe = unsubscribe.command_id();
+
+        let cases = [
+            (DataCommand::DefiRequest(request), expected_request),
+            (DataCommand::DefiSubscribe(subscribe), expected_subscribe),
+            (
+                DataCommand::DefiUnsubscribe(unsubscribe),
+                expected_unsubscribe,
+            ),
+        ];
+
+        for (command, expected) in cases {
+            assert_eq!(registry.identity_for_any(&command), Some(expected));
+        }
     }
 
     #[rstest]
@@ -2003,6 +2088,15 @@ mod tests {
         OrderEventAny::Filled(make_order_filled())
     }
 
+    fn ev_fill_voided() -> OrderEventAny {
+        OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .client_order_id(client_order_id())
+                .venue_order_id(venue_order_id())
+                .build(),
+        )
+    }
+
     #[rstest]
     fn trading_command_envelope_stamps_inner_submit_order_payload_type() {
         // TradingCommand reaches the bus tap as the wrapper TypeId; the dispatcher must
@@ -2215,6 +2309,7 @@ mod tests {
     )]
     #[case::updated(ev_updated(Some(venue_order_id())), PAYLOAD_TYPE_ORDER_UPDATED, true)]
     #[case::filled(ev_filled(), PAYLOAD_TYPE_ORDER_FILLED, true)]
+    #[case::fill_voided(ev_fill_voided(), PAYLOAD_TYPE_ORDER_FILL_VOIDED, true)]
     fn order_event_any_envelope_stamps_inner_tag_for_every_variant(
         #[case] event: OrderEventAny,
         #[case] expected_tag: &str,

@@ -37,10 +37,10 @@ order book imbalance, grid market making) once the engine mechanics are clear.
 
 NautilusTrader provides two API levels for backtesting:
 
-| API level                                      | Entry point     | Best for                                                          |
-|:-----------------------------------------------|:----------------|:------------------------------------------------------------------|
-| [Low‑level API](backtest_low_level)             | `BacktestEngine`| Direct component access, library development                      |
-| [High‑level API](backtest_high_level)           | `BacktestNode`  | Production workflows, easier transition to live trading (recommended) |
+| API level                             | Entry point      | Best for                                                              |
+| :------------------------------------ | :--------------- | :-------------------------------------------------------------------- |
+| [Low‑level API](backtest_low_level)   | `BacktestEngine` | Direct component access, library development                          |
+| [High‑level API](backtest_high_level) | `BacktestNode`   | Production workflows, easier transition to live trading (recommended) |
 
 The high‑level API requires a Parquet‑based data catalog. The low‑level API works with
 in‑memory data but has no live‑trading path.
@@ -54,7 +54,7 @@ See [Processes and threads](../concepts/architecture.md#processes-and-threads) f
 details.
 :::
 
-See the [Backtesting](../concepts/backtesting.md) concept guide for help choosing an
+See the [Backtesting](../concepts/backtesting/) concept guide for help choosing an
 API level.
 
 ## Examples in the repository
@@ -62,13 +62,13 @@ API level.
 The online documentation shows a subset of examples. For the full set, see the
 repository on GitHub:
 
-| Directory                                                                                                | Contains                                                      |
-|:---------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------|
-| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples)                     | Fully runnable, self‑contained Python examples                |
-| [docs/tutorials/](../tutorials/)                                                                         | Tutorials demonstrating common workflows                      |
-| [docs/concepts/](../concepts/)                                                                           | Concept guides with code snippets illustrating key features   |
-| [nautilus_trader/examples/](../../nautilus_trader/examples/)                                              | Pure‑Python examples of strategies, indicators, and exec algos|
-| [tests/unit_tests/](../../tests/unit_tests/)                                                             | Unit tests covering core functionality and edge cases         |
+| Directory                                                                            | Contains                                                       |
+| :----------------------------------------------------------------------------------- | :------------------------------------------------------------- |
+| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Fully runnable, self‑contained Python examples                 |
+| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                       |
+| [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features    |
+| [nautilus_trader/examples/](../../nautilus_trader/examples/)                         | Pure‑Python examples of strategies, indicators, and exec algos |
+| [tests/unit_tests/](../../tests/unit_tests/)                                         | Unit tests covering core functionality and edge cases          |
 
 ## Running in Docker
 

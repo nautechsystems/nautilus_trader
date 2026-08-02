@@ -42,7 +42,7 @@ while IFS=: read -r file _ line_content; do
     YEAR="${BASH_REMATCH[1]}"
 
     if [[ "$YEAR" -lt "$CURRENT_YEAR" ]]; then
-      echo "❌ $file: Copyright year is $YEAR, expected >=$CURRENT_YEAR"
+      echo "✗ $file: Copyright year is $YEAR, expected >=$CURRENT_YEAR"
       FAILED=1
     fi
   fi

@@ -23,21 +23,21 @@ use nautilus_model::{
         TradeTick,
     },
     enums::{
-        AggressorSide, BookAction, ContingencyType, LiquiditySide, OrderSide, OrderStatus,
-        OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+        AggressorSide, BookAction, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 
 use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::enums::{KrakenFillType, KrakenOrderSide};
+use crate::common::enums::KrakenOrderSide;
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -53,16 +53,16 @@ pub fn parse_futures_ws_quote_tick(
 
     let bid = ticker.bid.context("Ticker missing bid")?;
     let ask = ticker.ask.context("Ticker missing ask")?;
-    let bid_size = ticker.bid_size.unwrap_or(0.0);
-    let ask_size = ticker.ask_size.unwrap_or(0.0);
+    let bid_size = ticker.bid_size.unwrap_or(Decimal::ZERO);
+    let ask_size = ticker.ask_size.unwrap_or(Decimal::ZERO);
 
     let bid_price =
-        Price::new_checked(bid, price_precision).context("Failed to construct bid Price")?;
+        Price::from_decimal_dp(bid, price_precision).context("Failed to construct bid Price")?;
     let ask_price =
-        Price::new_checked(ask, price_precision).context("Failed to construct ask Price")?;
-    let bid_qty = Quantity::new_checked(bid_size, size_precision)
+        Price::from_decimal_dp(ask, price_precision).context("Failed to construct ask Price")?;
+    let bid_qty = Quantity::from_decimal_dp(bid_size, size_precision)
         .context("Failed to construct bid Quantity")?;
-    let ask_qty = Quantity::new_checked(ask_size, size_precision)
+    let ask_qty = Quantity::from_decimal_dp(ask_size, size_precision)
         .context("Failed to construct ask Quantity")?;
 
     let ts_event = ticker.time.map_or(ts_init, millis_to_nanos);
@@ -86,9 +86,9 @@ pub fn parse_futures_ws_trade_tick(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = Price::new_checked(trade.price, price_precision)
+    let price = Price::from_decimal_dp(trade.price, price_precision)
         .context("Failed to construct trade Price")?;
-    let size = Quantity::new_checked(trade.qty, size_precision)
+    let size = Quantity::from_decimal_dp(trade.qty, size_precision)
         .context("Failed to construct trade Quantity")?;
 
     let aggressor = match trade.side {
@@ -135,11 +135,11 @@ pub fn parse_futures_ws_book_snapshot_deltas(
     seq += 1;
 
     for level in &snapshot.bids {
-        if level.qty <= 0.0 {
+        if level.qty <= Decimal::ZERO {
             continue;
         }
-        let price = Price::new_checked(level.price, price_precision)?;
-        let size = Quantity::new_checked(level.qty, size_precision)?;
+        let price = Price::from_decimal_dp(level.price, price_precision)?;
+        let size = Quantity::from_decimal_dp(level.qty, size_precision)?;
         let order_id = price.raw as u64;
         let order = BookOrder::new(OrderSide::Buy, price, size, order_id);
         deltas.push(OrderBookDelta::new(
@@ -155,11 +155,11 @@ pub fn parse_futures_ws_book_snapshot_deltas(
     }
 
     for level in &snapshot.asks {
-        if level.qty <= 0.0 {
+        if level.qty <= Decimal::ZERO {
             continue;
         }
-        let price = Price::new_checked(level.price, price_precision)?;
-        let size = Quantity::new_checked(level.qty, size_precision)?;
+        let price = Price::from_decimal_dp(level.price, price_precision)?;
+        let size = Quantity::from_decimal_dp(level.qty, size_precision)?;
         let order_id = price.raw as u64;
         let order = BookOrder::new(OrderSide::Sell, price, size, order_id);
         deltas.push(OrderBookDelta::new(
@@ -186,8 +186,8 @@ pub fn parse_futures_ws_book_delta(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = Price::new_checked(delta.price, price_precision)?;
-    let size = Quantity::new_checked(delta.qty, size_precision)?;
+    let price = Price::from_decimal_dp(delta.price, price_precision)?;
+    let size = Quantity::from_decimal_dp(delta.qty, size_precision)?;
 
     let action = if size.raw == 0 {
         BookAction::Delete
@@ -224,11 +224,11 @@ fn parse_ws_direction(direction: i32) -> OrderSide {
 }
 
 fn infer_order_status(order: &KrakenFuturesOpenOrder, is_cancel: bool) -> OrderStatus {
-    if order.filled >= order.qty && order.qty > 0.0 {
+    if order.filled >= order.qty && order.qty > Decimal::ZERO {
         OrderStatus::Filled
     } else if is_cancel {
         OrderStatus::Canceled
-    } else if order.filled > 0.0 {
+    } else if order.filled > Decimal::ZERO {
         OrderStatus::PartiallyFilled
     } else {
         OrderStatus::Accepted
@@ -256,9 +256,9 @@ pub fn parse_futures_ws_order_status_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let quantity =
-        Quantity::new_checked(order.qty, size_precision).context("Failed to parse order qty")?;
-    let filled_qty = Quantity::new_checked(order.filled, size_precision)
+    let quantity = Quantity::from_decimal_dp(order.qty, size_precision)
+        .context("Failed to parse order qty")?;
+    let filled_qty = Quantity::from_decimal_dp(order.filled, size_precision)
         .context("Failed to parse order filled")?;
 
     let ts_accepted = millis_to_nanos(order.time);
@@ -286,6 +286,7 @@ pub fn parse_futures_ws_order_status_report(
         contingency_type: ContingencyType::NoContingency,
         expire_time: None,
         price: None,
+        activation_price: None,
         trigger_price: None,
         trigger_type: None,
         limit_offset: None,
@@ -300,11 +301,11 @@ pub fn parse_futures_ws_order_status_report(
     };
 
     if let Some(px) = order.limit_price {
-        report.price = Some(Price::new(px, price_precision));
+        report.price = Some(Price::from_decimal_dp(px, price_precision)?);
     }
 
     if let Some(px) = order.stop_price {
-        report.trigger_price = Some(Price::new(px, price_precision));
+        report.trigger_price = Some(Price::from_decimal_dp(px, price_precision)?);
         report.trigger_type = Some(order.trigger_signal.as_deref().map_or(
             TriggerType::Default,
             |s| match s {
@@ -342,18 +343,15 @@ pub fn parse_futures_ws_fill_report(
     };
 
     let last_qty =
-        Quantity::new_checked(fill.qty, size_precision).context("Failed to parse fill qty")?;
-    let last_px =
-        Price::new_checked(fill.price, price_precision).context("Failed to parse fill price")?;
+        Quantity::from_decimal_dp(fill.qty, size_precision).context("Failed to parse fill qty")?;
+    let last_px = Price::from_decimal_dp(fill.price, price_precision)
+        .context("Failed to parse fill price")?;
 
-    let liquidity_side = match fill.fill_type {
-        KrakenFillType::Maker => LiquiditySide::Maker,
-        KrakenFillType::Taker => LiquiditySide::Taker,
-    };
+    let liquidity_side = fill.fill_type.into();
 
-    let fee = fill.fee_paid.unwrap_or(0.0);
+    let fee = fill.fee_paid.unwrap_or(Decimal::ZERO);
     let commission_currency = instrument.quote_currency();
-    let commission = Money::new(fee, commission_currency);
+    let commission = Money::from_decimal(fee, commission_currency)?;
 
     let ts_event = millis_to_nanos(fill.time);
 
@@ -387,7 +385,7 @@ pub fn parse_futures_ws_mark_price(
     ts_init: UnixNanos,
 ) -> Option<MarkPriceUpdate> {
     let mark_price = ticker.mark_price?;
-    let price = Price::new(mark_price, instrument.price_precision());
+    let price = Price::from_decimal_dp(mark_price, instrument.price_precision()).ok()?;
     let ts_event = ticker.time.map_or(ts_init, millis_to_nanos);
     Some(MarkPriceUpdate::new(
         instrument.id(),
@@ -403,7 +401,7 @@ pub fn parse_futures_ws_index_price(
     ts_init: UnixNanos,
 ) -> Option<IndexPriceUpdate> {
     let index = ticker.index?;
-    let price = Price::new(index, instrument.price_precision());
+    let price = Price::from_decimal_dp(index, instrument.price_precision()).ok()?;
     let ts_event = ticker.time.map_or(ts_init, millis_to_nanos);
     Some(IndexPriceUpdate::new(
         instrument.id(),
@@ -418,8 +416,7 @@ pub fn parse_futures_ws_funding_rate(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> Option<FundingRateUpdate> {
-    let rate_f64 = ticker.relative_funding_rate?;
-    let rate = rust_decimal::Decimal::from_f64(rate_f64)?;
+    let rate = ticker.relative_funding_rate?;
     let ts_event = ticker.time.map_or(ts_init, millis_to_nanos);
     let next_funding_ns = ticker
         .next_funding_rate_time
@@ -437,15 +434,19 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::CurrencyType,
+        enums::{CurrencyType, LiquiditySide},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
         types::Currency,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{consts::KRAKEN_VENUE, enums::KrakenFuturesOrderType};
+    use crate::common::{
+        consts::KRAKEN_VENUE,
+        enums::{KrakenFillType, KrakenFuturesOrderType},
+    };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
@@ -490,10 +491,10 @@ mod tests {
         let quote = parse_futures_ws_quote_tick(&ticker, &instrument, TS).unwrap();
 
         assert_eq!(quote.instrument_id, instrument.id());
-        assert_eq!(quote.bid_price.as_f64(), 21978.5);
-        assert_eq!(quote.ask_price.as_f64(), 21987.0);
-        assert!(quote.bid_size.as_f64() > 0.0);
-        assert!(quote.ask_size.as_f64() > 0.0);
+        assert_eq!(quote.bid_price, Price::from("21978.5"));
+        assert_eq!(quote.ask_price, Price::from("21987.0"));
+        assert_eq!(quote.bid_size, Quantity::from("2536.0"));
+        assert_eq!(quote.ask_size, Quantity::from("13948.0"));
     }
 
     #[rstest]
@@ -505,8 +506,8 @@ mod tests {
         let tick = parse_futures_ws_trade_tick(&trade, &instrument, TS).unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
-        assert_eq!(tick.price.as_f64(), 34969.5);
-        assert_eq!(tick.size.as_f64(), 15000.0);
+        assert_eq!(tick.price, Price::from("34969.5"));
+        assert_eq!(tick.size, Quantity::from("15000.0"));
         assert_eq!(tick.aggressor_side, AggressorSide::Seller);
     }
 
@@ -538,11 +539,11 @@ mod tests {
         assert_eq!(deltas.len(), 4);
         assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(deltas[1].order.side, OrderSide::Buy);
-        assert_eq!(deltas[1].order.price.as_f64(), 34892.5);
+        assert_eq!(deltas[1].order.price, Price::from("34892.5"));
         assert_eq!(deltas[2].order.side, OrderSide::Buy);
-        assert_eq!(deltas[2].order.price.as_f64(), 34891.5);
+        assert_eq!(deltas[2].order.price, Price::from("34891.5"));
         assert_eq!(deltas[3].order.side, OrderSide::Sell);
-        assert_eq!(deltas[3].order.price.as_f64(), 34912.0);
+        assert_eq!(deltas[3].order.price, Price::from("34912.0"));
     }
 
     #[rstest]
@@ -565,9 +566,9 @@ mod tests {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
             time: 1700000000000,
             last_update_time: 1700000000100,
-            qty: 1000.0,
-            filled: 0.0,
-            limit_price: Some(35000.0),
+            qty: dec!(1000),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
             stop_price: None,
             order_type: KrakenFuturesOrderType::Limit,
             order_id: "abc-123".to_string(),
@@ -586,9 +587,9 @@ mod tests {
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
-        assert_eq!(report.quantity.as_f64(), 1000.0);
-        assert_eq!(report.filled_qty.as_f64(), 0.0);
-        assert_eq!(report.price.unwrap().as_f64(), 35000.0);
+        assert_eq!(report.quantity.as_decimal(), dec!(1000));
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.price.unwrap().as_decimal(), dec!(35000));
     }
 
     #[rstest]
@@ -597,9 +598,9 @@ mod tests {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
             time: 1700000000000,
             last_update_time: 1700000001000,
-            qty: 1000.0,
-            filled: 0.0,
-            limit_price: Some(35000.0),
+            qty: dec!(1000),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
             stop_price: None,
             order_type: KrakenFuturesOrderType::Limit,
             order_id: "abc-123".to_string(),
@@ -632,10 +633,10 @@ mod tests {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
             time: 1700000000000,
             last_update_time: 1700000000100,
-            qty: 500.0,
-            filled: 0.0,
+            qty: dec!(500),
+            filled: Decimal::ZERO,
             limit_price: None,
-            stop_price: Some(36000.0),
+            stop_price: Some(dec!(36000)),
             order_type: KrakenFuturesOrderType::TakeProfit,
             order_id: "tp-001".to_string(),
             cli_ord_id: Some("my-tp-1".to_string()),
@@ -651,7 +652,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.trigger_price.unwrap().as_f64(), 36000.0);
+        assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
         assert!(report.price.is_none());
         assert!(report.reduce_only);
     }
@@ -662,10 +663,10 @@ mod tests {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
             time: 1700000000000,
             last_update_time: 1700000000100,
-            qty: 500.0,
-            filled: 0.0,
-            limit_price: Some(35500.0),
-            stop_price: Some(36000.0),
+            qty: dec!(500),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35500)),
+            stop_price: Some(dec!(36000)),
             order_type: KrakenFuturesOrderType::TakeProfit,
             order_id: "tpl-001".to_string(),
             cli_ord_id: Some("my-tpl-1".to_string()),
@@ -681,8 +682,8 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
-        assert_eq!(report.trigger_price.unwrap().as_f64(), 36000.0);
-        assert_eq!(report.price.unwrap().as_f64(), 35500.0);
+        assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
+        assert_eq!(report.price.unwrap().as_decimal(), dec!(35500));
         assert_eq!(report.order_side, OrderSide::Sell);
     }
 
@@ -692,10 +693,10 @@ mod tests {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
             time: 1700000000000,
             last_update_time: 1700000000100,
-            qty: 500.0,
-            filled: 0.0,
+            qty: dec!(500),
+            filled: Decimal::ZERO,
             limit_price: None,
-            stop_price: Some(36000.0),
+            stop_price: Some(dec!(36000)),
             order_type: KrakenFuturesOrderType::TakeProfit,
             order_id: "tp-spot-001".to_string(),
             cli_ord_id: Some("my-tp-spot-1".to_string()),
@@ -714,11 +715,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_futures_ws_fill_report() {
+    #[case::taker(KrakenFillType::Taker, LiquiditySide::Taker)]
+    #[case::assignee(KrakenFillType::Assignee, LiquiditySide::NoLiquiditySide)]
+    fn test_parse_futures_ws_fill_report(
+        #[case] fill_type: KrakenFillType,
+        #[case] expected_liquidity_side: LiquiditySide,
+    ) {
         let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
         let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
             serde_json::from_str(json).unwrap();
-        let fill = &fills_delta.fills[0];
+        let mut fill = fills_delta.fills[0].clone();
+        fill.fill_type = fill_type;
 
         let instrument_id = InstrumentId::new(Symbol::new("PF_ETHUSD"), *KRAKEN_VENUE);
         let usd = Currency::new("USD", 6, 0, "USD", CurrencyType::Fiat);
@@ -752,13 +759,13 @@ mod tests {
         ));
 
         let account_id = AccountId::from("KRAKEN-001");
-        let report = parse_futures_ws_fill_report(fill, &instrument, account_id, TS).unwrap();
+        let report = parse_futures_ws_fill_report(&fill, &instrument, account_id, TS).unwrap();
 
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.order_side, OrderSide::Buy);
-        assert_eq!(report.last_px.as_f64(), 3162.0);
-        assert_eq!(report.last_qty.as_f64(), 0.001);
-        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(report.commission.as_f64(), 0.001581);
+        assert_eq!(report.last_px.as_decimal(), dec!(3162));
+        assert_eq!(report.last_qty.as_decimal(), dec!(0.001));
+        assert_eq!(report.liquidity_side, expected_liquidity_side);
+        assert_eq!(report.commission.as_decimal(), dec!(0.001581));
     }
 }

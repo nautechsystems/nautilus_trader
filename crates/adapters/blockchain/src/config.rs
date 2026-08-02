@@ -101,6 +101,14 @@ pub struct BlockchainDataClientConfig {
     pub transport_backend: TransportBackend,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BlockchainDataClientConfig {
+    dex_ids: Vec<DexType>,
+    multicall_calls_per_rpc_request: u32,
+    pool_filters: DexPoolFilters,
+    transport_backend: TransportBackend,
+});
+
 const fn default_multicall_calls_per_rpc_request() -> u32 {
     200
 }

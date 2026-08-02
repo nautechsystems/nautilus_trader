@@ -1668,7 +1668,7 @@ async def test_spread_execution_handles_exec_details_before_open_order(mocker, e
     exec_client.instrument_provider.contract_id_to_instrument_id[call_contract.conId] = call.id
 
     client_order_id = ClientOrderId("O-SPREAD-RACE-001")
-    # Order is in SUBMITTED state without venue_order_id — i.e. openOrder has not
+    # Order is in SUBMITTED state without venue_order_id - i.e. openOrder has not
     # fired yet. This is the precondition for the race.
     order = TestExecStubs.limit_order(
         instrument=spread,

@@ -71,6 +71,10 @@ impl BookLevel {
 
     /// Returns the total exposure (price * size) of all orders at this price level as raw integer units.
     ///
+    /// Fixed-scale orders contribute `price.raw * size.raw / FIXED_SCALAR`.
+    /// Native DeFi scales are normalized to the same fixed-scale result.
+    /// Division truncates toward zero.
+    /// Non-positive prices contribute zero.
     /// Saturates at `QuantityRaw::MAX` if the total exposure would overflow.
     #[pyo3(name = "exposure_raw")]
     fn py_exposure_raw(&self) -> QuantityRaw {

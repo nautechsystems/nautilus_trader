@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
@@ -24,8 +25,8 @@ use crate::{
     indicator::{Indicator, MovingAverage},
 };
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl HullMovingAverage {
     /// An indicator which calculates a Hull Moving Average (HMA) across a rolling
     /// window. The HMA, developed by Alan Hull, is an extremely fast and smooth
@@ -53,6 +54,12 @@ impl HullMovingAverage {
     }
 
     #[getter]
+    #[pyo3(name = "price_type")]
+    const fn py_price_type(&self) -> PriceType {
+        self.price_type
+    }
+
+    #[getter]
     #[pyo3(name = "count")]
     const fn py_count(&self) -> usize {
         self.count
@@ -77,18 +84,18 @@ impl HullMovingAverage {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
-        self.py_update_raw(quote.extract_price(self.price_type).into());
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
     fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
-        self.update_raw((&trade.price).into());
+        self.handle_trade(trade);
     }
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+        self.handle_bar(bar);
     }
 
     #[pyo3(name = "reset")]

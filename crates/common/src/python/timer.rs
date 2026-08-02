@@ -182,7 +182,7 @@ mod tests {
 
     use crate::{
         live::timer::LiveTimer,
-        runner::{TimeEventSender, set_time_event_sender},
+        runner::{TimeEventMessage, TimeEventSender, set_time_event_sender},
         testing::wait_until,
         timer::{TimeEvent, TimeEventCallback},
     };
@@ -196,7 +196,7 @@ mod tests {
     struct TestTimeEventSender;
 
     impl TimeEventSender for TestTimeEventSender {
-        fn send(&self, _handler: crate::timer::TimeEventHandler) {
+        fn send(&self, _message: TimeEventMessage) {
             // Test implementation - just ignore the events
         }
     }

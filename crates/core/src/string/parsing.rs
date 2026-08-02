@@ -35,46 +35,79 @@ fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
     len.min(u8::MAX as usize) as u8
 }
 
-/// Parses a scientific notation exponent and clamps to `u8::MAX`.
+/// Computes decimal precision from a scientific-notation string.
 ///
-/// Returns `None` for invalid/empty exponents when `strict` is false,
-/// otherwise panics for malformed input.
-#[inline]
-#[must_use]
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "value is clamped to u8::MAX before the cast"
-)]
-fn parse_scientific_exponent(exponent_str: &str, strict: bool) -> Option<u8> {
-    if let Ok(exp) = exponent_str.parse::<u64>() {
-        Some(exp.min(u64::from(u8::MAX)) as u8)
-    } else {
-        assert!(
-            !(exponent_str.is_empty() && strict),
-            "Invalid scientific notation format: missing exponent after 'e-'"
-        );
+/// Precision is `max(0, mantissa_fractional_digits - exponent)`, clamped to
+/// `u8::MAX` (255). When `trim_trailing_zeros` is true, trailing zeros in the
+/// mantissa's fractional part are stripped before counting.
+///
+/// Absurd exponents that overflow `i64` clamp to 255 (negative) or 0 (positive)
+/// without panicking.
+///
+/// # Panics
+///
+/// Panics when `strict` is true and the exponent is missing or non-numeric.
+fn precision_from_scientific(s: &str, trim_trailing_zeros: bool, strict: bool) -> Option<u8> {
+    let e_pos = s.find('e')?;
+    let mantissa = &s[..e_pos];
+    let exponent_str = &s[e_pos + 1..];
 
-        // Empty string is invalid (not a large number that overflowed)
-        if exponent_str.is_empty() {
+    let frac_digits = mantissa.split_once('.').map_or(0, |(_, frac)| {
+        if trim_trailing_zeros {
+            frac.trim_end_matches('0').len()
+        } else {
+            frac.len()
+        }
+    });
+
+    let exponent: i64 = if let Ok(v) = exponent_str.parse::<i64>() {
+        v
+    } else {
+        let (digits, is_negative) = exponent_str
+            .strip_prefix('-')
+            .map(|rest| (rest, true))
+            .or_else(|| exponent_str.strip_prefix('+').map(|rest| (rest, false)))
+            .unwrap_or((exponent_str, false));
+
+        if digits.is_empty() {
+            assert!(
+                !strict,
+                "Invalid scientific notation format: missing exponent value"
+            );
             return None;
         }
 
-        // If it's all digits but overflows u64, clamp to u8::MAX
-        if exponent_str.chars().all(|c| c.is_ascii_digit()) {
-            Some(u8::MAX)
-        } else if strict {
-            panic!("Invalid scientific notation exponent '{exponent_str}': must be a valid number")
-        } else {
-            None
+        if digits.chars().all(|c| c.is_ascii_digit()) {
+            return Some(if is_negative { u8::MAX } else { 0 });
         }
-    }
+
+        assert!(
+            !strict,
+            "Invalid scientific notation exponent '{exponent_str}': must be a valid number"
+        );
+        return None;
+    };
+
+    let precision = i64::try_from(frac_digits)
+        .unwrap_or(i64::MAX)
+        .saturating_sub(exponent)
+        .clamp(0, i64::from(u8::MAX));
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "clamped to 0..=u8::MAX above"
+    )]
+    let precision = precision as u8;
+
+    Some(precision)
 }
 
 /// Returns the decimal precision inferred from the given string.
 ///
-/// For scientific notation with large negative exponents (e.g., "1e-300", "1e-4294967296"),
-/// the precision is clamped to `u8::MAX` (255) since that represents the maximum representable
-/// precision in this system. This handles arbitrarily large exponents without panicking.
+/// For scientific notation (e.g., "1e-300", "1.5e-2"), the precision accounts
+/// for both the mantissa's fractional digits and the signed exponent:
+/// `max(0, fractional_digits - exponent)`, clamped to `u8::MAX` (255).
 ///
 /// # Panics
 ///
@@ -84,18 +117,11 @@ fn parse_scientific_exponent(exponent_str: &str, strict: bool) -> Option<u8> {
 pub fn precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
-    // Check for scientific notation
-    if s.contains("e-") {
-        let exponent_str = s
-            .split("e-")
-            .nth(1)
-            .expect("Invalid scientific notation format: missing exponent after 'e-'");
-
-        return parse_scientific_exponent(exponent_str, true)
-            .expect("parse_scientific_exponent should return Some in strict mode");
+    if s.contains('e') {
+        return precision_from_scientific(&s, false, true)
+            .expect("precision_from_scientific should return Some in strict mode");
     }
 
-    // Check for decimal precision
     if let Some((_, decimal_part)) = s.split_once('.') {
         clamp_precision_with_log(decimal_part.len(), "Decimal", &s)
     } else {
@@ -106,22 +132,17 @@ pub fn precision_from_str(s: &str) -> u8 {
 /// Returns the minimum increment precision inferred from the given string,
 /// ignoring trailing zeros.
 ///
-/// For scientific notation with large negative exponents (e.g., "1e-300"), the precision
-/// is clamped to `u8::MAX` (255) to match the behavior of `precision_from_str`.
+/// For scientific notation (e.g., "1e-300", "1.5e-2"), trailing zeros in the
+/// mantissa are stripped before computing precision, matching the behavior of
+/// [`precision_from_str`].
 #[must_use]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
-    // Check for scientific notation
-    if let Some(pos) = s.find('e')
-        && s[pos + 1..].starts_with('-')
-    {
-        let exponent_str = &s[pos + 2..];
-        // Use lenient parsing (returns 0 for invalid, doesn't panic)
-        return parse_scientific_exponent(exponent_str, false).unwrap_or(0);
+    if s.contains('e') {
+        return precision_from_scientific(&s, true, false).unwrap_or(0);
     }
 
-    // Check for decimal precision
     if let Some(dot_pos) = s.find('.') {
         let decimal_part = &s[dot_pos + 1..];
         if decimal_part.chars().any(|c| c != '0') {
@@ -131,26 +152,6 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
         clamp_precision_with_log(decimal_part.len(), "Decimal", &s)
     } else {
         0
-    }
-}
-
-/// Returns a `usize` from the given bytes.
-///
-/// Reads the first `size_of::<usize>()` bytes in little-endian order; any
-/// additional bytes are ignored.
-///
-/// # Errors
-///
-/// Returns an error if there are not enough bytes to represent a `usize`.
-pub fn bytes_to_usize(bytes: &[u8]) -> anyhow::Result<usize> {
-    // Check bytes width
-    if bytes.len() >= std::mem::size_of::<usize>() {
-        let mut buffer = [0u8; std::mem::size_of::<usize>()];
-        buffer.copy_from_slice(&bytes[..std::mem::size_of::<usize>()]);
-
-        Ok(usize::from_le_bytes(buffer))
-    } else {
-        anyhow::bail!("Not enough bytes to represent a `usize`");
     }
 }
 
@@ -175,6 +176,13 @@ mod tests {
     #[case("-1.23", 2)]
     #[case("-1e-2", 2)]
     #[case("1E-2", 2)]
+    #[case("1.5e-2", 3)]
+    #[case("1.23e-2", 4)]
+    #[case("1.5e2", 0)]
+    #[case("1.5E2", 0)]
+    #[case("1.5e+2", 0)]
+    #[case("1.5e0", 1)]
+    #[case("1.5e-1", 2)]
     #[case("  1.23", 2)]
     #[case("1.23  ", 2)]
     fn test_precision_from_str(#[case] s: &str, #[case] expected: u8) {
@@ -197,6 +205,11 @@ mod tests {
     #[case("-1.23", 2)]
     #[case("-1e-2", 2)]
     #[case("1E-2", 2)]
+    #[case("1.5e-2", 3)]
+    #[case("1.23e-2", 4)]
+    #[case("1.5e2", 0)]
+    #[case("1.50e-2", 3)]
+    #[case("1.0e-2", 2)]
     #[case("  1.23", 2)]
     #[case("1.23  ", 2)]
     #[case("1.010", 2)]
@@ -206,36 +219,6 @@ mod tests {
     fn test_min_increment_precision_from_str(#[case] s: &str, #[case] expected: u8) {
         let result = min_increment_precision_from_str(s);
         assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    fn test_bytes_to_usize_empty() {
-        let payload: Vec<u8> = vec![];
-        let result = bytes_to_usize(&payload);
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap().to_string(),
-            "Not enough bytes to represent a `usize`"
-        );
-    }
-
-    #[rstest]
-    fn test_bytes_to_usize_invalid() {
-        let payload: Vec<u8> = vec![0x01, 0x02, 0x03];
-        let result = bytes_to_usize(&payload);
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap().to_string(),
-            "Not enough bytes to represent a `usize`"
-        );
-    }
-
-    #[rstest]
-    fn test_bytes_to_usize_valid() {
-        let payload: Vec<u8> = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
-        let result = bytes_to_usize(&payload).unwrap();
-        assert_eq!(result, 0x0807_0605_0403_0201);
-        assert_eq!(result, 578_437_695_752_307_201);
     }
 
     #[rstest]
@@ -262,7 +245,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "missing exponent after 'e-'")]
+    #[should_panic(expected = "missing exponent value")]
     fn test_precision_from_str_malformed_scientific_notation() {
         // "1e-" with empty exponent should panic (fail fast on malformed input)
         let _ = precision_from_str("1e-");
@@ -318,6 +301,13 @@ mod tests {
         let min_precision = min_increment_precision_from_str(input);
         assert_eq!(precision, min_precision);
         assert_eq!(precision, 255);
+    }
+
+    #[rstest]
+    fn test_precision_from_str_i64_min_exponent_clamped() {
+        // Exponent equal to i64::MIN must saturate, not overflow the subtraction
+        let result = precision_from_str("1e-9223372036854775808");
+        assert_eq!(result, 255);
     }
 
     #[rstest]

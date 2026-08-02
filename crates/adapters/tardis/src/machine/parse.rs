@@ -1084,6 +1084,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_tardis_ws_message_mexc_snapshot_5000_routes_to_deltas() {
+        let json_data = load_test_json("mexc_book_snapshot_5000.json");
+        let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
+        let ws_msg = WsMessage::BookSnapshot(msg);
+
+        let instrument_id = InstrumentId::from("BTCUSDT.MEXC");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Mexc,
+            1,
+            1,
+        ));
+
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
+
+        let Some(Data::Deltas(deltas)) = result else {
+            panic!("Expected Data::Deltas, was {result:?}");
+        };
+        assert_eq!(deltas.instrument_id, instrument_id);
+        assert_eq!(deltas.deltas.len(), 7);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[1].order.price, Price::from("100.0"));
+        assert_eq!(deltas.deltas[4].order.price, Price::from("101.0"));
+        assert_eq!(
+            deltas.deltas[6].flags,
+            RecordFlag::F_LAST as u8 + RecordFlag::F_SNAPSHOT as u8
+        );
+    }
+
+    #[rstest]
     fn test_parse_tardis_ws_message_option_summary_routes_to_option_greeks() {
         let json_data = load_test_json("option_summary.json");
         let msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
@@ -1303,7 +1334,7 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
         let greeks = parse_option_summary_msg(&msg, instrument_id);
 
-        // Absent greeks default to 0.0; absent IVs, underlying and open interest stay None.
+        // Absent greeks default to 0.0; absent IVs, underlying, and open interest stay None.
         assert_eq!(greeks.greeks.delta, 0.0);
         assert_eq!(greeks.greeks.gamma, 0.0);
         assert_eq!(greeks.greeks.vega, 0.0);
@@ -1398,5 +1429,22 @@ mod tests {
 
         let index = parse_derivative_ticker_index_price(&msg, instrument_id, 1).unwrap();
         assert!(index.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_mexc_futures_derivative_ticker() {
+        let json_data = load_test_json("mexc_futures_derivative_ticker.json");
+        let msg: DerivativeTickerMsg = serde_json::from_str(&json_data).unwrap();
+
+        let instrument_id = InstrumentId::from("BTC_USDT-PERP.MEXC");
+
+        let funding = parse_derivative_ticker_msg(&msg, instrument_id).unwrap();
+        let mark = parse_derivative_ticker_mark_price(&msg, instrument_id, 1).unwrap();
+        let index = parse_derivative_ticker_index_price(&msg, instrument_id, 1).unwrap();
+
+        assert_eq!(msg.exchange, TardisExchange::MexcFutures);
+        assert_eq!(funding.unwrap().rate.to_string(), "0.0001");
+        assert_eq!(mark.unwrap().value, Price::new(61235.2, 1));
+        assert_eq!(index.unwrap().value, Price::new(61230.1, 1));
     }
 }

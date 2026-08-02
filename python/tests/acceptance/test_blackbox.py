@@ -19,7 +19,7 @@ Mirrors `tests/acceptance_tests/test_blackbox.py`. The v1 suite asserts on the e
 sequence of events captured by `msgbus.subscribe(events.account.* / events.order.* /
 events.position.*)`. v2's BacktestEngine does not yet expose the kernel msgbus topic
 broadcast for arbitrary subscribers from outside the trader, so this suite asserts on
-public BacktestResult invariants instead — the strategy ran, produced multiple position
+public BacktestResult invariants instead - the strategy ran, produced multiple position
 cycles, and the run completed without raising.
 
 """

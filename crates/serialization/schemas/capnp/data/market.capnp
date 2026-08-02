@@ -33,7 +33,7 @@ struct TradeTick {
 
 # Bar specification
 struct BarSpec {
-    step @0 :UInt32;
+    step @0 :UInt64;
     aggregation @1 :Enums.BarAggregation;
     priceType @2 :Enums.PriceType;
 }

@@ -124,6 +124,10 @@ impl DeribitHttpClient {
     }
 
     /// Requests instruments for a specific currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or instruments cannot be parsed.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (currency, product_type=None))]
     fn py_request_instruments<'py>(
@@ -145,16 +149,17 @@ impl DeribitHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let pylist = PyList::new(py, py_instruments?)
-                    .unwrap()
-                    .into_any()
-                    .unbind();
+                let pylist = PyList::new(py, py_instruments?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
     }
 
     /// Requests traded option expirations for a settlement currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "request_option_expirations")]
     fn py_request_option_expirations<'py>(
         &self,
@@ -180,6 +185,13 @@ impl DeribitHttpClient {
     ///
     /// This is a high-level method that fetches the raw instrument data from Deribit
     /// and converts it to a Nautilus `InstrumentAny` type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument name format is invalid (error code `-32602`)
+    /// - The instrument doesn't exist (error code `13020`)
+    /// - Network or API errors occur
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -202,6 +214,12 @@ impl DeribitHttpClient {
     ///
     /// Fetches account balance and margin information for all currencies from Deribit
     /// and converts it to Nautilus `AccountState` event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails
+    /// - Currency conversion fails
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -216,7 +234,7 @@ impl DeribitHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+            Python::attach(|py| account_state.into_py_any(py))
         })
     }
 
@@ -230,6 +248,13 @@ impl DeribitHttpClient {
     /// * `start` - Optional start time filter
     /// * `end` - Optional end time filter
     /// * `limit` - Optional limit on number of trades (max 1000)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache
+    /// - The request fails
+    /// - Trade parsing fails
     ///
     /// # Pagination
     ///
@@ -255,10 +280,11 @@ impl DeribitHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(
-                    py,
-                    trades.into_iter().map(|trade| trade.into_py_any_unwrap(py)),
-                )?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -267,6 +293,14 @@ impl DeribitHttpClient {
     /// Requests historical bars (OHLCV) for an instrument.
     ///
     /// Uses the `public/get_tradingview_chart_data` endpoint to fetch candlestick data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Aggregation source is not EXTERNAL
+    /// - Bar aggregation type is not supported by Deribit
+    /// - The instrument is not found in cache
+    /// - The request fails or response cannot be parsed
     ///
     /// # Supported Resolutions
     ///
@@ -290,8 +324,11 @@ impl DeribitHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -305,6 +342,13 @@ impl DeribitHttpClient {
     ///
     /// * `instrument_id` - The instrument to fetch the order book for
     /// * `depth` - Optional depth limit (valid values: 1, 5, 10, 20, 50, 100, 1000, 10000)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache
+    /// - The request fails
+    /// - Order book parsing fails
     #[pyo3(name = "request_book_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_book_snapshot<'py>(
@@ -321,7 +365,7 @@ impl DeribitHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(book.into_py_any_unwrap(py)))
+            Python::attach(|py| book.into_py_any(py))
         })
     }
 
@@ -333,6 +377,10 @@ impl DeribitHttpClient {
     /// - Uses `/private/get_open_orders` for all open orders (single efficient API call)
     /// - Uses `/private/get_open_orders_by_instrument` when specific instrument is provided
     /// - For historical orders (when `open_only=false`), iterates over currencies
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None, open_only=true))]
     fn py_request_order_status_reports<'py>(
@@ -377,6 +425,10 @@ impl DeribitHttpClient {
     /// # Strategy
     /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
     /// - Otherwise iterates over currencies using `/private/get_user_trades_by_currency_and_time`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None))]
     fn py_request_fill_reports<'py>(
@@ -418,6 +470,10 @@ impl DeribitHttpClient {
     /// # Strategy
     /// - Uses `currency=any` to fetch all positions in one call
     /// - Filters by instrument_id if provided
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(

@@ -16,12 +16,16 @@
 //! Data models for Kraken Futures HTTP API responses.
 
 use ahash::AHashMap;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::common::enums::{
-    KrakenApiResult, KrakenFillType, KrakenFuturesOrderEventType, KrakenFuturesOrderStatus,
-    KrakenFuturesOrderType, KrakenInstrumentType, KrakenOrderSide, KrakenPositionSide,
-    KrakenSendStatus, KrakenTriggerSide, KrakenTriggerSignal,
+use crate::common::{
+    enums::{
+        KrakenApiResult, KrakenFillType, KrakenFuturesOrderEventType, KrakenFuturesOrderStatus,
+        KrakenFuturesOrderType, KrakenInstrumentType, KrakenOrderSide, KrakenPositionSide,
+        KrakenSendStatus, KrakenTriggerSide, KrakenTriggerSignal,
+    },
+    serialization::{decimal, decimal_map, deserialize_decimal_pair, optional_decimal},
 };
 
 // Futures Instruments Models
@@ -31,10 +35,12 @@ use crate::common::enums::{
 pub struct FuturesMarginLevel {
     /// Number of contracts (for inverse futures) or notional units (for flexible futures).
     /// The field name varies: `contracts` for inverse, `numNonContractUnits` for flexible.
-    #[serde(alias = "numNonContractUnits", default)]
-    pub contracts: f64,
-    pub initial_margin: f64,
-    pub maintenance_margin: f64,
+    #[serde(alias = "numNonContractUnits", default, with = "decimal")]
+    pub contracts: Decimal,
+    #[serde(with = "decimal")]
+    pub initial_margin: Decimal,
+    #[serde(with = "decimal")]
+    pub maintenance_margin: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,19 +52,21 @@ pub struct FuturesInstrument {
     /// Only present for inverse futures, not for flexible futures.
     #[serde(default)]
     pub underlying: Option<String>,
-    pub tick_size: f64,
-    pub contract_size: f64,
+    #[serde(with = "decimal")]
+    pub tick_size: Decimal,
+    #[serde(with = "decimal")]
+    pub contract_size: Decimal,
     pub tradeable: bool,
-    #[serde(default)]
-    pub impact_mid_size: Option<f64>,
-    #[serde(default)]
-    pub max_position_size: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub impact_mid_size: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub max_position_size: Option<Decimal>,
     pub opening_date: String,
     pub margin_levels: Vec<FuturesMarginLevel>,
     #[serde(default)]
     pub funding_rate_coefficient: Option<i32>,
-    #[serde(default)]
-    pub max_relative_funding_rate: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub max_relative_funding_rate: Option<Decimal>,
     #[serde(default)]
     pub isin: Option<String>,
     pub contract_value_trade_precision: i32,
@@ -83,48 +91,48 @@ pub struct FuturesInstrumentsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesTicker {
     pub symbol: String,
-    #[serde(default)]
-    pub last: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub last: Option<Decimal>,
     #[serde(default)]
     pub last_time: Option<String>,
     pub tag: String,
     pub pair: String,
-    #[serde(default)]
-    pub mark_price: Option<f64>,
-    #[serde(default)]
-    pub bid: Option<f64>,
-    #[serde(default)]
-    pub bid_size: Option<f64>,
-    #[serde(default)]
-    pub ask: Option<f64>,
-    #[serde(default)]
-    pub ask_size: Option<f64>,
-    #[serde(rename = "vol24h", default)]
-    pub vol_24h: Option<f64>,
-    #[serde(default)]
-    pub volume_quote: Option<f64>,
-    #[serde(default)]
-    pub open_interest: Option<f64>,
-    #[serde(rename = "open24h", default)]
-    pub open_24h: Option<f64>,
-    #[serde(rename = "high24h", default)]
-    pub high_24h: Option<f64>,
-    #[serde(rename = "low24h", default)]
-    pub low_24h: Option<f64>,
-    #[serde(default)]
-    pub last_size: Option<f64>,
-    #[serde(default)]
-    pub funding_rate: Option<f64>,
-    #[serde(default)]
-    pub funding_rate_prediction: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub mark_price: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub bid: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub bid_size: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub ask: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub ask_size: Option<Decimal>,
+    #[serde(rename = "vol24h", default, with = "optional_decimal")]
+    pub vol_24h: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub volume_quote: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub open_interest: Option<Decimal>,
+    #[serde(rename = "open24h", default, with = "optional_decimal")]
+    pub open_24h: Option<Decimal>,
+    #[serde(rename = "high24h", default, with = "optional_decimal")]
+    pub high_24h: Option<Decimal>,
+    #[serde(rename = "low24h", default, with = "optional_decimal")]
+    pub low_24h: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub last_size: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub funding_rate_prediction: Option<Decimal>,
     #[serde(default)]
     pub suspended: bool,
-    #[serde(default)]
-    pub index_price: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub index_price: Option<Decimal>,
     #[serde(default)]
     pub post_only: bool,
-    #[serde(rename = "change24h", default)]
-    pub change_24h: Option<f64>,
+    #[serde(rename = "change24h", default, with = "optional_decimal")]
+    pub change_24h: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,8 +149,10 @@ pub struct FuturesTickersResponse {
 /// A `[price, qty]` pair from the Kraken Futures orderbook endpoint.
 #[derive(Debug, Clone, Serialize)]
 pub struct FuturesOrderBookLevel {
-    pub price: f64,
-    pub qty: f64,
+    #[serde(serialize_with = "decimal::serialize")]
+    pub price: Decimal,
+    #[serde(serialize_with = "decimal::serialize")]
+    pub qty: Decimal,
 }
 
 impl<'de> serde::Deserialize<'de> for FuturesOrderBookLevel {
@@ -150,7 +160,7 @@ impl<'de> serde::Deserialize<'de> for FuturesOrderBookLevel {
     where
         D: serde::Deserializer<'de>,
     {
-        let arr: (f64, f64) = serde::Deserialize::deserialize(deserializer)?;
+        let arr = deserialize_decimal_pair(deserializer)?;
         Ok(Self {
             price: arr.0,
             qty: arr.1,
@@ -180,8 +190,10 @@ pub struct FuturesOrderBookResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesHistoricalFundingRate {
     pub timestamp: String,
-    pub relative_funding_rate: f64,
-    pub funding_rate: f64,
+    #[serde(with = "decimal")]
+    pub relative_funding_rate: Decimal,
+    #[serde(with = "decimal")]
+    pub funding_rate: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,14 +230,16 @@ pub struct FuturesOpenOrder {
     pub symbol: String,
     pub side: KrakenOrderSide,
     pub order_type: KrakenFuturesOrderType,
-    #[serde(default)]
-    pub limit_price: Option<f64>,
-    #[serde(default)]
-    pub stop_price: Option<f64>,
-    pub unfilled_size: f64,
+    #[serde(default, with = "optional_decimal")]
+    pub limit_price: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub stop_price: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub unfilled_size: Option<Decimal>,
     pub received_time: String,
     pub status: KrakenFuturesOrderStatus,
-    pub filled_size: f64,
+    #[serde(with = "decimal")]
+    pub filled_size: Decimal,
     #[serde(default)]
     pub reduce_only: Option<bool>,
     pub last_update_time: String,
@@ -256,8 +270,8 @@ pub struct FuturesOrderEventWrapper {
     pub order: FuturesOrderEvent,
     #[serde(rename = "type")]
     pub event_type: KrakenFuturesOrderEventType,
-    #[serde(default)]
-    pub reduced_quantity: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub reduced_quantity: Option<Decimal>,
 }
 
 /// The actual order data within an order event.
@@ -271,12 +285,14 @@ pub struct FuturesOrderEvent {
     pub order_type: KrakenFuturesOrderType,
     pub symbol: String,
     pub side: KrakenOrderSide,
-    pub quantity: f64,
-    pub filled: f64,
-    #[serde(default)]
-    pub limit_price: Option<f64>,
-    #[serde(default)]
-    pub stop_price: Option<f64>,
+    #[serde(with = "decimal")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal")]
+    pub filled: Decimal,
+    #[serde(default, with = "optional_decimal")]
+    pub limit_price: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub stop_price: Option<Decimal>,
     pub timestamp: String,
     pub last_update_timestamp: String,
     #[serde(default)]
@@ -307,13 +323,15 @@ pub struct FuturesFill {
     #[serde(rename = "order_id")]
     pub order_id: String,
     pub fill_time: String,
-    pub size: f64,
-    pub price: f64,
+    #[serde(with = "decimal")]
+    pub size: Decimal,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
     pub fill_type: KrakenFillType,
     #[serde(rename = "cli_ord_id", default)]
     pub cli_ord_id: Option<String>,
-    #[serde(rename = "fee_paid", default)]
-    pub fee_paid: Option<f64>,
+    #[serde(rename = "fee_paid", default, with = "optional_decimal")]
+    pub fee_paid: Option<Decimal>,
     #[serde(rename = "fee_currency", default)]
     pub fee_currency: Option<String>,
 }
@@ -337,11 +355,13 @@ pub struct FuturesFillsResponse {
 pub struct FuturesPosition {
     pub side: KrakenPositionSide,
     pub symbol: String,
-    pub price: f64,
+    #[serde(with = "decimal")]
+    pub price: Decimal,
     pub fill_time: String,
-    pub size: f64,
-    #[serde(default)]
-    pub unrealized_funding: Option<f64>,
+    #[serde(with = "decimal")]
+    pub size: Decimal,
+    #[serde(default, with = "optional_decimal")]
+    pub unrealized_funding: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -392,21 +412,21 @@ pub struct FuturesSendOrderEvent {
     pub order: Option<FuturesOrderEventData>,
     #[serde(default)]
     pub order_trigger: Option<FuturesOrderTriggerData>,
-    #[serde(default)]
-    pub reduced_quantity: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub reduced_quantity: Option<Decimal>,
     // Execution event fields
     #[serde(rename = "executionId", default)]
     pub execution_id: Option<String>,
-    #[serde(default)]
-    pub price: Option<f64>,
-    #[serde(default)]
-    pub amount: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub price: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub amount: Option<Decimal>,
     #[serde(rename = "orderPriorEdit", default)]
     pub order_prior_edit: Option<Box<FuturesOrderEventData>>,
     #[serde(rename = "orderPriorExecution", default)]
     pub order_prior_execution: Option<Box<FuturesOrderEventData>>,
-    #[serde(rename = "takerReducedQuantity", default)]
-    pub taker_reduced_quantity: Option<f64>,
+    #[serde(rename = "takerReducedQuantity", default, with = "optional_decimal")]
+    pub taker_reduced_quantity: Option<Decimal>,
     // Reject event fields
     #[serde(default)]
     pub reason: Option<String>,
@@ -425,12 +445,14 @@ pub struct FuturesOrderEventData {
     pub order_type: KrakenFuturesOrderType,
     pub symbol: String,
     pub side: KrakenOrderSide,
-    pub quantity: f64,
-    pub filled: f64,
-    #[serde(rename = "limitPrice", default)]
-    pub limit_price: Option<f64>,
-    #[serde(rename = "stopPrice", default)]
-    pub stop_price: Option<f64>,
+    #[serde(with = "decimal")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal")]
+    pub filled: Decimal,
+    #[serde(rename = "limitPrice", default, with = "optional_decimal")]
+    pub limit_price: Option<Decimal>,
+    #[serde(rename = "stopPrice", default, with = "optional_decimal")]
+    pub stop_price: Option<Decimal>,
     pub timestamp: String,
     #[serde(rename = "lastUpdateTimestamp")]
     pub last_update_timestamp: String,
@@ -448,15 +470,17 @@ pub struct FuturesOrderTriggerData {
     pub order_type: KrakenFuturesOrderType,
     pub symbol: String,
     pub side: KrakenOrderSide,
-    pub quantity: f64,
-    #[serde(rename = "limitPrice", default)]
-    pub limit_price: Option<f64>,
-    #[serde(rename = "limitPriceOffsetValue", default)]
-    pub limit_price_offset_value: Option<f64>,
+    #[serde(with = "decimal")]
+    pub quantity: Decimal,
+    #[serde(rename = "limitPrice", default, with = "optional_decimal")]
+    pub limit_price: Option<Decimal>,
+    #[serde(rename = "limitPriceOffsetValue", default, with = "optional_decimal")]
+    pub limit_price_offset_value: Option<Decimal>,
     #[serde(rename = "limitPriceOffsetUnit", default)]
     pub limit_price_offset_unit: Option<String>,
     #[serde(rename = "triggerPrice")]
-    pub trigger_price: f64,
+    #[serde(with = "decimal")]
+    pub trigger_price: Decimal,
     #[serde(rename = "triggerSide")]
     pub trigger_side: KrakenTriggerSide,
     #[serde(rename = "triggerSignal")]
@@ -681,8 +705,8 @@ pub struct FuturesAccount {
     #[serde(rename = "type")]
     pub account_type: KrakenFuturesAccountType,
     /// Balances for margin accounts (symbol -> amount).
-    #[serde(default)]
-    pub balances: AHashMap<String, f64>,
+    #[serde(default, with = "decimal_map")]
+    pub balances: AHashMap<String, Decimal>,
     /// Currencies for flex/multi-collateral accounts.
     #[serde(default)]
     pub currencies: AHashMap<String, FuturesFlexCurrency>,
@@ -693,49 +717,50 @@ pub struct FuturesAccount {
     #[serde(default)]
     pub margin_requirements: Option<FuturesMarginRequirements>,
     /// Portfolio value (for flex accounts).
-    #[serde(default)]
-    pub portfolio_value: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub portfolio_value: Option<Decimal>,
     /// Available margin (for flex accounts).
-    #[serde(default)]
-    pub available_margin: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub available_margin: Option<Decimal>,
     /// Initial margin (for flex accounts).
-    #[serde(default)]
-    pub initial_margin: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub initial_margin: Option<Decimal>,
     /// PnL (for flex accounts).
-    #[serde(default)]
-    pub pnl: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub pnl: Option<Decimal>,
 }
 
 /// Currency info for flex/multi-collateral accounts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesFlexCurrency {
-    pub quantity: f64,
-    #[serde(default)]
-    pub value: Option<f64>,
-    #[serde(default)]
-    pub collateral: Option<f64>,
-    #[serde(default)]
-    pub available: Option<f64>,
+    #[serde(with = "decimal")]
+    pub quantity: Decimal,
+    #[serde(default, with = "optional_decimal")]
+    pub value: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub collateral: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub available: Option<Decimal>,
 }
 
 /// Auxiliary account info for margin accounts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesAuxiliary {
-    #[serde(default)]
-    pub usd: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub usd: Option<Decimal>,
     /// Portfolio value.
-    #[serde(default)]
-    pub pv: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub pv: Option<Decimal>,
     /// Profit/loss.
-    #[serde(default)]
-    pub pnl: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub pnl: Option<Decimal>,
     /// Available funds.
-    #[serde(default)]
-    pub af: Option<f64>,
-    #[serde(default)]
-    pub funding: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub af: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub funding: Option<Decimal>,
 }
 
 /// Margin requirements for an account.
@@ -743,22 +768,23 @@ pub struct FuturesAuxiliary {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesMarginRequirements {
     /// Initial margin.
-    #[serde(default)]
-    pub im: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub im: Option<Decimal>,
     /// Maintenance margin.
-    #[serde(default)]
-    pub mm: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub mm: Option<Decimal>,
     /// Liquidation threshold.
-    #[serde(default)]
-    pub lt: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub lt: Option<Decimal>,
     /// Termination threshold.
-    #[serde(default)]
-    pub tt: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub tt: Option<Decimal>,
 }
 
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -828,9 +854,31 @@ mod tests {
         assert_eq!(order.symbol, "PI_ETHUSD");
         assert_eq!(order.side, KrakenOrderSide::Buy);
         assert_eq!(order.order_type, KrakenFuturesOrderType::Limit);
-        assert_eq!(order.limit_price, Some(1200.0));
-        assert_eq!(order.unfilled_size, 100.0);
-        assert_eq!(order.filled_size, 0.0);
+        assert_eq!(order.limit_price, Some(dec!(1200)));
+        assert_eq!(order.unfilled_size, Some(dec!(100)));
+        assert_eq!(order.filled_size, dec!(0));
+
+        let trigger_order = &response.open_orders[1];
+        assert_eq!(
+            trigger_order.order_id,
+            "c8135f52-2a86-4e26-b629-43cc37da9dbf"
+        );
+        assert_eq!(trigger_order.order_type, KrakenFuturesOrderType::TakeProfit);
+        assert_eq!(trigger_order.symbol, "PI_XBTUSD");
+        assert_eq!(trigger_order.side, KrakenOrderSide::Buy);
+        assert_eq!(trigger_order.limit_price, None);
+        assert_eq!(trigger_order.stop_price, Some(dec!(1880.4)));
+        assert_eq!(trigger_order.unfilled_size, None);
+        assert_eq!(trigger_order.received_time, "2023-04-07T15:14:25.995Z");
+        assert_eq!(trigger_order.status, KrakenFuturesOrderStatus::Untouched);
+        assert_eq!(trigger_order.filled_size, dec!(0));
+        assert_eq!(trigger_order.reduce_only, Some(true));
+        assert_eq!(trigger_order.last_update_time, "2023-04-07T15:14:25.995Z");
+        assert_eq!(
+            trigger_order.trigger_signal,
+            Some(KrakenTriggerSignal::Last)
+        );
+        assert_eq!(trigger_order.cli_ord_id, None);
     }
 
     #[rstest]
@@ -846,10 +894,12 @@ mod tests {
         assert_eq!(fill.fill_id, "cad76f07-814e-4dc6-8478-7867407b6bff");
         assert_eq!(fill.symbol, "PI_XBTUSD");
         assert_eq!(fill.side, KrakenOrderSide::Buy);
-        assert_eq!(fill.size, 5000.0);
-        assert_eq!(fill.price, 27937.5);
+        assert_eq!(fill.size, dec!(5000));
+        assert_eq!(fill.price, dec!(27937.5));
         assert_eq!(fill.fill_type, KrakenFillType::Maker);
         assert_eq!(fill.fee_currency, Some("BTC".to_string()));
+        assert_eq!(response.fills[1].fill_type, KrakenFillType::Taker);
+        assert_eq!(response.fills[2].fill_type, KrakenFillType::Assignee);
     }
 
     #[rstest]
@@ -864,7 +914,7 @@ mod tests {
         let position = &response.open_positions[0];
         assert_eq!(position.side, KrakenPositionSide::Short);
         assert_eq!(position.symbol, "PI_XBTUSD");
-        assert_eq!(position.size, 8000.0);
+        assert_eq!(position.size, dec!(8000));
         assert!(position.unrealized_funding.is_some());
     }
 
@@ -879,12 +929,12 @@ mod tests {
         assert_eq!(response.order_book.asks.len(), 3);
 
         let best_bid = &response.order_book.bids[0];
-        assert_eq!(best_bid.price, 105900.0);
-        assert_eq!(best_bid.qty, 0.5);
+        assert_eq!(best_bid.price, dec!(105900));
+        assert_eq!(best_bid.qty, dec!(0.5));
 
         let best_ask = &response.order_book.asks[0];
-        assert_eq!(best_ask.price, 105950.0);
-        assert_eq!(best_ask.qty, 0.3);
+        assert_eq!(best_ask.price, dec!(105950));
+        assert_eq!(best_ask.qty, dec!(0.3));
     }
 
     #[rstest]
@@ -898,11 +948,20 @@ mod tests {
 
         let rate = &response.rates[0];
         assert_eq!(rate.timestamp, "2025-07-11T08:00:00.000Z");
-        assert_eq!(rate.relative_funding_rate, 0.0001);
-        assert_eq!(rate.funding_rate, 0.00005);
+        assert_eq!(rate.relative_funding_rate, dec!(0.0001));
+        assert_eq!(rate.funding_rate, dec!(0.00005));
 
         let negative_rate = &response.rates[1];
-        assert_eq!(negative_rate.relative_funding_rate, -0.00005);
+        assert_eq!(negative_rate.relative_funding_rate, dec!(-0.00005));
+    }
+
+    #[rstest]
+    fn test_parse_futures_orderbook_preserves_decimal_precision() {
+        let data = load_test_data("http_futures_orderbook_precision.json");
+        let level: FuturesOrderBookLevel = serde_json::from_str(&data).unwrap();
+
+        assert_eq!(level.price, dec!(0.1234567890123456789012345678));
+        assert_eq!(level.qty, dec!(123456789.123456789));
     }
 
     #[rstest]

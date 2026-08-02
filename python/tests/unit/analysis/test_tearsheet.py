@@ -203,6 +203,130 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
     assert captured["run_info"]["Backtest range"] == "1 days 00:00:00"
 
 
+def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
+    captured = {}
+
+    class DummyResult:
+        run_config_id = "run-001"
+        run_id = "R-001"
+        run_started = 1_577_836_800_000_000_000
+        run_finished = 1_577_836_801_000_000_000
+        backtest_start = 1_577_836_800_000_000_000
+        backtest_end = 1_577_923_200_000_000_000
+        elapsed_time_secs = 86_400.0
+        iterations = 2
+        total_events = 3
+        total_orders = 4
+        total_positions = 5
+        stats_pnls = {"USD": {"PnL (total)": 12.5}, "AUD": {"PnL (total)": 1.0}}
+        stats_returns = {"Sharpe Ratio (252 days)": 1.23}
+        stats_general = {"Long Ratio": 0.5}
+        returns_series = {
+            1_577_836_800_000_000_000: 0.01,
+            1_577_923_200_000_000_000: -0.02,
+        }
+        summary = {"account.SIM.id": "SIM-001"}
+
+    class DummyConfig:
+        id = "run-001"
+        dispose_on_completion = False
+
+    class DummyNode:
+        configs = [DummyConfig()]
+
+        @staticmethod
+        def get_engine_cache(run_config_id):
+            assert run_config_id == "run-001"
+            return "cache"
+
+        @staticmethod
+        def generate_account_report(run_config_id, account_id):
+            assert run_config_id == "run-001"
+            assert str(account_id) == "SIM-001"
+            return pd.DataFrame(
+                {
+                    "currency": ["USD", "USD", "AUD", "AUD"],
+                    "total": ["100.0", "110.0", "200.0", "220.0"],
+                },
+                index=pd.to_datetime(
+                    ["2020-01-01", "2020-01-02", "2020-01-01", "2020-01-02"],
+                    utc=True,
+                ),
+            )
+
+        @staticmethod
+        def generate_fills_report(run_config_id):
+            assert run_config_id == "run-001"
+            return pd.DataFrame()
+
+    def capture_tearsheet_from_stats(**kwargs):
+        captured.update(kwargs)
+        return "<html></html>"
+
+    monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
+    monkeypatch.setattr(tearsheet, "create_tearsheet_from_stats", capture_tearsheet_from_stats)
+
+    html = create_tearsheet(
+        DummyResult(),
+        node=DummyNode(),
+        output_path=None,
+        currency="USD",
+        config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+    )
+
+    assert html == "<html></html>"
+    assert captured["stats_pnls"] == {"USD": {"PnL (total)": 12.5}}
+    assert captured["account_info"] == {
+        "Starting balance (SIM, USD)": "100.0",
+        "Ending balance (SIM, USD)": "110.0",
+    }
+    assert captured["run_info"]["Elapsed time"] == "0 days 00:00:01"
+    assert captured["returns"].to_dict() == {
+        pd.Timestamp("2020-01-01T00:00:00Z"): 0.01,
+        pd.Timestamp("2020-01-02T00:00:00Z"): -0.02,
+    }
+    assert captured["engine"].cache == "cache"
+
+
+def test_create_tearsheet_rejects_disposed_node_state(monkeypatch):
+    class DummyResult:
+        run_config_id = "run-001"
+
+    class DummyConfig:
+        id = "run-001"
+        dispose_on_completion = True
+
+    class DummyNode:
+        configs = [DummyConfig()]
+
+    monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
+
+    with pytest.raises(ValueError, match="dispose_on_completion=False"):
+        create_tearsheet(
+            DummyResult(),
+            node=DummyNode(),
+            output_path=None,
+            config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+        )
+
+
+def test_result_account_info_filters_summary_balance_by_currency():
+    class DummyResult:
+        summary = {
+            "account.SIM.balance.USD.total": "110.0",
+            "account.SIM.balance.AUD.total": "220.0",
+        }
+
+    account_info = tearsheet._result_account_info(
+        DummyResult(),
+        node=None,
+        run_config_id=None,
+        currency="USD",
+    )
+
+    assert account_info == {"Ending balance (SIM, USD)": "110.0"}
+
+
 def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filter(monkeypatch):
     captured = []
 
@@ -552,13 +676,13 @@ def test_create_tearsheet_from_stats_exports_static_image(tmp_path):
             output_path=str(output_path),
             config=TearsheetConfig(charts=[TearsheetEquityChart()], height=400),
         )
-    except Exception as exc:
+    except Exception as e:
         # A datetime axis reaching Kaleido unconverted fails with a
         # "Type is not JSON serializable: Timestamp" TypeError; treat that as a
         # real regression, and anything else (e.g. no Chrome) as environmental.
-        if isinstance(exc, TypeError) or "JSON serializable" in str(exc):
+        if isinstance(e, TypeError) or "JSON serializable" in str(e):
             raise
-        pytest.skip(f"kaleido static export unavailable: {exc}")
+        pytest.skip(f"kaleido static export unavailable: {e}")
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
@@ -622,21 +746,176 @@ def _run_backtest_with_fills():
     return engine
 
 
+def _run_issue_3899_backtest():
+    from nautilus_trader.backtest import BacktestEngine
+    from nautilus_trader.backtest import BacktestEngineConfig
+    from nautilus_trader.model import AccountType
+    from nautilus_trader.model import Bar
+    from nautilus_trader.model import BarAggregation
+    from nautilus_trader.model import BarSpecification
+    from nautilus_trader.model import BarType
+    from nautilus_trader.model import Currency
+    from nautilus_trader.model import Equity
+    from nautilus_trader.model import InstrumentId
+    from nautilus_trader.model import Money
+    from nautilus_trader.model import OmsType
+    from nautilus_trader.model import OrderSide
+    from nautilus_trader.model import Price
+    from nautilus_trader.model import PriceType
+    from nautilus_trader.model import Quantity
+    from nautilus_trader.model import Symbol
+    from nautilus_trader.model import TimeInForce
+    from nautilus_trader.model import Venue
+    from nautilus_trader.trading import Strategy
+
+    class BuyHoldThenSellStrategy(Strategy):
+        def __init__(self):
+            super().__init__()
+            self.instrument = None
+            self.bar_type = None
+            self.day_index = 0
+
+        def on_start(self):
+            self.subscribe_bars(self.bar_type)
+
+        def on_bar(self, bar):
+            self.day_index += 1
+            if self.day_index not in {1, 7}:
+                return
+
+            order_side = OrderSide.BUY if self.day_index == 1 else OrderSide.SELL
+            order = self.order_factory.market(
+                instrument_id=self.instrument.id,
+                order_side=order_side,
+                quantity=Quantity.from_int(90),
+                time_in_force=TimeInForce.DAY,
+            )
+            self.submit_order(order)
+
+    usd = Currency.from_str("USD")
+    venue = Venue("XNAS")
+    instrument = Equity(
+        instrument_id=InstrumentId(Symbol("KO"), venue),
+        raw_symbol=Symbol("KO"),
+        currency=usd,
+        price_precision=2,
+        price_increment=Price.from_str("0.01"),
+        ts_event=0,
+        ts_init=0,
+    )
+    bar_type = BarType(
+        instrument.id,
+        BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
+    )
+    prices = [
+        ("100.00", "101.00", "99.00", "100.50"),
+        ("100.00", "104.00", "99.50", "103.50"),
+        ("103.00", "107.00", "102.00", "106.50"),
+        ("106.00", "111.00", "105.00", "110.50"),
+        ("110.00", "115.00", "109.00", "114.50"),
+        ("114.00", "119.00", "113.00", "118.50"),
+        ("118.00", "123.00", "117.00", "122.50"),
+        ("122.00", "126.00", "121.00", "125.00"),
+    ]
+    timestamps = pd.date_range("2024-01-02 21:00:00+00:00", periods=8, freq="B")
+    bars = [
+        Bar(
+            bar_type=bar_type,
+            open=Price.from_str(open_px),
+            high=Price.from_str(high_px),
+            low=Price.from_str(low_px),
+            close=Price.from_str(close_px),
+            volume=Quantity.from_int(1_000_000),
+            ts_event=timestamp.value,
+            ts_init=timestamp.value,
+        )
+        for timestamp, (open_px, high_px, low_px, close_px) in zip(timestamps, prices, strict=True)
+    ]
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        starting_balances=[Money(10_000.0, usd)],
+        base_currency=usd,
+    )
+    engine.add_instrument(instrument)
+    engine.add_data(bars)
+    strategy = BuyHoldThenSellStrategy()
+    strategy.instrument = instrument
+    strategy.bar_type = bar_type
+    engine.add_strategy(strategy)
+    engine.run()
+    return engine, timestamps[-1].value
+
+
+def test_issue_3899_equity_curve_tracks_open_position_mark_to_market():
+    engine, final_ts = _run_issue_3899_backtest()
+
+    try:
+        venue = engine.list_venues()[0]
+        account = engine.cache.account_for_venue(venue)
+        snapshots = engine.portfolio.snapshots(account.id)
+        returns = tearsheet._resolve_tearsheet_returns(engine=engine)
+        normalized_equity = (1 + returns).cumprod()
+        fills = engine.generate_fills_report()
+    finally:
+        engine.dispose()
+
+    assert fills["last_qty"].tolist() == ["90", "90"]
+    assert fills["last_px"].tolist() == ["100.50", "122.50"]
+    assert len(snapshots) >= 8
+    assert snapshots[-1].ts_event == final_ts
+    assert len(normalized_equity) >= 6
+    assert normalized_equity.nunique() >= 5
+    assert normalized_equity.iloc[-1] == pytest.approx(1.198)
+
+
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
 def test_create_tearsheet_end_to_end_real_engine():
     engine = _run_backtest_with_fills()
 
     try:
+        result = engine.get_result()
+        orders = engine.generate_orders_report()
+        order_fills = engine.generate_order_fills_report()
+        fills = engine.generate_fills_report()
+        positions = engine.generate_positions_report()
+        account = engine.generate_account_report(venue=engine.list_venues()[0])
         account_info = tearsheet._collect_account_info(engine=engine)
         returns = tearsheet._resolve_tearsheet_returns(engine=engine)
         html = create_tearsheet(engine, output_path=None, title="E2E Tearsheet")
     finally:
         engine.dispose()
 
+    assert result.iterations == 6
+    assert result.total_orders == 2
+    assert result.total_positions == 1
+    assert result.summary["orders.open"] == "0"
+    assert result.summary["positions.open"] == "0"
+    assert result.stats_pnls["USD"]["PnL (total)"] == pytest.approx(47.2)
+    assert result.stats_returns["Average (Return)"] == pytest.approx(returns.mean())
+    assert (1 + returns).prod() == pytest.approx(1.0000472)
+    assert result.stats_general == {"Long Ratio": 1.0}
+    assert len(orders) == result.total_orders
+    assert orders["status"].tolist() == ["FILLED", "FILLED"]
+    assert len(order_fills) == 2
+    assert order_fills["filled_qty"].tolist() == ["100000", "100000"]
+    assert len(fills) == 2
+    assert set(fills["order_side"]) == {"BUY", "SELL"}
+    assert fills["last_qty"].tolist() == ["100000", "100000"]
+    assert len(positions) == result.total_positions
+    assert positions["side"].tolist() == ["FLAT"]
+    assert positions["realized_pnl"].tolist() == ["47.20 USD"]
+    assert account["currency"].tolist() == ["USD", "USD", "USD"]
+    assert account["total"].tolist() == ["1000000.00", "999998.60", "1000047.20"]
     assert any(key.startswith("Starting balance") for key in account_info)
     assert isinstance(returns, pd.Series)
-    assert html is not None
     assert "plotly" in html.lower()
+    assert "PnL Statistics (USD)" in html
+    assert engine.cache.orders_open_count() == 0
+    assert engine.cache.positions_open_count() == 0
 
 
 def test_to_returns_series_normalizes_inputs():
@@ -671,6 +950,141 @@ def _account_report(rows):
         {"currency": [currency for _, currency, _ in rows], "total": [total for *_, total in rows]},
         index=pd.to_datetime([ts for ts, _, _ in rows], utc=True),
     )
+
+
+def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots():
+    class DummyCurrency:
+        code = "USD"
+
+    class DummyMoney:
+        currency = DummyCurrency()
+
+        def __init__(self, value):
+            self.value = value
+
+        def as_double(self):
+            return self.value
+
+    class DummySnapshot:
+        base_currency_equity = None
+
+        def __init__(self, value, ts_event, unpriced=False):
+            self.total_equity = [DummyMoney(value)]
+            self.ts_event = ts_event
+            self.unpriced_instruments = ["KO.XNAS"] if unpriced else []
+
+    class DummyAccount:
+        id = "SIM-001"
+
+    class DummyCache:
+        @staticmethod
+        def account_for_venue(venue):
+            return DummyAccount()
+
+    class DummyPortfolio:
+        @staticmethod
+        def snapshots(account_id):
+            return [
+                DummySnapshot(100.0, 1_577_880_000_000_000_000),
+                DummySnapshot(105.0, 1_577_901_600_000_000_000),
+                DummySnapshot(110.0, 1_577_923_200_000_000_000),
+                DummySnapshot(1.0, 1_578_009_600_000_000_000, unpriced=True),
+                DummySnapshot(121.0, 1_578_096_000_000_000_000),
+            ]
+
+    class DummyEngine:
+        cache = DummyCache()
+        portfolio = DummyPortfolio()
+
+        @staticmethod
+        def list_venues():
+            return ["SIM"]
+
+        @staticmethod
+        def generate_account_report(venue):
+            return _account_report(
+                [("2020-01-01", "USD", "100.0"), ("2020-01-02", "USD", "110.0")],
+            )
+
+    returns = tearsheet._resolve_tearsheet_returns(engine=DummyEngine())
+
+    assert returns.index.strftime("%Y-%m-%d").tolist() == ["2020-01-01", "2020-01-02", "2020-01-03"]
+    assert returns.tolist() == pytest.approx([0.10, 0.0, 0.10])
+
+
+def test_calculate_snapshot_returns_rejects_mixed_account_currencies():
+    class DummyCurrency:
+        def __init__(self, code):
+            self.code = code
+
+    class DummyMoney:
+        def __init__(self, value, currency):
+            self.value = value
+            self.currency = DummyCurrency(currency)
+
+        def as_double(self):
+            return self.value
+
+    class DummySnapshot:
+        base_currency_equity = None
+
+        def __init__(self, value, currency, ts_event):
+            self.total_equity = [DummyMoney(value, currency)]
+            self.ts_event = ts_event
+
+    class DummyAccount:
+        def __init__(self, account_id):
+            self.id = account_id
+
+    class DummyCache:
+        @staticmethod
+        def account_for_venue(venue):
+            return DummyAccount(venue)
+
+    class DummyPortfolio:
+        @staticmethod
+        def snapshots(account_id):
+            currency = "USD" if account_id == "SIM_USD" else "AUD"
+            return [
+                DummySnapshot(100.0, currency, 1_577_836_800_000_000_000),
+                DummySnapshot(110.0, currency, 1_577_923_200_000_000_000),
+            ]
+
+    class DummyEngine:
+        cache = DummyCache()
+        portfolio = DummyPortfolio()
+
+        @staticmethod
+        def list_venues():
+            return ["SIM_USD", "SIM_AUD"]
+
+    assert tearsheet._calculate_snapshot_returns(engine=DummyEngine()) is None
+
+
+def test_resolve_snapshot_equity_uses_requested_total_currency():
+    from nautilus_trader.model import Currency
+    from nautilus_trader.model import Money
+
+    class DummySnapshot:
+        base_currency_equity = Money(90.0, Currency.from_str("EUR"))
+        total_equity = [Money(100.0, Currency.from_str("USD"))]
+
+    assert tearsheet._resolve_snapshot_equity(DummySnapshot(), "USD") == (100.0, "USD")
+    assert tearsheet._resolve_snapshot_equity(DummySnapshot(), "AUD") is None
+
+
+def test_resolve_snapshot_equity_rejects_implicit_multi_currency_total():
+    from nautilus_trader.model import Currency
+    from nautilus_trader.model import Money
+
+    class DummySnapshot:
+        base_currency_equity = Money(100.0, Currency.from_str("USD"))
+        total_equity = [
+            Money(100.0, Currency.from_str("USD")),
+            Money(50.0, Currency.from_str("AUD")),
+        ]
+
+    assert tearsheet._resolve_snapshot_equity(DummySnapshot(), None) is None
 
 
 def test_calculate_account_returns_rejects_single_venue_mixed_currency():

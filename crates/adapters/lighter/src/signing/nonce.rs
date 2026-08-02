@@ -145,7 +145,7 @@ impl NonceManager {
         // with concurrent `next_nonce` on the same key: a racing allocator
         // may load a mixed pre/post-refresh pair. The CAS in `next_nonce`
         // detects only the `last_issued` mutation, so the documented
-        // contract is what makes refresh-vs-allocate safe — not these
+        // contract is what makes refresh-vs-allocate safe - not these
         // stores. Release ordering carries `baseline` to subsequent Acquire
         // loads after the caller serializes refresh quiescently.
         entry

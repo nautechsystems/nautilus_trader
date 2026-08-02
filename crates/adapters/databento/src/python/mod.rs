@@ -27,6 +27,8 @@ pub mod loader;
 pub mod types;
 
 #[cfg(feature = "live")]
+pub mod data;
+#[cfg(feature = "live")]
 pub mod factories;
 #[cfg(feature = "live")]
 pub mod live;
@@ -107,6 +109,8 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
+    #[cfg(feature = "live")]
+    m.add_class::<crate::data::DatabentoDataClient>()?;
     #[cfg(feature = "live")]
     m.add_class::<live::DatabentoLiveClient>()?;
     #[cfg(feature = "live")]

@@ -22,9 +22,9 @@
       "min_rate_per_hour": "-0.01",
       "static_interest_rate": "0.0"
     },
-    "quote_currency": "USDC",
-    "scheduled_activation": 0,
-    "scheduled_deactivation": 0,
+    "quote_currency": "USD",
+    "scheduled_activation": 1701840228,
+    "scheduled_deactivation": 9223372036854775807,
     "taker_fee_rate": "0.0005",
     "tick_size": "0.01"
   }

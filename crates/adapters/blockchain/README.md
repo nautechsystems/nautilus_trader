@@ -74,7 +74,7 @@ Running `target/debug/live_blocks_rpc`
 
 ```
 
-### Sync dex, tokens and pool for Uniswap V3 on Ethereum
+### Sync dex, tokens, and pool for Uniswap V3 on Ethereum
 
 This script demonstrates how to use the blockchain data client to discover and cache Uniswap V3 pools and their associated tokens. It queries the Ethereum blockchain for pool creation events emitted by the Uniswap V3 factory contract, retrieves token metadata (name, symbol, decimals) for each token in the pools via smart contract calls, and stores everything in a local Postgres database.
 

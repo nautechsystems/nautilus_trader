@@ -37,7 +37,7 @@ impl OrderPendingUpdate {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        account_id: AccountId,
+        account_id: Option<AccountId>,
         event_id: UUID4,
         ts_event: u64,
         ts_init: u64,
@@ -112,7 +112,7 @@ impl OrderPendingUpdate {
 
     #[getter]
     #[pyo3(name = "account_id")]
-    fn py_account_id(&self) -> AccountId {
+    fn py_account_id(&self) -> Option<AccountId> {
         self.account_id
     }
 
@@ -148,7 +148,10 @@ impl OrderPendingUpdate {
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
         dict.set_item("client_order_id", self.client_order_id.to_string())?;
-        dict.set_item("account_id", self.account_id.to_string())?;
+        match self.account_id {
+            Some(account_id) => dict.set_item("account_id", account_id.to_string())?,
+            None => dict.set_item("account_id", py.None())?,
+        }
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;

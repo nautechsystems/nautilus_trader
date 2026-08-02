@@ -15,6 +15,10 @@
 
 //! Integration tests for `OrderBook` using real market data.
 
+// The ITCH and Tardis Parquet datasets are published in 128-bit form only, so decoding them
+// under standard precision fails with a price `PrecisionMismatch`. Unlike the local fixtures
+// there is no 64-bit variant to select (see `get_nautilus_test_data_file_path`).
+#![cfg(feature = "high-precision")]
 #![allow(
     clippy::float_cmp,
     reason = "integration tests assert exact order book fixture outputs"

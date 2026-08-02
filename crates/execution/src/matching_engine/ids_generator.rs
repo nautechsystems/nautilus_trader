@@ -15,7 +15,7 @@
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
-use nautilus_common::cache::Cache;
+use nautilus_common::cache::{Cache, VenueOrderIdOwnershipError};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::OmsType,
@@ -92,13 +92,45 @@ impl IdsGenerator {
             return Ok(venue_order_id.to_owned());
         }
 
-        let venue_order_id = self.generate_venue_order_id();
-        self.cache.borrow_mut().add_venue_order_id(
-            &order.client_order_id(),
-            &venue_order_id,
-            false,
-        )?;
-        Ok(venue_order_id)
+        let client_order_id = order.client_order_id();
+        let mut conflict_count = 0_usize;
+
+        loop {
+            let venue_order_id = self.try_generate_venue_order_id()?;
+            let claim_result = self.cache.borrow_mut().add_venue_order_id(
+                &client_order_id,
+                &venue_order_id,
+                false,
+            );
+
+            match claim_result {
+                Ok(()) => {
+                    if conflict_count > 0 {
+                        log::info!(
+                            "Allocated venue order ID {venue_order_id} for {client_order_id} after \
+                             probing past {conflict_count} ownership conflicts"
+                        );
+                    }
+                    return Ok(venue_order_id);
+                }
+                Err(e) => {
+                    let Some(conflict) = e.downcast_ref::<VenueOrderIdOwnershipError>() else {
+                        return Err(e);
+                    };
+
+                    if conflict_count == 0 {
+                        log::error!(
+                            "Generated venue order ID conflict: candidate={}, existing_owner={}, \
+                             claimant={}",
+                            conflict.venue_order_id,
+                            conflict.existing_client_order_id,
+                            conflict.claimant_client_order_id,
+                        );
+                    }
+                    conflict_count += 1;
+                }
+            }
+        }
     }
 
     /// Retrieves or generates a position ID for the given order.
@@ -172,15 +204,28 @@ impl IdsGenerator {
         }
     }
 
+    /// Generates a venue order ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the deterministic order counter is exhausted.
     pub fn generate_venue_order_id(&mut self) -> VenueOrderId {
-        self.order_count += 1;
+        self.try_generate_venue_order_id()
+            .expect("Venue order ID counter exhausted")
+    }
+
+    fn try_generate_venue_order_id(&mut self) -> anyhow::Result<VenueOrderId> {
+        self.order_count = self
+            .order_count
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("Venue order ID counter exhausted"))?;
 
         if self.use_random_ids {
-            VenueOrderId::new(UUID4::new().to_string())
+            Ok(VenueOrderId::new(UUID4::new().to_string()))
         } else {
-            VenueOrderId::new(
+            Ok(VenueOrderId::new(
                 format!("{}-{}-{}", self.venue, self.raw_id, self.order_count).as_str(),
-            )
+            ))
         }
     }
 }
@@ -207,7 +252,7 @@ fn fnv1a_trade_id_hash(venue: Venue, raw_id: u32, ts_init_ns: u64) -> u64 {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::cache::Cache;
+    use nautilus_common::cache::{Cache, VenueOrderIdOwnershipError};
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{OmsType, OrderSide, OrderType},
@@ -219,7 +264,7 @@ mod tests {
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
-        orders::{Order, OrderAny, OrderTestBuilder},
+        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Price, Quantity},
     };
@@ -431,6 +476,99 @@ mod tests {
         // check if venue order id is cached again
         let venue_order_id3 = ids_generator.get_venue_order_id(&market_order_buy).unwrap();
         assert_eq!(venue_order_id3, VenueOrderId::from("BINANCE-1-1"));
+    }
+
+    #[rstest]
+    fn test_get_venue_order_id_probes_past_preclaimed_candidates(market_order_buy: OrderAny) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let owner_id = ClientOrderId::from("O-OWNER");
+
+        for suffix in 1..=3 {
+            cache
+                .borrow_mut()
+                .add_venue_order_id(
+                    &owner_id,
+                    &VenueOrderId::from(format!("BINANCE-1-{suffix}")),
+                    true,
+                )
+                .unwrap();
+        }
+        let mut ids_generator = get_ids_generator(Rc::clone(&cache), true, OmsType::Netting);
+
+        let venue_order_id = ids_generator.get_venue_order_id(&market_order_buy).unwrap();
+
+        assert_eq!(venue_order_id, VenueOrderId::from("BINANCE-1-4"));
+        assert_eq!(
+            cache
+                .borrow()
+                .venue_order_id(&market_order_buy.client_order_id()),
+            Some(&venue_order_id)
+        );
+
+        for suffix in 1..=3 {
+            assert_eq!(
+                cache
+                    .borrow()
+                    .client_order_id(&VenueOrderId::from(format!("BINANCE-1-{suffix}"))),
+                Some(&owner_id)
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_get_venue_order_id_fails_when_counter_is_exhausted(market_order_buy: OrderAny) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut ids_generator = get_ids_generator(Rc::clone(&cache), true, OmsType::Netting);
+        ids_generator.order_count = usize::MAX;
+
+        let error = ids_generator
+            .get_venue_order_id(&market_order_buy)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("counter exhausted"));
+        assert_eq!(
+            cache
+                .borrow()
+                .venue_order_id(&market_order_buy.client_order_id()),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_get_venue_order_id_does_not_replace_authoritative_id(mut market_order_buy: OrderAny) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let venue_order_id = VenueOrderId::from("V-AUTHORITATIVE");
+        let owner_id = ClientOrderId::from("O-OWNER");
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&owner_id, &venue_order_id, false)
+            .unwrap();
+        let accepted = TestOrderEventStubs::accepted(
+            &market_order_buy,
+            AccountId::from("ACCOUNT-001"),
+            venue_order_id,
+        );
+        market_order_buy.apply(accepted).unwrap();
+        let mut ids_generator = get_ids_generator(Rc::clone(&cache), true, OmsType::Netting);
+
+        let returned_id = ids_generator.get_venue_order_id(&market_order_buy).unwrap();
+        let error = cache
+            .borrow_mut()
+            .add_venue_order_id(&market_order_buy.client_order_id(), &returned_id, false)
+            .unwrap_err();
+
+        assert_eq!(returned_id, venue_order_id);
+        assert!(error.is::<VenueOrderIdOwnershipError>());
+        assert_eq!(
+            cache.borrow().client_order_id(&venue_order_id),
+            Some(&owner_id)
+        );
+        assert_eq!(
+            cache
+                .borrow()
+                .venue_order_id(&market_order_buy.client_order_id()),
+            None
+        );
     }
 
     fn build_ids_generator(venue: Venue, raw_id: u32) -> IdsGenerator {

@@ -287,7 +287,7 @@ cdef class RiskEngine(Component):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the max notional.
-        new_value : integer, float, string or Decimal
+        new_value : integer, float, string, or Decimal
             The max notional value to set.
 
         Raises

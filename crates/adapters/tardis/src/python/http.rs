@@ -15,10 +15,10 @@
 
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, enums::parse_enum, to_pyruntime_err},
+    python::{enums::parse_enum, to_pyruntime_err},
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::enums::TardisExchange,
@@ -62,6 +62,12 @@ impl TardisHttpClient {
     }
 
     /// Returns all Nautilus instrument definitions for the given `exchange`, and filter params.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching instrument info or parsing into domain types fails.
+    ///
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "instruments")]
     #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, available_offset=None, effective=None, ts_init=None))]
@@ -118,7 +124,7 @@ impl TardisHttpClient {
                 for inst in instruments {
                     py_instruments.push(instrument_any_to_pyobject(py, inst)?);
                 }
-                Ok(py_instruments.into_py_any_unwrap(py))
+                py_instruments.into_py_any(py)
             })
         })
     }

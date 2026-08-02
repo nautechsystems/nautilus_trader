@@ -31,8 +31,8 @@ use crate::{
     types::{AccountBalance, Currency, MarginBalance},
 };
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl AccountState {
     /// Represents an event which includes information on the state of the account.
     #[expect(clippy::too_many_arguments)]
@@ -85,6 +85,30 @@ impl AccountState {
     #[getter]
     fn margins(&self) -> Vec<MarginBalance> {
         self.margins.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_reported")]
+    fn py_is_reported(&self) -> bool {
+        self.is_reported
+    }
+
+    #[getter]
+    #[pyo3(name = "event_id")]
+    fn py_event_id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

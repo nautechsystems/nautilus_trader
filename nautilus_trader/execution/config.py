@@ -46,7 +46,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         Snapshots will be taken at every order state update (when events are applied).
     snapshot_positions : bool, default False
         If position state snapshot lists are persisted to a backing database.
-        Snapshots will be taken at position opened, changed and closed (when events are applied).
+        Snapshots will be taken at position opened, changed, and closed (when events are applied).
         To include the unrealized PnL in the snapshot then quotes for the positions instrument must
         be available in the cache.
     snapshot_positions_interval_secs : PositiveFloat, optional

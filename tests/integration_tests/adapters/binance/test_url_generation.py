@@ -17,6 +17,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.urls import get_futures_user_stream_url
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_usdm_ws_route_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
@@ -312,6 +313,65 @@ def test_get_ws_api_base_url_raises_for_coin_futures(account_type, environment):
 def test_get_ws_private_base_url(account_type, environment, is_us, expected):
     url = get_ws_private_base_url(account_type, environment=environment, is_us=is_us)
     assert url == expected
+
+
+@pytest.mark.parametrize(
+    ("account_type", "base_url", "expected"),
+    [
+        (
+            BinanceAccountType.USDT_FUTURES,
+            "wss://fstream.binance.com/private",
+            "wss://fstream.binance.com/private/ws?listenKey=redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "wss://dstream.binance.com",
+            "wss://dstream.binance.com/ws/redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "wss://dstream.binancefuture.com",
+            "wss://dstream.binancefuture.com/ws/redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "wss://demo-dstream.binance.com",
+            "wss://demo-dstream.binance.com/ws/redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "wss://custom.example/ws/",
+            "wss://custom.example/ws/redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "wss://custom.example",
+            "wss://custom.example/ws/redacted",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            "ws://127.0.0.1:1234/ws-inject",
+            "ws://127.0.0.1:1234/ws-inject?listenKey=redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "ws://127.0.0.1:1234/ws-inject",
+            "ws://127.0.0.1:1234/ws-inject/redacted",
+        ),
+    ],
+)
+def test_get_futures_user_stream_url(account_type, base_url, expected):
+    url = get_futures_user_stream_url(account_type, base_url, "redacted")
+    assert url == expected
+
+
+def test_get_futures_user_stream_url_rejects_non_futures_account_type():
+    with pytest.raises(ValueError, match="requires a Futures account type"):
+        get_futures_user_stream_url(
+            BinanceAccountType.SPOT,
+            "wss://stream.binance.com",
+            "redacted",
+        )
 
 
 @pytest.mark.parametrize(

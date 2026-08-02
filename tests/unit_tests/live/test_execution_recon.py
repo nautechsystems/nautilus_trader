@@ -4511,7 +4511,7 @@ async def test_position_check_stale_retries_pruned_when_position_closed(
     stale_key = (AUDUSD_SIM.id, TestIdStubs.account_id())
     live_exec_engine._position_recon_retries[stale_key] = 1  # Already maxed
 
-    # No open positions in cache, no venue reports — instrument disappeared
+    # No open positions in cache, no venue reports - instrument disappeared
     # Stub venue query to return nothing
     async def empty_reports(cmd):
         return []
@@ -4631,6 +4631,75 @@ async def test_position_check_activity_throttle_independent_per_account(
     )
 
     # Assert - B's reconciliation runs even though A had recent activity
+    assert len(queries) == 1
+
+
+@pytest.mark.asyncio
+async def test_position_activity_stamped_from_receipt_time_for_venue_ahead_fill(
+    live_exec_engine,
+    exec_client,
+    cache,
+):
+    # Arrange
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.generate_missing_orders = False
+    live_exec_engine._position_check_threshold_ns = 0
+
+    account = AccountId("SIM-A")
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM, order_side=OrderSide.BUY)
+    order.apply(TestEventStubs.order_submitted(order, account_id=account))
+    order.apply(TestEventStubs.order_accepted(order, account_id=account))
+    cache.add_order(order, position_id=None)
+
+    venue_ahead_ns = live_exec_engine._clock.timestamp_ns() + 900 * 86_400 * 1_000_000_000
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        account_id=account,
+        trade_id=TradeId("T-AXIS-1"),
+        last_qty=Quantity.from_int(1000),
+        last_px=Price.from_str("1.00000"),
+        ts_event=venue_ahead_ns,
+    )
+
+    # Act
+    live_exec_engine._handle_event_with_tracking(fill)
+
+    # Assert - stamp is on the local clock axis
+    stamp = live_exec_engine._position_local_activity_ns[(AUDUSD_SIM.id, account)]
+    assert stamp <= live_exec_engine._clock.timestamp_ns()
+    assert stamp != venue_ahead_ns
+
+    # A cached position with no venue report: a genuine discrepancy
+    order_b = TestExecStubs.limit_order(instrument=AUDUSD_SIM, order_side=OrderSide.BUY)
+    fill_b = TestEventStubs.order_filled(
+        order_b,
+        instrument=AUDUSD_SIM,
+        account_id=account,
+        trade_id=TradeId("T-AXIS-2"),
+        last_qty=Quantity.from_int(1000),
+        last_px=Price.from_str("1.00000"),
+        position_id=PositionId("P-AXIS-B"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill_b)
+    cache.add_position(position, OmsType.HEDGING)
+
+    queries = []
+
+    async def counting_query(instrument_id, clients):
+        queries.append(instrument_id)
+        return [], False
+
+    live_exec_engine._query_and_find_missing_fills = counting_query
+
+    # Act - zero threshold: a receipt-time stamp is already expired, a venue-axis
+    # stamp would make the delta negative and suppress forever
+    await live_exec_engine._process_cached_position_discrepancies(
+        {(AUDUSD_SIM.id, account): [position]},
+        {},
+    )
+
+    # Assert - the grace does not suppress the discrepancy query
     assert len(queries) == 1
 
 

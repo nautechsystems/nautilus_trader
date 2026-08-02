@@ -384,6 +384,7 @@ impl OrderEventFactory {
             false,
             venue_position_id,
             commission,
+            None,
         );
         OrderEventAny::Filled(event)
     }

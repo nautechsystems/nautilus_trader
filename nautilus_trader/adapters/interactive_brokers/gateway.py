@@ -77,7 +77,7 @@ class DockerizedIBGateway:
                 "Docker required for Gateway, install via `pip install docker`",
             ) from e
 
-        self._docker = docker.from_env()
+        self._docker = docker.from_env(use_context=False)
         self._container = None
 
     def __repr__(self):

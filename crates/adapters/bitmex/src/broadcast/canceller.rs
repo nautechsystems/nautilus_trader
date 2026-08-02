@@ -966,6 +966,7 @@ mod tests {
             ts_init: 0.into(),
             client_order_id: None,
             avg_px: None,
+            activation_price: None,
             trigger_price: None,
             trigger_type: None,
             contingency_type: ContingencyType::NoContingency,

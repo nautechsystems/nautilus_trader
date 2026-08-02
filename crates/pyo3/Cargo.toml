@@ -83,6 +83,7 @@ ffi = [
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
+  "nautilus-testkit/high-precision",
   "nautilus-betfair?/high-precision",
   "nautilus-binance/high-precision",
   "nautilus-bitmex/high-precision",
@@ -101,6 +102,7 @@ high-precision = [
   "nautilus-tardis/high-precision",
 ]
 hypersync = ["defi", "nautilus-blockchain/hypersync"]
+mimalloc = ["dep:mimalloc"]
 postgres = ["nautilus-infrastructure/postgres"]
 redis = ["nautilus-infrastructure/redis"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
@@ -133,7 +135,10 @@ nautilus-persistence = { workspace = true, features = ["python"] }
 nautilus-portfolio = { workspace = true, features = ["python"] }
 nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
-nautilus-testkit = { workspace = true, features = ["python"] }
+nautilus-system = { workspace = true, features = ["python"] }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "python",
+] }
 nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
@@ -159,6 +164,10 @@ nautilus-polymarket = { workspace = true, features = ["python"] }
 nautilus-sandbox = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 
+# local_dynamic_tls avoids exhausting static TLS space when the extension is dlopen'd
+mimalloc = { workspace = true, features = [
+  "local_dynamic_tls",
+], optional = true }
 pyo3 = { workspace = true }
 pyo3-stub-gen = { workspace = true }
 

@@ -23,6 +23,7 @@ pub mod dst;
 pub mod listener;
 pub mod runner;
 pub mod runtime;
+pub mod task;
 pub mod timer;
 
 pub use clock::LiveClock;

@@ -70,7 +70,7 @@ inside the same event-driven runtime.
 
 ## Prerequisites
 
-- A Rust toolchain (MSRV 1.96.0 or newer).
+- A Rust toolchain (MSRV 1.97.1 or newer).
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
 - Python 3.12+ to regenerate the rendered panels.
@@ -137,10 +137,10 @@ your own project.
 perpetual to `NVDA-PERP.LIGHTER`. This pairs a licensed Databento signal with a
 Lighter traded market:
 
-| Role              | Instrument ID       | Source    | Notes                                      |
-| ----------------- | ------------------- | --------- | ------------------------------------------ |
-| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.       |
-| Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter.      |
+| Role              | Instrument ID       | Source    | Notes                                 |
+| ----------------- | ------------------- | --------- | ------------------------------------- |
+| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.  |
+| Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter. |
 
 Subscribing to `NVDA.EQUS` requests top-of-book (`mbp-1`) quotes for `NVDA` from
 Databento's `EQUS.MINI` dataset by default, delivered as a single `QuoteTick`

@@ -31,6 +31,32 @@ use crate::examples::{
     },
 };
 
+macro_rules! impl_strategy_config_base_getters {
+    ($type:ty) => {
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
+        #[pymethods]
+        impl $type {
+            #[getter]
+            #[pyo3(name = "strategy_id")]
+            fn py_strategy_id(&self) -> Option<StrategyId> {
+                self.base.strategy_id
+            }
+
+            #[getter]
+            #[pyo3(name = "order_id_tag")]
+            fn py_order_id_tag(&self) -> Option<&str> {
+                self.base.order_id_tag.as_deref()
+            }
+        }
+    };
+}
+
+impl_strategy_config_base_getters!(CompositeMarketMakerConfig);
+impl_strategy_config_base_getters!(GridMarketMakerConfig);
+impl_strategy_config_base_getters!(EmaCrossConfig);
+impl_strategy_config_base_getters!(DeltaNeutralVolConfig);
+impl_strategy_config_base_getters!(HurstVpinDirectionalConfig);
+
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CompositeMarketMakerConfig {
@@ -446,6 +472,12 @@ impl DeltaNeutralVolConfig {
     #[getter]
     fn entry_premium_offset_ticks(&self) -> Option<i32> {
         self.entry_premium_offset_ticks
+    }
+
+    #[getter]
+    #[pyo3(name = "iv_param_key")]
+    fn py_iv_param_key(&self) -> &str {
+        &self.iv_param_key
     }
 }
 

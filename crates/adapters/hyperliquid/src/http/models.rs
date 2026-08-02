@@ -17,7 +17,7 @@ use std::fmt::Display;
 
 use alloy_primitives::{Address, keccak256};
 use nautilus_core::hex;
-use nautilus_model::identifiers::ClientOrderId;
+use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
@@ -26,7 +26,7 @@ use crate::common::{
     enums::{
         HyperliquidFillDirection, HyperliquidLeverageType,
         HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidPositionType,
-        HyperliquidSide,
+        HyperliquidSide, HyperliquidTimeInForce,
     },
     parse::{
         deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
@@ -557,10 +557,14 @@ pub struct HyperliquidRecentTrade {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub sz: Decimal,
+    /// Hyperliquid trade hash.
+    pub hash: String,
     /// Trade timestamp in milliseconds.
     pub time: u64,
     /// Venue trade identifier.
     pub tid: u64,
+    /// Buyer and seller wallet addresses, in that order.
+    pub users: [String; 2],
 }
 
 /// Represents an individual fill from user fills.
@@ -685,6 +689,22 @@ pub struct HyperliquidOrderInfo {
     /// Optional client order ID (hex representation of the venue CLOID).
     #[serde(default)]
     pub cloid: Option<String>,
+    /// Time in force used by the order.
+    #[serde(default)]
+    pub tif: Option<HyperliquidTimeInForce>,
+    /// Whether the order reduces an existing position.
+    #[serde(rename = "reduceOnly", default)]
+    pub reduce_only: Option<bool>,
+    /// Trigger price for conditional orders.
+    #[serde(
+        rename = "triggerPx",
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub trigger_px: Option<Decimal>,
+    /// Venue order type label.
+    #[serde(rename = "orderType", default)]
+    pub order_type: Option<String>,
 }
 
 /// ECC signature components for Hyperliquid exchange requests.
@@ -1061,6 +1081,53 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cancel_action_serializes_fast_flag() {
+        let action = HyperliquidExecAction::Cancel {
+            cancels: vec![HyperliquidExecCancelOrderRequest {
+                asset: 0,
+                oid: 12345,
+            }],
+            fast: Some(true),
+        };
+
+        let value = serde_json::to_value(action).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "type": "cancel",
+                "cancels": [{"a": 0, "o": 12345}],
+                "f": true,
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_by_cloid_action_serializes_fast_flag() {
+        let action = HyperliquidExecAction::CancelByCloid {
+            cancels: vec![HyperliquidExecCancelByCloidRequest {
+                asset: 0,
+                cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
+            }],
+            fast: Some(true),
+        };
+
+        let value = serde_json::to_value(action).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "type": "cancelByCloid",
+                "cancels": [{
+                    "asset": 0,
+                    "cloid": "0x00000000000000000000000000000000",
+                }],
+                "f": true,
+            })
+        );
+    }
+
+    #[rstest]
     fn test_order_response_normal_tpsl_with_waiting_children() {
         // `normalTpsl` bracket: the entry rests with an oid, while the SL/TP
         // children come back as bare strings until the parent fills or the
@@ -1231,6 +1298,44 @@ mod tests {
             })
         );
     }
+
+    #[rstest]
+    fn test_modify_target_serializes_numeric_oid() {
+        let request = modify_request_with_target(HyperliquidExecModifyTarget::Oid(12345));
+        let value: serde_json::Value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(value["oid"], json!(12345));
+    }
+
+    #[rstest]
+    fn test_modify_target_serializes_cloid() {
+        let cloid = Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap();
+        let request = modify_request_with_target(HyperliquidExecModifyTarget::Cloid(cloid));
+        let value: serde_json::Value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(value["oid"], json!("0x1234567890abcdef1234567890abcdef"));
+    }
+
+    fn modify_request_with_target(
+        oid: HyperliquidExecModifyTarget,
+    ) -> HyperliquidExecModifyOrderRequest {
+        HyperliquidExecModifyOrderRequest {
+            oid,
+            order: HyperliquidExecPlaceOrderRequest {
+                asset: 0,
+                is_buy: true,
+                price: dec!(51000),
+                size: dec!(0.2),
+                reduce_only: false,
+                kind: HyperliquidExecOrderKind::Limit {
+                    limit: HyperliquidExecLimitParams {
+                        tif: HyperliquidExecTif::Gtc,
+                    },
+                },
+                cloid: None,
+            },
+        }
+    }
 }
 
 /// Time-in-force for limit orders in exchange endpoint.
@@ -1388,14 +1493,52 @@ pub struct HyperliquidExecCancelByCloidRequest {
     pub cloid: Cloid,
 }
 
+/// Target of a modify request.
+///
+/// Hyperliquid names this field `oid`, but accepts either a numeric venue
+/// order ID or a CLOID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HyperliquidExecModifyTarget {
+    /// Numeric venue order ID.
+    Oid(OrderId),
+    /// CLOID.
+    Cloid(Cloid),
+}
+
+impl HyperliquidExecModifyTarget {
+    /// Creates a numeric modify target from a Nautilus venue order ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the venue order ID is not a numeric Hyperliquid order ID.
+    pub fn from_venue_order_id(
+        venue_order_id: &VenueOrderId,
+    ) -> Result<Self, std::num::ParseIntError> {
+        venue_order_id.as_str().parse::<OrderId>().map(Self::Oid)
+    }
+}
+
+impl From<OrderId> for HyperliquidExecModifyTarget {
+    fn from(value: OrderId) -> Self {
+        Self::Oid(value)
+    }
+}
+
+impl From<Cloid> for HyperliquidExecModifyTarget {
+    fn from(value: Cloid) -> Self {
+        Self::Cloid(value)
+    }
+}
+
 /// Modify specification for modifying existing orders via exchange endpoint.
 ///
 /// The HL API requires the full order spec (same as a place order) plus
-/// the venue order ID to modify.
+/// the venue order ID or CLOID to modify.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidExecModifyOrderRequest {
-    /// Venue order ID to modify.
-    pub oid: OrderId,
+    /// Venue order ID or CLOID to modify.
+    pub oid: HyperliquidExecModifyTarget,
     /// Full replacement order specification.
     pub order: HyperliquidExecPlaceOrderRequest,
 }
@@ -1542,6 +1685,9 @@ pub enum HyperliquidExecAction {
     Cancel {
         /// Orders to cancel.
         cancels: Vec<HyperliquidExecCancelOrderRequest>,
+        /// Optional fast-cancel flag.
+        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        fast: Option<bool>,
     },
 
     /// Cancel orders by client order ID.
@@ -1549,6 +1695,9 @@ pub enum HyperliquidExecAction {
     CancelByCloid {
         /// Orders to cancel by CLOID.
         cancels: Vec<HyperliquidExecCancelByCloidRequest>,
+        /// Optional fast-cancel flag.
+        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        fast: Option<bool>,
     },
 
     /// Modify a single order.

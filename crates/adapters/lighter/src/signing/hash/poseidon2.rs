@@ -322,7 +322,9 @@ mod tests {
             bytes.len(),
         );
         bytes
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .map(|chunk| {
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(chunk);
@@ -511,7 +513,7 @@ mod tests {
             prop_assert_eq!(s1, s2);
         }
 
-        /// `permute` is injective on distinct states (probabilistic — over
+        /// `permute` is injective on distinct states (probabilistic - over
         /// any pair of distinct inputs, outputs almost surely differ).
         #[rstest]
         fn prop_permute_injective_on_pairs(

@@ -46,6 +46,15 @@ def test_account_balance_equality():
     assert b1 == b2
 
 
+def test_account_balance_properties():
+    balance = _account_balance()
+
+    assert balance.total == Money(1525000.00, USD)
+    assert balance.locked == Money(25000.00, USD)
+    assert balance.free == Money(1500000.00, USD)
+    assert balance.currency == USD
+
+
 def test_account_balance_display():
     bal = _account_balance()
     expected = "AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)"
@@ -70,6 +79,15 @@ def test_margin_balance_equality():
     m1 = _margin_balance()
     m2 = _margin_balance()
     assert m1 == m2
+
+
+def test_margin_balance_properties():
+    balance = _margin_balance()
+
+    assert balance.initial == Money(1.00, USD)
+    assert balance.maintenance == Money(1.00, USD)
+    assert balance.currency == USD
+    assert balance.instrument_id == InstrumentId.from_str("AUD/USD.SIM")
 
 
 def test_margin_balance_display():

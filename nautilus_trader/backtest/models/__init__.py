@@ -45,7 +45,6 @@ __all__ = [
     "LimitOrderPartialFillModel",
     "MakerTakerFeeModel",
     "MarginModel",
-    "MarginModel",
     "MarketHoursFillModel",
     "OneTickSlippageFillModel",
     "PerContractFeeModel",

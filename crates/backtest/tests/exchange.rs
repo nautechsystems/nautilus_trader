@@ -17,24 +17,34 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     str::FromStr,
+    sync::Mutex,
 };
 
+use ahash::AHashMap;
+use chrono::TimeZone;
+use chrono_tz::US::Eastern;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_backtest::{
     config::SimulatedVenueConfig,
     exchange::SimulatedExchange,
     execution_client::BacktestExecutionClient,
-    modules::{ExchangeContext, SimulationModule},
+    modules::{
+        AccountAdjustmentError, AccountAdjustmentOutcome, ExchangeContext,
+        FXRolloverInterestModule, SimulationModule, SimulationModuleResult,
+        fx_rollover::InterestRateRecord,
+    },
 };
 use nautilus_common::{
     cache::Cache,
     clock::TestClock,
-    messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
+    messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
     msgbus::{
         self, MessagingSwitchboard,
         stubs::{
             TypedIntoMessageSavingHandler, get_any_saving_handler,
             get_typed_into_message_saving_handler, get_typed_message_saving_handler,
         },
+        typed_handler::TypedHandler,
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -43,7 +53,7 @@ use nautilus_execution::models::{
     latency::StaticLatencyModel,
 };
 use nautilus_model::{
-    accounts::{AccountAny, CashAccount, MarginAccount},
+    accounts::{Account, AccountAny, CashAccount, MarginAccount},
     data::{
         Bar, BarType, BookOrder, Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate,
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
@@ -58,16 +68,19 @@ use nautilus_model::{
         order::spec::OrderPendingUpdateSpec,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, Venue,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
+        TradeId, TraderId, Venue,
     },
     instruments::{
-        CryptoOption, CryptoPerpetual, Instrument, InstrumentAny, OptionContract,
-        stubs::crypto_perpetual_ethusdt,
+        CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
+        stubs::{audusd_sim, crypto_perpetual_ethusdt, gbpusd_sim, xbtusd_bitmex},
     },
-    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
+    },
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -79,16 +92,26 @@ fn get_exchange(
     book_type: BookType,
     cache: Option<Rc<RefCell<Cache>>>,
 ) -> Rc<RefCell<SimulatedExchange>> {
+    get_exchange_with_oms(venue, OmsType::Netting, account_type, book_type, cache)
+}
+
+fn get_exchange_with_oms(
+    venue: Venue,
+    oms_type: OmsType,
+    account_type: AccountType,
+    book_type: BookType,
+    cache: Option<Rc<RefCell<Cache>>>,
+) -> Rc<RefCell<SimulatedExchange>> {
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
     let clock = Rc::new(RefCell::new(TestClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
-        .oms_type(OmsType::Netting)
+        .oms_type(oms_type)
         .account_type(account_type)
         .book_type(book_type)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -168,6 +191,442 @@ fn test_cash_account_trading_futures_or_perpetuals(crypto_perpetual_ethusdt: Cry
     );
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     exchange.borrow_mut().add_instrument(instrument).unwrap();
+}
+
+#[rstest]
+fn test_matching_engine_iteration_order_is_stable_across_rebuilds(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let expected = vec![first_instrument.id(), second_instrument.id()];
+
+    for _ in 0..32 {
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+        );
+        exchange
+            .borrow_mut()
+            .add_instrument(first_instrument.clone())
+            .unwrap();
+        exchange
+            .borrow_mut()
+            .add_instrument(second_instrument.clone())
+            .unwrap();
+
+        let actual = exchange
+            .borrow()
+            .get_matching_engines()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_liquidation_closes_all_breached_currencies_in_one_pass(
+    audusd_sim: CurrencyPair,
+    #[case] reverse_balances: bool,
+) {
+    let usd = Currency::USD();
+    let jpy = Currency::JPY();
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let mut usdjpy = audusd_sim;
+    usdjpy.id = InstrumentId::from("USD/JPY.SIM");
+    usdjpy.raw_symbol = Symbol::from("USD/JPY");
+    usdjpy.base_currency = usd;
+    usdjpy.quote_currency = jpy;
+    let usdjpy = InstrumentAny::CurrencyPair(usdjpy);
+    let mut balances = vec![
+        AccountBalance::new(Money::new(1.0, usd), Money::zero(usd), Money::new(1.0, usd)),
+        AccountBalance::new(Money::new(1.0, jpy), Money::zero(jpy), Money::new(1.0, jpy)),
+    ];
+
+    if reverse_balances {
+        balances.reverse();
+    }
+
+    let account = MarginAccount::new(
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            balances.clone(),
+            vec![
+                MarginBalance::new(
+                    Money::new(10.0, usd),
+                    Money::new(10.0, usd),
+                    Some(audusd.id()),
+                ),
+                MarginBalance::new(
+                    Money::new(10.0, jpy),
+                    Money::new(10.0, jpy),
+                    Some(usdjpy.id()),
+                ),
+            ],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        false,
+    );
+    let mut raw_cache = Cache::default();
+    raw_cache.add_account(AccountAny::Margin(account)).unwrap();
+    add_fx_position(
+        &mut raw_cache,
+        &audusd,
+        "T-LIQUIDATION-USD",
+        "100000",
+        "2.00000",
+    );
+    add_fx_position(
+        &mut raw_cache,
+        &usdjpy,
+        "T-LIQUIDATION-JPY",
+        "100000",
+        "200.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(
+            balances
+                .iter()
+                .map(|balance| balance.total)
+                .collect::<Vec<_>>(),
+        )
+        .default_leverage(Decimal::ONE)
+        .liquidation_enabled(true)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .build()
+        .unwrap();
+    let exchange = Rc::new(RefCell::new(
+        SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+    ));
+    let client = BacktestExecutionClient::new(
+        TraderId::test_default(),
+        AccountId::from("SIM-001"),
+        &exchange,
+        cache.clone(),
+        clock,
+        None,
+        None,
+    );
+    exchange.borrow_mut().register_client(Rc::new(client));
+    exchange
+        .borrow_mut()
+        .add_instrument(audusd.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(usdjpy.clone())
+        .unwrap();
+    add_fx_quote(&exchange, &cache, audusd.id(), "1.00000", "1.00010");
+    add_fx_quote(&exchange, &cache, usdjpy.id(), "100.00000", "100.00010");
+    let (handler, saving_handler) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+
+    {
+        let cache = cache.borrow();
+        let account = cache.account_for_venue_owned(&Venue::new("SIM")).unwrap();
+        let AccountAny::Margin(account) = account else {
+            panic!("expected margin account");
+        };
+        let currencies = account.currencies();
+        assert_eq!(currencies.len(), 2, "{currencies:?}");
+        assert_eq!(account.total_maintenance_margin(usd), Money::new(10.0, usd));
+        assert_eq!(account.total_maintenance_margin(jpy), Money::new(10.0, jpy));
+        assert_eq!(
+            cache
+                .positions_open(Some(&Venue::new("SIM")), None, None, None, None)
+                .len(),
+            2
+        );
+
+        for position in cache.positions_open(Some(&Venue::new("SIM")), None, None, None, None) {
+            assert!(cache.calculate_unrealized_pnl(&position).unwrap().as_f64() < 0.0);
+        }
+    }
+
+    exchange
+        .borrow_mut()
+        .process_liquidations(UnixNanos::from(3));
+
+    let mut liquidated = saving_handler
+        .get_messages()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id.as_str().starts_with("LIQUIDATION-") =>
+            {
+                Some(fill.instrument_id)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    liquidated.sort_unstable();
+    let mut expected = vec![audusd.id(), usdjpy.id()];
+    expected.sort_unstable();
+    assert_eq!(liquidated, expected);
+}
+
+#[rstest]
+fn test_append_only_matching_engine_raw_ids_start_at_one_and_increment(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(second_instrument.clone())
+        .unwrap();
+
+    let exchange = exchange.borrow();
+    assert_eq!(
+        exchange
+            .get_matching_engine(&first_instrument.id())
+            .unwrap()
+            .raw_id,
+        1
+    );
+    assert_eq!(
+        exchange
+            .get_matching_engine(&second_instrument.id())
+            .unwrap()
+            .raw_id,
+        2
+    );
+}
+
+#[rstest]
+fn test_readded_instrument_does_not_collide_generated_fill_ids(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let saving_handler = register_order_event_saving_handler();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let exchange = get_exchange_with_oms(
+        Venue::new("BINANCE"),
+        OmsType::Hedging,
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(second_instrument.clone())
+        .unwrap();
+
+    let fill_timestamp = UnixNanos::from(2);
+    exchange.borrow_mut().process_quote_tick(&QuoteTick::new(
+        first_instrument.id(),
+        Price::from("1000.00"),
+        Price::from("1001.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    let pre_readd_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(first_instrument.id())
+        .client_order_id(ClientOrderId::from("O-READD-PRE"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .build();
+    submit_matching_option_limit(&exchange, &cache, &pre_readd_order, fill_timestamp);
+
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+
+    for instrument in [&first_instrument, &second_instrument] {
+        exchange.borrow_mut().process_quote_tick(&QuoteTick::new(
+            instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ));
+    }
+
+    let first_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(first_instrument.id())
+        .client_order_id(ClientOrderId::from("O-READD-FIRST"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .build();
+    let second_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(second_instrument.id())
+        .client_order_id(ClientOrderId::from("O-READD-SECOND"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1001.00"))
+        .build();
+
+    submit_matching_option_limit(&exchange, &cache, &first_order, fill_timestamp);
+    submit_matching_option_limit(&exchange, &cache, &second_order, fill_timestamp);
+
+    let messages = saving_handler.get_messages();
+    let pre_readd_fill = matching_option_fill(&messages, pre_readd_order.client_order_id());
+    let first_fill = matching_option_fill(&messages, first_order.client_order_id());
+    let second_fill = matching_option_fill(&messages, second_order.client_order_id());
+    assert_eq!(pre_readd_fill.ts_event, first_fill.ts_event);
+    assert_ne!(pre_readd_fill.venue_order_id, first_fill.venue_order_id);
+    assert_ne!(pre_readd_fill.trade_id, first_fill.trade_id);
+    assert_eq!(first_fill.ts_event, second_fill.ts_event);
+    assert_ne!(first_fill.venue_order_id, second_fill.venue_order_id);
+    assert_ne!(first_fill.position_id, second_fill.position_id);
+    assert_ne!(first_fill.trade_id, second_fill.trade_id);
+}
+
+#[rstest]
+fn test_same_timestamp_fills_follow_matching_engine_registration_order(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let saving_handler = register_order_event_saving_handler();
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let instruments = [&first_instrument, &second_instrument];
+    let expected = vec![first_instrument.id(), second_instrument.id()];
+
+    for rebuild in 0..32 {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            Some(cache.clone()),
+        );
+
+        for (index, instrument) in instruments.iter().enumerate() {
+            exchange
+                .borrow_mut()
+                .add_instrument((*instrument).clone())
+                .unwrap();
+
+            let initial_quote = QuoteTick::new(
+                instrument.id(),
+                Price::from("1000.00"),
+                Price::from("1001.00"),
+                Quantity::from("10.000"),
+                Quantity::from("10.000"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            );
+            exchange.borrow_mut().process_quote_tick(&initial_quote);
+
+            let client_order_id = ClientOrderId::from(format!("O-{rebuild}-{index}").as_str());
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(client_order_id)
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("1.000"))
+                .price(Price::from("1000.00"))
+                .build();
+            submit_matching_option_limit(&exchange, &cache, &order, UnixNanos::from(2));
+
+            let closed = InstrumentStatus::new(
+                instrument.id(),
+                MarketStatusAction::Close,
+                UnixNanos::from(3),
+                UnixNanos::from(3),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            exchange.borrow_mut().process_instrument_status(closed);
+
+            let crossing_quote = QuoteTick::new(
+                instrument.id(),
+                Price::from("998.00"),
+                Price::from("999.00"),
+                Quantity::from("10.000"),
+                Quantity::from("10.000"),
+                UnixNanos::from(100),
+                UnixNanos::from(100),
+            );
+            exchange.borrow_mut().process_quote_tick(&crossing_quote);
+
+            let reopened = InstrumentStatus::new(
+                instrument.id(),
+                MarketStatusAction::Trading,
+                UnixNanos::from(100),
+                UnixNanos::from(100),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            exchange.borrow_mut().process_instrument_status(reopened);
+        }
+
+        saving_handler.clear();
+        exchange
+            .borrow_mut()
+            .iterate_matching_engines(UnixNanos::from(100));
+
+        let actual = saving_handler
+            .get_messages()
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill.instrument_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
 }
 
 #[rstest]
@@ -346,6 +805,134 @@ fn test_option_limit_order_crossing_bbo_fills_as_taker(
             .borrow()
             .get_open_orders(Some(instrument.id()))
             .is_empty()
+    );
+}
+
+#[rstest]
+fn test_submit_order_list_routes_mixed_instrument_legs_to_own_matching_engine(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let saving_handler = register_order_event_saving_handler();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    let eth_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut btcusdt = crypto_perpetual_ethusdt;
+    btcusdt.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    btcusdt.raw_symbol = Symbol::from("BTCUSDT");
+    btcusdt.base_currency = Currency::from("BTC");
+    let btc_instrument = InstrumentAny::CryptoPerpetual(btcusdt);
+
+    exchange
+        .borrow_mut()
+        .add_instrument(eth_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(btc_instrument.clone())
+        .unwrap();
+
+    let eth_quote = QuoteTick::new(
+        eth_instrument.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let btc_quote = QuoteTick::new(
+        btc_instrument.id(),
+        Price::from("200.00"),
+        Price::from("201.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    exchange.borrow_mut().process_quote_tick(&eth_quote);
+    exchange.borrow_mut().process_quote_tick(&btc_quote);
+
+    let eth_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(eth_instrument.id())
+        .client_order_id(ClientOrderId::from("O-MIXED-ETH"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let btc_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(btc_instrument.id())
+        .client_order_id(ClientOrderId::from("O-MIXED-BTC"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let orders = vec![eth_order.clone(), btc_order.clone()];
+    let account_id = AccountId::test_default();
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&TestOrderEventStubs::submitted(order, account_id))
+            .unwrap();
+    }
+
+    let ts_init = UnixNanos::from(2);
+    let order_list = OrderList::new(
+        OrderListId::from("OL-MIXED-001"),
+        eth_order.instrument_id(),
+        StrategyId::test_default(),
+        orders.iter().map(OrderAny::client_order_id).collect(),
+        ts_init,
+    );
+    let command = SubmitOrderList::new(
+        TraderId::test_default(),
+        None,
+        StrategyId::test_default(),
+        order_list,
+        orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        None,
+        None,
+        None,
+        UUID4::default(),
+        ts_init,
+        None,
+    );
+
+    exchange
+        .borrow_mut()
+        .send(TradingCommand::SubmitOrderList(command));
+    exchange.borrow_mut().process(ts_init);
+
+    let messages = saving_handler.get_messages();
+    let fill_price = |client_order_id: ClientOrderId| -> Price {
+        messages
+            .iter()
+            .find_map(|event| match event {
+                OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                    Some(fill.last_px)
+                }
+                _ => None,
+            })
+            .expect("expected mixed instrument order-list leg fill")
+    };
+
+    assert_eq!(
+        fill_price(eth_order.client_order_id()),
+        Price::from("101.00")
+    );
+    assert_eq!(
+        fill_price(btc_order.client_order_id()),
+        Price::from("201.00")
     );
 }
 
@@ -936,6 +1523,48 @@ fn test_accounting() {
 }
 
 #[rstest]
+fn test_adjust_account_overflow_emits_no_state() {
+    let account_type = AccountType::Margin;
+    let usd = Currency::USD();
+    let maximum = Money::from_raw(MONEY_RAW_MAX, usd);
+    let mut cache = Cache::default();
+    let (handler, saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+    let margin_account = MarginAccount::new(
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            account_type,
+            vec![AccountBalance::new(maximum, Money::zero(usd), maximum)],
+            vec![],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        false,
+    );
+    cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+    cache.build_index();
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        account_type,
+        BookType::L2_MBP,
+        Some(Rc::new(RefCell::new(cache))),
+    );
+    exchange.borrow_mut().initialize_account();
+
+    let adjusted = exchange
+        .borrow_mut()
+        .adjust_account(Money::from("0.01 USD"));
+
+    assert!(!adjusted);
+    assert_eq!(saving_handler.get_messages().len(), 1);
+}
+
+#[rstest]
 fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let account_id = AccountId::from("BINANCE-001");
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
@@ -1045,6 +1674,146 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
     assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
+}
+
+#[rstest]
+fn test_process_funding_rate_returns_instrument_boundary() {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let first_boundary = UnixNanos::from(3);
+    let second_boundary = UnixNanos::from(4);
+    let first_instrument = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let second_instrument = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let first_scheduled = exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            first_instrument,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(first_boundary),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+    let second_scheduled = exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            second_instrument,
+            Decimal::from_str("0.002").unwrap(),
+            Some(480),
+            Some(second_boundary),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+
+    assert_eq!(first_scheduled, Some(first_boundary));
+    assert_eq!(second_scheduled, Some(second_boundary));
+}
+
+#[rstest]
+fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
+    let inverse = xbtusd_bitmex();
+    let instrument = InstrumentAny::CryptoPerpetual(inverse.clone());
+    let account_id = AccountId::from("BITMEX-001");
+    let mut cache = Cache::default();
+    pre_populate_margin_account_with_balance(&mut cache, "BITMEX-001", Money::from("100 BTC"));
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(inverse.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-INVERSE-ZERO")),
+        None,
+        Some(Price::from("10000.0")),
+        Some(Quantity::from("100000")),
+        None,
+        Some(Money::from("0 BTC")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            inverse.id,
+            Price::from("0.0"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    let exchange = build_exchange_with_options(
+        Venue::new("BITMEX"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            inverse.id,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(inverse.id, settlement_ns);
+    assert!(settlement_saver.get_messages().is_empty());
+    assert!(
+        cache
+            .borrow()
+            .position(&position.id)
+            .unwrap()
+            .adjustments
+            .is_empty()
+    );
+
+    cache
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            inverse.id,
+            Price::from("10000.0"),
+            UnixNanos::from(3),
+            UnixNanos::from(3),
+        ))
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(inverse.id, settlement_ns);
+
+    assert_eq!(settlement_saver.get_messages().len(), 1);
+    assert_eq!(
+        cache
+            .borrow()
+            .position(&position.id)
+            .unwrap()
+            .adjustments
+            .len(),
+        1
+    );
 }
 
 #[rstest]
@@ -1404,7 +2173,7 @@ fn build_exchange_with_options(
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
         .frozen_account(frozen_account)
         .allow_cash_borrowing(allow_cash_borrowing)
         .build()
@@ -2419,6 +3188,70 @@ struct MockSimulationModule {
     counts: MockModuleCounts,
 }
 
+#[derive(Default)]
+struct CapturingLogger {
+    messages: Mutex<Vec<(Level, String)>>,
+}
+
+impl CapturingLogger {
+    fn clear(&self) {
+        self.messages.lock().unwrap().clear();
+    }
+
+    fn messages(&self) -> Vec<(Level, String)> {
+        self.messages.lock().unwrap().clone()
+    }
+}
+
+impl Log for CapturingLogger {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Warn
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.messages
+                .lock()
+                .unwrap()
+                .push((record.level(), record.args().to_string()));
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static CAPTURING_LOGGER: CapturingLogger = CapturingLogger {
+    messages: Mutex::new(Vec::new()),
+};
+static CAPTURING_LOGGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+struct AdjustmentSimulationModule {
+    label: &'static str,
+    adjustments: Vec<Money>,
+    outcomes: Rc<RefCell<Vec<AccountAdjustmentOutcome>>>,
+    sequence: Rc<RefCell<Vec<String>>>,
+}
+
+impl SimulationModule for AdjustmentSimulationModule {
+    fn pre_process(&self, _data: &Data) {}
+
+    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
+        self.sequence
+            .borrow_mut()
+            .push(format!("process-{}", self.label));
+
+        SimulationModuleResult::Completed(self.adjustments.clone())
+    }
+
+    fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]) {
+        self.outcomes.borrow_mut().extend_from_slice(outcomes);
+    }
+
+    fn log_diagnostics(&self) {}
+
+    fn reset(&self) {}
+}
+
 impl MockSimulationModule {
     fn new(counts: MockModuleCounts) -> Self {
         Self { counts }
@@ -2432,10 +3265,12 @@ impl SimulationModule for MockSimulationModule {
             .set(self.counts.pre_process.get() + 1);
     }
 
-    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> Vec<Money> {
+    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
         self.counts.process.set(self.counts.process.get() + 1);
-        Vec::new()
+        SimulationModuleResult::Completed(Vec::new())
     }
+
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) {}
 
     fn log_diagnostics(&self) {
         self.counts
@@ -2452,14 +3287,19 @@ fn get_exchange_with_module(
     venue: Venue,
     counts: MockModuleCounts,
 ) -> Rc<RefCell<SimulatedExchange>> {
+    get_exchange_with_modules(venue, vec![Box::new(MockSimulationModule::new(counts))])
+}
+
+fn get_exchange_with_modules(
+    venue: Venue,
+    modules: Vec<Box<dyn SimulationModule>>,
+) -> Rc<RefCell<SimulatedExchange>> {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(TestClock::new()));
 
     // Register msgbus handler so generate_account_state works during reset
     let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
     msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
-
-    let modules: Vec<Box<dyn SimulationModule>> = vec![Box::new(MockSimulationModule::new(counts))];
 
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
@@ -2469,7 +3309,7 @@ fn get_exchange_with_module(
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
         .modules(modules)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -2562,6 +3402,776 @@ fn test_module_process_called_by_process_modules(crypto_perpetual_ethusdt: Crypt
     exchange.borrow_mut().process_modules(UnixNanos::from(100));
 
     assert_eq!(counts.process.get(), 1);
+}
+
+#[rstest]
+#[case(true, true)]
+#[case(false, false)]
+fn test_process_modules_skips_when_account_adjustments_are_unavailable(
+    #[case] frozen_account: bool,
+    #[case] register_client: bool,
+) {
+    let outcomes = Rc::new(RefCell::new(Vec::new()));
+    let sequence = Rc::new(RefCell::new(Vec::new()));
+    let modules: Vec<Box<dyn SimulationModule>> = vec![Box::new(AdjustmentSimulationModule {
+        label: "guarded",
+        adjustments: vec![Money::from("1 USD")],
+        outcomes: outcomes.clone(),
+        sequence: sequence.clone(),
+    })];
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1000 USD")])
+        .default_leverage(Decimal::ONE)
+        .modules(modules)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .frozen_account(frozen_account)
+        .build()
+        .unwrap();
+    let exchange = Rc::new(RefCell::new(
+        SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+    ));
+
+    if register_client {
+        let execution_client = BacktestExecutionClient::new(
+            TraderId::test_default(),
+            AccountId::test_default(),
+            &exchange,
+            cache,
+            clock,
+            None,
+            Some(frozen_account),
+        );
+        exchange
+            .borrow_mut()
+            .register_client(Rc::new(execution_client));
+    }
+
+    let (handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+
+    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+
+    assert!(
+        sequence.borrow().is_empty(),
+        "module processing must be skipped"
+    );
+    assert!(
+        outcomes.borrow().is_empty(),
+        "module acknowledgement must be skipped"
+    );
+    assert!(account_saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_process_modules_forwards_real_outcomes_after_shared_snapshot() {
+    let first_outcomes = Rc::new(RefCell::new(Vec::new()));
+    let second_outcomes = Rc::new(RefCell::new(Vec::new()));
+    let sequence = Rc::new(RefCell::new(Vec::new()));
+    let modules: Vec<Box<dyn SimulationModule>> = vec![
+        Box::new(AdjustmentSimulationModule {
+            label: "first",
+            adjustments: vec![Money::from("1 USD"), Money::from("1 AUD")],
+            outcomes: first_outcomes.clone(),
+            sequence: sequence.clone(),
+        }),
+        Box::new(AdjustmentSimulationModule {
+            label: "second",
+            adjustments: Vec::new(),
+            outcomes: second_outcomes.clone(),
+            sequence: sequence.clone(),
+        }),
+    ];
+    let exchange = get_exchange_with_modules(Venue::new("SIM"), modules);
+    let cache = exchange.borrow().cache().clone();
+    pre_populate_margin_account(&mut cache.borrow_mut(), "SIM-001");
+
+    // The saving handler registered by the fixture never applies account
+    // state back to the cache, so a balance probe cannot distinguish the
+    // processing orders. Record the account-state EMISSION instead: the
+    // successful USD adjustment emits exactly one AccountState, and under
+    // the shared-snapshot contract it must come after every module's
+    // process call, not between them.
+    let handler_sequence = sequence.clone();
+    msgbus::register_account_state_endpoint(
+        "Portfolio.update_account".into(),
+        TypedHandler::from(move |_: &AccountState| {
+            handler_sequence
+                .borrow_mut()
+                .push("account-state".to_string());
+        }),
+    );
+
+    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+
+    assert_eq!(
+        *first_outcomes.borrow(),
+        vec![
+            AccountAdjustmentOutcome::Applied,
+            AccountAdjustmentOutcome::Failed(AccountAdjustmentError::MissingBalance(
+                Currency::AUD()
+            )),
+        ]
+    );
+    assert!(second_outcomes.borrow().is_empty());
+    assert_eq!(
+        *sequence.borrow(),
+        vec!["process-first", "process-second", "account-state"],
+        "all modules must process against the same pre-adjustment snapshot, \
+         with adjustments applied only after the read-only phase"
+    );
+}
+
+fn rollover_records() -> Vec<InterestRateRecord> {
+    ["2020-01", "2021-01"]
+        .into_iter()
+        .flat_map(|time| {
+            [
+                InterestRateRecord {
+                    location: "AUS".to_string(),
+                    time: time.to_string(),
+                    value: 0.75,
+                },
+                InterestRateRecord {
+                    location: "GBR".to_string(),
+                    time: time.to_string(),
+                    value: 0.50,
+                },
+                InterestRateRecord {
+                    location: "USA".to_string(),
+                    time: time.to_string(),
+                    value: 1.50,
+                },
+            ]
+        })
+        .collect()
+}
+
+fn rollover_timestamp(year: i32, month: u32, day: u32) -> UnixNanos {
+    let timestamp = Eastern
+        .with_ymd_and_hms(year, month, day, 17, 1, 0)
+        .single()
+        .unwrap()
+        .timestamp_nanos_opt()
+        .unwrap()
+        .cast_unsigned();
+    UnixNanos::from(timestamp)
+}
+
+fn add_fx_position(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    trade_id: &str,
+    quantity: &str,
+    price: &str,
+) {
+    cache.add_instrument(instrument.clone()).unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        instrument,
+        Some(TradeId::from(trade_id)),
+        Some(PositionId::from(format!("P-{trade_id}").as_str())),
+        Some(Price::from(price)),
+        Some(Quantity::from(quantity)),
+        None,
+        Some(Money::new(0.0, instrument.quote_currency())),
+        Some(UnixNanos::from(1)),
+        Some(AccountId::from("SIM-001")),
+    );
+    let position = Position::new(instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+}
+
+fn process_rollover(
+    module: &FXRolloverInterestModule,
+    exchange: &Rc<RefCell<SimulatedExchange>>,
+    cache: &Rc<RefCell<Cache>>,
+    instruments: &AHashMap<InstrumentId, InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Vec<Money> {
+    let exchange = exchange.borrow();
+    let cache = cache.borrow();
+    let ctx = ExchangeContext {
+        venue: Venue::new("SIM"),
+        base_currency: None,
+        instruments,
+        matching_engines: exchange.get_matching_engines(),
+        cache: &cache,
+    };
+
+    match module.process(ts_now, &ctx) {
+        SimulationModuleResult::NotReady => Vec::new(),
+        SimulationModuleResult::Completed(adjustments) => {
+            module.acknowledge(&vec![AccountAdjustmentOutcome::Applied; adjustments.len()]);
+            adjustments
+        }
+    }
+}
+
+fn add_fx_quote(
+    exchange: &Rc<RefCell<SimulatedExchange>>,
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    bid: &str,
+    ask: &str,
+) {
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from("1000000"),
+        Quantity::from("1000000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+    exchange.borrow_mut().process_quote_tick(&quote);
+}
+
+#[rstest]
+fn test_fx_rollover_retries_after_quote_arrives(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-RETRY",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let instruments = AHashMap::from([(instrument.id(), instrument.clone())]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let rollover = rollover_timestamp(2020, 1, 15);
+
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
+
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1).len(),
+        1
+    );
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover + 2).is_empty());
+}
+
+#[rstest]
+fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-CROSS-DAY",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let instruments = AHashMap::from([(instrument.id(), instrument.clone())]);
+    let records = [
+        ("AUS", "2024-01", 1.0),
+        ("USA", "2024-01", 2.0),
+        ("AUS", "2024-02", 5.0),
+        ("USA", "2024-02", 1.0),
+    ]
+    .into_iter()
+    .map(|(location, time, value)| InterestRateRecord {
+        location: location.to_string(),
+        time: time.to_string(),
+        value,
+    })
+    .collect();
+    let module = FXRolloverInterestModule::new(records).unwrap();
+
+    // Wednesday's rollover is not ready because the quote is absent.
+    assert!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 1, 31),
+        )
+        .is_empty()
+    );
+
+    // The quote arrives on Friday. The pending Wednesday remains first and
+    // the full due batch uses each booking date's rates and multiplier.
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 2, 2),
+        ),
+        vec![
+            Money::from("-8.22 USD"),
+            Money::from("10.96 USD"),
+            Money::from("32.88 USD"),
+        ]
+    );
+
+    // Acknowledgement advances the cursor to Friday, the stored batch end date.
+    assert!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2024, 2, 2) + 1,
+        )
+        .is_empty()
+    );
+}
+
+#[rstest]
+fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-WEEKEND",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
+    let instruments = AHashMap::from([(instrument.id(), instrument)]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2020, 1, 17),
+        ),
+        vec![Money::from("-6.16 USD")]
+    );
+    let monday = rollover_timestamp(2020, 1, 20);
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, monday),
+        vec![Money::from("-2.05 USD")]
+    );
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, monday + 1).is_empty());
+}
+
+#[rstest]
+fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
+    audusd_sim: CurrencyPair,
+) {
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-XRATE",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("0.99990"),
+        Price::from("1.00010"),
+        Quantity::from("1000000"),
+        Quantity::from("1000000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    exchange.borrow_mut().process_quote_tick(&quote);
+    let instruments = AHashMap::from([(instrument.id(), instrument)]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let ts_now = rollover_timestamp(2020, 1, 15);
+
+    for _ in 0..2 {
+        let exchange = exchange.borrow();
+        let cache = cache.borrow();
+        let ctx = ExchangeContext {
+            venue: Venue::new("SIM"),
+            base_currency: Some(Currency::GBP()),
+            instruments: &instruments,
+            matching_engines: exchange.get_matching_engines(),
+            cache: &cache,
+        };
+        assert_eq!(
+            module.process(ts_now, &ctx),
+            SimulationModuleResult::NotReady
+        );
+    }
+
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message.contains(
+                        "Cannot calculate rollover for AUD/USD.SIM: exchange rate from USD to GBP",
+                    )
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .all(|(_, message)| !message.contains("Failed to calculate xrate"))
+    );
+}
+
+#[rstest]
+fn test_missing_rates_skip_instrument_and_do_not_stall_later_days(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let supported = InstrumentAny::CurrencyPair(audusd_sim);
+    let missing_rates = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &supported,
+        "T-ROLLOVER-SUPPORTED",
+        "100000",
+        "1.00000",
+    );
+    add_fx_position(
+        &mut raw_cache,
+        &missing_rates,
+        "T-ROLLOVER-MISSING-RATES",
+        "100000",
+        "1.20000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(supported.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(missing_rates.clone())
+        .unwrap();
+    // Deliberately no quote for `missing_rates`: the permanently missing rate
+    // must skip the instrument before the transient no-price check can retry
+    // the whole day.
+    add_fx_quote(&exchange, &cache, supported.id(), "0.99990", "1.00010");
+    let instruments = AHashMap::from([
+        (supported.id(), supported.clone()),
+        (missing_rates.id(), missing_rates.clone()),
+    ]);
+    let records = rollover_records()
+        .into_iter()
+        .filter(|record| record.location != "GBR")
+        .collect();
+    let module = FXRolloverInterestModule::new(records).unwrap();
+    let first_day = rollover_timestamp(2020, 1, 15);
+
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, first_day),
+        vec![Money::from("-6.16 USD")]
+    );
+
+    let only_missing = AHashMap::from([(missing_rates.id(), missing_rates)]);
+    let exchange_ref = exchange.borrow();
+    let cache_ref = cache.borrow();
+    let ctx = ExchangeContext {
+        venue: Venue::new("SIM"),
+        base_currency: None,
+        instruments: &only_missing,
+        matching_engines: exchange_ref.get_matching_engines(),
+        cache: &cache_ref,
+    };
+    assert_eq!(
+        module.process(rollover_timestamp(2020, 1, 16), &ctx),
+        SimulationModuleResult::Completed(Vec::new())
+    );
+    module.acknowledge(&[]);
+    assert_eq!(
+        module.process(rollover_timestamp(2020, 1, 17), &ctx),
+        SimulationModuleResult::Completed(Vec::new())
+    );
+
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message.contains("Skipping rollover for GBP/USD.SIM on 2020-01-15")
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+}
+
+#[rstest]
+fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let unrepresentable = InstrumentAny::CurrencyPair(audusd_sim);
+    let transient = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &unrepresentable,
+        "T-ROLLOVER-MONEY",
+        "100000",
+        "1.00000",
+    );
+    add_fx_position(
+        &mut raw_cache,
+        &transient,
+        "T-ROLLOVER-MONEY-RETRY",
+        "100000",
+        "1.20000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(unrepresentable.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(transient.clone())
+        .unwrap();
+    add_fx_quote(
+        &exchange,
+        &cache,
+        unrepresentable.id(),
+        "0.99990",
+        "1.00010",
+    );
+    let instruments = AHashMap::from([
+        (unrepresentable.id(), unrepresentable.clone()),
+        (transient.id(), transient.clone()),
+    ]);
+    let records = vec![
+        InterestRateRecord {
+            location: "AUS".to_string(),
+            time: "2020-01".to_string(),
+            value: f64::MAX,
+        },
+        InterestRateRecord {
+            location: "GBR".to_string(),
+            time: "2020-01".to_string(),
+            value: 0.5,
+        },
+        InterestRateRecord {
+            location: "USA".to_string(),
+            time: "2020-01".to_string(),
+            value: 1.5,
+        },
+    ];
+    let module = FXRolloverInterestModule::new(records).unwrap();
+    let rollover = rollover_timestamp(2020, 1, 15);
+
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
+    add_fx_quote(&exchange, &cache, transient.id(), "1.19990", "1.20010");
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1),
+        vec![Money::from("-9.86 USD")]
+    );
+
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message.contains("Skipping rollover for AUD/USD.SIM on 2020-01-15")
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+    assert!(messages.iter().all(|(level, message)| {
+        *level != Level::Error
+            || !(message.contains("Skipping rollover for AUD/USD.SIM")
+                && message.contains("invalid adjustment"))
+    }));
+}
+
+#[rstest]
+fn test_fx_rollover_is_atomic_across_instruments(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let first = InstrumentAny::CurrencyPair(audusd_sim);
+    let second = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &first,
+        "T-ROLLOVER-ATOMIC-1",
+        "100000",
+        "1.00000",
+    );
+    add_fx_position(
+        &mut raw_cache,
+        &second,
+        "T-ROLLOVER-ATOMIC-2",
+        "100000",
+        "1.20000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange.borrow_mut().add_instrument(first.clone()).unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(second.clone())
+        .unwrap();
+    let instruments = AHashMap::from([(first.id(), first.clone()), (second.id(), second.clone())]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let rollover = rollover_timestamp(2020, 1, 15);
+
+    add_fx_quote(&exchange, &cache, first.id(), "0.99990", "1.00010");
+    assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
+
+    add_fx_quote(&exchange, &cache, second.id(), "1.19990", "1.20010");
+    assert_eq!(
+        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1).len(),
+        2
+    );
+}
+
+#[rstest]
+fn test_fx_rollover_distinguishes_same_ordinal_across_years(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let mut raw_cache = Cache::default();
+    add_fx_position(
+        &mut raw_cache,
+        &instrument,
+        "T-ROLLOVER-CROSS-YEAR",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
+    let instruments = AHashMap::from([(instrument.id(), instrument)]);
+    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2020, 1, 15),
+        )
+        .len(),
+        1
+    );
+    // The catch-up includes the remaining 12 January 2020 weekdays and the
+    // first 11 January 2021 weekdays. Dates without configured rates skip.
+    assert_eq!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover_timestamp(2021, 1, 15),
+        )
+        .len(),
+        23
+    );
 }
 
 #[rstest]

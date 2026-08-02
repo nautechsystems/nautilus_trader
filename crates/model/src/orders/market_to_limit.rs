@@ -65,6 +65,7 @@ impl MarketToLimitOrder {
     /// - The `quantity` is not positive.
     /// - The `display_qty` (when provided) exceeds `quantity`.
     /// - The `time_in_force` is `GTD` **and** `expire_time` is `None` or zero.
+    /// - The order metadata violates an [`OrderInitialized::new_checked`] invariant.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -94,7 +95,7 @@ impl MarketToLimitOrder {
         check_display_qty(display_qty, quantity)?;
         check_time_in_force(time_in_force, expire_time)?;
 
-        let init_order = OrderInitialized::new(
+        let init_order = OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -116,6 +117,7 @@ impl MarketToLimitOrder {
             None,
             None,
             None,
+            None,
             expire_time,
             display_qty,
             Some(TriggerType::NoTrigger),
@@ -128,7 +130,7 @@ impl MarketToLimitOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        );
+        )?;
 
         Ok(Self {
             core: OrderCore::new(init_order),
@@ -379,6 +381,10 @@ impl Order for MarketToLimitOrder {
         self.filled_qty
     }
 
+    fn voided_qty(&self) -> Quantity {
+        self.voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -387,11 +393,11 @@ impl Order for MarketToLimitOrder {
         self.overfill_qty
     }
 
-    fn avg_px(&self) -> Option<f64> {
+    fn avg_px(&self) -> Option<Decimal> {
         self.avg_px
     }
 
-    fn slippage(&self) -> Option<f64> {
+    fn slippage(&self) -> Option<Decimal> {
         self.slippage
     }
 
@@ -575,6 +581,7 @@ impl TryFrom<OrderInitialized> for MarketToLimitOrder {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -683,6 +690,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_market_to_limit_order_rejects_invalid_update_atomically() {
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .build();
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+        let state = (
+            accepted_order.status(),
+            accepted_order.previous_status(),
+            accepted_order.ts_last(),
+            accepted_order.events().len(),
+        );
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            trigger_price: Some(Price::new(95.0, 2)),
+            ..Default::default()
+        };
+
+        let result = accepted_order.apply(OrderEventAny::Updated(event));
+
+        assert!(matches!(result, Err(OrderError::InvalidOrderEvent)));
+        assert_eq!(accepted_order.status(), state.0);
+        assert_eq!(accepted_order.previous_status(), state.1);
+        assert_eq!(accepted_order.ts_last(), state.2);
+        assert_eq!(accepted_order.events().len(), state.3);
+    }
+
+    #[rstest]
     fn test_market_to_limit_order_expire_time() {
         // Create a new MarketToLimitOrder with an expire time
         let expire_time = UnixNanos::from(1_234_567_890);
@@ -765,11 +801,7 @@ mod tests {
             .apply(OrderEventAny::Filled(order_filled_event))
             .unwrap();
 
-        // The slippage calculation should be triggered by the filled event
-        assert!(accepted_order.slippage().is_some());
-
-        // Additionally, verify the actual slippage value is correct
-        // The slippage would be 98.50 - 90.0 = 8.50 for a Buy order
-        assert_eq!(accepted_order.slippage().unwrap(), 8.50);
+        // The fill triggers the slippage calculation: 98.50 - 90.0 for a buy order
+        assert_eq!(accepted_order.slippage(), Some(dec!(8.50)));
     }
 }

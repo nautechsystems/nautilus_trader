@@ -6,7 +6,7 @@
 - Period      2024-01-01 --> 2024-01-31 (UTC timestamp, no contract rollover occurs in this period)
 - Bar type:   1-minute bars
 
-# Zipped format
+## Zipped format
 
 We used zipped data, because they are 9x smaller than original CSV file and can be DIRECTLY read by [pandas](https://pandas.pydata.org/)
 using code like this:

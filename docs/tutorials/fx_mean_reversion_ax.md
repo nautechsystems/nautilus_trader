@@ -162,14 +162,14 @@ rates.
 
 ## Configuration
 
-| Parameter            | Value  | Description                                          |
-| -------------------- | ------ | ---------------------------------------------------- |
+| Parameter            | Value  | Description                                                |
+| -------------------- | ------ | ---------------------------------------------------------- |
 | `bb_period`          | `20`   | Rolling window for the BB mean and the standard deviation. |
-| `bb_std`             | `2.0`  | Band width in standard deviations.                   |
-| `rsi_period`         | `14`   | RSI lookback in bars.                                |
-| `rsi_buy_threshold`  | `0.30` | Long entry confirmation (NautilusTrader RSI is `[0, 1]`). |
-| `rsi_sell_threshold` | `0.70` | Short entry confirmation.                            |
-| `trade_size`         | `1`    | One contract per trade (1,000 EUR notional).         |
+| `bb_std`             | `2.0`  | Band width in standard deviations.                         |
+| `rsi_period`         | `14`   | RSI lookback in bars.                                      |
+| `rsi_buy_threshold`  | `0.30` | Long entry confirmation (NautilusTrader RSI is `[0, 1]`).  |
+| `rsi_sell_threshold` | `0.70` | Short entry confirmation.                                  |
+| `trade_size`         | `1`    | One contract per trade (1,000 EUR notional).               |
 
 :::tip
 NautilusTrader RSI returns values in `[0.0, 1.0]`, not `[0, 100]`. The

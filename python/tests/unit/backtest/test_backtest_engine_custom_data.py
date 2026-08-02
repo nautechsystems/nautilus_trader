@@ -1,0 +1,89 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import register_custom_data_class
+from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.persistence import RustTestCustomData
+from nautilus_trader.trading import Strategy
+from nautilus_trader.trading import StrategyConfig
+
+
+class _CustomDataStrategy(Strategy):
+    def on_start(self) -> None:
+        self.subscribe_data(self.data_type)
+
+    def on_data(self, data: CustomData) -> None:
+        self.received.append(data)
+
+
+def test_catalog_custom_data_reaches_backtest_strategy(tmp_path) -> None:
+    register_custom_data_class(RustTestCustomData)
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    instrument_id = InstrumentId.from_str("CUSTOM.TEST")
+    data_type = DataType("RustTestCustomData", identifier=str(instrument_id))
+    custom_data = [
+        CustomData(
+            data_type,
+            RustTestCustomData(instrument_id, 1.25, True, 1, 1),
+        ),
+        CustomData(
+            data_type,
+            RustTestCustomData(instrument_id, 2.5, False, 2, 2),
+        ),
+    ]
+    catalog.write_custom_data(custom_data)
+    loaded = catalog.query_custom_data(
+        "RustTestCustomData",
+        identifiers=[str(instrument_id)],
+    )
+    assert len(loaded) == 2
+
+    strategy = _CustomDataStrategy(
+        StrategyConfig(
+            strategy_id=StrategyId("CUSTOM-DATA-STRATEGY"),
+            log_events=False,
+            log_commands=False,
+        ),
+    )
+    strategy.data_type = data_type
+    strategy.received = []
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        ),
+    )
+    engine.add_strategy(strategy)
+
+    try:
+        engine.add_data(list(reversed(loaded)), validate=True, sort=True)
+        engine.run()
+        result = engine.get_result()
+
+        assert result.iterations == 2
+        assert engine.backtest_start == 1
+        assert engine.backtest_end == 2
+        assert [item.data.value for item in strategy.received] == [1.25, 2.5]
+        assert [item.ts_init for item in strategy.received] == [1, 2]
+    finally:
+        engine.dispose()

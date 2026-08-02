@@ -23,7 +23,7 @@ use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit},
-    events::{AccountState, OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
@@ -46,6 +46,7 @@ const SYNTHETICS: &str = "synthetics";
 const ACCOUNTS: &str = "accounts";
 const ORDERS: &str = "orders";
 const POSITIONS: &str = "positions";
+const SNAPSHOTS: &str = "snapshots";
 const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
 const CUSTOM: &str = "custom";
@@ -246,7 +247,7 @@ impl DatabaseQueries {
             GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES => {
                 Self::read_string(&mut con, &full_key).await
             }
-            ACCOUNTS | ORDERS | POSITIONS => Self::read_list(&mut con, &full_key).await,
+            ACCOUNTS | ORDERS | POSITIONS | SNAPSHOTS => Self::read_list(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -356,7 +357,8 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         let mut instruments = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -366,23 +368,12 @@ impl DatabaseQueries {
             .iter()
             .map(|key| {
                 let con = con.clone();
+                let prefix = &prefix;
                 async move {
-                    let instrument_id = key
-                        .as_str()
-                        .rsplit(':')
-                        .next()
-                        .ok_or_else(|| {
-                            log::error!("Invalid key format: {key}");
-                            "Invalid key format"
-                        })
-                        .and_then(|code| {
-                            InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to convert to InstrumentId for {key}: {e}");
-                                "Invalid instrument ID"
-                            })
-                        });
+                    let instrument_id = parse_instrument_key(key, prefix);
 
                     let Ok(instrument_id) = instrument_id else {
+                        log::error!("Failed to parse InstrumentId from Redis key: {key}");
                         return None;
                     };
 
@@ -886,6 +877,18 @@ impl DatabaseQueries {
         position_id: &PositionId,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<Position>> {
+        let snapshot_key =
+            format!("{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let snapshots = Self::read(con, trader_key, &snapshot_key).await?;
+        for payload in snapshots.iter().rev() {
+            let snapshot: PositionSnapshot = Self::deserialize_payload(encoding, payload)?;
+            if let Some(replay_state) = snapshot.replay_state {
+                return serde_json::from_value(replay_state)
+                    .map(Some)
+                    .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"));
+            }
+        }
+
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
         let result = Self::read(con, trader_key, &key).await?;
         if result.is_empty() {
@@ -909,7 +912,7 @@ impl DatabaseQueries {
             return Ok(None);
         };
 
-        let mut position = Position::new(&instrument, *first_fill);
+        let mut position = Position::new(&instrument, first_fill.clone());
         for fill in remaining_fills {
             if position.trade_ids().contains(&fill.trade_id) {
                 anyhow::bail!(
@@ -975,6 +978,15 @@ impl DatabaseQueries {
     }
 }
 
+fn parse_instrument_key(key: &str, prefix: &str) -> anyhow::Result<InstrumentId> {
+    let value = key
+        .strip_prefix(prefix)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Invalid instrument key '{key}'"))?;
+    InstrumentId::from_str(value)
+        .map_err(|e| anyhow::anyhow!("Failed to parse instrument ID from key '{key}': {e}"))
+}
+
 fn is_timestamp_field(key: &str) -> bool {
     let expire_match = key == "expire_time_ns";
     let ts_match = key.starts_with("ts_");
@@ -1029,5 +1041,30 @@ fn convert_timestamp_strings(value: &mut Value) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use nautilus_model::identifiers::InstrumentId;
+    use rstest::rstest;
+
+    use super::parse_instrument_key;
+
+    #[rstest]
+    #[case("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3")]
+    #[case(concat!(
+        "0xc9bc8043294146424a4e4607d8ad837d",
+        "6a659142822bbaaabc83bb57e7447461.Arbitrum:UniswapV4",
+    ))]
+    fn test_parse_instrument_key_preserves_colons_in_venue(#[case] value: &str) {
+        let prefix = "TRADER-001:instruments:";
+        let key = format!("{prefix}{value}");
+
+        let result = parse_instrument_key(&key, prefix).unwrap();
+
+        assert_eq!(result, InstrumentId::from_str(value).unwrap());
     }
 }

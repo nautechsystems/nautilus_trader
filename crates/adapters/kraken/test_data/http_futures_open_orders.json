@@ -17,16 +17,14 @@
     },
     {
       "order_id": "c8135f52-2a86-4e26-b629-43cc37da9dbf",
-      "symbol": "PI_ETHUSD",
+      "symbol": "PI_XBTUSD",
       "side": "buy",
       "orderType": "take_profit",
-      "limitPrice": 1860.0,
       "stopPrice": 1880.4,
-      "unfilledSize": 10.0,
       "receivedTime": "2023-04-07T15:14:25.995Z",
       "status": "untouched",
       "filledSize": 0.0,
-      "reduceOnly": false,
+      "reduceOnly": true,
       "triggerSignal": "last",
       "lastUpdateTime": "2023-04-07T15:14:25.995Z"
     },

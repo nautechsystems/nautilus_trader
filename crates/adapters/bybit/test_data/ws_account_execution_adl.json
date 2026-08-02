@@ -31,7 +31,8 @@
       "execTime": "1746270400398",
       "isLeverage": "0",
       "isMaker": false,
-      "seq": 140612148849383
+      "seq": 140612148849383,
+      "feeCurrency": "USDT"
     }
   ]
 }

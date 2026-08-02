@@ -43,19 +43,23 @@ use nautilus_model::{
 };
 use nautilus_polymarket::{
     common::{enums::PolymarketOrderSide, parse::determine_trade_id},
+    execution::parse::{adjust_market_buy_amount, compute_commission},
     websocket::{
-        messages::{MarketWsMessage, PolymarketBookSnapshot, PolymarketTrade},
-        parse::{parse_book_snapshot, parse_trade_tick},
+        messages::{
+            MarketWsMessage, PolymarketBookSnapshot, PolymarketQuotes, PolymarketTrade,
+            UserWsMessage,
+        },
+        parse::{parse_book_deltas, parse_book_snapshot, parse_trade_tick},
     },
 };
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 fn bench_decode_trade(c: &mut Criterion) {
     let mut group = c.benchmark_group("decode_only");
     group.bench_function("trade", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_LAST_TRADE)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_LAST_TRADE)).unwrap();
             black_box(msg);
         });
     });
@@ -66,9 +70,79 @@ fn bench_decode_book(c: &mut Criterion) {
     let mut group = c.benchmark_group("decode_only");
     group.bench_function("book", |b| {
         b.iter(|| {
-            let msg: MarketWsMessage =
-                serde_json::from_str(black_box(fixtures::MARKET_BOOK)).unwrap();
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_BOOK)).unwrap();
             black_box(msg);
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_price_change(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("price_change", |b| {
+        b.iter(|| {
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_PRICE_CHANGE)).unwrap();
+            black_box(msg);
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_user_order(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("user_order", |b| {
+        b.iter(|| {
+            let msg = UserWsMessage::parse(black_box(fixtures::USER_ORDER)).unwrap();
+            black_box(msg);
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_user_order_captured(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("user_order_captured", |b| {
+        b.iter(|| {
+            let msg = UserWsMessage::parse(black_box(fixtures::USER_ORDER_CAPTURED)).unwrap();
+            black_box(msg);
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_user_order_dispatch(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("user_order_dispatch", |b| {
+        b.iter(|| {
+            let text = black_box(fixtures::USER_ORDER_CAPTURED);
+            if let Ok(messages) = UserWsMessage::parse_batch(text) {
+                black_box(messages);
+            } else {
+                let message = UserWsMessage::parse(text).unwrap();
+                black_box(message);
+            }
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_user_trade(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("user_trade", |b| {
+        b.iter(|| {
+            let msg = UserWsMessage::parse(black_box(fixtures::USER_TRADE)).unwrap();
+            black_box(msg);
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_user_batch(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("user_batch", |b| {
+        b.iter(|| {
+            let msgs = UserWsMessage::parse_batch(black_box(fixtures::USER_BATCH)).unwrap();
+            black_box(msgs);
         });
     });
     group.finish();
@@ -121,6 +195,32 @@ fn bench_parse_book_snapshot(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_parse_book_deltas(c: &mut Criterion) {
+    let (px_prec, sz_prec) = instrument_precisions();
+    let id = yes_instrument_id();
+    let msg: MarketWsMessage = serde_json::from_str(fixtures::MARKET_PRICE_CHANGE).unwrap();
+    let quotes: PolymarketQuotes = match msg {
+        MarketWsMessage::PriceChange(q) => q,
+        _ => unreachable!(),
+    };
+
+    let mut group = c.benchmark_group("parse_only");
+    group.bench_function("book_deltas", |b| {
+        b.iter(|| {
+            let deltas = parse_book_deltas(
+                black_box(&quotes),
+                id,
+                px_prec,
+                sz_prec,
+                UnixNanos::default(),
+            )
+            .unwrap();
+            black_box(deltas);
+        });
+    });
+    group.finish();
+}
+
 fn bench_decimal_from_str(c: &mut Criterion) {
     let s = "0.5000";
     c.bench_function("atom/decimal_from_str", |b| {
@@ -162,6 +262,38 @@ fn bench_price_combined(c: &mut Criterion) {
             let d = Decimal::from_str(black_box(s)).unwrap();
             let p = Price::from_decimal_dp(d, 2).unwrap();
             black_box(p);
+        });
+    });
+}
+
+fn bench_compute_commission(c: &mut Criterion) {
+    c.bench_function("atom/compute_commission", |b| {
+        b.iter(|| {
+            let commission = compute_commission(
+                black_box(dec!(0.03)),
+                black_box(2.0),
+                black_box(dec!(25)),
+                black_box(dec!(0.50)),
+                black_box(LiquiditySide::Taker),
+            );
+            black_box(commission);
+        });
+    });
+}
+
+fn bench_adjust_market_buy_amount(c: &mut Criterion) {
+    c.bench_function("atom/adjust_market_buy_amount", |b| {
+        b.iter(|| {
+            let amount = adjust_market_buy_amount(
+                black_box(dec!(50)),
+                black_box(dec!(50)),
+                black_box(dec!(0.50)),
+                black_box(dec!(0.03)),
+                black_box(2.0),
+                black_box(dec!(0)),
+            )
+            .unwrap();
+            black_box(amount);
         });
     });
 }
@@ -231,6 +363,7 @@ fn bench_event_filled_construct(c: &mut Criterion) {
                 false,
                 None,
                 Some(commission),
+                None,
             );
             black_box(filled);
         });
@@ -270,12 +403,21 @@ criterion_group!(
     benches,
     bench_decode_trade,
     bench_decode_book,
+    bench_decode_price_change,
+    bench_decode_user_order,
+    bench_decode_user_order_captured,
+    bench_decode_user_order_dispatch,
+    bench_decode_user_trade,
+    bench_decode_user_batch,
     bench_parse_trade,
     bench_parse_book_snapshot,
+    bench_parse_book_deltas,
     bench_decimal_from_str,
     bench_price_from_decimal_dp,
     bench_quantity_from_decimal_dp,
     bench_price_combined,
+    bench_compute_commission,
+    bench_adjust_market_buy_amount,
     bench_trade_id_determine,
     bench_uuid4_new,
     bench_event_filled_construct,

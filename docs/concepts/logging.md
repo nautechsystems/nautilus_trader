@@ -122,7 +122,7 @@ You can specify a custom log directory using `log_directory` and/or a custom fil
 **Log file formats:**
 
 - `None` (default) - Plain text format with `.log` extension.
-- `"json"` - JSON format with `.json` extension, useful for log aggregation tools.
+- `"json"` - JSON format with `.jsonl` extension, useful for log aggregation tools.
 
 For detailed information about log file naming conventions and rotation behavior, see the [Log file rotation](#log-file-rotation) and [Log file naming convention](#log-file-naming-convention) sections below.
 
@@ -133,6 +133,8 @@ Rotation behavior depends on both the presence of a size limit and whether a cus
 - **Size-based rotation**:
   - Enabled by specifying the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
   - When writing a log entry would make the current file exceed this size, the file is closed and a new one is created.
+  - Rotation file names have millisecond resolution. If a rotation resolves to the active path,
+    logging continues to that file, which may briefly exceed `log_file_max_size`.
 - **Date-based rotation (default naming only)**:
   - Applies when no `log_file_max_size` is specified and no custom `log_file_name` is provided.
   - At each UTC date change (midnight), the current log file is closed and a new one is started, creating one file per UTC day.
@@ -150,23 +152,23 @@ The format depends on whether file rotation is enabled:
 
 **With file rotation enabled**:
 
-- **Format**: `{trader_id}_{%Y-%m-%d_%H%M%S:%3f}_{instance_id}.{log|json}`
-- **Example**: `TESTER-001_2025-04-09_210721:521_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
+- **Format**: `{trader_id}_{%Y-%m-%d_%H%M%S-%3f}_{instance_id}.{log|jsonl}`
+- **Example**: `TESTER-001_2025-04-09_210721-521_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
 - **Components**:
   - `{trader_id}`: The trader identifier (e.g., `TESTER-001`).
-  - `{%Y-%m-%d_%H%M%S:%3f}`: Full ISO 8601-compliant datetime with millisecond resolution.
+  - `{%Y-%m-%d_%H%M%S-%3f}`: UTC datetime with millisecond resolution.
   - `{instance_id}`: A unique instance identifier.
-  - `{log|json}`: File suffix based on format setting.
+  - `{log|jsonl}`: File suffix based on format setting.
 
 **Without size-based rotation (default naming)**:
 
-- **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
+- **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|jsonl}`
 - **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
 - **Components**:
   - `{trader_id}`: The trader identifier.
   - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
   - `{instance_id}`: A unique instance identifier.
-  - `{log|json}`: File suffix based on format setting.
+  - `{log|jsonl}`: File suffix based on format setting.
 - **Note**: With default naming and no size limit, logs rotate daily at UTC midnight.
 
 **Custom naming**:
@@ -174,7 +176,7 @@ The format depends on whether file rotation is enabled:
 If `log_file_name` is set (e.g., `my_custom_log`):
 
 - With rotation disabled: The file will be named exactly as provided (e.g., `my_custom_log.log`).
-- With rotation enabled: The file will include the custom name and timestamp (e.g., `my_custom_log_2025-04-09_210721:521.log`).
+- With rotation enabled: The file will include the custom name and timestamp (e.g., `my_custom_log_2025-04-09_210721-521.log`).
 
 ### Component log filtering
 
@@ -212,7 +214,7 @@ export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 **Supported keys:**
 
 | Key                   | Type      | Description                                      |
-|-----------------------|-----------|--------------------------------------------------|
+| --------------------- | --------- | ------------------------------------------------ |
 | `stdout`              | Log level | Maximum level for stdout output.                 |
 | `fileout`             | Log level | Maximum level for file output.                   |
 | `is_colored`          | Flag      | Enable ANSI colors (default: true).              |

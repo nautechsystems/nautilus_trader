@@ -15,12 +15,12 @@ normal bar aggregation path.
 `ContinuousFutureAdjustmentType` combines direction (backward or forward) with operation
 (spread or ratio):
 
-| Mode              | Operation       | Anchor segment       |
-|-------------------|-----------------|----------------------|
-| `BACKWARD_SPREAD` | Additive        | Most recent contract |
-| `FORWARD_SPREAD`  | Additive        | First contract       |
-| `BACKWARD_RATIO`  | Multiplicative  | Most recent contract |
-| `FORWARD_RATIO`   | Multiplicative  | First contract       |
+| Mode              | Operation      | Anchor segment       |
+| ----------------- | -------------- | -------------------- |
+| `BACKWARD_SPREAD` | Additive       | Most recent contract |
+| `FORWARD_SPREAD`  | Additive       | First contract       |
+| `BACKWARD_RATIO`  | Multiplicative | Most recent contract |
+| `FORWARD_RATIO`   | Multiplicative | First contract       |
 
 The cumulative adjustment at segment `k` of `N` transitions is:
 
@@ -46,8 +46,8 @@ params = {
             "transition_time_ns": 1773671460000000000,  # when ESH26 rolls to ESM26
             "pre_instrument_id": "ESH26.XCME",
             "post_instrument_id": "ESM26.XCME",
-            "pre_price": "6001.00",                     # last ESH26 price pre-roll
-            "post_price": "5995.50",                    # first ESM26 price post-roll
+            "pre_price": "6001.00",  # last ESH26 price pre-roll
+            "post_price": "5995.50",  # first ESM26 price post-roll
         },
         # ... more transitions ...
     ],

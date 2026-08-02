@@ -17,6 +17,10 @@ import re
 
 import pytest
 
+from nautilus_trader.common import CacheConfig
+from nautilus_trader.common import LoggerConfig
+from nautilus_trader.common import MessageBusConfig
+from nautilus_trader.core import UUID4
 from nautilus_trader.live import InstrumentProviderConfig
 from nautilus_trader.live import LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig
@@ -27,6 +31,8 @@ from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import RoutingConfig
+from nautilus_trader.model import BarIntervalType
+from nautilus_trader.model import ClientId
 
 
 def test_instrument_provider_config_defaults():
@@ -120,9 +126,34 @@ def test_live_data_engine_config_defaults():
 
 
 def test_live_data_engine_config_explicit():
-    config = LiveDataEngineConfig(time_bars_build_with_no_updates=False)
+    client_id = ClientId("DATA-001")
+    config = LiveDataEngineConfig(
+        time_bars_build_with_no_updates=False,
+        time_bars_timestamp_on_close=False,
+        time_bars_skip_first_non_full_bar=True,
+        time_bars_interval_type=BarIntervalType.RIGHT_OPEN,
+        time_bars_build_delay=1,
+        time_bars_origin_offset={"minute": 2},
+        validate_data_sequence=True,
+        buffer_deltas=True,
+        emit_quotes_from_book=True,
+        emit_quotes_from_book_depths=True,
+        external_clients=[client_id],
+        debug=True,
+    )
 
-    assert isinstance(config, LiveDataEngineConfig)
+    assert config.time_bars_build_with_no_updates is False
+    assert config.time_bars_timestamp_on_close is False
+    assert config.time_bars_skip_first_non_full_bar is True
+    assert config.time_bars_interval_type == BarIntervalType.RIGHT_OPEN
+    assert config.time_bars_build_delay == 1
+    assert config.time_bars_origin_offset == {"minute": 2}
+    assert config.validate_data_sequence is True
+    assert config.buffer_deltas is True
+    assert config.emit_quotes_from_book is True
+    assert config.emit_quotes_from_book_depths is True
+    assert config.external_clients == [client_id]
+    assert config.debug is True
 
 
 def test_live_data_engine_config_accepts_string_interval_type():
@@ -169,6 +200,83 @@ def test_live_exec_engine_config_defaults():
     assert isinstance(config, LiveExecEngineConfig)
 
 
+def test_live_exec_engine_config_readback():
+    client_id = ClientId("EXEC-001")
+    config = LiveExecEngineConfig(
+        load_cache=False,
+        manage_own_order_books=True,
+        snapshot_positions_interval_secs=1.5,
+        external_clients=[client_id],
+        allow_overfills=True,
+        reconciliation=False,
+        reconciliation_startup_delay_secs=2.5,
+        reconciliation_lookback_mins=3,
+        reconciliation_instrument_ids=["BTCUSDT.BINANCE"],
+        filter_unclaimed_external_orders=True,
+        filter_position_reports=True,
+        filtered_client_order_ids=["O-001"],
+        generate_missing_orders=False,
+        inflight_check_interval_ms=4,
+        inflight_check_threshold_ms=5,
+        inflight_check_retries=6,
+        open_check_interval_secs=7.5,
+        open_check_lookback_mins=8,
+        open_check_threshold_ms=9,
+        open_check_missing_retries=10,
+        open_check_open_only=False,
+        max_single_order_queries_per_cycle=11,
+        single_order_query_delay_ms=12,
+        position_check_interval_secs=13.5,
+        position_check_lookback_mins=14,
+        position_check_threshold_ms=15,
+        position_check_retries=16,
+        purge_closed_orders_interval_mins=17,
+        purge_closed_orders_buffer_mins=18,
+        purge_closed_positions_interval_mins=19,
+        purge_closed_positions_buffer_mins=20,
+        purge_account_events_interval_mins=21,
+        purge_account_events_lookback_mins=22,
+        own_books_audit_interval_secs=23.5,
+        debug=True,
+    )
+
+    assert config.load_cache is False
+    assert config.manage_own_order_books is True
+    assert config.snapshot_positions_interval_secs == 1.5
+    assert config.external_clients == [client_id]
+    assert config.allow_overfills is True
+    assert config.reconciliation is False
+    assert config.reconciliation_startup_delay_secs == 2.5
+    assert config.reconciliation_lookback_mins == 3
+    assert config.reconciliation_instrument_ids == ["BTCUSDT.BINANCE"]
+    assert config.filter_unclaimed_external_orders is True
+    assert config.filter_position_reports is True
+    assert config.filtered_client_order_ids == ["O-001"]
+    assert config.generate_missing_orders is False
+    assert config.inflight_check_interval_ms == 4
+    assert config.inflight_check_threshold_ms == 5
+    assert config.inflight_check_retries == 6
+    assert config.open_check_interval_secs == 7.5
+    assert config.open_check_lookback_mins == 8
+    assert config.open_check_threshold_ms == 9
+    assert config.open_check_missing_retries == 10
+    assert config.open_check_open_only is False
+    assert config.max_single_order_queries_per_cycle == 11
+    assert config.single_order_query_delay_ms == 12
+    assert config.position_check_interval_secs == 13.5
+    assert config.position_check_lookback_mins == 14
+    assert config.position_check_threshold_ms == 15
+    assert config.position_check_retries == 16
+    assert config.purge_closed_orders_interval_mins == 17
+    assert config.purge_closed_orders_buffer_mins == 18
+    assert config.purge_closed_positions_interval_mins == 19
+    assert config.purge_closed_positions_buffer_mins == 20
+    assert config.purge_account_events_interval_mins == 21
+    assert config.purge_account_events_lookback_mins == 22
+    assert config.own_books_audit_interval_secs == 23.5
+    assert config.debug is True
+
+
 def test_live_exec_engine_config_rejects_unsupported_args():
     with pytest.raises(TypeError, match="snapshot_orders"):
         LiveExecEngineConfig(snapshot_orders=True)
@@ -202,6 +310,24 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value):
         LiveExecEngineConfig(reconciliation_startup_delay_secs=value)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "snapshot_positions_interval_secs",
+        "open_check_interval_secs",
+        "position_check_interval_secs",
+        "own_books_audit_interval_secs",
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0.0, 0.5e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
+)
+def test_live_exec_engine_config_rejects_invalid_intervals(field, value):
+    with pytest.raises(ValueError, match=field):
+        LiveExecEngineConfig(**{field: value})
+
+
 def test_live_node_config_defaults():
     config = LiveNodeConfig()
 
@@ -225,9 +351,34 @@ def test_live_node_config_rejects_invalid_timeout_duration():
 
 def test_live_node_config_accepts_portfolio_config_argument():
     portfolio = PortfolioConfig()
-    config = LiveNodeConfig(portfolio=portfolio)
+    cache = CacheConfig()
+    msgbus = MessageBusConfig()
+    logging = LoggerConfig(print_config=True)
+    instance_id = UUID4()
+    data_engine = LiveDataEngineConfig(debug=True)
+    risk_engine = LiveRiskEngineConfig(bypass=True)
+    exec_engine = LiveExecEngineConfig(load_cache=False)
+    config = LiveNodeConfig(
+        logging=logging,
+        instance_id=instance_id,
+        cache=cache,
+        msgbus=msgbus,
+        portfolio=portfolio,
+        loop_debug=True,
+        data_engine=data_engine,
+        risk_engine=risk_engine,
+        exec_engine=exec_engine,
+    )
 
-    assert isinstance(config, LiveNodeConfig)
+    assert config.logging.print_config is True
+    assert config.instance_id == instance_id
+    assert isinstance(config.cache, CacheConfig)
+    assert isinstance(config.msgbus, MessageBusConfig)
+    assert isinstance(config.portfolio, PortfolioConfig)
+    assert config.loop_debug is True
+    assert config.data_engine.debug is True
+    assert config.risk_engine.bypass is True
+    assert config.exec_engine.load_cache is False
 
 
 def test_live_risk_engine_config_defaults():
@@ -237,9 +388,19 @@ def test_live_risk_engine_config_defaults():
 
 
 def test_live_risk_engine_config_explicit():
-    config = LiveRiskEngineConfig(bypass=True)
+    config = LiveRiskEngineConfig(
+        bypass=True,
+        max_order_submit_rate="10/00:00:01",
+        max_order_modify_rate="20/00:00:02",
+        max_notional_per_order={"BTCUSDT.BINANCE": 100_000},
+        debug=True,
+    )
 
-    assert isinstance(config, LiveRiskEngineConfig)
+    assert config.bypass is True
+    assert config.max_order_submit_rate == "10/00:00:01"
+    assert config.max_order_modify_rate == "20/00:00:02"
+    assert config.max_notional_per_order == {"BTCUSDT.BINANCE": "100000"}
+    assert config.debug is True
 
 
 def test_live_risk_engine_config_rejects_unsupported_args():
@@ -299,7 +460,7 @@ def test_portfolio_config_properties():
     config = PortfolioConfig()
 
     assert config.convert_to_account_base_currency is True
-    assert config.use_mark_prices is False
+    assert config.use_mark_prices is True
     assert config.use_mark_xrates is False
     assert config.debug is False
     assert config.min_account_state_logging_interval_ms is None

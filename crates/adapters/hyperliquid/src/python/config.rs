@@ -15,6 +15,7 @@
 
 //! Python bindings for Hyperliquid configuration.
 
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -26,6 +27,13 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidDataClientConfig {
     /// Configuration for the Hyperliquid data client.
+    ///
+    /// The `stale_stream_*` options control the stream health monitor. With recovery
+    /// enabled, a stale stream is warned about first, targeted-resubscribed once per
+    /// recovery cooldown (preserving its original `l2Book` options), and escalated to
+    /// a full WebSocket reconnect after `stale_stream_max_targeted_resubscribes`
+    /// failed attempts; fresh data resets the ladder. See the Hyperliquid integration
+    /// guide ("Stream health and recovery") for details.
     #[new]
     #[pyo3(signature = (
         environment = None,
@@ -36,6 +44,13 @@ impl HyperliquidDataClientConfig {
         http_timeout_secs = None,
         ws_timeout_secs = None,
         update_instruments_interval_mins = None,
+        transport_backend = None,
+        stale_stream_receive_timeout_secs = None,
+        stream_health_check_interval_secs = None,
+        stale_stream_warning_cooldown_secs = None,
+        stale_stream_recovery_enabled = None,
+        stale_stream_recovery_cooldown_secs = None,
+        stale_stream_max_targeted_resubscribes = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -47,6 +62,13 @@ impl HyperliquidDataClientConfig {
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        transport_backend: Option<TransportBackend>,
+        stale_stream_receive_timeout_secs: Option<u64>,
+        stream_health_check_interval_secs: Option<u64>,
+        stale_stream_warning_cooldown_secs: Option<u64>,
+        stale_stream_recovery_enabled: Option<bool>,
+        stale_stream_recovery_cooldown_secs: Option<u64>,
+        stale_stream_max_targeted_resubscribes: Option<u32>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -57,14 +79,31 @@ impl HyperliquidDataClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
+            stale_stream_receive_timeout_secs: stale_stream_receive_timeout_secs
+                .unwrap_or(defaults.stale_stream_receive_timeout_secs),
+            stream_health_check_interval_secs: stream_health_check_interval_secs
+                .unwrap_or(defaults.stream_health_check_interval_secs),
+            stale_stream_warning_cooldown_secs: stale_stream_warning_cooldown_secs
+                .unwrap_or(defaults.stale_stream_warning_cooldown_secs),
+            stale_stream_recovery_enabled: stale_stream_recovery_enabled
+                .unwrap_or(defaults.stale_stream_recovery_enabled),
+            stale_stream_recovery_cooldown_secs: stale_stream_recovery_cooldown_secs
+                .unwrap_or(defaults.stale_stream_recovery_cooldown_secs),
+            stale_stream_max_targeted_resubscribes: stale_stream_max_targeted_resubscribes
+                .unwrap_or(defaults.stale_stream_max_targeted_resubscribes),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(HyperliquidDataClientConfig).to_string()
     }
 }
 
@@ -90,6 +129,7 @@ impl HyperliquidExecClientConfig {
         market_order_slippage_bps = None,
         include_builder_attribution = None,
         ws_post_timeout_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -109,6 +149,7 @@ impl HyperliquidExecClientConfig {
         market_order_slippage_bps: Option<u32>,
         include_builder_attribution: Option<bool>,
         ws_post_timeout_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -131,12 +172,17 @@ impl HyperliquidExecClientConfig {
             include_builder_attribution: include_builder_attribution
                 .unwrap_or(defaults.include_builder_attribution),
             ws_post_timeout_secs: ws_post_timeout_secs.unwrap_or(defaults.ws_post_timeout_secs),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             outcome_settlement_poll_secs: defaults.outcome_settlement_poll_secs,
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(HyperliquidExecClientConfig).to_string()
     }
 }

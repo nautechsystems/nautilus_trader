@@ -87,8 +87,7 @@ def test_ws_urls_eea_demo() -> None:
 def test_data_config_defaults_to_global_region() -> None:
     config = OKXDataClientConfig()
 
-    # The pyo3 config exposes no field getters; inspect via repr.
-    assert "region: Global" in repr(config)
+    assert config.region == OKXRegion.GLOBAL
 
 
 def test_exec_config_accepts_region() -> None:
@@ -98,7 +97,7 @@ def test_exec_config_accepts_region() -> None:
         region=OKXRegion.EEA,
     )
 
-    assert "region: Eea" in repr(config)
+    assert config.region == OKXRegion.EEA
 
 
 def test_okx_region_enum_surface() -> None:

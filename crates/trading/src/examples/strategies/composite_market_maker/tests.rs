@@ -445,7 +445,7 @@ fn test_on_order_canceled_self_cancel_preserves_anchor() {
         .insert(ClientOrderId::from("O-001"));
 
     let event = order_canceled("O-001");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert!(strategy.pending_self_cancels.is_empty());
     assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
@@ -459,7 +459,7 @@ fn test_on_order_canceled_protocol_cancel_resets_anchor() {
     strategy.last_quoted_residual = Some(0.05);
 
     let event = order_canceled("O-999");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert_eq!(strategy.last_quoted_anchor, None);
     assert_eq!(strategy.last_quoted_residual, None);
@@ -473,7 +473,7 @@ fn test_on_order_canceled_without_resubmit_does_nothing() {
     strategy.last_quoted_residual = Some(0.05);
 
     let event = order_canceled("O-999");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
     assert_eq!(strategy.last_quoted_residual, Some(0.05));

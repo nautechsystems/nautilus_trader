@@ -19,6 +19,10 @@ use nautilus_model::position::Position;
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the largest winning trade from realized PnLs.
+///
+/// Only positive PnLs count as winners. Returns `NaN` for an empty series or
+/// when there are no winning trades.
 #[repr(C)]
 #[derive(Debug, Clone)]
 #[cfg_attr(

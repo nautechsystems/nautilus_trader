@@ -37,17 +37,15 @@ impl TardisInstrumentMiniInfo {
         exchange: &str,
         price_precision: u8,
         size_precision: u8,
-    ) -> Self {
-        let exchange: TardisExchange = exchange
-            .parse()
-            .expect("`exchange` should be Tardis convention");
-        Self::new(
+    ) -> PyResult<Self> {
+        let exchange: TardisExchange = exchange.parse().map_err(to_pyvalue_err)?;
+        Ok(Self::new(
             instrument_id,
             Some(Ustr::from(raw_symbol)),
             exchange,
             price_precision,
             size_precision,
-        )
+        ))
     }
 
     #[getter]
@@ -128,7 +126,12 @@ impl TardisDataClientConfig {
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(TardisDataClientConfig).to_string()
     }
 }

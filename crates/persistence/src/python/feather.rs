@@ -35,10 +35,10 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
-        PositionClosed, PositionOpened, PositionSnapshot,
+        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
+        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     python::instruments::pyobject_to_instrument_any,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -94,7 +94,7 @@ impl PyStreamingFeatherWriter {
         fs_storage_options=None,
         include_types=None,
         rotation_mode=3,
-        max_file_size=1024*1024*1024,
+        max_file_size=1_073_741_824,
         rotation_interval_ns=None,
         rotation_time_ns=None,
         rotation_timezone="UTC",
@@ -102,7 +102,7 @@ impl PyStreamingFeatherWriter {
         replace=false
     ))]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn new(
+    pub fn py_new(
         path: String,
         cache: PyCache,
         clock: PyClock,
@@ -378,6 +378,7 @@ impl PyStreamingFeatherWriter {
         try_write!(OrderModifyRejected, "OrderModifyRejected");
         try_write!(OrderUpdated, "OrderUpdated");
         try_write!(OrderFilled, "OrderFilled");
+        try_write!(OrderFillVoided, "OrderFillVoided");
         try_write!(PositionOpened, "PositionOpened");
         try_write!(PositionChanged, "PositionChanged");
         try_write!(PositionClosed, "PositionClosed");

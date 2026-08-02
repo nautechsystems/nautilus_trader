@@ -24,6 +24,10 @@ use crate::{statistic::PortfolioStatistic, statistics::loser_max::MaxLoser};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MaxLoser {
+    /// Calculates the largest losing trade (most negative PnL) from realized PnLs.
+    ///
+    /// Only negative PnLs count as losers. Returns `NaN` for an empty series or
+    /// when there are no losing trades.
     #[new]
     fn py_new() -> Self {
         Self {}

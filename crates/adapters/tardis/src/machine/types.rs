@@ -77,10 +77,6 @@ impl TardisInstrumentMiniInfo {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
-)]
 pub struct TardisInstrumentKey {
     /// The Tardis raw symbol.
     pub raw_symbol: Ustr,

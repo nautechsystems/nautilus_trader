@@ -809,6 +809,7 @@ mod tests {
         types::{Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -921,10 +922,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: "test-token".to_string(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some("O-1".to_string()),
@@ -965,10 +966,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: "TKN".to_string(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
@@ -1003,7 +1004,7 @@ mod tests {
         let params = KrakenWsAmendOrderParams {
             order_id: Some("O-VENUE".to_string()),
             cl_ord_id: None,
-            order_qty: Some(0.005),
+            order_qty: Some(dec!(0.005)),
             limit_price: None,
             trigger_price: None,
             token: "TKN".to_string(),
@@ -1735,10 +1736,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: "TEST-TOKEN".to_string(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
@@ -1788,10 +1789,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: "TEST-TOKEN".to_string(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
@@ -1846,10 +1847,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: String::new(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
@@ -1902,10 +1903,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: String::new(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
@@ -1979,10 +1980,10 @@ mod tests {
         let params = KrakenWsAddOrderParams {
             order_type: KrakenOrderType::Limit,
             side: KrakenOrderSide::Buy,
-            order_qty: 0.001,
+            order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
             token: String::new(),
-            limit_price: Some(50_000.0),
+            limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
             cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),

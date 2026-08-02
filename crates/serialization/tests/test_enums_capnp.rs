@@ -145,6 +145,7 @@ fn test_order_type_roundtrip(#[case] value: OrderType) {
 #[case(OrderStatus::PendingCancel)]
 #[case(OrderStatus::PartiallyFilled)]
 #[case(OrderStatus::Filled)]
+#[case(OrderStatus::Voided)]
 fn test_order_status_roundtrip(#[case] value: OrderStatus) {
     let capnp_value = order_status_to_capnp(value);
     let decoded = order_status_from_capnp(capnp_value);

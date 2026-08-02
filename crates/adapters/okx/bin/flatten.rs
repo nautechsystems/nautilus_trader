@@ -399,6 +399,8 @@ async fn close_position(client: &OKXHttpClient, open: &OpenPosition) -> anyhow::
             speed_bump: None,
             outcome: None,
             slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
         })
         .await?;
 

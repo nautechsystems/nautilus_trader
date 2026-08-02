@@ -17,7 +17,7 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    UnixNanos,
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -62,7 +62,7 @@ use crate::{
     common::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_SUCCESS_CODE, OKX_VENUE, OKX_WS_HEARTBEAT_SECS,
-            resolve_instrument_families, validate_okx_client_order_id,
+            resolve_instrument_families, should_retry_error_code, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         parse::{is_okx_spread_symbol, nanos_to_datetime, okx_instrument_type_from_symbol},
@@ -93,7 +93,7 @@ pub struct OKXExecutionClient {
     ws_stream_handle: Option<JoinHandle<()>>,
     ws_business_stream_handle: Option<JoinHandle<()>>,
     ws_dispatch_state: Arc<WsDispatchState>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: TaskHandles,
 }
 
 impl OKXExecutionClient {
@@ -125,7 +125,7 @@ impl OKXExecutionClient {
             config.api_passphrase.clone(),
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
-            None,
+            config.auth_timeout_secs,
             config.transport_backend,
             config.proxy_url.clone(),
         )
@@ -138,7 +138,7 @@ impl OKXExecutionClient {
             config.api_passphrase.clone(),
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
-            None,
+            config.auth_timeout_secs,
             config.transport_backend,
             config.proxy_url.clone(),
         )
@@ -172,7 +172,7 @@ impl OKXExecutionClient {
             ws_stream_handle: None,
             ws_business_stream_handle: None,
             ws_dispatch_state,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: TaskHandles::default(),
         })
     }
 
@@ -344,6 +344,9 @@ impl OKXExecutionClient {
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
         let slippage_pct = get_param_as_string(&cmd.params, "slippage_pct");
+        let rpi = get_param_as_bool(&cmd.params, "rpi");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         self.spawn_task("submit_order", async move {
             let result = ws_private
@@ -369,6 +372,9 @@ impl OKXExecutionClient {
                     speed_bump,
                     outcome,
                     slippage_pct,
+                    rpi,
+                    rpi_taker_access,
+                    rpi_px_round,
                 )
                 .await;
 
@@ -426,6 +432,9 @@ impl OKXExecutionClient {
         let time_in_force = order.time_in_force();
         let price = order.price();
         let is_post_only = order.is_post_only();
+        let rpi = get_param_as_bool(&cmd.params, "rpi");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         self.spawn_task("submit_order_http", async move {
             let result = http_client
@@ -448,13 +457,14 @@ impl OKXExecutionClient {
                     None,
                     None,
                     None,
+                    rpi,
+                    rpi_taker_access,
+                    rpi_px_round,
                 )
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_structured_venue_rejection(&e)
-                    || is_okx_http_local_command_failure(&e)
-                {
+                if is_okx_http_submit_rejection(&e) || is_okx_http_local_command_failure(&e) {
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -563,9 +573,7 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_structured_venue_rejection(&e)
-                    || is_okx_http_local_command_failure(&e)
-                {
+                if is_okx_http_submit_rejection(&e) || is_okx_http_local_command_failure(&e) {
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -824,9 +832,7 @@ impl OKXExecutionClient {
             }
         });
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        self.pending_tasks.push(handle);
     }
 
     // Partitions algo cancel orders into regular and advance, then spawns
@@ -917,11 +923,7 @@ impl OKXExecutionClient {
     }
 
     fn abort_pending_tasks(&self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-
-        for handle in tasks.drain(..) {
-            handle.abort();
-        }
+        self.pending_tasks.abort_all();
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -1914,6 +1916,9 @@ impl ExecutionClient for OKXExecutionClient {
         let mut batch_orders = Vec::new();
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
+        let rpi = get_param_as_bool(&cmd.params, "rpi");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         for client_order_id in &cmd.order_list.client_order_ids {
             let order = cache.order(client_order_id).expect("validated above");
@@ -1933,6 +1938,9 @@ impl ExecutionClient for OKXExecutionClient {
                 Some(order.is_reduce_only()),
                 speed_bump.clone(),
                 outcome.clone(),
+                rpi,
+                rpi_taker_access,
+                rpi_px_round,
             ));
 
             self.ws_dispatch_state.order_identities.insert(
@@ -2015,6 +2023,8 @@ impl ExecutionClient for OKXExecutionClient {
         let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
         let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
+        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -2032,6 +2042,8 @@ impl ExecutionClient for OKXExecutionClient {
                     new_px_usd,
                     new_px_vol,
                     speed_bump,
+                    rpi_taker_access,
+                    rpi_px_round,
                 )
                 .await;
 
@@ -2368,6 +2380,19 @@ fn is_okx_http_structured_venue_rejection(error: &OKXHttpError) -> bool {
     matches!(error, OKXHttpError::OkxError { .. })
 }
 
+fn is_okx_http_submit_rejection(error: &OKXHttpError) -> bool {
+    match error {
+        OKXHttpError::OkxError {
+            error_code,
+            message,
+        } => {
+            !matches!(error_code.as_str(), "50004" | "51149")
+                && (should_retry_error_code(error_code) || !is_ambiguous_okx_http_failure(message))
+        }
+        _ => false,
+    }
+}
+
 fn is_okx_http_local_command_failure(error: &OKXHttpError) -> bool {
     match error {
         OKXHttpError::MissingCredentials => true,
@@ -2435,6 +2460,10 @@ fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
                 .or_else(|| v.as_f64().map(|n| n.to_string()))
         })
     })
+}
+
+fn get_param_as_bool(params: &Option<Params>, key: &str) -> Option<bool> {
+    params.as_ref().and_then(|params| params.get_bool(key))
 }
 
 fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {
@@ -2517,6 +2546,36 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(supports_algo_orders(instrument_type), expected);
+    }
+
+    #[rstest]
+    #[case::accepted_despite_timeout("51149", "Order timed out. Please try again.", false)]
+    #[case::documented_unknown_outcome(
+        "50004",
+        "API endpoint request timeout; please check the request result",
+        false
+    )]
+    #[case::unknown_timeout_code("59999", "Order request timed out", false)]
+    #[case::temporary_system_rejection("50013", "System busy, please retry later", true)]
+    #[case::parameter_rejection("51000", "Parameter state error", true)]
+    fn test_is_okx_http_submit_rejection(
+        #[case] error_code: &str,
+        #[case] message: &str,
+        #[case] expected: bool,
+    ) {
+        let error = OKXHttpError::OkxError {
+            error_code: error_code.to_string(),
+            message: message.to_string(),
+        };
+
+        assert_eq!(is_okx_http_submit_rejection(&error), expected);
+    }
+
+    #[rstest]
+    fn test_is_okx_http_submit_rejection_ignores_local_error() {
+        let error = OKXHttpError::ValidationError("invalid quantity".to_string());
+
+        assert!(!is_okx_http_submit_rejection(&error));
     }
 
     #[rstest]

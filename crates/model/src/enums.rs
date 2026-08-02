@@ -15,9 +15,8 @@
 
 //! Enumerations for the trading domain model.
 
-use std::{str::FromStr, sync::OnceLock};
+use std::str::FromStr;
 
-use ahash::AHashSet;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
@@ -765,7 +764,7 @@ pub enum InstrumentClass {
     Option = 8,
     /// An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
     OptionSpread = 9,
-    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security - most commonly an equity - at a certain price before expiration.
     Warrant = 10,
     /// A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
     SportsBetting = 11,
@@ -1380,6 +1379,7 @@ impl OrderSideSpecified {
 ///  - `CANCELED`
 ///  - `EXPIRED`
 ///  - `FILLED`
+///  - `VOIDED`
 #[repr(C)]
 #[derive(
     Copy,
@@ -1416,7 +1416,7 @@ impl OrderSideSpecified {
 pub enum OrderStatus {
     /// The order is initialized (instantiated) within the Nautilus system.
     Initialized = 1,
-    /// The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
+    /// The order was denied by the Nautilus system, either for being invalid, unprocessable, or exceeding a risk limit.
     Denied = 2,
     /// The order became emulated by the Nautilus system in the `OrderEmulator` component.
     Emulated = 3,
@@ -1442,6 +1442,8 @@ pub enum OrderStatus {
     PartiallyFilled = 13,
     /// The order has been completely filled on a trading venue (closed/done).
     Filled = 14,
+    /// The order is terminal after an authoritative venue void or fill correction.
+    Voided = 15,
 }
 
 impl OrderStatus {
@@ -1464,7 +1466,12 @@ impl OrderStatus {
     pub const fn is_closed(self) -> bool {
         matches!(
             self,
-            Self::Denied | Self::Rejected | Self::Canceled | Self::Expired | Self::Filled
+            Self::Denied
+                | Self::Rejected
+                | Self::Canceled
+                | Self::Expired
+                | Self::Filled
+                | Self::Voided
         )
     }
 
@@ -1475,33 +1482,6 @@ impl OrderStatus {
             self,
             Self::Accepted | Self::Triggered | Self::PendingUpdate | Self::PartiallyFilled
         )
-    }
-
-    /// Returns a cached `AHashSet` of order statuses safe for cancellation queries.
-    ///
-    /// These are statuses where an order is working on the venue but not already
-    /// in the process of being cancelled or updated. Including `PENDING_CANCEL`
-    /// in cancellation filters can cause duplicate cancel attempts or incorrect open order counts.
-    ///
-    /// Returns:
-    /// - `ACCEPTED`: Order is working on the venue.
-    /// - `TRIGGERED`: Stop order has been triggered.
-    /// - `PENDING_UPDATE`: Order being updated.
-    /// - `PARTIALLY_FILLED`: Order is partially filled but still working.
-    ///
-    /// Excludes:
-    /// - `PENDING_CANCEL`: Already being cancelled.
-    #[must_use]
-    pub fn cancellable_statuses_set() -> &'static AHashSet<Self> {
-        static CANCELLABLE_SET: OnceLock<AHashSet<OrderStatus>> = OnceLock::new();
-        CANCELLABLE_SET.get_or_init(|| {
-            AHashSet::from_iter([
-                Self::Accepted,
-                Self::Triggered,
-                Self::PendingUpdate,
-                Self::PartiallyFilled,
-            ])
-        })
     }
 }
 

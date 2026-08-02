@@ -1,7 +1,13 @@
 # Configuration for typos spell checker
 
+[default.extend-identifiers]
+# Rust crate names
+writeable = "writeable"
+
 [default.extend-words]
 # Industry standard abbreviations and technical terms
+CMO = "CMO" # Chande Momentum Oscillator
+BSE = "BSE" # Bombay Stock Exchange
 Pn = "Pn" # Part of PnL (Profit and Loss)
 PnL = "PnL" # Profit and Loss
 PnLs = "PnLs" # Plural of PnL
@@ -26,6 +32,7 @@ cummulativeQuoteQty = "cummulativeQuoteQty" # Binance API field name
 SETTELMENT = "SETTELMENT" # Binance API: DELIVERED_SETTELMENT income type (their official typo)
 Alo = "Alo" # Hyperliquid API: Add Liquidity Only (post-only TIF)
 BadAloPx = "BadAloPx" # Hyperliquid API: rejection code for post-only orders
+sweeden = "sweeden" # Polymarket API tag slug
 
 # Blockchain names (official branding)
 Superseed = "Superseed" # Superseed blockchain (chain ID 10001)
@@ -37,9 +44,13 @@ BA = "BA" # Base64/encoded characters in test data
 datas = "datas" # Intentional plural variable naming for vectors
 UE = "UE" # Base64 encoded certificate data (GA1UE pattern)
 Fo = "Fo" # Base64 encoded certificate data
+Iz = "Iz" # Base64 encoded certificate data
 
 # NumPy/scientific computing functions
 arange = "arange" # NumPy array range function (not a typo of "arrange")
+
+# Author names in literature references
+Cann = "Cann" # Part of McCann (Ulcer Index reference author)
 
 # Rust crate names
 flate = "flate" # Part of flate2 crate name (deflate compression)

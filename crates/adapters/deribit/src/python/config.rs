@@ -16,6 +16,7 @@
 //! Python bindings for Deribit configuration.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -42,8 +43,10 @@ impl DeribitDataClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         heartbeat_interval_secs = None,
+        auth_timeout_secs = None,
         update_instruments_interval_mins = None,
         auto_load_missing_instruments = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -59,8 +62,10 @@ impl DeribitDataClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
+        auth_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         auto_load_missing_instruments: Option<bool>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -78,16 +83,22 @@ impl DeribitDataClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
+            auth_timeout_secs,
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(defaults.auto_load_missing_instruments),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(DeribitDataClientConfig).to_string()
     }
 }
 
@@ -110,6 +121,8 @@ impl DeribitExecClientConfig {
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
+        auth_timeout_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -126,6 +139,8 @@ impl DeribitExecClientConfig {
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        auth_timeout_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -143,11 +158,17 @@ impl DeribitExecClientConfig {
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
-            transport_backend: defaults.transport_backend,
+            auth_timeout_secs,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
+    #[getter]
+    const fn has_proxy_url(&self) -> bool {
+        self.proxy_url.is_some()
+    }
+
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(DeribitExecClientConfig).to_string()
     }
 }

@@ -401,14 +401,14 @@ pub fn transform_row_to_dex_pool_data(
             Ok(DexPoolData::FeeCollect(pool_fee_collect))
         }
         "fee_protocol_update" => {
-            let fee_protocol0_new = row.try_get::<i16, _>("fee_protocol0_new")?;
-            let fee_protocol1_new = row.try_get::<i16, _>("fee_protocol1_new")?;
-            let fee_protocol0_new = u8::try_from(fee_protocol0_new).map_err(|e| {
+            let fee_protocol0_new = row.try_get::<i32, _>("fee_protocol0_new")?;
+            let fee_protocol1_new = row.try_get::<i32, _>("fee_protocol1_new")?;
+            let fee_protocol0_new = u32::try_from(fee_protocol0_new).map_err(|e| {
                 sqlx::Error::Decode(
                     format!("Invalid fee_protocol0_new '{fee_protocol0_new}': {e}").into(),
                 )
             })?;
-            let fee_protocol1_new = u8::try_from(fee_protocol1_new).map_err(|e| {
+            let fee_protocol1_new = u32::try_from(fee_protocol1_new).map_err(|e| {
                 sqlx::Error::Decode(
                     format!("Invalid fee_protocol1_new '{fee_protocol1_new}': {e}").into(),
                 )

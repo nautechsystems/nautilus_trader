@@ -15,7 +15,8 @@
 
 //! Example demonstrating live data testing with the Binance Futures USD-M adapter.
 //!
-//! Edit the constants below to change the environment, target instrument, and subscriptions.
+//! Edit the constants below to change the environment and subscriptions. Set
+//! `BINANCE_FUTURES_INSTRUMENT_ID` to override the target instrument.
 //!
 //! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance --features examples`
 //!
@@ -37,7 +38,7 @@ use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const NODE_NAME: &str = "BINANCE-FUTURES-TESTER-001";
-const INSTRUMENT_ID: &str = "BTCUSDT-PERP.BINANCE";
+const DEFAULT_INSTRUMENT_ID: &str = "BTCUSDT-PERP.BINANCE";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,8 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let trader_id = TraderId::from(TRADER_ID);
     let node_name = NODE_NAME.to_string();
+    let instrument_id = std::env::var("BINANCE_FUTURES_INSTRUMENT_ID")
+        .unwrap_or_else(|_| DEFAULT_INSTRUMENT_ID.to_string());
     let instrument_ids = vec![
-        InstrumentId::from(INSTRUMENT_ID),
+        InstrumentId::from(instrument_id.as_str()),
         // InstrumentId::from("ETHUSDT-PERP.BINANCE"),
     ];
 

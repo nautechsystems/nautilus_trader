@@ -144,6 +144,10 @@ impl HttpClient {
 
     /// Sends an HTTP request.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    ///
     /// # Examples
     ///
     /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
@@ -161,14 +165,14 @@ impl HttpClient {
         timeout_secs: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.client.clone();
-        let rate_limiter = self.rate_limiter.clone();
+        let client = self.clone();
         let params = params_to_hashmap(params)?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let keys = keys.map(into_ustr_vec);
-            rate_limiter.await_keys_ready(keys.as_deref()).await;
+            client.await_rate_limits(keys.as_deref()).await;
             client
+                .client
                 .send_request(
                     method.into(),
                     url,
@@ -183,6 +187,10 @@ impl HttpClient {
     }
 
     /// Sends an HTTP GET request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     #[pyo3(name = "get")]
     #[pyo3(signature = (url, params=None, headers=None, keys=None, timeout_secs=None))]
     fn py_get<'py>(
@@ -205,6 +213,10 @@ impl HttpClient {
     }
 
     /// Sends an HTTP POST request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "post")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -229,6 +241,10 @@ impl HttpClient {
     }
 
     /// Sends an HTTP PATCH request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "patch")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -253,6 +269,10 @@ impl HttpClient {
     }
 
     /// Sends an HTTP DELETE request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     #[pyo3(name = "delete")]
     #[pyo3(signature = (url, params=None, headers=None, keys=None, timeout_secs=None))]
     fn py_delete<'py>(

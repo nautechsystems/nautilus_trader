@@ -266,6 +266,7 @@ fn bench_cancel(c: &mut Criterion) {
                     asset: BTC_ASSET_INDEX,
                     cloid,
                 }],
+                fast: Some(true),
             };
             let bytes = sign_action(&signer, black_box(&action));
             black_box(bytes);
@@ -297,7 +298,7 @@ fn bench_modify(c: &mut Criterion) {
         b.iter(|| {
             let action = HyperliquidExecAction::Modify {
                 modify: HyperliquidExecModifyOrderRequest {
-                    oid: 430_481_837_807,
+                    oid: 430_481_837_807.into(),
                     order: replacement.clone(),
                 },
             };

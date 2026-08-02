@@ -16,11 +16,25 @@
 //! Integration tests for `OKXExecutionClient`.
 
 use std::{
-    cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, sync::Arc, time::Duration,
+    cell::RefCell,
+    collections::HashMap,
+    net::SocketAddr,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::AHashMap;
-use axum::{Json, Router, extract::Query, http::HeaderMap, response::IntoResponse, routing::get};
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::HeaderMap,
+    response::IntoResponse,
+    routing::{get, post},
+};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -38,13 +52,19 @@ use nautilus_common::{
 use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TriggerType,
+    },
     events::{OrderEventAny, OrderInitialized},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
-    instruments::{CryptoFuturesSpread, InstrumentAny},
+    instruments::{
+        CryptoFuturesSpread, InstrumentAny,
+        stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
+    },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
@@ -52,7 +72,9 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
-        consts::{OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE},
+        consts::{
+            OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE,
+        },
         enums::{OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide},
     },
     config::OKXExecClientConfig,
@@ -63,8 +85,8 @@ use nautilus_okx::{
             AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_execution_reports,
             dispatch_ws_message, emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
-        enums::OKXWsOperation,
-        messages::{ExecutionReport, OKXWsMessage},
+        enums::{OKXWsChannel, OKXWsOperation},
+        messages::{ExecutionReport, OKXOrderMsg, OKXWsFrame, OKXWsMessage},
         parse::OrderStateSnapshot,
     },
 };
@@ -375,6 +397,63 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
 
 #[rstest]
 #[tokio::test]
+async fn test_algo_submit_timeout_does_not_emit_order_rejected() {
+    let (addr, requests) = start_exec_submit_timeout_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.on_instrument(crypto_perpetual_ethusdt().into());
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let client_order_id = ClientOrderId::new("OALGOTIMEOUT1");
+    let order = build_test_stop_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { requests.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::Submitted(submitted))
+                    if submitted.client_order_id == client_order_id
+            ))
+            .count(),
+        1,
+    );
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected)
+                if rejected.client_order_id == client_order_id
+        )),
+        "ambiguous algo submit failure should not emit OrderRejected: {events:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_local_cancel_validation_failure_does_not_emit_order_cancel_rejected() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
@@ -469,7 +548,7 @@ fn dispatch_send_failed_response(
     client_order_id: ClientOrderId,
 ) -> (Vec<ExecutionEvent>, WsDispatchState) {
     let (emitter, mut rx) = test_emitter();
-    let state = state_with_order_identity(client_order_id);
+    let state = state_with_order_identity(client_order_id, InstrumentId::from("ETH-USDT-SWAP.OKX"));
 
     dispatch_command_response(
         OKXWsMessage::SendFailed {
@@ -490,7 +569,7 @@ fn dispatch_explicit_rejection_response(
     client_order_id: ClientOrderId,
 ) -> Vec<ExecutionEvent> {
     let (emitter, mut rx) = test_emitter();
-    let state = state_with_order_identity(client_order_id);
+    let state = state_with_order_identity(client_order_id, InstrumentId::from("ETH-USDT-SWAP.OKX"));
 
     dispatch_command_response(
         OKXWsMessage::OrderResponse {
@@ -535,12 +614,15 @@ fn dispatch_command_response(
     );
 }
 
-fn state_with_order_identity(client_order_id: ClientOrderId) -> WsDispatchState {
+fn state_with_order_identity(
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+) -> WsDispatchState {
     let state = WsDispatchState::default();
     state.order_identities.insert(
         client_order_id,
         OrderIdentity {
-            instrument_id: InstrumentId::from("ETH-USDT-SWAP.OKX"),
+            instrument_id,
             strategy_id: StrategyId::from("STRATEGY-001"),
             order_side: OrderSide::Buy,
             order_type: OrderType::Limit,
@@ -1200,6 +1282,290 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
 }
 
 #[rstest]
+#[case(
+    "ws_orders_post_only_canceled_first.json",
+    OKXInstrumentType::Swap,
+    OKXOrderType::PostOnly,
+    "ETH-USDT-SWAP",
+    "ETH-USDT-SWAP.OKX",
+    "OPOSTONLYCANCEL001",
+    "2497956918703120600"
+)]
+#[case(
+    "ws_orders_mmp_and_post_only_canceled_first.json",
+    OKXInstrumentType::Option,
+    OKXOrderType::MmpAndPostOnly,
+    "BTC-USD-260828-100000-C",
+    "BTC-USD-260828-100000-C.OKX",
+    "OMMPPOSTONLYCANCEL001",
+    "2497956918703120601"
+)]
+fn test_dispatch_tracked_post_only_cancel_from_fixture(
+    #[case] fixture: &str,
+    #[case] expected_instrument_type: OKXInstrumentType,
+    #[case] expected_order_type: OKXOrderType,
+    #[case] raw_symbol: &str,
+    #[case] instrument_id: InstrumentId,
+    #[case] client_order_id: &str,
+    #[case] venue_order_id: &str,
+) {
+    let client_order_id = ClientOrderId::new(client_order_id);
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data")
+        .join(fixture);
+    let content = std::fs::read_to_string(path).unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected private order data frame");
+    };
+    assert_eq!(arg.channel, OKXWsChannel::Orders);
+    assert_eq!(arg.inst_type, Some(expected_instrument_type));
+
+    let order_msgs: Vec<OKXOrderMsg> = serde_json::from_value(data).unwrap();
+    assert_eq!(order_msgs.len(), 1);
+    let message = order_msgs.into_iter().next().unwrap();
+    assert_eq!(message.inst_type, expected_instrument_type);
+    assert_eq!(message.ord_type, expected_order_type);
+    assert_eq!(message.state, OKXOrderStatus::Canceled);
+    assert_eq!(message.acc_fill_sz.as_deref(), Some("0"));
+    assert_eq!(message.fill_sz, "0");
+    assert_eq!(
+        message.cancel_source.as_deref(),
+        Some(OKX_POST_ONLY_CANCEL_SOURCE),
+    );
+    assert_eq!(
+        message.cancel_source_reason.as_deref(),
+        Some(OKX_POST_ONLY_CANCEL_REASON),
+    );
+    assert_eq!(message.cl_ord_id, client_order_id.as_str());
+    assert_eq!(message.ord_id, Ustr::from(venue_order_id));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = state_with_order_identity(client_order_id, instrument_id);
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from(raw_symbol),
+        order_instrument(expected_instrument_type, instrument_id, raw_symbol),
+    );
+
+    let (untracked_emitter, mut untracked_rx) = test_emitter();
+    let untracked_state = WsDispatchState::default();
+    let mut untracked_fee_cache = AHashMap::new();
+    let mut untracked_filled_qty_cache = AHashMap::new();
+    let mut untracked_order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(vec![message.clone()]),
+        &untracked_emitter,
+        &untracked_state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut untracked_fee_cache,
+        &mut untracked_filled_qty_cache,
+        &mut untracked_order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let untracked_events = drain_events(&mut untracked_rx);
+    assert_eq!(untracked_events.len(), 1);
+    match &untracked_events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.client_order_id, Some(client_order_id));
+            assert_eq!(report.venue_order_id, VenueOrderId::new(venue_order_id));
+            assert_eq!(report.order_side, OrderSide::Buy);
+            assert_eq!(report.order_type, OrderType::Limit);
+            assert_eq!(report.time_in_force, TimeInForce::Gtc);
+            assert_eq!(report.order_status, OrderStatus::Canceled);
+            assert!(report.post_only);
+            assert_eq!(
+                report.cancel_reason.as_deref(),
+                Some(OKX_POST_ONLY_CANCEL_REASON),
+            );
+        }
+        other => panic!("Expected first-seen untracked order status report, was {other:?}"),
+    }
+
+    let venue_order_id_key = Ustr::from(venue_order_id);
+    let mut fee_cache = AHashMap::new();
+    fee_cache.insert(venue_order_id_key, Money::new(1.25, Currency::from("USDT")));
+    let mut filled_qty_cache = AHashMap::new();
+    filled_qty_cache.insert(venue_order_id_key, Quantity::from("0.5"));
+    let mut order_state_cache = AHashMap::new();
+    order_state_cache.insert(
+        client_order_id,
+        OrderStateSnapshot {
+            venue_order_id: VenueOrderId::new(venue_order_id),
+            quantity: Quantity::from("2"),
+            price: Some(Price::from("1.25")),
+        },
+    );
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(vec![message.clone()]),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match events[0] {
+        ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) => {
+            assert_eq!(rejected.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(rejected.strategy_id, StrategyId::from("STRATEGY-001"));
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert_eq!(rejected.account_id, AccountId::from("OKX-001"));
+            assert_eq!(
+                rejected.reason,
+                Ustr::from("Post-only order would have taken liquidity"),
+            );
+            assert!(!rejected.reconciliation);
+            assert!(rejected.due_post_only);
+        }
+        ref other => panic!("Expected one OrderRejected, was {other:?}"),
+    }
+
+    assert!(!state.order_identities.contains_key(&client_order_id));
+    assert!(!order_state_cache.contains_key(&client_order_id));
+    assert!(!fee_cache.contains_key(&venue_order_id_key));
+    assert!(!filled_qty_cache.contains_key(&venue_order_id_key));
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(vec![message]),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let replay_events = drain_events(&mut rx);
+    assert_eq!(
+        replay_events.len(),
+        0,
+        "replay should not emit another execution event: {replay_events:?}",
+    );
+}
+
+#[rstest]
+fn test_dispatch_rpi_canceled_first_emits_rejection_without_acceptance() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data")
+        .join("ws_orders_rpi_canceled_first.json");
+    let content = std::fs::read_to_string(path).unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected private RPI order data frame");
+    };
+    let order_msgs: Vec<OKXOrderMsg> = serde_json::from_value(data).unwrap();
+    let message = &order_msgs[0];
+    let client_order_id = ClientOrderId::new("ORPICANCEL001");
+    let instrument_id = InstrumentId::from("OMI-USD.OKX");
+
+    assert_eq!(arg.channel, OKXWsChannel::Orders);
+    assert_eq!(arg.inst_type, Some(OKXInstrumentType::Spot));
+    assert_eq!(order_msgs.len(), 1);
+    assert_eq!(message.inst_id, Ustr::from("OMI-USD"));
+    assert_eq!(message.inst_type, OKXInstrumentType::Spot);
+    assert_eq!(message.ord_type, OKXOrderType::Rpi);
+    assert_eq!(message.state, OKXOrderStatus::Canceled);
+    assert_eq!(message.acc_fill_sz.as_deref(), Some("0"));
+    assert_eq!(message.fill_sz, "0");
+    assert_eq!(message.cancel_source.as_deref(), Some(""));
+    assert_eq!(message.cancel_source_reason.as_deref(), Some(""));
+    assert_eq!(message.cl_ord_id, client_order_id.as_str());
+    assert_eq!(message.ord_id, Ustr::from("2500000000000000001"));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = state_with_order_identity(client_order_id, instrument_id);
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("OMI-USD"),
+        order_instrument(OKXInstrumentType::Spot, instrument_id, "OMI-USD"),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) => {
+            assert_eq!(rejected.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(rejected.strategy_id, StrategyId::from("STRATEGY-001"));
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert_eq!(rejected.account_id, AccountId::from("OKX-001"));
+            assert_eq!(
+                rejected.reason,
+                Ustr::from("RPI order canceled before acceptance")
+            );
+            assert!(!rejected.reconciliation);
+            assert!(rejected.due_post_only);
+        }
+        other => panic!("Expected one OrderRejected, was {other:?}"),
+    }
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        ExecutionEvent::Order(OrderEventAny::Accepted(_) | OrderEventAny::Canceled(_))
+    )));
+    assert!(!state.emitted_accepted.contains(&client_order_id));
+    assert!(!state.order_identities.contains_key(&client_order_id));
+}
+
+fn order_instrument(
+    instrument_type: OKXInstrumentType,
+    instrument_id: InstrumentId,
+    raw_symbol: &str,
+) -> InstrumentAny {
+    match instrument_type {
+        OKXInstrumentType::Spot => {
+            let mut instrument = currency_pair_btcusdt();
+            instrument.id = instrument_id;
+            instrument.raw_symbol = Symbol::from(raw_symbol);
+            InstrumentAny::CurrencyPair(instrument)
+        }
+        OKXInstrumentType::Swap => {
+            let mut instrument = crypto_perpetual_ethusdt();
+            instrument.id = instrument_id;
+            instrument.raw_symbol = Symbol::from(raw_symbol);
+            InstrumentAny::CryptoPerpetual(instrument)
+        }
+        OKXInstrumentType::Option => {
+            let mut instrument =
+                crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+            instrument.id = instrument_id;
+            instrument.raw_symbol = Symbol::from(raw_symbol);
+            InstrumentAny::CryptoOption(instrument)
+        }
+        other => panic!("Unsupported test instrument type: {other}"),
+    }
+}
+
+#[rstest]
 fn test_dispatch_spread_post_only_cancel_emits_rejected() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
@@ -1727,6 +2093,44 @@ async fn start_exec_test_server() -> SocketAddr {
     addr
 }
 
+async fn start_exec_submit_timeout_test_server() -> (SocketAddr, Arc<AtomicUsize>) {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let route_requests = Arc::clone(&requests);
+    let router = create_exec_test_router().route(
+        "/api/v5/trade/order-algo",
+        post(move |_headers: HeaderMap| {
+            let requests = Arc::clone(&route_requests);
+            async move {
+                requests.fetch_add(1, Ordering::Relaxed);
+                Json(load_test_data("http_place_algo_order_timeout.json"))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/api/v5/account/balance");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    (addr, requests)
+}
+
 async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAddr {
     let router = create_exec_report_test_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2058,6 +2462,20 @@ fn build_test_limit_order(instrument_id: InstrumentId, client_order_id: ClientOr
         .side(OrderSide::Buy)
         .price(Price::from("2000.00"))
         .quantity(Quantity::from("1"))
+        .time_in_force(TimeInForce::Gtc)
+        .build()
+}
+
+fn build_test_stop_order(client_order_id: ClientOrderId) -> OrderAny {
+    OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("1000.00"))
+        .trigger_type(TriggerType::MarkPrice)
         .time_in_force(TimeInForce::Gtc)
         .build()
 }

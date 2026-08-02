@@ -206,19 +206,19 @@ fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
 
 The `OptionGreeks` fields:
 
-| Field              | Type           | Description                                        |
-|--------------------|----------------|----------------------------------------------------|
-| `instrument_id`    | `InstrumentId` | The option contract.                               |
-| `delta`            | `f64`          | Price sensitivity to underlying.                   |
-| `gamma`            | `f64`          | Delta sensitivity to underlying.                   |
-| `vega`             | `f64`          | Price sensitivity to a 1% change in volatility.    |
-| `theta`            | `f64`          | Daily time decay.                                  |
-| `rho`              | `f64`          | Sensitivity to interest rate changes.              |
-| `mark_iv`          | `Option<f64>`  | Mark price implied volatility.                     |
-| `bid_iv`           | `Option<f64>`  | Bid implied volatility.                            |
-| `ask_iv`           | `Option<f64>`  | Ask implied volatility.                            |
-| `underlying_price` | `Option<f64>`  | Current underlying forward price for this expiry.  |
-| `open_interest`    | `Option<f64>`  | Open interest for this contract.                   |
+| Field              | Type           | Description                                       |
+| ------------------ | -------------- | ------------------------------------------------- |
+| `instrument_id`    | `InstrumentId` | The option contract.                              |
+| `delta`            | `f64`          | Price sensitivity to underlying.                  |
+| `gamma`            | `f64`          | Delta sensitivity to underlying.                  |
+| `vega`             | `f64`          | Price sensitivity to a 1% change in volatility.   |
+| `theta`            | `f64`          | Daily time decay.                                 |
+| `rho`              | `f64`          | Sensitivity to interest rate changes.             |
+| `mark_iv`          | `Option<f64>`  | Mark price implied volatility.                    |
+| `bid_iv`           | `Option<f64>`  | Bid implied volatility.                           |
+| `ask_iv`           | `Option<f64>`  | Ask implied volatility.                           |
+| `underlying_price` | `Option<f64>`  | Current underlying forward price for this expiry. |
+| `open_interest`    | `Option<f64>`  | Open interest for this contract.                  |
 
 The `delta`, `gamma`, `vega`, `theta`, and `rho` values live on a nested
 `greeks: OptionGreekValues` struct. `OptionGreeks` implements
@@ -276,11 +276,11 @@ let series_id = OptionSeriesId::new(
 
 **`StrikeRange`** controls which strikes are active:
 
-| Variant       | Description                                            |
-|---------------|--------------------------------------------------------|
-| `Fixed`       | A fixed set of strike prices.                          |
-| `AtmRelative` | `strikes_above` above and `strikes_below` below ATM.   |
-| `AtmPercent`  | All strikes within `pct` of the ATM price.             |
+| Variant       | Description                                          |
+| ------------- | ---------------------------------------------------- |
+| `Fixed`       | A fixed set of strike prices.                        |
+| `AtmRelative` | `strikes_above` above and `strikes_below` below ATM. |
+| `AtmPercent`  | All strikes within `pct` of the ATM price.           |
 
 For ATM-based variants, subscriptions are deferred until the ATM price
 is determined from the venue-provided forward price.
@@ -361,7 +361,7 @@ fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
 The `OptionChainSlice` fields and methods:
 
 | Name             | Type / Returns              | Description                          |
-|------------------|-----------------------------|--------------------------------------|
+| ---------------- | --------------------------- | ------------------------------------ |
 | `series_id`      | `OptionSeriesId`            | The series this snapshot covers.     |
 | `atm_strike`     | `Option<Price>`             | ATM strike from the forward price.   |
 | `call_count()`   | `usize`                     | Number of call strikes with data.    |

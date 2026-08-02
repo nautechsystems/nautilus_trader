@@ -15,8 +15,14 @@
 
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
+use alloy::primitives::Address;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
+#[cfg(feature = "hypersync")]
+use nautilus_model::defi::DexType;
+use nautilus_model::defi::{
+    Block, Chain,
+    rpc::{RpcLog, RpcNodeWssResponse},
+};
 use nautilus_network::{
     RECONNECTED,
     http::USER_AGENT,
@@ -24,11 +30,14 @@ use nautilus_network::{
 };
 use tokio_tungstenite::tungstenite::Message;
 
+#[cfg(feature = "hypersync")]
+use crate::exchanges::get_dex_extended;
 use crate::rpc::{
     error::BlockchainRpcClientError,
     types::{BlockchainMessage, RpcEventType},
     utils::{
         extract_rpc_subscription_id, is_subscription_confirmation_response, is_subscription_event,
+        is_unsubscribe_confirmation_response,
     },
 };
 
@@ -56,8 +65,8 @@ pub struct CoreBlockchainRpcClient {
     wss_client: Option<Arc<WebSocketClient>>,
     /// Channel receiver for consuming WebSocket messages.
     wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
-    /// Tracks confirmed subscriptions that need to be re-established on reconnection.
-    subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, String>>>,
+    /// Tracks desired subscriptions that need to be re-established on reconnection.
+    subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, RpcSubscription>>>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     transport_backend: TransportBackend,
     /// Optional proxy URL for the WebSocket connection.
@@ -85,6 +94,45 @@ impl Debug for CoreBlockchainRpcClient {
             )
             .field("confirmed_subscriptions", &"<RwLock<HashMap>>")
             .finish()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RpcSubscription {
+    name: String,
+    filter: Option<serde_json::Value>,
+}
+
+impl RpcSubscription {
+    fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            filter: None,
+        }
+    }
+
+    fn pool_logs(addresses: &[Address], event_signature: String) -> Self {
+        let mut addresses: Vec<String> = addresses
+            .iter()
+            .map(|address| format!("{address:?}"))
+            .collect();
+        addresses.sort();
+
+        Self {
+            name: "logs".to_string(),
+            filter: Some(serde_json::json!({
+                "address": addresses,
+                "topics": [event_signature],
+            })),
+        }
+    }
+
+    fn params(&self) -> Vec<serde_json::Value> {
+        let mut params = vec![serde_json::json!(self.name)];
+        if let Some(filter) = &self.filter {
+            params.push(filter.clone());
+        }
+        params
     }
 }
 
@@ -156,26 +204,49 @@ impl CoreBlockchainRpcClient {
         Ok(())
     }
 
-    /// Registers a subscription for the specified event type and records it internally with the given ID.
+    /// Registers a subscription for the specified event type.
     async fn subscribe_events(
         &mut self,
         event_type: RpcEventType,
-        subscription_id: String,
+        subscription: RpcSubscription,
+    ) -> Result<(), BlockchainRpcClientError> {
+        if self.subscriptions.read().await.contains_key(&event_type) {
+            return Ok(());
+        }
+
+        self.send_subscription_request(event_type, subscription)
+            .await
+    }
+
+    async fn replace_subscription(
+        &mut self,
+        event_type: RpcEventType,
+        subscription: RpcSubscription,
+    ) -> Result<(), BlockchainRpcClientError> {
+        self.unsubscribe_event_type(event_type).await?;
+        self.send_subscription_request(event_type, subscription)
+            .await
+    }
+
+    async fn send_subscription_request(
+        &mut self,
+        event_type: RpcEventType,
+        subscription: RpcSubscription,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
             log::debug!(
                 "Subscribing to '{}' on chain '{}'",
-                subscription_id,
+                subscription.name,
                 self.chain.name
             );
             let msg = serde_json::json!({
                 "method": "eth_subscribe",
                 "id": self.request_id,
                 "jsonrpc": "2.0",
-                "params": [subscription_id]
+                "params": subscription.params()
             });
             self.pending_subscription_request
-                .insert(self.request_id, event_type.clone());
+                .insert(self.request_id, event_type);
             self.request_id += 1;
 
             if let Err(e) = client.send_text(msg.to_string(), None).await {
@@ -184,7 +255,7 @@ impl CoreBlockchainRpcClient {
 
             // Track subscription for re-establishment on reconnect
             let mut confirmed = self.subscriptions.write().await;
-            confirmed.insert(event_type, subscription_id);
+            confirmed.insert(event_type, subscription);
 
             Ok(())
         } else {
@@ -212,36 +283,16 @@ impl CoreBlockchainRpcClient {
             self.chain.name
         );
 
-        let subs_to_restore: Vec<(RpcEventType, String)> = subscriptions
+        let subs_to_restore: Vec<(RpcEventType, RpcSubscription)> = subscriptions
             .iter()
-            .map(|(event_type, sub_id)| (event_type.clone(), sub_id.clone()))
+            .map(|(event_type, subscription)| (*event_type, subscription.clone()))
             .collect();
 
         drop(subscriptions);
 
-        for (event_type, subscription_id) in subs_to_restore {
-            if let Some(client) = &self.wss_client {
-                log::debug!(
-                    "Re-subscribing to '{}' on chain '{}'",
-                    subscription_id,
-                    self.chain.name
-                );
-
-                let msg = serde_json::json!({
-                    "method": "eth_subscribe",
-                    "id": self.request_id,
-                    "jsonrpc": "2.0",
-                    "params": [subscription_id]
-                });
-
-                self.pending_subscription_request
-                    .insert(self.request_id, event_type);
-                self.request_id += 1;
-
-                if let Err(e) = client.send_text(msg.to_string(), None).await {
-                    log::error!("Error re-subscribing after reconnection: {e:?}");
-                }
-            }
+        for (event_type, subscription) in subs_to_restore {
+            self.send_subscription_request(event_type, subscription)
+                .await?;
         }
 
         Ok(())
@@ -253,7 +304,11 @@ impl CoreBlockchainRpcClient {
         subscription_id: String,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
-            log::debug!("Unsubscribing to new blocks on chain {}", self.chain.name);
+            log::debug!(
+                "Unsubscribing from '{}' on chain {}",
+                subscription_id,
+                self.chain.name
+            );
             let msg = serde_json::json!({
                 "method": "eth_unsubscribe",
                 "id": 1,
@@ -272,6 +327,29 @@ impl CoreBlockchainRpcClient {
         }
     }
 
+    async fn unsubscribe_event_type(
+        &mut self,
+        event_type: RpcEventType,
+    ) -> Result<(), BlockchainRpcClientError> {
+        let subscription_ids_to_remove: Vec<String> = self
+            .subscription_event_types
+            .iter()
+            .filter(|(_, active_event_type)| **active_event_type == event_type)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        for id in subscription_ids_to_remove {
+            self.unsubscribe_events(id.clone()).await?;
+            self.subscription_event_types.remove(&id);
+        }
+
+        self.pending_subscription_request
+            .retain(|_, pending_event_type| *pending_event_type != event_type);
+        self.subscriptions.write().await.remove(&event_type);
+
+        Ok(())
+    }
+
     /// Waits for and returns the next available message from the WebSocket channel.
     pub async fn wait_on_rpc_channel(&mut self) -> Option<Message> {
         match &mut self.wss_consumer_rx {
@@ -283,10 +361,6 @@ impl CoreBlockchainRpcClient {
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.
     ///
     /// Handles subscription confirmations, events, and reconnection signals automatically.
-    ///
-    /// # Panics
-    ///
-    /// Panics if expected fields (`id`, `result`) are missing or cannot be converted when handling subscription confirmations or events.
     ///
     /// # Errors
     ///
@@ -308,18 +382,48 @@ impl CoreBlockchainRpcClient {
 
                     match serde_json::from_str::<serde_json::Value>(&text) {
                         Ok(json) => {
-                            if is_subscription_confirmation_response(&json) {
-                                let subscription_request_id =
-                                    json.get("id").unwrap().as_u64().unwrap();
-                                let result = json.get("result").unwrap().as_str().unwrap();
-                                let event_type = self
+                            if is_unsubscribe_confirmation_response(&json) {
+                                log::debug!(
+                                    "Received unsubscribe confirmation on chain '{}'",
+                                    self.chain.name
+                                );
+                                continue;
+                            } else if is_subscription_confirmation_response(&json) {
+                                let subscription_request_id = json
+                                    .get("id")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .ok_or_else(|| {
+                                        BlockchainRpcClientError::InternalRpcClientError(
+                                            "Missing subscription request id".to_string(),
+                                        )
+                                    })?;
+                                let result = json
+                                    .get("result")
+                                    .and_then(serde_json::Value::as_str)
+                                    .ok_or_else(|| {
+                                        BlockchainRpcClientError::InternalRpcClientError(
+                                            "Missing subscription id".to_string(),
+                                        )
+                                    })?;
+                                let Some(event_type) = self
                                     .pending_subscription_request
-                                    .get(&subscription_request_id)
-                                    .unwrap();
-                                self.subscription_event_types
-                                    .insert(result.to_string(), event_type.clone());
-                                self.pending_subscription_request
-                                    .remove(&subscription_request_id);
+                                    .remove(&subscription_request_id)
+                                else {
+                                    log::debug!(
+                                        "Unsubscribing from stale subscription confirmation '{}' on chain '{}'",
+                                        result,
+                                        self.chain.name
+                                    );
+                                    self.unsubscribe_events(result.to_string()).await?;
+                                    continue;
+                                };
+
+                                if self.subscriptions.read().await.contains_key(&event_type) {
+                                    self.subscription_event_types
+                                        .insert(result.to_string(), event_type);
+                                } else {
+                                    self.unsubscribe_events(result.to_string()).await?;
+                                }
                                 continue;
                             } else if is_subscription_event(&json) {
                                 let subscription_id = match extract_rpc_subscription_id(&json) {
@@ -333,7 +437,7 @@ impl CoreBlockchainRpcClient {
                                 };
 
                                 if let Some(event_type) =
-                                    self.subscription_event_types.get(subscription_id)
+                                    self.subscription_event_types.get(subscription_id).copied()
                                 {
                                     match event_type {
                                         RpcEventType::NewBlock => {
@@ -354,6 +458,24 @@ impl CoreBlockchainRpcClient {
                                                     ),
                                                 ),
                                             };
+                                        }
+                                        RpcEventType::PoolSwap(_)
+                                        | RpcEventType::PoolMint(_)
+                                        | RpcEventType::PoolBurn(_)
+                                        | RpcEventType::PoolCollect(_)
+                                        | RpcEventType::PoolFlash(_)
+                                        | RpcEventType::PoolFeeProtocolUpdate(_)
+                                        | RpcEventType::PoolFeeProtocolCollect(_) => {
+                                            let log = Self::parse_rpc_log_response(json)?;
+
+                                            if let Some(message) = self
+                                                .blockchain_message_from_pool_log(
+                                                    event_type, &log,
+                                                )?
+                                            {
+                                                return Ok(message);
+                                            }
+                                            continue;
                                         }
                                     }
                                 }
@@ -386,14 +508,141 @@ impl CoreBlockchainRpcClient {
         Err(BlockchainRpcClientError::NoMessageReceived)
     }
 
+    fn parse_rpc_log_response(json: serde_json::Value) -> Result<RpcLog, BlockchainRpcClientError> {
+        serde_json::from_value::<RpcNodeWssResponse<RpcLog>>(json)
+            .map(|response| response.params.result)
+            .map_err(|e| {
+                BlockchainRpcClientError::MessageParsingError(format!(
+                    "Error parsing rpc response to log with error {e}"
+                ))
+            })
+    }
+
+    #[cfg(feature = "hypersync")]
+    fn blockchain_message_from_pool_log(
+        &self,
+        event_type: RpcEventType,
+        log: &RpcLog,
+    ) -> Result<Option<BlockchainMessage>, BlockchainRpcClientError> {
+        if log.removed {
+            log::debug!(
+                "Skipping removed pool log on chain '{}' for event {:?}",
+                self.chain.name,
+                event_type
+            );
+            return Ok(None);
+        }
+
+        let dex = Self::pool_event_dex(event_type)?;
+        let dex_extended = get_dex_extended(self.chain.name, &dex).ok_or_else(|| {
+            BlockchainRpcClientError::InternalRpcClientError(format!(
+                "DEX {dex} is not registered for chain {}",
+                self.chain.name
+            ))
+        })?;
+
+        match event_type {
+            RpcEventType::PoolSwap(_) => dex_extended
+                .parse_swap_event_rpc(log)
+                .map(BlockchainMessage::SwapEvent),
+            RpcEventType::PoolMint(_) => dex_extended
+                .parse_mint_event_rpc(log)
+                .map(BlockchainMessage::MintEvent),
+            RpcEventType::PoolBurn(_) => dex_extended
+                .parse_burn_event_rpc(log)
+                .map(BlockchainMessage::BurnEvent),
+            RpcEventType::PoolCollect(_) => dex_extended
+                .parse_collect_event_rpc(log)
+                .map(BlockchainMessage::CollectEvent),
+            RpcEventType::PoolFlash(_) => dex_extended
+                .parse_flash_event_rpc(log)
+                .map(BlockchainMessage::FlashEvent),
+            RpcEventType::PoolFeeProtocolUpdate(_) => dex_extended
+                .parse_fee_protocol_update_event_rpc(log)
+                .map(BlockchainMessage::FeeProtocolUpdateEvent),
+            RpcEventType::PoolFeeProtocolCollect(_) => dex_extended
+                .parse_fee_protocol_collect_event_rpc(log)
+                .map(BlockchainMessage::FeeProtocolCollectEvent),
+            RpcEventType::NewBlock => Err(anyhow::anyhow!(
+                "NewBlock event type cannot parse pool logs"
+            )),
+        }
+        .map(Some)
+        .map_err(|e| BlockchainRpcClientError::MessageParsingError(e.to_string()))
+    }
+
+    #[cfg(not(feature = "hypersync"))]
+    fn blockchain_message_from_pool_log(
+        &self,
+        event_type: RpcEventType,
+        log: &RpcLog,
+    ) -> Result<Option<BlockchainMessage>, BlockchainRpcClientError> {
+        if log.removed {
+            log::debug!(
+                "Skipping removed pool log on chain '{}' for event {:?}",
+                self.chain.name,
+                event_type
+            );
+            return Ok(None);
+        }
+
+        Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
+            format!("RPC pool log parsing for {event_type:?} requires the hypersync feature"),
+        ))
+    }
+
+    #[cfg(feature = "hypersync")]
+    fn pool_event_dex(event_type: RpcEventType) -> Result<DexType, BlockchainRpcClientError> {
+        match event_type {
+            RpcEventType::PoolSwap(dex)
+            | RpcEventType::PoolMint(dex)
+            | RpcEventType::PoolBurn(dex)
+            | RpcEventType::PoolCollect(dex)
+            | RpcEventType::PoolFlash(dex)
+            | RpcEventType::PoolFeeProtocolUpdate(dex)
+            | RpcEventType::PoolFeeProtocolCollect(dex) => Ok(dex),
+            RpcEventType::NewBlock => Err(BlockchainRpcClientError::InternalRpcClientError(
+                "NewBlock event type has no DEX".to_string(),
+            )),
+        }
+    }
+
     /// Subscribes to real-time block updates from the blockchain node.
     ///
     /// # Errors
     ///
     /// Returns an error if the subscription request fails or if the client is not connected.
     pub async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.subscribe_events(RpcEventType::NewBlock, String::from("newHeads"))
+        self.subscribe_events(RpcEventType::NewBlock, RpcSubscription::new("newHeads"))
             .await
+    }
+
+    /// Subscribes to real-time pool logs for one event type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if the client is not connected.
+    pub async fn subscribe_pool_events(
+        &mut self,
+        event_type: RpcEventType,
+        addresses: &[Address],
+        event_signature: String,
+    ) -> Result<(), BlockchainRpcClientError> {
+        if matches!(event_type, RpcEventType::NewBlock) {
+            return Err(BlockchainRpcClientError::InvalidParameters(
+                "NewBlock is not a pool event subscription".to_string(),
+            ));
+        }
+
+        if addresses.is_empty() {
+            return self.unsubscribe_event_type(event_type).await;
+        }
+
+        self.replace_subscription(
+            event_type,
+            RpcSubscription::pool_logs(addresses, event_signature),
+        )
+        .await
     }
 
     /// Cancels the subscription to real-time block updates.
@@ -402,22 +651,107 @@ impl CoreBlockchainRpcClient {
     ///
     /// Returns an error if the unsubscription request fails or if the client is not connected.
     pub async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.unsubscribe_events(String::from("newHeads")).await?;
+        self.unsubscribe_event_type(RpcEventType::NewBlock).await
+    }
+}
 
-        let subscription_ids_to_remove: Vec<String> = self
-            .subscription_event_types
-            .iter()
-            .filter(|(_, event_type)| **event_type == RpcEventType::NewBlock)
-            .map(|(id, _)| id.clone())
-            .collect();
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::address;
+    use nautilus_model::defi::{Chain, DexType};
+    use rstest::rstest;
 
-        for id in subscription_ids_to_remove {
-            self.subscription_event_types.remove(&id);
-        }
+    use super::*;
 
-        let mut confirmed = self.subscriptions.write().await;
-        confirmed.remove(&RpcEventType::NewBlock);
+    #[rstest]
+    fn pool_logs_subscription_params_use_logs_filter_with_sorted_addresses() {
+        let event_signature =
+            "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string();
+        let subscription = RpcSubscription::pool_logs(
+            &[
+                address!("2222222222222222222222222222222222222222"),
+                address!("1111111111111111111111111111111111111111"),
+            ],
+            event_signature.clone(),
+        );
 
-        Ok(())
+        let params = subscription.params();
+        let filter = &params[1];
+
+        assert_eq!(params[0], serde_json::json!("logs"));
+        assert_eq!(
+            filter["address"],
+            serde_json::json!([
+                "0x1111111111111111111111111111111111111111",
+                "0x2222222222222222222222222222222222222222",
+            ])
+        );
+        assert_eq!(filter["topics"], serde_json::json!([event_signature]));
+    }
+
+    #[cfg(feature = "hypersync")]
+    #[rstest]
+    fn pool_event_dex_rejects_block_event_type() {
+        assert!(CoreBlockchainRpcClient::pool_event_dex(RpcEventType::NewBlock).is_err());
+        assert_eq!(
+            CoreBlockchainRpcClient::pool_event_dex(RpcEventType::PoolSwap(DexType::UniswapV3))
+                .unwrap(),
+            DexType::UniswapV3
+        );
+    }
+
+    #[rstest]
+    fn removed_pool_log_returns_no_message() {
+        let client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        let log = RpcLog {
+            removed: true,
+            log_index: Some("0x0".to_string()),
+            transaction_index: Some("0x0".to_string()),
+            transaction_hash: Some("0x1".to_string()),
+            block_hash: Some("0x1".to_string()),
+            block_number: Some("0x1".to_string()),
+            address: "0x1111111111111111111111111111111111111111".to_string(),
+            data: "0x".to_string(),
+            topics: vec![],
+        };
+
+        let message = client
+            .blockchain_message_from_pool_log(RpcEventType::PoolSwap(DexType::UniswapV3), &log)
+            .expect("removed logs should not fail conversion");
+
+        assert!(message.is_none());
+    }
+
+    #[tokio::test]
+    async fn next_rpc_message_skips_unsubscribe_confirmation() {
+        let mut client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.wss_consumer_rx = Some(rx);
+        tx.send(Message::Text(
+            serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": true})
+                .to_string()
+                .into(),
+        ))
+        .expect("unsubscribe ack should enqueue");
+        drop(tx);
+
+        let error = client
+            .next_rpc_message()
+            .await
+            .expect_err("unsubscribe ack should be skipped");
+
+        assert!(matches!(error, BlockchainRpcClientError::NoMessageReceived));
     }
 }

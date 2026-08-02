@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
         Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
@@ -24,7 +24,7 @@ use nautilus_model::{
     python::data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
-use pyo3::{prelude::*, types::PyCapsule};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
@@ -92,10 +92,19 @@ impl NautilusDataType {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataBackendSession {
+    /// Provides a DataFusion session and registers DataFusion queries.
+    ///
+    /// The session is used to register data sources and make queries on them. A
+    /// query returns a Chunk of Arrow records. It is decoded and converted into
+    /// a Vec of data by types that implement `DecodeDataFromRecordBatch`.
     #[new]
     #[pyo3(signature=(chunk_size=10_000))]
-    fn new_session(chunk_size: usize) -> Self {
-        Self::new(chunk_size)
+    fn py_new(chunk_size: usize) -> PyResult<Self> {
+        if chunk_size == 0 {
+            return Err(to_pyvalue_err("chunk_size must be positive"));
+        }
+
+        Ok(Self::new(chunk_size))
     }
 
     /// Registers a Parquet file and adds a batch stream for decoding.
@@ -110,6 +119,11 @@ impl DataBackendSession {
     ///
     /// The file data must be ordered by the `ts_init` in ascending order for this
     /// to work correctly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parquet registration, SQL planning, stream execution, or
+    /// data decoding setup fails.
     #[pyo3(name = "add_file")]
     #[pyo3(signature = (data_type, table_name, file_path, sql_query=None))]
     fn py_add_file(
@@ -198,6 +212,11 @@ impl DataBackendSession {
     }
 
     /// Register an object store with the session context from a URI with optional storage options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object store URI cannot be normalized or the backend
+    /// cannot be created.
     #[pyo3(name = "register_object_store_from_uri")]
     #[pyo3(signature = (uri, storage_options=None))]
     fn py_register_object_store_from_uri(
@@ -215,6 +234,40 @@ impl DataBackendSession {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataQueryResult {
+    /// Collects the remaining query records as native Python objects.
+    ///
+    /// This provides a PyO3-native alternative to the capsule iterator for callers that need to
+    /// inspect the decoded records in Python.
+    #[pyo3(name = "to_list")]
+    fn py_to_list(mut slf: PyRefMut<'_, Self>) -> PyResult<Vec<Py<PyAny>>> {
+        let py = slf.py();
+        let ptr = SendPtr(&raw mut *slf);
+
+        // SAFETY: `PyRefMut` guarantees exclusive access to the underlying query result for the
+        // duration of this method call. As with `__next__`, release the GIL while waiting for
+        // decoder workers that may need to acquire it for custom data.
+        let data = unsafe {
+            py.detach(move || {
+                let p = ptr;
+                let result = &mut *p.0;
+                let mut data = Vec::new();
+
+                for chunk in result.by_ref() {
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    data.extend(chunk);
+                }
+
+                data
+            })
+        };
+
+        data.into_iter()
+            .map(|item| data_to_pyobject(py, item))
+            .collect()
+    }
+
     /// The reader implements an iterator.
     const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
@@ -263,7 +316,7 @@ impl DataQueryResult {
                         .into_iter()
                         .map(|item| data_to_pyobject(py, item))
                         .collect::<PyResult<_>>()?;
-                    Ok(Some(objects.into_py_any_unwrap(py)))
+                    Ok(Some(objects.into_py_any(py)?))
                 } else {
                     // Built-in types: FFI capsule path
                     let ffi_data: Vec<DataFFI> = acc

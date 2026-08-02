@@ -299,7 +299,7 @@ fn test_on_order_canceled_self_cancel_preserves_last_quoted_mid() {
         .insert(ClientOrderId::from("O-001"));
 
     let event = order_canceled("O-001");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert!(strategy.pending_self_cancels.is_empty());
     assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
@@ -312,7 +312,7 @@ fn test_on_order_canceled_protocol_cancel_resets_last_quoted_mid() {
     strategy.last_quoted_mid = Some(mid("1000.00"));
 
     let event = order_canceled("O-999");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert_eq!(strategy.last_quoted_mid, None);
 }
@@ -327,12 +327,12 @@ fn test_on_order_canceled_self_cancel_then_protocol_cancel() {
 
     // Self-cancel consumed
     let self_event = order_canceled("O-001");
-    strategy.on_order_canceled(&self_event).unwrap();
+    strategy.on_order_canceled(&self_event);
     assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
 
     // Protocol cancel triggers reset
     let protocol_event = order_canceled("O-002");
-    strategy.on_order_canceled(&protocol_event).unwrap();
+    strategy.on_order_canceled(&protocol_event);
     assert_eq!(strategy.last_quoted_mid, None);
 }
 
@@ -348,7 +348,7 @@ fn test_on_order_canceled_filled_order_does_not_block_protocol_cancel() {
 
     // O-001 filled (no cancel event) → O-002 is a protocol cancel
     let event = order_canceled("O-002");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert_eq!(strategy.last_quoted_mid, None);
 }
@@ -360,7 +360,7 @@ fn test_on_order_canceled_without_resubmit_does_nothing() {
     strategy.last_quoted_mid = Some(mid("1000.00"));
 
     let event = order_canceled("O-001");
-    strategy.on_order_canceled(&event).unwrap();
+    strategy.on_order_canceled(&event);
 
     assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
 }

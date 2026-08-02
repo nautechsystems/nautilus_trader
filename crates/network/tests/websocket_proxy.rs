@@ -37,6 +37,7 @@ use std::{
     time::Duration,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
     transport::Message,
@@ -250,6 +251,118 @@ async fn websocket_client_routes_through_http_connect_proxy() {
 }
 
 #[tokio::test]
+async fn websocket_client_without_proxy_connects_directly() {
+    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+    let config = WebSocketConfig {
+        url: format!("ws://{echo_addr}/"),
+        headers: vec![],
+        heartbeat: None,
+        heartbeat_msg: None,
+        reconnect_timeout_ms: Some(2_000),
+        reconnect_delay_initial_ms: Some(10),
+        reconnect_delay_max_ms: Some(50),
+        reconnect_backoff_factor: Some(1.5),
+        reconnect_jitter_ms: Some(10),
+        reconnect_max_attempts: Some(0),
+        idle_timeout_ms: None,
+        backend: TransportBackend::Tungstenite,
+        proxy_url: None,
+    };
+
+    let handler: MessageHandler = Arc::new(|_| {});
+    let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        .await
+        .expect("direct WebSocket connection");
+    client
+        .send_text("direct fixture".to_string(), None)
+        .await
+        .unwrap();
+
+    for _ in 0..40 {
+        if !received.lock().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let messages = received.lock().await.clone();
+    client.disconnect().await;
+
+    assert_eq!(messages, vec!["direct fixture".to_string()]);
+}
+
+#[tokio::test]
+async fn websocket_client_invalid_proxy_error_redacts_credentials() {
+    const SECRET: &str = "invalid-websocket-proxy-secret";
+    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+    let config = WebSocketConfig {
+        url: format!("ws://{echo_addr}/"),
+        headers: vec![],
+        heartbeat: None,
+        heartbeat_msg: None,
+        reconnect_timeout_ms: Some(2_000),
+        reconnect_delay_initial_ms: Some(10),
+        reconnect_delay_max_ms: Some(50),
+        reconnect_backoff_factor: Some(1.5),
+        reconnect_jitter_ms: Some(10),
+        reconnect_max_attempts: Some(0),
+        idle_timeout_ms: None,
+        backend: TransportBackend::Tungstenite,
+        proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
+    };
+
+    let handler: MessageHandler = Arc::new(|_| {});
+    let error = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        .await
+        .expect_err("malformed proxy should fail");
+
+    assert!(!error.to_string().contains(SECRET));
+    assert!(!error.to_string().contains(&BASE64.encode(SECRET)));
+    assert!(received.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn websocket_client_unreachable_proxy_error_redacts_credentials() {
+    const USERNAME: &str = "proxy-user";
+    const SECRET: &str = "unreachable-websocket-proxy-secret";
+    let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_addr = proxy_listener.local_addr().unwrap();
+    drop(proxy_listener);
+    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+    let config = WebSocketConfig {
+        url: format!("ws://{echo_addr}/"),
+        headers: vec![],
+        heartbeat: None,
+        heartbeat_msg: None,
+        reconnect_timeout_ms: Some(1_000),
+        reconnect_delay_initial_ms: Some(10),
+        reconnect_delay_max_ms: Some(50),
+        reconnect_backoff_factor: Some(1.5),
+        reconnect_jitter_ms: Some(10),
+        reconnect_max_attempts: Some(0),
+        idle_timeout_ms: None,
+        backend: TransportBackend::Tungstenite,
+        proxy_url: Some(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")),
+    };
+
+    let handler: MessageHandler = Arc::new(|_| {});
+    let error = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        .await
+        .expect_err("unreachable proxy should fail");
+
+    assert!(!error.to_string().contains(SECRET));
+    assert!(!error.to_string().contains(&BASE64.encode(SECRET)));
+    assert!(
+        !error
+            .to_string()
+            .contains(&BASE64.encode(format!("{USERNAME}:{SECRET}")))
+    );
+    assert!(received.lock().await.is_empty());
+}
+
+#[tokio::test]
 async fn websocket_client_falls_back_to_direct_for_socks_proxy() {
     // SOCKS proxies are not yet supported on the WS path. To preserve REST
     // proxy configs that use SOCKS, the client should log a warning and fall
@@ -378,10 +491,9 @@ async fn websocket_client_emits_proxy_authorization_header() {
         .iter()
         .find(|h| h.to_ascii_lowercase().starts_with("proxy-authorization:"))
         .expect("expected Proxy-Authorization header on CONNECT");
-    // base64("proxytest:fixture42") == "cHJveHl0ZXN0OmZpeHR1cmU0Mg=="
-    assert!(
-        auth.contains("Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg=="),
-        "header was {auth:?}, full headers: {headers:?}"
+    assert_eq!(
+        auth.split_once(':').expect("authorization header").1.trim(),
+        "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg=="
     );
 }
 

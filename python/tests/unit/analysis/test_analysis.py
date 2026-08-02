@@ -13,32 +13,52 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
+
 import pytest
 
+import nautilus_trader.analysis as analysis_module
 from nautilus_trader.analysis import CAGR
+from nautilus_trader.analysis import Alpha
 from nautilus_trader.analysis import AvgLoser
 from nautilus_trader.analysis import AvgWinner
+from nautilus_trader.analysis import BetaRatio
 from nautilus_trader.analysis import CalmarRatio
+from nautilus_trader.analysis import DownCaptureRatio
 from nautilus_trader.analysis import Expectancy
+from nautilus_trader.analysis import ExpectedShortfall
+from nautilus_trader.analysis import InformationRatio
 from nautilus_trader.analysis import LongRatio
 from nautilus_trader.analysis import MaxDrawdown
 from nautilus_trader.analysis import MaxLoser
 from nautilus_trader.analysis import MaxWinner
 from nautilus_trader.analysis import MinLoser
 from nautilus_trader.analysis import MinWinner
+from nautilus_trader.analysis import OmegaRatio
 from nautilus_trader.analysis import PortfolioAnalyzer
 from nautilus_trader.analysis import ProfitFactor
 from nautilus_trader.analysis import ReturnsAverage
 from nautilus_trader.analysis import ReturnsAverageLoss
 from nautilus_trader.analysis import ReturnsAverageWin
+from nautilus_trader.analysis import ReturnsKurtosis
+from nautilus_trader.analysis import ReturnsSkewness
 from nautilus_trader.analysis import ReturnsVolatility
 from nautilus_trader.analysis import RiskReturnRatio
 from nautilus_trader.analysis import SharpeRatio
 from nautilus_trader.analysis import SortinoRatio
+from nautilus_trader.analysis import TailRatio
+from nautilus_trader.analysis import TrackingError
+from nautilus_trader.analysis import TreynorRatio
+from nautilus_trader.analysis import UlcerIndex
+from nautilus_trader.analysis import UpCaptureRatio
+from nautilus_trader.analysis import ValueAtRisk
 from nautilus_trader.analysis import WinRate
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
+from nautilus_trader.model import Position
 from nautilus_trader.model import PositionId
+from tests.providers import TestInstrumentProvider
+from tests.unit.model.factories import make_position_fill
 
 
 NO_ARG_STATISTICS = [
@@ -55,7 +75,11 @@ NO_ARG_STATISTICS = [
     (ReturnsAverage, "Average (Return"),
     (ReturnsAverageLoss, "Average Loss (Return"),
     (ReturnsAverageWin, "Average Win (Return"),
+    (ReturnsKurtosis, "Returns Kurtosis"),
+    (ReturnsSkewness, "Returns Skewness"),
     (RiskReturnRatio, "Risk Return Ratio"),
+    (TailRatio, "Tail Ratio"),
+    (UlcerIndex, "Ulcer Index"),
     (WinRate, "Win Rate"),
 ]
 
@@ -66,6 +90,38 @@ PERIOD_STATISTICS = [
     (SharpeRatio, "Sharpe Ratio"),
     (SortinoRatio, "Sortino Ratio"),
 ]
+
+# Statistics carrying a single float parameter (threshold / confidence).
+THRESHOLD_STATISTICS = [
+    (OmegaRatio, "Omega Ratio"),
+    (ValueAtRisk, "Value at Risk"),
+    (ExpectedShortfall, "Expected Shortfall"),
+]
+
+BENCHMARK_STATISTICS = [
+    (Alpha, "Alpha"),
+    (BetaRatio, "Beta"),
+    (DownCaptureRatio, "Down Capture Ratio"),
+    (InformationRatio, "Information Ratio"),
+    (TrackingError, "Tracking Error"),
+    (TreynorRatio, "Treynor Ratio"),
+    (UpCaptureRatio, "Up Capture Ratio"),
+]
+
+ALL_STATISTICS = NO_ARG_STATISTICS + PERIOD_STATISTICS + THRESHOLD_STATISTICS + BENCHMARK_STATISTICS
+STATISTIC_METHODS = (
+    "calculate_from_positions",
+    "calculate_from_realized_pnls",
+    "calculate_from_returns",
+)
+EXPOSED_STATISTICS = sorted(
+    (
+        value
+        for value in vars(analysis_module).values()
+        if isinstance(value, type) and all(hasattr(value, method) for method in STATISTIC_METHODS)
+    ),
+    key=lambda cls: cls.__name__,
+)
 
 
 @pytest.mark.parametrize(("cls", "expected_prefix"), NO_ARG_STATISTICS)
@@ -89,9 +145,33 @@ def test_period_statistic_custom_period(cls, expected_prefix):
     assert "30" in stat.name
 
 
+@pytest.mark.parametrize(("cls", "expected_prefix"), THRESHOLD_STATISTICS)
+def test_threshold_statistic_default_construction_and_name(cls, expected_prefix):
+    stat = cls()
+
+    assert stat.name.startswith(expected_prefix)
+
+
+@pytest.mark.parametrize("cls", [ValueAtRisk, ExpectedShortfall])
+@pytest.mark.parametrize("confidence", [0.0, 1.0, 1.5, -0.5, float("nan"), float("inf")])
+def test_confidence_statistic_rejects_invalid_confidence(cls, confidence):
+    # `confidence` must be finite and in the open interval (0, 1); otherwise the
+    # historical percentile index would be out of range.
+    with pytest.raises(ValueError, match="confidence must be finite"):
+        cls(confidence=confidence)
+
+
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf")])
+def test_omega_ratio_rejects_non_finite_threshold(threshold):
+    # `threshold` has no natural range but must be finite; a non-finite value
+    # would silently poison the gain/loss split.
+    with pytest.raises(ValueError, match="threshold must be finite"):
+        OmegaRatio(threshold=threshold)
+
+
 @pytest.mark.parametrize(
     ("cls", "_expected_prefix"),
-    NO_ARG_STATISTICS + PERIOD_STATISTICS,
+    ALL_STATISTICS,
 )
 def test_pyo3_statistic_exposes_full_calculate_surface(cls, _expected_prefix):
     stat = cls()
@@ -119,9 +199,17 @@ def test_portfolio_analyzer_construction():
     assert analyzer.portfolio_returns() == {}
 
 
-def test_portfolio_analyzer_register_and_deregister_statistic():
+def test_exposed_statistic_inventory_matches_constructor_matrix():
+    expected = {cls for cls, _expected_prefix in ALL_STATISTICS}
+
+    assert EXPOSED_STATISTICS
+    assert set(EXPOSED_STATISTICS) == expected
+
+
+@pytest.mark.parametrize("cls", EXPOSED_STATISTICS)
+def test_portfolio_analyzer_register_and_deregister_statistic(cls):
     analyzer = PortfolioAnalyzer()
-    stat = SharpeRatio()
+    stat = cls()
 
     analyzer.register_statistic(stat)
 
@@ -130,6 +218,30 @@ def test_portfolio_analyzer_register_and_deregister_statistic():
     analyzer.deregister_statistic(stat)
 
     assert analyzer.statistic(stat.name) is None
+
+
+def test_portfolio_analyzer_adds_native_position():
+    analyzer = PortfolioAnalyzer()
+    instrument = TestInstrumentProvider.audusd_sim()
+    position = Position(instrument=instrument, fill=make_position_fill(instrument))
+    analyzer.register_statistic(LongRatio())
+
+    analyzer.add_positions([position])
+
+    assert analyzer.get_performance_stats_general() == {"Long Ratio": 1.0}
+
+
+def test_undefined_cagr_and_calmar_ratio_return_nan():
+    nanos_per_day = 86_400_000_000_000
+    returns = {
+        day * nanos_per_day: value for day, value in enumerate([-1.5, 0.0, 0.0, 0.0, 0.0], start=1)
+    }
+
+    cagr = CAGR().calculate_from_returns(returns)
+    calmar_ratio = CalmarRatio().calculate_from_returns(returns)
+
+    assert math.isnan(cagr)
+    assert math.isnan(calmar_ratio)
 
 
 def test_portfolio_analyzer_deregister_all_statistics():

@@ -81,7 +81,7 @@ if __name__ == "__main__":
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], format="%Y-%m-%d %H:%M:%S")
     # Rename column to required name
     df = df.rename(columns={"timestamp_utc": "timestamp"})
-    # Seet column `timestamp` as index
+    # Set column `timestamp` as index
     df = df.set_index("timestamp")
 
     # Step 4c: Define type of loaded bars

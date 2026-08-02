@@ -36,7 +36,9 @@ use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::{LIGHTER, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX},
+        consts::{
+            LIGHTER, LIGHTER_CLIENT_ID, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
+        },
         credential::Credential,
         enums::LighterEnvironment,
         urls::lighter_chain_id,
@@ -180,6 +182,8 @@ fn py_revoke_lighter_integrator(
 #[pymodule]
 pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(LIGHTER), LIGHTER)?;
+    m.add(stringify!(LIGHTER_CLIENT_ID), *LIGHTER_CLIENT_ID)?;
+    m.add(stringify!(LIGHTER_VENUE), *LIGHTER_VENUE)?;
     m.add_class::<LighterEnvironment>()?;
     m.add_class::<LighterDataClientConfig>()?;
     m.add_class::<LighterExecClientConfig>()?;

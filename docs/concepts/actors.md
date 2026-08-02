@@ -23,8 +23,8 @@ from nautilus_trader.common.actor import Actor
 
 
 class MyActorConfig(ActorConfig):
-    instrument_id: InstrumentId   # example value: "ETHUSDT-PERP.BINANCE"
-    bar_type: BarType             # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-INTERNAL"
+    instrument_id: InstrumentId  # example value: "ETHUSDT-PERP.BINANCE"
+    bar_type: BarType  # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-INTERNAL"
     lookback_period: int = 10
 
 
@@ -86,15 +86,15 @@ stateDiagram-v2
 
 Override these methods to hook into lifecycle events:
 
-| Method          | When called                                                         |
-|-----------------|---------------------------------------------------------------------|
-| `on_start()`    | Actor is starting (subscribe to data here).                         |
-| `on_stop()`     | Actor is stopping (cancel timers, clean up resources).              |
-| `on_resume()`   | Actor is resuming from a stopped state.                             |
-| `on_reset()`    | Reset indicators and internal state (called between backtest runs). |
-| `on_degrade()`  | Actor is entering a degraded state (partial functionality).         |
-| `on_fault()`    | Actor has encountered a fault.                                      |
-| `on_dispose()`  | Actor is being disposed (final cleanup).                            |
+| Method         | When called                                                         |
+| -------------- | ------------------------------------------------------------------- |
+| `on_start()`   | Actor is starting (subscribe to data here).                         |
+| `on_stop()`    | Actor is stopping (cancel timers, clean up resources).              |
+| `on_resume()`  | Actor is resuming from a stopped state.                             |
+| `on_reset()`   | Reset indicators and internal state (called between backtest runs). |
+| `on_degrade()` | Actor is entering a degraded state (partial functionality).         |
+| `on_fault()`   | Actor has encountered a fault.                                      |
+| `on_dispose()` | Actor is being disposed (final cleanup).                            |
 
 ## Timers and alerts
 
@@ -116,12 +116,15 @@ def on_start(self) -> None:
         callback=self._on_alert,
     )
 
+
 def on_stop(self) -> None:
     # Cancel timers to prevent resource leaks across stop/resume cycles
     self.clock.cancel_timer("my_timer")
 
+
 def _on_timer(self, event: TimeEvent) -> None:
     self.log.info("Timer fired!")
+
 
 def _on_alert(self, event: TimeEvent) -> None:
     self.log.info("Alert triggered!")
@@ -134,13 +137,13 @@ omit the callback, the event is delivered to `on_event` instead.
 
 Actors have access to core system components:
 
-| Property          | Description                                              |
-|-------------------|----------------------------------------------------------|
-| `self.cache`      | Shared state for instruments, orders, positions, etc.    |
-| `self.portfolio`  | Portfolio state and calculations.                        |
-| `self.clock`      | Current time and timer/alert scheduling.                 |
-| `self.log`        | Structured logging.                                      |
-| `self.msgbus`     | Publish/subscribe to custom messages.                    |
+| Property         | Description                                           |
+| ---------------- | ----------------------------------------------------- |
+| `self.cache`     | Shared state for instruments, orders, positions, etc. |
+| `self.portfolio` | Portfolio state and calculations.                     |
+| `self.clock`     | Current time and timer/alert scheduling.              |
+| `self.log`       | Structured logging.                                   |
+| `self.msgbus`    | Publish/subscribe to custom messages.                 |
 
 For custom messaging between components, see the [Message Bus](message_bus.md) guide.
 
@@ -167,37 +170,35 @@ The system distinguishes between two data flows:
 
 Different data operations map to these handlers:
 
-| Operation                            | Category   | Handler                  | Purpose                                           |
-|--------------------------------------|------------|--------------------------|---------------------------------------------------|
-| `subscribe_data()`                   | Real‑time  | `on_data()`              | Live data updates.                                |
-| `subscribe_instrument()`             | Real‑time  | `on_instrument()`        | Live instrument definition updates.               |
-| `subscribe_instruments()`            | Real‑time  | `on_instrument()`        | Live instrument definition updates (for venue).   |
-| `subscribe_order_book_deltas()`      | Real‑time  | `on_order_book_deltas()` | Live order book deltas.                           |
-| `subscribe_order_book_depth()`       | Real‑time  | `on_order_book_depth()`  | Live order book depth snapshots.                  |
-| `subscribe_order_book_at_interval()` | Real‑time  | `on_order_book()`        | Live order book snapshots at intervals.           |
-| `subscribe_quote_ticks()`            | Real‑time  | `on_quote_tick()`        | Live quote updates.                               |
-| `subscribe_trade_ticks()`            | Real‑time  | `on_trade_tick()`        | Live trade updates.                               |
-| `subscribe_mark_prices()`            | Real‑time  | `on_mark_price()`        | Live mark price updates.                          |
-| `subscribe_index_prices()`           | Real‑time  | `on_index_price()`       | Live index price updates.                         |
-| `subscribe_bars()`                   | Real‑time  | `on_bar()`               | Live bar updates.                                 |
-| `subscribe_funding_rates()`          | Real‑time  | `on_funding_rate()`      | Live funding rate updates.                        |
-| `subscribe_instrument_status()`      | Real‑time  | `on_instrument_status()` | Live instrument status updates.                   |
-| `subscribe_instrument_close()`       | Real‑time  | `on_instrument_close()`  | Live instrument close updates.                    |
-| `subscribe_option_greeks()`          | Real‑time  | `on_option_greeks()`     | Live option greeks updates.                       |
-| `subscribe_option_chain()`           | Real‑time  | `on_option_chain()`      | Live option chain slice snapshots.                |
-| `subscribe_order_fills()`            | Real‑time  | `on_order_filled()`      | Live order fill events for an instrument.         |
-| `subscribe_order_cancels()`          | Real‑time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
-| `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |
-| `request_order_book_deltas()`        | Historical | `on_historical_data()`   | Historical order book deltas.                     |
-| `request_order_book_depth()`         | Historical | `on_historical_data()`   | Historical order book depth.                      |
-| `request_order_book_snapshot()`      | Historical | `on_historical_data()`   | Historical order book snapshot.                   |
-| `request_instrument()`               | Historical | `on_instrument()`        | Instrument definition.                            |
-| `request_instruments()`              | Historical | `on_instrument()`        | Instrument definitions.                           |
-| `request_quote_ticks()`              | Historical | `on_historical_data()`   | Historical quotes processing.                     |
-| `request_trade_ticks()`              | Historical | `on_historical_data()`   | Historical trades processing.                     |
-| `request_bars()`                     | Historical | `on_historical_data()`   | Historical bars processing.                       |
-| `request_aggregated_bars()`          | Historical | `on_historical_data()`   | Historical aggregated bars (on‑the‑fly).          |
-| `request_funding_rates()`            | Historical | `on_historical_data()`   | Historical funding rates processing.              |
+| Operation                            | Category   | Handler                  | Purpose                                         |
+| ------------------------------------ | ---------- | ------------------------ | ----------------------------------------------- |
+| `subscribe_data()`                   | Real‑time  | `on_data()`              | Live data updates.                              |
+| `subscribe_instrument()`             | Real‑time  | `on_instrument()`        | Live instrument definition updates.             |
+| `subscribe_instruments()`            | Real‑time  | `on_instrument()`        | Live instrument definition updates (for venue). |
+| `subscribe_order_book_deltas()`      | Real‑time  | `on_order_book_deltas()` | Live order book deltas.                         |
+| `subscribe_order_book_depth()`       | Real‑time  | `on_order_book_depth()`  | Live order book depth snapshots.                |
+| `subscribe_order_book_at_interval()` | Real‑time  | `on_order_book()`        | Live order book snapshots at intervals.         |
+| `subscribe_quote_ticks()`            | Real‑time  | `on_quote_tick()`        | Live quote updates.                             |
+| `subscribe_trade_ticks()`            | Real‑time  | `on_trade_tick()`        | Live trade updates.                             |
+| `subscribe_mark_prices()`            | Real‑time  | `on_mark_price()`        | Live mark price updates.                        |
+| `subscribe_index_prices()`           | Real‑time  | `on_index_price()`       | Live index price updates.                       |
+| `subscribe_bars()`                   | Real‑time  | `on_bar()`               | Live bar updates.                               |
+| `subscribe_funding_rates()`          | Real‑time  | `on_funding_rate()`      | Live funding rate updates.                      |
+| `subscribe_instrument_status()`      | Real‑time  | `on_instrument_status()` | Live instrument status updates.                 |
+| `subscribe_instrument_close()`       | Real‑time  | `on_instrument_close()`  | Live instrument close updates.                  |
+| `subscribe_option_greeks()`          | Real‑time  | `on_option_greeks()`     | Live option greeks updates.                     |
+| `subscribe_option_chain()`           | Real‑time  | `on_option_chain()`      | Live option chain slice snapshots.              |
+| `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                     |
+| `request_order_book_deltas()`        | Historical | `on_historical_data()`   | Historical order book deltas.                   |
+| `request_order_book_depth()`         | Historical | `on_historical_data()`   | Historical order book depth.                    |
+| `request_order_book_snapshot()`      | Historical | `on_historical_data()`   | Historical order book snapshot.                 |
+| `request_instrument()`               | Historical | `on_instrument()`        | Instrument definition.                          |
+| `request_instruments()`              | Historical | `on_instrument()`        | Instrument definitions.                         |
+| `request_quote_ticks()`              | Historical | `on_historical_data()`   | Historical quotes processing.                   |
+| `request_trade_ticks()`              | Historical | `on_historical_data()`   | Historical trades processing.                   |
+| `request_bars()`                     | Historical | `on_historical_data()`   | Historical bars processing.                     |
+| `request_aggregated_bars()`          | Historical | `on_historical_data()`   | Historical aggregated bars (on‑the‑fly).        |
+| `request_funding_rates()`            | Historical | `on_historical_data()`   | Historical funding rates processing.            |
 
 ### Example
 
@@ -213,7 +214,7 @@ from nautilus_trader.model import ClientId, InstrumentId
 
 class MyActorConfig(ActorConfig):
     instrument_id: InstrumentId  # example value: "AAPL.XNAS"
-    bar_type: BarType            # example value: "AAPL.XNAS-1-MINUTE-LAST-EXTERNAL"
+    bar_type: BarType  # example value: "AAPL.XNAS-1-MINUTE-LAST-EXTERNAL"
 
 
 class MyActor(Actor):
@@ -226,11 +227,11 @@ class MyActor(Actor):
         self.request_bars(
             bar_type=self.bar_type,
             # Many optional parameters
-            start=None,                # pd.Timestamp | None
-            end=None,                  # pd.Timestamp | None
-            callback=None,             # Callable[[UUID4], None] | None
+            start=None,  # pd.Timestamp | None
+            end=None,  # pd.Timestamp | None
+            callback=None,  # Callable[[UUID4], None] | None
             update_catalog_mode=None,  # UpdateCatalogMode | None
-            params=None,               # dict[str, Any] | None
+            params=None,  # dict[str, Any] | None
         )
 
         # Subscribe to real-time data - will be processed by on_bar() handler
@@ -238,7 +239,7 @@ class MyActor(Actor):
             bar_type=self.bar_type,
             # Many optional parameters
             client_id=None,  # ClientId, optional
-            params=None,     # dict[str, Any], optional
+            params=None,  # dict[str, Any], optional
         )
 
     def on_historical_data(self, data: Data) -> None:
@@ -253,7 +254,8 @@ class MyActor(Actor):
 
 When `validate_data_sequence=True`, subscribe to live bars via the `request_bars()`
 `callback` (rather than a separate `subscribe_bars()` call) so the stream starts only
-after history has loaded; see [Working with bars: request vs. subscribe](data.md#working-with-bars-request-vs-subscribe).
+after history has loaded; see
+[Working with bars: request vs. subscribe](data/index.md#working-with-bars-request-vs-subscribe).
 
 Separating historical and real-time handlers lets you apply different processing logic
 based on context. For example:
@@ -268,20 +270,31 @@ If you're not seeing data in `on_bar()` but see log messages about receiving bar
 as the data might be coming from a request rather than a subscription.
 :::
 
-## Order fill subscriptions
+## Order event subscriptions
 
-Actors can subscribe to order fill events for specific instruments using `subscribe_order_fills()`.
-This is useful for monitoring trading activity, fill analysis, or tracking execution quality.
+Actors that need order lifecycle events can subscribe directly to the message bus. Use this
+for monitoring fills, cancels, or all order events for a strategy without adding dedicated
+Actor callback methods.
 
-When subscribed, the handler `on_order_filled()` receives all fills for the specified instrument,
-regardless of which strategy or component generated the original order.
+Subscribe in `on_start()` and unsubscribe in `on_stop()` using the same handler. This
+keeps direct message bus subscriptions aligned with the actor lifecycle.
 
-### Example
+Common order event topics:
+
+| Topic pattern                           | Receives                                 |
+| --------------------------------------- | ---------------------------------------- |
+| `events.order_filled.{instrument_id}`   | Fill events for one instrument.          |
+| `events.order_canceled.{instrument_id}` | Cancel events for one instrument.        |
+| `events.order.{strategy_id}`            | All order events routed to one strategy. |
+| `events.order.*`                        | All strategy‑routed order events.        |
+
+### Instrument fill and cancel events
 
 ```python
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
 
 
@@ -296,11 +309,28 @@ class FillMonitorActor(Actor):
         self.total_volume = 0.0
 
     def on_start(self) -> None:
-        # Subscribe to all fills for the instrument
-        self.subscribe_order_fills(self.config.instrument_id)
+        instrument_id = self.config.instrument_id
+        self.msgbus.subscribe(
+            topic=f"events.order_filled.{instrument_id}",
+            handler=self._on_order_filled,
+        )
+        self.msgbus.subscribe(
+            topic=f"events.order_canceled.{instrument_id}",
+            handler=self._on_order_canceled,
+        )
 
-    def on_order_filled(self, event: OrderFilled) -> None:
-        # Handle order fill events
+    def on_stop(self) -> None:
+        instrument_id = self.config.instrument_id
+        self.msgbus.unsubscribe(
+            topic=f"events.order_filled.{instrument_id}",
+            handler=self._on_order_filled,
+        )
+        self.msgbus.unsubscribe(
+            topic=f"events.order_canceled.{instrument_id}",
+            handler=self._on_order_canceled,
+        )
+
+    def _on_order_filled(self, event: OrderFilled) -> None:
         self.fill_count += 1
         self.total_volume += float(event.last_qty)
 
@@ -309,67 +339,56 @@ class FillMonitorActor(Actor):
             f"Total fills: {self.fill_count}, Volume: {self.total_volume}"
         )
 
-    def on_stop(self) -> None:
-        # Unsubscribe from fills
-        self.unsubscribe_order_fills(self.config.instrument_id)
+    def _on_order_canceled(self, event: OrderCanceled) -> None:
+        self.log.info(f"Cancel received: {event.client_order_id}")
 ```
 
-:::note
-Order fill subscriptions use the message bus only and do not involve the data engine.
-The `on_order_filled()` handler receives events only while the actor is running.
-:::
-
-## Order cancel subscriptions
-
-Actors can subscribe to order cancel events for specific instruments using `subscribe_order_cancels()`.
-This is useful for monitoring cancellations or tracking order lifecycle events.
-
-When subscribed, the handler `on_order_canceled()` receives all cancels for the specified instrument,
-regardless of which strategy or component generated the original order.
-
-### Example
+### Strategy order lifecycle events
 
 ```python
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
-from nautilus_trader.model import InstrumentId
-from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model.events import OrderEvent
 
 
 class MyActorConfig(ActorConfig):
-    instrument_id: InstrumentId  # example value: "ETHUSDT-PERP.BINANCE"
+    strategy_id: StrategyId  # example value: "EMA-CROSS-001"
 
 
-class CancelMonitorActor(Actor):
+class StrategyOrderMonitorActor(Actor):
     def __init__(self, config: MyActorConfig) -> None:
         super().__init__(config)
-        self.cancel_count = 0
+        self.order_event_count = 0
 
     def on_start(self) -> None:
-        # Subscribe to all cancels for the instrument
-        self.subscribe_order_cancels(self.config.instrument_id)
-
-    def on_order_canceled(self, event: OrderCanceled) -> None:
-        # Handle order cancel events
-        self.cancel_count += 1
-
-        self.log.info(
-            f"Cancel received: {event.client_order_id}, "
-            f"Total cancels: {self.cancel_count}"
+        self._order_topic = f"events.order.{self.config.strategy_id}"
+        self.msgbus.subscribe(
+            topic=self._order_topic,
+            handler=self._on_strategy_order_event,
         )
 
     def on_stop(self) -> None:
-        # Unsubscribe from cancels
-        self.unsubscribe_order_cancels(self.config.instrument_id)
+        self.msgbus.unsubscribe(
+            topic=self._order_topic,
+            handler=self._on_strategy_order_event,
+        )
+
+    def _on_strategy_order_event(self, event: OrderEvent) -> None:
+        self.order_event_count += 1
+
+        self.log.info(
+            f"Order event received: {type(event).__name__}, Total events: {self.order_event_count}"
+        )
 ```
 
 :::note
-Order cancel subscriptions use the message bus only and do not involve the data engine.
-The `on_order_canceled()` handler receives events only while the actor is running.
+Direct message bus subscriptions do not send data engine commands. They receive messages
+published on matching topics until you unsubscribe the handler.
 :::
 
 ## Related guides
 
 - [Strategies](strategies.md) - Strategies extend actors with order management capabilities.
-- [Data](data.md) - Data types and subscriptions available to actors.
+- [Data](data/) - Data types and subscriptions available to actors.
 - [Message Bus](message_bus.md) - The messaging system actors use for communication.

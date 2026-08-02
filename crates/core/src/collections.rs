@@ -1256,19 +1256,21 @@ mod tests {
                 extra in proptest::collection::vec(any::<u16>(), 1..50),
             ) {
                 let set = AtomicSet::new();
+                let expected: AHashSet<u16> = initial.iter().copied().collect();
                 for k in &initial {
                     set.insert(*k);
                 }
 
                 let snapshot = set.load();
                 let snapshot_contents: AHashSet<u16> = snapshot.iter().copied().collect();
+                prop_assert_eq!(&snapshot_contents, &expected);
 
                 for k in &extra {
                     set.insert(*k);
                 }
 
                 let snapshot_after: AHashSet<u16> = snapshot.iter().copied().collect();
-                prop_assert_eq!(snapshot_contents, snapshot_after, "snapshot mutated after write");
+                prop_assert_eq!(&snapshot_contents, &snapshot_after, "snapshot mutated after write");
             }
 
             /// From<AHashSet> roundtrip: every element in the source is present.
@@ -1449,6 +1451,7 @@ mod tests {
                 extra in proptest::collection::vec((any::<u16>(), any::<u32>()), 1..50),
             ) {
                 let map = AtomicMap::new();
+                let expected: AHashMap<u16, u32> = initial.iter().copied().collect();
                 for (k, v) in &initial {
                     map.insert(*k, *v);
                 }
@@ -1456,6 +1459,7 @@ mod tests {
                 let snapshot = map.load();
                 let snapshot_contents: AHashMap<u16, u32> =
                     snapshot.iter().map(|(k, v)| (*k, *v)).collect();
+                prop_assert_eq!(&snapshot_contents, &expected);
 
                 for (k, v) in &extra {
                     map.insert(*k, *v);
@@ -1463,7 +1467,7 @@ mod tests {
 
                 let snapshot_after: AHashMap<u16, u32> =
                     snapshot.iter().map(|(k, v)| (*k, *v)).collect();
-                prop_assert_eq!(snapshot_contents, snapshot_after, "snapshot mutated after write");
+                prop_assert_eq!(&snapshot_contents, &snapshot_after, "snapshot mutated after write");
             }
 
             /// From<AHashMap> roundtrip: every entry in the source is present.

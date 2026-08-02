@@ -33,7 +33,7 @@ for id in $ids; do
       break
     fi
 
-    # 404 means already gone – treat as success
+    # 404 means already gone - treat as success
     if [ "$status" -eq 404 ]; then
       echo "Artifact ID $id already deleted (404)"
       break

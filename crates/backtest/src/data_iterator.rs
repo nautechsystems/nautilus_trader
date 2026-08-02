@@ -128,7 +128,7 @@ impl BacktestDataIterator {
 
     fn add_stream(&mut self, name: &str, data: Vec<Data>, append_data: bool) {
         let priority = if let Some(p) = self.priorities.get(name) {
-            // Replace existing stream – remove previous traces then re-insert below.
+            // Replace existing stream - remove previous traces then re-insert below.
             *p
         } else {
             self.next_priority_counter += 1;
@@ -240,7 +240,7 @@ impl BacktestDataIterator {
     fn rebuild_heap(&mut self) {
         self.heap.clear();
 
-        // Determine if we’re in single-stream mode
+        // Determine if we're in single-stream mode
         if self.streams.len() == 1 {
             self.single_priority = self.streams.keys().next().copied();
             return;
@@ -629,7 +629,7 @@ mod tests {
 
     #[rstest]
     fn test_equal_timestamps_across_many_streams_preserves_priority_order() {
-        // All items at the same timestamp — ordering is strictly by priority
+        // All items at the same timestamp - ordering is strictly by priority
         let mut it = BacktestDataIterator::new();
         it.add_data("s1", vec![quote("A.B", 50)], true);
         it.add_data("s2", vec![quote("C.D", 50)], true);

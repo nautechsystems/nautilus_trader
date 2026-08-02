@@ -1016,9 +1016,18 @@ def contract_details_to_dict(contract_details: IBContractDetails) -> dict:
 def _serialize_for_json(obj: object) -> object:
     """
     Recursively convert Decimal objects and Enum objects to JSON-serializable types.
+
+    Falls back to converting arbitrary objects (such as ibapi response types like
+    ``IneligibilityReason``) via ``vars()``, and to ``str()`` for anything else, so that
+    unexpected fields returned by newer IB Gateway versions do not break downstream
+    msgpack/JSON serialization (e.g. when persisting instruments to a cache database).
+
     """
     if obj is None:
         return None
+
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
 
     if isinstance(obj, Decimal):
         return str(obj)
@@ -1032,7 +1041,10 @@ def _serialize_for_json(obj: object) -> object:
     if isinstance(obj, (list, tuple)):
         return [_serialize_for_json(item) for item in obj]
 
-    return obj
+    if hasattr(obj, "__dict__"):
+        return _serialize_for_json(vars(obj))
+
+    return str(obj)
 
 
 def _tick_size_to_precision(tick_size: float | Decimal) -> int:

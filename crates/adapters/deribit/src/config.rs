@@ -71,6 +71,9 @@ pub struct DeribitDataClientConfig {
     /// Heartbeat interval in seconds for WebSocket connection.
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// Interval for refreshing instruments (in minutes).
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -81,6 +84,23 @@ pub struct DeribitDataClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DeribitDataClientConfig {
+    product_types: Vec<DeribitProductType>,
+    environment: DeribitEnvironment,
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    http_timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
+    heartbeat_interval_secs: u64,
+    auth_timeout_secs: Option<u64>,
+    update_instruments_interval_mins: u64,
+    auto_load_missing_instruments: bool,
+    transport_backend: TransportBackend,
+});
 
 impl Default for DeribitDataClientConfig {
     fn default() -> Self {
@@ -167,10 +187,29 @@ pub struct DeribitExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DeribitExecClientConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    product_types: Vec<DeribitProductType>,
+    environment: DeribitEnvironment,
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    http_timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
+    auth_timeout_secs: Option<u64>,
+    transport_backend: TransportBackend,
+});
 
 impl Default for DeribitExecClientConfig {
     fn default() -> Self {

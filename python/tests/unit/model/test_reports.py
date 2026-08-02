@@ -19,11 +19,15 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import ContingencyType
+from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import ExecutionMassStatus
 from nautilus_trader.model import FillReport
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OrderInitialized
+from nautilus_trader.model import OrderListId
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderSnapshot
 from nautilus_trader.model import OrderStatusReport
 from nautilus_trader.model import OrderType
@@ -36,8 +40,10 @@ from nautilus_trader.model import PositionId
 from nautilus_trader.model import PositionOpened
 from nautilus_trader.model import PositionSnapshot
 from nautilus_trader.model import PositionStatusReport
+from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import TriggerType
 from nautilus_trader.model import Venue
@@ -112,7 +118,40 @@ def test_order_initialized_to_dict_and_from_dict_roundtrip(audusd_id):
 
     restored = OrderInitialized.from_dict(event.to_dict())
 
+    assert restored.trader_id == TraderId("TRADER-001")
+    assert restored.strategy_id == StrategyId("S-001")
+    assert restored.instrument_id == audusd_id
+    assert restored.client_order_id == ClientOrderId("O-1")
+    assert restored.order_side == OrderSide.BUY
     assert restored.order_type == OrderType.STOP_LIMIT
+    assert restored.quantity == Quantity.from_int(100_000)
+    assert restored.time_in_force == TimeInForce.GTC
+    assert restored.post_only is True
+    assert restored.reduce_only is False
+    assert restored.quote_quantity is False
+    assert restored.reconciliation is False
+    assert restored.event_id == event.event_id
+    assert restored.ts_event == 1
+    assert restored.ts_init == 2
+    assert restored.price == Price.from_str("1.00010")
+    assert restored.activation_price is None
+    assert restored.trigger_price == Price.from_str("0.99990")
+    assert restored.trigger_type == TriggerType.BID_ASK
+    assert restored.limit_offset is None
+    assert restored.trailing_offset is None
+    assert restored.trailing_offset_type is None
+    assert restored.expire_time == 3
+    assert restored.display_qty == Quantity.from_int(50_000)
+    assert restored.emulation_trigger == TriggerType.LAST_PRICE
+    assert restored.trigger_instrument_id == audusd_id
+    assert restored.contingency_type == ContingencyType.OCO
+    assert restored.order_list_id == OrderListId("L-1")
+    assert restored.linked_order_ids == [ClientOrderId("O-2")]
+    assert restored.parent_order_id == ClientOrderId("O-P")
+    assert restored.exec_algorithm_id == ExecAlgorithmId("VWAP")
+    assert restored.exec_algorithm_params == {"speed": "fast"}
+    assert restored.exec_spawn_id == ClientOrderId("O-X")
+    assert restored.tags == ["tag-1", "tag-2"]
 
 
 def test_order_snapshot_from_dict_returns_snapshot_instance(audusd_id):
@@ -173,6 +212,8 @@ def test_position_event_classes_expose_create_surface():
     assert hasattr(PositionOpened, "position_id")
     assert hasattr(PositionOpened, "quantity")
     assert hasattr(PositionChanged, "peak_quantity")
+    assert hasattr(PositionChanged, "peak_qty")
     assert hasattr(PositionChanged, "realized_pnl")
     assert hasattr(PositionClosed, "closing_order_id")
+    assert hasattr(PositionClosed, "peak_qty")
     assert hasattr(PositionClosed, "ts_closed")

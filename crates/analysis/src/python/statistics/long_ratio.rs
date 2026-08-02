@@ -25,6 +25,11 @@ use crate::{statistic::PortfolioStatistic, statistics::long_ratio::LongRatio};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LongRatio {
+    /// Calculates the ratio of long positions to total positions.
+    ///
+    /// A position counts as long when its entry (opening order) side is `Buy`.
+    /// The result is in `[0, 1]`, rounded to `precision` decimal places, and is
+    /// `None` for an empty position list.
     #[new]
     #[pyo3(signature = (precision=None))]
     fn py_new(precision: Option<usize>) -> Self {

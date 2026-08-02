@@ -127,6 +127,9 @@ impl InstrumentSetup {
                 has_funding: false,
                 has_greeks: false,
             },
+            DeriveInstrumentType::Unknown => {
+                panic!("KIND must be Perp, Option, or Erc20")
+            }
         };
 
         if let Some(symbol) = symbol

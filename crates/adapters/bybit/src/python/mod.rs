@@ -35,7 +35,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::{BYBIT, BYBIT_NAUTILUS_BROKER_ID},
+        consts::{BYBIT, BYBIT_CLIENT_ID, BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
         enums::{BybitOrderSide, BybitPositionIdx, BybitPositionMode},
         parse::{
             bar_spec_to_bybit_interval, extract_raw_symbol, make_hedge_venue_position_id,
@@ -186,6 +186,9 @@ fn extract_bybit_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<
 #[pymodule]
 #[rustfmt::skip]
 pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(BYBIT), BYBIT)?;
+    m.add(stringify!(BYBIT_CLIENT_ID), *BYBIT_CLIENT_ID)?;
+    m.add(stringify!(BYBIT_VENUE), *BYBIT_VENUE)?;
     m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
     m.add_class::<crate::common::enums::BybitAccountType>()?;
     m.add_class::<crate::common::enums::BybitCancelType>()?;
@@ -208,6 +211,9 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::client::BybitHttpClient>()?;
     m.add_class::<crate::http::client::BybitRawHttpClient>()?;
     m.add_class::<crate::http::models::BybitServerTime>()?;
+    m.add_class::<crate::http::models::BybitAccountDetails>()?;
+    m.add_class::<crate::http::models::BybitApiKeyPermissions>()?;
+    m.add_class::<crate::http::models::BybitFeeRate>()?;
     m.add_class::<crate::http::models::BybitOrder>()?;
     m.add_class::<crate::http::models::BybitOrderCursorList>()?;
     m.add_class::<crate::http::models::BybitTickerData>()?;

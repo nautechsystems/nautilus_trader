@@ -48,30 +48,11 @@ pub const SECONDS_IN_HOUR: u64 = 60 * SECONDS_IN_MINUTE;
 /// Number of seconds in one day.
 pub const SECONDS_IN_DAY: u64 = 24 * SECONDS_IN_HOUR;
 
-// Maximum finite seconds input that can be converted to nanoseconds without overflowing `u64`.
 #[expect(
     clippy::cast_precision_loss,
-    reason = "deriving a max-representable bound; f64 precision loss is part of the semantics"
+    reason = "u64::MAX rounds to the exact exclusive 2^64 upper bound"
 )]
-const MAX_SECS_FOR_NANOS: f64 = u64::MAX as f64 / NANOSECONDS_IN_SECOND as f64;
-// Maximum finite seconds input that can be converted to milliseconds without overflowing `u64`.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "deriving a max-representable bound; f64 precision loss is part of the semantics"
-)]
-const MAX_SECS_FOR_MILLIS: f64 = u64::MAX as f64 / MILLISECONDS_IN_SECOND as f64;
-// Maximum finite milliseconds input that can be converted to nanoseconds without overflowing `u64`.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "deriving a max-representable bound; f64 precision loss is part of the semantics"
-)]
-const MAX_MILLIS_FOR_NANOS: f64 = u64::MAX as f64 / NANOSECONDS_IN_MILLISECOND as f64;
-// Maximum finite microseconds input that can be converted to nanoseconds without overflowing `u64`.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "deriving a max-representable bound; f64 precision loss is part of the semantics"
-)]
-const MAX_MICROS_FOR_NANOS: f64 = u64::MAX as f64 / NANOSECONDS_IN_MICROSECOND as f64;
+pub(crate) const U64_UPPER_BOUND_F64: f64 = u64::MAX as f64;
 
 // Compile-time checks for time constants to prevent accidental modification
 const _: () = {
@@ -235,7 +216,7 @@ pub const WEEKDAYS: [Weekday; 5] = [
 ///
 /// # Errors
 ///
-/// Returns an error if `secs` is non-finite or exceeds `MAX_SECS_FOR_NANOS`.
+/// Returns an error if `secs` is non-finite or cannot be represented as `u64` nanoseconds.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -247,11 +228,11 @@ pub fn secs_to_nanos(secs: f64) -> anyhow::Result<u64> {
     if secs <= 0.0 {
         return Ok(0);
     }
-    anyhow::ensure!(
-        secs <= MAX_SECS_FOR_NANOS,
-        "seconds {secs} exceeds maximum representable value {MAX_SECS_FOR_NANOS}"
-    );
     let nanos = secs * NANOSECONDS_IN_SECOND as f64;
+    anyhow::ensure!(
+        nanos < U64_UPPER_BOUND_F64,
+        "seconds {secs} is out of range for `u64` nanoseconds"
+    );
     Ok(nanos.trunc() as u64)
 }
 
@@ -259,7 +240,7 @@ pub fn secs_to_nanos(secs: f64) -> anyhow::Result<u64> {
 ///
 /// # Errors
 ///
-/// Returns an error if `secs` is non-finite or exceeds `MAX_SECS_FOR_MILLIS`.
+/// Returns an error if `secs` is non-finite or cannot be represented as `u64` milliseconds.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -271,11 +252,11 @@ pub fn secs_to_millis(secs: f64) -> anyhow::Result<u64> {
     if secs <= 0.0 {
         return Ok(0);
     }
-    anyhow::ensure!(
-        secs <= MAX_SECS_FOR_MILLIS,
-        "seconds {secs} exceeds maximum representable value {MAX_SECS_FOR_MILLIS}"
-    );
     let millis = secs * MILLISECONDS_IN_SECOND as f64;
+    anyhow::ensure!(
+        millis < U64_UPPER_BOUND_F64,
+        "seconds {secs} is out of range for `u64` milliseconds"
+    );
     Ok(millis.trunc() as u64)
 }
 
@@ -293,15 +274,35 @@ pub fn secs_to_nanos_unchecked(secs: f64) -> u64 {
 }
 
 /// Converts minutes to seconds.
+///
+/// # Panics
+///
+/// Panics if the result cannot be represented as `u64` seconds.
 #[must_use]
 pub const fn mins_to_secs(mins: u64) -> u64 {
-    mins * SECONDS_IN_MINUTE
+    checked_mins_to_secs(mins).expect("minutes to seconds conversion overflow")
+}
+
+/// Converts minutes to seconds, returning `None` on overflow.
+#[must_use]
+pub const fn checked_mins_to_secs(mins: u64) -> Option<u64> {
+    mins.checked_mul(SECONDS_IN_MINUTE)
 }
 
 /// Converts minutes to nanoseconds.
+///
+/// # Panics
+///
+/// Panics if the result cannot be represented as `u64` nanoseconds.
 #[must_use]
 pub const fn mins_to_nanos(mins: u64) -> u64 {
-    mins * NANOSECONDS_IN_MINUTE
+    checked_mins_to_nanos(mins).expect("minutes to nanoseconds conversion overflow")
+}
+
+/// Converts minutes to nanoseconds, returning `None` on overflow.
+#[must_use]
+pub const fn checked_mins_to_nanos(mins: u64) -> Option<u64> {
+    mins.checked_mul(NANOSECONDS_IN_MINUTE)
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
@@ -311,7 +312,7 @@ pub const fn mins_to_nanos(mins: u64) -> u64 {
 ///
 /// # Errors
 ///
-/// Returns an error if `millis` is non-finite or exceeds `MAX_MILLIS_FOR_NANOS`.
+/// Returns an error if `millis` is non-finite or cannot be represented as `u64` nanoseconds.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -327,11 +328,11 @@ pub fn millis_to_nanos(millis: f64) -> anyhow::Result<u64> {
     if millis <= 0.0 {
         return Ok(0);
     }
-    anyhow::ensure!(
-        millis <= MAX_MILLIS_FOR_NANOS,
-        "milliseconds {millis} exceeds maximum representable value {MAX_MILLIS_FOR_NANOS}"
-    );
     let nanos = millis * NANOSECONDS_IN_MILLISECOND as f64;
+    anyhow::ensure!(
+        nanos < U64_UPPER_BOUND_F64,
+        "milliseconds {millis} is out of range for `u64` nanoseconds"
+    );
     Ok(nanos.trunc() as u64)
 }
 
@@ -352,7 +353,7 @@ pub fn millis_to_nanos_unchecked(millis: f64) -> u64 {
 ///
 /// # Errors
 ///
-/// Returns an error if `micros` is non-finite or exceeds `MAX_MICROS_FOR_NANOS`.
+/// Returns an error if `micros` is non-finite or cannot be represented as `u64` nanoseconds.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -368,11 +369,11 @@ pub fn micros_to_nanos(micros: f64) -> anyhow::Result<u64> {
     if micros <= 0.0 {
         return Ok(0);
     }
-    anyhow::ensure!(
-        micros <= MAX_MICROS_FOR_NANOS,
-        "microseconds {micros} exceeds maximum representable value {MAX_MICROS_FOR_NANOS}"
-    );
     let nanos = micros * NANOSECONDS_IN_MICROSECOND as f64;
+    anyhow::ensure!(
+        nanos < U64_UPPER_BOUND_F64,
+        "microseconds {micros} is out of range for `u64` nanoseconds"
+    );
     Ok(nanos.trunc() as u64)
 }
 
@@ -504,7 +505,7 @@ pub const fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
     (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
 }
 
-/// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
+/// Calculates the last weekday (Mon-Fri) from the given `year`, `month`, and `day`.
 ///
 /// # Errors
 ///
@@ -686,42 +687,30 @@ pub fn subtract_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<U
     Ok(UnixNanos::from(nanos))
 }
 
-/// Returns the last valid day of `(year, month)`.
-///
-/// Returns `None` if `month` is not in the range 1..=12.
-#[must_use]
-pub const fn last_day_of_month(year: i32, month: u32) -> Option<u32> {
-    // Validate month range 1-12
-    if month < 1 || month > 12 {
-        return None;
-    }
-
-    // February leap-year logic
-    Some(match month {
-        2 => {
-            if is_leap_year(year) {
-                29
-            } else {
-                28
-            }
-        }
-        4 | 6 | 9 | 11 => 30,
-        _ => 31, // January, March, May, July, August, October, December
-    })
-}
-
-/// Basic leap-year check
-#[must_use]
-pub const fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-}
-
 /// Convert optional `DateTime` to optional `UnixNanos` timestamp.
 pub fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
     value
         .and_then(|dt| dt.timestamp_nanos_opt())
         .and_then(|nanos| u64::try_from(nanos).ok())
         .map(UnixNanos::from)
+}
+
+/// Converts a `DateTime<Utc>` to `UnixNanos`.
+///
+/// Unlike `UnixNanos::from(DateTime<Utc>)` which panics, this returns an error.
+///
+/// # Errors
+///
+/// Returns an error if the timestamp is before the UNIX epoch or out of range for `UnixNanos`.
+pub fn try_datetime_to_unix_nanos(value: DateTime<Utc>) -> anyhow::Result<UnixNanos> {
+    let nanos = value
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("DateTime timestamp out of range for UnixNanos"))?;
+
+    let nanos = u64::try_from(nanos)
+        .map_err(|_| anyhow::anyhow!("DateTime timestamp cannot be negative: {nanos}"))?;
+
+    Ok(UnixNanos::from(nanos))
 }
 
 #[cfg(test)]
@@ -774,21 +763,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_secs_to_nanos_overflow_errors() {
-        let err = secs_to_nanos(MAX_SECS_FOR_NANOS + 1.0).unwrap_err();
-        assert!(err.to_string().contains("exceeds"));
-    }
-
-    #[rstest]
     fn test_secs_to_millis_non_finite_errors() {
         let err = secs_to_millis(f64::INFINITY).unwrap_err();
         assert!(err.to_string().contains("finite"));
-    }
-
-    #[rstest]
-    fn test_millis_to_nanos_overflow_errors() {
-        let err = millis_to_nanos(MAX_MILLIS_FOR_NANOS + 1.0).unwrap_err();
-        assert!(err.to_string().contains("exceeds"));
     }
 
     #[rstest]
@@ -823,23 +800,73 @@ mod tests {
     }
 
     #[rstest]
-    fn test_micros_to_nanos_overflow_errors() {
-        // Use * 2.0 because + 1.0 doesn't change MAX_MICROS_FOR_NANOS due to f64 precision
-        let err = micros_to_nanos(MAX_MICROS_FOR_NANOS * 2.0).unwrap_err();
-        assert!(err.to_string().contains("exceeds"));
+    #[case(
+        checked_mins_to_secs,
+        307_445_734_561_825_860,
+        18_446_744_073_709_551_600
+    )]
+    #[case(checked_mins_to_nanos, 307_445_734, 18_446_744_040_000_000_000)]
+    fn test_checked_minutes_conversion_boundary(
+        #[case] convert: fn(u64) -> Option<u64>,
+        #[case] max: u64,
+        #[case] expected: u64,
+    ) {
+        assert_eq!(convert(max), Some(expected));
+        assert_eq!(convert(max + 1), None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "minutes to seconds conversion overflow")]
+    fn test_mins_to_secs_overflow_panics() {
+        let _ = mins_to_secs(307_445_734_561_825_861);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "minutes to nanoseconds conversion overflow")]
+    fn test_mins_to_nanos_overflow_panics() {
+        let _ = mins_to_nanos(307_445_735);
+    }
+
+    #[rstest]
+    #[case(
+        secs_to_nanos,
+        18_446_744_073.709_553,
+        18_446_744_073.709_55,
+        18_446_744_073_709_549_568
+    )]
+    #[case(
+        secs_to_millis,
+        18_446_744_073_709_550.0,
+        18_446_744_073_709_548.0,
+        18_446_744_073_709_547_520
+    )]
+    #[case(
+        millis_to_nanos,
+        18_446_744_073_709.55,
+        18_446_744_073_709.547,
+        18_446_744_073_709_547_520
+    )]
+    #[case(
+        micros_to_nanos,
+        18_446_744_073_709_550.0,
+        18_446_744_073_709_548.0,
+        18_446_744_073_709_547_520
+    )]
+    fn test_float_conversion_u64_boundary(
+        #[case] convert: fn(f64) -> anyhow::Result<u64>,
+        #[case] invalid: f64,
+        #[case] previous: f64,
+        #[case] expected: u64,
+    ) {
+        let err = convert(invalid).unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+        assert_eq!(convert(previous).unwrap(), expected);
     }
 
     #[rstest]
     fn test_secs_to_nanos_negative_infinity_errors() {
         let result = secs_to_nanos(f64::NEG_INFINITY);
         assert!(result.is_err());
-    }
-
-    #[rstest]
-    #[case(2024, 0)] // Month below range
-    #[case(2024, 13)] // Month above range
-    fn test_last_day_of_month_invalid_month(#[case] year: i32, #[case] month: u32) {
-        assert!(last_day_of_month(year, month).is_none());
     }
 
     #[rstest]
@@ -1128,26 +1155,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(2024, 2, 29)] // Leap year February
-    #[case(2023, 2, 28)] // Non-leap year February
-    #[case(2024, 12, 31)] // December
-    #[case(2023, 11, 30)] // November
-    fn test_last_day_of_month(#[case] year: i32, #[case] month: u32, #[case] expected: u32) {
-        let result = last_day_of_month(year, month).unwrap();
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(2024, true)] // Leap year divisible by 4
-    #[case(1900, false)] // Not leap year, divisible by 100 but not 400
-    #[case(2000, true)] // Leap year, divisible by 400
-    #[case(2023, false)] // Non-leap year
-    fn test_is_leap_year(#[case] year: i32, #[case] expected: bool) {
-        let result = is_leap_year(year);
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
     #[case("1970-01-01T00:00:00.000000000Z", 0)] // Unix epoch
     #[case("1970-01-01T00:00:00.000000001Z", 1)] // 1 nanosecond
     #[case("1970-01-01T00:00:00.001000000Z", 1_000_000)] // 1 millisecond
@@ -1244,6 +1251,34 @@ mod tests {
         let dt = Utc.timestamp_opt(0, 1_000).unwrap(); // 1 microsecond = 1000 nanos
         let result = datetime_to_unix_nanos(Some(dt));
         assert_eq!(result, Some(UnixNanos::from(1_000)));
+    }
+
+    #[rstest]
+    fn test_try_datetime_to_unix_nanos_valid() {
+        let dt = Utc.timestamp_opt(0, 1_000).unwrap();
+        assert_eq!(
+            try_datetime_to_unix_nanos(dt).unwrap(),
+            UnixNanos::from(1_000)
+        );
+    }
+
+    #[rstest]
+    fn test_try_datetime_to_unix_nanos_before_epoch_errors() {
+        let before_epoch = Utc.with_ymd_and_hms(1969, 12, 31, 23, 59, 59).unwrap();
+        let err = try_datetime_to_unix_nanos(before_epoch).unwrap_err();
+        assert!(
+            err.to_string().contains("cannot be negative"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_try_datetime_to_unix_nanos_out_of_range_errors() {
+        let err = try_datetime_to_unix_nanos(DateTime::<Utc>::MAX_UTC).unwrap_err();
+        assert!(
+            err.to_string().contains("out of range"),
+            "unexpected error: {err}"
+        );
     }
 
     #[rstest]

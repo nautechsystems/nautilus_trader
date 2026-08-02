@@ -28,14 +28,20 @@ use std::{
 
 use axum::{
     Json, Router,
+    body::{Body, Bytes},
     extract::{
-        State,
+        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
+    http::header::CONTENT_TYPE,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use nautilus_architect_ax::common::consts::AX_VENUE;
+use futures_util::stream;
+use nautilus_architect_ax::{
+    common::consts::AX_VENUE,
+    http::query::{GetFillsParams, GetInstrumentParams, GetOpenOrdersParams, GetOrderStatusParams},
+};
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     enums::AssetClass,
@@ -44,8 +50,17 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use serde_json::json;
 use ustr::Ustr;
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct CapturedOrdersQuery {
+    pub start_timestamp_ns: Option<i64>,
+    pub end_timestamp_ns: Option<i64>,
+    pub limit: Option<i32>,
+    pub cursor: Option<String>,
+}
 
 #[derive(Clone)]
 pub(crate) struct TestServerState {
@@ -61,11 +76,29 @@ pub(crate) struct TestServerState {
     pub messages_received: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub cancel_all_count: Arc<AtomicUsize>,
     pub cancel_all_fail: Arc<AtomicBool>,
+    pub whoami_count: Arc<AtomicUsize>,
+    pub whoami_fail: Arc<AtomicBool>,
+    pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
+    pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub instrument_fail: Arc<AtomicBool>,
+    pub instrument_response_delay: Arc<AtomicBool>,
+    pub instrument_response_dropped: Arc<tokio::sync::Notify>,
+    pub instrument_response_entered: Arc<tokio::sync::Notify>,
+    pub instrument_response_release: Arc<tokio::sync::Notify>,
+    pub preview_count: Arc<AtomicUsize>,
     pub preview_empty: Arc<AtomicBool>,
+    pub preview_fail: Arc<AtomicBool>,
     pub preview_partial: Arc<AtomicBool>,
     pub replace_order_fail: Arc<AtomicBool>,
     pub replace_order_count: Arc<AtomicUsize>,
+    pub replace_order_oid: Arc<tokio::sync::Mutex<Option<String>>>,
+    pub order_status_queries: Arc<tokio::sync::Mutex<Vec<GetOrderStatusParams>>>,
+    pub open_orders_queries: Arc<tokio::sync::Mutex<Vec<GetOpenOrdersParams>>>,
     pub open_orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub orders_queries: Arc<tokio::sync::Mutex<Vec<CapturedOrdersQuery>>>,
+    pub orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub orders_page_size: Arc<tokio::sync::Mutex<Option<usize>>>,
+    pub orders_repeated_cursor: Arc<tokio::sync::Mutex<Option<String>>>,
     pub fills_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub positions_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
 }
@@ -85,11 +118,29 @@ impl Default for TestServerState {
             messages_received: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             cancel_all_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_fail: Arc::new(AtomicBool::new(false)),
+            whoami_count: Arc::new(AtomicUsize::new(0)),
+            whoami_fail: Arc::new(AtomicBool::new(false)),
+            instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            instrument_fail: Arc::new(AtomicBool::new(false)),
+            instrument_response_delay: Arc::new(AtomicBool::new(false)),
+            instrument_response_dropped: Arc::new(tokio::sync::Notify::new()),
+            instrument_response_entered: Arc::new(tokio::sync::Notify::new()),
+            instrument_response_release: Arc::new(tokio::sync::Notify::new()),
+            preview_count: Arc::new(AtomicUsize::new(0)),
             preview_empty: Arc::new(AtomicBool::new(false)),
+            preview_fail: Arc::new(AtomicBool::new(false)),
             preview_partial: Arc::new(AtomicBool::new(false)),
             replace_order_fail: Arc::new(AtomicBool::new(false)),
             replace_order_count: Arc::new(AtomicUsize::new(0)),
+            replace_order_oid: Arc::new(tokio::sync::Mutex::new(None)),
+            order_status_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            open_orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_page_size: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_repeated_cursor: Arc::new(tokio::sync::Mutex::new(None)),
             fills_payload: Arc::new(tokio::sync::Mutex::new(None)),
             positions_payload: Arc::new(tokio::sync::Mutex::new(None)),
         }
@@ -109,6 +160,16 @@ impl TestServerState {
         self.heartbeat_count.store(0, Ordering::Relaxed);
         self.messages_received.lock().await.clear();
         self.cancel_all_count.store(0, Ordering::Relaxed);
+        self.instrument_fail.store(false, Ordering::Relaxed);
+        self.instrument_response_delay
+            .store(false, Ordering::Relaxed);
+        *self.instrument_payload.lock().await = None;
+        self.order_status_queries.lock().await.clear();
+        self.instrument_queries.lock().await.clear();
+        self.open_orders_queries.lock().await.clear();
+        self.orders_queries.lock().await.clear();
+        *self.orders_page_size.lock().await = None;
+        *self.orders_repeated_cursor.lock().await = None;
     }
 
     pub(crate) async fn set_subscription_failures(&self, topics: Vec<String>) {
@@ -182,11 +243,16 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
                 match msg_type {
                     Some("subscribe") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                         let level = value
                             .get("level")
                             .and_then(|v| v.as_str())
                             .unwrap_or("LEVEL_1");
+                        let include_trades = value
+                            .get("trades")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
                         let key = format!("{symbol}:{level}");
 
                         let fail_list = state.fail_next_subscriptions.lock().await.clone();
@@ -198,48 +264,107 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                             .await
                             .push((key.clone(), !should_fail));
 
-                        if !should_fail {
+                        if should_fail {
+                            let error = json!({
+                                "rid": rid,
+                                "error": {
+                                    "code": 400,
+                                    "message": "subscription failed",
+                                },
+                            });
+
+                            if socket
+                                .send(Message::Text(error.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        {
                             let mut subs = state.subscriptions.lock().await;
                             if !subs.contains(&key) {
                                 subs.push(key);
                             }
                         }
 
-                        let book_msg = match level {
-                            "LEVEL_1" => load_test_data("ws_md_book_l1.json"),
-                            "LEVEL_2" => load_test_data("ws_md_book_l2.json"),
-                            "LEVEL_3" => load_test_data("ws_md_book_l3.json"),
-                            _ => load_test_data("ws_md_book_l1.json"),
-                        };
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "subscribed": symbol,
+                            },
+                        });
 
                         if socket
-                            .send(Message::Text(book_msg.to_string().into()))
+                            .send(Message::Text(ack.to_string().into()))
                             .await
                             .is_err()
                         {
                             break;
                         }
 
-                        let trade_msg = load_test_data("ws_md_trade.json");
+                        if level != "TRADES" {
+                            let book_msg = match level {
+                                "LEVEL_1" => load_test_data("ws_md_book_l1.json"),
+                                "LEVEL_2" => load_test_data("ws_md_book_l2.json"),
+                                "LEVEL_3" => load_test_data("ws_md_book_l3.json"),
+                                _ => load_test_data("ws_md_book_l1.json"),
+                            };
 
-                        if socket
-                            .send(Message::Text(trade_msg.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
+                            if socket
+                                .send(Message::Text(book_msg.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+
+                        if level == "TRADES" || include_trades {
+                            let trade_msg = load_test_data("ws_md_trade.json");
+
+                            if socket
+                                .send(Message::Text(trade_msg.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
                     }
                     Some("unsubscribe") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
 
-                        let mut subs = state.subscriptions.lock().await;
-                        subs.retain(|s| !s.starts_with(symbol));
+                        {
+                            let mut subs = state.subscriptions.lock().await;
+                            subs.retain(|s| !s.starts_with(symbol));
+                        }
 
-                        let mut events = state.subscription_events.lock().await;
-                        events.retain(|(t, _)| !t.starts_with(symbol));
+                        {
+                            let mut events = state.subscription_events.lock().await;
+                            events.retain(|(t, _)| !t.starts_with(symbol));
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "unsubscribed": symbol,
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                     Some("subscribe_candles") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                         let width = value.get("width").and_then(|v| v.as_str()).unwrap_or("1m");
 
@@ -252,7 +377,22 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
                         let mut subs = state.subscriptions.lock().await;
                         if !subs.contains(&key) {
-                            subs.push(key);
+                            subs.push(key.clone());
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "subscribed_candle": key,
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
 
                         // Send two candles with different timestamps to trigger bar emission
@@ -268,10 +408,29 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         }
                     }
                     Some("unsubscribe_candles") => {
+                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                        let width = value.get("width").and_then(|v| v.as_str()).unwrap_or("1m");
 
-                        let mut subs = state.subscriptions.lock().await;
-                        subs.retain(|s| !s.starts_with(&format!("{symbol}:candle")));
+                        {
+                            let mut subs = state.subscriptions.lock().await;
+                            subs.retain(|s| !s.starts_with(&format!("{symbol}:candle")));
+                        }
+
+                        let ack = json!({
+                            "rid": rid,
+                            "result": {
+                                "unsubscribed_candle": format!("{symbol}:candle:{width}"),
+                            },
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -347,13 +506,10 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
                     Some("p") => {
                         let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let ack = json!({
-                            "t": "a",
                             "rid": rid,
-                            "oid": format!("order-{rid}"),
-                            "s": value.get("s").and_then(|v| v.as_str()).unwrap_or(""),
-                            "d": value.get("d").and_then(|v| v.as_str()).unwrap_or("BUY"),
-                            "q": value.get("q").and_then(|v| v.as_i64()).unwrap_or(0),
-                            "p": value.get("p").and_then(|v| v.as_str()).unwrap_or("0"),
+                            "res": {
+                                "oid": format!("order-{rid}"),
+                            },
                         });
 
                         if socket
@@ -439,8 +595,71 @@ async fn handle_get_instruments() -> Json<serde_json::Value> {
     Json(load_test_data("http_get_instruments.json"))
 }
 
+async fn handle_get_instrument(
+    State(state): State<TestServerState>,
+    Query(params): Query<GetInstrumentParams>,
+) -> Response {
+    state.instrument_queries.lock().await.push(params.clone());
+
+    if state.instrument_fail.load(Ordering::Relaxed) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({"error":"instrument unavailable"})),
+        )
+            .into_response();
+    }
+
+    let mut instrument = state
+        .instrument_payload
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| load_test_data("http_get_instruments.json")["instruments"][0].clone());
+    instrument["symbol"] = json!(params.symbol.as_str());
+
+    if state.instrument_response_delay.load(Ordering::Relaxed) {
+        let dropped = Arc::clone(&state.instrument_response_dropped);
+        let entered = Arc::clone(&state.instrument_response_entered);
+        let release = Arc::clone(&state.instrument_response_release);
+        let body = Body::from_stream(stream::once(async move {
+            let _drop_signal = DropSignal(dropped);
+            entered.notify_one();
+            release.notified().await;
+            Ok::<Bytes, std::convert::Infallible>(Bytes::from(instrument.to_string()))
+        }));
+
+        return Response::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .expect("valid delayed instrument response");
+    }
+
+    Json(instrument).into_response()
+}
+
+struct DropSignal(Arc<tokio::sync::Notify>);
+
+impl Drop for DropSignal {
+    fn drop(&mut self) {
+        self.0.notify_one();
+    }
+}
+
 async fn handle_get_balances() -> Json<serde_json::Value> {
     Json(load_test_data("http_get_balances.json"))
+}
+
+async fn handle_get_whoami(State(state): State<TestServerState>) -> axum::response::Response {
+    state.whoami_count.fetch_add(1, Ordering::Relaxed);
+    if state.whoami_fail.load(Ordering::Relaxed) {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"server error"})),
+        )
+            .into_response()
+    } else {
+        Json(load_test_data("http_get_whoami.json")).into_response()
+    }
 }
 
 async fn handle_authenticate() -> Json<serde_json::Value> {
@@ -466,14 +685,24 @@ async fn handle_cancel_all_orders(
 
 async fn handle_preview_aggressive_limit_order(
     State(state): State<TestServerState>,
-) -> Json<serde_json::Value> {
+) -> axum::response::Response {
+    state.preview_count.fetch_add(1, Ordering::Relaxed);
+    if state.preview_fail.load(Ordering::Relaxed) {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "preview failed"})),
+        )
+            .into_response();
+    }
+
     if state.preview_empty.load(Ordering::Relaxed) {
         return Json(json!({
             "filled_quantity": 0,
             "remaining_quantity": 100,
             "limit_price": null,
             "vwap": null,
-        }));
+        }))
+        .into_response();
     }
 
     if state.preview_partial.load(Ordering::Relaxed) {
@@ -482,7 +711,8 @@ async fn handle_preview_aggressive_limit_order(
             "remaining_quantity": 60,
             "limit_price": "50001.00",
             "vwap": "50000.50",
-        }));
+        }))
+        .into_response();
     }
     Json(json!({
         "filled_quantity": 100,
@@ -490,6 +720,7 @@ async fn handle_preview_aggressive_limit_order(
         "limit_price": "50001.00",
         "vwap": "50000.50",
     }))
+    .into_response()
 }
 
 async fn handle_replace_order(
@@ -508,24 +739,131 @@ async fn handle_replace_order(
         .get("oid")
         .and_then(|v| v.as_str())
         .unwrap_or("OLD-OID");
-    let new_oid = format!("{old_oid}-REPL");
+    let new_oid = state
+        .replace_order_oid
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| format!("{old_oid}-REPL"));
     Json(json!({ "oid": new_oid })).into_response()
 }
 
-async fn handle_open_orders(State(state): State<TestServerState>) -> Json<serde_json::Value> {
-    let guard = state.open_orders_payload.lock().await;
-    if let Some(v) = guard.as_ref() {
-        return Json(v.clone());
-    }
-    Json(load_test_data("http_get_open_orders.json"))
+async fn handle_order_status(
+    State(state): State<TestServerState>,
+    Query(params): Query<GetOrderStatusParams>,
+) -> Json<serde_json::Value> {
+    state.order_status_queries.lock().await.push(params);
+    Json(load_test_data("http_get_order_status.json"))
 }
 
-async fn handle_fills(State(state): State<TestServerState>) -> Json<serde_json::Value> {
+async fn handle_open_orders(
+    State(state): State<TestServerState>,
+    Query(params): Query<GetOpenOrdersParams>,
+) -> Json<serde_json::Value> {
+    state.open_orders_queries.lock().await.push(params.clone());
+    let guard = state.open_orders_payload.lock().await;
+    let payload = guard
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| load_test_data("http_get_open_orders.json"));
+    let orders = payload
+        .get("orders")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let total_count = orders.len();
+    let offset = params.offset.unwrap_or(0).max(0) as usize;
+    let limit = params.limit.unwrap_or(100).max(0) as usize;
+    let page = orders
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+
+    Json(json!({
+        "orders": page,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+    }))
+}
+
+async fn handle_orders(
+    State(state): State<TestServerState>,
+    Query(params): Query<CapturedOrdersQuery>,
+) -> Json<serde_json::Value> {
+    state.orders_queries.lock().await.push(params.clone());
+    let guard = state.orders_payload.lock().await;
+    let payload = guard
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| load_test_data("http_get_orders.json"));
+    let orders = payload
+        .get("orders")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let total_count = orders.len();
+    let repeated_cursor = state.orders_repeated_cursor.lock().await.clone();
+    let offset = match params.cursor.as_deref() {
+        Some(cursor) if repeated_cursor.as_deref() == Some(cursor) => 1,
+        Some(cursor) => cursor.parse::<usize>().unwrap_or(0),
+        None => 0,
+    };
+    let limit = params.limit.unwrap_or(100).max(0) as usize;
+    let page_size = (*state.orders_page_size.lock().await).unwrap_or(limit);
+    let page = orders
+        .into_iter()
+        .skip(offset)
+        .take(page_size.min(limit))
+        .collect::<Vec<_>>();
+    let next_offset = offset + page.len();
+    let next_cursor = (next_offset < total_count)
+        .then(|| repeated_cursor.unwrap_or_else(|| next_offset.to_string()));
+
+    Json(json!({
+        "orders": page,
+        "total_count": total_count,
+        "limit": limit,
+        "next_cursor": next_cursor,
+    }))
+}
+
+async fn handle_fills(
+    State(state): State<TestServerState>,
+    Query(params): Query<GetFillsParams>,
+) -> Json<serde_json::Value> {
     let guard = state.fills_payload.lock().await;
-    if let Some(v) = guard.as_ref() {
-        return Json(v.clone());
-    }
-    Json(load_test_data("http_get_fills.json"))
+    let payload = guard
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| load_test_data("http_get_fills.json"));
+    let fills = payload
+        .get("fills")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let total_count = fills.len();
+    let offset = params
+        .cursor
+        .as_deref()
+        .and_then(|cursor| cursor.parse::<usize>().ok())
+        .unwrap_or(0);
+    let limit = params.limit.unwrap_or(100).max(0) as usize;
+    let page = fills
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+    let next_offset = offset + page.len();
+    let next_cursor = (next_offset < total_count).then(|| next_offset.to_string());
+
+    Json(json!({
+        "fills": page,
+        "total_count": total_count,
+        "limit": limit,
+        "next_cursor": next_cursor,
+    }))
 }
 
 async fn handle_positions(State(state): State<TestServerState>) -> Json<serde_json::Value> {
@@ -544,15 +882,19 @@ fn create_test_router(state: TestServerState) -> Router {
         // HTTP API routes
         .route("/authenticate", post(handle_authenticate))
         .route("/instruments", get(handle_get_instruments))
+        .route("/instrument", get(handle_get_instrument))
         .route("/balances", get(handle_get_balances))
+        .route("/whoami", get(handle_get_whoami))
         .route("/positions", get(handle_positions))
-        .route("/cancel_all_orders", post(handle_cancel_all_orders))
+        .route("/cancel-all-orders", post(handle_cancel_all_orders))
         .route(
             "/preview-aggressive-limit-order",
             post(handle_preview_aggressive_limit_order),
         )
-        .route("/replace_order", post(handle_replace_order))
-        .route("/open_orders", get(handle_open_orders))
+        .route("/replace-order", post(handle_replace_order))
+        .route("/order-status", get(handle_order_status))
+        .route("/open-orders", get(handle_open_orders))
+        .route("/orders", get(handle_orders))
         .route("/fills", get(handle_fills))
         .with_state(state)
 }

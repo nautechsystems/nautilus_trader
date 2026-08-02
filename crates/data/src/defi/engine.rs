@@ -34,6 +34,7 @@ use nautilus_model::{
         data::{DexPoolData, block::BlockPosition},
     },
     identifiers::{ClientId, InstrumentId},
+    instruments::{CurrencyPair, InstrumentAny},
 };
 
 use crate::engine::{
@@ -235,6 +236,18 @@ impl DataEngine {
             DefiData::Pool(pool) => {
                 if let Err(e) = self.cache.borrow_mut().add_pool(pool.clone()) {
                     log::error!("Failed to add Pool to cache: {e}");
+                }
+
+                match CurrencyPair::try_from(&pool) {
+                    Ok(instrument) => {
+                        self.handle_instrument(&InstrumentAny::CurrencyPair(instrument));
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to create instrument for Pool {}: {e}",
+                            pool.instrument_id
+                        );
+                    }
                 }
 
                 // Check if pool profiler creation was deferred. When a snapshot is also

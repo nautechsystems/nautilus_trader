@@ -681,280 +681,107 @@ mod tests {
         assert!(cache.contains_key(&4));
     }
 
+    use ahash::AHashMap;
     use proptest::prelude::*;
 
-    /// Operations that can be performed on a `FifoCache`
     #[derive(Clone, Debug)]
-    enum Op {
+    enum SetOperation {
         Add(u8),
         Remove(u8),
     }
 
-    fn op_strategy() -> impl Strategy<Value = Op> {
-        prop_oneof![(0..50u8).prop_map(Op::Add), (0..50u8).prop_map(Op::Remove),]
+    fn set_operation_strategy() -> impl Strategy<Value = SetOperation> {
+        prop_oneof![
+            (0..50u8).prop_map(SetOperation::Add),
+            (0..50u8).prop_map(SetOperation::Remove),
+        ]
     }
 
-    fn ops_strategy() -> impl Strategy<Value = Vec<Op>> {
-        proptest::collection::vec(op_strategy(), 0..100)
+    fn set_operations_strategy() -> impl Strategy<Value = Vec<SetOperation>> {
+        proptest::collection::vec(set_operation_strategy(), 0..100)
     }
 
-    /// Apply operations and return final cache state
-    fn apply_ops<const N: usize>(ops: &[Op]) -> FifoCache<u8, N> {
-        let mut cache = FifoCache::<u8, N>::new();
+    #[derive(Clone, Debug)]
+    enum MapOperation {
+        Insert(u8, u8),
+        Remove(u8),
+    }
 
-        for op in ops {
-            match op {
-                Op::Add(id) => cache.add(*id),
-                Op::Remove(id) => cache.remove(id),
-            }
-        }
-        cache
+    fn map_operation_strategy() -> impl Strategy<Value = MapOperation> {
+        prop_oneof![
+            (0..50u8, any::<u8>()).prop_map(|(key, value)| MapOperation::Insert(key, value)),
+            (0..50u8).prop_map(MapOperation::Remove),
+        ]
+    }
+
+    fn map_operations_strategy() -> impl Strategy<Value = Vec<MapOperation>> {
+        proptest::collection::vec(map_operation_strategy(), 0..100)
     }
 
     proptest! {
-        /// Invariant: len() never exceeds capacity
         #[rstest]
-        fn prop_len_never_exceeds_capacity(ops in ops_strategy()) {
-            let cache = apply_ops::<8>(&ops);
-            prop_assert!(cache.len() <= cache.capacity());
-        }
-
-        /// Invariant: is_empty() iff len() == 0
-        #[rstest]
-        fn prop_is_empty_consistent_with_len(ops in ops_strategy()) {
-            let cache = apply_ops::<8>(&ops);
-            if cache.is_empty() {
-                prop_assert_eq!(cache.len(), 0);
-            } else {
-                prop_assert!(!cache.is_empty());
-            }
-        }
-
-        /// Invariant: Adding a duplicate does not change len
-        #[rstest]
-        fn prop_add_duplicate_is_idempotent(
-            ops in ops_strategy(),
-            id in 0..50u8
-        ) {
-            let mut cache = apply_ops::<8>(&ops);
-            cache.add(id);
-            let len_after_first = cache.len();
-            let contained_after_first = cache.contains(&id);
-
-            cache.add(id);
-            prop_assert_eq!(cache.len(), len_after_first);
-            prop_assert_eq!(cache.contains(&id), contained_after_first);
-        }
-
-        /// Invariant: After remove(x), contains(x) is false
-        #[rstest]
-        fn prop_remove_ensures_not_contained(
-            ops in ops_strategy(),
-            id in 0..50u8
-        ) {
-            let mut cache = apply_ops::<8>(&ops);
-            cache.remove(&id);
-            prop_assert!(!cache.contains(&id));
-        }
-
-        /// Invariant: After add(x), contains(x) is true (unless immediately evicted)
-        #[rstest]
-        fn prop_add_ensures_contained_if_capacity(id in 0..50u8) {
+        fn prop_set_operations_match_reference(operations in set_operations_strategy()) {
             let mut cache: FifoCache<u8, 8> = FifoCache::new();
-            cache.add(id);
-            prop_assert!(cache.contains(&id));
-        }
+            let mut expected_order = Vec::new();
 
-        /// Invariant: FIFO eviction order - oldest element evicted first
-        #[rstest]
-        fn prop_fifo_eviction_order(extra in 0..20u8) {
-            let mut cache: FifoCache<u8, 4> = FifoCache::new();
+            for operation in operations {
+                match operation {
+                    SetOperation::Add(id) => {
+                        cache.add(id);
+                        if !expected_order.contains(&id) {
+                            if expected_order.len() == cache.capacity() {
+                                expected_order.pop();
+                            }
+                            expected_order.insert(0, id);
+                        }
+                    }
+                    SetOperation::Remove(id) => {
+                        cache.remove(&id);
+                        expected_order.retain(|expected| *expected != id);
+                    }
+                }
 
-            // Fill cache with 0, 1, 2, 3
-            for i in 0..4u8 {
-                cache.add(i);
-            }
-            prop_assert_eq!(cache.len(), 4);
-
-            // Add more elements, should evict in FIFO order
-            for i in 0..extra {
-                let new_id = 100 + i;
-                cache.add(new_id);
-
-                // The element that should have been evicted
-                let evicted = i;
-                if evicted < 4 {
-                    prop_assert!(!cache.contains(&evicted),
-                        "Element {} should have been evicted", evicted);
+                prop_assert_eq!(cache.len(), expected_order.len());
+                prop_assert_eq!(cache.is_empty(), expected_order.is_empty());
+                for id in 0..50u8 {
+                    prop_assert_eq!(cache.contains(&id), expected_order.contains(&id));
                 }
             }
         }
 
-        /// Invariant: Remove on empty cache is safe no-op
         #[rstest]
-        fn prop_remove_on_empty_is_noop(id in 0..50u8) {
-            let mut cache: FifoCache<u8, 8> = FifoCache::new();
-            cache.remove(&id);
-            prop_assert!(cache.is_empty());
-            prop_assert_eq!(cache.len(), 0);
-        }
-
-        /// Invariant: len() decreases by 1 when removing existing element
-        #[rstest]
-        fn prop_remove_decreases_len(
-            ops in ops_strategy(),
-            id in 0..50u8
-        ) {
-            let mut cache = apply_ops::<8>(&ops);
-            cache.add(id); // Ensure it exists
-            let len_before = cache.len();
-
-            cache.remove(&id);
-
-            if cache.contains(&id) {
-                prop_assert!(false, "Element still contained after remove");
-            }
-            prop_assert!(cache.len() < len_before || len_before == 0);
-        }
-
-        /// Invariant: At capacity, adding new element keeps len same
-        #[rstest]
-        fn prop_add_at_capacity_maintains_len(new_id in 50..100u8) {
-            let mut cache: FifoCache<u8, 4> = FifoCache::new();
-
-            // Fill to capacity with distinct values
-            for i in 0..4u8 {
-                cache.add(i);
-            }
-            prop_assert_eq!(cache.len(), 4);
-
-            // Add new element (guaranteed not in cache)
-            cache.add(new_id);
-            prop_assert_eq!(cache.len(), 4);
-        }
-
-        /// Invariant: All added elements are contained until evicted or removed
-        #[rstest]
-        fn prop_recent_adds_are_contained(recent in proptest::collection::vec(0..50u8, 1..5)) {
-            let mut cache: FifoCache<u8, 8> = FifoCache::new();
-
-            for &id in &recent {
-                cache.add(id);
-            }
-
-            // Deduplicate to get expected unique count
-            let mut unique: Vec<u8> = recent;
-            unique.sort_unstable();
-            unique.dedup();
-            let expected_len = unique.len().min(8);
-
-            prop_assert_eq!(cache.len(), expected_len);
-
-            // All unique recent adds should be contained (capacity is 8, we add at most 5)
-            for id in unique {
-                prop_assert!(cache.contains(&id), "Recently added {} not contained", id);
-            }
-        }
-
-        /// Invariant: len() never exceeds capacity for map
-        #[rstest]
-        fn prop_map_len_never_exceeds_capacity(
-            keys in proptest::collection::vec(0..50u8, 0..100)
-        ) {
-            let mut cache: FifoCacheMap<u8, u8, 8> = FifoCacheMap::new();
-            for key in keys {
-                cache.insert(key, key);
-            }
-            prop_assert!(cache.len() <= cache.capacity());
-        }
-
-        /// Invariant: is_empty() iff len() == 0 for map
-        #[rstest]
-        fn prop_map_is_empty_consistent_with_len(
-            keys in proptest::collection::vec(0..50u8, 0..20)
-        ) {
-            let mut cache: FifoCacheMap<u8, u8, 8> = FifoCacheMap::new();
-            for key in keys {
-                cache.insert(key, key);
-            }
-
-            if cache.is_empty() {
-                prop_assert_eq!(cache.len(), 0);
-            } else {
-                prop_assert!(!cache.is_empty());
-            }
-        }
-
-        /// Invariant: Updating existing key does not change len
-        #[rstest]
-        fn prop_map_update_is_idempotent_for_len(
-            keys in proptest::collection::vec(0..50u8, 1..10),
-            key in 0..50u8
-        ) {
-            let mut cache: FifoCacheMap<u8, u8, 8> = FifoCacheMap::new();
-            for k in keys {
-                cache.insert(k, k);
-            }
-            cache.insert(key, 100);
-            let len_after_first = cache.len();
-
-            cache.insert(key, 200);
-            prop_assert_eq!(cache.len(), len_after_first);
-        }
-
-        /// Invariant: After remove(k), get(k) is None
-        #[rstest]
-        fn prop_map_remove_ensures_not_contained(
-            keys in proptest::collection::vec(0..50u8, 0..20),
-            key in 0..50u8
-        ) {
-            let mut cache: FifoCacheMap<u8, u8, 8> = FifoCacheMap::new();
-            for k in keys {
-                cache.insert(k, k);
-            }
-            cache.remove(&key);
-            prop_assert!(cache.get(&key).is_none());
-        }
-
-        /// Invariant: After insert(k, v), get(k) returns Some(&v)
-        #[rstest]
-        fn prop_map_insert_ensures_get(key in 0..50u8, value in 0..100u8) {
-            let mut cache: FifoCacheMap<u8, u8, 8> = FifoCacheMap::new();
-            cache.insert(key, value);
-            prop_assert_eq!(cache.get(&key), Some(&value));
-        }
-
-        /// Invariant: At capacity, inserting new key keeps len same
-        #[rstest]
-        fn prop_map_insert_at_capacity_maintains_len(new_key in 50..100u8) {
+        fn prop_map_operations_match_reference(operations in map_operations_strategy()) {
             let mut cache: FifoCacheMap<u8, u8, 4> = FifoCacheMap::new();
+            let mut expected_order = Vec::new();
+            let mut expected_values = AHashMap::new();
 
-            for i in 0..4u8 {
-                cache.insert(i, i * 10);
-            }
-            prop_assert_eq!(cache.len(), 4);
+            for operation in operations {
+                match operation {
+                    MapOperation::Insert(key, value) => {
+                        cache.insert(key, value);
+                        if expected_values.contains_key(&key) {
+                            expected_values.insert(key, value);
+                        } else {
+                            if expected_order.len() == cache.capacity() {
+                                let evicted = expected_order.pop().unwrap();
+                                expected_values.remove(&evicted);
+                            }
+                            expected_order.insert(0, key);
+                            expected_values.insert(key, value);
+                        }
+                    }
+                    MapOperation::Remove(key) => {
+                        cache.remove(&key);
+                        if expected_values.remove(&key).is_some() {
+                            expected_order.retain(|expected| *expected != key);
+                        }
+                    }
+                }
 
-            cache.insert(new_key, 99);
-            prop_assert_eq!(cache.len(), 4);
-        }
-
-        /// Invariant: FIFO eviction for map
-        #[rstest]
-        fn prop_map_fifo_eviction(extra in 0..20u8) {
-            let mut cache: FifoCacheMap<u8, u8, 4> = FifoCacheMap::new();
-
-            for i in 0..4u8 {
-                cache.insert(i, i * 10);
-            }
-
-            for i in 0..extra {
-                let new_key = 100 + i;
-                cache.insert(new_key, new_key);
-
-                let evicted = i;
-                if evicted < 4 {
-                    prop_assert!(cache.get(&evicted).is_none(),
-                        "Key {} should have been evicted", evicted);
+                prop_assert_eq!(cache.len(), expected_values.len());
+                prop_assert_eq!(cache.is_empty(), expected_values.is_empty());
+                for key in 0..50u8 {
+                    prop_assert_eq!(cache.get(&key).copied(), expected_values.get(&key).copied());
                 }
             }
         }

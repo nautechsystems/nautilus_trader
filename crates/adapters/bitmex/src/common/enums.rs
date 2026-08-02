@@ -49,10 +49,6 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bitmex")
-)]
 pub enum BitmexSymbolStatus {
     /// Symbol is open for trading.
     Open,
@@ -125,10 +121,6 @@ impl From<BitmexSide> for OrderSide {
         eq_int,
         from_py_object
     )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bitmex")
 )]
 pub enum BitmexPositionSide {
     /// Long position.

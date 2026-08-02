@@ -1,0 +1,44 @@
+{
+  "timezone": "UTC",
+  "serverTime": 1784577617539,
+  "rateLimits": [],
+  "exchangeFilters": [],
+  "symbols": [
+    {
+      "symbol": "BTCUSD_260925",
+      "pair": "BTCUSD",
+      "contractType": "CURRENT_QUARTER",
+      "deliveryDate": 1790323200000,
+      "onboardDate": 1774598400000,
+      "contractStatus": "TRADING",
+      "contractSize": 100,
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "marginAsset": "BTC",
+      "pricePrecision": 1,
+      "quantityPrecision": 0,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "equalQtyPrecision": 4,
+      "triggerProtect": "0.0500",
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "minPrice": "1000",
+          "maxPrice": "4671848",
+          "tickSize": "0.1"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "minQty": "1",
+          "maxQty": "1000000",
+          "stepSize": "1"
+        }
+      ],
+      "orderTypes": ["LIMIT", "MARKET"],
+      "timeInForce": ["GTC", "IOC", "FOK"]
+    }
+  ]
+}

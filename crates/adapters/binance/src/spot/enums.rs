@@ -118,17 +118,29 @@ pub fn order_type_to_binance_spot(
 
 /// Converts a Nautilus time in force to Binance Spot time in force.
 ///
-/// Binance Spot only supports GTC, IOC, and FOK. GTD and other TIF values
-/// are rejected.
+/// Binance Spot only supports GTC, IOC, and FOK. When native GTD is disabled,
+/// GTD maps to GTC so a Nautilus strategy can manage expiry locally.
 ///
 /// # Errors
 ///
 /// Returns an error if the time in force is not supported on Binance Spot.
-pub fn time_in_force_to_binance_spot(tif: TimeInForce) -> anyhow::Result<BinanceTimeInForce> {
+pub fn time_in_force_to_binance_spot(
+    tif: TimeInForce,
+    use_gtd: bool,
+) -> anyhow::Result<BinanceTimeInForce> {
     match tif {
         TimeInForce::Gtc => Ok(BinanceTimeInForce::Gtc),
         TimeInForce::Ioc => Ok(BinanceTimeInForce::Ioc),
         TimeInForce::Fok => Ok(BinanceTimeInForce::Fok),
+        TimeInForce::Gtd if !use_gtd => {
+            log::warn!(
+                "Binance Spot does not support GTD; submitting as GTC because use_gtd=false. Enable manage_gtd_expiry on the submitting strategy"
+            );
+            Ok(BinanceTimeInForce::Gtc)
+        }
+        TimeInForce::Gtd => anyhow::bail!(
+            "Binance Spot does not support native GTD; set use_gtd=false and enable manage_gtd_expiry on the submitting strategy"
+        ),
         _ => anyhow::bail!("Unsupported time in force for Binance Spot: {tif:?}"),
     }
 }
@@ -175,14 +187,20 @@ mod tests {
         #[case] tif: TimeInForce,
         #[case] expected: BinanceTimeInForce,
     ) {
-        let result = time_in_force_to_binance_spot(tif).unwrap();
+        let result = time_in_force_to_binance_spot(tif, true).unwrap();
         assert_eq!(result, expected);
     }
 
     #[rstest]
     #[case(TimeInForce::Gtd)]
     fn test_time_in_force_to_binance_spot_rejects_gtd(#[case] tif: TimeInForce) {
-        let result = time_in_force_to_binance_spot(tif);
+        let result = time_in_force_to_binance_spot(tif, true);
         result.unwrap_err();
+    }
+
+    #[rstest]
+    fn test_time_in_force_to_binance_spot_maps_locally_managed_gtd_to_gtc() {
+        let result = time_in_force_to_binance_spot(TimeInForce::Gtd, false).unwrap();
+        assert_eq!(result, BinanceTimeInForce::Gtc);
     }
 }

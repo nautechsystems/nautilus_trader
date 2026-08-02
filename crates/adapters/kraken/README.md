@@ -35,7 +35,7 @@ This crate provides **separate HTTP and WebSocket clients for Spot and Futures m
 This design reflects fundamental differences between the two APIs:
 
 | Aspect         | Spot                  | Futures                      |
-|----------------|-----------------------|------------------------------|
+| -------------- | --------------------- | ---------------------------- |
 | API Version    | REST API v2           | Derivatives API v3           |
 | Base URL       | `api.kraken.com`      | `futures.kraken.com`         |
 | Auth Headers   | `API-Key`, `API-Sign` | `APIKey`, `Authent`, `Nonce` |
@@ -52,10 +52,10 @@ which explains why the APIs remain distinct rather than unified.
 
 ### Bitcoin symbol format
 
-| Market  | Format | Example      | Notes                                            |
-|---------|--------|--------------|--------------------------------------------------|
-| Spot    | `BTC`  | `BTC/USD`    | XBT normalized to BTC (base or quote position).  |
-| Futures | `XBT`  | `PI_XBTUSD`  | Uses Kraken's native XBT format.                 |
+| Market  | Format | Example     | Notes                                           |
+| ------- | ------ | ----------- | ----------------------------------------------- |
+| Spot    | `BTC`  | `BTC/USD`   | XBT normalized to BTC (base or quote position). |
+| Futures | `XBT`  | `PI_XBTUSD` | Uses Kraken's native XBT format.                |
 
 ## Examples
 

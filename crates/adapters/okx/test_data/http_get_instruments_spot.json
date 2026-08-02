@@ -29,6 +29,8 @@
       "minSz": "0.00001",
       "optType": "",
       "quoteCcy": "USD",
+      "rpiMinLevel": "5",
+      "rpiMinPxBand": "20",
       "ruleType": "normal",
       "settleCcy": "",
       "state": "live",

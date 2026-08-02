@@ -225,10 +225,6 @@ impl MessageBusBackingFactory for RedisMessageBusFactory {
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
-)]
 pub struct RedisMessageBusBacking {
     /// The trader ID for this message bus backing.
     pub trader_id: TraderId,
@@ -435,6 +431,11 @@ pub async fn publish_messages(
         .autotrim_mins
         .filter(|&mins| mins > 0)
         .map(|mins| Duration::from_secs(u64::from(mins) * 60));
+    let autotrim_maxlen = config
+        .autotrim_maxlen
+        .filter(|&maxlen| maxlen > 0)
+        .map(usize::try_from)
+        .transpose()?;
     let mut last_trim_index: HashMap<String, usize> = HashMap::new();
 
     // Buffering
@@ -460,6 +461,7 @@ pub async fn publish_messages(
                                 &stream_key,
                                 config.stream_per_topic,
                                 autotrim_duration,
+                                autotrim_maxlen,
                                 &mut last_trim_index,
                                 &mut buffer,
                             ).await?;
@@ -476,6 +478,7 @@ pub async fn publish_messages(
                             &stream_key,
                             config.stream_per_topic,
                             autotrim_duration,
+                            autotrim_maxlen,
                             &mut last_trim_index,
                             &mut buffer,
                         ).await?;
@@ -494,6 +497,7 @@ pub async fn publish_messages(
                         &stream_key,
                         config.stream_per_topic,
                         autotrim_duration,
+                        autotrim_maxlen,
                         &mut last_trim_index,
                         &mut buffer,
                     ).await?;
@@ -512,6 +516,7 @@ pub async fn publish_messages(
             &stream_key,
             config.stream_per_topic,
             autotrim_duration,
+            autotrim_maxlen,
             &mut last_trim_index,
             &mut buffer,
         )
@@ -527,6 +532,7 @@ async fn drain_buffer(
     stream_key: &str,
     stream_per_topic: bool,
     autotrim_duration: Option<Duration>,
+    autotrim_maxlen: Option<usize>,
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
 ) -> anyhow::Result<()> {
@@ -546,7 +552,17 @@ async fn drain_buffer(
         } else {
             stream_key.to_string()
         };
-        pipe.xadd(&stream_key, "*", &items);
+
+        if let Some(maxlen) = autotrim_maxlen {
+            pipe.xadd_maxlen(
+                &stream_key,
+                streams::StreamMaxlen::Approx(maxlen),
+                "*",
+                &items,
+            );
+        } else {
+            pipe.xadd(&stream_key, "*", &items);
+        }
 
         if autotrim_duration.is_none() {
             continue; // Nothing else to do
@@ -788,7 +804,7 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     let mut encoding = SerializationEncoding::default();
     let mut payload: Option<Bytes> = None;
 
-    for pair in fields.chunks_exact(2) {
+    for pair in fields.as_chunks::<2>().0 {
         let redis::Value::BulkString(key) = &pair[0] else {
             anyhow::bail!("Invalid stream field key: {stream_msg:?}");
         };
@@ -1283,10 +1299,14 @@ mod serial_tests {
 
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
-        let config = RedisMessageBusConfig::default();
+        let config = RedisMessageBusConfig {
+            connection_timeout: 1,
+            number_of_retries: 0,
+            ..Default::default()
+        };
         create_redis_connection(MSGBUS_STREAM, &config)
             .await
-            .unwrap()
+            .expect("A running Redis service is required for this test")
     }
 
     #[rstest]
@@ -1435,6 +1455,61 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_messages_skips_preexisting_entries(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let mut con = redis_connection.await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let suffix = UUID4::new();
+        let stream_key = format!("test:stream:no-backlog:{suffix}");
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        let _: () = con
+            .xadd(
+                &stream_key,
+                "1-0",
+                &[("topic", "preexisting"), ("payload", "old")],
+            )
+            .await
+            .unwrap();
+
+        let handle = tokio::spawn(async move {
+            stream_messages(
+                tx,
+                RedisMessageBusConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .await
+            .unwrap();
+        });
+
+        let future_id = (get_atomic_clock_realtime().get_time_ms() + 1_000_000).to_string();
+        let _: () = con
+            .xadd(
+                &stream_key,
+                future_id,
+                &[("topic", "live"), ("payload", "new")],
+            )
+            .await
+            .unwrap();
+
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
+
+        rx.close();
+        stream_signal.store(true, Ordering::Relaxed);
+        handle.await.unwrap();
+        let _: usize = con.del(stream_key).await.unwrap();
+
+        assert_eq!(msg.topic, "live");
+        assert_eq!(msg.payload, Bytes::from("new"));
     }
 
     #[rstest]
@@ -1612,6 +1687,60 @@ mod serial_tests {
 
         // Shutdown and cleanup
         handle.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages_applies_autotrim_maxlen(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let mut con = redis_connection.await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            buffer_interval_ms: Some(10),
+            autotrim_mins: Some(60),
+            autotrim_maxlen: Some(10),
+            use_instance_id: true,
+            stream_per_topic: false,
+            ..Default::default()
+        };
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+
+        let handle = tokio::spawn(async move {
+            publish_messages(
+                rx,
+                trader_id,
+                instance_id,
+                config,
+                RedisMessageBusConfig::default(),
+            )
+            .await
+            .unwrap();
+        });
+        let msg = BusMessage::with_str_topic(
+            "test_topic",
+            BusPayloadType::QuoteTick,
+            Bytes::from_static(b"test_payload"),
+            SerializationEncoding::Json,
+        );
+
+        // The integration service uses Redis's default stream node limits,
+        // so these writes span multiple macro nodes.
+        let messages_sent = 250;
+
+        for _ in 0..messages_sent {
+            tx.send(msg.clone()).unwrap();
+        }
+        tx.send(BusMessage::new_close()).unwrap();
+        handle.await.unwrap();
+
+        let stream_len: usize = con.xlen(&stream_key).await.unwrap();
+        let _: usize = con.del(stream_key).await.unwrap();
+
+        assert!(stream_len >= 10);
+        assert!(stream_len < messages_sent);
     }
 
     #[rstest]

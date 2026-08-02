@@ -1,9 +1,10 @@
 # Order Book
 
 NautilusTrader provides a high-performance order book implemented in Rust, capable of
-maintaining full book state from L1 through L3 data. The `OrderBook` is the primary
-component for tracking public market depth, while the `OwnOrderBook` tracks your own
-orders separately, enabling filtered views that show true available liquidity.
+maintaining full book state for the supported public book types. The `OrderBook` is
+the primary component for tracking public market depth, while the `OwnOrderBook`
+tracks your own orders separately, enabling filtered views that show true available
+liquidity.
 
 :::note
 This guide documents the Rust API. These types are also available from Python via
@@ -17,13 +18,19 @@ API reference for differences.
 
 `OrderBook` instances are maintained per instrument for both backtesting and live trading:
 
-- `L3_MBO`: **Market by order** data. Tracks every order at every price level, keyed by order ID.
-- `L2_MBP`: **Market by price** data. Aggregates orders by price level (one entry per price).
-- `L1_MBP`: **Top-of-book** data, also known as best bid and offer (BBO). Captures only the
-  best prices.
+- `L3_MBO`: Level 3 market-by-order (MBO) data. Tracks every order at every price
+  level, keyed by order ID. On each book side, an order ID maps to exactly one price
+  level: re-adding an ID at a different price moves the order to the new level. A zero
+  order ID carries no identity (for example, aggregated depth or MBP‑style input), so
+  the book derives the ID from the order's price.
+- `L2_MBP`: Level 2 market-by-price (MBP) data. Aggregates orders by price level
+  (one entry per price).
+- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data, also known as best bid
+  and offer (BBO). Captures only the best prices.
 
 :::note
-Top-of-book data such as `QuoteTick`, `TradeTick` and `Bar` can also maintain `L1_MBP` books.
+Quote, trade, and bar data (`QuoteTick`, `TradeTick`, and `Bar`) can also drive
+`L1_MBP` books.
 :::
 
 ## Subscribing to book data
@@ -32,7 +39,7 @@ Strategies and actors subscribe to order book updates through the following meth
 Subscriptions and handlers are part of the Python strategy/actor layer:
 
 ```python
-# L3/L2 incremental deltas
+# Incremental book deltas
 self.subscribe_order_book_deltas(instrument_id)
 
 # Aggregated depth snapshots (up to 10 levels)
@@ -45,14 +52,13 @@ self.subscribe_order_book_at_interval(instrument_id, interval_ms=1000)
 Each subscription type delivers data to the corresponding handler:
 
 ```python
-def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
-    ...
+def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
 
-def on_order_book_depth(self, depth: OrderBookDepth10) -> None:
-    ...
 
-def on_order_book(self, order_book: OrderBook) -> None:
-    ...
+def on_order_book_depth(self, depth: OrderBookDepth10) -> None: ...
+
+
+def on_order_book(self, order_book: OrderBook) -> None: ...
 ```
 
 ## Accessing the book
@@ -106,6 +112,10 @@ These checks run internally during delta application. The instrument ID of incom
 deltas is also validated against the book's instrument ID, returning
 `BookIntegrityError::InstrumentMismatch` on mismatch.
 
+A delta with `NoOrderSide` requires an unambiguous cached side. If its order ID exists
+on both sides, an `Add` returns `BookIntegrityError::AmbiguousOrderSide`, while an
+`Update` or `Delete` is skipped with a warning.
+
 ## Pretty printing
 
 Both `OrderBook` and `OwnOrderBook` provide a `pprint` method that renders the book
@@ -142,7 +152,7 @@ Each `OwnBookOrder` carries:
 
 - `client_order_id`: Client order ID used to reconcile the own book with cache state.
 - `venue_order_id`: Venue order ID when one has been assigned.
-- `side`, `price`, and `size`: Order side and the remaining own-book price level.
+- `side`, `price`, and `size`: Order side, price, and remaining (leaves) quantity.
 - `order_type` and `time_in_force`: Order type metadata used by filters and diagnostics.
 - `status`: Current order status, such as `SUBMITTED`, `ACCEPTED`, or `PENDING_CANCEL`.
 - `ts_last`: Timestamp of the latest order event applied to this own-book order.
@@ -211,8 +221,9 @@ let filtered = book.filtered_view(Some(&own_book), None, status, None, None);
 The `accepted_buffer_ns` parameter provides a grace period: when set, only orders
 where `ts_accepted + buffer <= now` are included. This excludes recently accepted
 orders that may not yet appear in the public book feed. The buffer applies to the
-`ts_accepted` field regardless of order status. Combine with a status filter to
-also exclude non-accepted orders.
+`ts_accepted` field regardless of order status. Omitting `ts_now` disables
+acceptance-time filtering, and a positive `accepted_buffer_ns` requires `ts_now`.
+Combine with a status filter to also exclude non-accepted orders.
 
 ```rust
 // Only subtract orders accepted at least 500ms ago

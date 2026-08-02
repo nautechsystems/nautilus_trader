@@ -17,10 +17,14 @@
 
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, de};
-use serde_json::Value;
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, DeserializeOwned, Error as _},
+};
+use serde_json::{Value, value::RawValue};
 use strum::Display;
 use ustr::Ustr;
 use uuid::Uuid;
@@ -28,9 +32,12 @@ use uuid::Uuid;
 use super::enums::{
     BitmexAction, BitmexSide, BitmexTickDirection, BitmexWsAuthAction, BitmexWsOperation,
 };
-use crate::common::enums::{
-    BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexLiquidityIndicator,
-    BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce,
+use crate::common::{
+    enums::{
+        BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexLiquidityIndicator,
+        BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce,
+    },
+    serialization::optional_decimal,
 };
 
 /// Custom deserializer for comma-separated `ExecInstruction` values.
@@ -105,6 +112,7 @@ pub enum BitmexWsMessage {
 #[serde(untagged)]
 pub(super) enum BitmexWsFrame {
     /// Table websocket message.
+    #[serde(skip)]
     Table(BitmexTableMessage),
     /// Initial welcome message received when connecting to the WebSocket.
     Welcome {
@@ -162,9 +170,7 @@ pub struct BitmexRateLimit {
 }
 
 /// Represents table-based messages.
-#[derive(Debug, Display, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "table")]
+#[derive(Debug, Display)]
 pub enum BitmexTableMessage {
     OrderBookL2 {
         action: BitmexAction,
@@ -208,7 +214,6 @@ pub enum BitmexTableMessage {
     },
     Order {
         action: BitmexAction,
-        #[serde(deserialize_with = "deserialize_order_data")]
         data: Vec<OrderData>,
     },
     Execution {
@@ -239,6 +244,128 @@ pub enum BitmexTableMessage {
         action: BitmexAction,
         data: Vec<BitmexLiquidationMsg>,
     },
+}
+
+#[derive(Deserialize)]
+struct BitmexTableTag {
+    table: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BitmexTableEnvelope<'a> {
+    table: &'a str,
+    action: BitmexAction,
+    #[serde(borrow)]
+    data: &'a RawValue,
+}
+
+impl BitmexTableMessage {
+    pub(super) fn from_json_if_table(json: &str) -> serde_json::Result<Option<Self>> {
+        let tag: BitmexTableTag = serde_json::from_str(json)?;
+        if tag.table.is_none() {
+            return Ok(None);
+        }
+
+        Self::from_json(json).map(Some)
+    }
+
+    fn from_json(json: &str) -> serde_json::Result<Self> {
+        let envelope: BitmexTableEnvelope = serde_json::from_str(json)?;
+        let action = envelope.action;
+        let data = envelope.data;
+
+        match envelope.table {
+            "orderBookL2" => Ok(Self::OrderBookL2 {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "orderBookL2_25" => Ok(Self::OrderBookL2_25 {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "orderBook10" => Ok(Self::OrderBook10 {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "quote" => Ok(Self::Quote {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "trade" => Ok(Self::Trade {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "tradeBin1m" => Ok(Self::TradeBin1m {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "tradeBin5m" => Ok(Self::TradeBin5m {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "tradeBin1h" => Ok(Self::TradeBin1h {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "tradeBin1d" => Ok(Self::TradeBin1d {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "instrument" => Ok(Self::Instrument {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "order" => Ok(Self::Order {
+                action,
+                data: parse_order_data(data)?,
+            }),
+            "execution" => Ok(Self::Execution {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "position" => Ok(Self::Position {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "wallet" => Ok(Self::Wallet {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "margin" => Ok(Self::Margin {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "funding" => Ok(Self::Funding {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "insurance" => Ok(Self::Insurance {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            "liquidation" => Ok(Self::Liquidation {
+                action,
+                data: parse_table_data(data)?,
+            }),
+            table => Err(serde_json::Error::custom(format!(
+                "unknown BitMEX table `{table}`"
+            ))),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BitmexTableMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = Box::<RawValue>::deserialize(deserializer)?;
+        Self::from_json(raw.get()).map_err(D::Error::custom)
+    }
+}
+
+fn parse_table_data<T: DeserializeOwned>(raw: &RawValue) -> serde_json::Result<Vec<T>> {
+    serde_json::from_str(raw.get())
 }
 
 /// Represents a single order book entry in the BitMEX order book.
@@ -573,17 +700,58 @@ pub struct BitmexOrderUpdateMsg {
     pub order_id: Uuid,
     #[serde(rename = "clOrdID")]
     pub cl_ord_id: Option<Ustr>,
-    pub account: i64,
-    pub symbol: Ustr,
+    pub account: Option<i64>,
+    pub symbol: Option<Ustr>,
     pub side: Option<BitmexSide>,
-    pub price: Option<f64>,
+    #[serde(default)]
+    pub price: FieldUpdate<f64>,
     pub currency: Option<Ustr>,
-    pub text: Option<Ustr>,
+    #[serde(default)]
+    pub text: FieldUpdate<Ustr>,
     pub transact_time: Option<DateTime<Utc>>,
     pub timestamp: Option<DateTime<Utc>>,
     pub leaves_qty: Option<i64>,
     pub cum_qty: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_decimal_update")]
+    pub avg_px: FieldUpdate<Decimal>,
     pub ord_status: Option<BitmexOrderStatus>,
+}
+
+/// A field in a sparse table update.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum FieldUpdate<T> {
+    /// The field was absent and the cached value remains unchanged.
+    #[default]
+    Missing,
+    /// The field was present with a null value.
+    Null,
+    /// The field was present with a value.
+    Value(T),
+}
+
+impl<'de, T> Deserialize<'de> for FieldUpdate<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(match Option::<T>::deserialize(deserializer)? {
+            Some(value) => Self::Value(value),
+            None => Self::Null,
+        })
+    }
+}
+
+fn deserialize_decimal_update<'de, D>(deserializer: D) -> Result<FieldUpdate<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(match optional_decimal::deserialize(deserializer)? {
+        Some(value) => FieldUpdate::Value(value),
+        None => FieldUpdate::Null,
+    })
 }
 
 /// Represents a full order message from the WebSocket stream.
@@ -619,7 +787,8 @@ pub struct BitmexOrderMsg {
     pub ord_rej_reason: Option<Ustr>,
     pub leaves_qty: i64,
     pub cum_qty: i64,
-    pub avg_px: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub avg_px: Option<Decimal>,
     pub text: Option<Ustr>,
     pub transact_time: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
@@ -634,23 +803,156 @@ pub enum OrderData {
     Update(BitmexOrderUpdateMsg),
 }
 
-/// Custom deserializer for order data that tries to deserialize as full message first,
-/// then falls back to update message if fields are missing.
-fn deserialize_order_data<'de, D>(deserializer: D) -> Result<Vec<OrderData>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let raw_values: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
+#[derive(Debug)]
+pub(crate) enum ResolvedOrderData {
+    Full(BitmexOrderMsg),
+    Update(BitmexOrderUpdateMsg),
+    Terminal(BitmexOrderMsg),
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct OrderRowCache {
+    rows: AHashMap<Uuid, BitmexOrderMsg>,
+}
+
+impl OrderRowCache {
+    pub(crate) fn apply(
+        &mut self,
+        action: BitmexAction,
+        data: Vec<OrderData>,
+    ) -> Vec<ResolvedOrderData> {
+        if action == BitmexAction::Partial {
+            self.clear();
+        }
+
+        data.into_iter()
+            .filter_map(|order_data| self.resolve(order_data))
+            .collect()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.rows.clear();
+    }
+
+    fn resolve(&mut self, order_data: OrderData) -> Option<ResolvedOrderData> {
+        match order_data {
+            OrderData::Full(order) => {
+                self.store(&order);
+                Some(ResolvedOrderData::Full(order))
+            }
+            OrderData::Update(mut update) => {
+                let order_id = update.order_id;
+                let Some(mut merged) = self.rows.get(&order_id).cloned() else {
+                    log::warn!("Order update cache miss: order_id={order_id}");
+                    return None;
+                };
+
+                update.apply_to(&mut merged);
+                update.inherit_context(&merged);
+
+                if merged.ord_status.is_terminal() {
+                    self.rows.remove(&order_id);
+                    Some(ResolvedOrderData::Terminal(merged))
+                } else {
+                    self.rows.insert(order_id, merged);
+                    Some(ResolvedOrderData::Update(update))
+                }
+            }
+        }
+    }
+
+    fn store(&mut self, order: &BitmexOrderMsg) {
+        if order.ord_status.is_terminal() {
+            self.rows.remove(&order.order_id);
+        } else {
+            self.rows.insert(order.order_id, order.clone());
+        }
+    }
+}
+
+impl BitmexOrderUpdateMsg {
+    fn apply_to(&self, order: &mut BitmexOrderMsg) {
+        if let Some(cl_ord_id) = self.cl_ord_id {
+            order.cl_ord_id = Some(cl_ord_id);
+        }
+
+        if let Some(account) = self.account {
+            order.account = account;
+        }
+
+        if let Some(symbol) = self.symbol {
+            order.symbol = symbol;
+        }
+
+        if let Some(side) = self.side {
+            order.side = side;
+        }
+        self.price.apply_to(&mut order.price);
+        if let Some(currency) = self.currency {
+            order.currency = currency;
+        }
+        self.text.apply_to(&mut order.text);
+        if let Some(transact_time) = self.transact_time {
+            order.transact_time = transact_time;
+        }
+
+        if let Some(timestamp) = self.timestamp {
+            order.timestamp = timestamp;
+        }
+
+        if let Some(leaves_qty) = self.leaves_qty {
+            order.leaves_qty = leaves_qty;
+        }
+
+        if let Some(cum_qty) = self.cum_qty {
+            order.cum_qty = cum_qty;
+        }
+        self.avg_px.apply_to(&mut order.avg_px);
+
+        if let Some(ord_status) = self.ord_status {
+            order.ord_status = ord_status;
+        }
+    }
+
+    fn inherit_context(&mut self, order: &BitmexOrderMsg) {
+        self.cl_ord_id = self.cl_ord_id.or(order.cl_ord_id);
+        self.account = self.account.or(Some(order.account));
+        self.symbol = self.symbol.or(Some(order.symbol));
+    }
+}
+
+impl<T> FieldUpdate<T> {
+    pub(crate) const fn value(&self) -> Option<&T> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Missing | Self::Null => None,
+        }
+    }
+
+    fn apply_to(&self, target: &mut Option<T>)
+    where
+        T: Clone,
+    {
+        match self {
+            Self::Missing => {}
+            Self::Null => *target = None,
+            Self::Value(value) => *target = Some(value.clone()),
+        }
+    }
+}
+
+fn parse_order_data(raw: &RawValue) -> serde_json::Result<Vec<OrderData>> {
+    let raw_values: Vec<Box<RawValue>> = serde_json::from_str(raw.get())?;
     let mut result = Vec::new();
 
     for value in raw_values {
         // Try to deserialize as full message first
-        if let Ok(full_msg) = serde_json::from_value::<BitmexOrderMsg>(value.clone()) {
+        if let Ok(full_msg) = serde_json::from_str::<BitmexOrderMsg>(value.get()) {
             result.push(OrderData::Full(full_msg));
-        } else if let Ok(update_msg) = serde_json::from_value::<BitmexOrderUpdateMsg>(value) {
+        } else if let Ok(update_msg) = serde_json::from_str::<BitmexOrderUpdateMsg>(value.get()) {
             result.push(OrderData::Update(update_msg));
         } else {
-            return Err(de::Error::custom(
+            return Err(serde_json::Error::custom(
                 "Failed to deserialize order data as either full or update message",
             ));
         }
@@ -1089,5 +1391,141 @@ mod tests {
             err.to_string().contains("Missing"),
             "Error should indicate missing required fields"
         );
+    }
+
+    #[rstest]
+    fn test_order_sparse_update_deserializes_exactly() {
+        let message: BitmexTableMessage = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_update_canceled.json"
+        ))
+        .unwrap();
+        let BitmexTableMessage::Order { action, data } = message else {
+            panic!("expected order table message");
+        };
+        let OrderData::Update(update) = &data[0] else {
+            panic!("expected sparse order update");
+        };
+
+        assert_eq!(action, BitmexAction::Update);
+        assert_eq!(
+            update.order_id,
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap()
+        );
+        assert_eq!(update.ord_status, Some(BitmexOrderStatus::Canceled));
+        assert_eq!(
+            update.avg_px,
+            FieldUpdate::Value("30000.500000000004".parse::<Decimal>().unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_order_avg_px_deserializes_exactly() {
+        let message: BitmexTableMessage =
+            serde_json::from_str(include_str!("../../test_data/ws_order_avg_px.json")).unwrap();
+        let BitmexTableMessage::Order { data, .. } = message else {
+            panic!("expected order table message");
+        };
+        let OrderData::Full(order) = &data[0] else {
+            panic!("expected full order message");
+        };
+
+        assert_eq!(
+            order.avg_px,
+            Some("30000.500000000004".parse::<Decimal>().unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_order_row_cache_merges_sparse_update_and_evicts_terminal_order() {
+        let order: BitmexOrderMsg =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        let original = order.clone();
+        let message: BitmexTableMessage = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_update_canceled.json"
+        ))
+        .unwrap();
+        let BitmexTableMessage::Order { action, data } = message else {
+            panic!("expected order table message");
+        };
+        let mut cache = OrderRowCache::default();
+
+        cache.apply(BitmexAction::Partial, vec![OrderData::Full(order)]);
+        let resolved = cache.apply(action, data);
+        let ResolvedOrderData::Terminal(canceled) = &resolved[0] else {
+            panic!("expected resolved terminal order");
+        };
+
+        assert_eq!(canceled.cl_ord_id, original.cl_ord_id);
+        assert_eq!(canceled.account, original.account);
+        assert_eq!(canceled.symbol, original.symbol);
+        assert_eq!(canceled.price, original.price);
+        assert_eq!(canceled.text, original.text);
+        assert_eq!(
+            canceled.avg_px,
+            Some("30000.500000000004".parse::<Decimal>().unwrap())
+        );
+        assert_eq!(canceled.ord_status, BitmexOrderStatus::Canceled);
+        assert!(cache.rows.is_empty());
+    }
+
+    #[rstest]
+    fn test_order_row_cache_applies_explicit_nulls() {
+        let order: BitmexOrderMsg =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        let message: BitmexTableMessage =
+            serde_json::from_str(include_str!("../../test_data/ws_order_update_nulls.json"))
+                .unwrap();
+        let BitmexTableMessage::Order { action, data } = message else {
+            panic!("expected order table message");
+        };
+        let order_id = order.order_id;
+        let mut cache = OrderRowCache::default();
+
+        cache.apply(BitmexAction::Partial, vec![OrderData::Full(order)]);
+        cache.apply(action, data);
+        let cached = cache.rows.get(&order_id).unwrap();
+
+        assert_eq!(cached.price, None);
+        assert_eq!(cached.text, None);
+    }
+
+    #[rstest]
+    fn test_order_row_cache_applies_values() {
+        let order: BitmexOrderMsg =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        let message: BitmexTableMessage =
+            serde_json::from_str(include_str!("../../test_data/ws_order_update_values.json"))
+                .unwrap();
+        let BitmexTableMessage::Order { action, data } = message else {
+            panic!("expected order table message");
+        };
+        let order_id = order.order_id;
+        let mut cache = OrderRowCache::default();
+
+        cache.apply(BitmexAction::Partial, vec![OrderData::Full(order)]);
+        cache.apply(action, data);
+        let cached = cache.rows.get(&order_id).unwrap();
+
+        assert_eq!(cached.price, Some(99_000.0));
+        assert_eq!(cached.text, Some(Ustr::from("Amended")));
+    }
+
+    #[rstest]
+    fn test_order_row_cache_resets_partial_and_evicts_full_terminal_order() {
+        let order: BitmexOrderMsg =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        let order_id = order.order_id;
+        let mut cache = OrderRowCache::default();
+
+        cache.apply(BitmexAction::Partial, vec![OrderData::Full(order.clone())]);
+        assert!(cache.rows.contains_key(&order_id));
+
+        cache.apply(BitmexAction::Partial, Vec::new());
+        assert!(cache.rows.is_empty());
+
+        let mut terminal = order;
+        terminal.ord_status = BitmexOrderStatus::Canceled;
+        cache.apply(BitmexAction::Insert, vec![OrderData::Full(terminal)]);
+        assert!(cache.rows.is_empty());
     }
 }

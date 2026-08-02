@@ -191,7 +191,7 @@ def test_start_loads_instrument(env):
 
 
 def test_start_resolves_trade_size_from_min_quantity(env):
-    # Arrange — min_quantity for AUD/USD.SIM is 1000
+    # Arrange - min_quantity for AUD/USD.SIM is 1000
     strategy = _make_strategy(env, trade_size=None)
 
     # Act
@@ -236,7 +236,7 @@ def test_buy_prices_below_mid(env):
     strategy.start()
     mid = Price(0.65000, env.instrument.price_precision)
 
-    # Act — mid = (0.64990 + 0.65010) / 2 = 0.65000
+    # Act - mid = (0.64990 + 0.65010) / 2 = 0.65000
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
 
     # Assert
@@ -251,7 +251,7 @@ def test_sell_prices_above_mid(env):
     strategy.start()
     mid = Price(0.65000, env.instrument.price_precision)
 
-    # Act — mid = 0.65000
+    # Act - mid = 0.65000
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
 
     # Assert
@@ -261,7 +261,7 @@ def test_sell_prices_above_mid(env):
 
 
 def test_grid_uses_geometric_spacing(env):
-    # Arrange — grid_step_bps=10: level N price = mid * (1 ± 0.001)^N
+    # Arrange - grid_step_bps=10: level N price = mid * (1 ± 0.001)^N
     strategy = _make_strategy(env, num_levels=2, grid_step_bps=10)
     strategy.start()
     mid = 0.65000
@@ -322,13 +322,13 @@ def test_anchor_set_after_first_quote(env):
 
 
 def test_requote_suppressed_below_threshold(env):
-    # Arrange — requote_threshold_bps=5, first quote sets the anchor at mid=0.65000
+    # Arrange - requote_threshold_bps=5, first quote sets the anchor at mid=0.65000
     strategy = _make_strategy(env, requote_threshold_bps=5)
     strategy.start()
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
     first_orders = {o.client_order_id for o in env.cache.orders_open()}
 
-    # Act — mid moves to 0.65019, ~2.9 bps < 5 bps threshold
+    # Act - mid moves to 0.65019, ~2.9 bps < 5 bps threshold
     _process_quote(env, bid_price=0.65014, ask_price=0.65024)
 
     # Assert
@@ -337,13 +337,13 @@ def test_requote_suppressed_below_threshold(env):
 
 
 def test_requote_triggered_above_threshold(env):
-    # Arrange — first quote sets the anchor at mid=0.65000
+    # Arrange - first quote sets the anchor at mid=0.65000
     strategy = _make_strategy(env, requote_threshold_bps=5, num_levels=3)
     strategy.start()
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
     first_orders = {o.client_order_id for o in env.cache.orders_open()}
 
-    # Act — mid moves to 0.65039, ~6.0 bps > 5 bps threshold
+    # Act - mid moves to 0.65039, ~6.0 bps > 5 bps threshold
     _process_quote(env, bid_price=0.65034, ask_price=0.65044)
 
     # Assert
@@ -358,10 +358,10 @@ def test_old_orders_cancelled_on_requote(env):
     strategy.start()
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
 
-    # Act — trigger a requote
+    # Act - trigger a requote
     _process_quote(env, bid_price=0.65034, ask_price=0.65044)
 
-    # Assert — 6 old (cancelled) + 6 new (open)
+    # Assert - 6 old (cancelled) + 6 new (open)
     all_orders = env.cache.orders(instrument_id=env.instrument.id)
     open_orders = env.cache.orders_open(instrument_id=env.instrument.id)
     assert len(all_orders) == 12
@@ -369,7 +369,7 @@ def test_old_orders_cancelled_on_requote(env):
 
 
 def test_requote_bypasses_threshold_when_no_orders_resting(env):
-    # Arrange — place orders then cancel them all externally; with on_cancel_resubmit=False
+    # Arrange - place orders then cancel them all externally; with on_cancel_resubmit=False
     # the anchor is NOT reset, so the threshold would normally suppress the next quote
     strategy = _make_strategy(env, requote_threshold_bps=5, on_cancel_resubmit=False)
     strategy.start()
@@ -377,15 +377,15 @@ def test_requote_bypasses_threshold_when_no_orders_resting(env):
     strategy.cancel_all_orders(env.instrument.id)
     env.exchange.process(env.clock.timestamp_ns())
 
-    # Act — mid moves by ~0.3 bps (well below 5 bps threshold) with no resting orders
+    # Act - mid moves by ~0.3 bps (well below 5 bps threshold) with no resting orders
     _process_quote(env, bid_price=0.64992, ask_price=0.65012)
 
-    # Assert — grid re-placed despite being within threshold
+    # Assert - grid re-placed despite being within threshold
     assert len(env.cache.orders_open(instrument_id=env.instrument.id)) > 0
 
 
 def test_max_position_limits_buy_count(env):
-    # Arrange — max_position = 1 trade_size, so only 1 buy level fits
+    # Arrange - max_position = 1 trade_size, so only 1 buy level fits
     strategy = _make_strategy(env, max_position=_TRADE_SIZE, num_levels=3)
     strategy.start()
 
@@ -413,14 +413,14 @@ def test_max_position_limits_sell_count(env):
 
 
 def test_anchor_not_advanced_when_no_orders_placed(env):
-    # Arrange — max_position < trade_size so no orders can be placed
+    # Arrange - max_position < trade_size so no orders can be placed
     strategy = _make_strategy(env, max_position=Quantity.from_int(500), num_levels=3)
     strategy.start()
 
     # Act
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
 
-    # Assert — anchor must not advance so the next tick can retry
+    # Assert - anchor must not advance so the next tick can retry
     assert strategy._last_quoted_mid is None
     assert len(env.cache.orders_open()) == 0
 
@@ -445,7 +445,7 @@ def test_skew_lowers_grid_on_long_position(env):
         worst_short=Decimal(0),
     )
 
-    # Assert — positive net position shifts all prices down to discourage buying
+    # Assert - positive net position shifts all prices down to discourage buying
     baseline_buy = next(p for side, p in baseline if side == OrderSide.BUY)
     baseline_sell = next(p for side, p in baseline if side == OrderSide.SELL)
     skewed_buy = next(p for side, p in skewed if side == OrderSide.BUY)
@@ -474,7 +474,7 @@ def test_skew_raises_grid_on_short_position(env):
         worst_short=Decimal(0),
     )
 
-    # Assert — negative net position shifts all prices up to discourage selling
+    # Assert - negative net position shifts all prices up to discourage selling
     baseline_buy = next(p for side, p in baseline if side == OrderSide.BUY)
     skewed_buy = next(p for side, p in skewed if side == OrderSide.BUY)
     assert skewed_buy > baseline_buy
@@ -487,7 +487,7 @@ def test_external_cancel_resets_anchor_when_configured(env):
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
     external_order = env.cache.orders_open(instrument_id=env.instrument.id)[0]
 
-    # Act — simulate an external cancel (order not in pending_self_cancels)
+    # Act - simulate an external cancel (order not in pending_self_cancels)
     event = TestEventStubs.order_canceled(external_order)
     strategy.on_order_canceled(event)
 
@@ -501,16 +501,16 @@ def test_self_cancel_does_not_reset_anchor(env):
     strategy.start()
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
 
-    # Act — requote adds old orders to pending_self_cancels before cancelling them
+    # Act - requote adds old orders to pending_self_cancels before cancelling them
     _process_quote(env, bid_price=0.65034, ask_price=0.65044)
 
-    # Assert — self-cancels consumed from the set, anchor remains at new mid
+    # Assert - self-cancels consumed from the set, anchor remains at new mid
     assert strategy._last_quoted_mid is not None
     assert strategy._pending_self_cancels == set()
 
 
 def test_partial_fill_then_self_cancel_does_not_reset_anchor(env):
-    # Arrange — mark an open order as a pending self-cancel (as the requote cycle would)
+    # Arrange - mark an open order as a pending self-cancel (as the requote cycle would)
     strategy = _make_strategy(env, on_cancel_resubmit=True)
     strategy.start()
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
@@ -518,7 +518,7 @@ def test_partial_fill_then_self_cancel_does_not_reset_anchor(env):
     strategy._pending_self_cancels.add(target_order.client_order_id)
     anchor_before = strategy._last_quoted_mid
 
-    # Act — partial fill followed by a cancel of the remaining quantity
+    # Act - partial fill followed by a cancel of the remaining quantity
     partial_fill = TestEventStubs.order_filled(
         target_order,
         instrument=env.instrument,
@@ -528,7 +528,7 @@ def test_partial_fill_then_self_cancel_does_not_reset_anchor(env):
     cancel_event = TestEventStubs.order_canceled(target_order)
     strategy.on_order_canceled(cancel_event)
 
-    # Assert — cancel recognised as self-cancel, anchor unchanged
+    # Assert - cancel recognised as self-cancel, anchor unchanged
     assert strategy._last_quoted_mid == anchor_before
 
 
@@ -542,7 +542,7 @@ def test_gtd_expiry_resets_anchor(env):
     # Act
     strategy.on_order_expired(TestEventStubs.order_expired(gtd_order))
 
-    # Assert — grid is gone after expiry; anchor must reset to allow re-quoting
+    # Assert - grid is gone after expiry; anchor must reset to allow re-quoting
     assert strategy._last_quoted_mid is None
 
 
@@ -568,10 +568,10 @@ def test_rejection_resets_anchor(env):
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
     rejected_order = env.cache.orders_open(instrument_id=env.instrument.id)[0]
 
-    # Act — simulate venue rejecting an order (e.g. post-only collision)
+    # Act - simulate venue rejecting an order (e.g. post-only collision)
     strategy.on_order_rejected(TestEventStubs.order_rejected(rejected_order))
 
-    # Assert — anchor reset so next tick can retry placing the full grid
+    # Assert - anchor reset so next tick can retry placing the full grid
     assert strategy._last_quoted_mid is None
 
 
@@ -591,7 +591,7 @@ def test_rejection_clears_pending_self_cancel_id(env):
 
 
 def test_full_fill_clears_pending_self_cancel_id(env):
-    # Arrange — manually apply a full fill to an order so order.is_closed is True
+    # Arrange - manually apply a full fill to an order so order.is_closed is True
     strategy = _make_strategy(env, on_cancel_resubmit=True, num_levels=1)
     strategy.start()
     _process_quote(env, bid_price=0.64990, ask_price=0.65010)
@@ -603,12 +603,12 @@ def test_full_fill_clears_pending_self_cancel_id(env):
     # Act
     strategy.on_order_filled(full_fill)
 
-    # Assert — fully filled order ID removed; no OrderCanceled will ever arrive for it
+    # Assert - fully filled order ID removed; no OrderCanceled will ever arrive for it
     assert target_order.client_order_id not in strategy._pending_self_cancels
 
 
 def test_grid_tick_snap_no_float_boundary_drift(env):
-    # Arrange — AUD/USD has price_precision=5, tick=0.00001. With mid=0.65 and
+    # Arrange - AUD/USD has price_precision=5, tick=0.00001. With mid=0.65 and
     # grid_step_bps=10, buy_raw = 0.65 * 0.999 = 0.6493499999... in f64.
     # The instrument's next_bid_price must snap this to 0.64935 (not 0.64934).
     strategy = _make_strategy(env, num_levels=1, grid_step_bps=10)

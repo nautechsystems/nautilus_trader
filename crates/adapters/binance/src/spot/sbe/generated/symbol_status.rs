@@ -5,6 +5,7 @@ pub enum SymbolStatus {
     EndOfDay = 0x1_u8,
     Halt = 0x2_u8,
     Break = 0x3_u8,
+    CancelOnly = 0x4_u8,
     NonRepresentable = 0xfe_u8,
     #[default]
     NullVal = 0xff_u8,
@@ -17,6 +18,7 @@ impl From<u8> for SymbolStatus {
             0x1_u8 => Self::EndOfDay,
             0x2_u8 => Self::Halt,
             0x3_u8 => Self::Break,
+            0x4_u8 => Self::CancelOnly,
             0xfe_u8 => Self::NonRepresentable,
             _ => Self::NullVal,
         }
@@ -30,6 +32,7 @@ impl From<SymbolStatus> for u8 {
             SymbolStatus::EndOfDay => 0x1_u8,
             SymbolStatus::Halt => 0x2_u8,
             SymbolStatus::Break => 0x3_u8,
+            SymbolStatus::CancelOnly => 0x4_u8,
             SymbolStatus::NonRepresentable => 0xfe_u8,
             SymbolStatus::NullVal => 0xff_u8,
         }
@@ -45,6 +48,7 @@ impl core::str::FromStr for SymbolStatus {
             "EndOfDay" => Ok(Self::EndOfDay),
             "Halt" => Ok(Self::Halt),
             "Break" => Ok(Self::Break),
+            "CancelOnly" => Ok(Self::CancelOnly),
             "NonRepresentable" => Ok(Self::NonRepresentable),
             _ => Ok(Self::NullVal),
         }
@@ -58,6 +62,7 @@ impl core::fmt::Display for SymbolStatus {
             Self::EndOfDay => write!(f, "EndOfDay"),
             Self::Halt => write!(f, "Halt"),
             Self::Break => write!(f, "Break"),
+            Self::CancelOnly => write!(f, "CancelOnly"),
             Self::NonRepresentable => write!(f, "NonRepresentable"),
             Self::NullVal => write!(f, "NullVal"),
         }

@@ -43,7 +43,7 @@ pub fn from_str_hex_to_u64(hex_string: &str) -> Result<u64, std::num::ParseIntEr
     // parse call and reuse it whenever necessary (this avoids the `unwrap_err()` call in hot
     // paths).
     if without_prefix.len() > 16 {
-        // Force–generate the standard overflow error and return it. This keeps the public API
+        // Force-generate the standard overflow error and return it. This keeps the public API
         // identical to the branch that would have overflowed inside `from_str_radix`.
         return Err(u64::from_str_radix("ffffffffffffffffffffffff", 16).unwrap_err());
     }
@@ -66,7 +66,7 @@ where
 
 /// Custom deserializer that converts an optional hexadecimal string into an `Option<u64>`.
 ///
-/// The field is treated as optional – if the JSON field is `null` or absent the function returns
+/// The field is treated as optional - if the JSON field is `null` or absent the function returns
 /// `Ok(None)`. When the value **is** present it is parsed via [`from_str_hex_to_u64`] and wrapped
 /// in `Some(..)`.
 ///

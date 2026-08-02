@@ -16,7 +16,7 @@
 Strategies used by acceptance tests.
 
 Each strategy is importable via ImportableStrategyConfig. They aim to exercise specific
-engine behaviours — multi-cycle PnL accounting, cascading order submission, timer
+engine behaviours - multi-cycle PnL accounting, cascading order submission, timer
 firing, etc.
 
 """
@@ -31,11 +31,13 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.indicators import MovingAverageConvergenceDivergence
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
+from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitOrder
 from nautilus_trader.model import MarketOrder
+from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
@@ -236,6 +238,97 @@ class TickScheduled(Strategy):
         pass
 
 
+class OrderBookImbalanceConfig(StrategyConfig):
+    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: str,
+        trade_size: str,
+        **kwargs,
+    ):
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.trade_size = trade_size
+
+
+class OrderBookImbalance(Strategy):
+    _MIN_IMBALANCE_SIZE = Decimal(100)
+    _MAX_IMBALANCE_RATIO = Decimal("0.20")
+
+    def __init__(self, config: OrderBookImbalanceConfig):
+        super().__init__(config)
+        self._instrument_id = InstrumentId.from_str(config.instrument_id)
+        self._trade_size = Quantity.from_str(config.trade_size)
+        self._has_submitted = False
+
+    def on_start(self):
+        self.subscribe_book_deltas(self._instrument_id, BookType.L2_MBP)
+
+    def on_book_deltas(self, deltas: OrderBookDeltas):
+        if self._has_submitted:
+            return
+
+        bid_size = Decimal(0)
+        ask_size = Decimal(0)
+        bid_price = None
+        ask_price = None
+
+        for delta in deltas.deltas:
+            size = delta.order.size.as_decimal()
+            if delta.order.side == OrderSide.BUY:
+                bid_size += size
+                bid_price = delta.order.price
+            elif delta.order.side == OrderSide.SELL:
+                ask_size += size
+                ask_price = delta.order.price
+
+        if bid_size <= 0 or ask_size <= 0:
+            return
+
+        larger = max(bid_size, ask_size)
+        smaller = min(bid_size, ask_size)
+
+        if larger <= self._MIN_IMBALANCE_SIZE:
+            return
+
+        if smaller / larger >= self._MAX_IMBALANCE_RATIO:
+            return
+
+        if bid_size > ask_size and ask_price is not None:
+            side = OrderSide.BUY
+            price = ask_price
+        elif bid_price is not None:
+            side = OrderSide.SELL
+            price = bid_price
+        else:
+            return
+
+        self._has_submitted = True
+        self.submit_order(
+            self.order_factory.limit(
+                instrument_id=self._instrument_id,
+                order_side=side,
+                quantity=self._trade_size,
+                price=price,
+                time_in_force=TimeInForce.FOK,
+                post_only=False,
+            ),
+        )
+
+    def on_stop(self):
+        self.cancel_all_orders(self._instrument_id)
+        self.close_all_positions(self._instrument_id)
+
+    def on_reset(self):
+        self._has_submitted = False
+
+
 class MultiInstrumentTickScheduledConfig(StrategyConfig):
     """
     Submit market orders from an instrument keyed action schedule.
@@ -347,6 +440,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         "trailing_offset_type",
         "trigger_type",
         "emulation_trigger",
+        "activate_at_market",
     )
 
     def __new__(cls, *args, **kwargs):
@@ -366,6 +460,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         trailing_offset_type: str = "PRICE",
         trigger_type: str = "BID_ASK",
         emulation_trigger: str = "BID_ASK",
+        activate_at_market: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -379,6 +474,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         self.trailing_offset_type = trailing_offset_type
         self.trigger_type = trigger_type
         self.emulation_trigger = emulation_trigger
+        self.activate_at_market = activate_at_market
 
 
 class _EMACrossTrailingWorkflow(Strategy):
@@ -396,6 +492,8 @@ class _EMACrossTrailingWorkflow(Strategy):
         self._trailing_offset_type = TrailingOffsetType.from_str(config.trailing_offset_type)
         self._trigger_type = TriggerType.from_str(config.trigger_type)
         self._emulation_trigger = TriggerType.from_str(config.emulation_trigger)
+        # Shared by both entry-trail and trailing-stop configs; only the latter exposes the flag.
+        self._activate_at_market = getattr(config, "activate_at_market", False)
 
         self._instrument = None
         self._tick_size = Decimal(0)
@@ -475,13 +573,15 @@ class _EMACrossTrailingWorkflow(Strategy):
 
         offset = self._atr * self._trailing_atr_multiple
         trailing_offset = Decimal(f"{offset:.{self._instrument.price_precision}f}")
+        # When activating at market, submit with neither trigger nor activation price: the
+        # order activates at market and its trigger materializes from `trailing_offset`.
         order = self.order_factory.trailing_stop_market(
             instrument_id=self._instrument_id,
             order_side=side,
             quantity=self._instrument.make_qty(self._trade_size),
             trailing_offset=trailing_offset,
             trailing_offset_type=self._trailing_offset_type,
-            activation_price=activation_price,
+            activation_price=None if self._activate_at_market else activation_price,
             trigger_type=self._trigger_type,
             reduce_only=True,
             emulation_trigger=self._emulation_trigger,

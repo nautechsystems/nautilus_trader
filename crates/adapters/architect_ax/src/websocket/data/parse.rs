@@ -20,14 +20,13 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{AggregationSource, AggressorSide, BookAction, OrderSide, RecordFlag},
-    identifiers::TradeId,
     instruments::{Instrument, any::InstrumentAny},
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 
 use crate::{
-    common::parse::ax_timestamp_stn_to_unix_nanos,
+    common::parse::{ax_timestamp_stn_to_unix_nanos, create_architect_trade_id},
     http::parse::candle_width_to_bar_spec,
     websocket::messages::{
         AxBookLevel, AxBookLevelL3, AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade,
@@ -53,28 +52,98 @@ pub fn parse_book_l1_quote(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
+    parse_top_of_book_quote(
+        book.ts,
+        book.tn,
+        book.b.first().map(|level| (level.p, level.q)),
+        book.a.first().map(|level| (level.p, level.q)),
+        instrument,
+        ts_init,
+    )
+}
+
+/// Parses the top levels of an Ax L2 book message into a [`QuoteTick`].
+///
+/// # Errors
+///
+/// Returns an error if price or quantity parsing fails.
+pub fn parse_book_l2_quote(
+    book: &AxMdBookL2,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<QuoteTick> {
+    parse_top_of_book_quote(
+        book.ts,
+        book.tn,
+        book.b
+            .iter()
+            .max_by_key(|level| level.p)
+            .map(|level| (level.p, level.q)),
+        book.a
+            .iter()
+            .min_by_key(|level| level.p)
+            .map(|level| (level.p, level.q)),
+        instrument,
+        ts_init,
+    )
+}
+
+/// Parses the top levels of an Ax L3 book message into a [`QuoteTick`].
+///
+/// # Errors
+///
+/// Returns an error if price or quantity parsing fails.
+pub fn parse_book_l3_quote(
+    book: &AxMdBookL3,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<QuoteTick> {
+    parse_top_of_book_quote(
+        book.ts,
+        book.tn,
+        book.b
+            .iter()
+            .max_by_key(|level| level.p)
+            .map(|level| (level.p, level.q)),
+        book.a
+            .iter()
+            .min_by_key(|level| level.p)
+            .map(|level| (level.p, level.q)),
+        instrument,
+        ts_init,
+    )
+}
+
+fn parse_top_of_book_quote(
+    ts: i64,
+    tn: i64,
+    bid: Option<(Decimal, u64)>,
+    ask: Option<(Decimal, u64)>,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<QuoteTick> {
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let (bid_price, bid_size) = if let Some(bid) = book.b.first() {
+    let (bid_price, bid_size) = if let Some((price, quantity)) = bid {
         (
-            decimal_to_price_dp(bid.p, price_precision, "book.bid.price")?,
-            Quantity::new(bid.q as f64, size_precision),
+            decimal_to_price_dp(price, price_precision, "book.bid.price")?,
+            Quantity::new(quantity as f64, size_precision),
         )
     } else {
         (Price::zero(price_precision), Quantity::zero(size_precision))
     };
 
-    let (ask_price, ask_size) = if let Some(ask) = book.a.first() {
+    let (ask_price, ask_size) = if let Some((price, quantity)) = ask {
         (
-            decimal_to_price_dp(ask.p, price_precision, "book.ask.price")?,
-            Quantity::new(ask.q as f64, size_precision),
+            decimal_to_price_dp(price, price_precision, "book.ask.price")?,
+            Quantity::new(quantity as f64, size_precision),
         )
     } else {
         (Price::zero(price_precision), Quantity::zero(size_precision))
     };
 
-    let ts_event = ax_timestamp_stn_to_unix_nanos(book.ts, book.tn)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(ts, tn)?;
 
     QuoteTick::new_checked(
         instrument.id(),
@@ -137,7 +206,7 @@ pub fn parse_book_l2_deltas(
         let (price, size) = parse_book_level(level, price_precision, size_precision)?;
         processed += 1;
 
-        let mut flags = RecordFlag::F_MBP as u8;
+        let mut flags = RecordFlag::F_MBP as u8 | RecordFlag::F_SNAPSHOT as u8;
 
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
@@ -162,7 +231,7 @@ pub fn parse_book_l2_deltas(
         let (price, size) = parse_book_level(level, price_precision, size_precision)?;
         processed += 1;
 
-        let mut flags = RecordFlag::F_MBP as u8;
+        let mut flags = RecordFlag::F_MBP as u8 | RecordFlag::F_SNAPSHOT as u8;
 
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
@@ -246,7 +315,7 @@ pub fn parse_book_l3_deltas(
         for &order_qty in &level.o {
             processed += 1;
 
-            let mut flags = 0_u8;
+            let mut flags = RecordFlag::F_SNAPSHOT as u8;
 
             if processed == total_orders {
                 flags |= RecordFlag::F_LAST as u8;
@@ -277,7 +346,7 @@ pub fn parse_book_l3_deltas(
         for &order_qty in &level.o {
             processed += 1;
 
-            let mut flags = 0_u8;
+            let mut flags = RecordFlag::F_SNAPSHOT as u8;
 
             if processed == total_orders {
                 flags |= RecordFlag::F_LAST as u8;
@@ -329,12 +398,8 @@ pub fn parse_trade_tick(
     let size = Quantity::new(trade.q as f64, size_precision);
     let aggressor_side: AggressorSide = trade.d.map_or(AggressorSide::NoAggressor, |d| d.into());
 
-    // Use transaction number as trade ID (stack-formatted to avoid heap alloc)
-    let mut buf = itoa::Buffer::new();
-    let trade_id = TradeId::new_checked(buf.format(trade.tn))
-        .context("Failed to create TradeId from transaction number")?;
-
     let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
+    let trade_id = create_architect_trade_id(ts_event, price, size, aggressor_side)?;
 
     TradeTick::new_checked(
         instrument.id(),
@@ -392,6 +457,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{consts::AX_VENUE, enums::AxOrderSide},
+        http::{models::AxRestTrade, parse::parse_trade_tick as parse_rest_trade_tick},
         websocket::messages::{AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade},
     };
 
@@ -477,6 +543,80 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_book_quotes_select_best_unsorted_levels() {
+        let l2 = AxMdBookL2 {
+            ts: 1700000000,
+            tn: 12345,
+            s: Ustr::from("BTC-PERP"),
+            b: vec![
+                AxBookLevel {
+                    p: dec!(50000.00),
+                    q: 200,
+                },
+                AxBookLevel {
+                    p: dec!(50000.50),
+                    q: 100,
+                },
+            ],
+            a: vec![
+                AxBookLevel {
+                    p: dec!(50001.50),
+                    q: 250,
+                },
+                AxBookLevel {
+                    p: dec!(50001.00),
+                    q: 150,
+                },
+            ],
+            st: false,
+        };
+        let l3 = AxMdBookL3 {
+            ts: 1700000000,
+            tn: 12345,
+            s: Ustr::from("BTC-PERP"),
+            b: vec![
+                AxBookLevelL3 {
+                    p: dec!(50000.00),
+                    q: 200,
+                    o: vec![200],
+                },
+                AxBookLevelL3 {
+                    p: dec!(50000.50),
+                    q: 100,
+                    o: vec![100],
+                },
+            ],
+            a: vec![
+                AxBookLevelL3 {
+                    p: dec!(50001.50),
+                    q: 250,
+                    o: vec![250],
+                },
+                AxBookLevelL3 {
+                    p: dec!(50001.00),
+                    q: 150,
+                    o: vec![150],
+                },
+            ],
+            st: false,
+        };
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let l2_quote = parse_book_l2_quote(&l2, &instrument, ts_init).unwrap();
+        let l3_quote = parse_book_l3_quote(&l3, &instrument, ts_init).unwrap();
+
+        assert_eq!(l2_quote.bid_price.as_f64(), 50000.50);
+        assert_eq!(l2_quote.bid_size.as_f64(), 100.0);
+        assert_eq!(l2_quote.ask_price.as_f64(), 50001.00);
+        assert_eq!(l2_quote.ask_size.as_f64(), 150.0);
+        assert_eq!(l3_quote.bid_price.as_f64(), 50000.50);
+        assert_eq!(l3_quote.bid_size.as_f64(), 100.0);
+        assert_eq!(l3_quote.ask_price.as_f64(), 50001.00);
+        assert_eq!(l3_quote.ask_size.as_f64(), 150.0);
+    }
+
+    #[rstest]
     fn test_parse_book_l2_deltas() {
         let book = AxMdBookL2 {
             ts: 1700000000,
@@ -515,6 +655,20 @@ mod tests {
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
         assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+
+        // Every delta in the snapshot sequence carries F_SNAPSHOT, and only the last F_LAST
+        for delta in &deltas.deltas {
+            assert_ne!(delta.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        }
+
+        for delta in &deltas.deltas[..deltas.deltas.len() - 1] {
+            assert_eq!(delta.flags & RecordFlag::F_LAST as u8, 0);
+        }
+
+        assert_ne!(
+            deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
+            0
+        );
     }
 
     #[rstest]
@@ -544,6 +698,15 @@ mod tests {
         // 1 clear + 4 individual orders
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+
+        // Every delta in the snapshot sequence carries F_SNAPSHOT, and L3 orders are not MBP
+        for delta in &deltas.deltas {
+            assert_ne!(delta.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        }
+
+        for delta in &deltas.deltas[1..] {
+            assert_eq!(delta.flags & RecordFlag::F_MBP as u8, 0);
+        }
     }
 
     #[rstest]
@@ -678,7 +841,37 @@ mod tests {
         assert_eq!(tick.price.as_f64(), 1.1719);
         assert_eq!(tick.size.as_f64(), 400.0);
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
-        assert_eq!(tick.trade_id.to_string(), "334589144");
+        assert_eq!(
+            tick.trade_id.to_string(),
+            "1766193240334589144-38b4fe5a94a253d0"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_matches_rest_trade_id_for_the_same_trade() {
+        // The same trade fetched from `GET /trades` and received on the market-data WebSocket must
+        // carry one identity, otherwise a request and subscribe overlap double-counts it.
+        let json = include_str!("../../../test_data/ws_md_trade_captured.json");
+        let ws_trade: AxMdTrade = serde_json::from_str(json).unwrap();
+        let rest_trade = AxRestTrade {
+            ts: ws_trade.ts,
+            tn: ws_trade.tn,
+            p: ws_trade.p,
+            q: ws_trade.q as i64,
+            s: ws_trade.s,
+            d: ws_trade.d.unwrap(),
+        };
+        let instrument = create_eurusd_instrument();
+        let ts_init = UnixNanos::default();
+
+        let ws_tick = parse_trade_tick(&ws_trade, &instrument, ts_init).unwrap();
+        let rest_tick = parse_rest_trade_tick(&rest_trade, &instrument, ts_init).unwrap();
+
+        assert_eq!(ws_tick.trade_id, rest_tick.trade_id);
+        assert_eq!(ws_tick.ts_event, rest_tick.ts_event);
+        assert_eq!(ws_tick.price, rest_tick.price);
+        assert_eq!(ws_tick.size, rest_tick.size);
+        assert_eq!(ws_tick.aggressor_side, rest_tick.aggressor_side);
     }
 
     #[rstest]

@@ -34,8 +34,8 @@ from nautilus_trader.adapters.coinbase import CoinbaseEnvironment
 from nautilus_trader.adapters.coinbase import CoinbaseExecClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
-from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import ClientId

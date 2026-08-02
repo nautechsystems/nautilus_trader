@@ -472,7 +472,7 @@ impl<'a> OrderApi<'a> {
             instrument_id,
             order_side,
             quantity,
-            price,
+            Some(price),
             limit_offset,
             trailing_offset,
             trailing_offset_type,

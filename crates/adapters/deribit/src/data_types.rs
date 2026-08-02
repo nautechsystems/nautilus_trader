@@ -24,8 +24,14 @@ use nautilus_persistence_macros::custom_data;
 /// Deribit volatility index (DVOL) update.
 ///
 /// Emitted from the `deribit_volatility_index.{index_name}` WebSocket channel.
-#[cfg_attr(feature = "arrow", custom_data(pyo3))]
-#[cfg_attr(not(feature = "arrow"), custom_data(pyo3, no_arrow))]
+#[cfg_attr(
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")
+)]
+#[cfg_attr(
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.deribit")
+)]
 pub struct DeribitVolatilityIndex {
     /// The index identifier (for example `"btc_usd"` or `"eth_usd"`).
     pub index_name: String,

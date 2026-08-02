@@ -242,7 +242,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     environment: r2-nightly
     permissions:
-      actions: write
+      actions: read # Required for downloading build artifacts
       contents: read
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -303,30 +303,7 @@ jobs:
       - name: Upload install.sh to R2 (stable + latest)
         shell: bash
         run: |
-          CACHE_CONTROL="no-cache, max-age=60, must-revalidate"
-          for i in {1..5}; do
-            if aws s3 cp scripts/cli/install.sh "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/install.sh" \
-              --endpoint-url="${CLOUDFLARE_R2_URL}" \
-              --content-type "text/x-shellscript" \
-              --cache-control "$CACHE_CONTROL"; then
-              break
-            else
-              echo "Retry ($i/5)"
-              sleep $((2**i))
-            fi
-          done
-          for i in {1..5}; do
-            if aws s3 cp scripts/cli/install.sh \
-              "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/latest/install.sh" \
-              --endpoint-url="${CLOUDFLARE_R2_URL}" \
-              --content-type "text/x-shellscript" \
-              --cache-control "$CACHE_CONTROL"; then
-              break
-            else
-              echo "Retry ($i/5)"
-              sleep $((2**i))
-            fi
-          done
+          bash ./scripts/ci/publish-cli-r2-upload-installer.sh
 
       - name: Publish CLI binaries to R2 (versioned + latest) and generate manifest
         shell: bash

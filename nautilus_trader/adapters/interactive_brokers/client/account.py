@@ -171,7 +171,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
             all_positions = await self._await_request(request, self._request_timeout_secs)
 
         if all_positions is None:
-            return None  # request failed — caller must not infer "no positions"
+            return None  # request failed - caller must not infer "no positions"
 
         if not all_positions:
             return []

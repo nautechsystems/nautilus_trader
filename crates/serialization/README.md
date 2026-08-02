@@ -143,12 +143,12 @@ The build script (`build.rs`) automatically discovers and compiles all `.capnp` 
 
 This crate supports three serialization formats for market data types. Choose the format based on your use case:
 
-| Format       | Serialize | Deserialize | Size      | Use case                                    |
-|--------------|-----------|-------------|-----------|---------------------------------------------|
-| Cap'n Proto  | ~267ns    | ~350ns      | 264 bytes | High-frequency data streams, IPC, caching.  |
-| JSON         | ~332ns    | ~779ns      | 174 bytes | Human-readable output, debugging, APIs.     |
-| MsgPack      | ~375ns    | ~634ns      | 134 bytes | Compact storage, network transmission.      |
-| Arrow        | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics.  |
+| Format      | Serialize | Deserialize | Size      | Use case                                   |
+| ----------- | --------- | ----------- | --------- | ------------------------------------------ |
+| Cap'n Proto | ~267ns    | ~350ns      | 264 bytes | High-frequency data streams, IPC, caching. |
+| JSON        | ~332ns    | ~779ns      | 174 bytes | Human-readable output, debugging, APIs.    |
+| MsgPack     | ~375ns    | ~634ns      | 134 bytes | Compact storage, network transmission.     |
+| Arrow       | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics. |
 
 Performance numbers shown for `QuoteTick` serialization (measured on AMD Ryzen 9 7950X). Cap'n Proto provides the
 fastest serialization and deserialization, while MsgPack offers the smallest size. Arrow is optimized for batch

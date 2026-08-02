@@ -16,6 +16,8 @@
 import asyncio
 from functools import lru_cache
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_FUTURES_ORDER_COUNT_1M_KEY
+from nautilus_trader.adapters.binance.common.constants import BINANCE_FUTURES_ORDER_COUNT_10S_KEY
 from nautilus_trader.adapters.binance.common.credentials import get_api_key
 from nautilus_trader.adapters.binance.common.credentials import get_api_secret
 from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
@@ -129,6 +131,8 @@ def get_cached_binance_http_client(
         ratelimiter_default_quota = global_quota
         ratelimiter_quotas = [
             (global_key, global_quota),
+            (BINANCE_FUTURES_ORDER_COUNT_10S_KEY, Quota.rate_per_second(30)),
+            (BINANCE_FUTURES_ORDER_COUNT_1M_KEY, Quota.rate_per_minute(1200)),
             ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
             ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
             ("binance:fapi/v1/commissionRate", Quota.rate_per_minute(int(2400 / 20))),

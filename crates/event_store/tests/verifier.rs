@@ -194,6 +194,24 @@ fn flip_stored_entry_payload_byte(path: &std::path::Path, seq: u64) {
     txn.commit().expect("commit flip");
 }
 
+fn truncate_stored_entry(path: &std::path::Path, seq: u64) {
+    let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+    let db = redb::Database::create(path).expect("open redb");
+    let txn = db.begin_write().expect("begin write");
+    {
+        let mut table = txn.open_table(entries).expect("open entries");
+        let mut bytes = {
+            let row = table.get(seq).expect("get entry").expect("entry present");
+            row.value().to_vec()
+        };
+        bytes.truncate(bytes.len() / 2);
+        table
+            .insert(seq, bytes.as_slice())
+            .expect("overwrite entry");
+    }
+    txn.commit().expect("commit truncate");
+}
+
 fn zero_tail_truncate(path: &std::path::Path) {
     let original_len = fs::metadata(path).expect("metadata").len();
     let retained_len = original_len / 2;
@@ -288,6 +306,63 @@ fn binary_clean_marker_sidecar_reports_clean_without_error() {
         "stdout was: {stdout}",
     );
     assert!(stderr.is_empty(), "stderr was: {stderr}");
+}
+
+#[rstest]
+fn binary_corrupt_entry_run_with_failing_marker_sidecar_relays_entry_findings() {
+    // A failing sidecar must not mask the entry run's corrupt findings
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0114";
+    write_sealed_run(&tmp, run_id);
+    flip_stored_entry_payload_byte(&run_path(&tmp, run_id), 2);
+
+    // A valid redb file without a marker manifest fails the sidecar open cleanly
+    drop(redb::Database::create(marker_path(&tmp, run_id)).expect("create marker file"));
+
+    let output = verify_bin(&run_path(&tmp, run_id));
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout");
+    let stderr = String::from_utf8(output.stderr).expect("stderr");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={stdout} stderr={stderr}",
+    );
+    assert!(stdout.contains("corrupt"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("hash mismatch at seq 2"),
+        "stdout was: {stdout}",
+    );
+    assert!(stdout.contains("markers=error"), "stdout was: {stdout}");
+}
+
+#[rstest]
+fn binary_undecodable_entry_is_reported_and_scan_continues() {
+    // A truncated row fails to decode at seq 2; the walk must continue so later
+    // entries count and the index pointing at the bad row reports drift.
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0115";
+    write_sealed_run(&tmp, run_id);
+    truncate_stored_entry(&run_path(&tmp, run_id), 2);
+
+    let output = verify_bin(&run_path(&tmp, run_id));
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout");
+    let stderr = String::from_utf8(output.stderr).expect("stderr");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={stdout} stderr={stderr}",
+    );
+    assert!(
+        stdout.contains("undecodable entry at seq 2"),
+        "stdout was: {stdout}",
+    );
+    assert!(stdout.contains("entries_scanned=3"), "stdout was: {stdout}",);
+    assert!(
+        stdout.contains("corrupted target seq 2"),
+        "stdout was: {stdout}",
+    );
 }
 
 #[rstest]

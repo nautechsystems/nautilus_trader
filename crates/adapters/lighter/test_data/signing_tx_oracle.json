@@ -3,6 +3,8 @@
     "license": "Apache-2.0 (SDK repository; compiled signer binary)",
     "primitive": "lighter_l2_tx",
     "source": "github.com/elliottech/lighter-python",
+    "upstream_version": "1.1.2",
+    "upstream_revision": "6957dd8a1b36894ca9580be0d51de30aeea3bd4a",
     "note": "Sig is non-deterministic (random k); tx_hash and tx_info carry deterministic byte equality targets."
   },
   "vectors": [
@@ -30,10 +32,10 @@
         "skip_nonce": 0
       },
       "tx_type": 14,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":123,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":1,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1777809907005,\"Nonce\":0,\"Sig\":\"WGEJIbsbnwHONQWj4TkbN9fhAhVwrm7id4i+prz6JQY4Qsu8IvSJXNdHKHVv632/RcQScZsYLYn+FaznX/szNajsv7jR+ChmUk+nKMnn4Vw=\",\"L2TxAttributes\":{\"1\":0,\"2\":0,\"3\":0}}",
-      "tx_hash": "32b8a053dbfef46e8940c2aa8f58328d58eb2396a3bf6fc2bc9017ed2af874fbe15c04242a350e0e",
-      "sig": "58610921bb1b9f01ce3505a3e1391b37d7e1021570ae6ee27788bea6bcfa25063842cbbc22f4895cd74728756feb7dbf45c412719b182d89fe15ace75ffb3335a8ecbfb8d1f82866524fa728c9e7e15c",
-      "expired_at": 1777809907005
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":123,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":1,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882578,\"Nonce\":0,\"Sig\":\"HKdUCOtwK3tCogu1bOEiEG9aoVMJhHC11Y0Hav8R0Ed9fhzT8O3eN5VQ0TqSeT672pf4MY+RGpJIEteFubunrkd/ZQU8UgOAeYIR1q3DYUg=\",\"L2TxAttributes\":null}",
+      "tx_hash": "49c80b614c0b7db4082506262f431d63a4bb55a22dd19ad1b7221feef7b6b5f95d7f6427795c8743",
+      "sig": "1ca75408eb702b7b42a20bb56ce122106f5aa153098470b5d58d076aff11d0477d7e1cd3f0edde379550d13a92793ebbda97f8318f911a924812d785b9bba7ae477f65053c520380798211d6adc36148",
+      "expired_at": 1783955882578
     },
     {
       "kind": "create_order",
@@ -59,10 +61,10 @@
         "skip_nonce": 0
       },
       "tx_type": 14,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":124,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":1,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1777809907006,\"Nonce\":1,\"Sig\":\"qriCsHkvLGeEQLu4OlLOwgCmhTh55axyAX3ZFljYplyMbQG8X6m0Ji/M6sEixo6yZEjBhPvsdyiZxwb1rIDBQFKJaNylz/f67tz1TrU4KXU=\",\"L2TxAttributes\":{\"1\":723813,\"2\":250,\"3\":100}}",
-      "tx_hash": "1cef87f8ee803fad67c87cfd4418329b1935aaff3831fa14b56e54d8cdf083e50948f294c17eb198",
-      "sig": "aab882b0792f2c678440bbb83a52cec200a6853879e5ac72017dd91658d8a65c8c6d01bc5fa9b4262fcceac122c68eb26448c184fbec772899c706f5ac80c140528968dca5cff7faeedcf54eb5382975",
-      "expired_at": 1777809907006
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":124,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":1,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882579,\"Nonce\":1,\"Sig\":\"lkoQq+HtwrbvrQTOkmQIH9sRcxnwltBerugTirtrQKjciSeINlTUOIV+3wHIPU6tQSIGDevuZz+RwpkrOSzsZWoFwVhELly95dFyFoiSsxc=\",\"L2TxAttributes\":{\"1\":723813,\"2\":250,\"3\":100}}",
+      "tx_hash": "c01b64a649eb7ec38141db2536549806eb075a53695002afb88e8d21e09bcb98af031e590b296df0",
+      "sig": "964a10abe1edc2b6efad04ce9264081fdb117319f096d05eaee8138abb6b40a8dc8927883654d438857edf01c83d4ead4122060debee673f91c2992b392cec656a05c158442e5cbde5d172168892b317",
+      "expired_at": 1783955882579
     },
     {
       "kind": "cancel_order",
@@ -77,10 +79,10 @@
         "skip_nonce": 0
       },
       "tx_type": 15,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":123,\"ExpiredAt\":1777809907007,\"Nonce\":2,\"Sig\":\"LIB7QG2SHWPyoPMDDfzGv7rpcLoKrEagoPbWo9Ulm+Nz4kA8+Uw9Wx4o/V2ufHILmmBo0AITVMxh9SOSa+FdR0W3b0qgNBiCfnsl9tJpGk4=\",\"L2TxAttributes\":null}",
-      "tx_hash": "5aec06e27c14dca89d1418d241954ed5f83ab70ca6a717888e1bc3654917ffb889f13a1ac9b5686d",
-      "sig": "2c807b406d921d63f2a0f3030dfcc6bfbae970ba0aac46a0a0f6d6a3d5259be373e2403cf94c3d5b1e28fd5dae7c720b9a6068d0021354cc61f523926be15d4745b76f4aa03418827e7b25f6d2691a4e",
-      "expired_at": 1777809907007
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":123,\"ExpiredAt\":1783955882579,\"Nonce\":2,\"Sig\":\"1PTuC6wCzkSGwm5uPjSH0fAeX4WuGpmot6fyIdy2FCP3UbUKqv+OJRowOXTLAatC7LqjAT21BysFN9MNHrG+D8nuYNLfrG2nqTRlkMAuwCw=\",\"L2TxAttributes\":null}",
+      "tx_hash": "af5392ddbeec7dfd443ef5e360a6ec641fd44bbcb69ff4a7f7368041af2898619e97169fc0539a21",
+      "sig": "d4f4ee0bac02ce4486c26e6e3e3487d1f01e5f85ae1a99a8b7a7f221dcb61423f751b50aaaff8e251a303974cb01ab42ecbaa3013db5072b0537d30d1eb1be0fc9ee60d2dfac6da7a9346590c02ec02c",
+      "expired_at": 1783955882579
     },
     {
       "kind": "modify_order",
@@ -101,10 +103,10 @@
         "skip_nonce": 0
       },
       "tx_type": 17,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":123,\"BaseAmount\":1100,\"Price\":410000,\"TriggerPrice\":0,\"ExpiredAt\":1777809907007,\"Nonce\":3,\"Sig\":\"rozlnJgrTUlabTf8tEkJd608fzMFv19j1abW3B9ebg8TXnvsCquvSIy7WHRG3zbmMODI762KsPcqUMMkQh47HteeLGgQnXfwpN95aB0bVX4=\",\"L2TxAttributes\":{\"1\":0,\"2\":0,\"3\":0}}",
-      "tx_hash": "6c41b7d8c9c32ca847cfb4371e8a1f5010ef3964f5586f911d257ef3fbe2a1d3b159630b1d6971ff",
-      "sig": "ae8ce59c982b4d495a6d37fcb4490977ad3c7f3305bf5f63d5a6d6dc1f5e6e0f135e7bec0aabaf488cbb587446df36e630e0c8efad8ab0f72a50c324421e3b1ed79e2c68109d77f0a4df79681d1b557e",
-      "expired_at": 1777809907007
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":123,\"BaseAmount\":1100,\"Price\":410000,\"TriggerPrice\":0,\"ExpiredAt\":1783955882580,\"Nonce\":3,\"Sig\":\"9PaAam+gA5yCb5YCxuLA4KMgjiiCkaL0xhaGWs4yxoPQBe7UXje2AdijnPioMsgTSQ17ceUK8V04QcAy1hEvhUfnCVKMfL3jMEwc0WJYilI=\",\"L2TxAttributes\":null}",
+      "tx_hash": "62c7547aa0f4f9cd06f61a89da01ad0f32c5e6519cfde86cce4dd8d60ddbaeeb4a4c83cd1de333c6",
+      "sig": "f4f6806a6fa0039c826f9602c6e2c0e0a3208e288291a2f4c616865ace32c683d005eed45e37b601d8a39cf8a832c813490d7b71e50af15d3841c032d6112f8547e709528c7cbde3304c1cd162588a52",
+      "expired_at": 1783955882580
     },
     {
       "kind": "approve_integrator",
@@ -123,10 +125,10 @@
         "skip_nonce": 0
       },
       "tx_type": 45,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"IntegratorAccountIndex\":723813,\"MaxPerpsTakerFee\":500,\"MaxPerpsMakerFee\":200,\"MaxSpotTakerFee\":600,\"MaxSpotMakerFee\":300,\"ApprovalExpiry\":1780000000000,\"ExpiredAt\":1777809907008,\"Nonce\":4,\"Sig\":\"t/NhGzzTUwGisvixY/m0gTH2NCal3shEc+y1lRokdm+D/lJpc+sOBwzr2LEeH6elyhc80G4LwOpcZ7lYN3uTrog5dkBcGPXzUOG1S88EKC8=\",\"L1Sig\":\"\",\"L2TxAttributes\":null}",
-      "tx_hash": "d2686eca5856df5eae2bd9945a32f5e0c92ceac7f48f15bd7190a44505f596859fcd68fef6b5239e",
-      "sig": "b7f3611b3cd35301a2b2f8b163f9b48131f63426a5dec84473ecb5951a24766f83fe526973eb0e070cebd8b11e1fa7a5ca173cd06e0bc0ea5c67b958377b93ae883976405c18f5f350e1b54bcf04282f",
-      "expired_at": 1777809907008
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"IntegratorAccountIndex\":723813,\"MaxPerpsTakerFee\":500,\"MaxPerpsMakerFee\":200,\"MaxSpotTakerFee\":600,\"MaxSpotMakerFee\":300,\"ApprovalExpiry\":1780000000000,\"ExpiredAt\":1783955882580,\"Nonce\":4,\"Sig\":\"KHKR6hs135FBhpybmdKeNJqDaRmccdPyC3hGiTwUK1c34grhBhRWR1QDDnhYaj7Mvc2b2rS7DkoMLNNuDPDPu/UVDyVXCd4o5+K1AL3pzEw=\",\"L1Sig\":\"\",\"L2TxAttributes\":null}",
+      "tx_hash": "050d52b274a8c7c35a95cef403038ce704262bb328f6497b155c6727958130f9775bbae438b7dc6f",
+      "sig": "287291ea1b35df9141869c9b99d29e349a8369199c71d3f20b7846893c142b5737e20ae10614564754030e78586a3eccbdcd9bdab4bb0e4a0c2cd36e0cf0cfbbf5150f255709de28e7e2b500bde9cc4c",
+      "expired_at": 1783955882580
     },
     {
       "kind": "create_order",
@@ -152,10 +154,10 @@
         "skip_nonce": 0
       },
       "tx_type": 14,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":200,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":0,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1777809907009,\"Nonce\":5,\"Sig\":\"ThfK3SN8pNBEA7r5K69xvvlsk1znKVxHd7Esyxi0mTe7depPS0v4TaIDURdFyzlL78ND1XBOuZrj/l4p3++4noByBMvN0U5SOZ8Im81rmzI=\",\"L2TxAttributes\":{\"1\":0,\"2\":0,\"3\":0}}",
-      "tx_hash": "28e2e706d9dcd6b3416082e4119250ae53c8659dd00f077db596d3829f3e585cbd680d9b1fad0cf2",
-      "sig": "4e17cadd237ca4d04403baf92baf71bef96c935ce7295c4777b12ccb18b49937bb75ea4f4b4bf84da203511745cb394befc343d5704eb99ae3fe5e29dfefb89e807204cbcdd14e52399f089bcd6b9b32",
-      "expired_at": 1777809907009
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":200,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":0,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882581,\"Nonce\":5,\"Sig\":\"lHcOJJWSoq6+uhin0iU+p5/SZ4m88iBWxlWm4nhWq5Y7eDHaravuS7ZswLUIgvUIR6zKk0Fao7H0flGK6ONlxGYK7aFhnbfCF3X10/v+xx4=\",\"L2TxAttributes\":null}",
+      "tx_hash": "085490c23e373594707239994b5ea61e50110e888911c6f17019139ac119889fc14960f885aefcd7",
+      "sig": "94770e249592a2aebeba18a7d2253ea79fd26789bcf22056c655a6e27856ab963b7831daadabee4bb66cc0b50882f50847acca93415aa3b1f47e518ae8e365c4660aeda1619db7c21775f5d3fbfec71e",
+      "expired_at": 1783955882581
     },
     {
       "kind": "cancel_order",
@@ -170,10 +172,10 @@
         "skip_nonce": 1
       },
       "tx_type": 15,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":124,\"ExpiredAt\":1777809907009,\"Nonce\":6,\"Sig\":\"ROfxIV78JCubAu/smkDaZonCuulHzlnM95IheL8HhgYacF9RjycvG6vVkAYnIgBwMof9BGbj1hP04dcKtQ49P+b/y391cKu5RnWe3iOQFlI=\",\"L2TxAttributes\":{\"4\":1}}",
-      "tx_hash": "3522f05b32ed9b989ac3236686ec56588eb22369885fb8ee4d6de07f5ece95e40126b8d1714a4dc4",
-      "sig": "44e7f1215efc242b9b02efec9a40da6689c2bae947ce59ccf7922178bf0786061a705f518f272f1babd59006272200703287fd0466e3d613f4e1d70ab50e3d3fe6ffcb7f7570abb946759ede23901652",
-      "expired_at": 1777809907009
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":124,\"ExpiredAt\":1783955882582,\"Nonce\":6,\"Sig\":\"YqRvo5X7/xUseiQkMSuXp/MXKIY5IQLdekPD9SiDQ7Zilz2MV/XtUw6rctxDRf0Rm8xBPFr6YAPCOpIh9hpiGZiigYCMX3tppWsvecZAJmU=\",\"L2TxAttributes\":{\"4\":1}}",
+      "tx_hash": "a25703efb423fc4d1202bdf5d5db968b0004e2e231de919f190529da7d5a77f17606a9362c681f10",
+      "sig": "62a46fa395fbff152c7a2424312b97a7f3172886392102dd7a43c3f5288343b662973d8c57f5ed530eab72dc4345fd119bcc413c5afa6003c23a9221f61a621998a281808c5f7b69a56b2f79c6402665",
+      "expired_at": 1783955882582
     },
     {
       "kind": "approve_integrator",
@@ -192,10 +194,10 @@
         "skip_nonce": 1
       },
       "tx_type": 45,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"IntegratorAccountIndex\":723813,\"MaxPerpsTakerFee\":500,\"MaxPerpsMakerFee\":200,\"MaxSpotTakerFee\":600,\"MaxSpotMakerFee\":300,\"ApprovalExpiry\":1780000000000,\"ExpiredAt\":1777809907010,\"Nonce\":7,\"Sig\":\"Hv3iJQG5Wv67r1FaSSopVC8QDUQ2qJOYLVcIVSoKN7JxY1/a7opiNaDIashZMgoIthefimmlIjTDD71RsdAJOXTv51Srm2Bkkl/oGixAUTg=\",\"L1Sig\":\"\",\"L2TxAttributes\":{\"4\":1}}",
-      "tx_hash": "c49bad2ba270a737b898d7a20d2d4f66757da3df61cc5e129a33130246ecc639157edaff8813aceb",
-      "sig": "1efde22501b95afebbaf515a492a29542f100d4436a893982d5708552a0a37b271635fdaee8a6235a0c86ac859320a08b6179f8a69a52234c30fbd51b1d0093974efe754ab9b6064925fe81a2c405138",
-      "expired_at": 1777809907010
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"IntegratorAccountIndex\":723813,\"MaxPerpsTakerFee\":500,\"MaxPerpsMakerFee\":200,\"MaxSpotTakerFee\":600,\"MaxSpotMakerFee\":300,\"ApprovalExpiry\":1780000000000,\"ExpiredAt\":1783955882582,\"Nonce\":7,\"Sig\":\"5DSsvwUz8I6SGGLylS+skUfHzRVbJcRMBXeGEDt5+5v9agV3/OjOYXF/Jyq/XvBgVY3RwvWEvH+h9Hdg4rqN2gcIrPzyYUYKwXmE62j7lXk=\",\"L1Sig\":\"\",\"L2TxAttributes\":{\"4\":1}}",
+      "tx_hash": "4da3e1f2f0cc846b6a595692b32819db7c085452fabee5f86d9b9beb797da5016de8c2a8c2f261ed",
+      "sig": "e434acbf0533f08e921862f2952fac9147c7cd155b25c44c057786103b79fb9bfd6a0577fce8ce61717f272abf5ef060558dd1c2f584bc7fa1f47760e2ba8dda0708acfcf261460ac17984eb68fb9579",
+      "expired_at": 1783955882582
     },
     {
       "kind": "modify_order",
@@ -216,10 +218,217 @@
         "skip_nonce": 0
       },
       "tx_type": 17,
-      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":123,\"BaseAmount\":1100,\"Price\":410000,\"TriggerPrice\":0,\"ExpiredAt\":1777809907011,\"Nonce\":8,\"Sig\":\"+uu36VcH6+vHjF6wiglrVewnAeDCLTtw00jBQeOBbyrocjOxsU1lQtcYkB5TJaOJdNy61mkzb3KDxPjv4fP4BEI1mCJwr8Y3wQ1EuMoFm2U=\",\"L2TxAttributes\":{\"1\":723813,\"2\":250,\"3\":100}}",
-      "tx_hash": "841da159fc59e4ed8760cc03a9c29498df8b5bf7ec15815900934ed6c44426aa804b9b00753a1607",
-      "sig": "faebb7e95707ebebc78c5eb08a096b55ec2701e0c22d3b70d348c141e3816f2ae87233b1b14d6542d718901e5325a38974dcbad669336f7283c4f8efe1f3f8044235982270afc637c10d44b8ca059b65",
-      "expired_at": 1777809907011
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":123,\"BaseAmount\":1100,\"Price\":410000,\"TriggerPrice\":0,\"ExpiredAt\":1783955882583,\"Nonce\":8,\"Sig\":\"0H8gbbL02AwXQw/22p84ZPjo9UTH3gQ4ZDYp6zgoZo3EeKlvwQHJBELltVBtgskWTSy5tOV8cTeTtknEXWOCChqDJOqQYD7Gm7UgXfMjMSQ=\",\"L2TxAttributes\":{\"1\":723813,\"2\":250,\"3\":100}}",
+      "tx_hash": "ebd50596aeecec829fab6c58c1caf9f63212bf55da950010c4d13bacb8eee62e9a039de434815268",
+      "sig": "d07f206db2f4d80c17430ff6da9f3864f8e8f544c7de0438643629eb3828668dc478a96fc101c90442e5b5506d82c9164d2cb9b4e57c713793b649c45d63820a1a8324ea90603ec69bb5205df3233124",
+      "expired_at": 1783955882583
+    },
+    {
+      "kind": "create_order",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 9,
+      "fields": {
+        "market_index": 0,
+        "client_order_index": 202,
+        "base_amount": 1000,
+        "price": 390000,
+        "is_ask": true,
+        "order_type": 2,
+        "time_in_force": 0,
+        "reduce_only": false,
+        "trigger_price": 395000,
+        "order_expiry": 1735689600000,
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 14,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":202,\"BaseAmount\":1000,\"Price\":390000,\"IsAsk\":1,\"Type\":2,\"TimeInForce\":0,\"ReduceOnly\":0,\"TriggerPrice\":395000,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882583,\"Nonce\":9,\"Sig\":\"sozFM08YCFKo4Yf0oKlLrjcdYJNk1BYO1Yn1C3exoDwcb0Hts3FMI67iUaP3L78IcDUT/wzZQMbl8ZLatbGPt+0Oa0hzS4BjRdMsRvqGIBM=\",\"L2TxAttributes\":null}",
+      "tx_hash": "d1dd4e17ab323688179f0c921daa3487fbbf529ae98304f20d51838b197734ebb4edb0d4235e107c",
+      "sig": "b28cc5334f180852a8e187f4a0a94bae371d609364d4160ed589f50b77b1a03c1c6f41edb3714c23aee251a3f72fbf08703513ff0cd940c6e5f192dab5b18fb7ed0e6b48734b806345d32c46fa862013",
+      "expired_at": 1783955882583
+    },
+    {
+      "kind": "create_order",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 10,
+      "fields": {
+        "market_index": 0,
+        "client_order_index": 203,
+        "base_amount": 1000,
+        "price": 390000,
+        "is_ask": true,
+        "order_type": 3,
+        "time_in_force": 1,
+        "reduce_only": false,
+        "trigger_price": 395000,
+        "order_expiry": 1735689600000,
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 14,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":203,\"BaseAmount\":1000,\"Price\":390000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":395000,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882584,\"Nonce\":10,\"Sig\":\"H1BdZ598N28a0eMr7/8uwEDs13JA8jB2Kv+kKvXfBwJw+Fll5EENBcFmui75bNRAYd9Mg2cauomMRpS6t1r41PdrY1fw50F0yGDo1QBAZHo=\",\"L2TxAttributes\":null}",
+      "tx_hash": "fd9424ad8acff8ab009a0b818942de8b0a50125afb6c475f8f8f7799d47304179b29ddb951e64039",
+      "sig": "1f505d679f7c376f1ad1e32befff2ec040ecd77240f230762affa42af5df070270f85965e4410d05c166ba2ef96cd44061df4c83671aba898c4694bab75af8d4f76b6357f0e74174c860e8d50040647a",
+      "expired_at": 1783955882584
+    },
+    {
+      "kind": "create_order",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 11,
+      "fields": {
+        "market_index": 0,
+        "client_order_index": 204,
+        "base_amount": 1000,
+        "price": 420000,
+        "is_ask": false,
+        "order_type": 4,
+        "time_in_force": 0,
+        "reduce_only": false,
+        "trigger_price": 415000,
+        "order_expiry": 1735689600000,
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 14,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":204,\"BaseAmount\":1000,\"Price\":420000,\"IsAsk\":0,\"Type\":4,\"TimeInForce\":0,\"ReduceOnly\":0,\"TriggerPrice\":415000,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882584,\"Nonce\":11,\"Sig\":\"6MBko71LRn4zqRtFMD3bVVhhvbdHbHifdcxI+m/cGfnte3fnOoDdcqBFs3vehirQ9s2eY3/2CsVUfbPblu8CzihdSIsi5kUFf9WABHLLQhw=\",\"L2TxAttributes\":null}",
+      "tx_hash": "cba0d949827f76e5925078b7236eb28c0a5a2b20d65d596e9037e8d08f42f668edac1668174da831",
+      "sig": "e8c064a3bd4b467e33a91b45303ddb555861bdb7476c789f75cc48fa6fdc19f9ed7b77e73a80dd72a045b37bde862ad0f6cd9e637ff60ac5547db3db96ef02ce285d488b22e645057fd5800472cb421c",
+      "expired_at": 1783955882584
+    },
+    {
+      "kind": "create_order",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 12,
+      "fields": {
+        "market_index": 0,
+        "client_order_index": 205,
+        "base_amount": 1000,
+        "price": 420000,
+        "is_ask": false,
+        "order_type": 5,
+        "time_in_force": 1,
+        "reduce_only": false,
+        "trigger_price": 415000,
+        "order_expiry": 1735689600000,
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 14,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":205,\"BaseAmount\":1000,\"Price\":420000,\"IsAsk\":0,\"Type\":5,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":415000,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882584,\"Nonce\":12,\"Sig\":\"fhCh8Ev87yrAq9ujeah4YseJK4K2h9rfasCCYT9UQWIyPlEKO+BNdW/t5J8hAa61qcelrIfNyGbI+rfsS91Wn9iY3WzEjqOKODMEj2mq4zI=\",\"L2TxAttributes\":null}",
+      "tx_hash": "2d0fec26889d2fb1605fb361fb7d98bc777a372c7fe28ed72df54145a78fa8b934808e17ffe1d691",
+      "sig": "7e10a1f04bfcef2ac0abdba379a87862c7892b82b687dadf6ac082613f544162323e510a3be04d756fede49f2101aeb5a9c7a5ac87cdc866c8fab7ec4bdd569fd898dd6cc48ea38a3833048f69aae332",
+      "expired_at": 1783955882584
+    },
+    {
+      "kind": "cancel_all_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 13,
+      "fields": {
+        "time_in_force": 0,
+        "scheduled_time_ms": 0,
+        "cancel_all_market_index": 255,
+        "skip_nonce": 0
+      },
+      "tx_type": 16,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"TimeInForce\":0,\"Time\":0,\"ExpiredAt\":1783955882585,\"Nonce\":13,\"Sig\":\"H1Anx3wOOX0dLTF8yQvCmyrWzVuxdtKgGgc7QWRCTLdlnLiM19KxFLrmhHuqBk/0LgjE7S5+c4nqjKj9GLPWdKv2UMQHYg3fz1f5I7/RBSA=\",\"L2TxAttributes\":null}",
+      "tx_hash": "17dbbc5ca4638873e957eb0acc6f5ccc764365ccc66bc265502139f88e033d43d24d38b413df58c3",
+      "sig": "1f5027c77c0e397d1d2d317cc90bc29b2ad6cd5bb176d2a01a073b4164424cb7659cb88cd7d2b114bae6847baa064ff42e08c4ed2e7e7389ea8ca8fd18b3d674abf650c407620ddfcf57f923bfd10520",
+      "expired_at": 1783955882585
+    },
+    {
+      "kind": "update_leverage",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 14,
+      "fields": {
+        "market_index": 3,
+        "initial_margin_fraction": 500,
+        "margin_mode": 1,
+        "skip_nonce": 0
+      },
+      "tx_type": 20,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":3,\"InitialMarginFraction\":500,\"MarginMode\":1,\"ExpiredAt\":1783955882585,\"Nonce\":14,\"Sig\":\"oxKygn7u5IIjx6h5Htg7kHm4/cgGt8igjhYrLdVV5I/R3U0IRoioIUw4o9dEsmym4kDtgHmS28N5DR2R5x8v9Rc8VaPaxjlmzdSnFwU/bCQ=\",\"L2TxAttributes\":null}",
+      "tx_hash": "0563135821947583672f6cf36551cdccd709d40e60e92e6de3eb894d7400096ae580898f8b5060ed",
+      "sig": "a312b2827eeee48223c7a8791ed83b9079b8fdc806b7c8a08e162b2dd555e48fd1dd4d084688a8214c38a3d744b26ca6e240ed807992dbc3790d1d91e71f2ff5173c55a3dac63966cdd4a717053f6c24",
+      "expired_at": 1783955882585
+    },
+    {
+      "kind": "create_order",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 15,
+      "fields": {
+        "market_index": 0,
+        "client_order_index": 206,
+        "base_amount": 1000,
+        "price": 405000,
+        "is_ask": true,
+        "order_type": 0,
+        "time_in_force": 1,
+        "reduce_only": false,
+        "trigger_price": 0,
+        "order_expiry": 1735689600000,
+        "integrator_account_index": 723813,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 14,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"ClientOrderIndex\":206,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":1,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1735689600000,\"ExpiredAt\":1783955882585,\"Nonce\":15,\"Sig\":\"Yvzrw0BIvs1ZOd02QK8UzwQv25OYH+p+XtSUJwhAa1ZU4kZszoZVPJuwA6M1zkAad7T4H+OeYQId+KrJNbJyxqi60su2R1SWEIXrF8oY9yg=\",\"L2TxAttributes\":{\"1\":723813}}",
+      "tx_hash": "36187d7398d328d13a737faa768dfcf43afda95e332874eab65e5a9dd325a02423e9a02c52105246",
+      "sig": "62fcebc34048becd5939dd3640af14cf042fdb93981fea7e5ed4942708406b5654e2466cce86553c9bb003a335ce401a77b4f81fe39e61021df8aac935b272c6a8bad2cbb64754961085eb17ca18f728",
+      "expired_at": 1783955882585
+    },
+    {
+      "kind": "modify_order",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 16,
+      "fields": {
+        "market_index": 0,
+        "index": 125,
+        "base_amount": 1100,
+        "price": 410000,
+        "trigger_price": 0,
+        "integrator_account_index": 723813,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 17,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"MarketIndex\":0,\"Index\":125,\"BaseAmount\":1100,\"Price\":410000,\"TriggerPrice\":0,\"ExpiredAt\":1783955882586,\"Nonce\":16,\"Sig\":\"e25wGdlxOS5xuUR3AIkOEMpr4Qn+1lNZXeH26Wx8OG9jGtLa/3LuBfJZBnnnrIqM+8s26VSeuj4rYXLlEs8IkTwUOoESO5c+bM9TIOIFeS4=\",\"L2TxAttributes\":{\"1\":723813}}",
+      "tx_hash": "fafa651c3a01192f9e3862bbeaf0162f3ee1b662b757e5dbbef7013aba184a57a769226df125bb55",
+      "sig": "7b6e7019d971392e71b9447700890e10ca6be109fed653595de1f6e96c7c386f631ad2daff72ee05f2590679e7ac8a8cfbcb36e9549eba3e2b6172e512cf08913c143a81123b973e6ccf5320e205792e",
+      "expired_at": 1783955882586
     }
   ]
 }

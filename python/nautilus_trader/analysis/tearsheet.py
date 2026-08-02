@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from nautilus_trader.backtest import BacktestEngine
+    from nautilus_trader.backtest import BacktestNode
+    from nautilus_trader.backtest import BacktestResult
 
 
 def _require_pandas():
@@ -271,7 +273,7 @@ def register_chart(name: str, func: Callable | None = None) -> Callable | None:
     ...     return fig
     >>>
     >>> # Or called directly
-    >>> register_chart("another_chart", my_chart_function)
+    >>> register_chart("another_chart", create_custom_chart)
 
     """
     _require_not_none(name, "name")
@@ -347,21 +349,23 @@ def list_charts() -> list[str]:
 
 
 def create_tearsheet(
-    engine: BacktestEngine,
+    engine: BacktestEngine | BacktestResult,
     output_path: str | None = "tearsheet.html",
     title: str = "NautilusTrader Backtest Results",
     currency=None,
     config=None,
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
+    node: BacktestNode | None = None,
+    run_config_id: str | None = None,
 ) -> str | None:
     """
     Generate an interactive HTML tearsheet from backtest results.
 
     Parameters
     ----------
-    engine : BacktestEngine
-        The backtest engine with completed run.
+    engine : BacktestEngine or BacktestResult
+        The completed backtest engine or result.
     output_path : str, optional
         Path to save the tearsheet. File extension selects the format:
         ``.html`` (interactive), or ``.png``, ``.jpg``, ``.webp``, ``.svg``, ``.pdf``
@@ -369,7 +373,9 @@ def create_tearsheet(
     title : str, default "NautilusTrader Backtest Results"
         Title for the tearsheet.
     currency : Currency, optional
-        Currency for PnL statistics. If None, uses first available currency.
+        Currency filter for PnL statistics, account balances, and engine-derived returns.
+        For ``BacktestResult`` input, the stored return series remains unchanged. If
+        None, includes all available currencies.
     config : TearsheetConfig, optional
         Configuration for tearsheet customization. If None, uses default configuration.
     benchmark_returns : pd.Series, optional
@@ -377,6 +383,12 @@ def create_tearsheet(
         on visualizations.
     benchmark_name : str, default "Benchmark"
         Display name for the benchmark.
+    node : BacktestNode, optional
+        The node which produced a ``BacktestResult``. Provide it for starting balances
+        or charts that read cached data, such as ``bars_with_fills``. The matching run
+        configuration must set ``dispose_on_completion=False``.
+    run_config_id : str, optional
+        The run configuration ID. Defaults to ``engine.run_config_id``.
 
     Returns
     -------
@@ -387,6 +399,10 @@ def create_tearsheet(
     ------
     ImportError
         If plotly is not installed.
+    ValueError
+        If ``bars_with_fills`` is configured without a node, a supplied node has no
+        run configuration ID, or the matching run configuration sets
+        ``dispose_on_completion=True``.
 
     """
     if not PLOTLY_AVAILABLE:
@@ -398,17 +414,26 @@ def create_tearsheet(
 
     _require_not_none(engine, "engine")
 
+    if not hasattr(engine, "get_result"):
+        return _create_tearsheet_from_result(
+            result=engine,
+            node=node,
+            run_config_id=run_config_id,
+            currency=currency,
+            output_path=output_path,
+            title=title,
+            config=config,
+            benchmark_returns=benchmark_returns,
+            benchmark_name=benchmark_name,
+        )
+
     result = engine.get_result()
     stats_returns = dict(result.stats_returns)
     stats_general = dict(result.stats_general)
     stats_pnls = dict(result.stats_pnls)
     returns = _resolve_tearsheet_returns(engine=engine, currency=currency)
 
-    if currency is not None:
-        currency_code = getattr(currency, "code", str(currency))
-        stats_pnls = (
-            {currency_code: stats_pnls[currency_code]} if currency_code in stats_pnls else {}
-        )
+    stats_pnls = _filter_stats_pnls(stats_pnls, currency)
 
     if title == "NautilusTrader Backtest Results":
         strategies = engine.cache.strategy_ids()
@@ -448,6 +473,160 @@ def create_tearsheet(
     )
 
 
+class _BacktestNodeEngineView:
+    def __init__(self, node: BacktestNode, run_config_id: str) -> None:
+        self._node = node
+        self._run_config_id = run_config_id
+        self.cache = node.get_engine_cache(run_config_id)
+
+    def generate_fills_report(self) -> pd.DataFrame:
+        return self._node.generate_fills_report(self._run_config_id)
+
+
+def _create_tearsheet_from_result(
+    result: BacktestResult,
+    node: BacktestNode | None,
+    run_config_id: str | None,
+    currency,
+    output_path: str | None,
+    title: str,
+    config,
+    benchmark_returns: pd.Series | None,
+    benchmark_name: str,
+) -> str | None:
+    resolved_run_config_id = run_config_id or result.run_config_id
+    needs_engine = config is not None and "bars_with_fills" in config.chart_names
+    if needs_engine and node is None:
+        raise ValueError("A BacktestNode is required for the bars_with_fills chart")
+    if node is not None and resolved_run_config_id is None:
+        raise ValueError("run_config_id is required when a BacktestNode is provided")
+    if node is not None and resolved_run_config_id is not None:
+        _validate_result_node_state(node, resolved_run_config_id)
+
+    engine_view = (
+        _BacktestNodeEngineView(node, resolved_run_config_id)
+        if node is not None and resolved_run_config_id is not None
+        else None
+    )
+    returns = _result_returns_series(result)
+    run_info = _result_run_info(result)
+    account_info = _result_account_info(result, node, resolved_run_config_id, currency)
+
+    if title == "NautilusTrader Backtest Results":
+        run_started = _format_optional_iso8601(result.run_started)
+        title = f"<b>NautilusTrader</b> v{NAUTILUS_VERSION} - Backtest Results"
+        title += f"<br><sub>Run started: {run_started}</sub>"
+
+    return create_tearsheet_from_stats(
+        run_info=run_info,
+        account_info=account_info,
+        stats_pnls=_filter_stats_pnls(result.stats_pnls, currency),
+        stats_returns=result.stats_returns,
+        stats_general=result.stats_general,
+        returns=returns,
+        output_path=output_path,
+        title=title,
+        config=config,
+        benchmark_returns=benchmark_returns,
+        benchmark_name=benchmark_name,
+        engine=engine_view,
+    )
+
+
+def _validate_result_node_state(node: BacktestNode, run_config_id: str) -> None:
+    for run_config in node.configs:
+        if run_config.id != run_config_id:
+            continue
+        if run_config.dispose_on_completion:
+            raise ValueError(
+                "BacktestNode state is unavailable when dispose_on_completion=True; "
+                "set dispose_on_completion=False before running the backtest",
+            )
+        return
+
+
+def _filter_stats_pnls(stats_pnls, currency) -> dict:
+    stats_pnls = dict(stats_pnls)
+    if currency is None:
+        return stats_pnls
+
+    currency_code = getattr(currency, "code", str(currency))
+    return {currency_code: stats_pnls[currency_code]} if currency_code in stats_pnls else {}
+
+
+def _result_returns_series(result: BacktestResult) -> pd.Series:
+    returns = pd.Series(dict(result.returns_series), dtype="float64")
+    returns.index = pd.to_datetime(returns.index, unit="ns", utc=True)
+    return returns.sort_index()
+
+
+def _result_run_info(result: BacktestResult) -> dict[str, str]:
+    return {
+        "Run ID": str(result.run_id) if result.run_id is not None else "N/A",
+        "Run started": _format_optional_iso8601(result.run_started),
+        "Run finished": _format_optional_iso8601(result.run_finished),
+        "Elapsed time": _format_optional_duration(result.run_started, result.run_finished),
+        "Backtest start": _format_optional_iso8601(result.backtest_start),
+        "Backtest end": _format_optional_iso8601(result.backtest_end),
+        "Backtest range": _format_optional_duration(result.backtest_start, result.backtest_end),
+        "Iterations": f"{result.iterations:_}",
+        "Total events": f"{result.total_events:_}",
+        "Total orders": f"{result.total_orders:_}",
+        "Total positions": f"{result.total_positions:_}",
+    }
+
+
+def _result_account_info(
+    result: BacktestResult,
+    node: BacktestNode | None,
+    run_config_id: str | None,
+    currency=None,
+) -> dict[str, str]:
+    currency_code = getattr(currency, "code", str(currency)) if currency is not None else None
+    summary = result.summary
+    account_ids = {
+        key.removeprefix("account.").removesuffix(".id"): value
+        for key, value in summary.items()
+        if key.startswith("account.") and key.endswith(".id")
+    }
+    account_info = {}
+
+    if node is not None and run_config_id is not None:
+        from nautilus_trader.model import AccountId
+
+        for venue, account_id in sorted(account_ids.items()):
+            report = node.generate_account_report(
+                run_config_id,
+                account_id=AccountId.from_str(account_id),
+            )
+
+            if report.empty:
+                continue
+
+            for report_currency, balances in report.groupby("currency", sort=True):
+                if currency_code is not None and str(report_currency) != currency_code:
+                    continue
+                totals = pd.to_numeric(balances["total"], errors="coerce").dropna()
+                if totals.empty:
+                    continue
+                account_info[f"Starting balance ({venue}, {report_currency})"] = str(totals.iloc[0])
+                account_info[f"Ending balance ({venue}, {report_currency})"] = str(totals.iloc[-1])
+
+        return account_info
+
+    for key, value in sorted(summary.items()):
+        if ".balance." not in key or not key.endswith(".total"):
+            continue
+        prefix, currency_and_field = key.rsplit(".balance.", maxsplit=1)
+        venue = prefix.removeprefix("account.")
+        report_currency = currency_and_field.removesuffix(".total")
+        if currency_code is not None and report_currency != currency_code:
+            continue
+        account_info[f"Ending balance ({venue}, {report_currency})"] = value
+
+    return account_info
+
+
 def _resolve_tearsheet_returns(
     engine: BacktestEngine,
     currency=None,
@@ -456,14 +635,172 @@ def _resolve_tearsheet_returns(
     Pick the best available returns series for the tearsheet.
 
     v2 exposes statistics snapshots rather than the mutable analyzer behind the
-    portfolio, so this reconstructs daily account returns from public account reports.
+    portfolio, so this uses complete, currency-compatible mark-to-market portfolio
+    snapshots when available and falls back to account reports otherwise.
 
     """
+    snapshot_returns = _calculate_snapshot_returns(engine=engine, currency=currency)
+    if snapshot_returns is not None and not snapshot_returns.empty:
+        return snapshot_returns
+
     account_returns = _calculate_account_returns(engine=engine, currency=currency)
     if account_returns is not None and not account_returns.empty:
         return account_returns
 
     return pd.Series(dtype=float)
+
+
+def _calculate_snapshot_returns(
+    engine: BacktestEngine,
+    currency=None,
+) -> pd.Series | None:
+    """
+    Compute daily returns from complete, currency-compatible portfolio snapshots.
+
+    Returns ``None`` when an account lacks usable snapshots or the account currencies
+    cannot be aggregated.
+
+    """
+    if engine is None:
+        return None
+
+    portfolio = getattr(engine, "portfolio", None)
+    cache = getattr(engine, "cache", None)
+    if portfolio is None or cache is None:
+        return None
+
+    venues = engine.list_venues()
+    if not venues:
+        return None
+
+    target_currency = getattr(currency, "code", str(currency)) if currency is not None else None
+    one_day_ns = pd.Timedelta(days=1).value
+    result = _collect_snapshot_equity(
+        venues=venues,
+        cache=cache,
+        portfolio=portfolio,
+        target_currency=target_currency,
+        one_day_ns=one_day_ns,
+    )
+
+    if result is None:
+        return None
+
+    equity_by_account, observed_currencies = result
+
+    if target_currency is None and len(observed_currencies) != 1:
+        return None
+
+    combined = pd.concat(equity_by_account.values(), axis=1).sort_index().ffill().dropna()
+    if combined.empty:
+        return None
+
+    return _calculate_daily_balance_returns(combined.sum(axis=1))
+
+
+def _collect_snapshot_equity(
+    venues,
+    cache,
+    portfolio,
+    target_currency: str | None,
+    one_day_ns: int,
+) -> tuple[dict[str, pd.Series], set[str]] | None:
+    observed_currencies = set()
+    equity_by_account: dict[str, pd.Series] = {}
+
+    for venue in venues:
+        account = cache.account_for_venue(venue)
+        if account is None:
+            return None
+
+        account_id = str(account.id)
+        if account_id in equity_by_account:
+            continue
+
+        snapshots = portfolio.snapshots(account.id)
+        if not snapshots:
+            return None
+
+        result = _snapshot_equity_series(
+            snapshots=snapshots,
+            target_currency=target_currency,
+            account_id=account_id,
+            one_day_ns=one_day_ns,
+        )
+
+        if result is None:
+            return None
+
+        account_equity, account_currencies = result
+        equity_by_account[account_id] = account_equity
+        observed_currencies.update(account_currencies)
+
+    if not equity_by_account:
+        return None
+
+    return equity_by_account, observed_currencies
+
+
+def _snapshot_equity_series(
+    snapshots,
+    target_currency: str | None,
+    account_id: str,
+    one_day_ns: int,
+) -> tuple[pd.Series, set[str]] | None:
+    values = []
+    timestamps = []
+    observed_currencies = set()
+
+    for snapshot in snapshots:
+        if getattr(snapshot, "unpriced_instruments", []):
+            continue
+
+        resolved = _resolve_snapshot_equity(snapshot, target_currency)
+        if resolved is None:
+            return None
+
+        value, observed_currency = resolved
+        values.append(value)
+        ts_event = snapshot.ts_event
+        if len(values) == 1:
+            ts_event = max(ts_event - (ts_event % one_day_ns) - 1, 0)
+        elif ts_event > 0 and ts_event % one_day_ns == 0:
+            ts_event -= 1
+        timestamps.append(ts_event)
+        observed_currencies.add(observed_currency)
+
+    if not values:
+        return None
+
+    series = pd.Series(
+        values,
+        index=pd.to_datetime(timestamps, unit="ns", utc=True),
+        dtype=float,
+        name=account_id,
+    )
+    return series.sort_index().groupby(level=0).last(), observed_currencies
+
+
+def _resolve_snapshot_equity(snapshot, target_currency: str | None) -> tuple[float, str] | None:
+    base_equity = snapshot.base_currency_equity
+    total_equity = snapshot.total_equity
+
+    if target_currency is not None:
+        if base_equity is not None and base_equity.currency.code == target_currency:
+            return base_equity.as_double(), target_currency
+
+        matching = [money for money in total_equity if money.currency.code == target_currency]
+        if len(matching) != 1:
+            return None
+        return matching[0].as_double(), target_currency
+
+    if len(total_equity) != 1:
+        return None
+
+    if base_equity is not None:
+        return base_equity.as_double(), base_equity.currency.code
+
+    return total_equity[0].as_double(), total_equity[0].currency.code
 
 
 def _calculate_account_returns(
@@ -678,11 +1015,11 @@ def create_tearsheet_from_stats(
     Examples
     --------
     >>> # Offline analysis with precomputed stats
-    >>> stats_returns = {"Sharpe Ratio (252 days)": 1.5, ...}
-    >>> stats_general = {"Win Rate": 0.55, ...}
-    >>> stats_pnls = {"PnL (total)": 10000.0, ...}
-    >>> returns = pd.Series([0.01, -0.02, ...])
-    >>> html = create_tearsheet_from_stats(
+    >>> stats_returns = {"Sharpe Ratio (252 days)": 1.5}
+    >>> stats_general = {"Win Rate": 0.55}
+    >>> stats_pnls = {"PnL (total)": 10000.0}
+    >>> returns = pd.Series([0.01, -0.02])
+    >>> html = create_tearsheet_from_stats(  # doctest: +SKIP
     ...     stats_pnls,
     ...     stats_returns,
     ...     stats_general,

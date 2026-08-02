@@ -19,13 +19,14 @@
 
 pub mod config;
 pub mod database;
-mod error;
 pub mod fifo;
 pub mod quote;
 pub mod refs;
 
 mod bounded;
+mod error;
 mod index;
+mod position;
 
 #[cfg(test)]
 mod tests;
@@ -35,7 +36,6 @@ use std::{
     cell::{Ref, RefCell},
     fmt::{Debug, Display},
     rc::Rc,
-    str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -49,11 +49,12 @@ pub use error::{
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
     ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND, OrderBookLookupError, OrderListLookupError,
     OrderLookupError, OwnOrderBookLookupError, POSITION_NOT_FOUND, PositionLookupError,
-    SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError,
+    SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError, VenueOrderIdOwnershipError,
 };
 use index::CacheIndex;
+use indexmap::IndexMap;
 use nautilus_core::{
-    SharedCell, UUID4, UnixNanos,
+    SharedCell, UnixNanos,
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
         check_valid_string_ascii,
@@ -86,34 +87,13 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
+pub use position::CacheSnapshotRef;
+use position::PositionSnapshotFrame;
 pub use refs::{AccountRef, AccountRefMut, OrderRef, OrderRefMut, PositionRef, PositionRefMut};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
-
-/// Cache-owned reference to a snapshot blob.
-///
-/// The cache writes and later fetches the blob; external systems persist this opaque reference
-/// and may hash the bytes before recording a durable anchor.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CacheSnapshotRef {
-    /// Opaque cache-owned snapshot location.
-    pub blob_ref: String,
-    /// Snapshot bytes stored under [`Self::blob_ref`].
-    pub blob: Bytes,
-}
-
-impl CacheSnapshotRef {
-    /// Creates a new [`CacheSnapshotRef`].
-    #[must_use]
-    pub fn new(blob_ref: impl Into<String>, blob: impl Into<Bytes>) -> Self {
-        Self {
-            blob_ref: blob_ref.into(),
-            blob: blob.into(),
-        }
-    }
-}
 
 // TODO: Reassess whether CacheView should consolidate with CacheApi once adapter and client
 // construction no longer need a cache-handle facade.
@@ -1623,6 +1603,46 @@ impl<'a> CacheApi<'a> {
         self.cache().trade_count(instrument_id)
     }
 
+    /// Returns the mark price update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn mark_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().mark_price_count(instrument_id)
+    }
+
+    /// Returns the index price update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn index_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().index_price_count(instrument_id)
+    }
+
+    /// Returns the funding rate update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn funding_rate_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().funding_rate_count(instrument_id)
+    }
+
+    /// Returns the instrument status update count for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_status_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.cache().instrument_status_count(instrument_id)
+    }
+
     /// Returns the bar count for the `bar_type`.
     ///
     /// # Panics
@@ -1661,6 +1681,46 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.cache().has_trade_ticks(instrument_id)
+    }
+
+    /// Returns whether the cache contains mark price updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_mark_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_mark_prices(instrument_id)
+    }
+
+    /// Returns whether the cache contains index price updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_index_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_index_prices(instrument_id)
+    }
+
+    /// Returns whether the cache contains funding rate updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_funding_rates(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_funding_rates(instrument_id)
+    }
+
+    /// Returns whether the cache contains instrument status updates for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_instrument_statuses(instrument_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.
@@ -2137,7 +2197,8 @@ pub struct Cache {
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
     positions: AHashMap<PositionId, SharedCell<Position>>,
-    position_snapshots: AHashMap<PositionId, Vec<Bytes>>,
+    position_snapshots: AHashMap<PositionId, Vec<PositionSnapshotFrame>>,
+    position_snapshot_revisions: AHashMap<PositionId, u64>,
     #[cfg(feature = "defi")]
     pub(crate) defi: crate::defi::cache::DefiCache,
 }
@@ -2223,6 +2284,7 @@ impl Cache {
             order_lists: AHashMap::new(),
             positions: AHashMap::new(),
             position_snapshots: AHashMap::new(),
+            position_snapshot_revisions: AHashMap::new(),
             #[cfg(feature = "defi")]
             defi: crate::defi::cache::DefiCache::default(),
         }
@@ -2298,6 +2360,7 @@ impl Cache {
             self.index.order_client = db.load_index_order_client()?;
         }
 
+        self.cache_position_oms()?;
         self.assign_position_ids_to_contingencies();
         Ok(())
     }
@@ -2416,7 +2479,28 @@ impl Cache {
             None => AHashMap::new(),
         };
 
+        self.cache_position_oms()?;
         log::info!("Cached {} positions from database", self.general.len());
+        Ok(())
+    }
+
+    fn cache_position_oms(&mut self) -> anyhow::Result<()> {
+        let persisted = match &self.database {
+            Some(database) => database.load()?,
+            None => self.general.clone(),
+        };
+
+        self.general
+            .retain(|key, _| !key.starts_with(POSITION_OMS_KEY_PREFIX));
+
+        for (key, value) in persisted {
+            if !key.starts_with(POSITION_OMS_KEY_PREFIX) {
+                continue;
+            }
+            self.general.insert(key, value);
+        }
+
+        self.index_position_oms();
         Ok(())
     }
 
@@ -2445,11 +2529,15 @@ impl Cache {
                 .or_default()
                 .insert(*client_order_id);
 
-            // 2: Build index.order_ids -> {VenueOrderId, ClientOrderId}
+            // 2: Build index.venue_order_ids -> {VenueOrderId, ClientOrderId}
+            //    and index.client_order_ids -> {ClientOrderId, VenueOrderId}
             if let Some(venue_order_id) = order.venue_order_id() {
                 self.index
                     .venue_order_ids
                     .insert(venue_order_id, *client_order_id);
+                self.index
+                    .client_order_ids
+                    .insert(*client_order_id, venue_order_id);
             }
 
             // 3: Build index.order_position -> {ClientOrderId, PositionId}
@@ -2608,12 +2696,130 @@ impl Cache {
             // 10: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
         }
+
+        self.index_position_oms();
+    }
+
+    fn index_position_oms(&mut self) {
+        self.index.position_oms.clear();
+
+        for (key, value) in &self.general {
+            let Some(position_id) = key.strip_prefix(POSITION_OMS_KEY_PREFIX) else {
+                continue;
+            };
+            let position_id = PositionId::new(position_id);
+            if !self.positions.contains_key(&position_id) {
+                continue;
+            }
+
+            match serde_json::from_slice::<OmsType>(value) {
+                Ok(oms_type) => {
+                    self.index.position_oms.insert(position_id, oms_type);
+                }
+                Err(e) => {
+                    log::error!("Failed to decode position OMS for {position_id}: {e}");
+                }
+            }
+        }
+
+        for position in self.positions.values().map(|cell| cell.borrow()) {
+            if !self.index.position_oms.contains_key(&position.id)
+                && position.id.as_str()
+                    == format!("{}-{}", position.instrument_id, position.strategy_id)
+            {
+                self.index
+                    .position_oms
+                    .insert(position.id, OmsType::Netting);
+            }
+        }
     }
 
     /// Returns whether the cache has a backing database.
     #[must_use]
     pub const fn has_backing(&self) -> bool {
         self.database.is_some()
+    }
+
+    /// Loads persisted actor state.
+    ///
+    /// Returns `None` when the cache has no backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading actor state fails.
+    pub fn load_actor_state(
+        &self,
+        component_id: &ComponentId,
+    ) -> anyhow::Result<Option<IndexMap<String, Vec<u8>>>> {
+        self.database
+            .as_ref()
+            .map(|database| database.load_actor(component_id))
+            .transpose()
+            .map(|state| state.map(Self::decode_component_state))
+    }
+
+    /// Loads persisted strategy state.
+    ///
+    /// Returns `None` when the cache has no backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading strategy state fails.
+    pub fn load_strategy_state(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<Option<IndexMap<String, Vec<u8>>>> {
+        self.database
+            .as_ref()
+            .map(|database| database.load_strategy(strategy_id))
+            .transpose()
+            .map(|state| state.map(Self::decode_component_state))
+    }
+
+    /// Persists actor state when the cache has a backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating actor state fails.
+    pub fn update_actor_state(
+        &self,
+        component_id: &ComponentId,
+        state: &IndexMap<String, Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.update_actor(component_id, &Self::encode_component_state(state))?;
+        }
+        Ok(())
+    }
+
+    /// Persists strategy state when the cache has a backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating strategy state fails.
+    pub fn update_strategy_state(
+        &self,
+        strategy_id: &StrategyId,
+        state: &IndexMap<String, Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.update_strategy(strategy_id, &Self::encode_component_state(state))?;
+        }
+        Ok(())
+    }
+
+    fn decode_component_state(state: AHashMap<String, Bytes>) -> IndexMap<String, Vec<u8>> {
+        state
+            .into_iter()
+            .map(|(key, value)| (key, value.to_vec()))
+            .collect()
+    }
+
+    fn encode_component_state(state: &IndexMap<String, Vec<u8>>) -> AHashMap<String, Bytes> {
+        state
+            .iter()
+            .map(|(key, value)| (key.clone(), Bytes::copy_from_slice(value)))
+            .collect()
     }
 
     // Calculate the unrealized profit and loss (PnL) for `position`.
@@ -2637,7 +2843,13 @@ impl Cache {
             PositionSide::Short => quote.ask_price,
         };
 
-        Some(position.unrealized_pnl(last))
+        match position.try_unrealized_pnl(last) {
+            Ok(pnl) => Some(pnl),
+            Err(e) => {
+                log::error!("Cannot calculate unrealized PnL for {}: {e}", position.id);
+                None
+            }
+        }
     }
 
     /// Checks integrity of data within the cache.
@@ -3139,82 +3351,105 @@ impl Cache {
     ///
     /// For safety, an order is prevented from being purged if it's open.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
-        // Check if order exists and is safe to purge before removing
-        let order_cell = self.orders.get(&client_order_id).cloned();
+        struct OrderDetails {
+            is_open: bool,
+            instrument_id: InstrumentId,
+            strategy_id: StrategyId,
+            account_id: Option<AccountId>,
+            exec_algorithm_id: Option<ExecAlgorithmId>,
+            exec_spawn_id: Option<ClientOrderId>,
+            position_id: Option<PositionId>,
+            venue_order_id: Option<VenueOrderId>,
+            venue_order_ids: Vec<VenueOrderId>,
+        }
 
-        // Prevent purging open orders
-        if let Some(ref order_cell) = order_cell
-            && order_cell.borrow().is_open()
+        let order_cell = self.orders.get(&client_order_id).cloned();
+        let order_details = order_cell.as_ref().map(|cell| {
+            let order = cell.borrow();
+            OrderDetails {
+                is_open: order.is_open(),
+                instrument_id: order.instrument_id(),
+                strategy_id: order.strategy_id(),
+                account_id: order.account_id(),
+                exec_algorithm_id: order.exec_algorithm_id(),
+                exec_spawn_id: order.exec_spawn_id(),
+                position_id: order.position_id(),
+                venue_order_id: order.venue_order_id(),
+                venue_order_ids: order.venue_order_ids().into_iter().copied().collect(),
+            }
+        });
+
+        if order_details
+            .as_ref()
+            .is_some_and(|details| details.is_open)
         {
             log::warn!("Order {client_order_id} found open when purging, skipping purge");
             return;
         }
 
-        // If order exists in cache, remove it and clean up order-specific indices
-        if let Some(ref order_cell) = order_cell {
-            let order = order_cell.borrow();
-            // Safe to purge
+        if order_details.is_some() {
             self.orders.remove(&client_order_id);
+        } else {
+            log::warn!("Order {client_order_id} not found when purging");
+        }
 
-            // Remove order from venue index
+        let indexed_position_id = self.index.order_position.remove(&client_order_id);
+        let indexed_strategy_id = self.index.order_strategy.remove(&client_order_id);
+        self.index.order_client.remove(&client_order_id);
+        let indexed_venue_order_id = self.index.client_order_ids.remove(&client_order_id);
+
+        if let Some(details) = &order_details {
             if let Some(venue_orders) = self
                 .index
                 .venue_orders
-                .get_mut(&order.instrument_id().venue)
+                .get_mut(&details.instrument_id.venue)
             {
                 venue_orders.remove(&client_order_id);
                 if venue_orders.is_empty() {
-                    self.index.venue_orders.remove(&order.instrument_id().venue);
+                    self.index.venue_orders.remove(&details.instrument_id.venue);
                 }
             }
 
-            // Remove venue order ID index if exists
-            if let Some(venue_order_id) = order.venue_order_id() {
-                self.index.venue_order_ids.remove(&venue_order_id);
+            // As with the strategy buckets below, an absent bucket is left absent: recreating
+            // it would suppress the `index.instrument_positions` integrity check.
+            // As with the strategy buckets below, an absent bucket is left absent: recreating
+            // it would suppress the `index.instrument_positions` integrity check.
+            let instrument_orders_became_empty = self
+                .index
+                .instrument_orders
+                .get_mut(&details.instrument_id)
+                .is_some_and(|instrument_orders| {
+                    instrument_orders.remove(&client_order_id);
+                    instrument_orders.is_empty()
+                });
+
+            let has_instrument_positions = self
+                .index
+                .instrument_positions
+                .get(&details.instrument_id)
+                .is_some_and(|positions| !positions.is_empty());
+
+            if instrument_orders_became_empty && !has_instrument_positions {
+                self.index.instrument_orders.remove(&details.instrument_id);
             }
 
-            // Remove from instrument orders index
-            if let Some(instrument_orders) =
-                self.index.instrument_orders.get_mut(&order.instrument_id())
-            {
-                instrument_orders.remove(&client_order_id);
-                if instrument_orders.is_empty() {
-                    self.index.instrument_orders.remove(&order.instrument_id());
-                }
-            }
+            if let Some(exec_algorithm_id) = details.exec_algorithm_id {
+                let became_empty = self
+                    .index
+                    .exec_algorithm_orders
+                    .get_mut(&exec_algorithm_id)
+                    .is_some_and(|orders| {
+                        orders.remove(&client_order_id);
+                        orders.is_empty()
+                    });
 
-            // Remove from position orders index if associated with a position
-            if let Some(position_id) = order.position_id()
-                && let Some(position_orders) = self.index.position_orders.get_mut(&position_id)
-            {
-                position_orders.remove(&client_order_id);
-                if position_orders.is_empty() {
-                    self.index.position_orders.remove(&position_id);
-                }
-            }
-
-            // Remove from exec algorithm orders index if it has an exec algorithm
-            if let Some(exec_algorithm_id) = order.exec_algorithm_id()
-                && let Some(exec_algorithm_orders) =
-                    self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
-            {
-                exec_algorithm_orders.remove(&client_order_id);
-                if exec_algorithm_orders.is_empty() {
+                if became_empty {
                     self.index.exec_algorithm_orders.remove(&exec_algorithm_id);
+                    self.index.exec_algorithms.remove(&exec_algorithm_id);
                 }
             }
 
-            // Clean up strategy orders reverse index
-            if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&order.strategy_id())
-            {
-                strategy_orders.remove(&client_order_id);
-                if strategy_orders.is_empty() {
-                    self.index.strategy_orders.remove(&order.strategy_id());
-                }
-            }
-
-            // Clean up account orders index
-            if let Some(account_id) = order.account_id()
+            if let Some(account_id) = details.account_id
                 && let Some(account_orders) = self.index.account_orders.get_mut(&account_id)
             {
                 account_orders.remove(&client_order_id);
@@ -3223,8 +3458,7 @@ impl Cache {
                 }
             }
 
-            // Clean up exec spawn reverse index (if this order is a spawned child)
-            if let Some(exec_spawn_id) = order.exec_spawn_id()
+            if let Some(exec_spawn_id) = details.exec_spawn_id
                 && let Some(spawn_orders) = self.index.exec_spawn_orders.get_mut(&exec_spawn_id)
             {
                 spawn_orders.remove(&client_order_id);
@@ -3232,29 +3466,125 @@ impl Cache {
                     self.index.exec_spawn_orders.remove(&exec_spawn_id);
                 }
             }
-
-            log::info!("Purged order {client_order_id}");
-        } else {
-            log::warn!("Order {client_order_id} not found when purging");
         }
 
-        // Always clean up order indices (even if order was not in cache)
-        self.index.order_position.remove(&client_order_id);
-        let strategy_id = self.index.order_strategy.remove(&client_order_id);
-        self.index.order_client.remove(&client_order_id);
-        self.index.client_order_ids.remove(&client_order_id);
+        let mut position_ids = AHashSet::new();
+        if let Some(position_id) = indexed_position_id {
+            position_ids.insert(position_id);
+        }
 
-        // Clean up reverse index when order not in cache (using forward index)
-        if let Some(strategy_id) = strategy_id
-            && let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id)
+        if let Some(position_id) = order_details
+            .as_ref()
+            .and_then(|details| details.position_id)
         {
-            strategy_orders.remove(&client_order_id);
-            if strategy_orders.is_empty() {
-                self.index.strategy_orders.remove(&strategy_id);
+            position_ids.insert(position_id);
+        }
+
+        let mut strategy_ids = AHashSet::new();
+        if let Some(strategy_id) = indexed_strategy_id {
+            strategy_ids.insert(strategy_id);
+        }
+
+        if let Some(details) = &order_details {
+            strategy_ids.insert(details.strategy_id);
+        }
+
+        for position_id in position_ids {
+            if self.positions.contains_key(&position_id) {
+                if let Some(position_orders) = self.index.position_orders.get_mut(&position_id) {
+                    position_orders.remove(&client_order_id);
+                }
+                continue;
+            }
+
+            let has_other_orders =
+                if let Some(position_orders) = self.index.position_orders.get_mut(&position_id) {
+                    position_orders.remove(&client_order_id);
+                    !position_orders.is_empty()
+                } else {
+                    self.index
+                        .order_position
+                        .values()
+                        .any(|candidate| *candidate == position_id)
+                };
+
+            if has_other_orders {
+                continue;
+            }
+
+            self.index.position_orders.remove(&position_id);
+            if let Some(strategy_id) = self.index.position_strategy.remove(&position_id) {
+                strategy_ids.insert(strategy_id);
+                if let Some(strategy_positions) =
+                    self.index.strategy_positions.get_mut(&strategy_id)
+                {
+                    strategy_positions.remove(&position_id);
+                    if strategy_positions.is_empty() {
+                        self.index.strategy_positions.remove(&strategy_id);
+                    }
+                }
+            }
+
+            if let Some(details) = &order_details
+                && let Some(venue_positions) = self
+                    .index
+                    .venue_positions
+                    .get_mut(&details.instrument_id.venue)
+            {
+                venue_positions.remove(&position_id);
+                if venue_positions.is_empty() {
+                    self.index
+                        .venue_positions
+                        .remove(&details.instrument_id.venue);
+                }
             }
         }
 
-        // Remove spawn parent entry if this order was a spawn root
+        for strategy_id in strategy_ids {
+            // An absent reverse bucket is not an empty one: it means the index is already
+            // inconsistent, possibly while another cached order still uses this strategy.
+            // Retiring the registry entry here would both drop a live strategy from
+            // `strategy_ids` and stop `check_integrity` reporting the missing bucket, so the
+            // absent case is left exactly as found.
+            let strategy_orders_became_empty = self
+                .index
+                .strategy_orders
+                .get_mut(&strategy_id)
+                .is_some_and(|strategy_orders| {
+                    strategy_orders.remove(&client_order_id);
+                    strategy_orders.is_empty()
+                });
+
+            let has_positions = self
+                .index
+                .strategy_positions
+                .get(&strategy_id)
+                .is_some_and(|strategy_positions| !strategy_positions.is_empty());
+
+            if strategy_orders_became_empty && !has_positions {
+                self.index.strategy_orders.remove(&strategy_id);
+                self.index.strategies.remove(&strategy_id);
+            }
+        }
+
+        let mut venue_order_ids = AHashSet::new();
+        if let Some(venue_order_id) = indexed_venue_order_id {
+            venue_order_ids.insert(venue_order_id);
+        }
+
+        if let Some(details) = &order_details {
+            venue_order_ids.extend(details.venue_order_ids.iter().copied());
+            if let Some(venue_order_id) = details.venue_order_id {
+                venue_order_ids.insert(venue_order_id);
+            }
+        }
+
+        for venue_order_id in venue_order_ids {
+            if self.index.venue_order_ids.get(&venue_order_id) == Some(&client_order_id) {
+                self.index.venue_order_ids.remove(&venue_order_id);
+            }
+        }
+
         self.index.exec_spawn_orders.remove(&client_order_id);
 
         self.index.orders.remove(&client_order_id);
@@ -3264,6 +3594,10 @@ impl Cache {
         self.index.orders_emulated.remove(&client_order_id);
         self.index.orders_inflight.remove(&client_order_id);
         self.index.orders_pending_cancel.remove(&client_order_id);
+
+        if order_details.is_some() {
+            log::info!("Purged order {client_order_id}");
+        }
     }
 
     /// Purges the position with the `position_id` from the cache (if found).
@@ -3299,22 +3633,49 @@ impl Cache {
             }
 
             // Remove from instrument positions index
-            if let Some(instrument_positions) =
-                self.index.instrument_positions.get_mut(&pos.instrument_id)
-            {
-                instrument_positions.remove(&position_id);
-                if instrument_positions.is_empty() {
-                    self.index.instrument_positions.remove(&pos.instrument_id);
+            let instrument_positions_became_empty = self
+                .index
+                .instrument_positions
+                .get_mut(&pos.instrument_id)
+                .is_some_and(|positions| {
+                    positions.remove(&position_id);
+                    positions.is_empty()
+                });
+
+            if instrument_positions_became_empty {
+                self.index.instrument_positions.remove(&pos.instrument_id);
+                let instrument_orders_empty = self
+                    .index
+                    .instrument_orders
+                    .get(&pos.instrument_id)
+                    .is_some_and(|orders| orders.is_empty());
+
+                if instrument_orders_empty {
+                    self.index.instrument_orders.remove(&pos.instrument_id);
                 }
             }
 
             // Remove from strategy positions index
-            if let Some(strategy_positions) =
-                self.index.strategy_positions.get_mut(&pos.strategy_id)
-            {
-                strategy_positions.remove(&position_id);
-                if strategy_positions.is_empty() {
-                    self.index.strategy_positions.remove(&pos.strategy_id);
+            let strategy_positions_became_empty = self
+                .index
+                .strategy_positions
+                .get_mut(&pos.strategy_id)
+                .is_some_and(|positions| {
+                    positions.remove(&position_id);
+                    positions.is_empty()
+                });
+
+            if strategy_positions_became_empty {
+                self.index.strategy_positions.remove(&pos.strategy_id);
+                let strategy_orders_empty = self
+                    .index
+                    .strategy_orders
+                    .get(&pos.strategy_id)
+                    .is_some_and(|orders| orders.is_empty());
+
+                if strategy_orders_empty {
+                    self.index.strategy_orders.remove(&pos.strategy_id);
+                    self.index.strategies.remove(&pos.strategy_id);
                 }
             }
 
@@ -3338,6 +3699,7 @@ impl Cache {
 
         // Always clean up position indices (even if position not in cache)
         self.index.position_strategy.remove(&position_id);
+        self.index.position_oms.remove(&position_id);
         self.index.position_orders.remove(&position_id);
         self.index.positions.remove(&position_id);
         self.index.positions_open.remove(&position_id);
@@ -3345,6 +3707,7 @@ impl Cache {
 
         // Always clean up position snapshots (even if position not in cache)
         self.position_snapshots.remove(&position_id);
+        self.bump_position_snapshot_revision(position_id);
     }
 
     /// Purges the instrument with the `instrument_id` from the cache (if found).
@@ -3499,7 +3862,7 @@ impl Cache {
     /// Resets the cache.
     ///
     /// All stateful fields are reset to their initial value. Instruments,
-    /// currencies and synthetics are retained when `drop_instruments_on_reset`
+    /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
@@ -3520,6 +3883,7 @@ impl Cache {
         self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
+        self.position_snapshot_revisions.clear();
         self.greeks.clear();
         self.yield_curves.clear();
 
@@ -4036,13 +4400,34 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if the existing venue order ID conflicts and overwrite is false.
+    /// Returns an error if the client already has a different venue order ID and `overwrite` is
+    /// false, or if the venue order ID is owned by a different client order.
     pub fn add_venue_order_id(
         &mut self,
         client_order_id: &ClientOrderId,
         venue_order_id: &VenueOrderId,
         overwrite: bool,
     ) -> anyhow::Result<()> {
+        self.validate_venue_order_id_claim(client_order_id, venue_order_id, overwrite)?;
+
+        self.index
+            .client_order_ids
+            .insert(*client_order_id, *venue_order_id);
+        self.index
+            .venue_order_ids
+            .insert(*venue_order_id, *client_order_id);
+
+        Ok(())
+    }
+
+    fn validate_venue_order_id_claim(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+        overwrite: bool,
+    ) -> anyhow::Result<()> {
+        self.validate_venue_order_id_ownership(client_order_id, venue_order_id)?;
+
         if let Some(existing_venue_order_id) = self.index.client_order_ids.get(client_order_id)
             && !overwrite
             && existing_venue_order_id != venue_order_id
@@ -4055,12 +4440,24 @@ impl Cache {
             );
         }
 
-        self.index
-            .client_order_ids
-            .insert(*client_order_id, *venue_order_id);
-        self.index
-            .venue_order_ids
-            .insert(*venue_order_id, *client_order_id);
+        Ok(())
+    }
+
+    fn validate_venue_order_id_ownership(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+    ) -> anyhow::Result<()> {
+        if let Some(existing_client_order_id) = self.index.venue_order_ids.get(venue_order_id)
+            && existing_client_order_id != client_order_id
+        {
+            return Err(VenueOrderIdOwnershipError {
+                venue_order_id: *venue_order_id,
+                existing_client_order_id: *existing_client_order_id,
+                claimant_client_order_id: *client_order_id,
+            }
+            .into());
+        }
 
         Ok(())
     }
@@ -4334,9 +4731,10 @@ impl Cache {
     /// # Errors
     ///
     /// Returns an error if persisting the position to the backing database fails.
-    pub fn add_position(&mut self, position: &Position, _oms_type: OmsType) -> anyhow::Result<()> {
+    pub fn add_position(&mut self, position: &Position, oms_type: OmsType) -> anyhow::Result<()> {
         self.positions
             .insert(position.id, SharedCell::new(position.clone()));
+        self.index.position_oms.insert(position.id, oms_type);
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
         self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
@@ -4381,6 +4779,10 @@ impl Cache {
             //     )?;
             // }
         }
+
+        let key = position_oms_key(position.id);
+        let value = Bytes::from(serde_json::to_vec(&oms_type)?);
+        self.add(&key, value)?;
 
         Ok(())
     }
@@ -4543,6 +4945,14 @@ impl Cache {
         // post-event value back into the cell so subsequent reads see the new state.
         let mut snapshot = order_cell.borrow().clone();
         snapshot.apply(event.clone())?;
+
+        // Preflight only reverse ownership. A same-client forward mismatch remains a logged
+        // refresh inconsistency, while other refresh failures, such as a backing database error,
+        // remain logged after the canonical state is committed.
+        if let Some(venue_order_id) = snapshot.venue_order_id() {
+            self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
+        }
+
         *order_cell.borrow_mut() = snapshot.clone();
 
         if let Err(e) = self.refresh_order(&snapshot) {
@@ -4555,24 +4965,22 @@ impl Cache {
     fn refresh_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
 
+        // Claim the venue order ID before mutating any other derived state. An updated event may
+        // change the current ID for the same client order, while historical reverse aliases remain.
+        if let Some(venue_order_id) = order.venue_order_id() {
+            let overwrite = matches!(order.last_event(), OrderEventAny::Updated(_));
+            if let Err(e) = self.add_venue_order_id(&client_order_id, &venue_order_id, overwrite) {
+                if e.is::<VenueOrderIdOwnershipError>() {
+                    return Err(e);
+                }
+                log::error!("Error indexing venue order ID in cache: {e}");
+            }
+        }
+
         if order.is_active_local() {
             self.index.orders_active_local.insert(client_order_id);
         } else {
             self.index.orders_active_local.remove(&client_order_id);
-        }
-
-        // Update venue order ID
-        if let Some(venue_order_id) = order.venue_order_id() {
-            // If the order is being modified then we allow a changing `VenueOrderId` to accommodate
-            // venues which use a cancel+replace update strategy.
-            if !self.index.venue_order_ids.contains_key(&venue_order_id) {
-                let overwrite = matches!(order.last_event(), OrderEventAny::Updated(_));
-                if let Err(e) =
-                    self.add_venue_order_id(&order.client_order_id(), &venue_order_id, overwrite)
-                {
-                    log::error!("Error indexing venue order ID in cache: {e}");
-                }
-            }
         }
 
         // Update in-flight state
@@ -4590,6 +4998,11 @@ impl Cache {
             self.index.orders_open.remove(&client_order_id);
             self.index.orders_pending_cancel.remove(&client_order_id);
             self.index.orders_closed.insert(client_order_id);
+        }
+
+        // A cancel rejection resolves the outstanding cancel request
+        if matches!(order.last_event(), OrderEventAny::CancelRejected(_)) {
+            self.index.orders_pending_cancel.remove(&client_order_id);
         }
 
         // Update emulation index
@@ -4675,251 +5088,10 @@ impl Cache {
         Ok(())
     }
 
-    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
-    /// serializing it, and storing it in the position snapshots.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serializing or storing the position snapshot fails.
-    pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<CacheSnapshotRef> {
-        let position_id = position.id;
-
-        let mut copied_position = position.clone();
-        let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
-        copied_position.id = PositionId::new(new_id);
-
-        // Serialize the position (TODO: temporarily just to JSON to remove a dependency)
-        let position_serialized = serde_json::to_vec(&copied_position)?;
-        let snapshot_index = self.position_snapshot_count(&position_id);
-        let blob_ref = format!(
-            "cache://position-snapshots/{}/{}",
-            position_id.as_str(),
-            snapshot_index,
-        );
-        let snapshot_blob = Bytes::from(position_serialized);
-
-        self.add(&blob_ref, snapshot_blob.clone())?;
-        self.position_snapshots
-            .entry(position_id)
-            .or_default()
-            .push(snapshot_blob.clone());
-
-        log::debug!("Snapshot {copied_position}");
-        Ok(CacheSnapshotRef::new(blob_ref, snapshot_blob))
-    }
-
-    /// Loads the cache-owned snapshot blob stored under `blob_ref`.
-    ///
-    /// The cache first checks in-memory snapshot state. When the blob is not present and a
-    /// database adapter exists, the generic cache entries are loaded and checked for the same
-    /// opaque reference.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if loading generic cache entries from the backing database fails.
-    pub fn load_snapshot_blob(&mut self, blob_ref: &str) -> anyhow::Result<Option<Bytes>> {
-        if let Some(blob) = self.snapshot_blob(blob_ref) {
-            return Ok(Some(blob));
-        }
-
-        if self.database.is_some() {
-            self.cache_general()?;
-        }
-
-        Ok(self.snapshot_blob(blob_ref))
-    }
-
-    /// Restores the cache-owned snapshot blob stored under `blob_ref`.
-    ///
-    /// Only cache-owned `cache://position-snapshots/...` blobs are currently supported.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the blob reference is unsupported, malformed, skips earlier
-    /// snapshot frames, conflicts with an existing frame, or does not decode to the expected
-    /// position snapshot.
-    pub fn restore_snapshot_blob(&mut self, blob_ref: &str, blob: Bytes) -> anyhow::Result<()> {
-        let (position_id, snapshot_index) = parse_position_snapshot_blob_ref(blob_ref)?;
-        validate_position_snapshot_blob(&position_id, blob.as_ref())?;
-
-        let frames = self.position_snapshots.entry(position_id).or_default();
-        match frames.get(snapshot_index) {
-            Some(existing) if existing == &blob => {}
-            Some(_) => {
-                anyhow::bail!(
-                    "position snapshot frame {snapshot_index} for {position_id} already exists with different bytes"
-                );
-            }
-            None if frames.len() == snapshot_index => frames.push(blob.clone()),
-            None => {
-                anyhow::bail!(
-                    "position snapshot blob_ref {blob_ref} skips missing frame {}",
-                    frames.len()
-                );
-            }
-        }
-
-        self.general.insert(blob_ref.to_string(), blob);
-        Ok(())
-    }
-
-    fn snapshot_blob(&self, blob_ref: &str) -> Option<Bytes> {
-        if let Some(blob) = self.general.get(blob_ref) {
-            return Some(blob.clone());
-        }
-
-        let (position_id, snapshot_index) = parse_position_snapshot_blob_ref(blob_ref).ok()?;
-        self.position_snapshots
-            .get(&position_id)
-            .and_then(|frames| frames.get(snapshot_index))
-            .cloned()
-    }
-
-    /// Creates a snapshot of the `position` state in the database.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if snapshotting the position state fails.
-    pub fn snapshot_position_state(
-        &mut self,
-        position: &Position,
-        ts_snapshot: UnixNanos,
-        unrealized_pnl: Option<Money>,
-        open_only: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let open_only = open_only.unwrap_or(true);
-
-        if open_only && !position.is_open() {
-            return Ok(());
-        }
-
-        if let Some(database) = &mut self.database {
-            database
-                .snapshot_position_state(position, ts_snapshot, unrealized_pnl)
-                .map_err(|e| {
-                    log::error!(
-                        "Failed to snapshot position state for {}: {e:?}",
-                        position.id
-                    );
-                    e
-                })?;
-        } else {
-            log::warn!(
-                "Cannot snapshot position state for {} (no database configured)",
-                position.id
-            );
-        }
-
-        Ok(())
-    }
-
     /// Gets the OMS type for the `position_id`.
     #[must_use]
     pub fn oms_type(&self, position_id: &PositionId) -> Option<OmsType> {
-        // Get OMS type from the index
-        if self.index.position_strategy.contains_key(position_id) {
-            // For now, we'll default to NETTING
-            // TODO: Store and retrieve actual OMS type per position
-            Some(OmsType::Netting)
-        } else {
-            None
-        }
-    }
-
-    /// Gets the serialized position snapshot frames for the `position_id`.
-    ///
-    /// Each element in the returned vector is one JSON-encoded [`Position`] snapshot,
-    /// in the order they were taken.
-    #[must_use]
-    pub fn position_snapshot_bytes(&self, position_id: &PositionId) -> Option<Vec<Vec<u8>>> {
-        self.position_snapshots
-            .get(position_id)
-            .map(|frames| frames.iter().map(|b| b.to_vec()).collect())
-    }
-
-    /// Returns the number of stored snapshot frames for the `position_id`.
-    ///
-    /// Returns `0` when no frames are stored. Does not allocate or copy frame bytes.
-    #[must_use]
-    pub fn position_snapshot_count(&self, position_id: &PositionId) -> usize {
-        self.position_snapshots.get(position_id).map_or(0, Vec::len)
-    }
-
-    /// Returns all position snapshots with the given optional filters.
-    ///
-    /// When `position_id` is `Some`, only snapshots for that position are returned.
-    /// When `account_id` is `Some`, snapshots are filtered to that account.
-    /// Frames that fail to deserialize are skipped with a warning.
-    #[must_use]
-    pub fn position_snapshots(
-        &self,
-        position_id: Option<&PositionId>,
-        account_id: Option<&AccountId>,
-    ) -> Vec<Position> {
-        let frames: Box<dyn Iterator<Item = &Bytes> + '_> = match position_id {
-            Some(pid) => match self.position_snapshots.get(pid) {
-                Some(v) => Box::new(v.iter()),
-                None => Box::new(std::iter::empty()),
-            },
-            None => Box::new(self.position_snapshots.values().flat_map(|v| v.iter())),
-        };
-
-        let mut results: Vec<Position> = frames
-            .filter_map(|bytes| match serde_json::from_slice::<Position>(bytes) {
-                Ok(position) => Some(position),
-                Err(e) => {
-                    log::warn!("Failed to decode position snapshot: {e}");
-                    None
-                }
-            })
-            .collect();
-
-        if let Some(aid) = account_id {
-            results.retain(|p| p.account_id == *aid);
-        }
-
-        results
-    }
-
-    /// Returns position snapshots for `position_id` starting from the `skip`th frame.
-    ///
-    /// Use this to deserialize only newly appended snapshots when the caller already
-    /// processed earlier frames. Returns an empty vector when no frames or fewer than
-    /// `skip` frames are stored. Frames that fail to deserialize are skipped with a warning.
-    #[must_use]
-    pub fn position_snapshots_from(&self, position_id: &PositionId, skip: usize) -> Vec<Position> {
-        let Some(frames) = self.position_snapshots.get(position_id) else {
-            return Vec::new();
-        };
-
-        frames
-            .iter()
-            .skip(skip)
-            .filter_map(|bytes| match serde_json::from_slice::<Position>(bytes) {
-                Ok(position) => Some(position),
-                Err(e) => {
-                    log::warn!("Failed to decode position snapshot: {e}");
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Gets position snapshot IDs for the `instrument_id`.
-    #[must_use]
-    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> AHashSet<PositionId> {
-        // Get snapshot position IDs that match the instrument
-        let mut result = AHashSet::new();
-
-        for (position_id, _) in &self.position_snapshots {
-            // Check if this position is for the requested instrument
-            if let Some(position_cell) = self.positions.get(position_id)
-                && position_cell.borrow().instrument_id == *instrument_id
-            {
-                result.insert(*position_id);
-            }
-        }
-        result
+        self.index.position_oms.get(position_id).copied()
     }
 
     /// Snapshots the `order` state in the database.
@@ -7318,6 +7490,38 @@ impl Cache {
             .map_or(0, BoundedVecDeque::len)
     }
 
+    /// Gets the mark price update count for the `instrument_id`.
+    #[must_use]
+    pub fn mark_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.mark_prices
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
+    /// Gets the index price update count for the `instrument_id`.
+    #[must_use]
+    pub fn index_price_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.index_prices
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
+    /// Gets the funding rate update count for the `instrument_id`.
+    #[must_use]
+    pub fn funding_rate_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.funding_rates
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
+    /// Gets the instrument status update count for the `instrument_id`.
+    #[must_use]
+    pub fn instrument_status_count(&self, instrument_id: &InstrumentId) -> usize {
+        self.instrument_statuses
+            .get(instrument_id)
+            .map_or(0, BoundedVecDeque::len)
+    }
+
     /// Gets the bar count for the `instrument_id`.
     #[must_use]
     pub fn bar_count(&self, bar_type: &BarType) -> usize {
@@ -7342,6 +7546,30 @@ impl Cache {
         self.trade_count(instrument_id) > 0
     }
 
+    /// Returns whether the cache contains mark price updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_mark_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.mark_price_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains index price updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_index_prices(&self, instrument_id: &InstrumentId) -> bool {
+        self.index_price_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains funding rate updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_funding_rates(&self, instrument_id: &InstrumentId) -> bool {
+        self.funding_rate_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains instrument status updates for the `instrument_id`.
+    #[must_use]
+    pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
+        self.instrument_status_count(instrument_id) > 0
+    }
+
     /// Returns whether the cache contains bars for the `bar_type`.
     #[must_use]
     pub fn has_bars(&self, bar_type: &BarType) -> bool {
@@ -7356,27 +7584,43 @@ impl Cache {
         to_currency: Currency,
         price_type: PriceType,
     ) -> Option<Decimal> {
-        if from_currency == to_currency {
-            // When the source and target currencies are identical,
-            // no conversion is needed; return an exchange rate of one.
-            return Some(Decimal::ONE);
-        }
-
-        let (bid_quote, ask_quote) = self.build_quote_table(&venue);
-
-        match get_exchange_rate(
-            from_currency.code,
-            to_currency.code,
-            price_type,
-            bid_quote,
-            ask_quote,
-        ) {
+        match self.try_get_xrate(venue, from_currency, to_currency, price_type) {
             Ok(rate) => rate,
             Err(e) => {
                 log::error!("Failed to calculate xrate: {e}");
                 None
             }
         }
+    }
+
+    /// Tries to calculate the exchange rate without logging calculation errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cached quotes cannot form a valid exchange
+    /// rate calculation.
+    pub fn try_get_xrate(
+        &self,
+        venue: Venue,
+        from_currency: Currency,
+        to_currency: Currency,
+        price_type: PriceType,
+    ) -> anyhow::Result<Option<Decimal>> {
+        if from_currency == to_currency {
+            // When the source and target currencies are identical,
+            // no conversion is needed; return an exchange rate of one.
+            return Ok(Some(Decimal::ONE));
+        }
+
+        let (bid_quote, ask_quote) = self.build_quote_table(&venue);
+
+        get_exchange_rate(
+            from_currency.code,
+            to_currency.code,
+            price_type,
+            bid_quote,
+            ask_quote,
+        )
     }
 
     fn build_quote_table(
@@ -7398,34 +7642,36 @@ impl Cache {
                     continue; // Empty ticks vector
                 }
             } else {
-                let bid_bar = self
-                    .bars
-                    .iter()
-                    .find(|(k, _)| {
-                        k.instrument_id() == *instrument_id
-                            && matches!(k.spec().price_type, PriceType::Bid)
-                    })
-                    .map(|(_, v)| v);
+                // Multiple bar types may exist per instrument: select the most recently added
+                // bar per side, preferring the greatest ts_init for determinism and breaking
+                // ties by bar type.
+                let mut latest_bid: Option<(&BarType, &Bar)> = None;
+                let mut latest_ask: Option<(&BarType, &Bar)> = None;
 
-                let ask_bar = self
-                    .bars
-                    .iter()
-                    .find(|(k, _)| {
-                        k.instrument_id() == *instrument_id
-                            && matches!(k.spec().price_type, PriceType::Ask)
-                    })
-                    .map(|(_, v)| v);
-
-                match (bid_bar, ask_bar) {
-                    (Some(bid), Some(ask)) => {
-                        match (bid.front(), ask.front()) {
-                            (Some(bid_bar), Some(ask_bar)) => (bid_bar.close, ask_bar.close),
-                            _ => {
-                                // Empty bar VecDeques
-                                continue;
-                            }
-                        }
+                for (bar_type, bars) in &self.bars {
+                    if bar_type.instrument_id() != *instrument_id {
+                        continue;
                     }
+
+                    let Some(bar) = bars.front() else {
+                        continue;
+                    };
+
+                    let slot = match bar_type.spec().price_type {
+                        PriceType::Bid => &mut latest_bid,
+                        PriceType::Ask => &mut latest_ask,
+                        _ => continue,
+                    };
+
+                    if slot.is_none_or(|(current_type, current)| {
+                        (current.ts_init, current_type) < (bar.ts_init, bar_type)
+                    }) {
+                        *slot = Some((bar_type, bar));
+                    }
+                }
+
+                match (latest_bid, latest_ask) {
+                    (Some((_, bid_bar)), Some((_, ask_bar))) => (bid_bar.close, ask_bar.close),
                     _ => continue,
                 }
             };
@@ -7455,7 +7701,11 @@ impl Cache {
             .insert((to_currency, from_currency), 1.0 / xrate);
     }
 
-    /// Clears the mark exchange rate for the given currency pair.
+    /// Clears the mark exchange rate for the given currency pair direction.
+    ///
+    /// Removes only the `(from_currency, to_currency)` entry; the inverse rate written
+    /// by [`Self::set_mark_xrate`] is retained until cleared separately or
+    /// [`Self::clear_mark_xrates`] is called.
     pub fn clear_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency) {
         let _ = self.mark_xrates.remove(&(from_currency, to_currency));
     }
@@ -7845,43 +8095,8 @@ impl Cache {
     }
 }
 
-fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {
-    let Some(rest) = blob_ref.strip_prefix("cache://position-snapshots/") else {
-        anyhow::bail!("unsupported cache snapshot blob_ref {blob_ref}");
-    };
+const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
-    let Some((position_id, snapshot_index)) = rest.rsplit_once('/') else {
-        anyhow::bail!("malformed position snapshot blob_ref {blob_ref}");
-    };
-
-    if position_id.is_empty() {
-        anyhow::bail!("position snapshot blob_ref {blob_ref} has empty position id");
-    }
-
-    let snapshot_index = snapshot_index.parse::<usize>().map_err(|e| {
-        anyhow::anyhow!("position snapshot blob_ref {blob_ref} has invalid frame index: {e}")
-    })?;
-
-    Ok((PositionId::new(position_id), snapshot_index))
-}
-
-fn validate_position_snapshot_blob(position_id: &PositionId, blob: &[u8]) -> anyhow::Result<()> {
-    let snapshot = serde_json::from_slice::<Position>(blob)?;
-    let expected_prefix = format!("{}-", position_id.as_str());
-
-    let Some(snapshot_uuid) = snapshot.id.as_str().strip_prefix(&expected_prefix) else {
-        anyhow::bail!(
-            "position snapshot id {} does not match blob_ref position {position_id}",
-            snapshot.id
-        );
-    };
-
-    if UUID4::from_str(snapshot_uuid).is_err() {
-        anyhow::bail!(
-            "position snapshot id {} does not match blob_ref position {position_id}",
-            snapshot.id
-        );
-    }
-
-    Ok(())
+fn position_oms_key(position_id: PositionId) -> String {
+    format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
 }

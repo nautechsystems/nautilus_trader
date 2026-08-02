@@ -29,7 +29,7 @@ use nautilus_core::{
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 
 use super::ERROR_MONOTONICITY;
 use crate::{
@@ -161,14 +161,18 @@ impl InstrumentClose {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 

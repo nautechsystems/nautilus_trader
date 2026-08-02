@@ -24,6 +24,9 @@ use crate::{
     identifiers::InstrumentId,
 };
 
+/// Protocol-fee denominator for basis-point fee shares.
+pub const PROTOCOL_FEE_BASIS_POINTS_DENOMINATOR: u32 = 10_000;
+
 /// Complete snapshot of a liquidity pool's state at a specific point in time.
 ///
 /// `PoolSnapshot` provides a self-contained representation of a pool's
@@ -113,6 +116,12 @@ pub struct PoolState {
     pub protocol_fees_token1: U256,
     /// Protocol fee packed: lower 4 bits for token0, upper 4 bits for token1.
     pub fee_protocol: u8,
+    /// Token0 protocol-fee share in basis points, when applicable.
+    #[serde(default)]
+    pub fee_protocol0_basis_points: Option<u32>,
+    /// Token1 protocol-fee share in basis points, when applicable.
+    #[serde(default)]
+    pub fee_protocol1_basis_points: Option<u32>,
     /// Global fee growth for token0 as Q128.128 fixed-point number.
     pub fee_growth_global_0: U256,
     /// Global fee growth for token1 as Q128.128 fixed-point number.
@@ -130,9 +139,45 @@ impl PoolState {
             protocol_fees_token0,
             protocol_fees_token1,
             fee_protocol,
+            fee_protocol0_basis_points: None,
+            fee_protocol1_basis_points: None,
             fee_growth_global_0: U256::ZERO,
             fee_growth_global_1: U256::ZERO,
         }
+    }
+
+    /// Returns the Uniswap V3 protocol-fee denominator for the input token.
+    #[must_use]
+    pub const fn uniswap_v3_fee_protocol(&self, zero_for_one: bool) -> u8 {
+        if zero_for_one {
+            self.fee_protocol % 16
+        } else {
+            self.fee_protocol >> 4
+        }
+    }
+
+    /// Returns the basis-point protocol-fee share for the input token, when applicable.
+    #[must_use]
+    pub const fn fee_protocol_basis_points(&self, zero_for_one: bool) -> Option<u32> {
+        if zero_for_one {
+            self.fee_protocol0_basis_points
+        } else {
+            self.fee_protocol1_basis_points
+        }
+    }
+
+    /// Sets the Uniswap V3 packed protocol-fee byte and clears the basis-point representation.
+    pub fn set_uniswap_v3_fee_protocol(&mut self, fee_protocol: u8) {
+        self.fee_protocol = fee_protocol;
+        self.fee_protocol0_basis_points = None;
+        self.fee_protocol1_basis_points = None;
+    }
+
+    /// Sets basis-point protocol-fee shares and clears the Uniswap packed byte.
+    pub fn set_protocol_fee_basis_points(&mut self, fee_protocol0: u32, fee_protocol1: u32) {
+        self.fee_protocol = 0;
+        self.fee_protocol0_basis_points = Some(fee_protocol0);
+        self.fee_protocol1_basis_points = Some(fee_protocol1);
     }
 }
 
@@ -145,6 +190,8 @@ impl Default for PoolState {
             protocol_fees_token0: U256::ZERO,
             protocol_fees_token1: U256::ZERO,
             fee_protocol: 0,
+            fee_protocol0_basis_points: None,
+            fee_protocol1_basis_points: None,
             fee_growth_global_0: U256::ZERO,
             fee_growth_global_1: U256::ZERO,
         }

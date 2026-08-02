@@ -96,6 +96,9 @@ cdef extern from "../includes/model.h":
     # The minimum valid quantity value that can be represented.
     const double QUANTITY_MIN # = 0.0
 
+    # Protocol-fee denominator for basis-point fee shares.
+    const uint32_t PROTOCOL_FEE_BASIS_POINTS_DENOMINATOR # = 10000
+
     # Minimum valid tick value for Uniswap V3 pools.
     const int32_t PoolTick_MIN_TICK # = -887272
 
@@ -208,7 +211,7 @@ cdef extern from "../includes/model.h":
         OPTION # = 8,
         # An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
         OPTION_SPREAD # = 9,
-        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security - most commonly an equity - at a certain price before expiration.
         WARRANT # = 10,
         # A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
         SPORTS_BETTING # = 11,
@@ -349,10 +352,11 @@ cdef extern from "../includes/model.h":
     #  - `CANCELED`
     #  - `EXPIRED`
     #  - `FILLED`
+    #  - `VOIDED`
     cpdef enum OrderStatus:
         # The order is initialized (instantiated) within the Nautilus system.
         INITIALIZED # = 1,
-        # The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
+        # The order was denied by the Nautilus system, either for being invalid, unprocessable, or exceeding a risk limit.
         DENIED # = 2,
         # The order became emulated by the Nautilus system in the `OrderEmulator` component.
         EMULATED # = 3,
@@ -378,6 +382,8 @@ cdef extern from "../includes/model.h":
         PARTIALLY_FILLED # = 13,
         # The order has been completely filled on a trading venue (closed/done).
         FILLED # = 14,
+        # The order is terminal after an authoritative venue void or fill correction.
+        VOIDED # = 15,
 
     # The type of order.
     cpdef enum OrderType:
@@ -637,6 +643,9 @@ cdef extern from "../includes/model.h":
     #
     # Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
     # its specialized structure and limited depth use case.
+    #
+    # Per-level [`BookOrder::order_id`] values are non-semantic for this aggregated MBP data.
+    # Parquet catalog decoding canonicalizes them to zero.
     cdef struct OrderBookDepth10_t:
         # The instrument ID for the book.
         InstrumentId_t instrument_id;
@@ -1239,11 +1248,13 @@ cdef extern from "../includes/model.h":
 
     # Creates a new [`OrderBookDeltas_API`] instance from a `CVec` of `OrderBookDelta`.
     #
-    # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects.
-    # - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it.
-    # - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks.
-    OrderBookDeltas_API orderbook_deltas_new(InstrumentId_t instrument_id,
-                                             const CVec *deltas);
+    # The data is cloned into Rust-managed memory and remains owned by the caller.
+    #
+    # # Safety
+    #
+    # `deltas` must describe initialized `OrderBookDelta` values that remain valid and immutable for
+    # the duration of this call. The caller remains responsible for deallocating its buffer.
+    OrderBookDeltas_API orderbook_deltas_new(InstrumentId_t instrument_id, const CVec *deltas);
 
     void orderbook_deltas_drop(OrderBookDeltas_API deltas);
 
@@ -1268,9 +1279,9 @@ cdef extern from "../includes/model.h":
 
     # Drops a `CVec` of `OrderBookDelta` values.
     #
-    # # Panics
+    # # Safety
     #
-    # Panics if `CVec` invariants are violated (corrupted metadata).
+    # `v` must uniquely own a valid `Vec<OrderBookDelta>` allocation transferred from Rust.
     void orderbook_deltas_vec_drop(CVec v);
 
     # # Safety
@@ -2035,6 +2046,10 @@ cdef extern from "../includes/model.h":
     void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
                                              const char *formula_ptr);
 
+    # # Safety
+    #
+    # `inputs_ptr` must describe initialized `f64` values that remain valid and immutable for the
+    # duration of this call.
     Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
 
     OrderBook_API orderbook_new(InstrumentId_t instrument_id, BookType book_type);
@@ -2184,11 +2199,17 @@ cdef extern from "../includes/model.h":
 
     uint8_t orderbook_check_integrity(const OrderBook_API *book);
 
+    # # Safety
+    #
+    # `v` must uniquely own a valid `Vec<(Price, Quantity)>` allocation transferred from Rust.
     void vec_drop_fills(CVec v);
 
     # Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
 
+    # # Safety
+    #
+    # `orders` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
     BookLevel_API level_new(OrderSide order_side, Price_t price, CVec orders);
 
     void level_drop(BookLevel_API level);
@@ -2209,16 +2230,16 @@ cdef extern from "../includes/model.h":
 
     # Drops a `CVec` of `BookLevel_API` values.
     #
-    # # Panics
+    # # Safety
     #
-    # Panics if `CVec` invariants are violated (corrupted metadata).
+    # `v` must uniquely own a valid `Vec<BookLevel_API>` allocation transferred from Rust.
     void vec_drop_book_levels(CVec v);
 
     # Drops a `CVec` of `BookOrder` values.
     #
-    # # Panics
+    # # Safety
     #
-    # Panics if `CVec` invariants are violated (corrupted metadata).
+    # `v` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
     void vec_drop_book_orders(CVec v);
 
     # Returns a [`Currency`] from pointers and primitives.

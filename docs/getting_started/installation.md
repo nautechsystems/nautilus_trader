@@ -2,16 +2,22 @@
 
 NautilusTrader is officially supported for Python 3.12-3.14 on the following 64-bit platforms:
 
-| Operating System       | Supported Versions | CPU Architecture  |
-|------------------------|--------------------|-------------------|
-| Linux (Ubuntu)         | 22.04 and later    | x86_64            |
-| Linux (Ubuntu)         | 22.04 and later    | ARM64             |
-| macOS                  | 15.0 and later     | ARM64             |
-| Windows Server         | 2022 and later     | x86_64            |
+| Operating System | Supported Versions | CPU Architecture |
+| ---------------- | ------------------ | ---------------- |
+| Linux (Ubuntu)   | 22.04 and later    | x86_64           |
+| Linux (Ubuntu)   | 22.04 and later    | ARM64            |
+| macOS            | 15.0 and later     | ARM64            |
+| Windows Server   | 2022 and later     | x86_64           |
 
 :::note
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
 :::
+
+NautilusTrader follows the
+[Python support window in Scientific Python SPEC 0](https://scientific-python.org/specs/spec-0000/).
+Each Python minor version is supported for three years after its initial release. Support normally
+ends in the first NautilusTrader release after that window and after the replacement Python version
+passes compatibility checks.
 
 Continuous CI coverage comes from the GitHub Actions runners we build on:
 
@@ -31,7 +37,7 @@ We recommend using the latest supported version of Python and installing [nautil
 :::tip
 We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
 
-Conda and other Python distributions *may* work but aren’t officially supported.
+Conda and other Python distributions *may* work but aren't officially supported.
 :::
 
 ## From PyPI
@@ -41,6 +47,26 @@ To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader
 ```bash
 uv pip install nautilus_trader
 ```
+
+### Python v2 release-candidate wheels
+
+Python v2 is the Rust + PyO3 package under `python/`. Release-candidate wheels publish to PyPI
+using `2.0.0rcN` versions while final v2 validation is in progress.
+
+```bash
+uv pip install --pre nautilus_trader
+```
+
+The `--pre` flag is required because these wheels are pre-release builds. The installed import name
+is still `nautilus_trader`.
+
+Run this command outside a NautilusTrader source checkout. The repository root uses an
+`exclude-newer` uv policy for reproducible development, which can filter out newly published v2
+wheels. Inside a source checkout, use [Build Python v2 from source](#8-build-python-v2-from-source)
+instead.
+
+Current v2 wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
+a debug build, or a platform wheel that is not available.
 
 ## Extras
 
@@ -74,14 +100,13 @@ uv pip install nautilus_trader --index-url=https://packages.nautechsystems.io/si
 ```
 
 :::tip
-Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to PyPI automatically:
-
+Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to PyPI automatically.
 :::
 
 ### Development wheels
 
-Development wheels are published from both the `nightly` and `develop` branches,
-allowing users to test features and fixes ahead of stable releases.
+The main package index publishes v1 development wheels from both the `nightly` and `develop`
+branches, allowing users to test features and fixes ahead of stable releases.
 
 This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
@@ -89,15 +114,16 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 - `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
 - `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
-| Platform           | Nightly | Develop |
-| :----------------- | :------ | :------ |
-| `Linux (x86_64)`   | ✓       | ✓       |
-| `Linux (ARM64)`    | ✓       | -       |
-| `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | -       |
+| Platform           | v1 Nightly | v1 Develop |
+| :----------------- | :--------- | :--------- |
+| `Linux (x86_64)`   | ✓          | ✓          |
+| `Linux (ARM64)`    | ✓          | -          |
+| `macOS (ARM64)`    | ✓          | -          |
+| `Windows (x86_64)` | ✓          | -          |
 
-**Note**: Development wheels from the `develop` branch publish for Linux x86_64 only.
-Windows, macOS, and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
+**Note**: The nightly merge publishes v1 and v2 wheels for all listed platforms, while `develop`
+publishes Linux x86_64 wheels only. Outside those publication builds, cross-platform nightly
+validation is v2-only; the scheduled nightly test workflow does not repeat the v1 platform matrix.
 
 :::warning
 We do not recommend using development wheels in production environments, such as live trading controlling real capital.
@@ -119,25 +145,26 @@ To install a specific development wheel (e.g., `1.221.0a20250912` for September 
 uv pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
-### Python v2 development wheels
+### Python v2 branch development wheels
 
-Python v2 is the PyO3 package under `python/`. It is published to a separate v2 index while the
-main package remains in transition.
+Branch development wheels for the v2 Rust + PyO3 package publish to a separate v2 index from
+`develop` and `nightly`:
 
 ```bash
 uv pip install --pre --index-url=https://packages.nautechsystems.io/v2/simple/ nautilus-trader
 ```
 
-The `--pre` flag is required because these wheels are pre-release builds. The installed import name
-is still `nautilus_trader`.
+| Platform           | v2 Develop | v2 Nightly |
+| :----------------- | :--------- | :--------- |
+| `Linux (x86_64)`   | ✓          | ✓          |
+| `Linux (ARM64)`    | -          | ✓          |
+| `macOS (ARM64)`    | -          | ✓          |
+| `Windows (x86_64)` | -          | ✓          |
 
-Run this command outside a NautilusTrader source checkout. The repository root uses an
-`exclude-newer` uv policy for reproducible development, which can filter out newly published v2
-wheels. Inside a source checkout, use [Build Python v2 from source](#8-build-python-v2-from-source)
-instead.
-
-Current v2 development wheels target Python 3.12-3.14. Build from source when you need local Rust
-changes, a debug build, or a platform wheel that is not available on the v2 index.
+The installed import name is still `nautilus_trader`. Run this command outside a NautilusTrader
+source checkout so the repository's `exclude-newer` uv policy does not filter out newly published
+v2 wheels. Build from source when you need local Rust changes, a debug build, or a platform wheel
+that is not available.
 
 ### Available versions
 
@@ -392,7 +419,7 @@ For pure Rust crates, high-precision works on all platforms (including Windows) 
 the `high-precision` feature flag.
 :::
 
-The performance tradeoff is that standard-precision is ~3–5% faster in typical backtests,
+The performance tradeoff is that standard-precision is ~3-5% faster in typical backtests,
 but has lower decimal precision and a smaller representable value range.
 
 :::note

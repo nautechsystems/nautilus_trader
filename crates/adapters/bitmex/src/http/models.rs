@@ -21,11 +21,14 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 use uuid::Uuid;
 
-use crate::common::enums::{
-    BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexFairMethod,
-    BitmexInstrumentState, BitmexInstrumentType, BitmexLiquidityIndicator, BitmexMarkMethod,
-    BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTickDirection,
-    BitmexTimeInForce,
+use crate::common::{
+    enums::{
+        BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexFairMethod,
+        BitmexInstrumentState, BitmexInstrumentType, BitmexLiquidityIndicator, BitmexMarkMethod,
+        BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTickDirection,
+        BitmexTimeInForce,
+    },
+    serialization::optional_decimal,
 };
 
 /// Custom deserializer for comma-separated `ExecInstruction` values
@@ -317,7 +320,8 @@ pub struct BitmexOrder {
     pub ord_rej_reason: Option<Ustr>,
     pub leaves_qty: Option<i64>,
     pub cum_qty: Option<i64>,
-    pub avg_px: Option<f64>,
+    #[serde(default, with = "optional_decimal")]
+    pub avg_px: Option<Decimal>,
     pub multi_leg_reporting_type: Option<Ustr>,
     pub text: Option<Ustr>,
     pub transact_time: Option<DateTime<Utc>>,

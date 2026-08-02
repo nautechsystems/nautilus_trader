@@ -475,7 +475,7 @@ fn batch_and_write_deltas(
     match book_deltas_to_arrow_record_batch_bytes(deltas) {
         Ok(batch) => write_batch(
             &batch,
-            "order_book_deltas",
+            OrderBookDelta::path_prefix(),
             instrument_id,
             date,
             path,
@@ -497,7 +497,7 @@ fn batch_and_write_depths(
     match book_depth10_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(
             &batch,
-            "order_book_depths",
+            OrderBookDepth10::path_prefix(),
             instrument_id,
             date,
             path,
@@ -539,7 +539,14 @@ fn batch_and_write_trades(
     compression: Compression,
 ) {
     match trades_to_arrow_record_batch_bytes(trades) {
-        Ok(batch) => write_batch(&batch, "trade_tick", instrument_id, date, path, compression),
+        Ok(batch) => write_batch(
+            &batch,
+            TradeTick::path_prefix(),
+            instrument_id,
+            date,
+            path,
+            compression,
+        ),
         Err(e) => {
             log::error!("Error converting TradeTick to Arrow: {e:?}");
         }
@@ -671,7 +678,10 @@ fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
         UnixNanos::from(end_nanos as u64),
     );
 
-    PathBuf::new().join("bar").join(bar_type_str).join(filename)
+    PathBuf::new()
+        .join(Bar::path_prefix())
+        .join(bar_type_str)
+        .join(filename)
 }
 
 fn write_batch(
@@ -723,7 +733,7 @@ mod tests {
         common::{enums::TardisExchange, testing::load_test_json},
         config::BookSnapshotOutput,
         machine::{
-            message::{BookSnapshotMsg, OptionSummaryMsg, WsMessage},
+            message::{BookSnapshotMsg, OptionSummaryMsg, TradeMsg, WsMessage},
             parse::parse_tardis_ws_message,
             types::TardisInstrumentMiniInfo,
         },
@@ -862,5 +872,135 @@ mod tests {
         assert_eq!(quotes_out, vec![quote_1, quote_2]);
         assert_eq!(quotes_out[0].instrument_id, instrument_id);
         assert!(quotes_out[0].ts_init < quotes_out[1].ts_init);
+    }
+
+    #[rstest]
+    fn test_trades_replay_catalog_round_trip() {
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        let compression = ParquetCompression::Zstd.as_parquet_compression();
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Bitmex,
+            1,
+            0,
+        ));
+
+        let trade_msg: TradeMsg = serde_json::from_str(&load_test_json("trade.json")).unwrap();
+        let Some(Data::Trade(trade_1)) = parse_tardis_ws_message(
+            WsMessage::Trade(trade_msg),
+            &info,
+            &BookSnapshotOutput::Deltas,
+        ) else {
+            panic!("Expected trade message to route to Data::Trade");
+        };
+
+        let mut trade_2 = trade_1;
+        trade_2.ts_event = trade_1.ts_event + 1_000_000_000;
+        trade_2.ts_init = trade_1.ts_init + 1_000_000_000;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_path = temp_dir.path().join("data");
+
+        let mut trades_map: AHashMap<InstrumentId, Vec<TradeTick>> = AHashMap::new();
+        let mut trades_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
+
+        for trade in [trade_1, trade_2] {
+            handle_trade_msg(
+                trade,
+                &mut trades_map,
+                &mut trades_cursors,
+                &data_path,
+                compression,
+            );
+        }
+
+        for (id, trades) in &trades_map {
+            let cursor = trades_cursors.get(id).expect("Expected cursor");
+            batch_and_write_trades(trades, id, cursor.date_utc, &data_path, compression);
+        }
+
+        // Trades must be written under the catalog convention path ("trades")
+        assert!(data_path.join(TradeTick::path_prefix()).exists());
+        assert!(!data_path.join("trade_tick").exists());
+
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let trades_out = catalog
+            .trade_ticks(Some(vec![instrument_id.to_string()]), None, None)
+            .unwrap();
+
+        assert_eq!(trades_out, vec![trade_1, trade_2]);
+        assert_eq!(trades_out[0].instrument_id, instrument_id);
+        assert!(trades_out[0].ts_init < trades_out[1].ts_init);
+    }
+
+    #[rstest]
+    fn test_bars_replay_catalog_round_trip() {
+        use nautilus_model::types::{Price, Quantity};
+
+        let compression = ParquetCompression::Zstd.as_parquet_compression();
+        let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+
+        let ts_1 = UnixNanos::from(
+            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap() as u64,
+        );
+        let ts_2 = ts_1 + 1_000_000_000;
+
+        let bar_1 = Bar::new(
+            bar_type,
+            Price::from("100.00"),
+            Price::from("110.00"),
+            Price::from("90.00"),
+            Price::from("105.00"),
+            Quantity::from("1000"),
+            ts_1,
+            ts_1,
+        );
+        let bar_2 = Bar::new(
+            bar_type,
+            Price::from("105.00"),
+            Price::from("115.00"),
+            Price::from("95.00"),
+            Price::from("110.00"),
+            Quantity::from("1000"),
+            ts_2,
+            ts_2,
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_path = temp_dir.path().join("data");
+
+        let mut bars_map: AHashMap<BarType, Vec<Bar>> = AHashMap::new();
+        let mut bars_cursors: AHashMap<BarType, DateCursor> = AHashMap::new();
+
+        for bar in [bar_1, bar_2] {
+            handle_bar_msg(
+                bar,
+                &mut bars_map,
+                &mut bars_cursors,
+                &data_path,
+                compression,
+            );
+        }
+
+        for (bar_type, bars) in &bars_map {
+            let cursor = bars_cursors.get(bar_type).expect("Expected cursor");
+            batch_and_write_bars(bars, bar_type, cursor.date_utc, &data_path, compression);
+        }
+
+        // Bars must be written under the catalog convention path ("bars"), consistent
+        // with the other data types so they are discoverable by `ParquetDataCatalog`.
+        assert!(data_path.join(Bar::path_prefix()).exists());
+        assert!(!data_path.join("bar").exists());
+
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let bars_out = catalog.bars(None, None, None).unwrap();
+
+        assert_eq!(bars_out, vec![bar_1, bar_2]);
+        assert_eq!(bars_out[0].bar_type, bar_type);
+        assert!(bars_out[0].ts_init < bars_out[1].ts_init);
     }
 }

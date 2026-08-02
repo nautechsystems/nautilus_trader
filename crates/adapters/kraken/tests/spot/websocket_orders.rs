@@ -46,6 +46,7 @@ use nautilus_kraken::{
 };
 use nautilus_model::identifiers::{AccountId, ClientOrderId, TraderId};
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use tokio_util::sync::CancellationToken;
 
 /// Shared state for the mock WebSocket server.
@@ -108,10 +109,10 @@ fn make_add_order_params(symbol: &str) -> KrakenWsAddOrderParams {
     KrakenWsAddOrderParams {
         order_type: KrakenOrderType::Limit,
         side: KrakenOrderSide::Buy,
-        order_qty: 0.001,
+        order_qty: dec!(0.001),
         symbol: symbol.to_string(),
         token: "test-token".to_string(),
-        limit_price: Some(50_000.0),
+        limit_price: Some(dec!(50000)),
         time_in_force: None,
         expire_time: None,
         cl_ord_id: Some("O-TEST-001".to_string()),

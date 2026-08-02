@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces deterministic simulation testing (DST) path bans in the in-scope crates.
 #
-# Rules (all applied to production code in the 16 in-scope crates):
+# Rules (all applied to production code in the 17 in-scope crates):
 #   1. No direct std::time::Instant::now(), std::time::SystemTime::now(), or
 #      chrono::Utc::now() reads
 #   2. No raw RNG entries (rand::thread_rng, rand::rng(), fastrand::,
@@ -9,11 +9,13 @@
 #   3. No unbiased tokio::select! (must have `biased;` as first token in block)
 #   4. No raw thread spawning (std::thread::spawn, std::thread::Builder::spawn,
 #      tokio::task::spawn_blocking) without cfg gating
-#   5. No AHashMap / AHashSet in crates/live/src/manager.rs or
+#   5. No AHashMap / AHashSet in crates/live/src/execution/manager.rs or
 #      crates/execution/src/matching_engine/engine.rs
 #   6. No direct tokio::net::TcpStream::connect / tokio::net::TcpListener::bind
 #      reaches that bypass the nautilus_network::net seam (the seam swaps to
 #      turmoil::net under the `turmoil` feature)
+#   7. No raw tokio::{time,task,runtime,signal} paths that bypass the madsim
+#      facade on production DST paths
 #
 # Use '// dst-ok' inline comment to allow specific exceptions.
 # Test modules (files under tests/, matching *_tests.rs, or lines inside an
@@ -33,9 +35,9 @@ NC='\033[0m'
 VIOLATIONS=0
 ALLOW_MARKER="dst-ok"
 
-# The 16 in-scope crates per phase3 upstream closure plan.
+# The 17 in-scope crates per phase3 upstream closure plan.
 IN_SCOPE_CRATES=(
-  "analysis" "common" "core" "cryptography" "data" "execution"
+  "analysis" "backtest" "common" "core" "cryptography" "data" "execution"
   "indicators" "live" "model" "network" "persistence" "portfolio"
   "risk" "serialization" "system" "trading"
 )
@@ -316,13 +318,21 @@ done < <(rg -n --no-heading \
 ################################################################################
 
 RULE5_FILES=(
-  "crates/live/src/manager.rs"
+  "crates/live/src/execution/manager.rs"
   "crates/execution/src/matching_engine/engine.rs"
 )
 
 for rule5_file in "${RULE5_FILES[@]}"; do
   echo "Checking AHashMap / AHashSet in $rule5_file..."
-  [[ -f "$rule5_file" ]] || continue
+
+  # A missing entry is itself a violation: silently skipping a moved file
+  # disarms the determinism guard (this happened when the reconciliation
+  # manager moved from crates/live/src/manager.rs).
+  if [[ ! -f "$rule5_file" ]]; then
+    report "rule5" "$rule5_file" "0" "(file not found)" \
+      "Update RULE5_FILES to the file's new location"
+    continue
+  fi
 
   while IFS=: read -r file line_num content; do
     [[ -z "$file" ]] && continue
@@ -412,6 +422,107 @@ while IFS=: read -r file line_num content; do
 done < <(rg -n --no-heading \
   '\bTcpStream::connect\b|\bTcpListener::bind\b' \
   "${GLOBS[@]}" --type rust 2> /dev/null || true)
+
+echo "Checking raw Tokio facade bypasses..."
+
+# Only these crates participate in the madsim build path that imports
+# `nautilus_common::live::dst`. Network and persistence own separate runtime
+# and transport seams, so the four-module facade does not apply to them.
+RULE7_CRATES=(
+  "common" "core" "data" "execution" "live" "portfolio" "risk" "system" "trading"
+)
+RULE7_GLOBS=()
+for c in "${RULE7_CRATES[@]}"; do
+  RULE7_GLOBS+=(--glob "crates/$c/src/**/*.rs")
+done
+
+# The facade and the process-wide real Tokio runtime define the seam and are
+# therefore allowed to name Tokio directly. `testing.rs` is test infrastructure
+# compiled as part of the library rather than production DST behavior.
+RULE7_ALLOWLIST=(
+  "crates/common/src/live/dst.rs"
+  "crates/common/src/live/runtime.rs"
+  "crates/common/src/testing.rs"
+)
+
+is_in_rule7_allowlist() {
+  local file
+  file=$(normalize_path "$1")
+  local entry
+  for entry in "${RULE7_ALLOWLIST[@]}"; do
+    [[ "$file" == "$entry" ]] && return 0
+  done
+  return 1
+}
+
+# Print the start line and normalized text for Tokio use statements that
+# import one of the facade modules, including rustfmt's merged multiline form.
+find_raw_tokio_facade_imports() {
+  awk '
+    function check_statement() {
+      normalized = statement
+      gsub(/[[:space:]]+/, " ", normalized)
+      direct = "tokio::[[:space:]]*(time|task|runtime|signal)(::|[[:space:]]*(;|as[[:space:]]))"
+      merged = "tokio::[[:space:]]*\\{([^;]*[^[:alnum:]_])?(time|task|runtime|signal)([^[:alnum:]_]|$)"
+      if (normalized ~ direct || normalized ~ merged) {
+        print start_line ":" normalized
+      }
+      in_statement = 0
+      statement = ""
+    }
+
+    /^[[:space:]]*(pub[[:space:]]+)?use[[:space:]]+tokio::/ {
+      in_statement = 1
+      start_line = NR
+      statement = $0
+      if ($0 ~ /;/) {
+        check_statement()
+      }
+      next
+    }
+
+    in_statement {
+      statement = statement " " $0
+      if ($0 ~ /;/) {
+        check_statement()
+      }
+    }
+  ' "$1"
+}
+
+while IFS=: read -r file line_num content; do
+  [[ -z "$file" ]] && continue
+  is_test_path "$file" && continue
+  is_in_test_module "$file" "$line_num" && continue
+  is_doc_comment "$content" && continue
+  [[ "$content" =~ $ALLOW_MARKER ]] && continue
+  is_in_rule7_allowlist "$file" && continue
+  [[ "$content" =~ ^[[:space:]]*(pub[[:space:]]+)?use[[:space:]] ]] && continue
+
+  has_preceding_dst_cfg "$file" "$line_num" && continue
+
+  report "rule7" "$file" "$line_num" "$content" \
+    "Route time, task, runtime, and signal calls through nautilus_common::live::dst or cfg-gate the site"
+done < <(rg -n --no-heading \
+  'tokio::(time|task|runtime|signal)::|\btokio::spawn\s*\(' \
+  "${RULE7_GLOBS[@]}" --type rust 2> /dev/null || true)
+
+for c in "${RULE7_CRATES[@]}"; do
+  while IFS= read -r file; do
+    while IFS=: read -r line_num content; do
+      [[ -z "$line_num" ]] && continue
+      is_test_path "$file" && continue
+      is_in_test_module "$file" "$line_num" && continue
+      [[ "$content" =~ $ALLOW_MARKER ]] && continue
+      is_in_rule7_allowlist "$file" && continue
+
+      has_preceding_dst_cfg "$file" "$line_num" && continue
+
+      report "rule7" "$file" "$line_num" "$content" \
+        "Import time, task, runtime, and signal through nautilus_common::live::dst or cfg-gate the site"
+    done < <(find_raw_tokio_facade_imports "$file")
+  done < <(rg --files --type rust "crates/$c/src")
+done
 
 ################################################################################
 # Summary

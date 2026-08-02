@@ -93,7 +93,7 @@ All three produce identical results for unspecified fields.
 Most adapter configs share a common set of fields:
 
 | Field                              | Type   | Default | Purpose                       |
-|------------------------------------|--------|---------|-------------------------------|
+| ---------------------------------- | ------ | ------- | ----------------------------- |
 | `http_timeout_secs`                | `u64`  | 60      | REST request timeout.         |
 | `max_retries`                      | `u32`  | 3       | Maximum retry attempts.       |
 | `retry_delay_initial_ms`           | `u64`  | 1,000   | Initial backoff delay.        |
@@ -117,8 +117,8 @@ from nautilus_trader.config import LiveExecEngineConfig
 
 config = LiveExecEngineConfig(
     reconciliation=True,
-    open_check_interval_secs=30.0,       # Enable open order polling
-    open_check_lookback_mins=60,         # Look back 60 minutes
+    open_check_interval_secs=30.0,  # Enable open order polling
+    open_check_lookback_mins=60,  # Look back 60 minutes
     # position_check_interval_secs=None  # Disabled by default
 )
 ```

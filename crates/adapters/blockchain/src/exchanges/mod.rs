@@ -291,7 +291,7 @@ mod tests {
     #[rstest]
     #[case(Blockchain::Ethereum, DexType::UniswapV3, true, true, true)]
     #[case(Blockchain::Base, DexType::UniswapV3, true, true, true)]
-    #[case(Blockchain::Bsc, DexType::PancakeSwapV3, true, true, false)]
+    #[case(Blockchain::Bsc, DexType::PancakeSwapV3, true, true, true)]
     #[case(Blockchain::Base, DexType::AerodromeSlipstream, false, true, false)]
     #[case(Blockchain::Ethereum, DexType::UniswapV2, true, false, false)]
     #[case(Blockchain::Arbitrum, DexType::SushiSwapV2, false, false, false)]

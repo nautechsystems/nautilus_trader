@@ -40,7 +40,7 @@ fn build_populated_cache() -> Cache {
 fn bench_set_intersections(c: &mut Criterion) {
     let cache = build_populated_cache();
 
-    // Pre-create filter values so we don’t allocate in the hot loop
+    // Pre-create filter values so we don't allocate in the hot loop
     let venue = Venue::from("VENUE-1");
     let instrument = InstrumentId::from("SYMBOL-1.VENUE-1");
 

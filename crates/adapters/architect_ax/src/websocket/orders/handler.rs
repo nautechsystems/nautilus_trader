@@ -25,7 +25,7 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_model::identifiers::ClientOrderId;
+use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 use nautilus_network::websocket::{AuthTracker, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
@@ -48,6 +48,8 @@ pub struct WsOrderInfo {
     pub client_order_id: ClientOrderId,
     /// Instrument symbol.
     pub symbol: Ustr,
+    /// Numeric AX client ID.
+    pub cid: u64,
 }
 
 /// Commands sent from the outer client to the inner orders handler.
@@ -57,11 +59,8 @@ pub enum HandlerCommand {
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
     Disconnect,
-    /// Authenticate with the provided token.
-    Authenticate {
-        /// Bearer token for authentication.
-        token: String,
-    },
+    /// Mark the current handshake-authenticated session as ready.
+    SessionAuthenticated,
     /// Place an order.
     PlaceOrder {
         /// Request ID for correlation.
@@ -98,9 +97,10 @@ pub(crate) struct AxOrdersWsFeedHandler {
     pending_orders: AHashMap<i64, WsOrderInfo>,
     message_queue: VecDeque<AxOrdersWsMessage>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
+    venue_to_client_order_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
     cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
-    bearer_token: Option<String>,
-    needs_reauthentication: bool,
+    has_authenticated_session: bool,
+    needs_session_restore: bool,
 }
 
 impl AxOrdersWsFeedHandler {
@@ -112,6 +112,7 @@ impl AxOrdersWsFeedHandler {
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         auth_tracker: AuthTracker,
         orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
+        venue_to_client_order_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
         cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     ) -> Self {
         Self {
@@ -123,23 +124,24 @@ impl AxOrdersWsFeedHandler {
             pending_orders: AHashMap::new(),
             message_queue: VecDeque::new(),
             orders_metadata,
+            venue_to_client_order_id,
             cid_to_client_order_id,
-            bearer_token: None,
-            needs_reauthentication: false,
+            has_authenticated_session: false,
+            needs_session_restore: false,
         }
     }
 
-    async fn reauthenticate(&mut self) {
-        if self.bearer_token.is_some() {
-            log::debug!("Re-authenticating after reconnection");
+    fn restore_authenticated_session(&mut self) {
+        if self.has_authenticated_session {
+            log::debug!("Restoring authenticated session after reconnection");
 
-            // Ax uses Bearer token in connection headers which persist across reconnect
+            // The reconnect handshake has already succeeded with the current Bearer header.
             self.auth_tracker.succeed();
             self.message_queue
                 .push_back(AxOrdersWsMessage::Authenticated);
-            log::debug!("Re-authentication completed");
+            log::debug!("Authenticated session restored");
         } else {
-            log::warn!("Cannot re-authenticate: no bearer token stored");
+            log::warn!("Cannot restore authentication before the initial session succeeds");
         }
     }
 
@@ -148,9 +150,9 @@ impl AxOrdersWsFeedHandler {
     /// This method blocks until a message is available or the handler is stopped.
     pub(crate) async fn next(&mut self) -> Option<AxOrdersWsMessage> {
         loop {
-            if self.needs_reauthentication && self.message_queue.is_empty() {
-                self.needs_reauthentication = false;
-                self.reauthenticate().await;
+            if self.needs_session_restore && self.message_queue.is_empty() {
+                self.needs_session_restore = false;
+                self.restore_authenticated_session();
             }
 
             if let Some(msg) = self.message_queue.pop_front() {
@@ -216,11 +218,9 @@ impl AxOrdersWsFeedHandler {
                     inner.disconnect().await;
                 }
             }
-            HandlerCommand::Authenticate { token } => {
-                log::debug!("Authenticate command received");
-                self.bearer_token = Some(token);
-
-                // Ax uses Bearer token in connection headers (handled at connect time)
+            HandlerCommand::SessionAuthenticated => {
+                log::debug!("Session authenticated command received");
+                self.has_authenticated_session = true;
                 self.auth_tracker.succeed();
                 self.message_queue
                     .push_back(AxOrdersWsMessage::Authenticated);
@@ -240,10 +240,7 @@ impl AxOrdersWsFeedHandler {
                     log::error!("Failed to send place order message: {e}");
                     self.pending_orders.remove(&request_id);
                     self.orders_metadata.remove(&order_info.client_order_id);
-
-                    if let Some(cid) = order.cid {
-                        self.cid_to_client_order_id.remove(&cid);
-                    }
+                    self.cid_to_client_order_id.remove(&order_info.cid);
                     self.message_queue
                         .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
                             "Failed to send place order for {}: {e}",
@@ -318,7 +315,7 @@ impl AxOrdersWsFeedHandler {
                 if text == nautilus_network::RECONNECTED {
                     log::info!("Received WebSocket reconnected signal");
                     self.auth_tracker.fail("Reconnecting");
-                    self.needs_reauthentication = true;
+                    self.needs_session_restore = true;
                     return Some(vec![AxOrdersWsMessage::Reconnected]);
                 }
 
@@ -375,7 +372,35 @@ impl AxOrdersWsFeedHandler {
         match resp {
             AxWsOrderResponse::PlaceOrder(msg) => {
                 log::debug!("Place order response: rid={} oid={}", msg.rid, msg.res.oid);
-                self.pending_orders.remove(&msg.rid);
+                let Some(order_info) = self.pending_orders.remove(&msg.rid) else {
+                    log::warn!("Ignoring unsolicited place order response: rid={}", msg.rid);
+                    return Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)]);
+                };
+
+                let venue_order_id = match VenueOrderId::new_checked(&msg.res.oid) {
+                    Ok(venue_order_id) => venue_order_id,
+                    Err(e) => {
+                        log::warn!(
+                            "Invalid venue order ID in place response for {}: {e}",
+                            order_info.client_order_id,
+                        );
+                        return Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)]);
+                    }
+                };
+
+                if let Some(mut metadata) =
+                    self.orders_metadata.get_mut(&order_info.client_order_id)
+                {
+                    metadata.venue_order_id = Some(venue_order_id);
+                    self.venue_to_client_order_id
+                        .insert(venue_order_id, order_info.client_order_id);
+                } else {
+                    log::debug!(
+                        "Order tracking already cleared before place response: {}",
+                        order_info.client_order_id,
+                    );
+                }
+
                 Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)])
             }
             AxWsOrderResponse::CancelOrder(msg) => {
@@ -387,7 +412,7 @@ impl AxOrdersWsFeedHandler {
                 Some(vec![AxOrdersWsMessage::CancelOrderResponse(msg)])
             }
             AxWsOrderResponse::OpenOrders(msg) => {
-                log::debug!("Open orders response: {} orders", msg.res.len());
+                log::debug!("Open orders response: {} orders", msg.res.orders.len());
                 Some(vec![AxOrdersWsMessage::OpenOrdersResponse(msg)])
             }
             AxWsOrderResponse::List(msg) => {
@@ -417,12 +442,18 @@ mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
     use dashmap::DashMap;
+    use nautilus_model::{
+        identifiers::{InstrumentId, StrategyId, TraderId},
+        types::Currency,
+    };
     use nautilus_network::websocket::AuthTracker;
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
-    use crate::websocket::messages::{AxWsPlaceOrderResponse, AxWsPlaceOrderResult};
+    use crate::websocket::messages::{
+        AxWsOrderError, AxWsOrderErrorResponse, AxWsPlaceOrderResponse, AxWsPlaceOrderResult,
+    };
 
     fn test_handler() -> AxOrdersWsFeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -434,18 +465,26 @@ mod tests {
             AuthTracker::default(),
             Arc::new(DashMap::new()),
             Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
         )
     }
 
     #[rstest]
-    fn test_place_order_response_cleans_pending_order() {
+    fn test_place_order_response_records_venue_identity() {
         let mut handler = test_handler();
         let request_id = 11;
+        let cid = 1011;
+        let client_order_id = ClientOrderId::from("CID-11");
+        let venue_order_id = VenueOrderId::from("OID-11");
+        handler
+            .orders_metadata
+            .insert(client_order_id, test_order_metadata(client_order_id));
         handler.pending_orders.insert(
             request_id,
             WsOrderInfo {
-                client_order_id: ClientOrderId::from("CID-11"),
+                client_order_id,
                 symbol: Ustr::from("EURUSD-PERP"),
+                cid,
             },
         );
 
@@ -457,8 +496,93 @@ mod tests {
         });
 
         let messages = handler.handle_response(response).unwrap();
+
         assert_eq!(messages.len(), 1);
         assert!(handler.pending_orders.get(&request_id).is_none());
+        assert_eq!(
+            handler
+                .orders_metadata
+                .get(&client_order_id)
+                .and_then(|metadata| metadata.venue_order_id),
+            Some(venue_order_id),
+        );
+        assert_eq!(
+            handler
+                .venue_to_client_order_id
+                .get(&venue_order_id)
+                .map(|client_order_id| *client_order_id),
+            Some(client_order_id),
+        );
+    }
+
+    #[rstest]
+    fn test_late_place_order_response_does_not_restore_cleared_tracking() {
+        let mut handler = test_handler();
+        let request_id = 12;
+        let client_order_id = ClientOrderId::from("CID-12");
+        handler.pending_orders.insert(
+            request_id,
+            WsOrderInfo {
+                client_order_id,
+                symbol: Ustr::from("EURUSD-PERP"),
+                cid: 1012,
+            },
+        );
+
+        let response = AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+            rid: request_id,
+            res: AxWsPlaceOrderResult {
+                oid: "OID-12".to_string(),
+            },
+        });
+
+        let messages = handler.handle_response(response).unwrap();
+
+        assert_eq!(messages.len(), 1);
+        assert!(handler.pending_orders.get(&request_id).is_none());
+        assert!(!handler.orders_metadata.contains_key(&client_order_id));
+        assert!(handler.venue_to_client_order_id.is_empty());
+    }
+
+    #[rstest]
+    fn test_place_order_error_preserves_cid_for_reconciliation() {
+        let mut handler = test_handler();
+        let request_id = 13;
+        let cid = 1013;
+        let client_order_id = ClientOrderId::from("CID-13");
+        handler
+            .orders_metadata
+            .insert(client_order_id, test_order_metadata(client_order_id));
+        handler.cid_to_client_order_id.insert(cid, client_order_id);
+        handler.pending_orders.insert(
+            request_id,
+            WsOrderInfo {
+                client_order_id,
+                symbol: Ustr::from("EURUSD-PERP"),
+                cid,
+            },
+        );
+
+        let messages = handler
+            .handle_raw_message(AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
+                rid: request_id,
+                err: AxWsOrderError {
+                    code: 400,
+                    msg: "invalid order".to_string(),
+                },
+            }))
+            .unwrap();
+
+        assert_eq!(messages.len(), 1);
+        assert!(handler.pending_orders.get(&request_id).is_none());
+        assert!(!handler.orders_metadata.contains_key(&client_order_id));
+        assert_eq!(
+            handler
+                .cid_to_client_order_id
+                .get(&cid)
+                .map(|client_order_id| *client_order_id),
+            Some(client_order_id),
+        );
     }
 
     #[rstest]
@@ -468,5 +592,37 @@ mod tests {
         let event = AxWsOrderEvent::Heartbeat;
         let result = handler.handle_event(event);
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_session_is_restored_after_reconnect() {
+        let mut handler = test_handler();
+
+        handler
+            .handle_command(HandlerCommand::SessionAuthenticated)
+            .await;
+        let initial = handler.message_queue.pop_front();
+        handler.auth_tracker.fail("Reconnecting");
+        handler.restore_authenticated_session();
+        let restored = handler.message_queue.pop_front();
+
+        assert!(handler.has_authenticated_session);
+        assert!(matches!(initial, Some(AxOrdersWsMessage::Authenticated)));
+        assert!(matches!(restored, Some(AxOrdersWsMessage::Authenticated)));
+        assert!(handler.auth_tracker.is_authenticated());
+    }
+
+    fn test_order_metadata(client_order_id: ClientOrderId) -> OrderMetadata {
+        OrderMetadata {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("EURUSD-PERP.AX"),
+            client_order_id,
+            venue_order_id: None,
+            ts_init: 0.into(),
+            size_precision: 0,
+            price_precision: 2,
+            quote_currency: Currency::USD(),
+        }
     }
 }

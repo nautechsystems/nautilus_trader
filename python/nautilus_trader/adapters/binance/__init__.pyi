@@ -2,11 +2,22 @@
 
 import decimal
 import enum
+import os
+import pathlib
 import typing
 
+import pandas as pd
+
 from nautilus_trader import model
+from nautilus_trader import network
+from nautilus_trader.adapters.binance.instruments import (
+    load_binance_instruments as load_binance_instruments,
+)
 
 __all__ = [
+    "BINANCE",
+    "BINANCE_CLIENT_ID",
+    "BINANCE_VENUE",
     "BinanceBar",
     "BinanceDataClientConfig",
     "BinanceDataClientFactory",
@@ -14,16 +25,27 @@ __all__ = [
     "BinanceExecClientConfig",
     "BinanceExecutionClientFactory",
     "BinanceFuturesLiquidation",
+    "BinanceFuturesMarkPriceUpdate",
     "BinanceFuturesOpenInterest",
     "BinanceFuturesOpenInterestHist",
     "BinanceFuturesOpenInterestHistPoint",
     "BinanceFuturesTicker",
+    "BinanceInstrumentProviderConfig",
     "BinanceMarginType",
     "BinancePositionSide",
     "BinanceProductType",
     "BinanceSpotMarketDataMode",
+    "BinanceSpotTicker",
+    "decode_binance_futures_client_order_id",
+    "decode_binance_spot_client_order_id",
     "get_binance_arrow_schema_map",
+    "load_binance_instruments",
+    "load_binance_order_book_deltas",
 ]
+
+BINANCE: str
+BINANCE_CLIENT_ID: model.ClientId
+BINANCE_VENUE: model.Venue
 
 @typing.final
 class BinanceBar:
@@ -58,6 +80,28 @@ class BinanceBar:
 
 @typing.final
 class BinanceDataClientConfig:
+    @property
+    def product_type(self) -> BinanceProductType: ...
+    @property
+    def environment(self) -> BinanceEnvironment: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def spot_market_data_mode(self) -> BinanceSpotMarketDataMode: ...
+    @property
+    def instrument_provider(self) -> BinanceInstrumentProviderConfig: ...
+    @property
+    def instrument_refresh_interval_secs(self) -> int: ...
+    @property
+    def instrument_status_poll_secs(self) -> int: ...
+    @property
+    def recv_window_ms(self) -> int: ...
+    @property
+    def us(self) -> bool: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         product_type: BinanceProductType | None = None,
@@ -67,8 +111,16 @@ class BinanceDataClientConfig:
         api_key: str | None = None,
         api_secret: str | None = None,
         spot_market_data_mode: BinanceSpotMarketDataMode | None = None,
+        instrument_provider: BinanceInstrumentProviderConfig | None = None,
+        instrument_refresh_interval_secs: int | None = None,
         instrument_status_poll_secs: int | None = None,
+        proxy_url: str | None = None,
+        recv_window_ms: int | None = None,
+        us: bool = False,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class BinanceDataClientFactory:
@@ -77,6 +129,52 @@ class BinanceDataClientFactory:
 
 @typing.final
 class BinanceExecClientConfig:
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def account_id(self) -> model.AccountId: ...
+    @property
+    def product_type(self) -> BinanceProductType: ...
+    @property
+    def environment(self) -> BinanceEnvironment: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def base_url_ws_trading(self) -> str | None: ...
+    @property
+    def use_ws_trading(self) -> bool: ...
+    @property
+    def ws_trading_setup_timeout_ms(self) -> int: ...
+    @property
+    def instrument_provider(self) -> BinanceInstrumentProviderConfig: ...
+    @property
+    def instrument_refresh_interval_secs(self) -> int: ...
+    @property
+    def use_gtd(self) -> bool: ...
+    @property
+    def use_position_ids(self) -> bool: ...
+    @property
+    def oms_type(self) -> model.OmsType | None: ...
+    @property
+    def default_taker_fee(self) -> decimal.Decimal: ...
+    @property
+    def recv_window_ms(self) -> int: ...
+    @property
+    def us(self) -> bool: ...
+    @property
+    def futures_leverages(self) -> dict[str, int] | None: ...
+    @property
+    def futures_margin_types(self) -> dict[str, BinanceMarginType] | None: ...
+    @property
+    def treat_expired_as_canceled(self) -> bool: ...
+    @property
+    def use_trade_lite(self) -> bool: ...
+    @property
+    def bnfcr_currency(self) -> model.Currency: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         trader_id: model.TraderId,
@@ -87,8 +185,16 @@ class BinanceExecClientConfig:
         base_url_ws: str | None = None,
         base_url_ws_trading: str | None = None,
         use_ws_trading: bool = True,
+        ws_trading_setup_timeout_ms: int | None = None,
+        instrument_provider: BinanceInstrumentProviderConfig | None = None,
+        instrument_refresh_interval_secs: int | None = None,
+        use_gtd: bool = True,
         use_position_ids: bool = True,
+        oms_type: model.OmsType | None = None,
         default_taker_fee: float | None = None,
+        proxy_url: str | None = None,
+        recv_window_ms: int | None = None,
+        us: bool = False,
         api_key: str | None = None,
         api_secret: str | None = None,
         futures_leverages: typing.Mapping[str, int] | None = None,
@@ -96,7 +202,10 @@ class BinanceExecClientConfig:
         treat_expired_as_canceled: bool = False,
         use_trade_lite: bool = False,
         bnfcr_currency: model.Currency | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class BinanceExecutionClientFactory:
@@ -117,6 +226,25 @@ class BinanceFuturesLiquidation:
     def last_filled_qty(self) -> model.Quantity: ...
     @property
     def accumulated_qty(self) -> model.Quantity: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+@typing.final
+class BinanceFuturesMarkPriceUpdate:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def mark_price(self) -> model.Price: ...
+    @property
+    def index_price(self) -> model.Price: ...
+    @property
+    def estimated_settle_price(self) -> model.Price: ...
+    @property
+    def funding_rate(self) -> decimal.Decimal: ...
+    @property
+    def next_funding_time(self) -> int | None: ...
     @property
     def ts_event(self) -> int: ...
     @property
@@ -195,6 +323,79 @@ class BinanceFuturesTicker:
     def ts_init(self) -> int: ...
 
 @typing.final
+class BinanceInstrumentProviderConfig:
+    def __init__(
+        self,
+        load_all: bool = True,
+        load_ids: typing.Sequence[str] | None = None,
+        filters: typing.Mapping[str, typing.Any] | None = None,
+        filter_callable: str | None = None,
+        log_warnings: bool = True,
+        query_commission_rates: bool = False,
+    ) -> None: ...
+    @property
+    def load_all(self) -> bool: ...
+    @property
+    def load_ids(self) -> list[str] | None: ...
+    @property
+    def filters(self) -> typing.Any: ...
+    @property
+    def filter_callable(self) -> str | None: ...
+    @property
+    def log_warnings(self) -> bool: ...
+    @property
+    def query_commission_rates(self) -> bool: ...
+
+@typing.final
+class BinanceSpotTicker:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def price_change(self) -> decimal.Decimal: ...
+    @property
+    def price_change_percent(self) -> decimal.Decimal: ...
+    @property
+    def weighted_avg_price(self) -> decimal.Decimal: ...
+    @property
+    def prev_close_price(self) -> decimal.Decimal: ...
+    @property
+    def last_price(self) -> decimal.Decimal: ...
+    @property
+    def last_qty(self) -> decimal.Decimal: ...
+    @property
+    def bid_price(self) -> decimal.Decimal: ...
+    @property
+    def bid_qty(self) -> decimal.Decimal: ...
+    @property
+    def ask_price(self) -> decimal.Decimal: ...
+    @property
+    def ask_qty(self) -> decimal.Decimal: ...
+    @property
+    def open_price(self) -> decimal.Decimal: ...
+    @property
+    def high_price(self) -> decimal.Decimal: ...
+    @property
+    def low_price(self) -> decimal.Decimal: ...
+    @property
+    def volume(self) -> decimal.Decimal: ...
+    @property
+    def quote_volume(self) -> decimal.Decimal: ...
+    @property
+    def open_time(self) -> int: ...
+    @property
+    def close_time(self) -> int: ...
+    @property
+    def first_trade_id(self) -> int: ...
+    @property
+    def last_trade_id(self) -> int: ...
+    @property
+    def num_trades(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+@typing.final
 class BinanceEnvironment(enum.Enum):
     LIVE = ...
     TESTNET = ...
@@ -227,3 +428,8 @@ class BinanceSpotMarketDataMode(enum.Enum):
     Json = ...
 
 def get_binance_arrow_schema_map(cls: type) -> typing.Any: ...
+def decode_binance_futures_client_order_id(encoded: str) -> str: ...
+def decode_binance_spot_client_order_id(encoded: str) -> str: ...
+def load_binance_order_book_deltas(
+    file_path: str | os.PathLike | pathlib.Path, nrows: int | None = None
+) -> pd.DataFrame: ...

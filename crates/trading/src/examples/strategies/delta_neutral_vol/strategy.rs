@@ -23,7 +23,7 @@ use nautilus_core::params::Params;
 use nautilus_model::{
     data::{QuoteTick, black_scholes::compute_greeks, option_chain::OptionGreeks},
     enums::{OptionKind, OrderSide, TimeInForce},
-    events::{OrderCanceled, OrderFilled},
+    events::{OrderCanceled, OrderDenied, OrderExpired, OrderFilled, OrderRejected},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
     orders::Order,
@@ -476,7 +476,72 @@ impl DeltaNeutralVol {
     }
 }
 
-nautilus_strategy!(DeltaNeutralVol);
+nautilus_strategy!(DeltaNeutralVol, {
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        let qty = event.last_qty.as_f64();
+        let signed_qty = match event.order_side {
+            OrderSide::Buy => qty,
+            OrderSide::Sell => -qty,
+            _ => 0.0,
+        };
+
+        if event.instrument_id == self.config.hedge_instrument_id {
+            self.hedge_position += signed_qty;
+
+            let is_closed = self
+                .cache()
+                .order(&event.client_order_id)
+                .is_some_and(|o| o.is_closed());
+
+            if is_closed {
+                self.hedge_pending = false;
+            }
+        } else if Some(event.instrument_id) == self.call_instrument_id {
+            self.call_position += signed_qty;
+        } else if Some(event.instrument_id) == self.put_instrument_id {
+            self.put_position += signed_qty;
+        }
+
+        log::info!(
+            "Fill: {} {:.4} {} | positions: call={}, put={}, hedge={}",
+            event.order_side,
+            event.last_qty,
+            event.instrument_id,
+            self.call_position,
+            self.put_position,
+            self.hedge_position,
+        );
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {
+        let instrument_id = self
+            .cache()
+            .order(&event.client_order_id)
+            .map(|o| o.instrument_id());
+
+        if instrument_id == Some(self.config.hedge_instrument_id) {
+            self.hedge_pending = false;
+        }
+    }
+
+    fn on_order_rejected(&mut self, event: OrderRejected) {
+        if event.instrument_id == self.config.hedge_instrument_id {
+            self.hedge_pending = false;
+        }
+    }
+
+    fn on_order_denied(&mut self, event: OrderDenied) {
+        if event.instrument_id == self.config.hedge_instrument_id {
+            self.hedge_pending = false;
+        }
+    }
+
+    fn on_order_expired(&mut self, event: OrderExpired) {
+        if event.instrument_id == self.config.hedge_instrument_id {
+            self.hedge_pending = false;
+        }
+    }
+});
 
 impl Debug for DeltaNeutralVol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -695,7 +760,7 @@ impl DataActor for DeltaNeutralVol {
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.clock().cancel_timer(REHEDGE_TIMER);
 
-        let ids: Vec<InstrumentId> = self.subscribed_greeks.drain(..).collect();
+        let ids: Vec<InstrumentId> = std::mem::take(&mut self.subscribed_greeks);
         let client_id = self.config.client_id;
 
         for instrument_id in ids {
@@ -794,57 +859,6 @@ impl DataActor for DeltaNeutralVol {
                 quote.ask_price,
                 quote.instrument_id,
             );
-        }
-
-        Ok(())
-    }
-
-    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        let qty = event.last_qty.as_f64();
-        let signed_qty = match event.order_side {
-            OrderSide::Buy => qty,
-            OrderSide::Sell => -qty,
-            _ => 0.0,
-        };
-
-        if event.instrument_id == self.config.hedge_instrument_id {
-            self.hedge_position += signed_qty;
-
-            let is_closed = self
-                .cache()
-                .order(&event.client_order_id)
-                .is_some_and(|o| o.is_closed());
-
-            if is_closed {
-                self.hedge_pending = false;
-            }
-        } else if Some(event.instrument_id) == self.call_instrument_id {
-            self.call_position += signed_qty;
-        } else if Some(event.instrument_id) == self.put_instrument_id {
-            self.put_position += signed_qty;
-        }
-
-        log::info!(
-            "Fill: {} {:.4} {} | positions: call={}, put={}, hedge={}",
-            event.order_side,
-            event.last_qty,
-            event.instrument_id,
-            self.call_position,
-            self.put_position,
-            self.hedge_position,
-        );
-
-        Ok(())
-    }
-
-    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
-        let instrument_id = self
-            .cache()
-            .order(&event.client_order_id)
-            .map(|o| o.instrument_id());
-
-        if instrument_id == Some(self.config.hedge_instrument_id) {
-            self.hedge_pending = false;
         }
 
         Ok(())

@@ -6,34 +6,28 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
-    "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
+    "HYPERLIQUID",
+    "HYPERLIQUID_CLIENT_ID",
+    "HYPERLIQUID_VENUE",
     "HyperliquidAllDexsAssetCtxs",
     "HyperliquidAllMids",
-    "HyperliquidConditionalOrderType",
     "HyperliquidDataClientConfig",
     "HyperliquidDataClientFactory",
     "HyperliquidEnvironment",
     "HyperliquidExecClientConfig",
     "HyperliquidExecFactoryConfig",
     "HyperliquidExecutionClientFactory",
-    "HyperliquidHttpClient",
     "HyperliquidOpenInterest",
     "HyperliquidProductType",
-    "HyperliquidRawHttpClient",
-    "HyperliquidTpSl",
-    "HyperliquidTrailingOffsetType",
-    "HyperliquidWebSocketClient",
-    "builder_fee_approve",
-    "builder_fee_revoke",
-    "get_hyperliquid_http_base_url",
-    "get_hyperliquid_ws_url",
-    "hyperliquid_cloid_from_client_order_id",
-    "hyperliquid_product_type_from_symbol",
-    "hyperliquid_resolve_execution_account_address",
+    "HyperliquidPublicTrade",
 ]
 
+HYPERLIQUID: str
+HYPERLIQUID_CLIENT_ID: model.ClientId
+HYPERLIQUID_VENUE: model.Venue
 HYPERLIQUID_POST_ONLY_WOULD_MATCH: str
 
 @typing.final
@@ -71,6 +65,32 @@ class HyperliquidAllMids:
 
 @typing.final
 class HyperliquidDataClientConfig:
+    @property
+    def environment(self) -> HyperliquidEnvironment: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def ws_timeout_secs(self) -> int: ...
+    @property
+    def update_instruments_interval_mins(self) -> int: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def stale_stream_receive_timeout_secs(self) -> int: ...
+    @property
+    def stream_health_check_interval_secs(self) -> int: ...
+    @property
+    def stale_stream_warning_cooldown_secs(self) -> int: ...
+    @property
+    def stale_stream_recovery_enabled(self) -> bool: ...
+    @property
+    def stale_stream_recovery_cooldown_secs(self) -> int: ...
+    @property
+    def stale_stream_max_targeted_resubscribes(self) -> int: ...
     def __init__(
         self,
         environment: HyperliquidEnvironment | None = None,
@@ -81,7 +101,16 @@ class HyperliquidDataClientConfig:
         http_timeout_secs: int | None = None,
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
+        stale_stream_receive_timeout_secs: int | None = None,
+        stream_health_check_interval_secs: int | None = None,
+        stale_stream_warning_cooldown_secs: int | None = None,
+        stale_stream_recovery_enabled: bool | None = None,
+        stale_stream_recovery_cooldown_secs: int | None = None,
+        stale_stream_max_targeted_resubscribes: int | None = None,
     ) -> None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class HyperliquidDataClientFactory:
@@ -90,6 +119,36 @@ class HyperliquidDataClientFactory:
 
 @typing.final
 class HyperliquidExecClientConfig:
+    @property
+    def vault_address(self) -> str | None: ...
+    @property
+    def account_address(self) -> str | None: ...
+    @property
+    def environment(self) -> HyperliquidEnvironment: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_exchange(self) -> str | None: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def max_retries(self) -> int: ...
+    @property
+    def retry_delay_initial_ms(self) -> int: ...
+    @property
+    def retry_delay_max_ms(self) -> int: ...
+    @property
+    def normalize_prices(self) -> bool: ...
+    @property
+    def market_order_slippage_bps(self) -> int: ...
+    @property
+    def include_builder_attribution(self) -> bool: ...
+    @property
+    def ws_post_timeout_secs(self) -> int: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         private_key: str | None = None,
@@ -108,10 +167,19 @@ class HyperliquidExecClientConfig:
         market_order_slippage_bps: int | None = None,
         include_builder_attribution: bool | None = None,
         ws_post_timeout_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class HyperliquidExecFactoryConfig:
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def account_id(self) -> model.AccountId: ...
+    @property
+    def config(self) -> HyperliquidExecClientConfig: ...
     def __init__(
         self,
         trader_id: model.TraderId,
@@ -178,6 +246,13 @@ class HyperliquidHttpClient:
         end: datetime.datetime | None = None,
         limit: int | None = None,
     ) -> typing.Any: ...
+    def request_public_trades(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+    ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
@@ -207,7 +282,7 @@ class HyperliquidHttpClient:
     def modify_order(
         self,
         instrument_id: model.InstrumentId,
-        venue_order_id: model.VenueOrderId,
+        venue_order_id: model.VenueOrderId | None,
         order_side: model.OrderSide,
         order_type: model.OrderType,
         price: model.Price,
@@ -270,7 +345,50 @@ class HyperliquidOpenInterest:
     def encode_record_batch_py(self, items: list) -> typing.Any: ...
 
 @typing.final
-class HyperliquidRawHttpClient: ...
+class HyperliquidPublicTrade:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def price(self) -> typing.Any: ...
+    @property
+    def size(self) -> typing.Any: ...
+    @property
+    def aggressor_side(self) -> typing.Any: ...
+    @property
+    def trade_id(self) -> str: ...
+    @property
+    def buyer(self) -> str: ...
+    @property
+    def seller(self) -> str: ...
+    @property
+    def hash(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        price: typing.Any,
+        size: typing.Any,
+        aggressor_side: typing.Any,
+        trade_id: str,
+        buyer: str,
+        seller: str,
+        hash: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> HyperliquidPublicTrade: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    @staticmethod
+    def to_arrow_record_batch_bytes(data: typing.Sequence[HyperliquidPublicTrade]) -> bytes: ...
 
 @typing.final
 class HyperliquidWebSocketClient:
@@ -321,7 +439,7 @@ class HyperliquidWebSocketClient:
         self,
         signer: HyperliquidHttpClient,
         instrument_id: model.InstrumentId,
-        venue_order_id: model.VenueOrderId,
+        venue_order_id: model.VenueOrderId | None,
         order_side: model.OrderSide,
         order_type: model.OrderType,
         price: model.Price,
@@ -348,6 +466,8 @@ class HyperliquidWebSocketClient:
     def close(self) -> typing.Any: ...
     def subscribe_trades(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def unsubscribe_trades(self, instrument_id: model.InstrumentId) -> typing.Any: ...
+    def subscribe_public_trades(self, instrument_id: model.InstrumentId) -> typing.Any: ...
+    def unsubscribe_public_trades(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def subscribe_all_mids(self) -> typing.Any: ...
     def subscribe_all_dexs_asset_ctxs(self) -> typing.Any: ...
     def subscribe_all_mids_with_dex(self, dex: str | None = ...) -> typing.Any: ...
@@ -360,6 +480,7 @@ class HyperliquidWebSocketClient:
     def subscribe_book_snapshots(
         self, instrument_id: model.InstrumentId, _book_type: int, _depth: int
     ) -> typing.Any: ...
+    def unsubscribe_book_snapshots(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def subscribe_quotes(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def unsubscribe_quotes(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def subscribe_bars(self, bar_type: model.BarType) -> typing.Any: ...

@@ -1,0 +1,16 @@
+{
+  "account": 0,
+  "orderID": "550e8400-e29b-41d4-a716-446655440003",
+  "clOrdID": "cancel-control",
+  "symbol": "XBTUSD",
+  "side": "Buy",
+  "orderQty": 100,
+  "leavesQty": 0,
+  "cumQty": 0,
+  "ordStatus": "Canceled",
+  "ordType": "Limit",
+  "timeInForce": "GoodTillCancel",
+  "workingIndicator": false,
+  "transactTime": "2026-07-20T21:23:23.168Z",
+  "timestamp": "2026-07-20T21:23:23.168Z"
+}

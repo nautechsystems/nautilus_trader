@@ -97,6 +97,18 @@ impl PyOrderFactory {
         ))))
     }
 
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.0.borrow().trader_id()
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.0.borrow().strategy_id()
+    }
+
     #[pyo3(name = "get_client_order_id_count")]
     fn py_get_client_order_id_count(&self) -> usize {
         self.0.borrow().client_order_id_count()
@@ -620,7 +632,7 @@ impl PyOrderFactory {
         instrument_id: InstrumentId,
         order_side: OrderSide,
         quantity: Quantity,
-        price: Price,
+        price: Option<Price>,
         limit_offset: Decimal,
         trailing_offset: Decimal,
         trailing_offset_type: Option<TrailingOffsetType>,

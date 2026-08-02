@@ -134,7 +134,7 @@ pub(crate) async fn retire_local_instrument_state(
     pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
-    ws: &crate::websocket::client::WsSubscriptionHandle,
+    ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
 ) {
     let token_id = resolve_token_id_from(instruments, instrument_id).ok();
 
@@ -195,7 +195,7 @@ pub(crate) async fn retire_expired_local_instruments(
     pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
-    ws: &crate::websocket::client::WsSubscriptionHandle,
+    ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
 ) {
     let expired_candidates: Vec<(InstrumentId, String)> = {
         let loaded = instruments.load();
@@ -274,7 +274,7 @@ mod tests {
     use super::*;
     use crate::{
         resolve::upsert_resolve_watch_entry_from_instrument,
-        websocket::{client::WsSubscriptionHandle, handler::HandlerCommand},
+        websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle},
     };
 
     fn seed_expired_instrument(raw_symbol: &str, condition_id: &str) -> InstrumentAny {
@@ -374,7 +374,7 @@ mod tests {
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let ws = WsSubscriptionHandle::from_sender(tx);
+        let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &["0xTOKEN_WATCHED"]);
 
         let inst = seed_expired_instrument("0xTOKEN_WATCHED", "0xCOND-WATCHED");
         let instrument_id = inst.id();

@@ -317,15 +317,23 @@ impl QuoteTick {
     }
 
     /// Returns the `Price` for this quote depending on the given `price_type`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `price_type` is not `Bid`, `Ask`, or `Mid` (a quote has no `Last` price).
     #[pyo3(name = "extract_price")]
-    fn py_extract_price(&self, price_type: PriceType) -> Price {
-        self.extract_price(price_type)
+    fn py_extract_price(&self, price_type: PriceType) -> PyResult<Price> {
+        self.extract_price(price_type).map_err(to_pyvalue_err)
     }
 
     /// Returns the `Quantity` for this quote depending on the given `price_type`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `price_type` is not `Bid`, `Ask`, or `Mid` (a quote has no `Last` size).
     #[pyo3(name = "extract_size")]
-    fn py_extract_size(&self, price_type: PriceType) -> Quantity {
-        self.extract_size(price_type)
+    fn py_extract_size(&self, price_type: PriceType) -> PyResult<Quantity> {
+        self.extract_size(price_type).map_err(to_pyvalue_err)
     }
 
     /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
@@ -356,14 +364,18 @@ impl QuoteTick {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 
@@ -384,8 +396,7 @@ impl QuoteTick {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::Python;
+    use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
@@ -460,7 +471,7 @@ mod tests {
 
         Python::initialize();
         Python::attach(|py| {
-            let tick_pyobject = quote.into_py_any_unwrap(py);
+            let tick_pyobject = quote.into_py_any(py).unwrap();
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, quote);
         });

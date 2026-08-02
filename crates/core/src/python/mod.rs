@@ -31,6 +31,27 @@
 //! consumed from the `nautilus_trader` Python package without sacrificing type-safety or
 //! performance.
 
+/// Implements read-only Python getters for cloneable configuration fields.
+#[macro_export]
+macro_rules! impl_pyo3_config_getters {
+    ($config:ty { $($field:ident: $field_type:ty),+ $(,)? }) => {
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
+        #[pyo3::pymethods]
+        #[allow(
+            clippy::clone_on_copy,
+            reason = "one macro handles Copy and owned configuration fields"
+        )]
+        impl $config {
+            $(
+                #[getter]
+                fn $field(&self) -> $field_type {
+                    self.$field.clone()
+                }
+            )+
+        }
+    };
+}
+
 pub mod casing;
 pub mod datetime;
 pub mod enums;
@@ -42,10 +63,10 @@ pub mod string;
 pub mod uuid;
 pub mod version;
 
-use std::fmt::Display;
+use std::{convert::Infallible, fmt::Display};
 
 use pyo3::{
-    Py,
+    BoundObject, Py,
     conversion::IntoPyObjectExt,
     exceptions::{
         PyException, PyKeyError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
@@ -108,18 +129,18 @@ pub fn call_python_threadsafe(
     }
 }
 
-/// Extend `IntoPyObjectExt` helper trait to unwrap `Py<PyAny>` after conversion.
+/// Extends `IntoPyObjectExt` with an infallible conversion to `Py<PyAny>`.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
-    /// Convert `self` into a [`Py<PyAny>`] while *panicking* if the conversion fails.
-    ///
-    /// This is a convenience wrapper around [`IntoPyObjectExt::into_py_any`] that avoids the
-    /// cumbersome `Result` handling when we are certain that the conversion cannot fail (for
-    /// instance when we are converting primitives or other types that already implement the
-    /// necessary PyO3 traits).
+    /// Converts `self` into a [`Py<PyAny>`] when the underlying conversion is infallible.
     #[inline]
-    fn into_py_any_unwrap(self, py: Python<'py>) -> Py<PyAny> {
-        self.into_py_any(py)
-            .expect("Failed to convert type to Py<PyAny>")
+    fn into_py_any_unwrap(self, py: Python<'py>) -> Py<PyAny>
+    where
+        Self: IntoPyObject<'py, Error = Infallible>,
+    {
+        match self.into_pyobject(py) {
+            Ok(obj) => obj.into_any().unbind(),
+            Err(never) => match never {},
+        }
     }
 }
 

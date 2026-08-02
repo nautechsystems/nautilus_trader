@@ -14,9 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_model::identifiers::{
-    AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, PositionId,
-    StrategyId, Venue, VenueOrderId,
+use nautilus_model::{
+    enums::OmsType,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, PositionId,
+        StrategyId, Venue, VenueOrderId,
+    },
 };
 
 /// A key-value lookup index for a `Cache`.
@@ -31,6 +34,7 @@ pub(super) struct CacheIndex {
     pub(crate) order_strategy: AHashMap<ClientOrderId, StrategyId>,
     pub(crate) order_client: AHashMap<ClientOrderId, ClientId>,
     pub(crate) position_strategy: AHashMap<PositionId, StrategyId>,
+    pub(crate) position_oms: AHashMap<PositionId, OmsType>,
     pub(crate) position_orders: AHashMap<PositionId, AHashSet<ClientOrderId>>,
     pub(crate) instrument_orders: AHashMap<InstrumentId, AHashSet<ClientOrderId>>,
     pub(crate) instrument_positions: AHashMap<InstrumentId, AHashSet<PositionId>>,
@@ -68,6 +72,7 @@ impl Default for CacheIndex {
             order_strategy: AHashMap::new(),
             order_client: AHashMap::new(),
             position_strategy: AHashMap::new(),
+            position_oms: AHashMap::new(),
             position_orders: AHashMap::new(),
             instrument_orders: AHashMap::new(),
             instrument_positions: AHashMap::new(),
@@ -106,6 +111,7 @@ impl CacheIndex {
         self.order_strategy.clear();
         self.order_client.clear();
         self.position_strategy.clear();
+        self.position_oms.clear();
         self.position_orders.clear();
         self.instrument_orders.clear();
         self.instrument_positions.clear();

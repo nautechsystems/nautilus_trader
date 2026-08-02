@@ -98,10 +98,19 @@ impl MemoryBackend {
 
 impl EventStore for MemoryBackend {
     fn open_run(&mut self, mut manifest: RunManifest) -> Result<(), EventStoreError> {
-        if let Some(state) = &self.state
-            && !state.manifest.is_sealed()
-        {
-            return Err(EventStoreError::CrashedPredecessor);
+        if let Some(state) = &self.state {
+            if !state.manifest.is_sealed() {
+                return Err(EventStoreError::CrashedPredecessor);
+            }
+
+            // Mirror the redb backend: a same-id sealed reopen is an error, not a
+            // silent replacement of the predecessor's entries.
+            if state.manifest.run_id == manifest.run_id {
+                return Err(EventStoreError::Backend(format!(
+                    "run {} already sealed, status was {:?}",
+                    state.manifest.run_id, state.manifest.status,
+                )));
+            }
         }
 
         manifest.status = RunStatus::Running;
@@ -781,7 +790,7 @@ mod tests {
             other => panic!("expected Backend, was {other:?}"),
         }
         assert!(!open_backend.manifest().expect("manifest").is_sealed());
-        // The run is still writeable.
+        // The run is still writable
         open_backend
             .append_batch(&[append_with(1, 10, Vec::new())])
             .expect("append");
@@ -837,6 +846,35 @@ mod tests {
             backend.manifest().expect("manifest").run_id,
             "run-2".to_string(),
         );
+    }
+
+    #[rstest]
+    fn reopening_same_run_id_after_seal_fails() {
+        // Mirrors the redb backend: a same-id sealed reopen must not silently
+        // destroy the predecessor's entries.
+        let mut backend = MemoryBackend::new();
+        backend.open_run(manifest("run-1")).expect("open 1");
+        backend
+            .append_batch(&[append_with(1, 10, Vec::new())])
+            .expect("append");
+        backend.seal(RunStatus::Ended).expect("seal");
+
+        let err = backend
+            .open_run(manifest("run-1"))
+            .expect_err("must refuse same-id sealed reopen");
+
+        match err {
+            EventStoreError::Backend(msg) => {
+                assert!(msg.contains("already sealed"), "msg was: {msg}");
+            }
+            other => panic!("expected Backend, was {other:?}"),
+        }
+
+        assert!(
+            backend.scan_seq(1).expect("scan").is_some(),
+            "predecessor entry must survive refused reopen",
+        );
+        assert_eq!(backend.high_watermark().expect("hwm"), 1);
     }
 
     #[rstest]

@@ -304,6 +304,11 @@ pub struct DydxDataClientConfig {
     pub per_channel_subscription_limit: usize,
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DydxDataClientConfig {
+    network: DydxNetwork,
+});
+
 impl DydxDataClientConfig {
     /// Returns whether this is a testnet configuration.
     #[must_use]
@@ -389,6 +394,15 @@ pub struct DydxExecClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DydxExecClientConfig {
+    trader_id: TraderId,
+    account_id: AccountId,
+    network: DydxNetwork,
+    wallet_address: Option<String>,
+    subaccount_number: u32,
+});
 
 impl Default for DydxExecClientConfig {
     fn default() -> Self {

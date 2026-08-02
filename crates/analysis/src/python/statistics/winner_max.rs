@@ -24,6 +24,10 @@ use crate::{statistic::PortfolioStatistic, statistics::winner_max::MaxWinner};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MaxWinner {
+    /// Calculates the largest winning trade from realized PnLs.
+    ///
+    /// Only positive PnLs count as winners. Returns `NaN` for an empty series or
+    /// when there are no winning trades.
     #[new]
     fn py_new() -> Self {
         Self {}

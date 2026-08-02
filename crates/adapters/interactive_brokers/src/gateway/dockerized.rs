@@ -49,7 +49,14 @@ use crate::config::DockerizedIBGatewayConfig;
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum ContainerStatus {
@@ -79,6 +86,12 @@ pub enum ContainerStatus {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 #[cfg(feature = "gateway")]

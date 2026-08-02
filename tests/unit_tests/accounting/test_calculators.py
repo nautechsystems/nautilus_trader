@@ -106,8 +106,8 @@ class TestExchangeRateCalculator:
 
     def test_get_rate_for_inverse1(self):
         # Arrange
-        bid_rates = {"BTC/USD": 10501.5}
-        ask_rates = {"BTC/USD": 10500.0}
+        bid_rates = {"BTC/USD": 10500.0}
+        ask_rates = {"BTC/USD": 10501.5}
 
         # Act
         result = nautilus_pyo3.get_exchange_rate(
@@ -136,7 +136,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == pytest.approx(Decimal("0.009082652134423252"), abs=Decimal("1e-9"))
+        assert result == pytest.approx(Decimal("0.009080177971488241"), abs=Decimal("1e-9"))
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
@@ -167,7 +167,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result1 == pytest.approx(Decimal("0.011353315168029066"), abs=Decimal("1e-9"))
+        assert result1 == pytest.approx(Decimal("0.011348803863877317"), abs=Decimal("1e-9"))
         assert result2 == pytest.approx(Decimal("88.115013"), abs=Decimal("1e-9"))
 
     def test_calculate_exchange_rate_for_mid_price_type(self):

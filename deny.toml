@@ -35,19 +35,24 @@ ignore = [
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
 
-  # bincode 1.3.3 unmaintained, dev-only via madsim. Not a vulnerability.
-  # TODO: Monitor https://github.com/madsys-dev/madsim for migration
-  { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, dev-only via madsim (not a vulnerability)" },
+  # bincode 1.3.3 unmaintained, transitive via madsim and hypersync-client. Not a vulnerability.
+  # TODO: Monitor madsim and hypersync-client upstreams for migration
+  { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via madsim and hypersync-client (not a vulnerability)" },
 
   # capnp unsound APIs in constant::Reader and StructSchema, transitive via hypersync-client.
   # Fix requires upstream update to capnp >= 0.24.0. Low risk: internal schema handling only.
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
-  # proc-macro-error2 unmaintained, transitive via alloy and tabled_derive.
-  # No patched version is available; not a vulnerability.
-  # TODO: Monitor upstream alloy and tabled releases for migration away from proc-macro-error2
-  { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained via alloy and tabled_derive; no patch" },
+  # quick-xml duplicate-attribute check DoS, transitive via object_store 0.13.2.
+  # object_store has no release that depends on quick-xml >= 0.41.0.
+  # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml DoS via object_store 0.13.2; no fixed object_store release" },
+
+  # quick-xml NsReader namespace-allocation DoS, transitive via object_store 0.13.2.
+  # object_store has no release that depends on quick-xml >= 0.41.0.
+  # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release" },
 
   # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface; it is listed only in .cargo/audit.toml.
@@ -78,6 +83,9 @@ allow = [
   "Unlicense",
   "bzip2-1.0.6",
 ]
+
+# libfuzzer-sys bundles LLVM's libFuzzer runtime under NCSA
+exceptions = [{ allow = ["NCSA"], crate = "libfuzzer-sys@0.4.13" }]
 
 confidence-threshold = 0.8
 
@@ -130,14 +138,16 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-05-30
+# Last reviewed: 2026-07-15
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
+  { crate = "const-oid" },
   { crate = "crypto-common" },
   { crate = "digest" },
   { crate = "hmac" },
   { crate = "md-5" },
+  { crate = "sha1" },
   { crate = "sha2" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
@@ -187,9 +197,12 @@ skip = [
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
-  { crate = "rustc-hash" },
   { crate = "petgraph" },
   { crate = "socket2" },
+
+  # Signature traits - v2 via cosmrs/tendermint, v3 via ed25519-dalek
+  { crate = "ed25519" },
+  { crate = "signature" },
 
   # Perfect hash function crates - transitive
   { crate = "phf" },

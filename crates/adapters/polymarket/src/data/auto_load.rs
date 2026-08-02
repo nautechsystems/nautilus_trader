@@ -102,7 +102,7 @@ impl PolymarketDataClient {
         let active_trade_subs = self.active_trade_subs.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
-        let ws_client = self.ws_client.clone_subscription_handle();
+        let ws_client = self.ws_client.handle();
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
         let cancellation = self.cancellation_token.clone();
@@ -179,7 +179,7 @@ impl PolymarketDataClient {
 
                 for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
                     let params = GetGammaMarketsParams {
-                        condition_ids: Some(chunk.join(",")),
+                        condition_ids: Some(chunk.to_vec()),
                         ..Default::default()
                     };
 

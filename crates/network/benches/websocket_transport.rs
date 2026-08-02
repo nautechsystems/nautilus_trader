@@ -50,6 +50,17 @@ fn bench_receive_text(c: &mut Criterion) {
                 });
             },
         );
+        group.bench_with_input(
+            BenchmarkId::new("sockudo_ws", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        sockudo_receive_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
     }
 
     group.finish();
@@ -72,6 +83,17 @@ fn bench_send_text(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         tokio_tungstenite_send_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sockudo_ws", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        sockudo_send_text(payload_size).await.unwrap();
                     });
                 });
             },
@@ -100,6 +122,17 @@ fn bench_roundtrip_text(c: &mut Criterion) {
                         tokio_tungstenite_roundtrip_text(payload_size)
                             .await
                             .unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sockudo_ws", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        sockudo_roundtrip_text(payload_size).await.unwrap();
                     });
                 });
             },
@@ -207,6 +240,133 @@ async fn tokio_tungstenite_client(stream: DuplexStream) -> TokioWebSocketStream<
 
 async fn tokio_tungstenite_server(stream: DuplexStream) -> TokioWebSocketStream<DuplexStream> {
     TokioWebSocketStream::from_raw_socket(stream, Role::Server, None).await
+}
+
+macro_rules! define_sockudo_benches {
+    (
+        $receive:ident,
+        $send:ident,
+        $roundtrip:ident,
+        $client:ident,
+        $server:ident,
+        $module:ident
+    ) => {
+        async fn $receive(payload_size: usize) -> BenchResult {
+            let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+            let mut client = $client(client_io);
+            let mut server = $server(server_io);
+            let payload = "x".repeat(payload_size);
+
+            let server_task = tokio::spawn(async move {
+                for _ in 0..MESSAGE_COUNT {
+                    server
+                        .send($module::Message::Text(payload.clone().into()))
+                        .await?;
+                }
+
+                BenchResult::Ok(())
+            });
+
+            for _ in 0..MESSAGE_COUNT {
+                let message = client.next().await.transpose()?.unwrap();
+                match message {
+                    $module::Message::Text(data) => {
+                        black_box(data);
+                    }
+                    other => panic!("unexpected message: {other:?}"),
+                }
+            }
+
+            server_task.await??;
+            Ok(())
+        }
+
+        async fn $send(payload_size: usize) -> BenchResult {
+            let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+            let mut client = $client(client_io);
+            let mut server = $server(server_io);
+            let payload = "x".repeat(payload_size);
+
+            let server_task = tokio::spawn(async move {
+                for _ in 0..MESSAGE_COUNT {
+                    let message = server.next().await.transpose()?.unwrap();
+                    match message {
+                        $module::Message::Text(data) => {
+                            black_box(data);
+                        }
+                        other => panic!("unexpected message: {other:?}"),
+                    }
+                }
+
+                BenchResult::Ok(())
+            });
+
+            for _ in 0..MESSAGE_COUNT {
+                client
+                    .send($module::Message::Text(payload.clone().into()))
+                    .await?;
+            }
+
+            server_task.await??;
+            Ok(())
+        }
+
+        async fn $roundtrip(payload_size: usize) -> BenchResult {
+            let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+            let mut client = $client(client_io);
+            let mut server = $server(server_io);
+            let payload = "x".repeat(payload_size);
+
+            let server_task = tokio::spawn(async move {
+                for _ in 0..MESSAGE_COUNT {
+                    let message = server.next().await.transpose()?.unwrap();
+                    server.send(message).await?;
+                }
+
+                BenchResult::Ok(())
+            });
+
+            for _ in 0..MESSAGE_COUNT {
+                client
+                    .send($module::Message::Text(payload.clone().into()))
+                    .await?;
+                let message = client.next().await.transpose()?.unwrap();
+                match message {
+                    $module::Message::Text(data) => {
+                        black_box(data);
+                    }
+                    other => panic!("unexpected message: {other:?}"),
+                }
+            }
+
+            server_task.await??;
+            Ok(())
+        }
+
+        fn $client(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
+            $module::WebSocketStream::client(stream, sockudo_config())
+        }
+
+        fn $server(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
+            $module::WebSocketStream::server(stream, sockudo_config())
+        }
+    };
+}
+
+define_sockudo_benches!(
+    sockudo_receive_text,
+    sockudo_send_text,
+    sockudo_roundtrip_text,
+    sockudo_client,
+    sockudo_server,
+    sockudo_ws
+);
+
+fn sockudo_config() -> sockudo_ws::Config {
+    sockudo_ws::Config::builder()
+        .auto_ping(false)
+        .idle_timeout(0)
+        .build()
 }
 
 criterion_group!(

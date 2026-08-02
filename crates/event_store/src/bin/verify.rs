@@ -152,7 +152,29 @@ fn verify_run_file_inner(path: &Path) -> ExitCode {
     match Verifier::open_redb_file(path).and_then(|verifier| verifier.verify()) {
         Ok(report) => match scan_marker_sidecar(path, &report) {
             Ok(markers) => print_report(&report, &markers),
-            Err((marker_path, err)) => print_marker_error(marker_path.as_path(), &err),
+            Err((marker_path, err)) => {
+                if report.is_clean() {
+                    return print_marker_error(marker_path.as_path(), &err);
+                }
+
+                // Relay the entry findings before the marker error so a failing
+                // sidecar cannot mask them.
+                println!(
+                    "corrupt run_id={} status={:?} high_watermark={} entries_scanned={} findings={} markers=error quarantine=not-performed",
+                    report.run_id,
+                    report.status,
+                    report.high_watermark,
+                    report.entries_scanned,
+                    report.findings.len(),
+                );
+
+                for finding in &report.findings {
+                    print_finding(finding);
+                }
+
+                print_marker_error(marker_path.as_path(), &err);
+                ExitCode::from(EXIT_CORRUPT)
+            }
         },
         Err(e) => print_error(path, &e),
     }
@@ -300,6 +322,9 @@ fn print_finding(finding: &VerifyFinding) {
             embedded_seq,
         } => {
             println!("- seq mismatch at table key {table_key}: embedded seq was {embedded_seq}");
+        }
+        VerifyFinding::Undecodable { seq, reason } => {
+            println!("- undecodable entry at seq {seq}: {reason}");
         }
         VerifyFinding::IndexDrift { kind, key, drift } => {
             print_index_drift(*kind, key, *drift);

@@ -16,7 +16,7 @@
 //! Error structures and enumerations for the Bybit integration.
 //!
 //! The JSON error schema is described in the Bybit documentation under
-//! *Error Codes* – <https://bybit-exchange.github.io/docs/v5/error>.
+//! *Error Codes* - <https://bybit-exchange.github.io/docs/v5/error>.
 //! The types below mirror that structure and are reused across the entire
 //! crate.
 

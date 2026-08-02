@@ -302,7 +302,11 @@ fn live_mbo_payload(records: u64) -> Arc<[u8]> {
 
 fn live_mbo_msg(sequence: u64, flags: u8) -> dbn::MboMsg {
     let price = 100_000_000_000 + (sequence as i64 % 20) * 250_000_000;
-    let side = if sequence % 2 == 0 { b'B' } else { b'A' };
+    let side = if sequence.is_multiple_of(2) {
+        b'B'
+    } else {
+        b'A'
+    };
     let mut msg = mbo_msg_with_ts(
         INSTRUMENT_ID,
         b'A',
@@ -329,7 +333,7 @@ impl HistoricalFixtureServer {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let base_url = format!("http://{}/", listener.local_addr().unwrap());
             let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
-            let body = Arc::new(body);
+            let body = Arc::<[u8]>::from(body);
 
             let task = tokio::runtime::Handle::current().spawn(serve_historical_fixture(
                 listener,
@@ -357,7 +361,7 @@ impl HistoricalFixtureServer {
 
 async fn serve_historical_fixture(
     listener: TcpListener,
-    body: Arc<Vec<u8>>,
+    body: Arc<[u8]>,
     mut shutdown: tokio::sync::oneshot::Receiver<()>,
 ) {
     loop {
@@ -371,7 +375,7 @@ async fn serve_historical_fixture(
 
                 tokio::runtime::Handle::current().spawn(async move {
                     read_http_request(&mut stream).await;
-                    write_http_response(&mut stream, &body).await;
+                    write_http_response(&mut stream, body.as_ref()).await;
                 });
             }
         }

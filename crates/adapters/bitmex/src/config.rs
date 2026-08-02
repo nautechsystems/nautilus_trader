@@ -61,6 +61,9 @@ pub struct BitmexDataClientConfig {
     pub retry_delay_max_ms: u64,
     /// Optional heartbeat interval (seconds) for the WebSocket client.
     pub heartbeat_interval_secs: Option<u64>,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// Receive window in milliseconds for signed requests.
     ///
     /// This value determines how far in the future the `api-expires` timestamp will be set
@@ -96,6 +99,25 @@ pub struct BitmexDataClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BitmexDataClientConfig {
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    http_timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
+    heartbeat_interval_secs: Option<u64>,
+    auth_timeout_secs: Option<u64>,
+    recv_window_ms: u64,
+    active_only: bool,
+    update_instruments_interval_mins: Option<u64>,
+    environment: BitmexEnvironment,
+    max_requests_per_second: u32,
+    max_requests_per_minute: u32,
+    transport_backend: TransportBackend,
+});
 
 impl Default for BitmexDataClientConfig {
     fn default() -> Self {
@@ -180,6 +202,9 @@ pub struct BitmexExecClientConfig {
     /// Heartbeat interval (seconds) for the WebSocket client.
     #[builder(default = 5)]
     pub heartbeat_interval_secs: u64,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// Receive window in milliseconds for signed requests.
     ///
     /// This value determines how far in the future the `api-expires` timestamp will be set
@@ -230,6 +255,28 @@ pub struct BitmexExecClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BitmexExecClientConfig {
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
+    http_timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
+    heartbeat_interval_secs: u64,
+    auth_timeout_secs: Option<u64>,
+    recv_window_ms: u64,
+    active_only: bool,
+    environment: BitmexEnvironment,
+    account_id: Option<AccountId>,
+    max_requests_per_second: u32,
+    max_requests_per_minute: u32,
+    submitter_pool_size: Option<usize>,
+    canceller_pool_size: Option<usize>,
+    deadmans_switch_timeout_secs: Option<u64>,
+    transport_backend: TransportBackend,
+});
 
 impl Default for BitmexExecClientConfig {
     fn default() -> Self {
@@ -319,5 +366,27 @@ max_requests_per_second = 5
             expected.max_requests_per_second,
         );
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_config_auth_timeout_secs() {
+        assert_eq!(BitmexDataClientConfig::default().auth_timeout_secs, None);
+        assert_eq!(BitmexExecClientConfig::default().auth_timeout_secs, None);
+
+        let data = BitmexDataClientConfig::builder()
+            .auth_timeout_secs(3)
+            .build();
+        assert_eq!(data.auth_timeout_secs, Some(3));
+
+        let exec = BitmexExecClientConfig::builder()
+            .auth_timeout_secs(4)
+            .build();
+        assert_eq!(exec.auth_timeout_secs, Some(4));
+
+        let data: BitmexDataClientConfig = toml::from_str("auth_timeout_secs = 7\n").unwrap();
+        assert_eq!(data.auth_timeout_secs, Some(7));
+
+        let exec: BitmexExecClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
+        assert_eq!(exec.auth_timeout_secs, Some(8));
     }
 }

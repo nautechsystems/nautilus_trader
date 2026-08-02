@@ -35,7 +35,7 @@ use pyo3::{
 use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
     common::enums::{
-        OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode,
+        OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXPositionMode, OKXTradeMode,
     },
     http::{
         client::OKXHttpClient,
@@ -239,6 +239,10 @@ impl OKXHttpClient {
     ///
     /// Defaults to NetMode if no position mode is provided.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the position mode cannot be set.
+    ///
     /// # Note
     ///
     /// This endpoint only works for accounts with derivatives trading enabled.
@@ -262,6 +266,10 @@ impl OKXHttpClient {
     }
 
     /// Requests all instruments for the `instrument_type` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or instrument parsing fails.
     ///
     /// # Returns
     ///
@@ -289,17 +297,16 @@ impl OKXHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let instruments_list = PyList::new(py, py_instruments?).unwrap();
+                let instruments_list = PyList::new(py, py_instruments?)?;
 
                 // Convert inst_id_codes to list of (inst_id: str, inst_id_code: int) tuples
                 let py_codes: Vec<_> = inst_id_codes
                     .into_iter()
                     .map(|(inst_id, code)| (inst_id.to_string(), code))
                     .collect();
-                let codes_list = PyList::new(py, py_codes).unwrap();
+                let codes_list = PyList::new(py, py_codes)?;
 
-                let result = PyTuple::new(py, [instruments_list.as_any(), codes_list.as_any()])
-                    .unwrap()
+                let result = PyTuple::new(py, [instruments_list.as_any(), codes_list.as_any()])?
                     .into_any()
                     .unbind();
                 Ok(result)
@@ -308,6 +315,10 @@ impl OKXHttpClient {
     }
 
     /// Requests spread instruments from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or spread parsing fails.
     #[pyo3(name = "request_spread_instruments")]
     #[pyo3(signature = (base_currency=None, instrument_id=None, spread_id=None, state=None))]
     fn py_request_spread_instruments<'py>(
@@ -344,6 +355,13 @@ impl OKXHttpClient {
     /// Requests a single instrument by `instrument_id` from OKX.
     ///
     /// Fetches the instrument from the API, caches it, and returns it.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The API request fails.
+    /// - The instrument is not found.
+    /// - Failed to parse instrument data.
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -363,6 +381,10 @@ impl OKXHttpClient {
     }
 
     /// Requests event contract series metadata from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
     #[pyo3(name = "request_event_contract_series")]
     #[pyo3(signature = (series_id=None))]
     fn py_request_event_contract_series<'py>(
@@ -383,6 +405,10 @@ impl OKXHttpClient {
     }
 
     /// Requests event metadata for an event contract series from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "request_event_contract_events")]
     #[pyo3(signature = (series_id, event_id=None, state=None, limit=None, before=None, after=None))]
@@ -416,6 +442,10 @@ impl OKXHttpClient {
     }
 
     /// Requests event contract market metadata from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "request_event_contract_markets")]
     #[pyo3(signature = (series_id, event_id=None, inst_id=None, state=None, limit=None, before=None, after=None))]
@@ -451,6 +481,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the account state for the `account_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no account state is returned.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -465,11 +499,15 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+            Python::attach(|py| account_state.into_py_any(py))
         })
     }
 
     /// Requests trades for the `instrument_id` and `start` -> `end` time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or trade parsing fails.
     #[pyo3(name = "request_trades")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trades<'py>(
@@ -489,7 +527,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -499,6 +541,10 @@ impl OKXHttpClient {
     ///
     /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
     /// Returns bars sorted oldest to newest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # Endpoint Selection
     ///
@@ -550,14 +596,21 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }
 
     /// Requests an order book snapshot as `OrderBookDeltas` for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_orderbook_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_orderbook_snapshot<'py>(
@@ -574,11 +627,15 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(deltas.into_py_any_unwrap(py)))
+            Python::attach(|py| deltas.into_py_any(py))
         })
     }
 
     /// Requests historical funding rates for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(
@@ -598,13 +655,21 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, rates.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_rates = rates
+                    .into_iter()
+                    .map(|rate| rate.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_rates)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }
 
     /// Requests forward prices for OKX options using the option summary endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no usable instrument family can be resolved.
     #[pyo3(name = "request_forward_prices")]
     #[pyo3(signature = (underlying, instrument_id=None))]
     fn py_request_forward_prices<'py>(
@@ -622,18 +687,21 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(
-                    py,
-                    forward_prices
-                        .into_iter()
-                        .map(|price| price.into_py_any_unwrap(py)),
-                )?;
+                let py_prices = forward_prices
+                    .into_iter()
+                    .map(|price| price.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_prices)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }
 
     /// Requests the latest mark price for the `instrument_type` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no mark price is returned.
     #[pyo3(name = "request_mark_price")]
     fn py_request_mark_price<'py>(
         &self,
@@ -648,11 +716,41 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(mark_price.into_py_any_unwrap(py)))
+            Python::attach(|py| mark_price.into_py_any(py))
+        })
+    }
+
+    /// Requests the current price limits for the `instrument_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no price limit is returned.
+    #[pyo3(name = "request_price_limit")]
+    fn py_request_price_limit<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let price_limit = client
+                .request_price_limit(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let value = serde_json::to_value(price_limit).map_err(to_pyvalue_err)?;
+                value_to_pyobject(py, &value)
+            })
         })
     }
 
     /// Requests the latest index price for the `instrument_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no index price is returned.
     #[pyo3(name = "request_index_price")]
     fn py_request_index_price<'py>(
         &self,
@@ -667,11 +765,15 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(index_price.into_py_any_unwrap(py)))
+            Python::attach(|py| index_price.into_py_any(py))
         })
     }
 
     /// Requests historical order status reports for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -708,14 +810,21 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }
 
     /// Requests algo order status reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "request_algo_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None, algo_id=None, algo_client_order_id=None, state=None, limit=None))]
     #[expect(clippy::too_many_arguments)]
@@ -727,7 +836,7 @@ impl OKXHttpClient {
         instrument_id: Option<InstrumentId>,
         algo_id: Option<String>,
         algo_client_order_id: Option<ClientOrderId>,
-        state: Option<OKXOrderStatus>,
+        state: Option<OKXAlgoOrderStatus>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -747,14 +856,21 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }
 
     /// Requests an algo order status report by client order identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "request_algo_order_status_report")]
     fn py_request_algo_order_status_report<'py>(
         &self,
@@ -772,13 +888,17 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| match report {
-                Some(report) => Ok(report.into_py_any_unwrap(py)),
+                Some(report) => report.into_py_any(py),
                 None => Ok(py.None()),
             })
         })
     }
 
     /// Requests fill reports (transaction details) for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -812,7 +932,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -837,6 +961,10 @@ impl OKXHttpClient {
     /// - Allows holding simultaneous long and short positions on the same instrument
     /// - Position IDs are suffixed with `-LONG` or `-SHORT` for uniqueness
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>
@@ -858,14 +986,21 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }
 
     /// Places a regular order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -944,6 +1079,9 @@ impl OKXHttpClient {
                     speed_bump,
                     outcome,
                     slippage_pct,
+                    None,
+                    None,
+                    None,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -977,6 +1115,10 @@ impl OKXHttpClient {
     }
 
     /// Places an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -1072,6 +1214,10 @@ impl OKXHttpClient {
 
     /// Cancels an algo order via HTTP.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
@@ -1106,6 +1252,10 @@ impl OKXHttpClient {
     }
 
     /// Cancels an order via HTTP, routing spread instruments to the spread endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or if no order identifier is supplied.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -1149,6 +1299,10 @@ impl OKXHttpClient {
     }
 
     /// Cancels all open orders for an instrument via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "cancel_all_orders")]
     fn py_cancel_all_orders<'py>(
         &self,
@@ -1195,6 +1349,10 @@ impl OKXHttpClient {
     }
 
     /// Amends an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -1278,6 +1436,10 @@ impl OKXHttpClient {
     /// Items with non-zero `sCode` are logged as warnings but do not
     /// fail the entire batch.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
@@ -1306,23 +1468,22 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let results: Vec<_> = responses
+                let results = responses
                     .into_iter()
                     .map(|resp| {
                         let dict = PyDict::new(py);
-                        dict.set_item("algo_id", resp.algo_id).expect("set algo_id");
+                        dict.set_item("algo_id", resp.algo_id)?;
                         if let Some(s_code) = resp.s_code {
-                            dict.set_item("s_code", s_code).expect("set s_code");
+                            dict.set_item("s_code", s_code)?;
                         }
 
                         if let Some(s_msg) = resp.s_msg {
-                            dict.set_item("s_msg", s_msg).expect("set s_msg");
+                            dict.set_item("s_msg", s_msg)?;
                         }
-                        dict
+                        Ok(dict)
                     })
-                    .collect();
-                let pylist = PyList::new(py, results)?;
-                Ok(pylist.into_py_any_unwrap(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                Ok(PyList::new(py, results)?.into_any().unbind())
             })
         })
     }

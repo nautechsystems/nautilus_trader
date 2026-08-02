@@ -31,6 +31,7 @@ use super::{
     super::{MAX_GROUP_SIZE, SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter},
     MARKET_SCHEMA_ID, MARKET_SCHEMA_VERSION,
 };
+use crate::numeric::{raw_to_wire, wire_to_raw};
 
 pub(super) const PRICE_BLOCK_LENGTH: u16 = 17;
 pub(super) const QUANTITY_BLOCK_LENGTH: u16 = 17;
@@ -116,13 +117,9 @@ pub(super) fn validate_header(
 
 #[inline]
 pub(super) fn encode_price(writer: &mut SbeWriter<'_>, price: &Price) {
-    #[expect(
-        clippy::useless_conversion,
-        reason = "conversion is required when high precision changes the raw type"
-    )]
-    let raw = i128::from(price.raw);
+    let raw_i128: i128 = raw_to_wire(price.raw);
 
-    writer.write_i128_le(raw);
+    writer.write_i128_le(raw_i128);
     writer.write_u8(price.precision);
 }
 
@@ -132,25 +129,17 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
     let precision = cursor.read_u8()?;
     validate_precision("Price.precision", precision)?;
 
-    #[cfg(not(feature = "high-precision"))]
-    let raw = i64::try_from(raw_i128)
-        .map_err(|_| SbeDecodeError::NumericOverflow { type_name: "Price" })?;
+    let raw: PriceRaw =
+        wire_to_raw(raw_i128).ok_or(SbeDecodeError::NumericOverflow { type_name: "Price" })?;
 
-    #[cfg(feature = "high-precision")]
-    let raw = raw_i128;
-
-    Ok(Price::from_raw(raw as PriceRaw, precision))
+    Ok(Price::from_raw(raw, precision))
 }
 
 #[inline]
 pub(super) fn encode_quantity(writer: &mut SbeWriter<'_>, quantity: &Quantity) {
-    #[expect(
-        clippy::useless_conversion,
-        reason = "conversion is required when high precision changes the raw type"
-    )]
-    let raw = u128::from(quantity.raw);
+    let raw_u128: u128 = raw_to_wire(quantity.raw);
 
-    writer.write_u128_le(raw);
+    writer.write_u128_le(raw_u128);
     writer.write_u8(quantity.precision);
 }
 
@@ -160,15 +149,11 @@ pub(super) fn decode_quantity(cursor: &mut SbeCursor<'_>) -> Result<Quantity, Sb
     let precision = cursor.read_u8()?;
     validate_precision("Quantity.precision", precision)?;
 
-    #[cfg(not(feature = "high-precision"))]
-    let raw = u64::try_from(raw_u128).map_err(|_| SbeDecodeError::NumericOverflow {
+    let raw: QuantityRaw = wire_to_raw(raw_u128).ok_or(SbeDecodeError::NumericOverflow {
         type_name: "Quantity",
     })?;
 
-    #[cfg(feature = "high-precision")]
-    let raw = raw_u128;
-
-    Ok(Quantity::from_raw(raw as QuantityRaw, precision))
+    Ok(Quantity::from_raw(raw, precision))
 }
 
 #[inline]

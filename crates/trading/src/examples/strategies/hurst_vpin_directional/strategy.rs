@@ -345,6 +345,28 @@ nautilus_strategy!(HurstVpinDirectional, {
             self.clear_latch_for(event.client_order_id);
         }
     }
+
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        if event.instrument_id != self.config.instrument_id {
+            return;
+        }
+
+        let closed = self
+            .cache()
+            .order(&event.client_order_id)
+            .is_some_and(|o| o.is_closed());
+
+        if closed {
+            self.clear_latch_for(event.client_order_id);
+        }
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {
+        if event.instrument_id != self.config.instrument_id {
+            return;
+        }
+        self.clear_latch_for(event.client_order_id);
+    }
 });
 
 impl Debug for HurstVpinDirectional {
@@ -381,7 +403,7 @@ impl DataActor for HurstVpinDirectional {
     fn on_stop(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         self.cancel_all_orders(instrument_id, None, None, None)?;
-        self.close_all_positions(instrument_id, None, None, None, None, None, None)?;
+        self.close_all_positions(instrument_id, None, None, None, None, None, None, None)?;
         self.unsubscribe_bars(self.config.bar_type, None, None);
         self.unsubscribe_quotes(instrument_id, None, None);
         self.unsubscribe_trades(instrument_id, None, None);
@@ -481,29 +503,6 @@ impl DataActor for HurstVpinDirectional {
         }
 
         self.try_open_position()
-    }
-
-    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        if event.instrument_id != self.config.instrument_id {
-            return Ok(());
-        }
-
-        let closed = self
-            .cache()
-            .order(&event.client_order_id)
-            .is_some_and(|o| o.is_closed());
-        if closed {
-            self.clear_latch_for(event.client_order_id);
-        }
-        Ok(())
-    }
-
-    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
-        if event.instrument_id != self.config.instrument_id {
-            return Ok(());
-        }
-        self.clear_latch_for(event.client_order_id);
-        Ok(())
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {

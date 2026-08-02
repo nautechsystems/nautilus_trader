@@ -18,14 +18,14 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering},
     },
     time::Duration,
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
 use nautilus_core::{
     AtomicMap,
@@ -34,7 +34,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -44,8 +44,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, PingHandler, ReconnectHeaders, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use ustr::Ustr;
@@ -54,7 +54,7 @@ use super::handler::{AxOrdersWsFeedHandler, HandlerCommand, WsOrderInfo};
 use crate::{
     common::{
         consts::AX_NAUTILUS_TAG,
-        enums::{AxOrderRequestType, AxOrderSide, AxOrderType, AxTimeInForce},
+        enums::{AxOrderRequestType, AxOrderSide, AxTimeInForce},
         parse::{client_order_id_to_cid, quantity_to_contracts},
     },
     websocket::messages::{AxOrdersWsMessage, AxWsPlaceOrder, OrderMetadata},
@@ -124,6 +124,7 @@ pub struct AxOrdersWebSocketClient {
     clock: &'static AtomicTime,
     url: String,
     heartbeat: Option<u64>,
+    reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxOrdersWsMessage>>>,
@@ -155,6 +156,7 @@ impl Clone for AxOrdersWebSocketClient {
             clock: self.clock,
             url: self.url.clone(),
             heartbeat: self.heartbeat,
+            reconnect_headers: Arc::clone(&self.reconnect_headers),
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
@@ -192,6 +194,7 @@ impl AxOrdersWebSocketClient {
             clock: get_atomic_clock_realtime(),
             url,
             heartbeat: Some(heartbeat),
+            reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
@@ -258,6 +261,29 @@ impl AxOrdersWebSocketClient {
                 m.insert(inst.symbol().inner(), inst.clone());
             }
         });
+    }
+
+    /// Updates the token used by future automatic reconnect attempts.
+    ///
+    /// Updating the token does not interrupt the active WebSocket connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reconnect header cannot be updated.
+    pub fn update_auth_token(&self, token: &str) -> AxOrdersWsResult<()> {
+        let value = format!("Bearer {token}");
+
+        if let Some(headers) = self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            headers
+                .update("Authorization", &value)
+                .map_err(|e| AxOrdersWsClientError::Transport(e.to_string()))?;
+        }
+        Ok(())
     }
 
     /// Returns a cached instrument by symbol.
@@ -333,7 +359,6 @@ impl AxOrdersWebSocketClient {
             size_precision: instrument.size_precision(),
             price_precision: instrument.price_precision(),
             quote_currency: instrument.quote_currency(),
-            pending_trigger_price: None,
         };
 
         self.caches
@@ -466,6 +491,10 @@ impl AxOrdersWebSocketClient {
         };
 
         self.connection_mode.store(client.connection_mode_atomic());
+        *self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.reconnect_headers());
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxOrdersWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -475,15 +504,12 @@ impl AxOrdersWebSocketClient {
 
         self.send_cmd(HandlerCommand::SetClient(client)).await?;
 
-        // Bearer token is passed in connection headers
-        self.send_cmd(HandlerCommand::Authenticate {
-            token: bearer_token.to_string(),
-        })
-        .await?;
+        self.send_cmd(HandlerCommand::SessionAuthenticated).await?;
 
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
         let orders_metadata = Arc::clone(&self.caches.orders_metadata);
+        let venue_to_client_order_id = Arc::clone(&self.caches.venue_to_client_id);
         let cid_to_client_order_id = Arc::clone(&self.caches.cid_to_client_order_id);
 
         let stream_handle = get_runtime().spawn(async move {
@@ -493,6 +519,7 @@ impl AxOrdersWebSocketClient {
                 raw_rx,
                 auth_tracker.clone(),
                 orders_metadata,
+                venue_to_client_order_id,
                 cid_to_client_order_id,
             );
 
@@ -515,7 +542,7 @@ impl AxOrdersWebSocketClient {
         Ok(())
     }
 
-    /// Submits an order using Nautilus domain types.
+    /// Submits the AX priced order shape using Nautilus domain types.
     ///
     /// This method handles conversion from Nautilus domain types to AX-specific
     /// types and stores order metadata for event correlation.
@@ -523,11 +550,8 @@ impl AxOrdersWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The order type is not supported (only MARKET (simulated), LIMIT and STOP_LIMIT).
     /// - The time-in-force is not supported.
     /// - The instrument is not found in the cache.
-    /// - A limit order is missing a price.
-    /// - A stop-loss order is missing a trigger price.
     /// - The order command cannot be sent.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
@@ -537,22 +561,11 @@ impl AxOrdersWebSocketClient {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         order_side: OrderSide,
-        order_type: OrderType,
         quantity: Quantity,
         time_in_force: TimeInForce,
-        price: Option<Price>,
-        trigger_price: Option<Price>,
+        price: Price,
         post_only: bool,
     ) -> AxOrdersWsResult<i64> {
-        if !matches!(
-            order_type,
-            OrderType::Market | OrderType::Limit | OrderType::StopLimit
-        ) {
-            return Err(AxOrdersWsClientError::ClientError(format!(
-                "Unsupported order type: {order_type:?}. AX supports MARKET, LIMIT and STOP_LIMIT."
-            )));
-        }
-
         // Get instrument from cache for precision
         let symbol = instrument_id.symbol.inner();
         let instrument = self.get_cached_instrument(&symbol).ok_or_else(|| {
@@ -566,58 +579,11 @@ impl AxOrdersWebSocketClient {
         let qty_contracts = quantity_to_contracts(quantity)
             .map_err(|e| AxOrdersWsClientError::ClientError(e.to_string()))?;
 
-        // Market orders are simulated as IOC limit orders with aggressive pricing
-        // because Architect does not support native market orders
         let request_id = self.next_request_id();
+        let ax_tif = AxTimeInForce::try_from(time_in_force)?;
+        let cid = client_order_id_to_cid(&client_order_id);
 
-        let (ax_price, ax_tif, ax_post_only, ax_order_type, ax_trigger_price) = match order_type {
-            OrderType::Market => {
-                let market_price = price.ok_or_else(|| {
-                    AxOrdersWsClientError::ClientError(
-                        "Market order requires price (calculated from quote)".to_string(),
-                    )
-                })?;
-                (
-                    market_price.as_decimal(),
-                    AxTimeInForce::Ioc,
-                    false,
-                    None,
-                    None,
-                )
-            }
-            OrderType::Limit => {
-                let ax_tif = AxTimeInForce::try_from(time_in_force)?;
-                let limit_price = price.ok_or_else(|| {
-                    AxOrdersWsClientError::ClientError("Limit order requires price".to_string())
-                })?;
-                (limit_price.as_decimal(), ax_tif, post_only, None, None)
-            }
-            OrderType::StopLimit => {
-                let ax_tif = AxTimeInForce::try_from(time_in_force)?;
-                let limit_price = price.ok_or_else(|| {
-                    AxOrdersWsClientError::ClientError(
-                        "Stop-limit order requires price".to_string(),
-                    )
-                })?;
-                let stop_price = trigger_price.ok_or_else(|| {
-                    AxOrdersWsClientError::ClientError(
-                        "Stop-limit order requires trigger price".to_string(),
-                    )
-                })?;
-                (
-                    limit_price.as_decimal(),
-                    ax_tif,
-                    false,
-                    Some(AxOrderType::StopLossLimit),
-                    Some(stop_price.as_decimal()),
-                )
-            }
-            _ => {
-                return Err(AxOrdersWsClientError::ClientError(format!(
-                    "Unsupported order type: {order_type:?}"
-                )));
-            }
-        };
+        reserve_cid_mapping(&self.caches, cid, client_order_id)?;
 
         // Store order metadata for event correlation (after validation to avoid stale entries)
         let metadata = OrderMetadata {
@@ -630,17 +596,10 @@ impl AxOrdersWebSocketClient {
             size_precision: instrument.size_precision(),
             price_precision: instrument.price_precision(),
             quote_currency: instrument.quote_currency(),
-            pending_trigger_price: None,
         };
         self.caches
             .orders_metadata
             .insert(client_order_id, metadata);
-
-        // Store cid -> client_order_id mapping for correlation
-        let cid = client_order_id_to_cid(&client_order_id);
-        self.caches
-            .cid_to_client_order_id
-            .insert(cid, client_order_id);
 
         let order = AxWsPlaceOrder {
             rid: request_id,
@@ -648,18 +607,17 @@ impl AxOrdersWebSocketClient {
             s: symbol,
             d: ax_side,
             q: qty_contracts,
-            p: ax_price,
+            p: price.as_decimal(),
             tif: ax_tif,
-            po: ax_post_only,
+            po: post_only,
             tag: Some(AX_NAUTILUS_TAG.to_string()),
             cid: Some(cid),
-            order_type: ax_order_type,
-            trigger_price: ax_trigger_price,
         };
 
         let order_info = WsOrderInfo {
             client_order_id,
             symbol,
+            cid,
         };
 
         let result = self
@@ -770,6 +728,10 @@ impl AxOrdersWebSocketClient {
                 }
             }
         }
+        *self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     async fn send_cmd(&self, cmd: HandlerCommand) -> AxOrdersWsResult<()> {
@@ -780,11 +742,54 @@ impl AxOrdersWebSocketClient {
     }
 }
 
+fn reserve_cid_mapping(
+    caches: &OrdersCaches,
+    cid: u64,
+    client_order_id: ClientOrderId,
+) -> AxOrdersWsResult<()> {
+    match caches.cid_to_client_order_id.entry(cid) {
+        Entry::Vacant(entry) => {
+            entry.insert(client_order_id);
+            Ok(())
+        }
+        Entry::Occupied(entry) => Err(AxOrdersWsClientError::ClientError(format!(
+            "AX cid {cid} is already mapped to {}",
+            entry.get(),
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use rstest::rstest;
+
     use super::*;
+
+    #[rstest]
+    fn test_reserve_cid_mapping_rejects_collision() {
+        let caches = OrdersCaches::default();
+        let cid = 123;
+        let first_client_order_id = ClientOrderId::from("CID-123-A");
+        let second_client_order_id = ClientOrderId::from("CID-123-B");
+
+        reserve_cid_mapping(&caches, cid, first_client_order_id).unwrap();
+        let result = reserve_cid_mapping(&caches, cid, second_client_order_id);
+
+        assert!(matches!(
+            result,
+            Err(AxOrdersWsClientError::ClientError(msg))
+                if msg == "AX cid 123 is already mapped to CID-123-A"
+        ));
+        assert_eq!(
+            caches
+                .cid_to_client_order_id
+                .get(&cid)
+                .map(|client_order_id| *client_order_id),
+            Some(first_client_order_id),
+        );
+    }
 
     #[tokio::test]
     async fn test_cancel_order_rejects_without_venue_order_id() {

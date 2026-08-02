@@ -21,7 +21,35 @@ name = "nautilus_testkit"
 crate-type = ["rlib"]
 
 [features]
-default = []
+default = ["datasets", "testers"]
+datasets = [
+  "dep:ahash",
+  "dep:anyhow",
+  "dep:aws-lc-rs",
+  "dep:itchy",
+  "dep:nautilus-model",
+  "dep:nautilus-network",
+  "dep:nautilus-serialization",
+  "dep:parquet",
+  "dep:rand",
+  "dep:reqwest",
+  "dep:serde_json",
+]
+testers = [
+  "dep:ahash",
+  "dep:anyhow",
+  "dep:async-trait",
+  "dep:bon",
+  "dep:bytes",
+  "dep:chrono",
+  "dep:indexmap",
+  "dep:log",
+  "dep:nautilus-model",
+  "dep:nautilus-trading",
+  "dep:rust_decimal",
+  "dep:serde",
+  "dep:ustr",
+]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -31,14 +59,19 @@ extension-module = [
   "pyo3/extension-module",
 ]
 python = [
+  "datasets",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-trading/python",
   "pyo3",
   "pyo3-stub-gen",
+  "testers",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model?/high-precision",
+  "nautilus-serialization?/high-precision",
+]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -48,34 +81,57 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-network = { workspace = true }
-nautilus-portfolio = { workspace = true }
-nautilus-serialization = { workspace = true, features = ["arrow"] }
-nautilus-trading = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"], optional = true }
+nautilus-network = { workspace = true, optional = true }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
+nautilus-trading = { workspace = true, optional = true }
 
-ahash = { workspace = true }
-anyhow = { workspace = true }
-aws-lc-rs = { workspace = true }
-bon = { workspace = true }
-chrono = { workspace = true }
-indexmap = { workspace = true }
-itchy = { workspace = true }
-log = { workspace = true }
-parquet = { workspace = true, features = ["zstd"] }
-rand = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
-rust_decimal = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+ahash = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true, optional = true }
+bon = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+indexmap = { workspace = true, optional = true }
+itchy = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+parquet = { workspace = true, features = ["zstd"], optional = true }
+rand = { workspace = true, optional = true }
+reqwest = { workspace = true, features = ["blocking"], optional = true }
+rust_decimal = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 tokio = { workspace = true }
+ustr = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-portfolio = { workspace = true }
+
 arrow = { workspace = true }
 axum = { workspace = true }
+indexmap = { workspace = true }
 rstest = { workspace = true }
+rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "common"
+required-features = ["datasets"]
+
+[[test]]
+name = "large_data"
+required-features = ["datasets"]
+
+[[test]]
+name = "orderbook_integration"
+required-features = ["datasets"]

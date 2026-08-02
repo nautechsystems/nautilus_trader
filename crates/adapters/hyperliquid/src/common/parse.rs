@@ -1046,9 +1046,9 @@ pub fn parse_spot_account_balances(
 /// as Hyperliquid TP/SL groups.
 ///
 /// - `NormalTpsl` (OTOCO bracket): entry order is OTO and not reduce-only,
-///   all child orders are OCO, reduce-only, and reference the entry as parent.
-/// - `PositionTpsl` (OCO pair): every order is OCO, reduce-only, and linked
-///   to the same sibling set.
+///   all child orders are OCO or OUO, reduce-only, and reference the entry as parent.
+/// - `PositionTpsl` (linked exit pair): every order is OCO or OUO, reduce-only,
+///   and linked to the same sibling set.
 /// - `Na`: everything else (independent batch).
 pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidExecGrouping {
     if orders.len() >= 2 {
@@ -1058,8 +1058,10 @@ pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidE
         let entry_is_oto =
             entry.contingency_type() == Some(ContingencyType::Oto) && !entry.is_reduce_only();
         let children_are_linked = children.iter().all(|o| {
-            o.contingency_type() == Some(ContingencyType::Oco)
-                && o.is_reduce_only()
+            matches!(
+                o.contingency_type(),
+                Some(ContingencyType::Oco | ContingencyType::Ouo)
+            ) && o.is_reduce_only()
                 && o.parent_order_id() == Some(entry_id)
         });
 
@@ -1069,9 +1071,12 @@ pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidE
     }
 
     let all_oco_linked = orders.len() >= 2
-        && orders
-            .iter()
-            .all(|o| o.contingency_type() == Some(ContingencyType::Oco) && o.is_reduce_only())
+        && orders.iter().all(|o| {
+            matches!(
+                o.contingency_type(),
+                Some(ContingencyType::Oco | ContingencyType::Ouo)
+            ) && o.is_reduce_only()
+        })
         && orders.iter().all(|o| {
             o.linked_order_ids().is_some_and(|ids| {
                 ids.iter()

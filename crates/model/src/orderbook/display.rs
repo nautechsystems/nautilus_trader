@@ -139,6 +139,7 @@ pub(crate) fn pprint_own_book(
     group_size: Option<Decimal>,
 ) -> String {
     let data: Vec<BookLevelDisplay> = if let Some(group_size) = group_size {
+        // Rendering is membership-neutral, so acceptance-time filtering stays disabled.
         let bid_quantities =
             own_order_book.bid_quantity(None, Some(num_levels), Some(group_size), None, None);
         let ask_quantities =

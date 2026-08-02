@@ -136,6 +136,7 @@ impl KrakenFuturesExecutionClient {
             config.ws_url(),
             config.heartbeat_interval_secs,
             Some(credential),
+            config.auth_timeout_secs,
             config.transport_backend,
             config.proxy_url.clone(),
         );
@@ -1555,7 +1556,7 @@ mod tests {
             OrderSide::Buy,
             Quantity::from(quantity),
             Price::from(price),
-            Money::new(0.0, Currency::USD()),
+            Money::from_decimal(Decimal::ZERO, Currency::USD()).unwrap(),
             LiquiditySide::Taker,
             client_order_id.map(ClientOrderId::from),
             None,

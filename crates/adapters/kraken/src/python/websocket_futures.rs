@@ -39,6 +39,7 @@ use nautilus_model::{
 };
 use nautilus_network::websocket::{SubscriptionState, TransportBackend};
 use pyo3::{IntoPyObjectExt, prelude::*};
+use rust_decimal_macros::dec;
 
 use crate::{
     common::{
@@ -68,7 +69,7 @@ use crate::{
 impl KrakenFuturesWebSocketClient {
     /// WebSocket client for the Kraken Futures v1 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None, proxy_url=None))]
+    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None, proxy_url=None, auth_timeout_secs=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         base_url: Option<String>,
@@ -76,6 +77,7 @@ impl KrakenFuturesWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         proxy_url: Option<String>,
+        auth_timeout_secs: Option<u64>,
     ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Live);
         let demo = env == KrakenEnvironment::Demo;
@@ -88,6 +90,7 @@ impl KrakenFuturesWebSocketClient {
             url,
             heartbeat_secs,
             credential,
+            auth_timeout_secs,
             TransportBackend::default(),
             proxy_url,
         )
@@ -762,7 +765,10 @@ fn handle_open_orders_delta(
 
     order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
 
-    let qty = Quantity::new(delta.order.qty, instrument.size_precision());
+    let Ok(qty) = Quantity::from_decimal_dp(delta.order.qty, instrument.size_precision()) else {
+        log::error!("Failed to parse order quantity: {}", delta.order.qty);
+        return;
+    };
     venue_order_qty.insert(delta.order.order_id.clone(), qty);
 
     match parse_futures_ws_order_status_report(
@@ -1106,9 +1112,9 @@ fn maybe_emit_quote(
         return;
     };
 
-    let bid = bid_price.as_f64();
-    let ask = ask_price.as_f64();
-    if bid > 0.0 && (ask - bid) / bid > 0.25 {
+    let bid = bid_price.as_decimal();
+    let ask = ask_price.as_decimal();
+    if bid > dec!(0) && (ask - bid) / bid > dec!(0.25) {
         log::debug!("Filtered quote with wide spread: bid={bid}, ask={ask}");
         return;
     }

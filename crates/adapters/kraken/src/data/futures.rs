@@ -56,6 +56,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use rust_decimal_macros::dec;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -117,6 +118,7 @@ impl KrakenFuturesDataClient {
         let ws = KrakenFuturesWebSocketClient::with_credentials(
             config.ws_public_url(),
             config.heartbeat_interval_secs,
+            None,
             None,
             config.transport_backend,
             config.proxy_url.clone(),
@@ -417,9 +419,9 @@ impl KrakenFuturesDataClient {
             return;
         };
 
-        let bid = bid_price.as_f64();
-        let ask = ask_price.as_f64();
-        if bid > 0.0 && (ask - bid) / bid > 0.25 {
+        let bid = bid_price.as_decimal();
+        let ask = ask_price.as_decimal();
+        if bid > dec!(0) && (ask - bid) / bid > dec!(0.25) {
             log::debug!("Filtered quote with wide spread: bid={bid}, ask={ask}");
             return;
         }

@@ -137,6 +137,7 @@ impl DeribitDataClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             config.heartbeat_interval_secs,
+            config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),
@@ -285,6 +286,11 @@ impl DeribitDataClient {
                 log::warn!(
                     "Data client received FillReports message (should be handled by execution client): {} reports",
                     reports.len()
+                );
+            }
+            NautilusWsMessage::OrderFilled(order) => {
+                log::warn!(
+                    "Data client received OrderFilled message (should be handled by execution client): {order:?}"
                 );
             }
             NautilusWsMessage::OrderRejected(order) => {
@@ -1096,6 +1102,7 @@ impl DataClient for DeribitDataClient {
                 .load()
                 .get(&instrument_id)
                 .is_some_and(|inst| matches!(inst, InstrumentAny::CryptoPerpetual(_)));
+
             if !is_perpetual {
                 log::warn!(
                     "Funding rates subscription rejected for {instrument_id}: only available for perpetual instruments"

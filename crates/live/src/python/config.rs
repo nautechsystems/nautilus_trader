@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, hash::BuildHasher, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
@@ -25,6 +25,7 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId},
 };
 use nautilus_portfolio::config::PortfolioConfig;
+use nautilus_trading::ImportableControllerConfig;
 use pyo3::{
     IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
     types::{PyAnyMethods, PyDict, PyDictMethods},
@@ -33,9 +34,7 @@ use pyo3::{
 use crate::config::{
     InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
     LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, RoutingConfig,
-    duration_from_secs_f64, parse_rate_limit, validate_client_order_id_strings,
-    validate_instrument_id_strings, validate_max_notional_per_order,
-    validate_non_negative_finite_f64,
+    duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
 };
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
@@ -94,8 +93,12 @@ fn py_to_json_value(bound: &pyo3::Bound<'_, PyAny>) -> PyResult<serde_json::Valu
     }
 }
 
-/// Converts a [`serde_json::Value`] into a Python object.
-fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+/// Converts a JSON configuration value into a Python object.
+///
+/// # Errors
+///
+/// Returns an error if Python object construction fails.
+pub fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
     match value {
         serde_json::Value::Null => Ok(py.None()),
         serde_json::Value::Bool(b) => Ok((*b).into_pyobject(py)?.to_owned().into_any().unbind()),
@@ -127,8 +130,12 @@ fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<Py
 }
 
 /// Converts Python mapping values into JSON values.
-pub(crate) fn coerce_json_config(
-    raw: HashMap<String, Py<PyAny>>,
+///
+/// # Errors
+///
+/// Returns an error if a Python value cannot be converted.
+pub fn coerce_json_config<S: BuildHasher>(
+    raw: HashMap<String, Py<PyAny>, S>,
 ) -> PyResult<HashMap<String, serde_json::Value>> {
     Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
         let mut result = HashMap::with_capacity(raw.len());
@@ -208,6 +215,78 @@ impl LiveDataEngineConfig {
         })
     }
 
+    #[getter]
+    #[pyo3(name = "time_bars_build_with_no_updates")]
+    const fn py_time_bars_build_with_no_updates(&self) -> bool {
+        self.time_bars_build_with_no_updates
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_timestamp_on_close")]
+    const fn py_time_bars_timestamp_on_close(&self) -> bool {
+        self.time_bars_timestamp_on_close
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_skip_first_non_full_bar")]
+    const fn py_time_bars_skip_first_non_full_bar(&self) -> bool {
+        self.time_bars_skip_first_non_full_bar
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_interval_type")]
+    const fn py_time_bars_interval_type(&self) -> BarIntervalType {
+        self.time_bars_interval_type
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_build_delay")]
+    const fn py_time_bars_build_delay(&self) -> u64 {
+        self.time_bars_build_delay
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_origin_offset")]
+    fn py_time_bars_origin_offset(&self) -> HashMap<String, u64> {
+        self.time_bars_origin_offset.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "validate_data_sequence")]
+    const fn py_validate_data_sequence(&self) -> bool {
+        self.validate_data_sequence
+    }
+
+    #[getter]
+    #[pyo3(name = "buffer_deltas")]
+    const fn py_buffer_deltas(&self) -> bool {
+        self.buffer_deltas
+    }
+
+    #[getter]
+    #[pyo3(name = "emit_quotes_from_book")]
+    const fn py_emit_quotes_from_book(&self) -> bool {
+        self.emit_quotes_from_book
+    }
+
+    #[getter]
+    #[pyo3(name = "emit_quotes_from_book_depths")]
+    const fn py_emit_quotes_from_book_depths(&self) -> bool {
+        self.emit_quotes_from_book_depths
+    }
+
+    #[getter]
+    #[pyo3(name = "external_clients")]
+    fn py_external_clients(&self) -> Option<Vec<ClientId>> {
+        self.external_clients.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "debug")]
+    const fn py_debug(&self) -> bool {
+        self.debug
+    }
+
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
@@ -266,6 +345,36 @@ impl LiveRiskEngineConfig {
         })
     }
 
+    #[getter]
+    #[pyo3(name = "bypass")]
+    const fn py_bypass(&self) -> bool {
+        self.bypass
+    }
+
+    #[getter]
+    #[pyo3(name = "max_order_submit_rate")]
+    fn py_max_order_submit_rate(&self) -> &str {
+        &self.max_order_submit_rate
+    }
+
+    #[getter]
+    #[pyo3(name = "max_order_modify_rate")]
+    fn py_max_order_modify_rate(&self) -> &str {
+        &self.max_order_modify_rate
+    }
+
+    #[getter]
+    #[pyo3(name = "max_notional_per_order")]
+    fn py_max_notional_per_order(&self) -> HashMap<String, String> {
+        self.max_notional_per_order.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "debug")]
+    const fn py_debug(&self) -> bool {
+        self.debug
+    }
+
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
@@ -321,28 +430,7 @@ impl LiveExecEngineConfig {
     ) -> PyResult<Self> {
         let default = Self::default();
 
-        if let Some(delay) = reconciliation_startup_delay_secs {
-            validate_non_negative_finite_f64(
-                "LiveExecEngineConfig.reconciliation_startup_delay_secs",
-                delay,
-            )
-            .map_err(config_error_to_pyvalue_err)?;
-        }
-
-        if let Some(ids) = reconciliation_instrument_ids.as_ref() {
-            validate_instrument_id_strings(
-                "LiveExecEngineConfig.reconciliation_instrument_ids",
-                ids,
-            )
-            .map_err(config_error_to_pyvalue_err)?;
-        }
-
-        if let Some(ids) = filtered_client_order_ids.as_ref() {
-            validate_client_order_id_strings("LiveExecEngineConfig.filtered_client_order_ids", ids)
-                .map_err(config_error_to_pyvalue_err)?;
-        }
-
-        Ok(Self {
+        let config = Self {
             load_cache: load_cache.unwrap_or(default.load_cache),
             manage_own_order_books: manage_own_order_books
                 .unwrap_or(default.manage_own_order_books),
@@ -397,7 +485,221 @@ impl LiveExecEngineConfig {
             debug: debug.unwrap_or(default.debug),
             own_books_audit_interval_secs,
             qsize: default.qsize,
-        })
+        };
+        config
+            .validate_runtime_support()
+            .map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
+    }
+
+    #[getter]
+    #[pyo3(name = "load_cache")]
+    const fn py_load_cache(&self) -> bool {
+        self.load_cache
+    }
+
+    #[getter]
+    #[pyo3(name = "manage_own_order_books")]
+    const fn py_manage_own_order_books(&self) -> bool {
+        self.manage_own_order_books
+    }
+
+    #[getter]
+    #[pyo3(name = "snapshot_positions_interval_secs")]
+    const fn py_snapshot_positions_interval_secs(&self) -> Option<f64> {
+        self.snapshot_positions_interval_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "external_clients")]
+    fn py_external_clients(&self) -> Option<Vec<ClientId>> {
+        self.external_clients.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "allow_overfills")]
+    const fn py_allow_overfills(&self) -> bool {
+        self.allow_overfills
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation")]
+    const fn py_reconciliation(&self) -> bool {
+        self.reconciliation
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation_startup_delay_secs")]
+    const fn py_reconciliation_startup_delay_secs(&self) -> f64 {
+        self.reconciliation_startup_delay_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation_lookback_mins")]
+    const fn py_reconciliation_lookback_mins(&self) -> Option<u32> {
+        self.reconciliation_lookback_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation_instrument_ids")]
+    fn py_reconciliation_instrument_ids(&self) -> Option<Vec<String>> {
+        self.reconciliation_instrument_ids.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "filter_unclaimed_external_orders")]
+    const fn py_filter_unclaimed_external_orders(&self) -> bool {
+        self.filter_unclaimed_external_orders
+    }
+
+    #[getter]
+    #[pyo3(name = "filter_position_reports")]
+    const fn py_filter_position_reports(&self) -> bool {
+        self.filter_position_reports
+    }
+
+    #[getter]
+    #[pyo3(name = "filtered_client_order_ids")]
+    fn py_filtered_client_order_ids(&self) -> Option<Vec<String>> {
+        self.filtered_client_order_ids.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "generate_missing_orders")]
+    const fn py_generate_missing_orders(&self) -> bool {
+        self.generate_missing_orders
+    }
+
+    #[getter]
+    #[pyo3(name = "inflight_check_interval_ms")]
+    const fn py_inflight_check_interval_ms(&self) -> u32 {
+        self.inflight_check_interval_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "inflight_check_threshold_ms")]
+    const fn py_inflight_check_threshold_ms(&self) -> u32 {
+        self.inflight_check_threshold_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "inflight_check_retries")]
+    const fn py_inflight_check_retries(&self) -> u32 {
+        self.inflight_check_retries
+    }
+
+    #[getter]
+    #[pyo3(name = "open_check_interval_secs")]
+    const fn py_open_check_interval_secs(&self) -> Option<f64> {
+        self.open_check_interval_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "open_check_lookback_mins")]
+    const fn py_open_check_lookback_mins(&self) -> Option<u32> {
+        self.open_check_lookback_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "open_check_threshold_ms")]
+    const fn py_open_check_threshold_ms(&self) -> u32 {
+        self.open_check_threshold_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "open_check_missing_retries")]
+    const fn py_open_check_missing_retries(&self) -> u32 {
+        self.open_check_missing_retries
+    }
+
+    #[getter]
+    #[pyo3(name = "open_check_open_only")]
+    const fn py_open_check_open_only(&self) -> bool {
+        self.open_check_open_only
+    }
+
+    #[getter]
+    #[pyo3(name = "max_single_order_queries_per_cycle")]
+    const fn py_max_single_order_queries_per_cycle(&self) -> u32 {
+        self.max_single_order_queries_per_cycle
+    }
+
+    #[getter]
+    #[pyo3(name = "single_order_query_delay_ms")]
+    const fn py_single_order_query_delay_ms(&self) -> u32 {
+        self.single_order_query_delay_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "position_check_interval_secs")]
+    const fn py_position_check_interval_secs(&self) -> Option<f64> {
+        self.position_check_interval_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "position_check_lookback_mins")]
+    const fn py_position_check_lookback_mins(&self) -> u32 {
+        self.position_check_lookback_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "position_check_threshold_ms")]
+    const fn py_position_check_threshold_ms(&self) -> u32 {
+        self.position_check_threshold_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "position_check_retries")]
+    const fn py_position_check_retries(&self) -> u32 {
+        self.position_check_retries
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_closed_orders_interval_mins")]
+    const fn py_purge_closed_orders_interval_mins(&self) -> Option<u32> {
+        self.purge_closed_orders_interval_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_closed_orders_buffer_mins")]
+    const fn py_purge_closed_orders_buffer_mins(&self) -> Option<u32> {
+        self.purge_closed_orders_buffer_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_closed_positions_interval_mins")]
+    const fn py_purge_closed_positions_interval_mins(&self) -> Option<u32> {
+        self.purge_closed_positions_interval_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_closed_positions_buffer_mins")]
+    const fn py_purge_closed_positions_buffer_mins(&self) -> Option<u32> {
+        self.purge_closed_positions_buffer_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_account_events_interval_mins")]
+    const fn py_purge_account_events_interval_mins(&self) -> Option<u32> {
+        self.purge_account_events_interval_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_account_events_lookback_mins")]
+    const fn py_purge_account_events_lookback_mins(&self) -> Option<u32> {
+        self.purge_account_events_lookback_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "own_books_audit_interval_secs")]
+    const fn py_own_books_audit_interval_secs(&self) -> Option<f64> {
+        self.own_books_audit_interval_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "debug")]
+    const fn py_debug(&self) -> bool {
+        self.debug
     }
 
     fn __repr__(&self) -> String {
@@ -644,7 +946,7 @@ impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, plugins=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -666,6 +968,7 @@ impl LiveNodeConfig {
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
         exec_engine: Option<LiveExecEngineConfig>,
+        controller: Option<ImportableControllerConfig>,
         plugins: Option<Vec<PluginConfig>>,
     ) -> PyResult<Self> {
         let default = Self::default();
@@ -718,6 +1021,7 @@ impl LiveNodeConfig {
             exec_engine: exec_engine.unwrap_or_default(),
             data_clients: HashMap::new(),
             exec_clients: HashMap::new(),
+            controller,
             plugins: plugins.unwrap_or_default(),
         })
     }
@@ -786,7 +1090,66 @@ impl LiveNodeConfig {
     }
 
     #[getter]
+    #[pyo3(name = "logging")]
+    fn py_logging(&self) -> LoggerConfig {
+        self.logging.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "instance_id")]
+    const fn py_instance_id(&self) -> Option<UUID4> {
+        self.instance_id
+    }
+
+    #[getter]
+    #[pyo3(name = "cache")]
+    fn py_cache(&self) -> Option<CacheConfig> {
+        self.cache.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "msgbus")]
+    fn py_msgbus(&self) -> Option<MessageBusConfig> {
+        self.msgbus.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "portfolio")]
+    fn py_portfolio(&self) -> Option<PortfolioConfig> {
+        self.portfolio
+    }
+
+    #[getter]
+    #[pyo3(name = "loop_debug")]
+    const fn py_loop_debug(&self) -> bool {
+        self.loop_debug
+    }
+
+    #[getter]
+    #[pyo3(name = "data_engine")]
+    fn py_data_engine(&self) -> LiveDataEngineConfig {
+        self.data_engine.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "risk_engine")]
+    fn py_risk_engine(&self) -> LiveRiskEngineConfig {
+        self.risk_engine.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "exec_engine")]
+    fn py_exec_engine(&self) -> LiveExecEngineConfig {
+        self.exec_engine.clone()
+    }
+
+    #[getter]
     fn plugins(&self) -> Vec<PluginConfig> {
         self.plugins.clone()
+    }
+
+    #[getter]
+    fn controller(&self) -> Option<ImportableControllerConfig> {
+        self.controller.clone()
     }
 }

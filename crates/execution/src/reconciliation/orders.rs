@@ -19,17 +19,15 @@
 //! helper turns a venue-sourced report into zero or more `OrderEventAny`s that are
 //! safe to apply to the local order model.
 
-use std::str::FromStr;
-
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, OrderType},
     events::{
-        OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
-        OrderTriggered, OrderUpdated,
+        OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
+        OrderRejected, OrderTriggered, OrderUpdated,
     },
-    identifiers::{AccountId, PositionId},
+    identifiers::{AccountId, PositionId, TradeId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
     reports::{FillReport, OrderStatusReport},
@@ -60,6 +58,195 @@ pub fn generate_reconciliation_order_events(
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
+    generate_reconciliation_order_events_inner(
+        order,
+        report,
+        instrument,
+        ts_now,
+        report.order_status == OrderStatus::Voided,
+    )
+}
+
+/// Generates reconciliation events for an authoritative venue snapshot.
+///
+/// Unlike [`generate_reconciliation_order_events`], a material decrease in cumulative filled
+/// quantity is treated as evidence that previously applied fills were voided. This is intended for
+/// status reports paired with the snapshot's fill reports, where the caller can project the full
+/// venue state before applying corrections.
+#[must_use]
+pub fn generate_reconciliation_order_snapshot_events(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    generate_reconciliation_order_events_inner(order, report, instrument, ts_now, true)
+}
+
+fn generate_reconciliation_order_events_inner(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+    allow_fill_decrease: bool,
+) -> Vec<OrderEventAny> {
+    if is_superseded_cancel_report(order, report) {
+        let _ = reconcile_order_report(order, report, instrument, ts_now);
+        return Vec::new();
+    }
+
+    if has_material_fill_decrease(order, report) {
+        if !allow_fill_decrease {
+            log::warn!(
+                "Ignoring fill decrease without explicit void evidence for {}: cached={}, venue={}",
+                order.client_order_id(),
+                order.filled_qty(),
+                report.filled_qty,
+            );
+            return reconcile_fill_decrease_terminal(order, report, instrument, ts_now);
+        }
+
+        let mut working = order.clone();
+        let mut events = create_reconciliation_fill_voids(&working, report, ts_now);
+        if events.is_empty() {
+            return reconcile_fill_decrease_terminal(order, report, instrument, ts_now);
+        }
+
+        for event in &events {
+            if let Err(e) = working.apply(event.clone()) {
+                log::warn!(
+                    "Cannot project reconciliation fill void for {}: {e}",
+                    order.client_order_id()
+                );
+                return reconcile_fill_decrease_terminal(order, report, instrument, ts_now);
+            }
+        }
+
+        if report_is_working(report) && should_reconciliation_update(&working, report) {
+            let updated = create_reconciliation_updated(&working, report, ts_now);
+            if let Err(e) = working.apply(updated.clone()) {
+                log::warn!(
+                    "Cannot project reopening reconciliation update for {}: {e}",
+                    order.client_order_id()
+                );
+            } else {
+                events.push(updated);
+            }
+        }
+
+        if let Some(terminal) = reconcile_order_report(&working, report, instrument, ts_now) {
+            events.push(terminal);
+        }
+        return events;
+    }
+
+    let (mut working, mut events) = prepare_reconciliation_order(order, report, ts_now);
+
+    if matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired,
+    ) && report.filled_qty > working.filled_qty()
+        && let Some(instrument) = instrument
+        && let Some(filled) = create_incremental_inferred_fill(
+            &working,
+            report,
+            &report.account_id,
+            instrument,
+            ts_now,
+            None,
+        )
+    {
+        if let Err(e) = working.apply(filled.clone()) {
+            log::warn!(
+                "Failed to pre-apply reconciliation fill for {}: {e}",
+                order.client_order_id(),
+            );
+        } else {
+            events.push(filled);
+        }
+    }
+
+    if working.status() == OrderStatus::Filled
+        && matches!(
+            report.order_status,
+            OrderStatus::Canceled | OrderStatus::Expired,
+        )
+    {
+        return events;
+    }
+
+    if let Some(event) = reconcile_order_report(&working, report, instrument, ts_now) {
+        events.push(event);
+    }
+
+    events
+}
+
+fn has_material_fill_decrease(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if report.filled_qty >= order.filled_qty() {
+        return false;
+    }
+
+    let precision = order
+        .filled_qty()
+        .precision
+        .max(report.filled_qty.precision);
+    !is_within_single_unit_tolerance(
+        report.filled_qty.as_decimal(),
+        order.filled_qty().as_decimal(),
+        precision,
+    )
+}
+
+fn reconcile_fill_decrease_terminal(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    let should_reconcile = report.order_status == OrderStatus::Voided
+        || (!order.is_closed()
+            && matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired
+            ));
+
+    if !should_reconcile {
+        return Vec::new();
+    }
+
+    reconcile_order_report(order, report, instrument, ts_now)
+        .into_iter()
+        .collect()
+}
+
+/// Generates acceptance, amendment, and triggering events for a report paired with real fills.
+#[must_use]
+pub fn generate_reconciliation_order_pre_fill_events(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    if is_superseded_cancel_report(order, report) {
+        return Vec::new();
+    }
+
+    let (working, mut events) = prepare_reconciliation_order(order, report, ts_now);
+
+    if report.order_status == OrderStatus::Triggered
+        && let Some(triggered) = reconcile_order_report(&working, report, None, ts_now)
+    {
+        events.push(triggered);
+    }
+
+    events
+}
+
+fn prepare_reconciliation_order(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    ts_now: UnixNanos,
+) -> (OrderAny, Vec<OrderEventAny>) {
     let mut working = order.clone();
     let mut events: Vec<OrderEventAny> = Vec::new();
 
@@ -69,9 +256,7 @@ pub fn generate_reconciliation_order_events(
                 "Cannot create reconciliation acceptance for {}: missing account_id",
                 order.client_order_id(),
             );
-            return reconcile_order_report(order, report, instrument, ts_now)
-                .into_iter()
-                .collect();
+            return (working, events);
         };
 
         if let Err(e) = working.apply(accepted.clone()) {
@@ -79,15 +264,20 @@ pub fn generate_reconciliation_order_events(
                 "Failed to pre-apply reconciliation acceptance for {}: {e}",
                 order.client_order_id(),
             );
-            return reconcile_order_report(order, report, instrument, ts_now)
-                .into_iter()
-                .collect();
+            return (working, events);
         }
         events.push(accepted);
     }
 
     if report_is_confirmed_state(report)
-        && local_accepts_amendment(&working)
+        && (local_accepts_amendment(&working)
+            || (matches!(
+                working.status(),
+                OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
+            ) && matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired,
+            )))
         && should_reconciliation_update(&working, report)
     {
         let updated = create_reconciliation_updated(&working, report, ts_now);
@@ -101,11 +291,7 @@ pub fn generate_reconciliation_order_events(
         }
     }
 
-    if let Some(event) = reconcile_order_report(&working, report, instrument, ts_now) {
-        events.push(event);
-    }
-
-    events
+    (working, events)
 }
 
 /// Reconciles an order with a venue status report, generating appropriate events.
@@ -180,23 +366,13 @@ pub fn reconcile_order_report(
             }
         }
         OrderStatus::Canceled => {
-            // TODO: Venue cancel-replace handling that belongs in the adapters, not generic
-            // reconciliation. Remove once each cancel-replace adapter suppresses its stale leg
-            // on the query/reconcile path; until then this is the engine's only cover for a
-            // superseded-leg Canceled arriving via inflight query or reconnect snapshot.
-            let report_venue_order_id = report.venue_order_id;
-            if let Some(cached_venue_order_id) = order.venue_order_id()
-                && cached_venue_order_id != report_venue_order_id
-                && order
-                    .venue_order_ids()
-                    .iter()
-                    .any(|v| **v == report_venue_order_id)
-            {
+            if is_superseded_cancel_report(order, report) {
+                let cached_venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
                 log::info!(
                     "Suppressing Canceled for {} on previously-promoted venue_order_id {}: \
                      current venue_order_id is {}",
                     order.client_order_id(),
-                    report_venue_order_id,
+                    report.venue_order_id,
                     cached_venue_order_id,
                 );
                 return None;
@@ -208,6 +384,10 @@ pub fn reconcile_order_report(
 
         OrderStatus::PartiallyFilled | OrderStatus::Filled => {
             reconcile_fill_quantity_mismatch(order, report, instrument, ts_now)
+        }
+
+        OrderStatus::Voided => {
+            create_reconciliation_terminal_fill_void(order, report, instrument, ts_now)
         }
 
         OrderStatus::PendingUpdate | OrderStatus::PendingCancel => None,
@@ -268,35 +448,57 @@ pub fn generate_external_order_status_events(
 
             events
         }
-        OrderStatus::Canceled => {
-            let canceled = OrderEventAny::Canceled(OrderCanceled::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                UUID4::new(),
-                report.ts_last,
-                ts_now,
-                true, // reconciliation
-                Some(report.venue_order_id),
-                Some(*account_id),
-            ));
-            vec![accepted, canceled]
+        OrderStatus::Voided => {
+            let mut working = order.clone();
+            if let Err(e) = working.apply(accepted.clone()) {
+                log::warn!(
+                    "Cannot project external order acceptance for {}: {e}",
+                    order.client_order_id()
+                );
+                return vec![accepted];
+            }
+            let mut events = vec![accepted];
+
+            if !report.filled_qty.is_zero()
+                && let Some(filled) =
+                    create_inferred_fill(order, report, *account_id, instrument, ts_now, None)
+            {
+                if let Err(e) = working.apply(filled.clone()) {
+                    log::warn!(
+                        "Cannot project external order fill for {}: {e}",
+                        order.client_order_id()
+                    );
+                } else {
+                    events.push(filled);
+                }
+            }
+
+            if let Some(voided) =
+                create_reconciliation_terminal_fill_void(&working, report, Some(instrument), ts_now)
+            {
+                events.push(voided);
+            }
+            events
         }
-        OrderStatus::Expired => {
-            let expired = OrderEventAny::Expired(OrderExpired::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                UUID4::new(),
-                report.ts_last,
-                ts_now,
-                true, // reconciliation
-                Some(report.venue_order_id),
-                Some(*account_id),
-            ));
-            vec![accepted, expired]
+        OrderStatus::Canceled | OrderStatus::Expired => {
+            let terminal = create_external_terminal_event(order, report, *account_id, ts_now);
+            let mut events = vec![accepted];
+
+            let inferred_fill = if report.filled_qty.is_zero() {
+                None
+            } else {
+                create_inferred_fill(order, report, *account_id, instrument, ts_now, None)
+            };
+            let filled_to_quantity =
+                inferred_fill.is_some() && report.filled_qty >= report.quantity;
+            if let Some(filled) = inferred_fill {
+                events.push(filled);
+            }
+
+            if !filled_to_quantity {
+                events.push(terminal);
+            }
+            events
         }
         OrderStatus::Rejected => {
             // Rejected goes directly to terminal state without acceptance
@@ -323,6 +525,169 @@ pub fn generate_external_order_status_events(
             );
             Vec::new()
         }
+    }
+}
+
+fn create_reconciliation_fill_voids(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    let mut remaining = order.filled_qty() - report.filled_qty;
+    let order_events = order.events();
+    let mut corrections = Vec::new();
+
+    for candidate in order_events.iter().rev() {
+        let OrderEventAny::Filled(fill) = candidate else {
+            continue;
+        };
+
+        if remaining.is_zero() {
+            break;
+        }
+        let previous = order_events.iter().rev().find_map(|event| match event {
+            OrderEventAny::FillVoided(voided) if voided.trade_id == fill.trade_id => Some(voided),
+            _ => None,
+        });
+        let prior_qty = previous.map_or_else(
+            || Quantity::zero(fill.last_qty.precision),
+            |voided| voided.voided_qty.min(fill.last_qty),
+        );
+        let effective = fill.last_qty - prior_qty;
+        if effective.is_zero() {
+            continue;
+        }
+        let removed = remaining.min(effective);
+        let voided_qty = prior_qty + removed;
+        let commission_voided = fill.commission.and_then(|commission| {
+            let fraction = voided_qty.as_decimal() / fill.last_qty.as_decimal();
+            Money::from_decimal(commission.as_decimal() * fraction, commission.currency).ok()
+        });
+        let mut event = OrderFillVoided::new(
+            fill.trader_id,
+            fill.strategy_id,
+            fill.instrument_id,
+            fill.client_order_id,
+            fill.venue_order_id,
+            fill.account_id,
+            Ustr::from(&format!(
+                "reconciliation-{}-{}",
+                report.report_id, fill.trade_id
+            )),
+            fill.trade_id,
+            voided_qty,
+            commission_voided,
+            fill.order_side,
+            fill.order_type,
+            fill.last_px,
+            fill.currency,
+            fill.liquidity_side,
+            fill.position_id,
+            report.cancel_reason.as_deref().map(Ustr::from),
+            None,
+            UUID4::new(),
+            report.ts_last,
+            ts_now,
+            true,
+            report_is_working(report),
+        );
+        event.causation_id = Some(report.report_id);
+        corrections.push(OrderEventAny::FillVoided(event));
+        remaining = remaining - removed;
+    }
+
+    if !remaining.is_zero() {
+        log::warn!(
+            "Cannot reconcile fill decrease for {}: {} is outside retained fill history",
+            order.client_order_id(),
+            remaining
+        );
+        return Vec::new();
+    }
+    corrections
+}
+
+/// Creates a fill void reversing the remaining leaves of a terminally voided order.
+///
+/// An unresolved price falls back to zero rather than `None`: the price is a placeholder that
+/// never reaches `Position::avg_px_open`, whereas suppressing the void would leave the order
+/// open locally against a venue that considers it gone.
+fn create_reconciliation_terminal_fill_void(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Option<OrderEventAny> {
+    let voided_qty = order.leaves_qty();
+    if voided_qty.is_zero() {
+        return None;
+    }
+    let instrument = instrument?;
+
+    let last_px = resolve_fill_price(order, report, instrument)
+        .unwrap_or_else(|| Price::zero(instrument.price_precision()));
+
+    let mut event = OrderFillVoided::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        report.venue_order_id,
+        report.account_id,
+        Ustr::from(&format!("reconciliation-{}", report.report_id)),
+        TradeId::new(format!("VOID-{}", report.venue_order_id)),
+        voided_qty,
+        None,
+        order.order_side(),
+        order.order_type(),
+        last_px,
+        instrument.quote_currency(),
+        LiquiditySide::NoLiquiditySide,
+        None,
+        report.cancel_reason.as_deref().map(Ustr::from),
+        None,
+        UUID4::new(),
+        report.ts_last,
+        ts_now,
+        true,
+        false,
+    );
+    event.causation_id = Some(report.report_id);
+    Some(OrderEventAny::FillVoided(event))
+}
+
+fn create_external_terminal_event(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    account_id: AccountId,
+    ts_now: UnixNanos,
+) -> OrderEventAny {
+    match report.order_status {
+        OrderStatus::Canceled => OrderEventAny::Canceled(OrderCanceled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            report.ts_last,
+            ts_now,
+            true, // reconciliation
+            Some(report.venue_order_id),
+            Some(account_id),
+        )),
+        OrderStatus::Expired => OrderEventAny::Expired(OrderExpired::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            report.ts_last,
+            ts_now,
+            true, // reconciliation
+            Some(report.venue_order_id),
+            Some(account_id),
+        )),
+        status => unreachable!("cannot create external terminal event for {status}"),
     }
 }
 
@@ -407,6 +772,7 @@ pub fn reconcile_fill_report(
         true, // reconciliation
         report.venue_position_id,
         Some(report.commission),
+        None,
     )))
 }
 
@@ -573,7 +939,7 @@ pub(super) fn create_reconciliation_updated(
 ) -> OrderEventAny {
     // Only pass trigger_price for order types that support it.
     // Limit, Market, and MarketToLimit orders assert trigger_price.is_none()
-    // in their update() methods — passing a spurious trigger_price from the
+    // in their update() methods - passing a spurious trigger_price from the
     // venue report (e.g. Bybit sends "0.00" for non-conditional orders)
     // causes a panic. Positive list ensures new order types without
     // trigger_price support won't accidentally receive one.
@@ -616,28 +982,20 @@ pub(super) fn create_inferred_fill(
     commission: Option<Money>,
 ) -> Option<OrderEventAny> {
     let liquidity_side = match order.order_type() {
-        OrderType::Market | OrderType::StopMarket | OrderType::TrailingStopMarket => {
-            LiquiditySide::Taker
-        }
-        _ if report.post_only => LiquiditySide::Maker,
+        OrderType::Market
+        | OrderType::StopMarket
+        | OrderType::MarketToLimit
+        | OrderType::TrailingStopMarket => LiquiditySide::Taker,
+        _ if order.is_post_only() => LiquiditySide::Maker,
         _ => LiquiditySide::NoLiquiditySide,
     };
 
-    let last_px = if let Some(avg_px) = report.avg_px {
-        match Price::from_decimal_dp(avg_px, instrument.price_precision()) {
-            Ok(px) => px,
-            Err(e) => {
-                log::warn!("Failed to create price from avg_px for inferred fill: {e}");
-                return None;
-            }
-        }
-    } else if let Some(price) = report.price {
-        price
-    } else {
+    let Some(last_px) = resolve_fill_price(order, report, instrument) else {
         log::warn!(
-            "Cannot create inferred fill for {}: no avg_px or price available",
+            "Cannot create inferred fill for {}: no avg_px, report price, or order price",
             order.client_order_id()
         );
+
         return None;
     };
     let last_px = clamp_inferred_fill_price(last_px, instrument);
@@ -685,6 +1043,7 @@ pub(super) fn create_inferred_fill(
         true, // reconciliation
         report.venue_position_id,
         commission,
+        None,
     )))
 }
 
@@ -767,6 +1126,7 @@ pub fn create_incremental_inferred_fill(
         true, // reconciliation
         None, // venue_position_id
         commission,
+        None,
     )))
 }
 
@@ -797,17 +1157,12 @@ pub fn create_inferred_fill_for_qty(
         _ => LiquiditySide::NoLiquiditySide,
     };
 
-    let last_px = if let Some(avg_px) = report.avg_px {
-        Price::from_decimal_dp(avg_px, instrument.price_precision()).ok()?
-    } else if let Some(price) = report.price {
-        price
-    } else if let Some(price) = order.price() {
-        price
-    } else {
+    let Some(last_px) = resolve_fill_price(order, report, instrument) else {
         log::warn!(
-            "Cannot determine fill price for {}: no avg_px or price available",
+            "Cannot determine fill price for {}: no avg_px, report price, or order price",
             order.client_order_id()
         );
+
         return None;
     };
     let last_px = clamp_inferred_fill_price(last_px, instrument);
@@ -856,6 +1211,7 @@ pub fn create_inferred_fill_for_qty(
         true, // reconciliation
         None, // venue_position_id
         commission,
+        None,
     )))
 }
 
@@ -866,7 +1222,32 @@ fn report_is_confirmed_state(report: &OrderStatusReport) -> bool {
             | OrderStatus::Triggered
             | OrderStatus::PartiallyFilled
             | OrderStatus::Filled
+            | OrderStatus::Canceled
+            | OrderStatus::Expired
     )
+}
+
+fn report_is_working(report: &OrderStatusReport) -> bool {
+    matches!(
+        report.order_status,
+        OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
+    )
+}
+
+pub(crate) fn is_superseded_cancel_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if report.order_status != OrderStatus::Canceled {
+        return false;
+    }
+
+    let Some(cached_venue_order_id) = order.venue_order_id() else {
+        return false;
+    };
+
+    cached_venue_order_id != report.venue_order_id
+        && order
+            .venue_order_ids()
+            .iter()
+            .any(|venue_order_id| **venue_order_id == report.venue_order_id)
 }
 
 fn local_accepts_amendment(order: &OrderAny) -> bool {
@@ -992,6 +1373,10 @@ fn reconcile_fill_quantity_mismatch(
 }
 
 /// Calculates the fill price for an incremental inferred fill.
+///
+/// The back-solve is guarded because nothing downstream rejects a negative price:
+/// [`Price`] admits negatives, [`clamp_inferred_fill_price`] caps only the upper bound,
+/// and `Position` takes `OrderFilled::last_px` straight into `avg_px_open` and PnL.
 fn calculate_incremental_fill_price(
     order: &OrderAny,
     report: &OrderStatusReport,
@@ -1006,50 +1391,93 @@ fn calculate_incremental_fill_price(
         order.client_order_id(),
     );
 
-    // First fill - use avg_px from report or order price
+    // First fill - nothing booked locally to difference against
     if order_filled_qty.is_zero() {
-        if let Some(avg_px) = report.avg_px {
-            return Price::from_decimal_dp(avg_px, instrument.price_precision()).ok();
+        let last_px = resolve_fill_price(order, report, instrument);
+        if last_px.is_none() {
+            log::warn!(
+                "Cannot determine fill price for {}: no avg_px, report price, or order price",
+                order.client_order_id()
+            );
         }
 
-        if let Some(price) = report.price {
-            return Some(price);
-        }
-
-        if let Some(price) = order.price() {
-            return Some(price);
-        }
-        log::warn!(
-            "Cannot determine fill price for {}: no avg_px, report price, or order price",
-            order.client_order_id()
-        );
-        return None;
+        return last_px;
     }
 
     // Incremental fill - calculate price using weighted average
     if let Some(report_avg_px) = report.avg_px {
-        let Some(order_avg_px) = order.avg_px() else {
-            // No previous avg_px, use report avg_px
-            return Price::from_decimal_dp(report_avg_px, instrument.price_precision()).ok();
+        let last_px_decimal = match order.avg_px() {
+            // No previous average to difference against
+            None => report_avg_px,
+            Some(order_avg_px) => {
+                let report_filled_qty = report.filled_qty;
+                let last_qty = report_filled_qty - order_filled_qty;
+
+                let report_notional = report_avg_px * report_filled_qty.as_decimal();
+                let order_notional = order_avg_px * order_filled_qty.as_decimal();
+                let last_notional = report_notional - order_notional;
+                let back_solved = last_notional / last_qty.as_decimal();
+
+                if back_solved < Decimal::ZERO && !instrument.allows_negative_price() {
+                    if report_avg_px < Decimal::ZERO {
+                        log::warn!(
+                            "Cannot price inferred fill for {}: back-solved {back_solved} and venue average {report_avg_px} are both negative on an instrument that disallows negative prices",
+                            order.client_order_id(),
+                        );
+
+                        return None;
+                    }
+
+                    log::warn!(
+                        "Negative back-solved fill price {back_solved} for {}, using venue average {report_avg_px}",
+                        order.client_order_id(),
+                    );
+
+                    report_avg_px
+                } else {
+                    back_solved
+                }
+            }
         };
-        let report_filled_qty = report.filled_qty;
-        let last_qty = report_filled_qty - order_filled_qty;
 
-        let report_notional = report_avg_px * report_filled_qty.as_decimal();
-        let order_notional = Decimal::from_str(&order_avg_px.to_string()).unwrap_or_default()
-            * order_filled_qty.as_decimal();
-        let last_notional = report_notional - order_notional;
-        let last_px_decimal = last_notional / last_qty.as_decimal();
-
-        return Price::from_decimal_dp(last_px_decimal, instrument.price_precision()).ok();
+        return Price::from_decimal_dp(last_px_decimal, instrument.price_precision())
+            .inspect_err(|e| {
+                log::warn!(
+                    "Cannot price {} from incremental {last_px_decimal}, falling back: {e}",
+                    order.client_order_id(),
+                );
+            })
+            .ok()
+            .or_else(|| resolve_fill_price(order, report, instrument));
     }
 
-    // Fallback to report price or order price
-    if let Some(price) = report.price {
-        return Some(price);
-    }
+    resolve_fill_price(order, report, instrument)
+}
 
-    order.price()
+/// Resolves a fill price from the venue report, falling back to the order.
+///
+/// Rungs run from most to least direct evidence of what executed. Callers decide what an
+/// unresolved price means: booking a fill at an invented price corrupts position averages,
+/// whereas a void event only needs a placeholder.
+fn resolve_fill_price(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: &InstrumentAny,
+) -> Option<Price> {
+    report
+        .avg_px
+        .and_then(|avg_px| {
+            Price::from_decimal_dp(avg_px, instrument.price_precision())
+                .inspect_err(|e| {
+                    log::warn!(
+                        "Cannot price {} from venue average {avg_px}, trying next source: {e}",
+                        order.client_order_id(),
+                    );
+                })
+                .ok()
+        })
+        .or(report.price)
+        .or_else(|| order.price())
 }
 
 /// Caps an inferred fill price at the instrument's maximum price.

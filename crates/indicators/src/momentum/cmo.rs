@@ -63,7 +63,9 @@ impl Indicator for ChandeMomentumOscillator {
         self.initialized
     }
 
-    fn handle_quote(&mut self, _quote: &QuoteTick) {}
+    fn handle_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn handle_trade(&mut self, _trade: &TradeTick) {}
 
@@ -213,7 +215,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_quote_tick(mut cmo_10: ChandeMomentumOscillator, stub_quote: QuoteTick) {
-        cmo_10.handle_quote(&stub_quote);
+        cmo_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(cmo_10.count, 0);
         assert_eq!(cmo_10.value, 0.0);
     }

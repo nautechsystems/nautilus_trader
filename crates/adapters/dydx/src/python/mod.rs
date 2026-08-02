@@ -38,7 +38,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::consts::DYDX,
+    common::consts::{DYDX, DYDX_CLIENT_ID, DYDX_VENUE},
     config::{DydxDataClientConfig, DydxExecClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
 };
@@ -91,6 +91,9 @@ fn extract_dydx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<d
 
 #[pymodule]
 pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(DYDX), DYDX)?;
+    m.add(stringify!(DYDX_CLIENT_ID), *DYDX_CLIENT_ID)?;
+    m.add(stringify!(DYDX_VENUE), *DYDX_VENUE)?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
     m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
     m.add_class::<crate::common::enums::DydxNetwork>()?;

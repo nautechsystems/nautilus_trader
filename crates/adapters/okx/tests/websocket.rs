@@ -607,6 +607,9 @@ async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
             None,
             Some("yes".to_string()),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect("submit event order failed");
@@ -668,6 +671,9 @@ async fn test_submit_event_post_only_order_omits_default_speed_bump() {
             None,
             Some("yes".to_string()),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect("submit post-only event order failed");
@@ -719,6 +725,9 @@ async fn test_submit_event_order_requires_outcome() {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await;
 
@@ -748,6 +757,9 @@ async fn test_batch_submit_event_order_requires_outcome() {
             Some(Price::from("0.420")),
             None,
             Some(false),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -792,6 +804,9 @@ async fn test_batch_submit_event_order_defaults_speed_bump() {
             None,
             None,
             Some("yes".to_string()),
+            None,
+            None,
+            None,
         )])
         .await
         .expect("batch submit event order failed");
@@ -841,6 +856,8 @@ async fn test_modify_event_order_sends_explicit_speed_bump() {
             None,
             None,
             Some("0".to_string()),
+            None,
+            None,
         )
         .await
         .expect("modify event order failed");
@@ -859,6 +876,212 @@ async fn test_modify_event_order_sends_explicit_speed_bump() {
 
     assert_eq!(messages[0]["op"], "amend-order");
     assert_eq!(arg["speedBump"], "0");
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+    let instrument_id = InstrumentId::from("BTC-USD.OKX");
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&load_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USD"), 10_459);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_book_rpi(instrument_id)
+        .await
+        .expect("subscribe RPI book failed");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|value| value_matches_channel(value, "books-rpi"))
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+    client
+        .unsubscribe_book_rpi(instrument_id)
+        .await
+        .expect("unsubscribe RPI book failed");
+
+    let error = client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            OKXTradeMode::Cash,
+            ClientOrderId::from("ORPI-WS-MARKET"),
+            OrderSide::Sell,
+            OrderType::Market,
+            Quantity::from("0.25"),
+            None,
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Client error: OKX RPI orders require a limit order"
+    );
+
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            OKXTradeMode::Cash,
+            ClientOrderId::from("ORPI-WS-1"),
+            OrderSide::Sell,
+            OrderType::Limit,
+            Quantity::from("0.25"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("65000.1")),
+            None,
+            Some(false),
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            Some(true),
+            Some(false),
+        )
+        .await
+        .expect("submit RPI order failed");
+    client
+        .batch_submit_orders(vec![(
+            OKXInstrumentType::Spot,
+            instrument_id,
+            OKXTradeMode::Cash,
+            ClientOrderId::from("ORPI-WS-2"),
+            OrderSide::Sell,
+            None,
+            OrderType::Limit,
+            Quantity::from("0.50"),
+            Some(Price::from("65000.2")),
+            None,
+            Some(false),
+            Some(false),
+            None,
+            None,
+            Some(true),
+            Some(false),
+            Some(true),
+        )])
+        .await
+        .expect("batch submit RPI order failed");
+    client
+        .modify_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            instrument_id,
+            Some(ClientOrderId::from("ORPI-WS-1")),
+            Some(Price::from("65000.3")),
+            Some(Quantity::from("0.75")),
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )
+        .await
+        .expect("amend RPI order failed");
+    client
+        .batch_modify_orders(vec![(
+            OKXInstrumentType::Spot,
+            instrument_id,
+            ClientOrderId::from("ORPI-WS-2"),
+            Some("RPI-WS-AMEND-2".to_string()),
+            Some(Price::from("65000.4")),
+            Some(Quantity::from("1.00")),
+            None,
+            Some(false),
+            Some(true),
+        )])
+        .await
+        .expect("batch amend RPI order failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.order_messages.lock().await.len() >= 4 }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let subscriptions = state.subscriptions.lock().await;
+    let subscription = subscriptions
+        .iter()
+        .find(|value| value_matches_channel(value, "books-rpi"))
+        .expect("missing RPI subscription");
+    assert_eq!(subscription["channel"], "books-rpi");
+    assert_eq!(subscription["instId"], "BTC-USD");
+    drop(subscriptions);
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    let unsubscription = unsubscriptions
+        .iter()
+        .find(|value| value_matches_channel(value, "books-rpi"))
+        .expect("missing RPI unsubscription");
+    assert_eq!(unsubscription["channel"], "books-rpi");
+    assert_eq!(unsubscription["instId"], "BTC-USD");
+    drop(unsubscriptions);
+
+    let messages = state.order_messages().await;
+    assert_eq!(messages.len(), 4);
+    assert_eq!(messages[0]["op"], "order");
+    assert_eq!(messages[0]["args"][0]["ordType"], "rpi");
+    assert_eq!(messages[0]["args"][0]["rpiTakerAccess"], true);
+    assert_eq!(messages[0]["args"][0]["rpiPxRound"], false);
+    assert_eq!(messages[1]["op"], "batch-orders");
+    assert_eq!(messages[1]["args"][0]["ordType"], "rpi");
+    assert_eq!(messages[1]["args"][0]["rpiTakerAccess"], false);
+    assert_eq!(messages[1]["args"][0]["rpiPxRound"], true);
+    assert_eq!(messages[2]["op"], "amend-order");
+    assert_eq!(messages[2]["args"][0]["rpiTakerAccess"], true);
+    assert_eq!(messages[2]["args"][0]["rpiPxRound"], false);
+    assert_eq!(messages[3]["op"], "batch-amend-orders");
+    assert_eq!(messages[3]["args"][0]["reqId"], "RPI-WS-AMEND-2");
+    assert!(messages[3]["args"][0].get("newClOrdId").is_none());
+    assert_eq!(messages[3]["args"][0]["rpiTakerAccess"], false);
+    assert_eq!(messages[3]["args"][0]["rpiPxRound"], true);
 
     client.close().await.expect("close failed");
 }

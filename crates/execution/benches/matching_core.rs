@@ -112,7 +112,7 @@ fn bench_get_order(c: &mut Criterion) {
         // side, so scaling shows index overhead vs bucket size, not scan cost.
         let target = *ask_ids.last().unwrap_or(bid_ids.last().unwrap());
 
-        group.throughput(Throughput::Elements(n as u64));
+        group.throughput(Throughput::Elements(1));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
             b.iter(|| black_box(core.get_order(black_box(target))));
         });
@@ -128,7 +128,7 @@ fn bench_order_exists(c: &mut Criterion) {
         // Miss: hash index `contains_key` returns false in O(1).
         let missing = ClientOrderId::from("O-MISSING");
 
-        group.throughput(Throughput::Elements(n as u64));
+        group.throughput(Throughput::Elements(1));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
             b.iter(|| black_box(core.order_exists(black_box(missing))));
         });
@@ -170,7 +170,7 @@ fn bench_delete_order(c: &mut Criterion) {
 
     for case in cases {
         for &n in SIZES {
-            group.throughput(Throughput::Elements(n as u64));
+            group.throughput(Throughput::Elements(1));
             group.bench_with_input(BenchmarkId::new(case.label(), n), &n, |b, &n| {
                 b.iter_batched_ref(
                     || {

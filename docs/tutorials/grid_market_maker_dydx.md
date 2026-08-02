@@ -569,13 +569,13 @@ DYDX_LOG=/tmp/dydx_main.log \
 
 ### Key log messages
 
-| Log message                                         | Meaning                                            |
-| --------------------------------------------------- | -------------------------------------------------- |
-| `Requoting grid: mid=X, last_mid=Y`                 | Mid moved beyond threshold, refreshing grid.       |
-| `Submit short‑term order N`                         | Order submitted via short‑term broadcast path.    |
-| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.   |
+| Log message                                         | Meaning                                                 |
+| --------------------------------------------------- | ------------------------------------------------------- |
+| `Requoting grid: mid=X, last_mid=Y`                 | Mid moved beyond threshold, refreshing grid.            |
+| `Submit short‑term order N`                         | Order submitted via short‑term broadcast path.          |
+| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.         |
 | `benign cancel error, treating as success`          | Cancel for an already‑filled or expired order (normal). |
-| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto‑recovering.        |
+| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto‑recovering.             |
 
 ### Expected behaviour patterns
 
@@ -595,11 +595,11 @@ DYDX_LOG=/tmp/dydx_main.log \
 
 ### High vs low volatility
 
-| Condition       | Adjustment                                                               |
-| --------------- | ------------------------------------------------------------------------ |
-| High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`.|
-| Low volatility  | Tighter `grid_step_bps` (10-30), more `num_levels`, higher `skew_factor`.|
-| Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.             |
+| Condition       | Adjustment                                                                |
+| --------------- | ------------------------------------------------------------------------- |
+| High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`. |
+| Low volatility  | Tighter `grid_step_bps` (10-30), more `num_levels`, higher `skew_factor`. |
+| Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.              |
 
 ### Multiple instruments
 

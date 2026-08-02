@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, hash_map::DefaultHasher},
+    hash::{Hash, Hasher},
+};
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
@@ -38,7 +41,11 @@ use crate::{
         own::{OwnBookLadder, OwnBookLevel, OwnOrderBook},
     },
     stubs::TestDefault,
-    types::{Price, Quantity},
+    types::{
+        Price, Quantity,
+        fixed::FIXED_PRECISION,
+        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
+    },
 };
 
 #[rstest]
@@ -237,7 +244,7 @@ fn test_book_midpoint_with_orders() {
 }
 
 #[rstest]
-fn test_book_get_price_for_quantity_no_market() {
+fn test_book_get_avg_px_for_quantity_no_market() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
@@ -259,7 +266,7 @@ fn test_book_get_quantity_for_price_no_market() {
 }
 
 #[rstest]
-fn test_book_get_price_for_quantity() {
+fn test_book_get_avg_px_for_quantity() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
@@ -302,6 +309,46 @@ fn test_book_get_price_for_quantity() {
         book.get_avg_px_for_quantity(qty, OrderSide::Sell),
         0.996_666_666_666_666_7
     );
+}
+
+#[rstest]
+fn test_book_get_avg_px_for_quantity_exact_accumulation() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let size = Quantity::from_raw(1, FIXED_PRECISION);
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("9007199253.999000000"),
+        size,
+        1,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("9007199253.999000001"),
+        size,
+        2,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+
+    let result =
+        book.get_avg_px_for_quantity(Quantity::from_raw(2, FIXED_PRECISION), OrderSide::Buy);
+
+    assert_eq!(result.to_bits(), 4_756_019_973_358_353_908);
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+fn test_book_get_avg_px_for_quantity_max_raw_size() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let size = Quantity::from_raw(QUANTITY_RAW_MAX, FIXED_PRECISION);
+    let ask = BookOrder::new(OrderSide::Sell, Price::from("1.0"), size, 1);
+    book.add(ask, 0, 1, 1.into());
+
+    let result = book.get_avg_px_for_quantity(size, OrderSide::Buy);
+
+    assert_eq!(result, 1.0);
 }
 
 #[rstest]
@@ -619,6 +666,46 @@ fn test_book_get_quantity_at_level_after_delete() {
 }
 
 #[rstest]
+fn test_book_get_orders_at_level_fifo_and_side_convention() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("200.0"),
+        2,
+    );
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.000"),
+        Quantity::from("50.0"),
+        3,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+    book.add(bid, 0, 3, 3.into());
+
+    // BUY reads the asks, in FIFO insertion order
+    let asks = book.get_orders_at_level(Price::from("2.000"), OrderSide::Buy);
+    assert_eq!(asks, vec![ask1, ask2]);
+
+    // SELL reads the bids
+    let bids = book.get_orders_at_level(Price::from("1.000"), OrderSide::Sell);
+    assert_eq!(bids, vec![bid]);
+
+    // No level at this price
+    let missing = book.get_orders_at_level(Price::from("1.500"), OrderSide::Buy);
+    assert!(missing.is_empty());
+}
+
+#[rstest]
 fn test_book_get_price_for_exposure_no_market() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -666,6 +753,157 @@ fn test_book_apply_depth(stub_depth10: OrderBookDepth10) {
     assert_eq!(book.best_ask_price().unwrap(), Price::from("100.00"));
     assert_eq!(book.best_bid_size().unwrap(), Quantity::from("100.0"));
     assert_eq!(book.best_ask_size().unwrap(), Quantity::from("100.0"));
+}
+
+#[rstest]
+fn test_l1_book_apply_depth_keeps_best_of_descending_levels() {
+    // Depth levels arrive best-first: L1 must keep the best price, not the
+    // last-processed (worst) level.
+    use crate::data::depth::DEPTH10_LEN;
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    let zero_bid = BookOrder::new(OrderSide::Buy, Price::from("0"), Quantity::zero(0), 0);
+    let zero_ask = BookOrder::new(OrderSide::Sell, Price::from("0"), Quantity::zero(0), 0);
+    let mut bids = [zero_bid; DEPTH10_LEN];
+    let mut asks = [zero_ask; DEPTH10_LEN];
+
+    for (i, price) in ["100.00", "99.00", "98.00"].iter().enumerate() {
+        bids[i] = BookOrder::new(OrderSide::Buy, Price::from(*price), Quantity::from("10"), 0);
+    }
+    asks[0] = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.00"),
+        Quantity::from("10"),
+        0,
+    );
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        RecordFlag::F_SNAPSHOT as u8,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_depth(&depth).unwrap();
+
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
+}
+
+#[rstest]
+#[case::no_flags(0)]
+#[case::snapshot(RecordFlag::F_SNAPSHOT as u8)]
+fn test_l3_zero_order_id_deltas_keep_all_levels(#[case] flags: u8) {
+    // MBP-style delta streams carry order_id=0 (e.g. Tardis L2 data): an L3 book
+    // must key them by price hash and keep every level, not collapse to one.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    let mut deltas = vec![OrderBookDelta::clear(instrument_id, 0, 0.into(), 0.into())];
+    for (i, price) in ["100.00", "99.00", "98.00"].iter().enumerate() {
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(OrderSide::Buy, Price::from(*price), Quantity::from("10"), 0),
+            flags,
+            (i + 1) as u64,
+            0.into(),
+            0.into(),
+        ));
+    }
+
+    for (i, price) in ["101.00", "102.00"].iter().enumerate() {
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from(*price),
+                Quantity::from("20"),
+                0,
+            ),
+            flags,
+            (i + 4) as u64,
+            0.into(),
+            0.into(),
+        ));
+    }
+    book.apply_deltas(&OrderBookDeltas::new(instrument_id, deltas))
+        .unwrap();
+
+    assert_eq!(
+        book.bids(None).count(),
+        3,
+        "L3 book must keep all bid levels"
+    );
+    assert_eq!(
+        book.asks(None).count(),
+        2,
+        "L3 book must keep all ask levels"
+    );
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
+}
+
+#[rstest]
+fn test_l3_book_apply_depth_keeps_all_levels() {
+    // Depth orders carry no venue order IDs (all zero): L3 books must still
+    // retain every level, keyed by price hash.
+    use crate::data::depth::DEPTH10_LEN;
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    let zero_bid = BookOrder::new(OrderSide::Buy, Price::from("0"), Quantity::zero(0), 0);
+    let zero_ask = BookOrder::new(OrderSide::Sell, Price::from("0"), Quantity::zero(0), 0);
+    let mut bids = [zero_bid; DEPTH10_LEN];
+    let mut asks = [zero_ask; DEPTH10_LEN];
+
+    for (i, price) in ["100.00", "99.00", "98.00"].iter().enumerate() {
+        bids[i] = BookOrder::new(OrderSide::Buy, Price::from(*price), Quantity::from("10"), 0);
+    }
+
+    for (i, price) in ["101.00", "102.00"].iter().enumerate() {
+        asks[i] = BookOrder::new(
+            OrderSide::Sell,
+            Price::from(*price),
+            Quantity::from("20"),
+            0,
+        );
+    }
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        RecordFlag::F_SNAPSHOT as u8,
+        1,
+        0.into(),
+        0.into(),
+    );
+    book.apply_depth(&depth).unwrap();
+
+    assert_eq!(
+        book.bids(None).count(),
+        3,
+        "L3 book must keep all bid levels"
+    );
+    assert_eq!(
+        book.asks(None).count(),
+        2,
+        "L3 book must keep all ask levels"
+    );
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
 }
 
 #[rstest]
@@ -3656,6 +3894,50 @@ fn own_order() -> OwnBookOrder {
 }
 
 #[rstest]
+fn test_own_order_ordering_laws(own_order: OwnBookOrder) {
+    let mut updated = own_order;
+    updated.price = Price::from("101.00");
+    updated.size = Quantity::from("5");
+    updated.status = OrderStatus::Accepted;
+    updated.ts_last = 20.into();
+    updated.ts_accepted = 15.into();
+    updated.ts_init = 10.into();
+
+    assert_eq!(own_order, updated);
+    assert_eq!(own_order.cmp(&updated), std::cmp::Ordering::Equal);
+
+    let mut original_hasher = DefaultHasher::new();
+    own_order.hash(&mut original_hasher);
+    let mut updated_hasher = DefaultHasher::new();
+    updated.hash(&mut updated_hasher);
+    assert_eq!(original_hasher.finish(), updated_hasher.finish());
+
+    let mut lower_id_later_timestamp = own_order;
+    lower_id_later_timestamp.client_order_id = ClientOrderId::from("O-100");
+    lower_id_later_timestamp.ts_init = 200.into();
+    let mut higher_id_earlier_timestamp = own_order;
+    higher_id_earlier_timestamp.client_order_id = ClientOrderId::from("O-200");
+    higher_id_earlier_timestamp.ts_init = 100.into();
+
+    assert!(lower_id_later_timestamp < higher_id_earlier_timestamp);
+
+    let variants = [
+        own_order,
+        updated,
+        lower_id_later_timestamp,
+        higher_id_earlier_timestamp,
+    ];
+
+    for a in &variants {
+        for b in &variants {
+            assert_eq!(a == b, a.cmp(b).is_eq());
+            assert_eq!(a.partial_cmp(b), Some(a.cmp(b)));
+            assert_eq!(a.cmp(b), b.cmp(a).reverse());
+        }
+    }
+}
+
+#[rstest]
 fn test_own_order_to_book_price(own_order: OwnBookOrder) {
     let book_price = own_order.to_book_price();
     assert_eq!(book_price.value, Price::from("100.00"));
@@ -4152,6 +4434,47 @@ fn test_own_book_level_add_update_delete() {
 }
 
 #[rstest]
+fn test_own_book_level_update_inserts_missing_order() {
+    let mut level = OwnBookLevel::new(BookPrice::new(
+        Price::from("100.00"),
+        OrderSideSpecified::Buy,
+    ));
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        1.into(),
+        2.into(),
+        3.into(),
+        4.into(),
+    );
+
+    level.update(order);
+
+    assert_eq!(level.len(), 1);
+    let inserted = level.first().unwrap();
+    assert_eq!(inserted.trader_id, order.trader_id);
+    assert_eq!(inserted.client_order_id, order.client_order_id);
+    assert_eq!(inserted.venue_order_id, order.venue_order_id);
+    assert_eq!(inserted.side, order.side);
+    assert_eq!(inserted.price, order.price);
+    assert_eq!(inserted.size, order.size);
+    assert_eq!(inserted.order_type, order.order_type);
+    assert_eq!(inserted.time_in_force, order.time_in_force);
+    assert_eq!(inserted.status, order.status);
+    assert_eq!(inserted.ts_last, order.ts_last);
+    assert_eq!(inserted.ts_accepted, order.ts_accepted);
+    assert_eq!(inserted.ts_submitted, order.ts_submitted);
+    assert_eq!(inserted.ts_init, order.ts_init);
+}
+
+#[rstest]
 fn test_own_book_level_delete_missing_order_errors() {
     let price = BookPrice::new(Price::from("100.00"), OrderSideSpecified::Buy);
     let mut level = OwnBookLevel::new(price);
@@ -4427,6 +4750,100 @@ fn test_own_order_book_bids_and_asks_as_map() {
     let ask_orders = asks_map.get(&ask_price).unwrap();
     assert_eq!(ask_orders.len(), 1);
     assert_eq!(ask_orders[0], order2);
+}
+
+#[rstest]
+fn test_own_order_book_missing_ts_now_skips_acceptance_filter() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::max(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    book.add(order);
+
+    // `ts_accepted` is deliberately `UnixNanos::max()` rather than a value derived from
+    // the current wall clock, so the assertion cannot pass by accident of when it runs.
+    let unfiltered = book.bids_as_map(None, None, None);
+    let filtered = book.bids_as_map(None, None, Some(0));
+
+    assert_eq!(unfiltered.get(&dec!(100.00)), Some(&vec![order]));
+    assert!(filtered.is_empty());
+}
+
+#[rstest]
+fn test_own_order_book_acceptance_buffer_overflow_excludes_order() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::max(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    book.add(order);
+
+    // `ts_accepted + accepted_buffer_ns` overflows, so the order can never become
+    // eligible and is excluded rather than panicking on the addition.
+    let overflowed = book.bids_as_map(None, Some(1), Some(u64::MAX));
+
+    assert!(overflowed.is_empty());
+}
+
+#[rstest]
+#[should_panic(expected = "ts_now must be provided when accepted_buffer_ns > 0")]
+fn test_own_order_book_positive_accepted_buffer_without_ts_now_panics() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let book = OwnOrderBook::new(instrument_id);
+
+    let _ = book.bids_as_map(None, Some(1), None);
+}
+
+#[rstest]
+fn test_own_book_grouped_pprint_includes_future_accepted_order() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OwnOrderBook::new(instrument_id);
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("123.45"),
+        Quantity::from("17"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::max(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    book.add(order);
+
+    let output = book.pprint(3, Some(dec!(0.01)));
+
+    assert!(output.contains("123.45"));
+    assert!(output.contains("17"));
 }
 
 #[rstest]
@@ -6381,10 +6798,14 @@ fn own_order_passes_filter(
     ts_now: Option<u64>,
 ) -> bool {
     let accepted_buffer_ns = accepted_buffer_ns.unwrap_or(0);
-    let ts_now = ts_now.unwrap_or(u64::MAX);
 
     status.is_none_or(|filter| filter.contains(&order.status))
-        && order.ts_accepted + accepted_buffer_ns <= ts_now
+        && ts_now.is_none_or(|ts_now| {
+            order
+                .ts_accepted
+                .checked_add(accepted_buffer_ns)
+                .is_some_and(|eligible_at| eligible_at.as_u64() <= ts_now)
+        })
 }
 
 fn test_own_book_with_operations(operations: Vec<OwnBookOperation>) {
@@ -7537,6 +7958,208 @@ fn test_apply_delta_skips_update_delete_when_order_not_found() {
 }
 
 #[rstest]
+fn test_apply_delta_skips_ambiguous_no_side_update_on_locked_l2_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        0,
+    );
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("100.00"),
+        Quantity::from("20"),
+        0,
+    );
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        bid,
+        0,
+        1,
+        0.into(),
+        0.into(),
+    ))
+    .unwrap();
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        ask,
+        0,
+        2,
+        0.into(),
+        0.into(),
+    ))
+    .unwrap();
+
+    // Recover the price-hash order ID shared by both sides via a snapshot round trip
+    let snapshot = book.to_deltas(3.into(), 3.into());
+    let hash_order_id = snapshot.deltas[1].order.order_id;
+
+    let noside_update = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("55"),
+        hash_order_id,
+    );
+    let result = book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Update,
+        noside_update,
+        0,
+        4,
+        0.into(),
+        0.into(),
+    ));
+
+    assert!(result.is_ok());
+    assert_eq!(
+        book.best_bid_size().unwrap(),
+        Quantity::from("10"),
+        "Ambiguous update must not mutate the bid side"
+    );
+    assert_eq!(
+        book.best_ask_size().unwrap(),
+        Quantity::from("20"),
+        "Ambiguous update must not mutate the ask side"
+    );
+
+    let noside_delete = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        hash_order_id,
+    );
+    let result = book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Delete,
+        noside_delete,
+        0,
+        5,
+        0.into(),
+        0.into(),
+    ));
+
+    assert!(result.is_ok());
+    assert_eq!(
+        book.best_bid_size().unwrap(),
+        Quantity::from("10"),
+        "Ambiguous delete must not mutate the bid side"
+    );
+    assert_eq!(
+        book.best_ask_size().unwrap(),
+        Quantity::from("20"),
+        "Ambiguous delete must not mutate the ask side"
+    );
+}
+
+#[rstest]
+fn test_apply_delta_errors_on_ambiguous_no_side_add_on_locked_l2_book() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    for side in [OrderSide::Buy, OrderSide::Sell] {
+        let order = BookOrder::new(side, Price::from("100.00"), Quantity::from("10"), 0);
+        book.apply_delta(&OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            order,
+            0,
+            1,
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    }
+
+    let snapshot = book.to_deltas(2.into(), 2.into());
+    let hash_order_id = snapshot.deltas[1].order.order_id;
+
+    let noside_add = BookOrder::new(
+        OrderSide::NoOrderSide,
+        Price::from("100.00"),
+        Quantity::from("55"),
+        hash_order_id,
+    );
+    let result = book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        noside_add,
+        0,
+        3,
+        0.into(),
+        0.into(),
+    ));
+
+    assert_eq!(
+        result.unwrap_err(),
+        BookIntegrityError::AmbiguousOrderSide(hash_order_id)
+    );
+}
+
+#[rstest]
+fn test_l3_ftob_add_only_flow_replaces_top_of_book() {
+    // F_TOB add-only top-of-book updates on an L3 book map to the side-constant
+    // order ID: each add must move that order (replace the top), not accumulate
+    // orphan levels that deletes can never reach.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let ftob = RecordFlag::F_TOB as u8;
+
+    for (i, price) in ["100.00", "101.00"].iter().enumerate() {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from(*price),
+            Quantity::from("10"),
+            (i + 1) as u64, // Venue order ID, normalized by pre_process_order
+        );
+        book.apply_delta(&OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            order,
+            ftob,
+            (i + 1) as u64,
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    }
+
+    assert_eq!(
+        book.bids(None).count(),
+        1,
+        "F_TOB add-only flow must replace the top, not accumulate levels"
+    );
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("101.00"));
+
+    let delete = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("101.00"),
+        Quantity::from("10"),
+        2,
+    );
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Delete,
+        delete,
+        ftob,
+        3,
+        0.into(),
+        0.into(),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        book.bids(None).count(),
+        0,
+        "Delete must not leave a ghost level at the stale price"
+    );
+}
+
+#[rstest]
 fn test_apply_delta_no_order_side_with_zero_order_id_for_clear() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
@@ -8016,9 +8639,9 @@ fn test_deltas_to_quotes_suppresses_duplicate_bbo() {
             2,
             2000,
         ),
-        // Add deeper bid — BBO unchanged
+        // Add deeper bid - BBO unchanged
         make_delta(id, BookAction::Add, OrderSide::Buy, "98.00", "5", 3, 3000),
-        // Add deeper ask — BBO unchanged
+        // Add deeper ask - BBO unchanged
         make_delta(id, BookAction::Add, OrderSide::Sell, "102.00", "5", 4, 4000),
     ];
 
@@ -8092,7 +8715,7 @@ fn test_deltas_to_quotes_emits_on_cancel_changes_bbo() {
             3,
             2000,
         ),
-        // Cancel best bid — BBO changes to 98.00
+        // Cancel best bid - BBO changes to 98.00
         make_delta(
             id,
             BookAction::Delete,
@@ -8478,6 +9101,36 @@ fn test_book_get_levels_for_price_buy_crosses_two_levels() {
             (Price::from("1.002"), Quantity::from("20.0")),
         ]
     );
+}
+
+#[rstest]
+fn test_book_get_levels_for_price_preserves_raw_size() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let price = Price::from("1.001");
+    let size = Quantity::from_raw(9_007_199_253_999_999_999 as QuantityRaw, FIXED_PRECISION);
+    let ask = BookOrder::new(OrderSide::Sell, price, size, 0);
+    book.add(ask, 0, 1, 1.into());
+
+    let result = book.get_all_crossed_levels(OrderSide::Buy, price, FIXED_PRECISION);
+
+    assert_eq!(result, vec![(price, size)]);
+}
+
+#[cfg(not(feature = "high-precision"))]
+#[rstest]
+#[should_panic(expected = "Overflow occurred when summing `BookLevel` raw size")]
+fn test_book_get_levels_for_price_panics_on_raw_size_overflow() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let price = Price::from("1.001");
+    let size = Quantity::from_raw(QUANTITY_RAW_MAX, FIXED_PRECISION);
+    let ask1 = BookOrder::new(OrderSide::Sell, price, size, 1);
+    let ask2 = BookOrder::new(OrderSide::Sell, price, size, 2);
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+
+    let _ = book.get_all_crossed_levels(OrderSide::Buy, price, FIXED_PRECISION);
 }
 
 #[rstest]

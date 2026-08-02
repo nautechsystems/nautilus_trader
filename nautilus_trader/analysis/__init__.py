@@ -53,6 +53,7 @@ from nautilus_trader.core.nautilus_pyo3 import AvgLoser
 from nautilus_trader.core.nautilus_pyo3 import AvgWinner
 from nautilus_trader.core.nautilus_pyo3 import BetaRatio
 from nautilus_trader.core.nautilus_pyo3 import CalmarRatio
+from nautilus_trader.core.nautilus_pyo3 import DownCaptureRatio
 from nautilus_trader.core.nautilus_pyo3 import Expectancy
 from nautilus_trader.core.nautilus_pyo3 import InformationRatio
 from nautilus_trader.core.nautilus_pyo3 import LongRatio
@@ -71,6 +72,7 @@ from nautilus_trader.core.nautilus_pyo3 import SharpeRatio
 from nautilus_trader.core.nautilus_pyo3 import SortinoRatio
 from nautilus_trader.core.nautilus_pyo3 import TrackingError
 from nautilus_trader.core.nautilus_pyo3 import TreynorRatio
+from nautilus_trader.core.nautilus_pyo3 import UpCaptureRatio
 from nautilus_trader.core.nautilus_pyo3 import WinRate
 
 
@@ -81,6 +83,7 @@ __all__ = [
     "AvgWinner",
     "BetaRatio",
     "CalmarRatio",
+    "DownCaptureRatio",
     "Expectancy",
     "GridLayout",
     "InformationRatio",
@@ -115,6 +118,7 @@ __all__ = [
     "TearsheetYearlyReturnsChart",
     "TrackingError",
     "TreynorRatio",
+    "UpCaptureRatio",
     "WinRate",
     "create_drawdown_chart",
     "create_equity_curve",

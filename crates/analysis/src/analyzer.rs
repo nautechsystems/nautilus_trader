@@ -20,7 +20,8 @@ use indexmap::{IndexMap, IndexSet};
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    identifiers::PositionId,
+    events::PortfolioSnapshot,
+    identifiers::{AccountId, PositionId},
     position::Position,
     types::{Currency, Money},
 };
@@ -34,9 +35,10 @@ use crate::{
         expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
         loser_min::MinLoser, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
         returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
+        returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
         returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, tail_ratio::TailRatio,
+        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -86,11 +88,14 @@ impl Default for PortfolioAnalyzer {
         analyzer.register_statistic(Arc::new(Expectancy {}));
         analyzer.register_statistic(Arc::new(WinRate {}));
         analyzer.register_statistic(Arc::new(ReturnsVolatility::new(None)));
+        analyzer.register_statistic(Arc::new(ReturnsSkewness::new()));
+        analyzer.register_statistic(Arc::new(ReturnsKurtosis::new()));
         analyzer.register_statistic(Arc::new(ReturnsAverage {}));
         analyzer.register_statistic(Arc::new(ReturnsAverageLoss {}));
         analyzer.register_statistic(Arc::new(ReturnsAverageWin {}));
         analyzer.register_statistic(Arc::new(SharpeRatio::new(None)));
         analyzer.register_statistic(Arc::new(SortinoRatio::new(None)));
+        analyzer.register_statistic(Arc::new(TailRatio {}));
         analyzer.register_statistic(Arc::new(ProfitFactor {}));
         analyzer.register_statistic(Arc::new(RiskReturnRatio {}));
         analyzer.register_statistic(Arc::new(LongRatio::new(None)));
@@ -209,7 +214,30 @@ impl PortfolioAnalyzer {
         snapshots: &[Position],
         recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
     ) -> Self {
+        Self::from_accounts_with_snapshots(
+            accounts,
+            positions,
+            snapshots,
+            &[],
+            recorded_realized_pnls,
+        )
+    }
+
+    /// Builds a populated analyzer from accounts, positions, and portfolio snapshots.
+    ///
+    /// Portfolio returns use daily mark-to-market equity when at least two UTC dates are
+    /// available and every account resolves to one common currency. Otherwise the primary
+    /// returns source falls back to position returns.
+    #[must_use]
+    pub fn from_accounts_with_snapshots<'a>(
+        accounts: &[AccountAny],
+        positions: &[Position],
+        position_snapshots: &[Position],
+        portfolio_snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
+        recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
+    ) -> Self {
         let mut analyzer = Self::default();
+        let mut account_ids = Vec::with_capacity(accounts.len());
 
         for account in accounts {
             let account_ref: &dyn Account = match account {
@@ -217,6 +245,7 @@ impl PortfolioAnalyzer {
                 AccountAny::Cash(cash) => cash,
                 AccountAny::Betting(betting) => betting,
             };
+            account_ids.push(account_ref.id());
 
             for (currency, money) in account_ref.starting_balances() {
                 analyzer
@@ -236,9 +265,22 @@ impl PortfolioAnalyzer {
         }
 
         analyzer.add_positions(positions);
-        analyzer.add_positions(snapshots);
+        analyzer.add_positions(position_snapshots);
         analyzer.recorded_realized_pnls = recorded_realized_pnls;
+        analyzer.set_portfolio_returns_from_snapshots(&account_ids, portfolio_snapshots);
         analyzer
+    }
+
+    /// Replaces the primary returns source with snapshot-backed portfolio returns when resolvable.
+    pub fn set_portfolio_returns_from_snapshots<'a>(
+        &mut self,
+        account_ids: &[AccountId],
+        snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
+    ) {
+        if let Some(returns) = Self::calculate_snapshot_returns(account_ids, snapshots) {
+            self.portfolio_returns = returns;
+            self.sync_returns_alias();
+        }
     }
 
     /// Collects an owned [`PortfolioStatistics`] snapshot from the current analyzer state.
@@ -255,6 +297,7 @@ impl PortfolioAnalyzer {
             pnls,
             returns: self.get_performance_stats_returns(),
             general: self.get_performance_stats_general(),
+            returns_series: self.returns.clone(),
         }
     }
 
@@ -336,6 +379,10 @@ impl PortfolioAnalyzer {
         let mut daily_balances = BTreeMap::new();
 
         for event in events {
+            if event.balances.is_empty() {
+                continue;
+            }
+
             if event.balances.len() != 1 {
                 return None;
             }
@@ -356,18 +403,122 @@ impl PortfolioAnalyzer {
             daily_balances.insert(day_start, balance.total.as_f64());
         }
 
-        if daily_balances.len() < 2 {
+        Self::calculate_daily_returns(&daily_balances)
+    }
+
+    fn calculate_snapshot_returns<'a>(
+        account_ids: &[AccountId],
+        snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
+    ) -> Option<Returns> {
+        let expected_accounts: IndexSet<AccountId> = account_ids.iter().copied().collect();
+        if expected_accounts.is_empty() {
+            return None;
+        }
+
+        let mut currency = None;
+        let mut equity_by_account: AHashMap<AccountId, BTreeMap<UnixNanos, f64>> = AHashMap::new();
+
+        for snapshot in snapshots {
+            if !expected_accounts.contains(&snapshot.account_id) {
+                continue;
+            }
+
+            if !snapshot.unpriced_instruments.is_empty() {
+                continue;
+            }
+
+            if snapshot.total_equity.len() != 1 {
+                return None;
+            }
+
+            let equity = snapshot
+                .base_currency_equity
+                .unwrap_or(snapshot.total_equity[0]);
+
+            if let Some(existing_currency) = currency {
+                if existing_currency != equity.currency {
+                    return None;
+                }
+            } else {
+                currency = Some(equity.currency);
+            }
+
+            let is_registration = !equity_by_account.contains_key(&snapshot.account_id);
+            let day_start = Self::snapshot_day_start(snapshot.ts_event, is_registration);
+            equity_by_account
+                .entry(snapshot.account_id)
+                .or_default()
+                .insert(day_start, equity.as_f64());
+        }
+
+        if equity_by_account.len() != expected_accounts.len() {
+            return None;
+        }
+
+        let first_day = equity_by_account
+            .values()
+            .filter_map(|equity| equity.keys().next().copied())
+            .min()?;
+        let last_day = equity_by_account
+            .values()
+            .filter_map(|equity| equity.keys().next_back().copied())
+            .max()?;
+        let mut daily_equity = BTreeMap::new();
+        let mut current_equity = AHashMap::new();
+        let mut current_day = first_day;
+
+        loop {
+            for account_id in &expected_accounts {
+                if let Some(equity) = equity_by_account
+                    .get(account_id)
+                    .and_then(|values| values.get(&current_day))
+                {
+                    current_equity.insert(*account_id, *equity);
+                }
+            }
+
+            if current_equity.len() == expected_accounts.len() {
+                let total = expected_accounts
+                    .iter()
+                    .map(|account_id| current_equity[account_id])
+                    .sum();
+                daily_equity.insert(current_day, total);
+            }
+
+            if current_day >= last_day {
+                break;
+            }
+
+            current_day += UnixNanos::from(NANOSECONDS_IN_DAY);
+        }
+
+        Self::calculate_daily_returns(&daily_equity)
+    }
+
+    fn snapshot_day_start(ts_event: UnixNanos, is_registration: bool) -> UnixNanos {
+        let timestamp = ts_event.as_u64();
+        let offset = timestamp % NANOSECONDS_IN_DAY;
+        let day_start = timestamp - offset;
+        if is_registration || (offset == 0 && timestamp > 0) {
+            UnixNanos::from(day_start.saturating_sub(NANOSECONDS_IN_DAY))
+        } else {
+            UnixNanos::from(day_start)
+        }
+    }
+
+    fn calculate_daily_returns(daily_equity: &BTreeMap<UnixNanos, f64>) -> Option<Returns> {
+        if daily_equity.len() < 2 {
             return None;
         }
 
         let mut returns = Returns::new();
-        let mut current_day = *daily_balances.keys().next()?;
-        let last_day = *daily_balances.keys().next_back()?;
+        let mut current_day = *daily_equity.keys().next()?;
+        let last_day = *daily_equity.keys().next_back()?;
         let mut current_balance: Option<f64> = None;
         let mut previous_balance: Option<f64> = None;
 
         loop {
-            if let Some(balance) = daily_balances.get(&current_day) {
+            if let Some(balance) = daily_equity.get(&current_day) {
                 current_balance = Some(*balance);
             }
 
@@ -814,7 +965,7 @@ mod tests {
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
-        events::{AccountState, OrderFilled},
+        events::{AccountState, OrderFilled, PortfolioSnapshot},
         identifiers::{
             AccountId, ClientOrderId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
@@ -871,6 +1022,8 @@ mod tests {
         Position {
             events: Vec::new(),
             adjustments: Vec::new(),
+            replay_events: Vec::new(),
+            fill_voids: Vec::new(),
             trader_id: trader_id(),
             strategy_id: strategy_id_ema_cross(),
             instrument_id: instrument_id_aud_usd_sim(),
@@ -1026,6 +1179,225 @@ mod tests {
             UnixNanos::from(ts_event),
             Some(currency),
         )
+    }
+
+    fn create_portfolio_snapshot(
+        account_id: AccountId,
+        equity: Decimal,
+        currency: Currency,
+        ts_event: u64,
+    ) -> PortfolioSnapshot {
+        let equity = Money::from_decimal(equity, currency).unwrap();
+
+        PortfolioSnapshot::new(
+            account_id,
+            AccountType::Cash,
+            Some(currency),
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![equity],
+            Some(equity),
+            false,
+            vec![],
+            vec![],
+            vec![],
+            UUID4::new(),
+            UnixNanos::from(ts_event),
+            UnixNanos::from(ts_event),
+        )
+    }
+
+    #[rstest]
+    fn test_calculate_snapshot_returns_tracks_daily_mark_to_market_equity() {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+        let snapshots = [
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(10_000),
+                currency,
+                NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
+            ),
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(10_500),
+                currency,
+                NANOSECONDS_IN_DAY + 3 * NANOSECONDS_IN_DAY / 4,
+            ),
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(11_000),
+                currency,
+                2 * NANOSECONDS_IN_DAY,
+            ),
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(12_100),
+                currency,
+                3 * NANOSECONDS_IN_DAY,
+            ),
+        ];
+
+        let returns =
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
+        let values: Vec<f64> = returns.values().copied().collect();
+        let dates: Vec<UnixNanos> = returns.keys().copied().collect();
+
+        assert_eq!(
+            dates,
+            vec![
+                UnixNanos::from(NANOSECONDS_IN_DAY),
+                UnixNanos::from(2 * NANOSECONDS_IN_DAY),
+            ]
+        );
+        assert_eq!(values.len(), 2);
+        assert!(approx_eq!(f64, values[0], 0.1, epsilon = 1e-12));
+        assert!(approx_eq!(f64, values[1], 0.1, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    fn test_calculate_snapshot_returns_aggregates_accounts_in_one_currency() {
+        let account_a = AccountId::new("SIM-001");
+        let account_b = AccountId::new("SIM-002");
+        let currency = Currency::USD();
+        let snapshots = [
+            create_portfolio_snapshot(account_a, Decimal::from(100), currency, NANOSECONDS_IN_DAY),
+            create_portfolio_snapshot(account_b, Decimal::from(50), currency, NANOSECONDS_IN_DAY),
+            create_portfolio_snapshot(
+                account_a,
+                Decimal::from(110),
+                currency,
+                2 * NANOSECONDS_IN_DAY,
+            ),
+        ];
+
+        let returns = PortfolioAnalyzer::calculate_snapshot_returns(
+            &[account_a, account_b],
+            snapshots.iter(),
+        )
+        .unwrap();
+
+        assert!(approx_eq!(
+            f64,
+            returns[&UnixNanos::from(NANOSECONDS_IN_DAY)],
+            160.0 / 150.0 - 1.0,
+            epsilon = 1e-12
+        ));
+    }
+
+    #[rstest]
+    fn test_calculate_snapshot_returns_uses_single_total_without_base_currency() {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+        let mut first =
+            create_portfolio_snapshot(account_id, Decimal::from(100), currency, NANOSECONDS_IN_DAY);
+        let mut second = create_portfolio_snapshot(
+            account_id,
+            Decimal::from(110),
+            currency,
+            2 * NANOSECONDS_IN_DAY,
+        );
+        first.base_currency_equity = None;
+        second.base_currency_equity = None;
+        let snapshots = [first, second];
+
+        let returns =
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
+
+        assert!(approx_eq!(
+            f64,
+            returns[&UnixNanos::from(NANOSECONDS_IN_DAY)],
+            0.1,
+            epsilon = 1e-12
+        ));
+    }
+
+    #[rstest]
+    fn test_calculate_snapshot_returns_rejects_multi_currency_total_with_base_equity() {
+        let account_id = AccountId::new("SIM-001");
+        let mut first = create_portfolio_snapshot(
+            account_id,
+            Decimal::from(100),
+            Currency::USD(),
+            NANOSECONDS_IN_DAY,
+        );
+        let mut second = create_portfolio_snapshot(
+            account_id,
+            Decimal::from(110),
+            Currency::USD(),
+            2 * NANOSECONDS_IN_DAY,
+        );
+        first.total_equity.push(Money::new(50.0, Currency::AUD()));
+        second.total_equity.push(Money::new(55.0, Currency::AUD()));
+        let snapshots = [first, second];
+
+        let returns =
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter());
+
+        assert!(returns.is_none());
+    }
+
+    #[rstest]
+    fn test_calculate_snapshot_returns_forward_fills_unpriced_dates() {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+        let first =
+            create_portfolio_snapshot(account_id, Decimal::from(100), currency, NANOSECONDS_IN_DAY);
+        let mut unpriced =
+            create_portfolio_snapshot(account_id, Decimal::ZERO, currency, 2 * NANOSECONDS_IN_DAY);
+        unpriced.unpriced_instruments = vec![instrument_id_aud_usd_sim()];
+        let last = create_portfolio_snapshot(
+            account_id,
+            Decimal::from(110),
+            currency,
+            3 * NANOSECONDS_IN_DAY,
+        );
+        let snapshots = [first, unpriced, last];
+
+        let returns =
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
+
+        assert!(approx_eq!(
+            f64,
+            returns[&UnixNanos::from(NANOSECONDS_IN_DAY)],
+            0.0,
+            epsilon = 1e-12
+        ));
+        assert!(approx_eq!(
+            f64,
+            returns[&UnixNanos::from(2 * NANOSECONDS_IN_DAY)],
+            0.1,
+            epsilon = 1e-12
+        ));
+    }
+
+    #[rstest]
+    fn test_calculate_snapshot_returns_rejects_mixed_account_currencies() {
+        let account_a = AccountId::new("SIM-001");
+        let account_b = AccountId::new("SIM-002");
+        let snapshots = [
+            create_portfolio_snapshot(
+                account_a,
+                Decimal::from(100),
+                Currency::USD(),
+                NANOSECONDS_IN_DAY,
+            ),
+            create_portfolio_snapshot(
+                account_b,
+                Decimal::from(100),
+                Currency::AUD(),
+                NANOSECONDS_IN_DAY,
+            ),
+        ];
+
+        let returns = PortfolioAnalyzer::calculate_snapshot_returns(
+            &[account_a, account_b],
+            snapshots.iter(),
+        );
+
+        assert!(returns.is_none());
     }
 
     #[rstest]
@@ -1554,6 +1926,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_statistics_skips_empty_balance_events() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+        let mut starting_balances = AHashMap::new();
+        starting_balances.insert(currency, Money::new(1000.0, currency));
+        let mut current_balances = AHashMap::new();
+        current_balances.insert(currency, Money::new(1050.0, currency));
+        let empty_event = AccountState::new(
+            AccountId::new("test-account"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1_705_276_800_000_000_000),
+            UnixNanos::from(1_705_276_800_000_000_000),
+            Some(currency),
+        );
+        let account = MockAccount {
+            starting_balances,
+            current_balances,
+            events: vec![
+                create_account_state(1000.0, currency, 1_704_067_200_000_000_000),
+                empty_event,
+                create_account_state(1050.0, currency, 1_706_659_200_000_000_000),
+            ],
+        };
+
+        analyzer.calculate_statistics(&account, &[]);
+
+        let portfolio_returns = analyzer.portfolio_returns();
+        assert_eq!(portfolio_returns.len(), 30);
+        assert_eq!(analyzer.returns(), portfolio_returns);
+        assert!(approx_eq!(
+            f64,
+            *portfolio_returns
+                .get(&UnixNanos::from(1_706_659_200_000_000_000))
+                .unwrap(),
+            0.05,
+            epsilon = 1e-9
+        ));
+    }
+
+    #[rstest]
     fn test_calculate_statistics_skips_non_finite_account_returns() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -1747,6 +2163,7 @@ mod tests {
             &snapshot.general,
             &analyzer.get_performance_stats_general()
         ));
+        assert_eq!(&snapshot.returns_series, analyzer.returns());
 
         for currency in analyzer.currencies() {
             let expected = analyzer

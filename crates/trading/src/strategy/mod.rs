@@ -39,10 +39,11 @@ use nautilus_core::{Params, UUID4};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, PositionSide, TimeInForce, TriggerType},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderDenied, OrderEmulated, OrderEventAny,
-        OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -429,7 +430,7 @@ pub trait Strategy: DataActor {
 
         if !updating {
             log::error!(
-                "Cannot create command ModifyOrder: quantity, price and trigger were either None \
+                "Cannot create command ModifyOrder: quantity, price, and trigger were either None \
                 or the same as existing values"
             );
             return Ok(());
@@ -562,7 +563,7 @@ pub trait Strategy: DataActor {
 
             if !updating {
                 anyhow::bail!(
-                    "Cannot create command BatchModifyOrders: quantity, price and trigger were \
+                    "Cannot create command BatchModifyOrders: quantity, price, and trigger were \
                     either None or the same as existing values for {}",
                     order.client_order_id()
                 );
@@ -910,9 +911,7 @@ pub trait Strategy: DataActor {
             order.strategy_id(),
             order.instrument_id(),
             order.client_order_id(),
-            order
-                .account_id()
-                .expect("Order must have account_id for pending update"),
+            order.account_id(),
             UUID4::new(),
             ts_now,
             ts_now,
@@ -935,9 +934,7 @@ pub trait Strategy: DataActor {
             order.strategy_id(),
             order.instrument_id(),
             order.client_order_id(),
-            order
-                .account_id()
-                .expect("Order must have account_id for pending cancel"),
+            order.account_id(),
             UUID4::new(),
             ts_now,
             ts_now,
@@ -1093,6 +1090,7 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if the strategy is not registered or position closing fails.
+    #[expect(clippy::too_many_arguments)]
     fn close_position(
         &mut self,
         position: &Position,
@@ -1101,6 +1099,7 @@ pub trait Strategy: DataActor {
         time_in_force: Option<TimeInForce>,
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
+        params: Option<Params>,
     ) -> anyhow::Result<()>
     where
         Self: StrategyNative,
@@ -1127,7 +1126,7 @@ pub trait Strategy: DataActor {
             None,
         );
 
-        self.submit_order(order, Some(position.id), client_id, None)
+        self.submit_order(order, Some(position.id), client_id, params)
     }
 
     /// Closes all open positions for the given instrument.
@@ -1145,6 +1144,7 @@ pub trait Strategy: DataActor {
         time_in_force: Option<TimeInForce>,
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
+        params: Option<Params>,
     ) -> anyhow::Result<()>
     where
         Self: StrategyNative,
@@ -1202,7 +1202,7 @@ pub trait Strategy: DataActor {
                 None,
             );
 
-            self.submit_order(order, Some(pos_id), client_id, None)?;
+            self.submit_order(order, Some(pos_id), client_id, params.clone())?;
         }
 
         Ok(())
@@ -1310,14 +1310,23 @@ pub trait Strategy: DataActor {
         };
 
         let client_order_id = event.client_order_id();
-        let is_terminal = matches!(
-            &event,
-            OrderEventAny::Filled(_)
-                | OrderEventAny::Canceled(_)
-                | OrderEventAny::Rejected(_)
-                | OrderEventAny::Expired(_)
-                | OrderEventAny::Denied(_)
-        );
+        let cached_order_is_closed = {
+            let core = StrategyNative::strategy_core_mut(self);
+            core.cache_ref()
+                .order(&client_order_id)
+                .map(|order| order.is_closed())
+        };
+        let is_terminal = match &event {
+            OrderEventAny::FillVoided(event) => {
+                cached_order_is_closed.unwrap_or(!event.is_reopened)
+            }
+            OrderEventAny::Filled(_) => cached_order_is_closed.unwrap_or(true),
+            OrderEventAny::Canceled(_)
+            | OrderEventAny::Rejected(_)
+            | OrderEventAny::Expired(_)
+            | OrderEventAny::Denied(_) => true,
+            _ => false,
+        };
 
         // GTD timer cleanup runs regardless of state so timers do not leak when
         // terminal events arrive during the post-stop delay.
@@ -1329,6 +1338,22 @@ pub trait Strategy: DataActor {
         // remain observable, but dispatch is gated on the running state.
         if state != ComponentState::Running {
             return;
+        }
+
+        if matches!(&event, OrderEventAny::FillVoided(event) if event.is_reopened) {
+            let order = StrategyNative::strategy_core_mut(self)
+                .cache_ref()
+                .order(&client_order_id)
+                .map(|order| order.clone());
+            if let Some(order) = order
+                && order.is_open()
+                && !self.has_gtd_expiry_timer(&client_order_id)
+                && let Err(e) = self.set_gtd_expiry(&order)
+            {
+                log::error!(
+                    "Failed to restore GTD expiry for reopened order {client_order_id}: {e}"
+                );
+            }
         }
 
         // Contingent order manager observes events before user handlers so OCO
@@ -1352,9 +1377,7 @@ pub trait Strategy: DataActor {
             OrderEventAny::Submitted(e) => self.on_order_submitted(*e),
             OrderEventAny::Rejected(e) => self.on_order_rejected(*e),
             OrderEventAny::Accepted(e) => self.on_order_accepted(*e),
-            OrderEventAny::Canceled(e) => {
-                let _ = DataActor::on_order_canceled(self, e);
-            }
+            OrderEventAny::Canceled(e) => self.on_order_canceled(e),
             OrderEventAny::Expired(e) => self.on_order_expired(*e),
             OrderEventAny::Triggered(e) => self.on_order_triggered(*e),
             OrderEventAny::PendingUpdate(e) => self.on_order_pending_update(*e),
@@ -1362,9 +1385,8 @@ pub trait Strategy: DataActor {
             OrderEventAny::ModifyRejected(e) => self.on_order_modify_rejected(*e),
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
-            OrderEventAny::Filled(e) => {
-                let _ = DataActor::on_order_filled(self, e);
-            }
+            OrderEventAny::Filled(e) => self.on_order_filled(e),
+            OrderEventAny::FillVoided(e) => self.on_order_fill_voided(e),
         }
         self.on_order_event(event);
     }
@@ -1537,7 +1559,21 @@ pub trait Strategy: DataActor {
     #[allow(unused_variables)]
     fn on_order_updated(&mut self, event: OrderUpdated) {}
 
-    // Note: on_order_filled is inherited from DataActor trait
+    /// Called when an order is canceled.
+    ///
+    /// Override this method to implement custom logic when an order is canceled.
+    #[allow(unused_variables)]
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {}
+
+    /// Called when an order is filled.
+    ///
+    /// Override this method to implement custom logic when an order is filled.
+    #[allow(unused_variables)]
+    fn on_order_filled(&mut self, event: &OrderFilled) {}
+
+    /// Called when an applied order fill is partly or fully voided.
+    #[allow(unused_variables)]
+    fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {}
 
     /// Called when a position is opened.
     ///
@@ -1671,6 +1707,7 @@ pub trait Strategy: DataActor {
                 Some(vec![market_exit_tag]),
                 Some(time_in_force),
                 Some(reduce_only),
+                None,
                 None,
             ) {
                 log::error!("Error closing positions for {instrument_id}: {e}");
@@ -2242,7 +2279,13 @@ mod tests {
         enums::{
             LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PositionSide,
         },
-        events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted},
+        events::{
+            OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
+            order::spec::{
+                OrderAcceptedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
+                OrderFilledSpec, OrderRejectedSpec,
+            },
+        },
         identifiers::{
             AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, OrderListId, PositionId,
             StrategyId, TradeId, TraderId, VenueOrderId,
@@ -2267,6 +2310,7 @@ mod tests {
         on_order_accepted_called: bool,
         on_order_canceled_called: bool,
         on_order_filled_called: bool,
+        on_order_fill_voided_called: bool,
         on_order_expired_called: bool,
         on_position_event_called: bool,
         on_position_opened_called: bool,
@@ -2322,6 +2366,7 @@ mod tests {
                 on_order_accepted_called: false,
                 on_order_canceled_called: false,
                 on_order_filled_called: false,
+                on_order_fill_voided_called: false,
                 on_order_expired_called: false,
                 on_position_event_called: false,
                 on_position_opened_called: false,
@@ -2331,19 +2376,21 @@ mod tests {
         }
     }
 
-    impl DataActor for TestStrategy {
-        fn on_order_canceled(&mut self, _event: &OrderCanceled) -> anyhow::Result<()> {
-            self.on_order_canceled_called = true;
-            Ok(())
-        }
-
-        fn on_order_filled(&mut self, _event: &OrderFilled) -> anyhow::Result<()> {
-            self.on_order_filled_called = true;
-            Ok(())
-        }
-    }
+    impl DataActor for TestStrategy {}
 
     nautilus_strategy!(TestStrategy, {
+        fn on_order_canceled(&mut self, _event: &OrderCanceled) {
+            self.on_order_canceled_called = true;
+        }
+
+        fn on_order_filled(&mut self, _event: &OrderFilled) {
+            self.on_order_filled_called = true;
+        }
+
+        fn on_order_fill_voided(&mut self, _event: &OrderFillVoided) {
+            self.on_order_fill_voided_called = true;
+        }
+
         fn on_order_rejected(&mut self, _event: OrderRejected) {
             self.on_order_rejected_called = true;
         }
@@ -2412,93 +2459,94 @@ mod tests {
     }
 
     fn make_filled(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Filled(OrderFilled {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: VenueOrderId::test_default(),
-            account_id: AccountId::from("ACC-001"),
-            trade_id: TradeId::test_default(),
-            position_id: None,
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            last_qty: Quantity::default(),
-            last_px: Price::default(),
-            currency: Currency::from("USD"),
-            liquidity_side: LiquiditySide::Taker,
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            commission: None,
-            causation_id: None,
-        })
+        OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .venue_order_id(VenueOrderId::test_default())
+                .account_id(AccountId::from("ACC-001"))
+                .trade_id(TradeId::test_default())
+                .last_qty(Quantity::default())
+                .last_px(Price::default())
+                .currency(Currency::from("USD"))
+                .liquidity_side(LiquiditySide::Taker)
+                .event_id(UUID4::default())
+                .build(),
+        )
+    }
+
+    fn make_fill_voided(client_order_id: ClientOrderId, is_reopened: bool) -> OrderEventAny {
+        OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .venue_order_id(VenueOrderId::test_default())
+                .account_id(AccountId::from("ACC-001"))
+                .is_reopened(is_reopened)
+                .build(),
+        )
+    }
+
+    fn make_terminal_fill_voided(client_order_id: ClientOrderId) -> OrderEventAny {
+        make_fill_voided(client_order_id, false)
     }
 
     fn make_canceled(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Canceled(OrderCanceled {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: None,
-            account_id: Some(AccountId::from("ACC-001")),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        })
+        OrderEventAny::Canceled(
+            OrderCanceledSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .account_id(AccountId::from("ACC-001"))
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_rejected(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Rejected(OrderRejected {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            account_id: AccountId::from("ACC-001"),
-            reason: "Test rejection".into(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            due_post_only: false,
-            causation_id: None,
-        })
+        OrderEventAny::Rejected(
+            OrderRejectedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .account_id(AccountId::from("ACC-001"))
+                .reason("Test rejection".into())
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_expired(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Expired(OrderExpired {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: None,
-            account_id: Some(AccountId::from("ACC-001")),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        })
+        OrderEventAny::Expired(
+            OrderExpiredSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .account_id(AccountId::from("ACC-001"))
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_accepted(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Accepted(OrderAccepted {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: VenueOrderId::test_default(),
-            account_id: AccountId::from("ACC-001"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        })
+        OrderEventAny::Accepted(
+            OrderAcceptedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .venue_order_id(VenueOrderId::test_default())
+                .account_id(AccountId::from("ACC-001"))
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_accepted_market_order(client_order_id: &str) -> OrderAny {
@@ -2531,7 +2579,9 @@ mod tests {
             .apply(TestOrderEventStubs::accepted(
                 &order,
                 account_id,
-                VenueOrderId::test_default(),
+                // Derived per order: a venue order ID has a single owning client order, so
+                // batch tests holding two accepted orders cannot share the default.
+                VenueOrderId::from(client_order_id),
             ))
             .unwrap();
         order
@@ -2573,7 +2623,8 @@ mod tests {
             .apply(TestOrderEventStubs::accepted(
                 &order,
                 account_id,
-                VenueOrderId::test_default(),
+                // Derived per order, as above.
+                VenueOrderId::from(client_order_id),
             ))
             .unwrap();
         order
@@ -2760,24 +2811,23 @@ mod tests {
         register_strategy(&mut strategy);
         start_strategy(&mut strategy);
 
-        let event = OrderEventAny::Rejected(OrderRejected {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id: ClientOrderId::from("O-001"),
-            account_id: AccountId::from("ACC-001"),
-            reason: "Test rejection".into(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            due_post_only: false,
-            causation_id: None,
-        });
+        let event = make_rejected(ClientOrderId::from("O-001"));
 
         strategy.handle_order_event(event);
 
         assert!(strategy.on_order_rejected_called);
+        assert!(strategy.on_order_event_called);
+    }
+
+    #[rstest]
+    fn test_handle_order_fill_voided_dispatches_to_specific_handler() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+
+        strategy.handle_order_event(make_fill_voided(ClientOrderId::from("O-001"), false));
+
+        assert!(strategy.on_order_fill_voided_called);
         assert!(strategy.on_order_event_called);
     }
 
@@ -2841,7 +2891,7 @@ mod tests {
         strategy.on_order_released(OrderReleased::default());
         strategy.on_order_submitted(OrderSubmitted::default());
         strategy.on_order_rejected(OrderRejected::default());
-        let _ = DataActor::on_order_canceled(&mut strategy, &OrderCanceled::default());
+        strategy.on_order_canceled(&OrderCanceled::default());
         strategy.on_order_expired(OrderExpired::default());
         strategy.on_order_triggered(OrderTriggered::default());
         strategy.on_order_pending_update(OrderPendingUpdate::default());
@@ -2849,6 +2899,8 @@ mod tests {
         strategy.on_order_modify_rejected(OrderModifyRejected::default());
         strategy.on_order_cancel_rejected(OrderCancelRejected::default());
         strategy.on_order_updated(OrderUpdated::default());
+        strategy.on_order_filled(&OrderFilledSpec::builder().build());
+        strategy.on_order_fill_voided(&OrderFillVoidedSpec::builder().build());
         strategy.on_position_event(make_position_opened());
     }
 
@@ -3776,6 +3828,7 @@ mod tests {
     #[case::canceled(make_canceled)]
     #[case::rejected(make_rejected)]
     #[case::expired(make_expired)]
+    #[case::fill_voided(make_terminal_fill_voided)]
     fn test_handle_order_event_cancels_gtd_timer_for_terminal_event(
         #[case] make_event: fn(ClientOrderId) -> OrderEventAny,
     ) {
@@ -3795,10 +3848,34 @@ mod tests {
     }
 
     #[rstest]
+    #[case::partial_fill(make_filled)]
+    #[case::non_reopened_fill_void(make_terminal_fill_voided)]
+    fn test_handle_order_event_keeps_gtd_timer_when_cached_order_remains_open(
+        #[case] make_event: fn(ClientOrderId) -> OrderEventAny,
+    ) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        let order = make_accepted_limit_order(client_order_id.as_str());
+        add_order_to_cache(&strategy, &order);
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        strategy.handle_order_event(make_event(client_order_id));
+
+        assert!(strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
     #[case::filled(make_filled)]
     #[case::canceled(make_canceled)]
     #[case::rejected(make_rejected)]
     #[case::expired(make_expired)]
+    #[case::fill_voided(make_terminal_fill_voided)]
     fn test_handle_order_event_cancels_gtd_timer_when_stopped(
         #[case] make_event: fn(ClientOrderId) -> OrderEventAny,
     ) {
@@ -3833,6 +3910,23 @@ mod tests {
             .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
 
         strategy.handle_order_event(make_accepted(client_order_id));
+
+        assert!(strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_handle_reopened_fill_void_keeps_gtd_timer() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        strategy.handle_order_event(make_fill_voided(client_order_id, true));
 
         assert!(strategy.has_gtd_expiry_timer(&client_order_id));
     }

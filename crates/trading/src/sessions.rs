@@ -24,7 +24,7 @@
 //! - London Session    0800-1600 (Europe / London)
 //! - New York Session  0800-1700 (America / New York)
 
-use chrono::{DateTime, Datelike, Duration, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, Days, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::{America::New_York, Asia::Tokyo, Australia::Sydney, Europe::London, Tz};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -96,117 +96,89 @@ pub fn fx_local_from_utc(session: ForexSession, time_now: DateTime<Utc>) -> Date
 /// Returns the next session start time in UTC.
 #[must_use]
 pub fn fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
     let (start_time, _) = session.session_times();
 
-    let mut next_start = timezone
-        .with_ymd_and_hms(
-            local_now.year(),
-            local_now.month(),
-            local_now.day(),
-            start_time.hour(),
-            start_time.minute(),
-            0,
-        )
-        .unwrap();
-
-    if local_now > next_start {
-        next_start += Duration::days(1);
-    }
-
-    if next_start.weekday().number_from_monday() > 5 {
-        next_start += Duration::days(8 - i64::from(next_start.weekday().number_from_monday()));
-    }
-
-    next_start.with_timezone(&Utc)
+    fx_next_boundary(local_now, start_time)
 }
 
 /// Returns the previous session start time in UTC.
 #[must_use]
 pub fn fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
     let (start_time, _) = session.session_times();
 
-    let mut prev_start = timezone
-        .with_ymd_and_hms(
-            local_now.year(),
-            local_now.month(),
-            local_now.day(),
-            start_time.hour(),
-            start_time.minute(),
-            0,
-        )
-        .unwrap();
-
-    if local_now < prev_start {
-        prev_start -= Duration::days(1);
-    }
-
-    if prev_start.weekday().number_from_monday() > 5 {
-        prev_start -= Duration::days(i64::from(prev_start.weekday().number_from_monday()) - 5);
-    }
-
-    prev_start.with_timezone(&Utc)
+    fx_prev_boundary(local_now, start_time)
 }
 
 /// Returns the next session end time in UTC.
 #[must_use]
 pub fn fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
     let (_, end_time) = session.session_times();
 
-    let mut next_end = timezone
-        .with_ymd_and_hms(
-            local_now.year(),
-            local_now.month(),
-            local_now.day(),
-            end_time.hour(),
-            end_time.minute(),
-            0,
-        )
-        .unwrap();
-
-    if local_now > next_end {
-        next_end += Duration::days(1);
-    }
-
-    if next_end.weekday().number_from_monday() > 5 {
-        next_end += Duration::days(8 - i64::from(next_end.weekday().number_from_monday()));
-    }
-
-    next_end.with_timezone(&Utc)
+    fx_next_boundary(local_now, end_time)
 }
 
 /// Returns the previous session end time in UTC.
 #[must_use]
 pub fn fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
-    let timezone = session.timezone();
     let local_now = fx_local_from_utc(session, time_now);
     let (_, end_time) = session.session_times();
 
-    let mut prev_end = timezone
-        .with_ymd_and_hms(
-            local_now.year(),
-            local_now.month(),
-            local_now.day(),
-            end_time.hour(),
-            end_time.minute(),
-            0,
-        )
-        .unwrap();
+    fx_prev_boundary(local_now, end_time)
+}
 
-    if local_now < prev_end {
-        prev_end -= Duration::days(1);
+fn fx_next_boundary(local_now: DateTime<Tz>, session_time: NaiveTime) -> DateTime<Utc> {
+    let timezone = local_now.timezone();
+    let mut date = local_now.date_naive();
+
+    if local_now.time() > session_time {
+        date = date
+            .checked_add_days(Days::new(1))
+            .expect("FX session date must be representable");
     }
 
-    if prev_end.weekday().number_from_monday() > 5 {
-        prev_end -= Duration::days(i64::from(prev_end.weekday().number_from_monday()) - 5);
+    let weekend_days = match date.weekday() {
+        Weekday::Sat => 2,
+        Weekday::Sun => 1,
+        _ => 0,
+    };
+    date = date
+        .checked_add_days(Days::new(weekend_days))
+        .expect("FX session date must be representable");
+
+    timezone
+        .from_local_datetime(&date.and_time(session_time))
+        .single()
+        .expect("FX session boundary must be a unique local time")
+        .with_timezone(&Utc)
+}
+
+fn fx_prev_boundary(local_now: DateTime<Tz>, session_time: NaiveTime) -> DateTime<Utc> {
+    let timezone = local_now.timezone();
+    let mut date = local_now.date_naive();
+
+    if local_now.time() < session_time {
+        date = date
+            .checked_sub_days(Days::new(1))
+            .expect("FX session date must be representable");
     }
 
-    prev_end.with_timezone(&Utc)
+    let weekend_days = match date.weekday() {
+        Weekday::Sat => 1,
+        Weekday::Sun => 2,
+        _ => 0,
+    };
+    date = date
+        .checked_sub_days(Days::new(weekend_days))
+        .expect("FX session date must be representable");
+
+    timezone
+        .from_local_datetime(&date.and_time(session_time))
+        .single()
+        .expect("FX session boundary must be a unique local time")
+        .with_timezone(&Utc)
 }
 
 #[cfg(test)]
@@ -214,6 +186,19 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    fn local_datetime(
+        session: ForexSession,
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+    ) -> DateTime<Tz> {
+        session
+            .timezone()
+            .with_ymd_and_hms(year, month, day, hour, 0, 0)
+            .unwrap()
+    }
 
     #[rstest]
     #[case(ForexSession::Sydney, "1970-01-01T10:00:00+10:00")]
@@ -268,6 +253,126 @@ mod tests {
         let unix_epoch = Utc.timestamp_opt(0, 0).unwrap();
         let result = fx_prev_end(session, unix_epoch);
         assert_eq!(result.to_rfc3339(), expected);
+    }
+
+    #[rstest]
+    #[case(ForexSession::Sydney, (2024, 4, 5), (2024, 4, 8), 7)]
+    #[case(ForexSession::Sydney, (2024, 10, 4), (2024, 10, 7), 7)]
+    #[case(ForexSession::London, (2024, 3, 29), (2024, 4, 1), 8)]
+    #[case(ForexSession::London, (2024, 10, 25), (2024, 10, 28), 8)]
+    #[case(ForexSession::NewYork, (2024, 3, 8), (2024, 3, 11), 8)]
+    #[case(ForexSession::NewYork, (2024, 11, 1), (2024, 11, 4), 8)]
+    // Saturday input: advances to Sunday, then takes the Sunday weekend arm.
+    #[case(ForexSession::London, (2024, 3, 30), (2024, 4, 1), 8)]
+    fn test_fx_next_start_across_dst_weekend(
+        #[case] session: ForexSession,
+        #[case] input_date: (i32, u32, u32),
+        #[case] expected_date: (i32, u32, u32),
+        #[case] expected_hour: u32,
+    ) {
+        let (input_year, input_month, input_day) = input_date;
+        let (expected_year, expected_month, expected_day) = expected_date;
+        let time_now =
+            local_datetime(session, input_year, input_month, input_day, 18).with_timezone(&Utc);
+        let expected = local_datetime(
+            session,
+            expected_year,
+            expected_month,
+            expected_day,
+            expected_hour,
+        )
+        .with_timezone(&Utc);
+
+        assert_eq!(fx_next_start(session, time_now), expected);
+    }
+
+    #[rstest]
+    #[case(ForexSession::Sydney, (2024, 4, 8), (2024, 4, 5), 7)]
+    #[case(ForexSession::Sydney, (2024, 10, 7), (2024, 10, 4), 7)]
+    #[case(ForexSession::London, (2024, 4, 1), (2024, 3, 29), 8)]
+    #[case(ForexSession::London, (2024, 10, 28), (2024, 10, 25), 8)]
+    #[case(ForexSession::NewYork, (2024, 3, 11), (2024, 3, 8), 8)]
+    #[case(ForexSession::NewYork, (2024, 11, 4), (2024, 11, 1), 8)]
+    // Sunday input: retreats to Saturday, then takes the Saturday weekend arm.
+    #[case(ForexSession::London, (2024, 3, 31), (2024, 3, 29), 8)]
+    fn test_fx_prev_start_across_dst_weekend(
+        #[case] session: ForexSession,
+        #[case] input_date: (i32, u32, u32),
+        #[case] expected_date: (i32, u32, u32),
+        #[case] expected_hour: u32,
+    ) {
+        let (input_year, input_month, input_day) = input_date;
+        let (expected_year, expected_month, expected_day) = expected_date;
+        let time_now =
+            local_datetime(session, input_year, input_month, input_day, 6).with_timezone(&Utc);
+        let expected = local_datetime(
+            session,
+            expected_year,
+            expected_month,
+            expected_day,
+            expected_hour,
+        )
+        .with_timezone(&Utc);
+
+        assert_eq!(fx_prev_start(session, time_now), expected);
+    }
+
+    #[rstest]
+    #[case(ForexSession::Sydney, (2024, 4, 5), (2024, 4, 8), 16)]
+    #[case(ForexSession::Sydney, (2024, 10, 4), (2024, 10, 7), 16)]
+    #[case(ForexSession::London, (2024, 3, 29), (2024, 4, 1), 16)]
+    #[case(ForexSession::London, (2024, 10, 25), (2024, 10, 28), 16)]
+    #[case(ForexSession::NewYork, (2024, 3, 8), (2024, 3, 11), 17)]
+    #[case(ForexSession::NewYork, (2024, 11, 1), (2024, 11, 4), 17)]
+    fn test_fx_next_end_across_dst_weekend(
+        #[case] session: ForexSession,
+        #[case] input_date: (i32, u32, u32),
+        #[case] expected_date: (i32, u32, u32),
+        #[case] expected_hour: u32,
+    ) {
+        let (input_year, input_month, input_day) = input_date;
+        let (expected_year, expected_month, expected_day) = expected_date;
+        let time_now =
+            local_datetime(session, input_year, input_month, input_day, 18).with_timezone(&Utc);
+        let expected = local_datetime(
+            session,
+            expected_year,
+            expected_month,
+            expected_day,
+            expected_hour,
+        )
+        .with_timezone(&Utc);
+
+        assert_eq!(fx_next_end(session, time_now), expected);
+    }
+
+    #[rstest]
+    #[case(ForexSession::Sydney, (2024, 4, 8), (2024, 4, 5), 16)]
+    #[case(ForexSession::Sydney, (2024, 10, 7), (2024, 10, 4), 16)]
+    #[case(ForexSession::London, (2024, 4, 1), (2024, 3, 29), 16)]
+    #[case(ForexSession::London, (2024, 10, 28), (2024, 10, 25), 16)]
+    #[case(ForexSession::NewYork, (2024, 3, 11), (2024, 3, 8), 17)]
+    #[case(ForexSession::NewYork, (2024, 11, 4), (2024, 11, 1), 17)]
+    fn test_fx_prev_end_across_dst_weekend(
+        #[case] session: ForexSession,
+        #[case] input_date: (i32, u32, u32),
+        #[case] expected_date: (i32, u32, u32),
+        #[case] expected_hour: u32,
+    ) {
+        let (input_year, input_month, input_day) = input_date;
+        let (expected_year, expected_month, expected_day) = expected_date;
+        let time_now =
+            local_datetime(session, input_year, input_month, input_day, 6).with_timezone(&Utc);
+        let expected = local_datetime(
+            session,
+            expected_year,
+            expected_month,
+            expected_day,
+            expected_hour,
+        )
+        .with_timezone(&Utc);
+
+        assert_eq!(fx_prev_end(session, time_now), expected);
     }
 
     #[rstest]

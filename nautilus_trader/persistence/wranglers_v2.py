@@ -25,12 +25,16 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import FIXED_PRECISION
 from nautilus_trader.model.objects import FIXED_PRECISION_BYTES
-from nautilus_trader.model.objects import FIXED_SCALAR
 
 
 # Fixed-point raw values are stored as little-endian bytes to match the Rust
 # Arrow decoder (`PriceRaw::from_le_bytes` / `QuantityRaw::from_le_bytes`).
 RAW_BYTE_ORDER: Final = "little"
+_RAW_VALUE_BITS: Final = FIXED_PRECISION_BYTES * 8
+_SIGNED_RAW_MIN: Final = -(2 ** (_RAW_VALUE_BITS - 1))
+_SIGNED_RAW_MAX: Final = 2 ** (_RAW_VALUE_BITS - 1) - 1
+_UNSIGNED_RAW_MIN: Final = 0
+_UNSIGNED_RAW_MAX: Final = 2**_RAW_VALUE_BITS - 1
 
 
 class WranglerBase(abc.ABC):
@@ -161,20 +165,28 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
             ts_init = ts_event + ts_init_delta
 
         # Convert prices and sizes to fixed binary
-        price = (
-            (df["price"] * FIXED_SCALAR)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
-            .to_numpy()
-        )
-        size = (
-            (df["quantity"] if "quantity" in df else df["size"] * FIXED_SCALAR)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
-            )
-            .to_numpy()
-        )
+        price_scale = 10 ** (FIXED_PRECISION - self._inner.price_precision)
+        size_scale = 10 ** (FIXED_PRECISION - self._inner.size_precision)
+        price_mult = 10**self._inner.price_precision
+        size_mult = 10**self._inner.size_precision
+        price = _fixed_binary_series(
+            df["price"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="price",
+            precision=self._inner.price_precision,
+            signed=True,
+        ).to_numpy()
+        size = _fixed_binary_series(
+            df["size"],
+            mult=size_mult,
+            scale=size_scale,
+            kind="size",
+            col_name="size",
+            precision=self._inner.size_precision,
+            signed=False,
+        ).to_numpy()
 
         # Other uint fields
         order_id = df["order_id"].to_numpy(dtype="uint64")
@@ -256,18 +268,15 @@ class OrderBookDepth10DataWranglerV2(WranglerBase):
         if col_name in df.columns:
             price_scale = 10 ** (FIXED_PRECISION - self._inner.price_precision)
             price_mult = 10**self._inner.price_precision
-            return (
-                df[col_name]
-                .apply(lambda x: round(x * price_mult) * price_scale)
-                .apply(
-                    lambda x: x.to_bytes(
-                        FIXED_PRECISION_BYTES,
-                        byteorder=RAW_BYTE_ORDER,
-                        signed=True,
-                    ),
-                )
-                .to_numpy()
-            )
+            return _fixed_binary_series(
+                df[col_name],
+                mult=price_mult,
+                scale=price_scale,
+                kind="price",
+                col_name=col_name,
+                precision=self._inner.price_precision,
+                signed=True,
+            ).to_numpy()
         else:
             return [default_bytes] * len(df)
 
@@ -275,18 +284,15 @@ class OrderBookDepth10DataWranglerV2(WranglerBase):
         if col_name in df.columns:
             size_scale = 10 ** (FIXED_PRECISION - self._inner.size_precision)
             size_mult = 10**self._inner.size_precision
-            return (
-                df[col_name]
-                .apply(lambda x: round(x * size_mult) * size_scale)
-                .apply(
-                    lambda x: x.to_bytes(
-                        FIXED_PRECISION_BYTES,
-                        byteorder=RAW_BYTE_ORDER,
-                        signed=False,
-                    ),
-                )
-                .to_numpy()
-            )
+            return _fixed_binary_series(
+                df[col_name],
+                mult=size_mult,
+                scale=size_scale,
+                kind="size",
+                col_name=col_name,
+                precision=self._inner.size_precision,
+                signed=False,
+            ).to_numpy()
         else:
             return [default_bytes] * len(df)
 
@@ -551,38 +557,42 @@ class QuoteTickDataWranglerV2(WranglerBase):
         size_scale = 10 ** (FIXED_PRECISION - self._inner.size_precision)
         price_mult = 10**self._inner.price_precision
         size_mult = 10**self._inner.size_precision
-        bid_price = (
-            df["bid_price"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
-            .to_numpy()
-        )
-        ask_price = (
-            df["ask_price"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
-            .to_numpy()
-        )
-        bid_size = (
-            df["bid_size"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
-            )
-            .to_numpy()
-        )
-        ask_size = (
-            df["ask_size"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
-            )
-            .to_numpy()
-        )
+        bid_price = _fixed_binary_series(
+            df["bid_price"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="bid_price",
+            precision=self._inner.price_precision,
+            signed=True,
+        ).to_numpy()
+        ask_price = _fixed_binary_series(
+            df["ask_price"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="ask_price",
+            precision=self._inner.price_precision,
+            signed=True,
+        ).to_numpy()
+        bid_size = _fixed_binary_series(
+            df["bid_size"],
+            mult=size_mult,
+            scale=size_scale,
+            kind="size",
+            col_name="bid_size",
+            precision=self._inner.size_precision,
+            signed=False,
+        ).to_numpy()
+        ask_size = _fixed_binary_series(
+            df["ask_size"],
+            mult=size_mult,
+            scale=size_scale,
+            kind="size",
+            col_name="ask_size",
+            precision=self._inner.size_precision,
+            signed=False,
+        ).to_numpy()
 
         fields = [
             pa.field("bid_price", pa.binary(FIXED_PRECISION_BYTES), nullable=False),
@@ -709,20 +719,24 @@ class TradeTickDataWranglerV2(WranglerBase):
         size_scale = 10 ** (FIXED_PRECISION - self._inner.size_precision)
         price_mult = 10**self._inner.price_precision
         size_mult = 10**self._inner.size_precision
-        price = (
-            df["price"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
+        price = _fixed_binary_series(
+            df["price"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="price",
+            precision=self._inner.price_precision,
+            signed=True,
         )
 
-        size = (
-            df["size"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
-            )
+        size = _fixed_binary_series(
+            df["size"],
+            mult=size_mult,
+            scale=size_scale,
+            kind="size",
+            col_name="size",
+            precision=self._inner.size_precision,
+            signed=False,
         )
 
         aggressor_side = df["aggressor_side"].map(_map_aggressor_side)
@@ -862,40 +876,50 @@ class BarDataWranglerV2(WranglerBase):
         size_scale = 10 ** (FIXED_PRECISION - self._inner.size_precision)
         price_mult = 10**self._inner.price_precision
         size_mult = 10**self._inner.size_precision
-        open_price = (
-            df["open"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
+        open_price = _fixed_binary_series(
+            df["open"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="open",
+            precision=self._inner.price_precision,
+            signed=True,
         )
-        high_price = (
-            df["high"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
+        high_price = _fixed_binary_series(
+            df["high"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="high",
+            precision=self._inner.price_precision,
+            signed=True,
         )
-        low_price = (
-            df["low"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
+        low_price = _fixed_binary_series(
+            df["low"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="low",
+            precision=self._inner.price_precision,
+            signed=True,
         )
-        close_price = (
-            df["close"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
-            )
+        close_price = _fixed_binary_series(
+            df["close"],
+            mult=price_mult,
+            scale=price_scale,
+            kind="price",
+            col_name="close",
+            precision=self._inner.price_precision,
+            signed=True,
         )
-        volume = (
-            df["volume"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
-            .apply(
-                lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
-            )
+        volume = _fixed_binary_series(
+            df["volume"],
+            mult=size_mult,
+            scale=size_scale,
+            kind="size",
+            col_name="volume",
+            precision=self._inner.size_precision,
+            signed=False,
         )
 
         fields = [
@@ -920,3 +944,51 @@ class BarDataWranglerV2(WranglerBase):
 
         table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
         return self.from_arrow(table)
+
+
+def _fixed_binary_series(
+    series: pd.Series,
+    *,
+    mult: int,
+    scale: int,
+    kind: str,
+    col_name: str,
+    precision: int,
+    signed: bool,
+) -> pd.Series:
+    return series.apply(
+        lambda x: _fixed_binary_value(
+            x,
+            mult=mult,
+            scale=scale,
+            kind=kind,
+            col_name=col_name,
+            precision=precision,
+            signed=signed,
+        ),
+    )
+
+
+def _fixed_binary_value(
+    value: Any,
+    *,
+    mult: int,
+    scale: int,
+    kind: str,
+    col_name: str,
+    precision: int,
+    signed: bool,
+) -> bytes:
+    raw = round(value * mult) * scale
+    lower = _SIGNED_RAW_MIN if signed else _UNSIGNED_RAW_MIN
+    upper = _SIGNED_RAW_MAX if signed else _UNSIGNED_RAW_MAX
+    range_name = "signed" if signed else "unsigned"
+
+    if raw < lower or raw > upper:
+        raise ValueError(
+            f"Wrangler overflow: {kind} column {col_name!r} source value {value!r} "
+            f"produced raw value {raw}, outside {range_name} {_RAW_VALUE_BITS}-bit range "
+            f"[{lower}, {upper}] with {kind}_precision={precision}",
+        )
+
+    return raw.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=signed)

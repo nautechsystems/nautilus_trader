@@ -306,7 +306,7 @@ impl MarketOrder {
 
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
-        let event_any = pyobject_to_order_event(py, event).unwrap();
+        let event_any = pyobject_to_order_event(py, event)?;
         self.apply(event_any).map_err(to_pyruntime_err)
     }
 
@@ -421,8 +421,7 @@ impl MarketOrder {
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
                 let linked_order_ids_list =
-                    PyList::new(py, linked_order_ids.iter().map(ToString::to_string))
-                        .expect("Invalid `ExactSizeIterator`");
+                    PyList::new(py, linked_order_ids.iter().map(ToString::to_string))?;
                 dict.set_item("linked_order_ids", linked_order_ids_list)
             },
         )?;

@@ -19,6 +19,10 @@ use nautilus_model::position::Position;
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the largest losing trade (most negative PnL) from realized PnLs.
+///
+/// Only negative PnLs count as losers. Returns `NaN` for an empty series or
+/// when there are no losing trades.
 #[repr(C)]
 #[derive(Debug, Clone)]
 #[cfg_attr(

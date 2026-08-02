@@ -93,7 +93,7 @@ use std::collections::BTreeMap;
 
 use ahash::AHashMap;
 use nautilus_model::{
-    enums::{OrderSideSpecified, OrderType},
+    enums::{OrderSideSpecified, OrderType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId},
     orders::{Order, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
@@ -130,6 +130,7 @@ pub struct RestingOrder {
     pub client_order_id: ClientOrderId,
     pub order_side: OrderSideSpecified,
     pub order_type: OrderType,
+    pub trigger_type: TriggerType,
     pub trigger_price: Option<Price>,
     pub limit_price: Option<Price>,
     pub is_activated: bool,
@@ -152,10 +153,32 @@ impl RestingOrder {
         limit_price: Option<Price>,
         is_activated: bool,
     ) -> Self {
+        Self::new_with_trigger_type(
+            client_order_id,
+            order_side,
+            order_type,
+            TriggerType::Default,
+            trigger_price,
+            limit_price,
+            is_activated,
+        )
+    }
+
+    #[must_use]
+    pub(crate) const fn new_with_trigger_type(
+        client_order_id: ClientOrderId,
+        order_side: OrderSideSpecified,
+        order_type: OrderType,
+        trigger_type: TriggerType,
+        trigger_price: Option<Price>,
+        limit_price: Option<Price>,
+        is_activated: bool,
+    ) -> Self {
         Self {
             client_order_id,
             order_side,
             order_type,
+            trigger_type,
             trigger_price,
             limit_price,
             is_activated,
@@ -182,6 +205,7 @@ impl From<&PassiveOrderAny> for RestingOrder {
                 client_order_id: limit.client_order_id(),
                 order_side: limit.order_side_specified(),
                 order_type: limit.order_type(),
+                trigger_type: TriggerType::NoTrigger,
                 trigger_price: None,
                 limit_price: Some(limit.limit_px()),
                 is_activated: true,
@@ -190,7 +214,7 @@ impl From<&PassiveOrderAny> for RestingOrder {
                 let limit_price = match stop {
                     StopOrderAny::LimitIfTouched(o) => Some(o.price),
                     StopOrderAny::StopLimit(o) => Some(o.price),
-                    StopOrderAny::TrailingStopLimit(o) => Some(o.price),
+                    StopOrderAny::TrailingStopLimit(o) => o.price,
                     StopOrderAny::MarketIfTouched(_)
                     | StopOrderAny::StopMarket(_)
                     | StopOrderAny::TrailingStopMarket(_) => None,
@@ -204,7 +228,8 @@ impl From<&PassiveOrderAny> for RestingOrder {
                     client_order_id: stop.client_order_id(),
                     order_side: stop.order_side_specified(),
                     order_type: stop.order_type(),
-                    trigger_price: Some(stop.stop_px()),
+                    trigger_type: stop.trigger_type().unwrap_or(TriggerType::Default),
+                    trigger_price: stop.stop_px(),
                     limit_price,
                     is_activated,
                 }
@@ -559,9 +584,22 @@ impl OrderMatchingCore {
             return None;
         }
 
-        if let Some(trigger_price) = order.trigger_price
-            && self.is_stop_matched(order.order_side, trigger_price)
-        {
+        let trigger_price = order.trigger_price?;
+        let is_triggered = match order.order_type {
+            OrderType::MarketIfTouched | OrderType::LimitIfTouched => self
+                .is_touch_triggered_with_trigger_type(
+                    order.order_side,
+                    trigger_price,
+                    order.trigger_type,
+                ),
+            _ => self.is_stop_matched_with_trigger_type(
+                order.order_side,
+                trigger_price,
+                order.trigger_type,
+            ),
+        };
+
+        if is_triggered {
             Some(MatchAction::TriggerStop(order.client_order_id))
         } else {
             None
@@ -582,19 +620,58 @@ impl OrderMatchingCore {
     /// (BUY: `ask >= price`, SELL: `bid <= price`).
     #[must_use]
     pub fn is_stop_matched(&self, side: OrderSideSpecified, price: Price) -> bool {
-        match side {
-            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a >= price),
-            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b <= price),
-        }
+        self.is_stop_matched_with_trigger_type(side, price, TriggerType::BidAsk)
+    }
+
+    #[must_use]
+    pub(crate) fn is_stop_matched_with_trigger_type(
+        &self,
+        side: OrderSideSpecified,
+        price: Price,
+        trigger_type: TriggerType,
+    ) -> bool {
+        self.market_price_for_trigger(side, trigger_type)
+            .is_some_and(|market_price| match side {
+                OrderSideSpecified::Buy => market_price >= price,
+                OrderSideSpecified::Sell => market_price <= price,
+            })
     }
 
     /// Returns whether a touch trigger at `trigger_price` has been reached
     /// (BUY: `ask <= trigger_price`, SELL: `bid >= trigger_price`).
     #[must_use]
     pub fn is_touch_triggered(&self, side: OrderSideSpecified, trigger_price: Price) -> bool {
-        match side {
-            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= trigger_price),
-            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= trigger_price),
+        self.is_touch_triggered_with_trigger_type(side, trigger_price, TriggerType::BidAsk)
+    }
+
+    #[must_use]
+    pub(crate) fn is_touch_triggered_with_trigger_type(
+        &self,
+        side: OrderSideSpecified,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+    ) -> bool {
+        self.market_price_for_trigger(side, trigger_type)
+            .is_some_and(|market_price| match side {
+                OrderSideSpecified::Buy => market_price <= trigger_price,
+                OrderSideSpecified::Sell => market_price >= trigger_price,
+            })
+    }
+
+    fn market_price_for_trigger(
+        &self,
+        side: OrderSideSpecified,
+        trigger_type: TriggerType,
+    ) -> Option<Price> {
+        let quote_price = match side {
+            OrderSideSpecified::Buy => self.ask,
+            OrderSideSpecified::Sell => self.bid,
+        };
+
+        match trigger_type {
+            TriggerType::LastPrice => self.last,
+            TriggerType::LastOrBidAsk => self.last.or(quote_price),
+            _ => quote_price,
         }
     }
 
@@ -901,6 +978,36 @@ mod tests {
     }
 
     #[rstest]
+    #[case::last_price_below_trigger(Some(Price::from("99.00")), TriggerType::LastPrice, false)]
+    #[case::last_price_at_trigger(Some(Price::from("100.00")), TriggerType::LastPrice, true)]
+    #[case::last_price_unavailable(None, TriggerType::LastPrice, false)]
+    #[case::last_or_bid_ask_prefers_last(
+        Some(Price::from("99.00")),
+        TriggerType::LastOrBidAsk,
+        false
+    )]
+    #[case::last_or_bid_ask_falls_back_to_quote(None, TriggerType::LastOrBidAsk, true)]
+    #[case::bid_ask_uses_quote(Some(Price::from("99.00")), TriggerType::BidAsk, true)]
+    fn test_is_stop_matched_uses_trigger_type(
+        #[case] last: Option<Price>,
+        #[case] trigger_type: TriggerType,
+        #[case] expected: bool,
+    ) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.ask = Some(Price::from("101.00"));
+        matching_core.last = last;
+
+        let result = matching_core.is_stop_matched_with_trigger_type(
+            OrderSideSpecified::Buy,
+            Price::from("100.00"),
+            trigger_type,
+        );
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
     fn test_iterate_returns_empty_when_no_orders() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
@@ -979,7 +1086,7 @@ mod tests {
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
         matching_core.set_ask_raw(Price::from("101.00"));
 
-        // Buy limit at 100 with ask at 101 — not matched
+        // Buy limit at 100 with ask at 101 - not matched
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -1088,7 +1195,7 @@ mod tests {
         matching_core.set_bid_raw(Price::from("99.00"));
         matching_core.set_ask_raw(Price::from("101.00"));
 
-        // Buy limit at 101 — matches (ask <= price)
+        // Buy limit at 101 - matches (ask <= price)
         let buy_limit = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -1101,7 +1208,7 @@ mod tests {
             &PassiveOrderAny::try_from(buy_limit).unwrap(),
         ));
 
-        // Sell stop at 99 — matches (bid <= trigger)
+        // Sell stop at 99 - matches (bid <= trigger)
         let sell_stop = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_id)
             .side(OrderSide::Sell)
@@ -1378,7 +1485,7 @@ mod tests {
                 .quantity(Quantity::from("10"))
                 .price(Price::from("99.00"))
                 .trigger_price(Price::from("100.00"))
-                .trigger_type(TriggerType::Default)
+                .trigger_type(TriggerType::LastPrice)
                 .build(),
         );
 
@@ -1386,6 +1493,7 @@ mod tests {
 
         assert_eq!(info.trigger_price, Some(Price::from("100.00")));
         assert_eq!(info.limit_price, Some(Price::from("99.00")));
+        assert_eq!(info.trigger_type, TriggerType::LastPrice);
         assert!(info.is_activated);
     }
 

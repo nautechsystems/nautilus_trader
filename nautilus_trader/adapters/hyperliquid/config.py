@@ -20,6 +20,7 @@ from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
+from nautilus_trader.network import TransportBackend
 
 
 class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -47,6 +48,7 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: HyperliquidEnvironment | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     http_timeout_secs: PositiveInt = 10
 
 
@@ -114,6 +116,7 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     environment: HyperliquidEnvironment | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

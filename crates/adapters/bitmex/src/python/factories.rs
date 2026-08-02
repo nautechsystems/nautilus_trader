@@ -40,7 +40,7 @@ impl BitmexExecFactoryConfig {
     }
 
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(BitmexExecFactoryConfig).to_string()
     }
 }
 

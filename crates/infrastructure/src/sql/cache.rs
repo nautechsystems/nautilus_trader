@@ -224,6 +224,7 @@ impl PostgresCacheDatabase {
         let pg_connect_options =
             get_postgres_connect_options(host, port, username, password, database);
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
+        check_schema_migrated(&pool).await?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
         let handle = get_runtime().spawn(async move {
@@ -284,6 +285,36 @@ impl PostgresCacheDatabase {
 
         log_task_stopped(CACHE_PROCESS);
     }
+}
+
+// Fails fast when the connected database predates the exact-average columns.
+//
+// Both directions of the mismatch are otherwise silent: `numeric -> double precision` is an
+// implicit cast so writes truncate, and the row readers use `.ok().flatten()` so reads degrade
+// to `None`. A column absent altogether is left to the query that first touches it.
+async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let stale: Vec<String> = sqlx::query_scalar(
+        "SELECT table_name || '.' || column_name || ' (' || data_type || ')'
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (table_name, column_name) IN (('order', 'avg_px'), ('order', 'slippage'))
+          AND data_type <> 'numeric'
+        ORDER BY table_name, column_name",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if stale.is_empty() {
+        return Ok(());
+    }
+
+    Err(sqlx::Error::Configuration(
+        format!(
+            "Postgres schema is out of date, {} should be `numeric`: run `nautilus database init` to migrate",
+            stale.join(", ")
+        )
+        .into(),
+    ))
 }
 
 async fn handle_query(
@@ -510,7 +541,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
-        todo!()
+        Ok(AHashMap::new())
     }
 
     async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
@@ -689,9 +720,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     async fn load_synthetic(
         &self,
-        _instrument_id: &InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>> {
-        todo!()
+        anyhow::bail!(
+            "load_synthetic not implemented for PostgreSQL cache adapter: {instrument_id}"
+        )
     }
 
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
@@ -757,16 +790,16 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         rx.recv()?
     }
 
-    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_actor not implemented for PostgreSQL cache adapter: {component_id}")
     }
 
     fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_strategy not implemented for PostgreSQL cache adapter: {strategy_id}")
     }
 
     fn delete_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<()> {
@@ -1111,18 +1144,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn update_actor(
         &self,
-        _component_id: &ComponentId,
+        component_id: &ComponentId,
         _state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        todo!()
+        anyhow::bail!("update_actor not implemented for PostgreSQL cache adapter: {component_id}")
     }
 
     fn update_strategy(
         &self,
-        _strategy_id: &StrategyId,
+        strategy_id: &StrategyId,
         _state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        todo!()
+        anyhow::bail!("update_strategy not implemented for PostgreSQL cache adapter: {strategy_id}")
     }
 
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
@@ -1140,7 +1173,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        let query = DatabaseQuery::UpdatePosition(position_last_event(position)?);
+        let query = if position.fill_voids.is_empty() {
+            DatabaseQuery::UpdatePosition(position_last_event(position)?)
+        } else {
+            DatabaseQuery::AddPositionSnapshot(PositionSnapshot::from_replay_state(position, None))
+        };
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query update_position to database message handler: {e}")
         })

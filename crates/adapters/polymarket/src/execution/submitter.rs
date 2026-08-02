@@ -21,7 +21,14 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::{error::Error as StdError, fmt::Display, sync::Arc};
+use std::{
+    error::Error as StdError,
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -201,37 +208,44 @@ impl OrderSubmitter {
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 
-        // Wire amounts are mantissas at USDC_DECIMALS (10^6) scale. For BUY,
-        // the signed taker_amount is the exact share quantity the venue will
-        // fill against; for SELL, the original `amount` is already in base
-        // shares (book walk total is irrelevant since SELL is never quote-qty).
-        let usdc_scale = Decimal::from(1_000_000u32);
-        let signed_base_qty = match poly_side {
-            PolymarketOrderSide::Buy => poly_order.taker_amount / usdc_scale,
-            PolymarketOrderSide::Sell => amount_dec,
-        };
+        // Wire amounts are mantissas at USDC_DECIMALS (10^6) scale. The share-denominated leg is
+        // the exact base quantity signed for the venue: takerAmount for BUY and makerAmount for
+        // SELL. Market SELL signing truncates shares to two decimal places.
+        let signed_base_qty =
+            signed_base_quantity(poly_order.maker_amount, poly_order.taker_amount, poly_side);
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&poly_order, neg_risk)?;
 
         let http_client = self.http_client.clone();
+        let saw_unknown_outcome = Arc::new(AtomicBool::new(false));
 
         let response = match self
             .retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "submit_market_order",
                 || {
                     let http_client = http_client.clone();
                     let poly_order = poly_order.clone();
-                    async move { http_client.post_order(&poly_order, order_type, false).await }
+                    let saw_unknown_outcome = saw_unknown_outcome.clone();
+                    async move {
+                        let result = http_client.post_order(&poly_order, order_type, false).await;
+                        if result.as_ref().is_err_and(Error::is_submit_outcome_unknown) {
+                            saw_unknown_outcome.store(true, Ordering::Release);
+                        }
+                        result
+                    }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
         {
             Ok(response) => response,
-            Err(e) if e.is_submit_outcome_unknown() => {
+            Err(e)
+                if submit_outcome_is_unknown(&e, saw_unknown_outcome.load(Ordering::Acquire)) =>
+            {
                 return Err(UnknownSubmitError {
                     reason: e.to_string(),
                     expected_venue_order_id,
@@ -253,8 +267,9 @@ impl OrderSubmitter {
     pub(crate) async fn cancel_order(&self, venue_order_id: &str) -> HttpResult<CancelResponse> {
         let http_client = self.http_client.clone();
         let order_id = venue_order_id.to_string();
+
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "cancel_order",
                 || {
                     let http_client = http_client.clone();
@@ -262,6 +277,7 @@ impl OrderSubmitter {
                     async move { http_client.cancel_order(&order_id).await }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
@@ -272,11 +288,37 @@ impl OrderSubmitter {
         &self,
         venue_order_ids: &[&str],
     ) -> HttpResult<CancelResponse> {
-        let http_client = self.http_client.clone();
         let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
+        if order_ids.is_empty() {
+            return self.cancel_orders_chunk(&order_ids).await;
+        }
+
+        let mut response = CancelResponse::default();
+        let mut offset = 0;
+
+        while offset < order_ids.len() {
+            let limit = self.http_client.cancel_batch_limit().await;
+            let end = offset.saturating_add(limit).min(order_ids.len());
+            match self.cancel_orders_chunk(&order_ids[offset..end]).await {
+                Ok(chunk_response) => {
+                    response.merge(chunk_response);
+                    offset = end;
+                }
+                Err(e @ Error::BurstExceeded { .. }) => {
+                    log::warn!("Cancellation batch limit changed, reselecting chunk: {e}");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(response)
+    }
+
+    async fn cancel_orders_chunk(&self, order_ids: &[String]) -> HttpResult<CancelResponse> {
+        let http_client = self.http_client.clone();
+        let order_ids = order_ids.to_vec();
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "cancel_orders",
                 || {
                     let http_client = http_client.clone();
@@ -287,6 +329,7 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
@@ -303,7 +346,7 @@ impl OrderSubmitter {
         let oid = order_id.to_string();
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_delay(
                 "get_order",
                 || {
                     let http_client = http_client.clone();
@@ -311,6 +354,7 @@ impl OrderSubmitter {
                     async move { http_client.get_order_optional(&oid).await }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
             .await
@@ -345,6 +389,7 @@ impl OrderSubmitter {
                 side,
                 request.price.as_decimal(),
                 request.quantity.as_decimal(),
+                order_type,
                 &expiration,
                 request.neg_risk,
                 request.tick_decimals,
@@ -368,27 +413,43 @@ impl OrderSubmitter {
         submission: SignedLimitOrderSubmission,
     ) -> crate::http::error::Result<OrderResponse> {
         let http_client = self.http_client.clone();
+        let saw_unknown_outcome = Arc::new(AtomicBool::new(false));
 
-        self.retry_manager
-            .execute_with_retry(
+        let result = self
+            .retry_manager
+            .execute_with_retry_with_delay(
                 "submit_limit_order",
                 || {
                     let http_client = http_client.clone();
                     let submission = submission.clone();
+                    let saw_unknown_outcome = saw_unknown_outcome.clone();
                     async move {
-                        http_client
+                        let result = http_client
                             .post_order(
                                 &submission.order,
                                 submission.order_type,
                                 submission.post_only,
                             )
-                            .await
+                            .await;
+
+                        if result.as_ref().is_err_and(Error::is_submit_outcome_unknown) {
+                            saw_unknown_outcome.store(true, Ordering::Release);
+                        }
+                        result
                     }
                 },
                 |e| e.is_retryable(),
+                Error::retry_after,
                 Error::transport,
             )
-            .await
+            .await;
+
+        match result {
+            Err(e) if saw_unknown_outcome.load(Ordering::Acquire) => Err(Error::transport(
+                format!("submit outcome unknown after an earlier attempt: {e}"),
+            )),
+            result => result,
+        }
     }
 
     pub(crate) async fn post_limit_order_submissions(
@@ -413,6 +474,22 @@ impl OrderSubmitter {
     }
 }
 
+fn submit_outcome_is_unknown(error: &Error, earlier_attempt_unknown: bool) -> bool {
+    error.is_submit_outcome_unknown() || earlier_attempt_unknown
+}
+
+fn signed_base_quantity(
+    maker_amount: Decimal,
+    taker_amount: Decimal,
+    side: PolymarketOrderSide,
+) -> Decimal {
+    let usdc_scale = Decimal::from(1_000_000u32);
+    match side {
+        PolymarketOrderSide::Buy => taker_amount / usdc_scale,
+        PolymarketOrderSide::Sell => maker_amount / usdc_scale,
+    }
+}
+
 // Converts a nanos expire time to the unix-seconds string expected by the
 // Polymarket API. Returns `"0"` when there is no expiration.
 fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
@@ -425,6 +502,7 @@ fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -436,5 +514,33 @@ mod tests {
     #[case::typical(Some(UnixNanos::from(1_735_689_600_000_000_000u64)), "1735689600")]
     fn test_limit_order_expiration(#[case] expire_time: Option<UnixNanos>, #[case] expected: &str) {
         assert_eq!(limit_order_expiration(expire_time), expected);
+    }
+
+    #[rstest]
+    #[case::buy(dec!(4_800_000), dec!(5_202_897), PolymarketOrderSide::Buy, dec!(5.202897))]
+    #[case::sell(dec!(5_200_000), dec!(4_992_000), PolymarketOrderSide::Sell, dec!(5.2))]
+    fn test_signed_base_quantity_uses_share_denominated_wire_leg(
+        #[case] maker_amount: Decimal,
+        #[case] taker_amount: Decimal,
+        #[case] side: PolymarketOrderSide,
+        #[case] expected: Decimal,
+    ) {
+        assert_eq!(
+            signed_base_quantity(maker_amount, taker_amount, side),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_rate_limit_is_definitive_unless_an_earlier_attempt_was_unknown() {
+        let rate_limit = Error::rate_limit("/order", 1, Some(2_000));
+
+        assert!(!submit_outcome_is_unknown(&rate_limit, false));
+        assert!(submit_outcome_is_unknown(&rate_limit, true));
+        assert!(submit_outcome_is_unknown(
+            &Error::transport("connection reset"),
+            false
+        ));
+        assert!(submit_outcome_is_unknown(&Error::Timeout, false));
     }
 }

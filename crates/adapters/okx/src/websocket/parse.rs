@@ -49,7 +49,7 @@ use super::{
     enums::OKXWsChannel,
     messages::{
         OKXAlgoOrderMsg, OKXBookMsg, OKXCandleMsg, OKXIndexPriceMsg, OKXMarkPriceMsg,
-        OKXOptionSummaryMsg, OKXOrderMsg, OKXTickerMsg, OKXTradeMsg, OrderBookEntry,
+        OKXOptionSummaryMsg, OKXOrderMsg, OKXRpiBookMsg, OKXTickerMsg, OKXTradeMsg, OrderBookEntry,
     },
 };
 use crate::{
@@ -662,6 +662,36 @@ pub fn parse_book_msg_vec(
     Ok(deltas)
 }
 
+/// Parses RPI book messages into Nautilus order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if any RPI book message cannot be represented at the instrument precision.
+pub fn parse_rpi_book_msg_vec(
+    data: Vec<OKXRpiBookMsg>,
+    instrument_id: &InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    action: OKXBookAction,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<Data>> {
+    let mut deltas = Vec::with_capacity(data.len());
+
+    for msg in data {
+        let deltas_api = OrderBookDeltas_API::new(parse_rpi_book_msg(
+            &msg,
+            *instrument_id,
+            price_precision,
+            size_precision,
+            &action,
+            ts_init,
+        )?);
+        deltas.push(Data::Deltas(deltas_api));
+    }
+
+    Ok(deltas)
+}
+
 /// Parses vector of OKX ticker messages into Nautilus quote ticks.
 ///
 /// # Errors
@@ -937,6 +967,74 @@ pub fn parse_book_msg(
             ts_init,
         );
         deltas.push(delta);
+    }
+
+    OrderBookDeltas::new_checked(instrument_id, deltas)
+}
+
+/// Parses an RPI book message into Nautilus order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if a price or total quantity cannot be represented at the instrument precision.
+pub fn parse_rpi_book_msg(
+    msg: &OKXRpiBookMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    action: &OKXBookAction,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDeltas> {
+    let flags = if action == &OKXBookAction::Snapshot {
+        RecordFlag::F_SNAPSHOT as u8
+    } else {
+        0
+    };
+    let ts_event = parse_millisecond_timestamp(msg.ts);
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+
+    for bid in &msg.bids {
+        let book_action = if action == &OKXBookAction::Snapshot {
+            BookAction::Add
+        } else if bid.1.is_zero() {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+        let price = Price::from_decimal_dp(bid.0, price_precision)?;
+        let size = Quantity::from_decimal_dp(bid.1, size_precision)?;
+        let order = BookOrder::new(OrderSide::Buy, price, size, 0);
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            book_action,
+            order,
+            flags,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    for ask in &msg.asks {
+        let book_action = if action == &OKXBookAction::Snapshot {
+            BookAction::Add
+        } else if ask.1.is_zero() {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+        let price = Price::from_decimal_dp(ask.0, price_precision)?;
+        let size = Quantity::from_decimal_dp(ask.1, size_precision)?;
+        let order = BookOrder::new(OrderSide::Sell, price, size, 0);
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            book_action,
+            order,
+            flags,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
     }
 
     OrderBookDeltas::new_checked(instrument_id, deltas)
@@ -1496,6 +1594,11 @@ pub fn parse_algo_order_status_report(
             report.trailing_offset = Some(Decimal::from_str(&msg.callback_spread)?);
             report.trailing_offset_type = TrailingOffsetType::Price;
         }
+
+        if !msg.active_px.is_empty() {
+            report.activation_price =
+                Some(parse_price(&msg.active_px, instrument.price_precision())?);
+        }
     }
 
     if msg.reduce_only == "true" {
@@ -1793,7 +1896,7 @@ pub fn parse_order_status_report(
 
     if matches!(
         msg.ord_type,
-        OKXOrderType::PostOnly | OKXOrderType::MmpAndPostOnly
+        OKXOrderType::PostOnly | OKXOrderType::Rpi | OKXOrderType::MmpAndPostOnly
     ) || matches!(
         msg.cancel_source.as_deref(),
         Some(source) if source == OKX_POST_ONLY_CANCEL_SOURCE
@@ -2273,7 +2376,7 @@ pub fn parse_option_summary_greeks(
 /// # Panics
 ///
 /// Panics only in the case where `okx_channel_to_bar_spec(channel)` returns
-/// `None` after a prior `is_some` check – an unreachable scenario indicating a
+/// `None` after a prior `is_some` check - an unreachable scenario indicating a
 /// logic error.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_ws_message_data(
@@ -2640,6 +2743,36 @@ mod tests {
                 .any(|d| d.order.side == OrderSide::Sell),
             "Should have ask deltas"
         );
+    }
+
+    #[rstest]
+    fn test_parse_rpi_books_update_uses_total_quantity_and_sequence() {
+        let json_data = load_test_json("ws_books_rpi_update.json");
+        let msg: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
+        let (data, action) = match msg {
+            OKXWsFrame::RpiBookData { data, action, .. } => (data, action),
+            _ => panic!("Expected an RPI book update"),
+        };
+        let instrument_id = InstrumentId::from("OMI-USD.OKX");
+
+        let deltas =
+            parse_rpi_book_msg(&data[0], instrument_id, 7, 3, &action, UnixNanos::from(123))
+                .unwrap();
+
+        assert_eq!(deltas.instrument_id, instrument_id);
+        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.flags, 0);
+        assert_eq!(deltas.sequence, 1_082_831_230);
+        assert_eq!(deltas.ts_event, UnixNanos::from(1_785_406_443_903_000_000));
+        assert_eq!(deltas.ts_init, UnixNanos::from(123));
+        assert_eq!(deltas.deltas[0].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[0].order.price, Price::from("0.0001617"));
+        assert_eq!(deltas.deltas[0].order.size, Quantity::from("0"));
+        assert_eq!(deltas.deltas[1].action, BookAction::Update);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.price, Price::from("0.0001625"));
+        assert_eq!(deltas.deltas[1].order.size, Quantity::from("12324367.786"));
     }
 
     #[rstest]
@@ -4231,7 +4364,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
-        // acc_fill_sz (0.01) < previous_filled_qty (0.03) — stale data after reconnect
+        // acc_fill_sz (0.01) < previous_filled_qty (0.03) - stale data after reconnect
         let order_msg =
             create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "trade_2");
 
@@ -5448,7 +5581,7 @@ mod tests {
     fn test_empty_trade_id_fill_deduped_across_replays() {
         use crate::websocket::dispatch::WsDispatchState;
 
-        // Two identical fill messages with no venue trade_id — the dedup in
+        // Two identical fill messages with no venue trade_id - the dedup in
         // `WsDispatchState::check_and_insert_trade` must suppress the replay.
         // Regression lock for the empty-trade_id UUID fabrication bug: if
         // `synthesize_trade_id` drifts back to a non-deterministic id, the
@@ -6543,6 +6676,23 @@ mod tests {
         assert_eq!(report.trailing_offset, Some(dec!(100)));
         assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints,);
         assert_eq!(report.trigger_price, Some(Price::from("95000.00")));
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_trailing_stop_captures_activation_price() {
+        let instrument = create_stub_instrument();
+        let inst = InstrumentAny::CryptoPerpetual(instrument);
+        let account_id = AccountId::new("OKX-001");
+
+        let mut msg = stub_algo_order_msg(OKXAlgoOrderType::MoveOrderStop);
+        msg.callback_ratio = "0.01".to_string();
+        msg.active_px = "94000.5".to_string();
+
+        let report =
+            parse_algo_order_status_report(&msg, &inst, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(report.order_type, OrderType::TrailingStopMarket);
+        assert_eq!(report.activation_price, Some(Price::from("94000.50")));
     }
 
     #[rstest]

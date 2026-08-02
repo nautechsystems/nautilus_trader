@@ -7,7 +7,7 @@ This guide covers the release process and the standards for writing release note
 NautilusTrader uses a three-branch model:
 
 - **`develop`**: active development; publishes dev wheels to Cloudflare R2 on every push.
-- **`nightly`**: pre-release testing; publishes alpha wheels and CLI binaries.
+- **`nightly`**: pre-release testing; publishes v1 and v2 pre-release wheels and CLI binaries.
 - **`master`**: stable releases; triggers the full release pipeline.
 
 Pushing to `master` automatically tags the version from `pyproject.toml`, creates a draft GitHub
@@ -82,7 +82,7 @@ Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
 The project maintains two version numbers:
 
 | File                     | Scope          | Example   |
-|--------------------------|----------------|-----------|
+| ------------------------ | -------------- | --------- |
 | `pyproject.toml`         | Python package | `1.223.0` |
 | `Cargo.toml` (workspace) | Rust crates    | `0.55.0`  |
 
@@ -95,7 +95,7 @@ crates.io Trusted Publishing through GitHub Actions OIDC, so it does not use a p
 token. Configure each crate on crates.io with:
 
 | Field       | Value             |
-|-------------|-------------------|
+| ----------- | ----------------- |
 | Owner       | `nautechsystems`  |
 | Repository  | `nautilus_trader` |
 | Workflow    | `build.yml`       |
@@ -307,8 +307,8 @@ Features marked for removal.
 **Be specific**:
 
 ```markdown
-❌ Improved Binance adapter
-✅ Improved Binance fill handling when instrument not cached
+Bad:  Improved Binance adapter
+Good: Improved Binance fill handling when instrument not cached
 ```
 
 ## Security classification

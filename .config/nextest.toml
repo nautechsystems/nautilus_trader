@@ -9,6 +9,10 @@ large-data-tests = { max-threads = 1 }
 # GitHub Actions runners have 4 vCPUs and 16GB RAM.
 # Limit parallelism to avoid OOM kills from too many concurrent test processes.
 test-threads = 2
+# Kill hung tests after 10 minutes so the run fails fast with the test name,
+# instead of stalling until the workflow timeout with no logs to attribute.
+# Tests with a per-test slow-timeout override keep their own settings.
+slow-timeout = { period = "120s", terminate-after = 5 }
 
 [[profile.default.overrides]]
 filter = 'test(serial_tests)'
@@ -20,7 +24,7 @@ slow-timeout = { period = "300s" }
 
 # Tests that download large data files share the same target paths across binaries
 [[profile.default.overrides]]
-filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration) | binary(large_data)'
+filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration) | binary(large_data) | binary(test_pinned_data_direct_session)'
 test-group = 'large-data-tests'
 
 # Websocket and data client tests can be flaky due to timing on low-spec runners

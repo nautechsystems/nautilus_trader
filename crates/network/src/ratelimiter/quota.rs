@@ -133,10 +133,11 @@ impl Quota {
     }
 
     /// The time it takes to replenish the entire maximum burst size.
+    ///
+    /// Saturates at [`Duration::MAX`] if the full duration cannot be represented.
     #[must_use]
     pub const fn burst_size_replenished_in(&self) -> Duration {
-        let fill_in_ns = self.replenish_1_per.as_nanos() * self.max_burst.get() as u128;
-        Duration::from_nanos(fill_in_ns as u64)
+        self.replenish_1_per.saturating_mul(self.max_burst.get())
     }
 }
 

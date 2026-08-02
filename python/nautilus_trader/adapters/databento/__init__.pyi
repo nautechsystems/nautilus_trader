@@ -8,23 +8,37 @@ import typing
 from nautilus_trader import model
 
 __all__ = [
-    "DatabentoDataClient",
     "DatabentoDataClientFactory",
     "DatabentoDataLoader",
-    "DatabentoHistoricalClient",
     "DatabentoImbalance",
-    "DatabentoLiveClient",
     "DatabentoLiveClientConfig",
     "DatabentoPublisher",
     "DatabentoStatisticType",
     "DatabentoStatisticUpdateAction",
     "DatabentoStatistics",
-    "DatabentoSubscriptionAck",
     "get_databento_arrow_schema_map",
 ]
 
 @typing.final
-class DatabentoDataClient: ...
+class DatabentoDataClient:
+    def __init__(
+        self,
+        client_id: model.ClientId,
+        api_key: str,
+        publishers_filepath: str | os.PathLike | pathlib.Path,
+        use_exchange_as_venue: bool = True,
+        bars_timestamp_on_close: bool = True,
+    ) -> None: ...
+    @property
+    def client_id(self) -> model.ClientId: ...
+    @property
+    def is_connected(self) -> bool: ...
+    @property
+    def is_disconnected(self) -> bool: ...
+    @property
+    def api_key(self) -> str: ...
+    @property
+    def api_key_masked(self) -> str: ...
 
 @typing.final
 class DatabentoDataClientFactory:
@@ -355,6 +369,14 @@ class DatabentoLiveClient:
 
 @typing.final
 class DatabentoLiveClientConfig:
+    @property
+    def publishers_filepath(self) -> pathlib.Path: ...
+    @property
+    def use_exchange_as_venue(self) -> bool: ...
+    @property
+    def bars_timestamp_on_close(self) -> bool: ...
+    @property
+    def venue_dataset_map(self) -> dict[str, str]: ...
     def __init__(
         self,
         api_key: str,

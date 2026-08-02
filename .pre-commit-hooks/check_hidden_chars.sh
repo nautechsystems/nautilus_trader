@@ -3,7 +3,7 @@
 # Ensure no hidden control or problematic unicode characters in source files
 #
 # This hook detects characters that could be used to hide malicious content:
-# - Control chars (U+0001–U+0008, U+000E–U+001F)
+# - Control chars (U+0001-U+0008, U+000E-U+001F)
 # - Zero-width spaces (U+200B, U+200C, U+200D)
 # - BOM (U+FEFF)
 # - Right-to-left override chars (U+202D, U+202E)

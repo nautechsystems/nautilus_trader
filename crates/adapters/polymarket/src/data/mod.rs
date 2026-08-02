@@ -41,9 +41,10 @@ use nautilus_common::{
         DataEvent,
         data::{
             RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBookDeltas, SubscribeCustomData, SubscribeInstruments,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeCustomData,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+            SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeCustomData, UnsubscribeInstrument, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     msgbus::TypedHandler,
@@ -60,6 +61,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orderbook::OrderBook,
 };
+use nautilus_network::websocket::proxy::ProxyUrl;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -84,7 +86,7 @@ use crate::{
     providers::PolymarketInstrumentProvider,
     resolve::ResolveWatchEntry,
     rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
-    websocket::client::PolymarketWebSocketClient,
+    websocket::pool::PolymarketMarketConnectionPool,
 };
 
 const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
@@ -110,7 +112,7 @@ pub struct PolymarketDataClient {
     provider: PolymarketInstrumentProvider,
     clob_public_client: PolymarketClobPublicClient,
     data_api_client: PolymarketDataApiHttpClient,
-    ws_client: PolymarketWebSocketClient,
+    ws_client: PolymarketMarketConnectionPool,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -133,17 +135,39 @@ pub struct PolymarketDataClient {
     auto_load_scheduled: Arc<AtomicBool>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
+    proxy_url: Option<ProxyUrl>,
 }
 
 impl PolymarketDataClient {
     /// Creates a new [`PolymarketDataClient`].
     pub fn new(
         client_id: ClientId,
+        config: PolymarketDataClientConfig,
+        gamma_client: PolymarketGammaHttpClient,
+        clob_public_client: PolymarketClobPublicClient,
+        data_api_client: PolymarketDataApiHttpClient,
+        ws_client: PolymarketMarketConnectionPool,
+    ) -> Self {
+        Self::new_with_proxy(
+            client_id,
+            config,
+            gamma_client,
+            clob_public_client,
+            data_api_client,
+            ws_client,
+            None,
+        )
+    }
+
+    /// Creates a new data client with an optional validated proxy URL.
+    pub fn new_with_proxy(
+        client_id: ClientId,
         mut config: PolymarketDataClientConfig,
         gamma_client: PolymarketGammaHttpClient,
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
-        ws_client: PolymarketWebSocketClient,
+        ws_client: PolymarketMarketConnectionPool,
+        proxy_url: Option<ProxyUrl>,
     ) -> Self {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
@@ -199,12 +223,14 @@ impl PolymarketDataClient {
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
             position_event_handler: None,
-            rtds_feed: PolymarketRtdsFeed::new(
+            rtds_feed: PolymarketRtdsFeed::new_with_proxy(
                 rtds_url,
                 rtds_transport_backend,
                 clock,
                 rtds_data_sender,
+                proxy_url.clone(),
             ),
+            proxy_url,
         }
     }
 
@@ -224,6 +250,26 @@ impl PolymarketDataClient {
     #[must_use]
     pub fn provider(&self) -> &PolymarketInstrumentProvider {
         &self.provider
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clob_public_client(&self) -> &PolymarketClobPublicClient {
+        &self.clob_public_client
+    }
+
+    #[cfg(test)]
+    pub(crate) fn data_api_client(&self) -> &PolymarketDataApiHttpClient {
+        &self.data_api_client
+    }
+
+    #[cfg(test)]
+    pub(crate) fn ws_client(&self) -> &PolymarketMarketConnectionPool {
+        &self.ws_client
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rtds_feed(&self) -> &PolymarketRtdsFeed {
+        &self.rtds_feed
     }
 
     /// Adds an instrument filter on the underlying provider.
@@ -290,7 +336,7 @@ impl PolymarketDataClient {
         let active_trade_subs = self.active_trade_subs.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
-        let ws = self.ws_client.clone_subscription_handle();
+        let ws = self.ws_client.handle();
 
         get_runtime().spawn(sync_ws_subscription_async(
             instrument_id,
@@ -378,6 +424,23 @@ impl DataClient for PolymarketDataClient {
         Ok(())
     }
 
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!(
+            "Subscribed to instrument definition updates for {}; shared instrument sources remain active",
+            cmd.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribed from instrument {}; shared instrument sources remain active",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
     fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
         if !is_supported_rtds_data_type(&cmd.data_type) {
             log::debug!(
@@ -400,7 +463,8 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.rtds_feed.schedule_sync();
+        self.rtds_feed
+            .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
 
         Ok(())
     }
@@ -436,6 +500,12 @@ impl DataClient for PolymarketDataClient {
 
         self.sync_ws_subscription(instrument_id);
         Ok(())
+    }
+
+    fn subscribe_book_depth10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
+        )
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
@@ -480,6 +550,21 @@ impl DataClient for PolymarketDataClient {
 
         self.sync_ws_subscription(instrument_id);
         Ok(())
+    }
+
+    fn subscribe_instrument_status(
+        &mut self,
+        _cmd: SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Polymarket does not support generic instrument status subscriptions; resolution status is owned by position tracking"
+        )
+    }
+
+    fn subscribe_instrument_close(&mut self, _cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Polymarket does not support generic instrument close subscriptions; resolution close is owned by position tracking"
+        )
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
@@ -532,7 +617,8 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.rtds_feed.schedule_sync();
+        self.rtds_feed
+            .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
 
         Ok(())
     }

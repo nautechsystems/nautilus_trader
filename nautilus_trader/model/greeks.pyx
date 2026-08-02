@@ -105,9 +105,9 @@ cdef class GreeksCalculator:
         Calculate option or underlying greeks for a given instrument and a quantity of 1.
 
         Additional features:
-        - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
+        - Apply shocks to the spot value of the instrument's underlying, implied volatility, or time to expiry.
         - Compute percent greeks.
-        - Compute beta-weighted delta, gamma and vega with respect to an index.
+        - Compute beta-weighted delta, gamma, and vega with respect to an index.
         - Update volatility to a target price from a previously calculated volatility.
 
         Parameters
@@ -412,7 +412,7 @@ cdef class GreeksCalculator:
         vol_index_price: float | None = None,
     ) -> tuple[float, float, float]:
         """
-        Modify delta, gamma and vega based on beta weighting and percentage calculations.
+        Modify delta, gamma, and vega based on beta weighting and percentage calculations.
 
         Parameters
         ----------
@@ -602,9 +602,9 @@ cdef class GreeksCalculator:
         Aggregates the Greeks data for all open positions that match the specified criteria.
 
         Additional features:
-        - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
+        - Apply shocks to the spot value of an instrument's underlying, implied volatility, or time to expiry.
         - Compute percent greeks.
-        - Compute beta-weighted delta, gamma and vega with respect to an index.
+        - Compute beta-weighted delta, gamma, and vega with respect to an index.
         - Update volatility to a target price from a previously calculated volatility.
 
         Parameters

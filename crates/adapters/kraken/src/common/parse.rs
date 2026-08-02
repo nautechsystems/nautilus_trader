@@ -18,10 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::{
-    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, string::parsing::precision_from_str,
-    uuid::UUID4,
-};
+use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
@@ -43,7 +40,7 @@ use crate::{
     common::{
         consts::KRAKEN_VENUE,
         enums::{
-            KrakenFillType, KrakenFuturesOrderEventType, KrakenInstrumentType, KrakenPositionSide,
+            KrakenFuturesOrderEventType, KrakenInstrumentType, KrakenPositionSide,
             KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
@@ -206,7 +203,10 @@ pub fn parse_spot_instrument(
 
     // lot_decimals specifies the decimal precision for the lot size
     let size_precision = definition.lot_decimals;
-    let size_increment = Quantity::new(10.0_f64.powi(-(size_precision as i32)), size_precision);
+    let size_increment = Quantity::from_decimal_dp(
+        Decimal::try_new(1, u32::from(size_precision)).context("Invalid lot_decimals")?,
+        size_precision,
+    )?;
 
     let min_quantity = definition
         .ordermin
@@ -215,21 +215,12 @@ pub fn parse_spot_instrument(
         .transpose()?;
 
     // Use base tier fees, convert from percentage
-    let taker_fee = definition
-        .fees
-        .first()
-        .map(|(_, fee)| Decimal::try_from(*fee))
-        .transpose()
-        .context("Failed to parse taker fee")?
-        .map(|f| f / dec!(100));
+    let taker_fee = definition.fees.first().map(|(_, fee)| *fee / dec!(100));
 
     let maker_fee = definition
         .fees_maker
         .first()
-        .map(|(_, fee)| Decimal::try_from(*fee))
-        .transpose()
-        .context("Failed to parse maker fee")?
-        .map(|f| f / dec!(100));
+        .map(|(_, fee)| *fee / dec!(100));
 
     let instrument = CurrencyPair::new(
         instrument_id,
@@ -292,7 +283,10 @@ pub fn parse_tokenized_instrument(
     )?;
 
     let size_precision = definition.lot_decimals;
-    let size_increment = Quantity::new(10.0_f64.powi(-(size_precision as i32)), size_precision);
+    let size_increment = Quantity::from_decimal_dp(
+        Decimal::try_new(1, u32::from(size_precision)).context("Invalid lot_decimals")?,
+        size_precision,
+    )?;
 
     let min_quantity = definition
         .ordermin
@@ -300,21 +294,12 @@ pub fn parse_tokenized_instrument(
         .map(|s| parse_quantity(s, "ordermin"))
         .transpose()?;
 
-    let taker_fee = definition
-        .fees
-        .first()
-        .map(|(_, fee)| Decimal::try_from(*fee))
-        .transpose()
-        .context("failed to parse taker fee")?
-        .map(|f| f / dec!(100));
+    let taker_fee = definition.fees.first().map(|(_, fee)| *fee / dec!(100));
 
     let maker_fee = definition
         .fees_maker
         .first()
-        .map(|(_, fee)| Decimal::try_from(*fee))
-        .transpose()
-        .context("failed to parse maker fee")?
-        .map(|f| f / dec!(100));
+        .map(|(_, fee)| *fee / dec!(100));
 
     let instrument = TokenizedAsset::new(
         instrument_id,
@@ -374,10 +359,9 @@ pub fn parse_futures_instrument(
         quote_currency
     };
 
-    // Derive precision from tick_size string representation to handle non-power-of-10
-    // tick sizes correctly (e.g., 0.25, 2.5)
-    let tick_size = instrument.tick_size;
-    let price_precision = precision_from_str(&tick_size.to_string());
+    // Normalize before deriving precision so wire padding does not overstate the tick precision
+    let tick_size = instrument.tick_size.normalize();
+    let price_precision = u8::try_from(tick_size.scale()).context("Invalid tick_size precision")?;
     if price_precision > FIXED_PRECISION {
         anyhow::bail!(
             "Cannot parse instrument '{}': tick_size {tick_size} requires precision {price_precision} \
@@ -385,47 +369,44 @@ pub fn parse_futures_instrument(
             instrument.symbol
         );
     }
-    let price_increment = Price::new(tick_size, price_precision);
+    let price_increment = Price::from_decimal_dp(tick_size, price_precision)?;
 
     // Use contract_value_trade_precision for the tradeable size increment
     // Positive values (e.g., 3) mean fractional sizes (0.001)
     // Negative values (e.g., -3) mean multiples of powers of 10 (1000) - used for meme coins
     // Zero means whole number increments (1)
-    let (_size_precision, size_increment) = if instrument.contract_value_trade_precision >= 0 {
-        let precision = instrument.contract_value_trade_precision as u8;
-        let increment = Quantity::new(10.0_f64.powi(-(precision as i32)), precision);
-        (precision, increment)
+    let size_increment = if instrument.contract_value_trade_precision >= 0 {
+        let precision = u8::try_from(instrument.contract_value_trade_precision)
+            .context("Invalid contract_value_trade_precision")?;
+        Quantity::from_decimal_dp(
+            Decimal::try_new(1, u32::from(precision))
+                .context("Invalid contract_value_trade_precision")?,
+            precision,
+        )?
     } else {
-        // Negative precision: increment is 10^abs(precision), e.g., -3 → 1000
-        let increment_value = 10.0_f64.powi(-instrument.contract_value_trade_precision);
-        (0, Quantity::new(increment_value, 0))
+        // Negative precision: increment is 10^abs(precision), e.g., -3 means 1000
+        let exponent = instrument.contract_value_trade_precision.unsigned_abs();
+        let increment_value = 10_i64
+            .checked_pow(exponent)
+            .context("contract_value_trade_precision exceeds supported range")?;
+        Quantity::from_decimal_dp(Decimal::from(increment_value), 0)?
     };
 
-    let multiplier_precision = if instrument.contract_size.fract() == 0.0 {
-        0
-    } else {
-        instrument
-            .contract_size
-            .to_string()
-            .split('.')
-            .nth(1)
-            .map_or(0, |s| s.len() as u8)
-    };
-    let multiplier = Some(Quantity::new(
-        instrument.contract_size,
+    let contract_size = instrument.contract_size.normalize();
+    let multiplier_precision =
+        u8::try_from(contract_size.scale()).context("Invalid contract_size precision")?;
+    let multiplier = Some(Quantity::from_decimal_dp(
+        contract_size,
         multiplier_precision,
-    ));
+    )?);
 
     // Use first margin level if available
     let (margin_init, margin_maint) = instrument
         .margin_levels
         .first()
-        .and_then(|level| {
-            let init = Decimal::try_from(level.initial_margin).ok()?;
-            let maint = Decimal::try_from(level.maintenance_margin).ok()?;
-            Some((Some(init), Some(maint)))
-        })
-        .unwrap_or((None, None));
+        .map_or((None, None), |level| {
+            (Some(level.initial_margin), Some(level.maintenance_margin))
+        });
 
     let instrument = CryptoPerpetual::new(
         instrument_id,
@@ -613,9 +594,9 @@ pub fn parse_bar(
 
 fn parse_price_with_precision(value: &str, precision: u8, field: &str) -> anyhow::Result<Price> {
     let parsed = value
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
-    Price::new_checked(parsed, precision).with_context(|| {
+        .parse::<Decimal>()
+        .with_context(|| format!("Failed to parse {field}='{value}' as Decimal"))?;
+    Price::from_decimal_dp(parsed, precision).with_context(|| {
         format!("Failed to construct Price for {field} with precision {precision}")
     })
 }
@@ -626,9 +607,9 @@ fn parse_quantity_with_precision(
     field: &str,
 ) -> anyhow::Result<Quantity> {
     let parsed = value
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
-    Quantity::new_checked(parsed, precision).with_context(|| {
+        .parse::<Decimal>()
+        .with_context(|| format!("Failed to parse {field}='{value}' as Decimal"))?;
+    Quantity::from_decimal_dp(parsed, precision).with_context(|| {
         format!("Failed to construct Quantity for {field} with precision {precision}")
     })
 }
@@ -748,6 +729,7 @@ pub fn parse_order_status_report(
         contingency_type: ContingencyType::NoContingency,
         expire_time,
         price,
+        activation_price: None,
         trigger_price,
         trigger_type,
         limit_offset: None,
@@ -821,10 +803,7 @@ pub fn parse_fill_report(
         _ => anyhow::bail!("Unsupported instrument type for fill report"),
     };
 
-    let fee_f64 = fee_decimal
-        .try_into()
-        .context("Failed to convert fee to f64")?;
-    let commission = Money::new(fee_f64, quote_currency);
+    let commission = Money::from_decimal(fee_decimal, quote_currency)?;
 
     let liquidity_side = match trade.maker {
         Some(true) => LiquiditySide::Maker,
@@ -862,6 +841,7 @@ pub fn parse_futures_order_status_report(
     order: &FuturesOpenOrder,
     instrument: &InstrumentAny,
     account_id: AccountId,
+    fallback_quantity: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
@@ -876,23 +856,27 @@ pub fn parse_futures_order_status_report(
     };
     let order_status = order.status.into();
 
-    let quantity = Quantity::new(
-        order.unfilled_size + order.filled_size,
-        instrument.size_precision(),
-    );
+    let quantity_value = order
+        .unfilled_size
+        .map(|unfilled_size| unfilled_size + order.filled_size)
+        .or(fallback_quantity)
+        .context("missing unfilled size and fallback quantity")?;
+    let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())?;
 
-    let filled_qty = Quantity::new(order.filled_size, instrument.size_precision());
+    let filled_qty = Quantity::from_decimal_dp(order.filled_size, instrument.size_precision())?;
 
     let ts_accepted = parse_rfc3339_timestamp(&order.received_time, "order.received_time")?;
     let ts_last = parse_rfc3339_timestamp(&order.last_update_time, "order.last_update_time")?;
 
     let price = order
         .limit_price
-        .map(|p| Price::new(p, instrument.price_precision()));
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()?;
 
     let trigger_price = order
         .stop_price
-        .map(|p| Price::new(p, instrument.price_precision()));
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()?;
 
     let trigger_type = parse_futures_trigger_type(order_type, order.trigger_signal);
 
@@ -918,6 +902,7 @@ pub fn parse_futures_order_status_report(
         contingency_type: ContingencyType::NoContingency,
         expire_time: None,
         price,
+        activation_price: None,
         trigger_price,
         trigger_type,
         limit_offset: None,
@@ -957,8 +942,8 @@ pub fn parse_futures_order_event_status_report(
 
     let order_status = parse_futures_order_event_status(event_type, event.filled, event.quantity);
 
-    let quantity = Quantity::new(event.quantity, instrument.size_precision());
-    let filled_qty = Quantity::new(event.filled, instrument.size_precision());
+    let quantity = Quantity::from_decimal_dp(event.quantity, instrument.size_precision())?;
+    let filled_qty = Quantity::from_decimal_dp(event.filled, instrument.size_precision())?;
 
     let ts_accepted = parse_rfc3339_timestamp(&event.timestamp, "event.timestamp")?;
     let ts_last =
@@ -966,11 +951,13 @@ pub fn parse_futures_order_event_status_report(
 
     let price = event
         .limit_price
-        .map(|p| Price::new(p, instrument.price_precision()));
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()?;
 
     let trigger_price = event
         .stop_price
-        .map(|p| Price::new(p, instrument.price_precision()));
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()?;
 
     let trigger_type = parse_futures_trigger_type(order_type, None);
 
@@ -996,6 +983,7 @@ pub fn parse_futures_order_event_status_report(
         contingency_type: ContingencyType::NoContingency,
         expire_time: None,
         price,
+        activation_price: None,
         trigger_price,
         trigger_type,
         limit_offset: None,
@@ -1012,8 +1000,8 @@ pub fn parse_futures_order_event_status_report(
 
 fn parse_futures_order_event_status(
     event_type: Option<KrakenFuturesOrderEventType>,
-    filled: f64,
-    quantity: f64,
+    filled: Decimal,
+    quantity: Decimal,
 ) -> OrderStatus {
     match event_type {
         Some(KrakenFuturesOrderEventType::Cancel) => OrderStatus::Canceled,
@@ -1027,7 +1015,7 @@ fn parse_futures_order_event_status(
         ) => {
             if filled >= quantity {
                 OrderStatus::Filled
-            } else if filled > 0.0 {
+            } else if filled > Decimal::ZERO {
                 OrderStatus::PartiallyFilled
             } else {
                 OrderStatus::Accepted
@@ -1036,7 +1024,7 @@ fn parse_futures_order_event_status(
         _ => {
             if filled >= quantity {
                 OrderStatus::Filled
-            } else if filled > 0.0 {
+            } else if filled > Decimal::ZERO {
                 OrderStatus::PartiallyFilled
             } else {
                 OrderStatus::Canceled
@@ -1062,8 +1050,8 @@ pub fn parse_futures_fill_report(
 
     let order_side = fill.side.into();
 
-    let last_qty = Quantity::new(fill.size, instrument.size_precision());
-    let last_px = Price::new(fill.price, instrument.price_precision());
+    let last_qty = Quantity::from_decimal_dp(fill.size, instrument.size_precision())?;
+    let last_px = Price::from_decimal_dp(fill.price, instrument.price_precision())?;
 
     let quote_currency = match instrument {
         InstrumentAny::CryptoPerpetual(perp) => perp.quote_currency,
@@ -1071,13 +1059,9 @@ pub fn parse_futures_fill_report(
         _ => anyhow::bail!("Unsupported instrument type for futures fill report"),
     };
 
-    let fee_f64 = fill.fee_paid.unwrap_or(0.0);
-    let commission = Money::new(fee_f64, quote_currency);
+    let commission = Money::from_decimal(fill.fee_paid.unwrap_or(Decimal::ZERO), quote_currency)?;
 
-    let liquidity_side = match fill.fill_type {
-        KrakenFillType::Maker => LiquiditySide::Maker,
-        KrakenFillType::Taker => LiquiditySide::Taker,
-    };
+    let liquidity_side = fill.fill_type.into();
 
     let ts_event = parse_rfc3339_timestamp(&fill.fill_time, "fill.fill_time")?;
 
@@ -1118,15 +1102,14 @@ pub fn parse_futures_position_status_report(
         KrakenPositionSide::Short => PositionSideSpecified::Short,
     };
 
-    let quantity = Quantity::new(position.size, instrument.size_precision());
-    let size_decimal = Decimal::from_str(&position.size.to_string()).unwrap_or(dec!(0));
+    let quantity = Quantity::from_decimal_dp(position.size, instrument.size_precision())?;
     let signed_decimal_qty = match position_side {
-        PositionSideSpecified::Long => size_decimal,
-        PositionSideSpecified::Short => -size_decimal,
+        PositionSideSpecified::Long => position.size,
+        PositionSideSpecified::Short => -position.size,
         PositionSideSpecified::Flat => dec!(0),
     };
 
-    let avg_px_open = Decimal::from_str(&position.price.to_string()).ok();
+    let avg_px_open = Some(position.price);
 
     Ok(PositionStatusReport {
         account_id,
@@ -1251,8 +1234,8 @@ mod tests {
             KrakenOrderSide,
         },
         http::{
-            futures::models::{FuturesOpenOrder, FuturesOrderEvent},
-            models::AssetPairsResponse,
+            futures::models::{FuturesFillsResponse, FuturesOpenOrder, FuturesOrderEvent},
+            models::{AssetPairsResponse, KrakenResponse},
         },
     };
 
@@ -1285,9 +1268,8 @@ mod tests {
     #[rstest]
     fn test_parse_spot_instrument() {
         let json = load_test_json("http_asset_pairs.json");
-        let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let result = wrapper.get("result").unwrap();
-        let pairs: AssetPairsResponse = serde_json::from_value(result.clone()).unwrap();
+        let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
+        let pairs = response.result.unwrap();
 
         let (pair_name, definition) = pairs.iter().next().unwrap();
 
@@ -1298,8 +1280,8 @@ mod tests {
                 assert_eq!(pair.id.venue.as_str(), "KRAKEN");
                 assert_eq!(pair.base_currency.code.as_str(), "XXBT");
                 assert_eq!(pair.quote_currency.code.as_str(), "USDT");
-                assert!(pair.price_increment.as_f64() > 0.0);
-                assert!(pair.size_increment.as_f64() > 0.0);
+                assert_eq!(pair.price_increment.as_decimal(), dec!(0.1));
+                assert_eq!(pair.size_increment.as_decimal(), dec!(0.00000001));
                 assert!(pair.min_quantity.is_some());
                 assert_eq!(pair.maker_fee, dec!(0.0025));
                 assert_eq!(pair.taker_fee, dec!(0.004));
@@ -1329,8 +1311,8 @@ mod tests {
                 assert_eq!(perp.quote_currency.code.as_str(), "USD");
                 assert_eq!(perp.settlement_currency.code.as_str(), "BTC");
                 assert!(perp.is_inverse);
-                assert_eq!(perp.price_increment.as_f64(), 0.5);
-                assert_eq!(perp.size_increment.as_f64(), 1.0);
+                assert_eq!(perp.price_increment.as_decimal(), dec!(0.5));
+                assert_eq!(perp.size_increment.as_decimal(), dec!(1));
                 assert_eq!(perp.size_precision(), 0);
                 assert_eq!(perp.margin_init, dec!(0.02));
                 assert_eq!(perp.margin_maint, dec!(0.01));
@@ -1358,8 +1340,8 @@ mod tests {
                 assert_eq!(perp.quote_currency.code.as_str(), "USD");
                 assert_eq!(perp.settlement_currency.code.as_str(), "USD");
                 assert!(!perp.is_inverse);
-                assert_eq!(perp.price_increment.as_f64(), 0.1);
-                assert_eq!(perp.size_increment.as_f64(), 0.001);
+                assert_eq!(perp.price_increment.as_decimal(), dec!(0.1));
+                assert_eq!(perp.size_increment.as_decimal(), dec!(0.001));
                 assert_eq!(perp.size_precision(), 3);
                 assert_eq!(perp.margin_init, dec!(0.02));
                 assert_eq!(perp.margin_maint, dec!(0.01));
@@ -1386,7 +1368,7 @@ mod tests {
                 assert_eq!(perp.id.symbol.as_str(), "PF_PEPEUSD");
                 assert_eq!(perp.base_currency.code.as_str(), "PEPE");
                 assert!(!perp.is_inverse);
-                assert_eq!(perp.size_increment.as_f64(), 1000.0);
+                assert_eq!(perp.size_increment.as_decimal(), dec!(1000));
                 assert_eq!(perp.size_precision(), 0);
             }
             _ => panic!("Expected CryptoPerpetual"),
@@ -1411,8 +1393,8 @@ mod tests {
                 assert_eq!(perp.quote_currency.code.as_str(), "USD");
                 assert_eq!(perp.settlement_currency.code.as_str(), "USD");
                 assert!(!perp.is_inverse);
-                assert_eq!(perp.price_increment.as_f64(), 0.01);
-                assert_eq!(perp.size_increment.as_f64(), 0.01);
+                assert_eq!(perp.price_increment.as_decimal(), dec!(0.01));
+                assert_eq!(perp.size_increment.as_decimal(), dec!(0.01));
                 assert_eq!(perp.size_precision(), 2);
                 assert_eq!(perp.margin_init, dec!(0.2));
                 assert_eq!(perp.margin_maint, dec!(0.1));
@@ -1483,8 +1465,8 @@ mod tests {
         let trade_tick = parse_trade_tick_from_array(trade_array, &instrument, TS).unwrap();
 
         assert_eq!(trade_tick.instrument_id, instrument_id);
-        assert!(trade_tick.price.as_f64() > 0.0);
-        assert!(trade_tick.size.as_f64() > 0.0);
+        assert_eq!(trade_tick.price, Price::from("105433.60000"));
+        assert_eq!(trade_tick.size, Quantity::from("0.00027625"));
     }
 
     #[rstest]
@@ -1549,11 +1531,11 @@ mod tests {
         let bar = parse_bar(&ohlc, &instrument, bar_type, TS).unwrap();
 
         assert_eq!(bar.bar_type, bar_type);
-        assert!(bar.open.as_f64() > 0.0);
-        assert!(bar.high.as_f64() > 0.0);
-        assert!(bar.low.as_f64() > 0.0);
-        assert!(bar.close.as_f64() > 0.0);
-        assert!(bar.volume.as_f64() >= 0.0);
+        assert_eq!(bar.open, Price::from("106038.2"));
+        assert_eq!(bar.high, Price::from("106038.2"));
+        assert_eq!(bar.low, Price::from("106038.2"));
+        assert_eq!(bar.close, Price::from("106038.2"));
+        assert_eq!(bar.volume, Quantity::from("0.00000000"));
     }
 
     #[rstest]
@@ -1692,7 +1674,7 @@ mod tests {
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.venue_order_id.as_str(), order_id);
         assert_eq!(report.order_status, OrderStatus::Accepted);
-        assert!(report.quantity.as_f64() > 0.0);
+        assert_eq!(report.quantity, Quantity::from("0.50000000"));
     }
 
     fn create_mock_perp() -> InstrumentAny {
@@ -1728,6 +1710,41 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_futures_assignee_fill_report() {
+        let json = load_test_json("http_futures_fills.json");
+        let response: FuturesFillsResponse = serde_json::from_str(&json).unwrap();
+        let fill = &response.fills[2];
+        let instrument = create_mock_perp();
+        let account_id = AccountId::new("KRAKEN-001");
+
+        let report = parse_futures_fill_report(fill, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::new("f8a7b6c5-d4e3-2f1a-0b9c-8d7e6f5a4b3c")
+        );
+        assert_eq!(
+            report.trade_id,
+            TradeId::new("d3f4e5a6-b7c8-9d0e-1f2a-3b4c5d6e7f8a")
+        );
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.last_qty, Quantity::from("2500"));
+        assert_eq!(report.last_px, Price::from("28050.0"));
+        assert_eq!(report.commission, Money::zero(Currency::USD()));
+        assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
+        assert_eq!(report.avg_px, None);
+        assert_eq!(
+            report.ts_event,
+            "2023-04-07T15:55:20.123Z".parse::<UnixNanos>().unwrap()
+        );
+        assert_eq!(report.ts_init, TS);
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
     fn test_parse_futures_order_status_report_market_if_touched() {
         let order = FuturesOpenOrder {
             order_id: "tp-001".to_string(),
@@ -1735,11 +1752,11 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_type: KrakenFuturesOrderType::TakeProfit,
             limit_price: None,
-            stop_price: Some(36000.0),
-            unfilled_size: 500.0,
+            stop_price: Some(dec!(36000)),
+            unfilled_size: Some(dec!(500)),
             received_time: "2023-11-14T22:13:20.000Z".to_string(),
-            status: KrakenFuturesOrderStatus::Untouched,
-            filled_size: 0.0,
+            status: KrakenFuturesOrderStatus::PartiallyFilled,
+            filled_size: dec!(25),
             reduce_only: Some(true),
             last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
             trigger_signal: None,
@@ -1749,13 +1766,15 @@ mod tests {
         let account_id = AccountId::new("KRAKEN-001");
 
         let report =
-            parse_futures_order_status_report(&order, &instrument, account_id, TS).unwrap();
+            parse_futures_order_status_report(&order, &instrument, account_id, None, TS).unwrap();
 
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.trigger_price.unwrap().as_f64(), 36000.0);
+        assert_eq!(report.quantity.as_decimal(), dec!(525));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(25));
+        assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
         assert!(report.price.is_none());
         assert!(report.reduce_only);
-        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
     }
 
     #[rstest]
@@ -1765,12 +1784,12 @@ mod tests {
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Sell,
             order_type: KrakenFuturesOrderType::TakeProfit,
-            limit_price: Some(35500.0),
-            stop_price: Some(36000.0),
-            unfilled_size: 500.0,
+            limit_price: Some(dec!(35500)),
+            stop_price: Some(dec!(36000)),
+            unfilled_size: Some(dec!(500)),
             received_time: "2023-11-14T22:13:20.000Z".to_string(),
             status: KrakenFuturesOrderStatus::Untouched,
-            filled_size: 0.0,
+            filled_size: dec!(0),
             reduce_only: None,
             last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
             trigger_signal: None,
@@ -1780,11 +1799,11 @@ mod tests {
         let account_id = AccountId::new("KRAKEN-001");
 
         let report =
-            parse_futures_order_status_report(&order, &instrument, account_id, TS).unwrap();
+            parse_futures_order_status_report(&order, &instrument, account_id, None, TS).unwrap();
 
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
-        assert_eq!(report.trigger_price.unwrap().as_f64(), 36000.0);
-        assert_eq!(report.price.unwrap().as_f64(), 35500.0);
+        assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
+        assert_eq!(report.price.unwrap().as_decimal(), dec!(35500));
         assert_eq!(report.order_side, OrderSide::Sell);
         assert!(!report.reduce_only);
     }
@@ -1797,10 +1816,10 @@ mod tests {
             order_type: KrakenFuturesOrderType::TakeProfit,
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Buy,
-            quantity: 100.0,
-            filled: 100.0,
+            quantity: dec!(100),
+            filled: dec!(100),
             limit_price: None,
-            stop_price: Some(40000.0),
+            stop_price: Some(dec!(40000)),
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
@@ -1818,7 +1837,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.trigger_price.unwrap().as_f64(), 40000.0);
+        assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(40000));
         assert!(report.price.is_none());
         assert_eq!(report.order_status, OrderStatus::Filled);
     }
@@ -1831,10 +1850,10 @@ mod tests {
             order_type: KrakenFuturesOrderType::TakeProfit,
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Sell,
-            quantity: 200.0,
-            filled: 0.0,
-            limit_price: Some(39500.0),
-            stop_price: Some(40000.0),
+            quantity: dec!(200),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(39500)),
+            stop_price: Some(dec!(40000)),
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: true,
@@ -1852,8 +1871,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
-        assert_eq!(report.trigger_price.unwrap().as_f64(), 40000.0);
-        assert_eq!(report.price.unwrap().as_f64(), 39500.0);
+        assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(40000));
+        assert_eq!(report.price.unwrap().as_decimal(), dec!(39500));
         assert_eq!(report.order_side, OrderSide::Sell);
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert!(report.reduce_only);
@@ -1867,10 +1886,10 @@ mod tests {
             order_type: KrakenFuturesOrderType::Stop,
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Sell,
-            quantity: 200.0,
-            filled: 0.0,
+            quantity: dec!(200),
+            filled: Decimal::ZERO,
             limit_price: None,
-            stop_price: Some(39000.0),
+            stop_price: Some(dec!(39000)),
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: true,
@@ -1899,9 +1918,9 @@ mod tests {
             order_type: KrakenFuturesOrderType::Limit,
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Buy,
-            quantity: 200.0,
-            filled: 0.0,
-            limit_price: Some(35000.0),
+            quantity: dec!(200),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
             stop_price: None,
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
@@ -1930,9 +1949,9 @@ mod tests {
             order_type: KrakenFuturesOrderType::Limit,
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Buy,
-            quantity: 200.0,
-            filled: 0.0,
-            limit_price: Some(35000.0),
+            quantity: dec!(200),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
             stop_price: None,
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
@@ -1961,9 +1980,9 @@ mod tests {
             order_type: KrakenFuturesOrderType::Limit,
             symbol: "PI_XBTUSD".to_string(),
             side: KrakenOrderSide::Buy,
-            quantity: 200.0,
-            filled: 50.0,
-            limit_price: Some(35000.0),
+            quantity: dec!(200),
+            filled: dec!(50),
+            limit_price: Some(dec!(35000)),
             stop_price: None,
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
@@ -2029,9 +2048,9 @@ mod tests {
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.trade_id.to_string(), *trade_id);
-        assert!(report.last_qty.as_f64() > 0.0);
-        assert!(report.last_px.as_f64() > 0.0);
-        assert!(report.commission.as_f64() > 0.0);
+        assert_eq!(report.last_qty, Quantity::from("0.50000000"));
+        assert_eq!(report.last_px, Price::from("29500.50"));
+        assert_eq!(report.commission.as_decimal(), dec!(23.60));
     }
 
     #[rstest]
@@ -2128,9 +2147,8 @@ mod tests {
     #[rstest]
     fn test_parse_tokenized_instrument() {
         let json = load_test_json("http_asset_pairs_tokenized.json");
-        let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let result = wrapper.get("result").unwrap();
-        let pairs: AssetPairsResponse = serde_json::from_value(result.clone()).unwrap();
+        let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
+        let pairs = response.result.unwrap();
 
         let (pair_name, definition) = pairs.iter().next().unwrap();
 
@@ -2146,8 +2164,8 @@ mod tests {
                 assert_eq!(ta.quote_currency.code.as_str(), "ZUSD");
                 assert_eq!(ta.price_precision, 2);
                 assert_eq!(ta.size_precision, 8);
-                assert!(ta.price_increment.as_f64() > 0.0);
-                assert!(ta.size_increment.as_f64() > 0.0);
+                assert_eq!(ta.price_increment.as_decimal(), dec!(0.01));
+                assert_eq!(ta.size_increment.as_decimal(), dec!(0.00000001));
                 assert!(ta.min_quantity.is_some());
                 assert_eq!(ta.maker_fee, dec!(-0.0002));
                 assert_eq!(ta.taker_fee, dec!(0.001));
@@ -2203,8 +2221,8 @@ mod tests {
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.trade_id.to_string(), *trade_id);
-        assert!(report.last_qty.as_f64() > 0.0);
-        assert!(report.last_px.as_f64() > 0.0);
+        assert_eq!(report.last_qty, Quantity::from("0.50000000"));
+        assert_eq!(report.last_px, Price::from("29500.50"));
         assert_eq!(report.commission.currency, Currency::USD());
     }
 

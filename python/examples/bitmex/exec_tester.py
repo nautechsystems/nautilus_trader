@@ -34,8 +34,8 @@ from nautilus_trader.adapters.bitmex import BitmexExecClientConfig
 from nautilus_trader.adapters.bitmex import BitmexExecFactoryConfig
 from nautilus_trader.adapters.bitmex import BitmexExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
-from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId

@@ -61,8 +61,9 @@ impl Indicator for ExponentialMovingAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -206,7 +207,7 @@ mod tests {
         stub_quote: QuoteTick,
     ) {
         let mut ema = indicator_ema_10;
-        ema.handle_quote(&stub_quote);
+        ema.handle_quote(&stub_quote).unwrap();
         assert!(ema.has_inputs());
         assert_eq!(ema.value, 1501.0);
     }
@@ -216,8 +217,8 @@ mod tests {
         let tick1 = stub_quote("1500.0", "1502.0");
         let tick2 = stub_quote("1502.0", "1504.0");
 
-        indicator_ema_10.handle_quote(&tick1);
-        indicator_ema_10.handle_quote(&tick2);
+        indicator_ema_10.handle_quote(&tick1).unwrap();
+        indicator_ema_10.handle_quote(&tick2).unwrap();
         assert_eq!(indicator_ema_10.count, 2);
         assert_eq!(indicator_ema_10.value, 1_501.363_636_363_636_3);
     }

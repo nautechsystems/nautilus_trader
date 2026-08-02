@@ -21,19 +21,19 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 
 **Common pitfalls**: GNU and BSD utilities differ between Linux and macOS:
 
-| Command              | Linux (GNU)       | macOS (BSD)       | Portable solution                        |
-|----------------------|-------------------|-------------------|------------------------------------------|
-| `sed -i`             | `sed -i 's/…'`    | `sed -i '' 's/…'` | Use backup extension: `sed -i.bak 's/…'` |
-| `stat` (file size)   | `stat -c%s file`  | `stat -f%z file`  | Detect with `stat --version`             |
-| `sha256sum`          | `sha256sum file`  | N/A               | Use `shasum -a 256` or detect            |
-| `readlink -f`        | Works             | N/A               | Avoid, or use `realpath`                 |
-| `grep -P` (PCRE)     | Works             | N/A               | Use `-E` (extended regex) instead        |
-| `date` (nanoseconds) | `date +%N`        | N/A               | Use `$RANDOM` for cache‑busting          |
+| Command              | Linux (GNU)      | macOS (BSD)       | Portable solution                        |
+| -------------------- | ---------------- | ----------------- | ---------------------------------------- |
+| `sed -i`             | `sed -i 's/…'`   | `sed -i '' 's/…'` | Use backup extension: `sed -i.bak 's/…'` |
+| `stat` (file size)   | `stat -c%s file` | `stat -f%z file`  | Detect with `stat --version`             |
+| `sha256sum`          | `sha256sum file` | N/A               | Use `shasum -a 256` or detect            |
+| `readlink -f`        | Works            | N/A               | Avoid, or use `realpath`                 |
+| `grep -P` (PCRE)     | Works            | N/A               | Use `-E` (extended regex) instead        |
+| `date` (nanoseconds) | `date +%N`       | N/A               | Use `$RANDOM` for cache‑busting          |
 
 **Bash version**: macOS ships with bash 3.2; avoid bash 4+ features in user-facing scripts:
 
 | Feature                           | Bash version | Alternative                      |
-|-----------------------------------|--------------|----------------------------------|
+| --------------------------------- | ------------ | -------------------------------- |
 | Associative arrays (`declare -A`) | 4.0+         | Use files or simple arrays       |
 | `readarray` / `mapfile`           | 4.0+         | Use `while read` loops           |
 | `${var,,}` / `${var^^}` (case)    | 4.0+         | Use `tr '[:upper:]' '[:lower:]'` |
@@ -43,16 +43,16 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 ### Comment conventions
 
 1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
-2. Use *sentence case* – capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
+2. Use *sentence case* - capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
 3. Do not use double spaces after periods.
-4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link – in those cases leave the punctuation exactly as the link requires.
+4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link - in those cases leave the punctuation exactly as the link requires.
 5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *should* end with a period.
-6. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
+6. Keep comments concise; favor clarity and only explain the non-obvious - *less is more*.
 7. Avoid emoji symbols in text.
 
 ### Doc comment mood
 
-**Rust** doc comments should be written in the **indicative mood** – e.g. *"Returns a cached client."*
+**Rust** doc comments should be written in the **indicative mood** - e.g. *"Returns a cached client."*
 
 This convention aligns with the prevailing style of the Rust ecosystem and makes generated
 documentation feel natural to end-users.
@@ -60,10 +60,10 @@ documentation feel natural to end-users.
 ### Terminology and phrasing
 
 1. **Error messages**: Avoid using ", got" in error messages. Use more descriptive alternatives like ", was", ", received", or ", found" depending on context.
-   - ❌ `"Expected string, got {type(value)}"`
-   - ✅ `"Expected string, was {type(value)}"`
+   - Bad: `"Expected string, got {type(value)}"`
+   - Good: `"Expected string, was {type(value)}"`
 
-2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" – this is the more modern and accepted spelling.
+2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" - this is the more modern and accepted spelling.
 
 3. **Error variable naming**: Use single-letter `e` for caught errors/exceptions:
    - Rust: `Err(e)` not `Err(err)` or `Err(error)`, and `|e|` not `|err|` in closures
@@ -76,6 +76,50 @@ documentation feel natural to end-users.
 2. **User-facing API**: Use full, descriptive names for public properties, function parameters, return types, and metric names/labels (e.g., `price_precision`, `size_precision`). This prevents abbreviated terminology from leaking into dashboards or alerts.
 
 3. **Error messages and logs**: Use full words for clarity (e.g., "price precision" not "price prec"). The user should never see abbreviated terminology.
+
+#### Data loading APIs
+
+Use free functions for stateless data ingestion. Use a class only when instances retain reusable
+configuration, caches, workers, iteration state, or an open resource across calls. Do not use a
+zero-state class solely to group static or class methods.
+
+Follow the semantic distinction in the
+[Polars I/O API](https://docs.pola.rs/api/python/stable/reference/io.html), adapted to the
+established Nautilus `load_*` vocabulary:
+
+- `load_<source>_<data>` eagerly reads, normalizes, and materializes a complete result.
+- `scan_<source>_<data>` creates a lazy query or deferred execution plan.
+- `stream_<source>_<data>` incrementally yields records or batches.
+- `write_<format>` eagerly writes an in-memory result.
+- `sink_<format>` writes through a lazy or streaming execution path.
+
+For ingestion, order names from general to specific: verb, source, logical data, then an optional
+representation. Include the representation only when real sibling formats exist. For example,
+`load_binance_order_book_deltas` is preferable to a stateless
+`BinanceOrderBookDeltaDataLoader.load` class or a generic `load_binance_data` function.
+
+#### Adapter package facades
+
+Each package under `nautilus_trader/adapters/` is a thin facade over the private
+`_libnautilus` extension. Every adapter `__init__.py` declares a deterministic `__all__` that is
+the single source of truth for its public API; `python/generate_stubs.py` copies that list into the
+matching `.pyi` so runtime and stub exports agree exactly.
+
+A venue adapter exposes its canonical identity constants plus the supported public surface:
+
+- `<VENUE>`, `<VENUE>_CLIENT_ID`, `<VENUE>_VENUE`, registered from Rust via `m.add` in the adapter's
+  `python/mod.rs`
+- data types, `*Config`, `*Factory`, user-facing enums (such as `*Environment` and `*ProductType`)
+- stateless loaders (`load_*`, `stream_*`, `convert_*`) and intentional utilities
+  (`decode_*`, `get_*_arrow_schema_map`)
+
+Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint helpers
+(`get_*_url`, `*_HTTP_URL`), caches, or other internals to `__all__` merely for structural parity.
+Data providers (such as `databento` and `tardis`), the `blockchain` data client, the `sandbox`
+execution client, and the multi-venue `interactive_brokers` broker omit venue constants because the
+constants would be meaningless for them.
+
+Order `__all__` entries so the `RUF022` pre-commit gate owns sort order; do not hand-order the list.
 
 ### Formatting
 
@@ -95,21 +139,66 @@ long_method_with_many_params(
 
 ## Commit messages
 
-Here are some guidelines for the style of your commit messages:
+Commit messages use a capitalized, imperative subject naming the affected surface, optionally followed by
+a body explaining the change. [Gitlint](#gitlint-optional) encodes the length limits and some formatting
+rules. It is opt-in today but may be enforced in CI later, so write messages that pass it now.
 
-1. Limit subject titles to 60 characters or fewer. Capitalize subject line and do not end with period.
+### Subject line
 
-2. Use 'imperative voice', i.e. the message should describe what the commit will do if applied.
+- Open with a capitalized imperative verb, so the subject describes what the commit does when applied.
+  `Add`, `Fix`, `Improve`, `Refine`, `Update`, `Remove`, `Refactor`, and `Standardize` cover most of the history.
+- Name the affected surface (crate, adapter, subsystem, or type) so the log stays scannable.
+- Keep the subject between 10 and 60 characters (gitlint `title-min-length` and `title-max-length`).
+- Do not end the subject with a period.
 
-3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 100 character width. You can use bullet points with or without terminating periods.
+```text
+Add Decimal constructors to Instrument trait
+Fix non-atomic order event application
+Refine cross-platform wheel validation
+Remove stale security audit exceptions
+```
 
-4. Optional: Provide # references to relevant issues or tickets.
+Avoid these shapes:
 
-5. Optional: Provide any hyperlinks which are informative.
+```text
+feat(bybit): add due_post_only flag        # Conventional Commits type and scope
+fix: bug                                   # lowercase, unspecific, too short
+Fixed the Bybit post-only rejection flag.  # past tense, trailing period
+Update stuff                               # says nothing about the surface
+```
+
+### Conventional Commits
+
+Do NOT use [Conventional Commits](https://www.conventionalcommits.org/) syntax for commit messages or pull
+request titles. Many editors and AI assistants emit that format by default, but no commit in this
+repository's history uses it, and the type and scope ceremony duplicates what the subject already carries.
+Pull request titles matter here too, because a squash merge turns the PR title into the commit subject.
+
+### Body
+
+The body is optional and gitlint does not require one, but anything beyond a trivial change should say
+why the change was made rather than restate the diff.
+
+- Separate the body from the subject with a blank line.
+- Keep body lines to 79 characters or fewer (gitlint `body-max-line-length`).
+- Use prose paragraphs or bullet points, whichever suits the change. Bullets may keep the same imperative
+  voice as the subject, and do not need terminating periods.
+- Include informative hyperlinks where they help a future reader.
+
+### Issue references
+
+- Reference issues from the body, typically on a final line: `Resolves #4534` when the commit closes the
+  issue, or `Related to #4547` when it is partial work.
+- GitHub appends the pull request number to the subject on squash merge, producing subjects such as
+  `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand.
+- Gitlint skips all rules for subjects ending in `(#1234)` (`ignore-by-title`), which is why squash-merged
+  subjects in the log can exceed 60 characters.
 
 ### Gitlint (optional)
 
-Gitlint is available to help enforce commit message standards automatically. It checks that commit messages follow the guidelines above (character limits, formatting, etc.). This is **opt-in** and not enforced in CI.
+Gitlint is available to help enforce commit message standards automatically. It checks length limits and
+formatting such as trailing punctuation, not the choice of verb, capitalization, or surface. This is
+**opt-in** and not enforced in CI.
 
 **Benefits**: Encourages concise yet expressive commit messages, helps develop clear explanations of changes.
 
@@ -135,6 +224,7 @@ Configuration is in `.gitlint` at the repository root:
 
 - **60-character title limit**: Ensures clear rendering on GitHub and encourages brevity while remaining descriptive.
 - **79-character body width**: Aligns with Python's PEP 8 conventions and the traditional limit for git tooling.
+- **Optional body**: `body-is-missing` and `body-min-length` are ignored, so short commits need no body.
 
 :::note
 Gitlint may be enforced in CI in the future, so adopting these practices early eases the transition.

@@ -97,7 +97,7 @@ pub enum CodecError {
         ///
         /// Kept as `u64` (not `usize`) so the reported value is exact on every
         /// target, including a length that overflows `usize` on a sub-64-bit
-        /// build — the case that would otherwise be reported with a lossy
+        /// build - the case that would otherwise be reported with a lossy
         /// sentinel.
         claimed: u64,
         /// Bytes remaining in the input when the length was checked.
@@ -990,6 +990,7 @@ mod tests {
     use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::data::DataType;
     use nautilus_system::RegisteredComponents;
     use proptest::{prelude::*, test_runner::Config as ProptestConfig};
     use rstest::rstest;
@@ -1333,6 +1334,34 @@ mod tests {
             encode_to_vec(&manifest).unwrap(),
             encode_to_vec(&manifest).unwrap()
         );
+    }
+
+    #[rstest]
+    fn data_type_roundtrip_preserves_fields_and_repairs_hash() {
+        // Absent metadata isolates the sequence framing under test. Params stores
+        // serde_json::Value, whose Deserialize requires deserialize_any, so a non-empty
+        // Params cannot be decoded by this codec at all - a pre-existing Params limitation
+        // unrelated to the DataType visitor.
+        let expected = DataType::new("ExampleType", None, Some("catalog/path".to_string()));
+        let expected_hash = expected.precomputed_hash();
+        let mut bytes = encode_to_vec(&expected).unwrap();
+
+        let hash_offset = HEADER_LEN
+            + size_of::<u64>()
+            + expected.type_name().len()
+            + size_of::<u8>()
+            + size_of::<u64>()
+            + expected.topic().len();
+        bytes[hash_offset..hash_offset + size_of::<u64>()]
+            .copy_from_slice(&(expected_hash ^ u64::MAX).to_le_bytes());
+
+        let roundtripped: DataType = decode_from_slice(&bytes).unwrap();
+
+        assert_eq!(roundtripped.type_name(), expected.type_name());
+        assert_eq!(roundtripped.metadata(), expected.metadata());
+        assert_eq!(roundtripped.topic(), expected.topic());
+        assert_eq!(roundtripped.identifier(), expected.identifier());
+        assert_eq!(roundtripped.precomputed_hash(), expected_hash);
     }
 
     #[rstest]

@@ -21,8 +21,7 @@ use anyhow::Context;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick,
-        TradeTick,
+        BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType,
@@ -36,11 +35,15 @@ use rust_decimal::Decimal;
 
 use super::messages::{
     BinanceSpotBookTickerMsg, BinanceSpotDepthDiffMsg, BinanceSpotKlineMsg,
-    BinanceSpotPartialDepthMsg, BinanceSpotTradeMsg,
+    BinanceSpotPartialDepthMsg, BinanceSpotTickerMsg, BinanceSpotTradeMsg,
 };
-use crate::common::{
-    enums::BinanceKlineInterval,
-    parse::{parse_price_at_precision, parse_quantity_at_precision},
+use crate::{
+    common::{
+        bar::BinanceBar,
+        enums::BinanceKlineInterval,
+        parse::{parse_millis_or_init, parse_price_at_precision, parse_quantity_at_precision},
+    },
+    data_types::BinanceSpotTicker,
 };
 
 fn parse_positive_price(raw: &str, precision: u8, field: &str) -> anyhow::Result<Price> {
@@ -86,7 +89,7 @@ pub fn parse_trade(
         AggressorSide::Buyer
     };
 
-    let ts_event = UnixNanos::from_millis(msg.trade_time as u64);
+    let ts_event = parse_millis_or_init(msg.trade_time, "Spot JSON trade time", ts_init);
 
     Ok(TradeTick::new(
         instrument_id,
@@ -124,8 +127,9 @@ pub fn parse_book_ticker(
     let ts_event = msg
         .transaction_time
         .or(msg.event_time)
-        .and_then(|ts| u64::try_from(ts).ok())
-        .map_or(ts_init, UnixNanos::from_millis);
+        .map_or(ts_init, |value| {
+            parse_millis_or_init(value, "Spot JSON book ticker time", ts_init)
+        });
 
     Ok(QuoteTick::new(
         instrument_id,
@@ -218,7 +222,7 @@ pub fn parse_depth_diff(
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Spot JSON depth event time", ts_init);
     let sequence = msg.final_update_id;
 
     let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());
@@ -344,7 +348,7 @@ pub fn parse_kline(
     msg: &BinanceSpotKlineMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> anyhow::Result<Option<Bar>> {
+) -> anyhow::Result<Option<BinanceBar>> {
     if !msg.kline.is_closed {
         return Ok(None);
     }
@@ -361,17 +365,94 @@ pub fn parse_kline(
     let low = parse_positive_price(&msg.kline.low, price_precision, "low price")?;
     let close = parse_positive_price(&msg.kline.close, price_precision, "close price")?;
     let volume = parse_non_negative_quantity(&msg.kline.volume, size_precision, "volume")?;
+    let quote_volume = Decimal::from_str(&msg.kline.quote_volume)
+        .with_context(|| format!("invalid quote volume `{}`", msg.kline.quote_volume))?;
+    let taker_buy_base_volume =
+        Decimal::from_str(&msg.kline.taker_buy_base_volume).with_context(|| {
+            format!(
+                "invalid taker buy base volume `{}`",
+                msg.kline.taker_buy_base_volume
+            )
+        })?;
+    let taker_buy_quote_volume = Decimal::from_str(&msg.kline.taker_buy_quote_volume)
+        .with_context(|| {
+            format!(
+                "invalid taker buy quote volume `{}`",
+                msg.kline.taker_buy_quote_volume
+            )
+        })?;
+    let count = u64::try_from(msg.kline.num_trades).map_err(|_| {
+        anyhow::anyhow!(
+            "invalid negative kline trade count {}",
+            msg.kline.num_trades
+        )
+    })?;
 
-    let ts_event = UnixNanos::from_millis(msg.kline.close_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.kline.close_time, "Spot JSON kline close time", ts_init);
 
-    Ok(Some(Bar::new(
-        bar_type, open, high, low, close, volume, ts_event, ts_init,
+    Ok(Some(BinanceBar::new(
+        bar_type,
+        open,
+        high,
+        low,
+        close,
+        volume,
+        quote_volume,
+        count,
+        taker_buy_base_volume,
+        taker_buy_quote_volume,
+        ts_event,
+        ts_init,
     )))
+}
+
+/// Parses a rolling 24-hour ticker message.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field is invalid.
+pub fn parse_ticker(
+    msg: &BinanceSpotTickerMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<BinanceSpotTicker> {
+    let decimal = |field: &str, value: &str| {
+        Decimal::from_str(value).with_context(|| format!("invalid {field} `{value}`"))
+    };
+    let millis = |field: &str, value: i64| parse_millis_or_init(value, field, ts_init);
+
+    Ok(BinanceSpotTicker {
+        instrument_id: instrument.id(),
+        price_change: decimal("price change", &msg.price_change)?,
+        price_change_percent: decimal("price change percent", &msg.price_change_percent)?,
+        weighted_avg_price: decimal("weighted average price", &msg.weighted_avg_price)?,
+        prev_close_price: decimal("previous close price", &msg.prev_close_price)?,
+        last_price: decimal("last price", &msg.last_price)?,
+        last_qty: decimal("last quantity", &msg.last_qty)?,
+        bid_price: decimal("bid price", &msg.bid_price)?,
+        bid_qty: decimal("bid quantity", &msg.bid_qty)?,
+        ask_price: decimal("ask price", &msg.ask_price)?,
+        ask_qty: decimal("ask quantity", &msg.ask_qty)?,
+        open_price: decimal("open price", &msg.open_price)?,
+        high_price: decimal("high price", &msg.high_price)?,
+        low_price: decimal("low price", &msg.low_price)?,
+        volume: decimal("volume", &msg.volume)?,
+        quote_volume: decimal("quote volume", &msg.quote_volume)?,
+        open_time: millis("Spot JSON ticker open time", msg.open_time),
+        close_time: millis("Spot JSON ticker close time", msg.close_time),
+        first_trade_id: msg.first_trade_id,
+        last_trade_id: msg.last_trade_id,
+        num_trades: msg.num_trades,
+        ts_event: millis("Spot JSON ticker event time", msg.event_time),
+        ts_init,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
@@ -445,6 +526,29 @@ mod tests {
             tick.size.as_decimal(),
             Decimal::from_str("0.10000001").unwrap()
         );
+    }
+
+    #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_trade_falls_back_for_invalid_timestamp(#[case] trade_time: i64) {
+        let instrument = sample_instrument();
+        let msg = BinanceSpotTradeMsg {
+            event_type: "trade".to_string(),
+            event_time: 1_700_000_000_000,
+            symbol: Ustr::from("ETHUSDT"),
+            trade_id: 42,
+            price: "123.45678901".to_string(),
+            quantity: "0.10000001".to_string(),
+            trade_time,
+            is_buyer_maker: false,
+        };
+
+        let ts_init = UnixNanos::from(1);
+        let trade = parse_trade(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(trade.ts_event, ts_init);
+        assert_eq!(trade.ts_init, ts_init);
     }
 
     #[rstest]
@@ -563,5 +667,187 @@ mod tests {
         assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
         assert_eq!(deltas.deltas[3].order.size.as_decimal(), Decimal::ZERO);
         assert_eq!(deltas.deltas[3].flags, RecordFlag::F_LAST as u8);
+    }
+
+    #[rstest]
+    fn test_parse_closed_one_second_kline_preserves_extended_fields() {
+        let instrument = sample_instrument();
+        let ts_init = UnixNanos::from(1_700_000_001_234_567_890_u64);
+        let msg = BinanceSpotKlineMsg {
+            event_type: "kline".to_string(),
+            event_time: 1_700_000_000_999,
+            symbol: Ustr::from("ETHUSDT"),
+            kline: super::super::messages::BinanceSpotKlineData {
+                start_time: 1_700_000_000_000,
+                close_time: 1_700_000_000_999,
+                symbol: Ustr::from("ETHUSDT"),
+                interval: BinanceKlineInterval::Second1,
+                first_trade_id: 201,
+                last_trade_id: 207,
+                open: "123.45678901".to_string(),
+                close: "124.56789012".to_string(),
+                high: "125.67890123".to_string(),
+                low: "122.34567890".to_string(),
+                volume: "7.65432109".to_string(),
+                num_trades: 7,
+                is_closed: true,
+                quote_volume: "951.35792468".to_string(),
+                taker_buy_base_volume: "3.21098765".to_string(),
+                taker_buy_quote_volume: "399.86420864".to_string(),
+            },
+        };
+
+        let bar = parse_kline(&msg, &instrument, ts_init).unwrap().unwrap();
+
+        assert_eq!(
+            bar.bar_type,
+            BarType::from("ETHUSDT.BINANCE-1-SECOND-LAST-EXTERNAL")
+        );
+        assert_eq!(bar.open, Price::from("123.45678901"));
+        assert_eq!(bar.high, Price::from("125.67890123"));
+        assert_eq!(bar.low, Price::from("122.34567890"));
+        assert_eq!(bar.close, Price::from("124.56789012"));
+        assert_eq!(bar.volume, Quantity::from("7.65432109"));
+        assert_eq!(bar.quote_volume, dec!(951.35792468));
+        assert_eq!(bar.count, 7);
+        assert_eq!(bar.taker_buy_base_volume, dec!(3.21098765));
+        assert_eq!(bar.taker_buy_quote_volume, dec!(399.86420864));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_700_000_000_999_000_000_u64));
+        assert_eq!(bar.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_open_kline_returns_none() {
+        let instrument = sample_instrument();
+        let msg: BinanceSpotKlineMsg = serde_json::from_value(serde_json::json!({
+            "e": "kline",
+            "E": 1700000000999_i64,
+            "s": "ETHUSDT",
+            "k": {
+                "t": 1700000000000_i64,
+                "T": 1700000000999_i64,
+                "s": "ETHUSDT",
+                "i": "1s",
+                "f": 201,
+                "L": 207,
+                "o": "123.45678901",
+                "c": "124.56789012",
+                "h": "125.67890123",
+                "l": "122.34567890",
+                "v": "7.65432109",
+                "n": 7,
+                "x": false,
+                "q": "951.35792468",
+                "V": "3.21098765",
+                "Q": "399.86420864"
+            }
+        }))
+        .unwrap();
+
+        assert!(
+            parse_kline(&msg, &instrument, UnixNanos::from(1))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_spot_ticker_preserves_all_fields() {
+        let instrument = sample_instrument();
+        let ts_init = UnixNanos::from(1_700_000_001_234_567_890_u64);
+        let msg = BinanceSpotTickerMsg {
+            event_time: 1_700_000_000_999,
+            symbol: Ustr::from("ETHUSDT"),
+            price_change: "1.00000001".to_string(),
+            price_change_percent: "2.00000002".to_string(),
+            weighted_avg_price: "3.00000003".to_string(),
+            prev_close_price: "4.00000004".to_string(),
+            last_price: "5.00000005".to_string(),
+            last_qty: "6.00000006".to_string(),
+            bid_price: "7.00000007".to_string(),
+            bid_qty: "8.00000008".to_string(),
+            ask_price: "9.00000009".to_string(),
+            ask_qty: "10.00000010".to_string(),
+            open_price: "11.00000011".to_string(),
+            high_price: "12.00000012".to_string(),
+            low_price: "13.00000013".to_string(),
+            volume: "14.00000014".to_string(),
+            quote_volume: "15.00000015".to_string(),
+            open_time: 1_699_913_600_999,
+            close_time: 1_700_000_000_998,
+            first_trade_id: 301,
+            last_trade_id: 399,
+            num_trades: 99,
+        };
+
+        let ticker = parse_ticker(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(ticker.instrument_id, instrument.id());
+        assert_eq!(ticker.price_change, dec!(1.00000001));
+        assert_eq!(ticker.price_change_percent, dec!(2.00000002));
+        assert_eq!(ticker.weighted_avg_price, dec!(3.00000003));
+        assert_eq!(ticker.prev_close_price, dec!(4.00000004));
+        assert_eq!(ticker.last_price, dec!(5.00000005));
+        assert_eq!(ticker.last_qty, dec!(6.00000006));
+        assert_eq!(ticker.bid_price, dec!(7.00000007));
+        assert_eq!(ticker.bid_qty, dec!(8.00000008));
+        assert_eq!(ticker.ask_price, dec!(9.00000009));
+        assert_eq!(ticker.ask_qty, dec!(10.00000010));
+        assert_eq!(ticker.open_price, dec!(11.00000011));
+        assert_eq!(ticker.high_price, dec!(12.00000012));
+        assert_eq!(ticker.low_price, dec!(13.00000013));
+        assert_eq!(ticker.volume, dec!(14.00000014));
+        assert_eq!(ticker.quote_volume, dec!(15.00000015));
+        assert_eq!(
+            ticker.open_time,
+            UnixNanos::from(1_699_913_600_999_000_000_u64)
+        );
+        assert_eq!(
+            ticker.close_time,
+            UnixNanos::from(1_700_000_000_998_000_000_u64)
+        );
+        assert_eq!(ticker.first_trade_id, 301);
+        assert_eq!(ticker.last_trade_id, 399);
+        assert_eq!(ticker.num_trades, 99);
+        assert_eq!(
+            ticker.ts_event,
+            UnixNanos::from(1_700_000_000_999_000_000_u64)
+        );
+        assert_eq!(ticker.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_spot_ticker_rejects_invalid_decimal() {
+        let instrument = sample_instrument();
+        let mut msg: BinanceSpotTickerMsg = serde_json::from_value(serde_json::json!({
+            "E": 1700000000999_i64,
+            "s": "ETHUSDT",
+            "p": "1.1",
+            "P": "2.2",
+            "w": "3.3",
+            "x": "4.4",
+            "c": "5.5",
+            "Q": "6.6",
+            "b": "7.7",
+            "B": "8.8",
+            "a": "9.9",
+            "A": "10.1",
+            "o": "11.1",
+            "h": "12.1",
+            "l": "13.1",
+            "v": "14.1",
+            "q": "15.1",
+            "O": 1699913600999_i64,
+            "C": 1700000000998_i64,
+            "F": 301,
+            "L": 399,
+            "n": 99
+        }))
+        .unwrap();
+        msg.quote_volume = "invalid".to_string();
+
+        let error = parse_ticker(&msg, &instrument, UnixNanos::from(1)).unwrap_err();
+
+        assert!(error.to_string().contains("invalid quote volume `invalid`"));
     }
 }

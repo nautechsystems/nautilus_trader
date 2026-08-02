@@ -112,6 +112,15 @@ impl RateLimit {
 /// throttler mutates its buffer and window state through `UnsafeCell` without
 /// borrow-check protection. Route side effects through an asynchronous queue
 /// when in doubt.
+///
+/// # Buffered mode contract
+///
+/// Buffered mode (`output_drop` is `None`) drains through a message-bus
+/// endpoint registered by [`Throttler::to_actor`]. An embedded throttler that
+/// is never registered cannot drain: any buffered messages accumulate without
+/// bound. Embedded throttlers that can reach the limit must therefore use
+/// drop mode (provide `output_drop`), where the `send()` auto-reset provides
+/// recovery.
 pub struct Throttler<T, F> {
     clock: Rc<RefCell<dyn Clock>>,
     actor_id: Ustr,
@@ -370,6 +379,8 @@ where
     T: 'static + Debug,
     F: Fn(T) + 'static,
 {
+    /// Registers the throttler's process endpoint and actor state, returning
+    /// the shared handle.
     pub fn to_actor(self) -> Rc<UnsafeCell<Self>> {
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
@@ -606,6 +617,10 @@ impl<T, F> Drop for Throttler<T, F> {
 /// Uses `try_get_actor_unchecked` so that embedded throttlers (not registered
 /// in the actor registry) are handled gracefully. The `send()` auto-reset
 /// ensures such throttlers recover once the rate window passes.
+///
+/// When messages are buffered (possible after a rejected `try_reserve`), the
+/// throttler stays limiting and arms its timer with the drain callback
+/// instead, so buffered messages drain in FIFO order ahead of later sends.
 pub fn throttler_resume<T, F>(actor_id: Ustr) -> TimeEventCallback
 where
     T: 'static + Debug,
@@ -613,7 +628,12 @@ where
 {
     TimeEventCallback::from(move |_event: TimeEvent| {
         if let Some(mut throttler) = try_get_actor_unchecked::<Throttler<T, F>>(&actor_id) {
-            throttler.is_limiting = false;
+            if throttler.buffer.is_empty() {
+                throttler.is_limiting = false;
+            } else {
+                let cb = Some(ThrottlerProcess::<T, F>::new(actor_id).get_timer_callback());
+                throttler.set_timer(cb);
+            }
         }
     })
 }
@@ -1306,6 +1326,75 @@ mod tests {
         );
     }
 
+    #[rstest]
+    fn test_try_reserve_then_buffered_sends_drain_in_order_after_window() {
+        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let sent: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(Vec::new()));
+        let sent_cb = {
+            let sent = Rc::clone(&sent);
+            Box::new(move |msg| sent.borrow_mut().push(msg)) as Box<dyn Fn(u64)>
+        };
+        let throttler = Throttler::new(
+            RateLimit::new(5, 10),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            "reserve_drain_timer",
+            sent_cb,
+            None,
+            Ustr::from(UUID4::new().as_str()),
+        )
+        .to_actor();
+        let throttler = access_shared(&throttler);
+
+        assert!(throttler.try_reserve(5));
+        assert!(!throttler.try_reserve(1));
+        assert!(throttler.is_limiting);
+
+        throttler.send(1);
+        throttler.send(2);
+        assert_eq!(throttler.qsize(), 2);
+        assert!(sent.borrow().is_empty());
+
+        // The rejected reservation armed only the resume timer. Firing it must
+        // arm the drain callback and keep limiting, not drain yet or resume.
+        {
+            let mut clock_ref = clock.borrow_mut();
+            let time_events = clock_ref.advance_time(10.into(), true);
+            for each_event in clock_ref.match_handlers(time_events) {
+                drop(clock_ref);
+                each_event.callback.call(each_event.event);
+                clock_ref = clock.borrow_mut();
+            }
+        }
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.qsize(), 2);
+        assert!(sent.borrow().is_empty());
+
+        // A send after the resume fires must queue behind the buffered messages
+        throttler.send(3);
+        assert_eq!(throttler.qsize(), 3);
+        assert!(sent.borrow().is_empty());
+
+        for _ in 0..10 {
+            if throttler.qsize() == 0 && !throttler.is_limiting {
+                break;
+            }
+            let mut clock_ref = clock.borrow_mut();
+            let current_time = clock_ref.get_time_ns();
+            let time_events = clock_ref.advance_time(current_time + 10, true);
+            for each_event in clock_ref.match_handlers(time_events) {
+                drop(clock_ref);
+                each_event.callback.call(each_event.event);
+                clock_ref = clock.borrow_mut();
+            }
+        }
+
+        assert_eq!(*sent.borrow(), vec![1, 2, 3]);
+        assert_eq!(throttler.qsize(), 0);
+        assert!(!throttler.is_limiting);
+        assert_eq!(throttler.sent_count, 8);
+        assert_eq!(throttler.clock.borrow().timer_count(), 0);
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // Property-based testing
     ////////////////////////////////////////////////////////////////////////////////
@@ -1460,6 +1549,81 @@ mod tests {
                 assert_eq!(throttler.sent_count, sent_now);
                 assert!(throttler.qsize() == 0, "drop mode must never buffer");
             }
+        });
+    }
+
+    #[derive(Clone, Debug)]
+    enum ThrottlerReserveInput {
+        SendMessage(u64),
+        TryReserve(u8),
+        AdvanceClock(u8),
+    }
+
+    fn throttler_reserve_input_strategy() -> impl Strategy<Value = ThrottlerReserveInput> {
+        prop_oneof![
+            2 => prop::bool::ANY.prop_map(|_| ThrottlerReserveInput::SendMessage(42)),
+            2 => prop::num::u8::ANY.prop_map(|v| ThrottlerReserveInput::TryReserve(v % 6 + 1)),
+            6 => prop::num::u8::ANY.prop_map(|v| ThrottlerReserveInput::AdvanceClock(v % 5 + 5)),
+        ]
+    }
+
+    #[rstest]
+    fn prop_test_try_reserve_interleaved() {
+        // Mixing try_reserve with sends: conservation must hold across every
+        // interleaving, and the buffer must always drain eventually (a
+        // rejected reservation arms only the resume timer, which must hand off
+        // to the drain handler when messages are buffered).
+        proptest!(|(inputs in prop::collection::vec(throttler_reserve_input_strategy(), 10..=150))| {
+            let test_throttler = test_throttler_buffered();
+            let test_clock = test_throttler.clock.clone();
+            let interval = test_throttler.interval;
+            let throttler = test_throttler.get_throttler();
+            let mut attempted = 0usize;
+            let mut reserved = 0usize;
+
+            for input in inputs {
+                match input {
+                    ThrottlerReserveInput::SendMessage(msg) => {
+                        throttler.send(msg);
+                        attempted += 1;
+                    }
+                    ThrottlerReserveInput::TryReserve(n) => {
+                        if throttler.try_reserve(usize::from(n)) {
+                            reserved += usize::from(n);
+                        }
+                    }
+                    ThrottlerReserveInput::AdvanceClock(duration) => {
+                        let mut clock_ref = test_clock.borrow_mut();
+                        let current_time = clock_ref.get_time_ns();
+                        let time_events =
+                            clock_ref.advance_time(current_time + u64::from(duration), true);
+                        for each_event in clock_ref.match_handlers(time_events) {
+                            drop(clock_ref);
+                            each_event.callback.call(each_event.event);
+                            clock_ref = test_clock.borrow_mut();
+                        }
+                    }
+                }
+
+                assert_eq!(throttler.sent_count + throttler.qsize(), attempted + reserved);
+            }
+
+            for i in 1..=100u64 {
+                if throttler.qsize() == 0 {
+                    break;
+                }
+                let advance_to = interval * 100 * i;
+                let time_events = test_clock
+                    .borrow_mut()
+                    .advance_time(advance_to.into(), true);
+                let mut clock_ref = test_clock.borrow_mut();
+                for each_event in clock_ref.match_handlers(time_events) {
+                    drop(clock_ref);
+                    each_event.callback.call(each_event.event);
+                    clock_ref = test_clock.borrow_mut();
+                }
+            }
+            assert_eq!(throttler.qsize(), 0);
         });
     }
 

@@ -22,7 +22,7 @@ use nautilus_model::{
         CurrencyPair, Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract,
         OptionSpread,
     },
-    types::Currency,
+    types::{Currency, Quantity},
 };
 use ustr::Ustr;
 
@@ -332,13 +332,15 @@ pub fn decode_option_contract(
         strike_price_currency.precision,
         "strike_price",
     )?;
+    let dataset = msg.hd.publisher().ok().map(|p| p.dataset());
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
-    let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
+    let multiplier =
+        decode_option_multiplier(dataset, msg.contract_multiplier, msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let expiration = corrected_option_expiration(
         decode_timestamp(msg.expiration, "expiration")?,
         underlying,
-        msg.hd.publisher().ok().map(|p| p.dataset()),
+        dataset,
         decode_config,
     );
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
@@ -372,6 +374,23 @@ pub fn decode_option_contract(
         ts_event,
         ts_init,
     )?)
+}
+
+fn decode_option_multiplier(
+    dataset: Option<dbn::Dataset>,
+    contract_multiplier: i32,
+    unit_of_measure_qty: i64,
+) -> anyhow::Result<Quantity> {
+    match (dataset, contract_multiplier) {
+        (Some(dbn::Dataset::OpraPillar), 0 | i32::MAX) => decode_multiplier(unit_of_measure_qty),
+        (Some(dbn::Dataset::OpraPillar), value) if value < 0 => {
+            anyhow::bail!("Invalid negative `contract_multiplier`: {value}")
+        }
+        (Some(dbn::Dataset::OpraPillar), value) => {
+            Ok(Quantity::from_mantissa_exponent(value as u64, 0, 0))
+        }
+        _ => decode_multiplier(unit_of_measure_qty),
+    }
 }
 
 /// Decodes a Databento instrument definition message into an `OptionSpread` instrument.

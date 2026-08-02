@@ -34,7 +34,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use nautilus_architect_ax::{
     common::{credential::Credential, enums::AxEnvironment},
-    http::{client::AxRawHttpClient, parse::parse_perp_instrument},
+    http::{client::AxRawHttpClient, parse::parse_instrument},
     websocket::{AxDataWsMessage, data::AxMdWebSocketClient},
 };
 use nautilus_core::time::get_atomic_clock_realtime;
@@ -124,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .find(|inst| inst.symbol.as_str() == test_symbol)
         .ok_or_else(|| format!("Instrument {test_symbol} not found in /instruments response"))?;
 
-    let _instrument = parse_perp_instrument(
+    let _instrument = parse_instrument(
         maybe_instrument,
         Decimal::ZERO,
         Decimal::ZERO,

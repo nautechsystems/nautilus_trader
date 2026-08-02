@@ -15,61 +15,51 @@
 
 use std::fmt::Display;
 
-macro_rules! define_ib_i32_enum {
-    (
-        $(#[$meta:meta])*
-        pub enum $name:ident {
-            $(
-                $(#[$variant_meta:meta])*
-                $variant:ident = $value:expr
-            ),+ $(,)?
-        }
-    ) => {
-        $(#[$meta])*
-        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-        #[cfg_attr(
-            feature = "python",
-            pyo3::pyclass(
-                module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-                from_py_object
-            )
-        )]
-        pub enum $name {
-            $($(#[$variant_meta])* $variant),+
-        }
-
-        impl $name {
-            #[must_use]
-            pub const fn as_i32(self) -> i32 {
-                match self {
-                    $(Self::$variant => $value),+
-                }
-            }
-        }
-
-        impl From<i32> for $name {
-            fn from(value: i32) -> Self {
-                match value {
-                    $($value => Self::$variant,)+
-                    _ => Self::default(),
-                }
-            }
-        }
-
-        impl Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.as_i32())
-            }
-        }
-    };
+/// Interactive Brokers order origin values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbOrderOrigin {
+    #[default]
+    Customer,
+    Firm,
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers order origin values.
-    pub enum IbOrderOrigin {
-        #[default]
-        Customer = 0,
-        Firm = 1,
+impl IbOrderOrigin {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::Customer => 0,
+            Self::Firm => 1,
+        }
+    }
+}
+
+impl From<i32> for IbOrderOrigin {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Self::Customer,
+            1 => Self::Firm,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbOrderOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -80,13 +70,54 @@ impl IbOrderOrigin {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers institutional short-sale slot values.
-    pub enum IbShortSaleSlot {
-        #[default]
-        None = 0,
-        Broker = 1,
-        ThirdParty = 2,
+/// Interactive Brokers institutional short-sale slot values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbShortSaleSlot {
+    #[default]
+    None,
+    Broker,
+    ThirdParty,
+}
+
+impl IbShortSaleSlot {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::None => 0,
+            Self::Broker => 1,
+            Self::ThirdParty => 2,
+        }
+    }
+}
+
+impl From<i32> for IbShortSaleSlot {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Self::None,
+            1 => Self::Broker,
+            2 => Self::ThirdParty,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbShortSaleSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -97,12 +128,51 @@ impl IbShortSaleSlot {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers volatility type values.
-    pub enum IbVolatilityType {
-        #[default]
-        Daily = 1,
-        Annual = 2,
+/// Interactive Brokers volatility type values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbVolatilityType {
+    #[default]
+    Daily,
+    Annual,
+}
+
+impl IbVolatilityType {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::Daily => 1,
+            Self::Annual => 2,
+        }
+    }
+}
+
+impl From<i32> for IbVolatilityType {
+    fn from(value: i32) -> Self {
+        match value {
+            1 => Self::Daily,
+            2 => Self::Annual,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbVolatilityType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -113,12 +183,51 @@ impl IbVolatilityType {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers VOL order reference price type values.
-    pub enum IbReferencePriceType {
-        #[default]
-        AverageOfNbbo = 1,
-        Nbbo = 2,
+/// Interactive Brokers VOL order reference price type values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbReferencePriceType {
+    #[default]
+    AverageOfNbbo,
+    Nbbo,
+}
+
+impl IbReferencePriceType {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::AverageOfNbbo => 1,
+            Self::Nbbo => 2,
+        }
+    }
+}
+
+impl From<i32> for IbReferencePriceType {
+    fn from(value: i32) -> Self {
+        match value {
+            1 => Self::AverageOfNbbo,
+            2 => Self::Nbbo,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbReferencePriceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -129,13 +238,54 @@ impl IbReferencePriceType {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers BOX auction strategy values.
-    pub enum IbAuctionStrategy {
-        #[default]
-        Match = 1,
-        Improvement = 2,
-        Transparent = 3,
+/// Interactive Brokers BOX auction strategy values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbAuctionStrategy {
+    #[default]
+    Match,
+    Improvement,
+    Transparent,
+}
+
+impl IbAuctionStrategy {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::Match => 1,
+            Self::Improvement => 2,
+            Self::Transparent => 3,
+        }
+    }
+}
+
+impl From<i32> for IbAuctionStrategy {
+    fn from(value: i32) -> Self {
+        match value {
+            1 => Self::Match,
+            2 => Self::Improvement,
+            3 => Self::Transparent,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbAuctionStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -146,12 +296,51 @@ impl IbAuctionStrategy {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers option exercise action values.
-    pub enum IbExerciseAction {
-        #[default]
-        Exercise = 1,
-        Lapse = 2,
+/// Interactive Brokers option exercise action values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbExerciseAction {
+    #[default]
+    Exercise,
+    Lapse,
+}
+
+impl IbExerciseAction {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::Exercise => 1,
+            Self::Lapse => 2,
+        }
+    }
+}
+
+impl From<i32> for IbExerciseAction {
+    fn from(value: i32) -> Self {
+        match value {
+            1 => Self::Exercise,
+            2 => Self::Lapse,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbExerciseAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -165,12 +354,51 @@ impl IbExerciseAction {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers news article type values.
-    pub enum IbArticleType {
-        #[default]
-        Text = 0,
-        Binary = 1,
+/// Interactive Brokers news article type values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbArticleType {
+    #[default]
+    Text,
+    Binary,
+}
+
+impl IbArticleType {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::Text => 0,
+            Self::Binary => 1,
+        }
+    }
+}
+
+impl From<i32> for IbArticleType {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Self::Text,
+            1 => Self::Binary,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbArticleType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -181,13 +409,54 @@ impl IbArticleType {
     }
 }
 
-define_ib_i32_enum! {
-    /// Interactive Brokers builder auction type values.
-    pub enum IbAuctionType {
-        #[default]
-        Opening = 1,
-        Closing = 2,
-        Volatility = 4,
+/// Interactive Brokers builder auction type values.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+pub enum IbAuctionType {
+    #[default]
+    Opening,
+    Closing,
+    Volatility,
+}
+
+impl IbAuctionType {
+    #[must_use]
+    pub const fn as_i32(self) -> i32 {
+        match self {
+            Self::Opening => 1,
+            Self::Closing => 2,
+            Self::Volatility => 4,
+        }
+    }
+}
+
+impl From<i32> for IbAuctionType {
+    fn from(value: i32) -> Self {
+        match value {
+            1 => Self::Opening,
+            2 => Self::Closing,
+            4 => Self::Volatility,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl Display for IbAuctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_i32())
     }
 }
 
@@ -196,7 +465,14 @@ define_ib_i32_enum! {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbRule80A {
@@ -239,7 +515,14 @@ impl Display for IbRule80A {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbOrderOpenClose {
@@ -268,7 +551,14 @@ impl Display for IbOrderOpenClose {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbTwapStrategyType {
@@ -301,7 +591,14 @@ impl Display for IbTwapStrategyType {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbRiskAversion {
@@ -334,7 +631,14 @@ impl Display for IbRiskAversion {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbLegAction {
@@ -363,7 +667,14 @@ impl Display for IbLegAction {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbFundDistributionPolicyIndicator {
@@ -394,7 +705,14 @@ impl Display for IbFundDistributionPolicyIndicator {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbFundAssetType {
@@ -438,7 +756,14 @@ impl Display for IbFundAssetType {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbBondIdentifierKind {

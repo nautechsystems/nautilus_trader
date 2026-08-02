@@ -1,20 +1,20 @@
 {
   "default": false, // default state for all rules
-  // MD001/heading-increment : Heading levels should only increment by one level at a time : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md001.md
+  // MD001/heading-increment : Heading levels should only increment by one level at a time : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md001.md
   "MD001": true,
-  // MD003/heading-style : Heading style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md003.md
+  // MD003/heading-style : Heading style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md003.md
   "MD003": {
     // Heading style
-    "style": "consistent"
+    "style": "atx"
   },
-  // MD004/ul-style : Unordered list style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md004.md
+  // MD004/ul-style : Unordered list style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md004.md
   "MD004": {
     // List style
     "style": "dash"
   },
-  // MD005/list-indent : Inconsistent indentation for list items at the same level : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md005.md
+  // MD005/list-indent : Inconsistent indentation for list items at the same level : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md005.md
   "MD005": true,
-  // MD007/ul-indent : Unordered list indentation : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md007.md
+  // MD007/ul-indent : Unordered list indentation : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md007.md
   "MD007": {
     // Spaces for indent
     "indent": 2,
@@ -23,7 +23,7 @@
     // Spaces for first level indent (when start_indented is set)
     "start_indent": 2
   },
-  // MD009/no-trailing-spaces : Trailing spaces : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md009.md
+  // MD009/no-trailing-spaces : Trailing spaces : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md009.md
   "MD009": {
     // Spaces for line break
     "br_spaces": 2,
@@ -32,7 +32,7 @@
     // Include unnecessary breaks
     "strict": true
   },
-  // MD010/no-hard-tabs : Hard tabs : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md010.md
+  // MD010/no-hard-tabs : Hard tabs : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md010.md
   "MD010": {
     // Include code blocks
     "code_blocks": true,
@@ -41,59 +41,72 @@
     // Number of spaces for each hard tab
     "spaces_per_tab": 1
   },
-  // MD011/no-reversed-links : Reversed link syntax : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md011.md
+  // MD011/no-reversed-links : Reversed link syntax : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md011.md
   "MD011": true,
-  // MD012/no-multiple-blanks : Multiple consecutive blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md012.md
+  // MD012/no-multiple-blanks : Multiple consecutive blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md012.md
   "MD012": {
     // Consecutive blank lines
     "maximum": 1
   },
-  // MD031/blanks-around-fences : Fenced code blocks should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md031.md
+  // MD031/blanks-around-fences : Fenced code blocks should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md031.md
   "MD031": {
     // Include list items
     "list_items": true
   },
-  // MD032/blanks-around-lists : Lists should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md032.md
+  // MD032/blanks-around-lists : Lists should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md032.md
   "MD032": true,
-  // MD034/no-bare-urls : Bare URL used : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md034.md
+  // MD034/no-bare-urls : Bare URL used : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md034.md
   "MD034": true,
-  // MD037/no-space-in-emphasis : Spaces inside emphasis markers : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md037.md
+  // MD037/no-space-in-emphasis : Spaces inside emphasis markers : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md037.md
   "MD037": true,
-  // MD038/no-space-in-code : Spaces inside code span elements : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md038.md
+  // MD038/no-space-in-code : Spaces inside code span elements : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md038.md
   "MD038": true,
-  // MD039/no-space-in-links : Spaces inside link text : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md039.md
+  // MD039/no-space-in-links : Spaces inside link text : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md039.md
   "MD039": true,
-  // MD046/code-block-style : Code block style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md046.md
+  // MD046/code-block-style : Code block style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md046.md
   "MD046": {
     // Block style
     "style": "fenced"
   },
-  // MD049/emphasis-style : Emphasis style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md049.md
+  // MD049/emphasis-style : Emphasis style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md049.md
   "MD049": {
     // Emphasis style
     "style": "asterisk"
   },
-  // MD050/strong-style : Strong style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md050.md
+  // MD050/strong-style : Strong style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md050.md
   "MD050": {
     // Strong style
     "style": "asterisk"
   },
-  // MD018/no-space-after-atx-heading : Space required after '#' in ATX headings : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md018.md
+  // MD018/no-space-after-atx-heading : Space required after '#' in ATX headings : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md018.md
   "MD018": true,
-  // MD019/no-multiple-space-atx : Multiple spaces after hash on atx style heading : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md019.md
+  // MD019/no-multiple-space-atx : Multiple spaces after hash on atx style heading : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md019.md
   "MD019": true,
-  // MD022/blanks-around-headings : Headings should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md022.md
+  // MD020/no-missing-space-closed-atx : Spaces required inside hashes on closed ATX headings : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md020.md
+  "MD020": true,
+  // MD021/no-multiple-space-closed-atx : Multiple spaces inside hashes on closed ATX headings : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md021.md
+  "MD021": true,
+  // MD022/blanks-around-headings : Headings should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md022.md
   "MD022": {
     // Blank lines above heading
     "lines_above": 1,
     // Blank lines below heading
     "lines_below": 1
   },
-  // MD023/heading-start-left : Headings must start at the beginning of the line : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md023.md
+  // MD023/heading-start-left : Headings must start at the beginning of the line : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md023.md
   "MD023": true,
-  // MD026/no-trailing-punctuation : Headings should not end with punctuation : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md026.md
+  // MD024/no-duplicate-heading : Sibling headings should have unique content : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md024.md
+  "MD024": {
+    // Allow common section names beneath different parents
+    "siblings_only": true
+  },
+  // MD025/single-title : Multiple top-level headings in the same document : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md025.md
+  "MD025": true,
+  // MD026/no-trailing-punctuation : Headings should not end with punctuation : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md026.md
   "MD026": true,
-  // MD030/list-marker-space : Spaces after list markers : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md030.md
+  // MD027/no-multiple-space-blockquote : Multiple spaces after blockquote symbol : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md027.md
+  "MD027": true,
+  // MD030/list-marker-space : Spaces after list markers : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md030.md
   "MD030": {
     // Spaces for single-line unordered list items
     "ul_single": 1,
@@ -104,8 +117,41 @@
     // Spaces for multi-line ordered list items
     "ol_multi": 1
   },
-  // MD047/single-trailing-newline : File must end with a single newline : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md047.md
+  // MD035/hr-style : Horizontal rule style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md035.md
+  "MD035": {
+    "style": "---"
+  },
+  // MD041/first-line-h1 : First line in a file should be a top-level heading : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md041.md
+  "MD041": true,
+  // MD042/no-empty-links : No empty links : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md042.md
+  "MD042": true,
+  // MD045/no-alt-text : Images should have alternate text : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md045.md
+  "MD045": true,
+  // MD047/single-trailing-newline : File must end with a single newline : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md047.md
   "MD047": true,
-  // MD051/link-fragments : Link fragments should be valid : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md051.md
-  "MD051": true
+  // MD048/code-fence-style : Code fence style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md048.md
+  "MD048": {
+    "style": "backtick"
+  },
+  // MD051/link-fragments : Link fragments should be valid : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md051.md
+  "MD051": true,
+  // MD052/reference-links-images : Reference links and images should use a defined label : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md052.md
+  "MD052": true,
+  // MD053/link-image-reference-definitions : Link and image definitions should be needed : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md053.md
+  "MD053": true,
+  // MD055/table-pipe-style : Table pipe style : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md055.md
+  "MD055": {
+    "style": "leading_and_trailing"
+  },
+  // MD056/table-column-count : Table rows should contain the same number of columns : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md056.md
+  "MD056": true,
+  // MD058/blanks-around-tables : Tables should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md058.md
+  "MD058": true,
+  // MD059/descriptive-link-text : Link text should be descriptive : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md059.md
+  "MD059": true,
+  // MD060/table-column-alignment : Table column alignment : https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md060.md
+  "MD060": {
+    // Column alignment style
+    "style": "aligned"
+  }
 }

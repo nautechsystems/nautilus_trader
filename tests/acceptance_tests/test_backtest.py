@@ -247,7 +247,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
         assert account.event_count == 207
-        assert account.balance_total(USD) == Money(996_814.33, USD)
+        assert account.balance_total(USD) == Money(996_813.68, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -322,9 +322,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
             "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=3_000.00 USD, free=996_980.00 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",
         )
         assert str(account.events[2]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=0.00 USD, free=998_841.57 USD)], margins=[]",
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.59 USD, locked=0.00 USD, free=998_841.59 USD)], margins=[]",
         )
-        assert account.balance_total(USD) == Money(1_023_530.50, USD)
+        assert account.balance_total(USD) == Money(1_023_541.41, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -754,7 +754,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
         assert account.event_count == 175
-        assert account.balance_total(AUD) == Money(991_881.44, AUD)
+        assert account.balance_total(AUD) == Money(991_881.13, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
@@ -783,7 +783,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
         assert account.event_count == 99
-        assert account.balance_total(AUD) == Money(996_361.60, AUD)
+        assert account.balance_total(AUD) == Money(996_361.50, AUD)
 
 
 class TestBacktestAcceptanceTestsETHUSDT:
@@ -3186,7 +3186,7 @@ class TestBacktestContinuousFuture:
         assert live_closes[:5] == [120.0, 121.0, 122.0, 123.0, 124.0]
 
         # Seam check: the last historical close (adjusted ESM26) joins the first live close
-        # (unadjusted ESU26) at 120.0 — both phases share the same adjusted frame.
+        # (unadjusted ESU26) at 120.0 - both phases share the same adjusted frame.
         assert historical_closes[-1] == live_closes[0] == 120.0
 
         # Every bar must carry the continuous (target) standard bar type, not a segment contract.

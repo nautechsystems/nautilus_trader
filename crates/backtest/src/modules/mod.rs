@@ -17,8 +17,11 @@
 
 pub mod fx_rollover;
 
+use std::fmt::Display;
+
 use ahash::AHashMap;
 pub use fx_rollover::FXRolloverInterestModule;
+use indexmap::IndexMap;
 use nautilus_common::cache::Cache;
 use nautilus_core::UnixNanos;
 use nautilus_execution::matching_engine::engine::OrderMatchingEngine;
@@ -39,7 +42,7 @@ pub struct ExchangeContext<'a> {
     /// All instruments registered on the exchange.
     pub instruments: &'a AHashMap<InstrumentId, InstrumentAny>,
     /// All matching engines, providing order book access.
-    pub matching_engines: &'a AHashMap<InstrumentId, OrderMatchingEngine>,
+    pub matching_engines: &'a IndexMap<InstrumentId, OrderMatchingEngine>,
     /// Read-only cache access for querying positions and other state.
     pub cache: &'a Cache,
 }
@@ -56,9 +59,15 @@ impl SimulationModule for SimulationModuleAny {
         }
     }
 
-    fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> Vec<Money> {
+    fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> SimulationModuleResult {
         match self {
             Self::FXRolloverInterest(module) => module.process(ts_now, ctx),
+        }
+    }
+
+    fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]) {
+        match self {
+            Self::FXRolloverInterest(module) => module.acknowledge(outcomes),
         }
     }
 
@@ -83,6 +92,73 @@ impl From<SimulationModuleAny> for Box<dyn SimulationModule> {
     }
 }
 
+/// Result of processing a simulation module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SimulationModuleResult {
+    /// The module does not yet have a complete batch of adjustments.
+    NotReady,
+    /// The module produced a complete batch, which may be empty.
+    Completed(Vec<Money>),
+}
+
+/// Failure applying an account adjustment produced by a simulation module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccountAdjustmentError {
+    /// The adjusted total balance would exceed [`Money`] bounds.
+    TotalOverflow(Currency),
+    /// The adjusted free balance would exceed [`Money`] bounds.
+    FreeBalanceOverflow(Currency),
+    /// The account has no balance for the adjustment currency.
+    MissingBalance(Currency),
+    /// The exchange has no account for the venue.
+    MissingAccount(Venue),
+    /// Generating the updated account state failed.
+    AccountStateGeneration(String),
+}
+
+impl Display for AccountAdjustmentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TotalOverflow(currency) => {
+                write!(
+                    f,
+                    "Cannot adjust account: {currency} total exceeds Money bounds"
+                )
+            }
+            Self::FreeBalanceOverflow(currency) => write!(
+                f,
+                "Cannot adjust account: {currency} free balance exceeds Money bounds"
+            ),
+            Self::MissingBalance(currency) => {
+                write!(
+                    f,
+                    "Cannot adjust account: no balance for currency {currency}"
+                )
+            }
+            Self::MissingAccount(venue) => {
+                write!(f, "Cannot adjust account: no account for venue {venue}")
+            }
+            Self::AccountStateGeneration(error) => {
+                write!(
+                    f,
+                    "Cannot adjust account: failed to generate account state: {error}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for AccountAdjustmentError {}
+
+/// Outcome of applying an account adjustment produced by a simulation module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccountAdjustmentOutcome {
+    /// The adjustment was applied successfully.
+    Applied,
+    /// The adjustment could not be applied.
+    Failed(AccountAdjustmentError),
+}
+
 /// Trait for custom simulation modules that extend backtesting functionality.
 ///
 /// Implementations can add specialized behavior such as rollover interest,
@@ -97,8 +173,20 @@ pub trait SimulationModule {
 
     /// Processes simulation logic at the given timestamp.
     ///
-    /// Returns account balance adjustments to be applied by the exchange.
-    fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> Vec<Money>;
+    /// Returns a complete batch of account balance adjustments, or indicates
+    /// that the module is not ready.
+    fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> SimulationModuleResult;
+
+    /// Acknowledges the ordered application outcomes for a completed batch.
+    ///
+    /// This is called exactly once for every [`SimulationModuleResult::Completed`],
+    /// including an empty batch.
+    ///
+    /// # Panics
+    ///
+    /// Implementations may panic if the outcome count does not match the
+    /// completed batch or if no completed batch is awaiting acknowledgement.
+    fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]);
 
     /// Logs diagnostic information about the module's state.
     fn log_diagnostics(&self);

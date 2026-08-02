@@ -28,7 +28,8 @@ use super::{
         BINANCE_OPTIONS_TESTNET_WS_PUBLIC_URL, BINANCE_OPTIONS_TESTNET_WS_URL,
         BINANCE_OPTIONS_WS_URL, BINANCE_SPOT_DEMO_HTTP_URL, BINANCE_SPOT_DEMO_WS_URL,
         BINANCE_SPOT_HTTP_URL, BINANCE_SPOT_TESTNET_HTTP_URL, BINANCE_SPOT_TESTNET_WS_URL,
-        BINANCE_SPOT_WS_URL,
+        BINANCE_SPOT_WS_URL, BINANCE_US_SPOT_HTTP_URL, BINANCE_US_SPOT_USER_WS_URL,
+        BINANCE_US_SPOT_WS_URL,
     },
     enums::{BinanceEnvironment, BinanceProductType},
 };
@@ -72,6 +73,33 @@ pub fn get_http_base_url(
     }
 }
 
+/// Returns the HTTP base URL, including first-class Binance US routing.
+#[must_use]
+pub fn get_http_base_url_with_us(
+    product_type: BinanceProductType,
+    environment: BinanceEnvironment,
+    us: bool,
+) -> &'static str {
+    if us {
+        BINANCE_US_SPOT_HTTP_URL
+    } else {
+        get_http_base_url(product_type, environment)
+    }
+}
+
+/// Returns the SAPI base URL for the given environment, or `None` where SAPI is unavailable.
+///
+/// SAPI endpoints (`/sapi/v1/...`) are served from the Spot host on the live exchange. The
+/// testnet and demo hosts do not route `/sapi/v1`, so callers must treat `None` as unavailable
+/// rather than falling back to live, which would route account management against real funds.
+#[must_use]
+pub fn get_sapi_base_url(environment: BinanceEnvironment) -> Option<&'static str> {
+    match environment {
+        BinanceEnvironment::Live => Some(BINANCE_SPOT_HTTP_URL),
+        BinanceEnvironment::Testnet | BinanceEnvironment::Demo => None,
+    }
+}
+
 /// Returns the WebSocket base URL for the given product type and environment.
 #[must_use]
 pub fn get_ws_base_url(
@@ -111,6 +139,32 @@ pub fn get_ws_base_url(
     }
 }
 
+/// Returns the WebSocket base URL, including first-class Binance US routing.
+#[must_use]
+pub fn get_ws_base_url_with_us(
+    product_type: BinanceProductType,
+    environment: BinanceEnvironment,
+    us: bool,
+) -> &'static str {
+    if us {
+        BINANCE_US_SPOT_WS_URL
+    } else {
+        get_ws_base_url(product_type, environment)
+    }
+}
+
+/// Returns a Spot user stream URL bound to the supplied listen key.
+#[must_use]
+pub(crate) fn get_spot_user_stream_url(base_url: Option<&str>, listen_key: &str) -> String {
+    let base_url = base_url.unwrap_or(BINANCE_US_SPOT_USER_WS_URL);
+    let normalized = base_url.trim_end_matches('/');
+    if normalized.ends_with("/ws") {
+        format!("{normalized}/{listen_key}")
+    } else {
+        format!("{normalized}/ws/{listen_key}")
+    }
+}
+
 /// Returns the WebSocket public stream base URL for high-frequency book data.
 ///
 /// USD-M live exchange uses the dedicated public endpoint for `@bookTicker` and
@@ -145,6 +199,38 @@ pub fn get_ws_private_base_url(
             BINANCE_OPTIONS_TESTNET_WS_PRIVATE_URL
         }
         _ => get_ws_base_url(product_type, environment),
+    }
+}
+
+/// Returns a Futures user stream URL bound to the supplied listen key.
+#[must_use]
+pub(crate) fn get_futures_user_stream_url(
+    product_type: BinanceProductType,
+    base_url: &str,
+    listen_key: &str,
+) -> String {
+    assert!(
+        matches!(
+            product_type,
+            BinanceProductType::UsdM | BinanceProductType::CoinM
+        ),
+        "Futures user stream requires UsdM or CoinM product type, was {product_type:?}"
+    );
+
+    let mut normalized = base_url.trim_end_matches('/').to_string();
+    let path = normalized
+        .split_once("://")
+        .map_or(normalized.as_str(), |(_, rest)| rest)
+        .split_once('/')
+        .map(|(_, path)| path);
+    if matches!(path, None | Some("" | "private")) {
+        normalized.push_str("/ws");
+    }
+
+    match product_type {
+        BinanceProductType::UsdM => format!("{normalized}?listenKey={listen_key}"),
+        BinanceProductType::CoinM => format!("{normalized}/{listen_key}"),
+        _ => unreachable!(),
     }
 }
 
@@ -218,6 +304,27 @@ mod tests {
     fn test_http_url_spot_live() {
         let url = get_http_base_url(BinanceProductType::Spot, BinanceEnvironment::Live);
         assert_eq!(url, "https://api.binance.com");
+    }
+
+    #[rstest]
+    fn test_binance_us_spot_urls() {
+        let http =
+            get_http_base_url_with_us(BinanceProductType::Spot, BinanceEnvironment::Live, true);
+        let public_ws =
+            get_ws_base_url_with_us(BinanceProductType::Spot, BinanceEnvironment::Live, true);
+        let user_ws = get_spot_user_stream_url(None, "listen-key");
+
+        assert_eq!(http, "https://api.binance.us");
+        assert_eq!(public_ws, "wss://stream.binance.us:9443/ws");
+        assert_eq!(user_ws, "wss://stream.binance.us:443/ws/listen-key");
+    }
+
+    #[rstest]
+    #[case("wss://custom.example/ws", "wss://custom.example/ws/listen-key")]
+    #[case("wss://custom.example", "wss://custom.example/ws/listen-key")]
+    #[case("wss://custom.example/ws/", "wss://custom.example/ws/listen-key")]
+    fn test_spot_user_stream_url_override(#[case] base: &str, #[case] expected: &str) {
+        assert_eq!(get_spot_user_stream_url(Some(base), "listen-key"), expected);
     }
 
     #[rstest]
@@ -356,6 +463,66 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        BinanceProductType::UsdM,
+        "wss://fstream.binance.com/private/ws",
+        "wss://fstream.binance.com/private/ws?listenKey=redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://dstream.binance.com/ws",
+        "wss://dstream.binance.com/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://dstream.binancefuture.com/ws",
+        "wss://dstream.binancefuture.com/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://demo-dstream.binance.com/ws",
+        "wss://demo-dstream.binance.com/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://custom.example/ws/",
+        "wss://custom.example/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://custom.example",
+        "wss://custom.example/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::UsdM,
+        "ws://127.0.0.1:1234/ws-inject",
+        "ws://127.0.0.1:1234/ws-inject?listenKey=redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "ws://127.0.0.1:1234/ws-inject",
+        "ws://127.0.0.1:1234/ws-inject/redacted"
+    )]
+    fn test_futures_user_stream_url(
+        #[case] product_type: BinanceProductType,
+        #[case] base_url: &str,
+        #[case] expected: &str,
+    ) {
+        let url = get_futures_user_stream_url(product_type, base_url, "redacted");
+        assert_eq!(url, expected);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Futures user stream requires UsdM or CoinM product type")]
+    fn test_futures_user_stream_url_rejects_non_futures_product() {
+        let _ = get_futures_user_stream_url(
+            BinanceProductType::Spot,
+            "wss://stream.binance.com/ws",
+            "redacted",
+        );
+    }
+
+    #[rstest]
     fn test_ws_public_url_fallback_to_market() {
         let url = get_ws_public_base_url(BinanceProductType::Spot, BinanceEnvironment::Live);
         assert_eq!(
@@ -421,5 +588,14 @@ mod tests {
     ) {
         let url = get_usdm_ws_route_base_url(base_url, route);
         assert_eq!(url, base_url);
+    }
+
+    #[rstest]
+    #[case(BinanceEnvironment::Live, Some("https://api.binance.com"))]
+    #[case(BinanceEnvironment::Testnet, None)]
+    #[case(BinanceEnvironment::Demo, None)]
+    fn test_sapi_base_url(#[case] environment: BinanceEnvironment, #[case] expected: Option<&str>) {
+        let url = get_sapi_base_url(environment);
+        assert_eq!(url, expected);
     }
 }

@@ -53,7 +53,7 @@ impl DeriveExecFactoryConfig {
     }
 
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        stringify!(DeriveExecFactoryConfig).to_string()
     }
 }
 

@@ -72,8 +72,6 @@ pub mod sorted_hashset {
     }
 }
 
-struct BoolVisitor;
-
 /// Zero-allocation decimal visitor for maximum deserialization performance.
 ///
 /// Directly visits JSON tokens without intermediate `serde_json::Value` allocation.
@@ -92,12 +90,7 @@ impl Visitor<'_> for DecimalVisitor {
         if v.is_empty() {
             return Ok(Decimal::ZERO);
         }
-        // Check for scientific notation
-        if v.contains('e') || v.contains('E') {
-            Decimal::from_scientific(v).map_err(E::custom)
-        } else {
-            Decimal::from_str(v).map_err(E::custom)
-        }
+        parse_decimal_str(v).map_err(E::custom)
     }
 
     // Owned string (rare case, delegates to visit_str)
@@ -200,6 +193,176 @@ impl Visitor<'_> for OptionalDecimalVisitor {
     }
 }
 
+fn parse_decimal_str(value: &str) -> Result<Decimal, String> {
+    let parsed = if value.contains('e') || value.contains('E') {
+        Decimal::from_scientific(value)
+    } else {
+        Decimal::from_str(value)
+    };
+
+    match parsed {
+        Ok(decimal) => Ok(decimal),
+        Err(e) => {
+            // Fractional digits beyond Decimal's maximum scale are
+            // sub-representable; round to the highest scale that fits
+            // (venues quoting 18-decimal on-chain units emit such values).
+            for scale in (0..=Decimal::MAX_SCALE as usize).rev() {
+                let clamped =
+                    decimal_string_clamped_to_scale(value, scale).ok_or_else(|| e.to_string())?;
+
+                if let Ok(decimal) = Decimal::from_str(&clamped) {
+                    return Ok(decimal);
+                }
+            }
+            Err(e.to_string())
+        }
+    }
+}
+
+fn decimal_string_clamped_to_scale(value: &str, max_scale: usize) -> Option<String> {
+    let (coefficient, exponent) = match value.find(['e', 'E']) {
+        Some(index) => {
+            let exponent = value[index + 1..].parse::<i32>().ok()?;
+            (&value[..index], exponent)
+        }
+        None => (value, 0),
+    };
+
+    let (sign, unsigned) = match coefficient.as_bytes().first()? {
+        b'+' => ("", &coefficient[1..]),
+        b'-' => ("-", &coefficient[1..]),
+        _ => ("", coefficient),
+    };
+    let (integer, fractional) = decimal_components(unsigned)?;
+    let digits = format!("{integer}{fractional}");
+    if decimal_digits_are_zero(&digits, "") {
+        return Some("0".to_string());
+    }
+
+    let point = i32::try_from(integer.len()).ok()?.checked_add(exponent)?;
+
+    // Decimal can hold at most 29 significant integer digits, and
+    // `Decimal::from_str` below still rejects values above Decimal::MAX.
+    // Check significant digits before expansion so absurd exponents keep the
+    // original parse error without allocating an absurd string.
+    if decimal_integer_digits_exceed_max(&digits, point) {
+        return None;
+    }
+
+    let (integer, fractional) = if point <= 0 {
+        // Digits past the rounding position are leading zeros, so the cap
+        // cannot change the result; bounds allocation for absurd exponents.
+        let zero_count = usize::try_from(-point).ok()?.min(max_scale + 1);
+        (
+            "0".to_string(),
+            format!("{}{digits}", "0".repeat(zero_count)),
+        )
+    } else {
+        let point = usize::try_from(point).ok()?;
+        if point >= digits.len() {
+            (
+                format!("{}{}", digits, "0".repeat(point - digits.len())),
+                String::new(),
+            )
+        } else {
+            (digits[..point].to_string(), digits[point..].to_string())
+        }
+    };
+
+    let (integer, fractional) = round_decimal_components(integer, fractional, max_scale);
+    let sign = if sign == "-" && decimal_digits_are_zero(&integer, &fractional) {
+        ""
+    } else {
+        sign
+    };
+
+    if fractional.is_empty() {
+        Some(format!("{sign}{integer}"))
+    } else {
+        Some(format!("{sign}{integer}.{fractional}"))
+    }
+}
+
+fn decimal_components(value: &str) -> Option<(&str, &str)> {
+    let mut split = value.split('.');
+    let integer = split.next()?;
+    let fractional = split.next().unwrap_or("");
+    if split.next().is_some()
+        || (integer.is_empty() && fractional.is_empty())
+        || !integer.chars().all(|c| c.is_ascii_digit())
+        || !fractional.chars().all(|c| c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some((integer, fractional))
+}
+
+fn decimal_integer_digits_exceed_max(digits: &str, point: i32) -> bool {
+    const DECIMAL_MAX_INTEGER_DIGITS: i32 = 29;
+
+    if point <= 0 {
+        return false;
+    }
+
+    let Some(first_non_zero) = digits.bytes().position(|digit| digit != b'0') else {
+        return false;
+    };
+    let Ok(first_non_zero) = i32::try_from(first_non_zero) else {
+        return true;
+    };
+
+    point.saturating_sub(first_non_zero) > DECIMAL_MAX_INTEGER_DIGITS
+}
+
+fn round_decimal_components(
+    mut integer: String,
+    fractional: String,
+    max_scale: usize,
+) -> (String, String) {
+    if fractional.len() <= max_scale {
+        return (integer, fractional);
+    }
+
+    let mut rounded = fractional.as_bytes()[..max_scale].to_vec();
+    if fractional.as_bytes()[max_scale] >= b'5' {
+        increment_decimal_digits(&mut integer, &mut rounded);
+    }
+
+    (
+        integer,
+        String::from_utf8(rounded).expect("decimal digits are ASCII"),
+    )
+}
+
+fn increment_decimal_digits(integer: &mut String, fractional: &mut [u8]) {
+    for digit in fractional.iter_mut().rev() {
+        if *digit < b'9' {
+            *digit += 1;
+            return;
+        }
+        *digit = b'0';
+    }
+
+    let mut integer_digits = integer.as_bytes().to_vec();
+    for digit in integer_digits.iter_mut().rev() {
+        if *digit < b'9' {
+            *digit += 1;
+            *integer = String::from_utf8(integer_digits).expect("decimal digits are ASCII");
+            return;
+        }
+        *digit = b'0';
+    }
+    integer_digits.insert(0, b'1');
+    *integer = String::from_utf8(integer_digits).expect("decimal digits are ASCII");
+}
+
+fn decimal_digits_are_zero(integer: &str, fractional: &str) -> bool {
+    integer
+        .bytes()
+        .chain(fractional.bytes())
+        .all(|digit| digit == b'0')
+}
+
 /// Represents types which are serializable for JSON specifications.
 pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// Deserialize an object from JSON encoded bytes.
@@ -269,40 +432,6 @@ pub mod msgpack {
     impl<T> MsgPackSerializable for T where T: Serializable {}
 }
 
-impl Visitor<'_> for BoolVisitor {
-    type Value = u8;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a boolean as u8")
-    }
-
-    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(u8::from(value))
-    }
-
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "Intentional for parsing, value range validated"
-    )]
-    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        // Only 0 or 1 are considered valid representations when provided as an
-        // integer. We deliberately reject values outside this range to avoid
-        // silently truncating larger integers into impl-defined boolean
-        // semantics.
-        if value > 1 {
-            Err(E::invalid_value(Unexpected::Unsigned(value), &self))
-        } else {
-            Ok(value as u8)
-        }
-    }
-}
-
 /// Serde default value function that returns `true`.
 ///
 /// Use with `#[serde(default = "default_true")]` on boolean fields.
@@ -319,18 +448,6 @@ pub const fn default_false() -> bool {
     false
 }
 
-/// Deserialize the boolean value as a `u8`.
-///
-/// # Errors
-///
-/// Returns serialization errors.
-pub fn from_bool_as_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    deserializer.deserialize_any(BoolVisitor)
-}
-
 /// Deserializes a `Decimal` from either a JSON string or number.
 ///
 /// High-performance implementation using a custom visitor that avoids intermediate
@@ -341,6 +458,7 @@ where
 /// - JSON float: `123.456` → Decimal
 /// - JSON null: → `Decimal::ZERO`
 /// - Scientific notation: `"1.5e-8"` → Decimal
+/// - Fractional digits beyond `Decimal`'s maximum scale (28) are rounded
 ///
 /// # Performance
 ///
@@ -370,6 +488,7 @@ where
 /// - JSON null: → `None`
 /// - Empty string: `""` → `None`
 /// - Scientific notation: `"1.5e-8"` → Some(Decimal)
+/// - Fractional digits beyond `Decimal`'s maximum scale (28) are rounded
 ///
 /// # Performance
 ///
@@ -705,42 +824,12 @@ mod tests {
         deserialize_empty_ustr_as_none, deserialize_optional_decimal,
         deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
         deserialize_optional_string_to_u64, deserialize_string_to_u8, deserialize_string_to_u64,
-        deserialize_vec_decimal_from_str, from_bool_as_u8,
+        deserialize_vec_decimal_from_str,
         msgpack::{FromMsgPack, ToMsgPack},
         parse_decimal, parse_optional_decimal, serialize_decimal, serialize_decimal_as_str,
         serialize_optional_decimal, serialize_optional_decimal_as_str,
         serialize_vec_decimal_as_str,
     };
-
-    #[derive(Deserialize)]
-    pub(super) struct TestStruct {
-        #[serde(deserialize_with = "from_bool_as_u8")]
-        pub value: u8,
-    }
-
-    #[rstest]
-    #[case(r#"{"value": true}"#, 1)]
-    #[case(r#"{"value": false}"#, 0)]
-    fn test_deserialize_bool_as_u8_with_boolean(#[case] json_str: &str, #[case] expected: u8) {
-        let test_struct: TestStruct = serde_json::from_str(json_str).unwrap();
-        assert_eq!(test_struct.value, expected);
-    }
-
-    #[rstest]
-    #[case(r#"{"value": 1}"#, 1)]
-    #[case(r#"{"value": 0}"#, 0)]
-    fn test_deserialize_bool_as_u8_with_u64(#[case] json_str: &str, #[case] expected: u8) {
-        let test_struct: TestStruct = serde_json::from_str(json_str).unwrap();
-        assert_eq!(test_struct.value, expected);
-    }
-
-    #[rstest]
-    fn test_deserialize_bool_as_u8_with_invalid_integer() {
-        // Any integer other than 0/1 is invalid and should error
-        let json = r#"{"value": 2}"#;
-        let result: Result<TestStruct, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-    }
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct SerializableTestStruct {
@@ -1176,6 +1265,54 @@ mod tests {
         assert_eq!(result.value, dec!(123456789.123456789012345678));
     }
 
+    #[rstest]
+    #[case(
+        r#"{"value": "1.234567890123456789012345678912345e-1"}"#,
+        "0.1234567890123456789012345679"
+    )]
+    #[case(
+        r#"{"value": "0.1234567890123456789012345678912345"}"#,
+        "0.1234567890123456789012345679"
+    )]
+    #[case(
+        r#"{"value": "999999999999999999999999999995e-29"}"#,
+        "10.000000000000000000000000000"
+    )]
+    #[case(r#"{"value": "0.5e29"}"#, "50000000000000000000000000000")]
+    #[case(r#"{"value": "-4e-29"}"#, "0.0000000000000000000000000000")]
+    #[case(r#"{"value": "1.5e-999999"}"#, "0.0000000000000000000000000000")]
+    #[case(r#"{"value": "9e-999999"}"#, "0.0000000000000000000000000000")]
+    #[case(r#"{"value": "0e2000000000"}"#, "0")]
+    fn test_deserialize_decimal_rounds_high_scale_values(
+        #[case] json: &str,
+        #[case] expected: &str,
+    ) {
+        // Carries propagate and a rounded-away negative loses its sign.
+        let result: TestDecimalOnly = serde_json::from_str(json).unwrap();
+        assert_eq!(result.value.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(r#"{"value": "8e28"}"#)] // above Decimal::MAX
+    #[case(r#"{"value": "1e1000000000"}"#)] // absurd exponent must fail without expansion
+    #[case(r#"{"value": "not-a-number"}"#)]
+    fn test_deserialize_decimal_rejects_unrepresentable_values(#[case] json: &str) {
+        // The fallback rounds fractional digits only; oversized magnitudes
+        // keep their original parse error.
+        let result: Result<TestDecimalOnly, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_deserialize_optional_decimal_rounds_high_scale_values() {
+        let json = r#"{"value": "51.234567890123456789012345678912345e-1"}"#;
+        let result: TestOptionalDecimalOnly = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            result.value.map(|v| v.to_string()),
+            Some("5.1234567890123456789012345679".into()),
+        );
+    }
+
     #[derive(Debug, Deserialize)]
     struct TestOptionalDecimalOnly {
         #[serde(deserialize_with = "deserialize_optional_decimal")]
@@ -1194,5 +1331,104 @@ mod tests {
     ) {
         let result: TestOptionalDecimalOnly = serde_json::from_str(json).unwrap();
         assert_eq!(result.value, expected);
+    }
+
+    use proptest::prelude::*;
+    use rust_decimal::prelude::ToPrimitive;
+
+    fn representable_decimal_strategy() -> impl Strategy<Value = Decimal> {
+        // Mantissa spans Decimal's full 96-bit range; every generated value is
+        // exactly representable.
+        (
+            -79_228_162_514_264_337_593_543_950_335i128
+                ..=79_228_162_514_264_337_593_543_950_335i128,
+            0u32..=28u32,
+        )
+            .prop_map(|(mantissa, scale)| Decimal::from_i128_with_scale(mantissa, scale))
+    }
+
+    fn numeric_string_strategy() -> impl Strategy<Value = String> {
+        // Signed digit strings with long fractions and exponents, covering
+        // both natively-parsed shapes and the high-scale clamp fallback.
+        (
+            proptest::bool::ANY,
+            "[0-9]{1,30}",
+            proptest::option::of("[0-9]{1,40}"),
+            proptest::option::of(-40i32..=40),
+        )
+            .prop_map(|(negative, integer, fraction, exponent)| {
+                let mut value = String::new();
+                if negative {
+                    value.push('-');
+                }
+                value.push_str(&integer);
+                if let Some(fraction) = fraction {
+                    value.push('.');
+                    value.push_str(&fraction);
+                }
+
+                if let Some(exponent) = exponent {
+                    value.push('e');
+                    value.push_str(&exponent.to_string());
+                }
+                value
+            })
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_deserialize_decimal_roundtrips_representable_values(
+            expected in representable_decimal_strategy()
+        ) {
+            // The clamp fallback must never distort a value Decimal can hold
+            // exactly.
+            let json = format!(r#"{{"value": "{expected}"}}"#);
+            let parsed: TestDecimalOnly = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(parsed.value, expected);
+        }
+
+        #[rstest]
+        fn prop_deserialize_decimal_total_on_arbitrary_strings(value in "\\PC{0,64}") {
+            // Any string input must decode or error without panicking.
+            let json = serde_json::to_string(&serde_json::json!({"value": value})).unwrap();
+            let _ = serde_json::from_str::<TestDecimalOnly>(&json);
+        }
+
+        #[rstest]
+        fn prop_deserialize_decimal_tracks_f64_reference(value in numeric_string_strategy()) {
+            // Accepted values (rounded or not) must agree with an independent
+            // f64 parse of the same string within f64 precision.
+            let json = format!(r#"{{"value": "{value}"}}"#);
+            if let Ok(parsed) = serde_json::from_str::<TestDecimalOnly>(&json) {
+                let reference: f64 = value.parse().unwrap();
+                let decoded = parsed.value.to_f64().unwrap();
+                prop_assert!(
+                    (decoded - reference).abs() <= reference.abs() * 1e-9 + 1e-27,
+                    "decoded {decoded} diverges from reference {reference} for input {value}",
+                );
+            }
+        }
+
+        #[rstest]
+        fn prop_deserialize_optional_decimal_matches_required(
+            value in numeric_string_strategy()
+        ) {
+            let json = format!(r#"{{"value": "{value}"}}"#);
+            let required = serde_json::from_str::<TestDecimalOnly>(&json);
+            let optional = serde_json::from_str::<TestOptionalDecimalOnly>(&json);
+            match (required, optional) {
+                (Ok(required), Ok(optional)) => {
+                    prop_assert_eq!(optional.value, Some(required.value));
+                }
+                (Err(_), Err(_)) => {}
+                (required, optional) => prop_assert!(
+                    false,
+                    "required and optional decoding disagree for input {}: {:?} vs {:?}",
+                    value,
+                    required.map(|r| r.value),
+                    optional.map(|o| o.value),
+                ),
+            }
+        }
     }
 }

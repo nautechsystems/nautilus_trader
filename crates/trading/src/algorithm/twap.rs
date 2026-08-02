@@ -39,11 +39,13 @@ use nautilus_common::{
 };
 use nautilus_model::{
     enums::OrderType,
+    events::OrderDeniedReason,
     identifiers::ClientOrderId,
     instruments::Instrument,
     orders::{Order, OrderAny},
-    types::{Quantity, quantity::QuantityRaw},
+    types::Quantity,
 };
+use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
 use super::{
@@ -84,6 +86,7 @@ impl TwapAlgorithm {
         if core.clock_mut().timer_names().contains(&timer_name) {
             core.clock_mut().cancel_timer(timer_name);
         }
+        core.remove_submit_params(&primary_id);
         self.scheduled_sizes.remove(&primary_id);
         log::info!("Completed TWAP execution for {primary_id}");
     }
@@ -117,11 +120,11 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
 
         // Only market orders supported
         if order.order_type() != OrderType::Market {
-            log::error!(
-                "Cannot execute order: only implemented for market orders, order_type={:?}",
-                order.order_type()
-            );
-            return Ok(());
+            let reason = OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            }
+            .to_string();
+            return self.deny_order(&order, Ustr::from(&reason));
         }
 
         let instrument = {
@@ -130,79 +133,111 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         };
 
         let Some(instrument) = instrument else {
-            log::error!(
-                "Cannot execute order: instrument {} not found",
-                order.instrument_id()
-            );
-            return Ok(());
+            let reason = OrderDeniedReason::InstrumentNotFound {
+                instrument_id: order.instrument_id(),
+            }
+            .to_string();
+            return self.deny_order(&order, Ustr::from(&reason));
         };
 
         let Some(exec_params) = order.exec_algorithm_params() else {
-            log::error!(
-                "Cannot execute order: exec_algorithm_params not found for primary order {primary_id}"
-            );
-            return Ok(());
+            return self.deny_order(&order, validation_failed("exec_algorithm_params not found"));
         };
 
         let Some(horizon_secs_str) = exec_params.get(&Ustr::from("horizon_secs")) else {
-            log::error!("Cannot execute order: horizon_secs not found in exec_algorithm_params");
-            return Ok(());
+            return self.deny_order(
+                &order,
+                validation_failed("horizon_secs not found in exec_algorithm_params"),
+            );
         };
 
-        let horizon_secs: f64 = horizon_secs_str.parse().map_err(|e| {
-            log::error!("Cannot parse horizon_secs: {e}");
-            anyhow::anyhow!("Invalid horizon_secs")
-        })?;
+        let horizon_secs: f64 = match horizon_secs_str.parse() {
+            Ok(value) => value,
+            Err(_) => {
+                return self.deny_order(
+                    &order,
+                    validation_failed(format!(
+                        "horizon_secs={horizon_secs_str} is not a valid number"
+                    )),
+                );
+            }
+        };
 
         let Some(interval_secs_str) = exec_params.get(&Ustr::from("interval_secs")) else {
-            log::error!("Cannot execute order: interval_secs not found in exec_algorithm_params");
-            return Ok(());
+            return self.deny_order(
+                &order,
+                validation_failed("interval_secs not found in exec_algorithm_params"),
+            );
         };
 
-        let interval_secs: f64 = interval_secs_str.parse().map_err(|e| {
-            log::error!("Cannot parse interval_secs: {e}");
-            anyhow::anyhow!("Invalid interval_secs")
-        })?;
+        let interval_secs: f64 = match interval_secs_str.parse() {
+            Ok(value) => value,
+            Err(_) => {
+                return self.deny_order(
+                    &order,
+                    validation_failed(format!(
+                        "interval_secs={interval_secs_str} is not a valid number"
+                    )),
+                );
+            }
+        };
 
         if !horizon_secs.is_finite() || horizon_secs <= 0.0 {
-            log::error!(
-                "Cannot execute order: horizon_secs={horizon_secs} must be finite and positive"
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "horizon_secs={horizon_secs} must be finite and positive"
+                )),
             );
-            return Ok(());
         }
 
         if !interval_secs.is_finite() || interval_secs <= 0.0 {
-            log::error!(
-                "Cannot execute order: interval_secs={interval_secs} must be finite and positive"
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "interval_secs={interval_secs} must be finite and positive"
+                )),
             );
-            return Ok(());
         }
 
         if horizon_secs < interval_secs {
-            log::error!(
-                "Cannot execute order: horizon_secs={horizon_secs} was less than interval_secs={interval_secs}"
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "horizon_secs={horizon_secs} must be greater than or equal to interval_secs={interval_secs}"
+                )),
             );
-            return Ok(());
         }
 
         let num_intervals = (horizon_secs / interval_secs).floor() as u64;
         if num_intervals == 0 {
-            log::error!("Cannot execute order: num_intervals is 0");
-            return Ok(());
+            return self.deny_order(&order, validation_failed("num_intervals is 0"));
         }
 
         let total_qty = order.quantity();
-        let total_raw = total_qty.raw;
-        let precision = total_qty.precision;
-
-        let qty_per_interval_raw = total_raw / (num_intervals as QuantityRaw);
-        let qty_per_interval = Quantity::from_raw(qty_per_interval_raw, precision);
+        let interval_count = Decimal::from(num_intervals);
+        let quotient = total_qty.as_decimal() / interval_count;
+        let floored = quotient.round_dp_with_strategy(
+            u32::from(instrument.size_precision()),
+            RoundingStrategy::ToZero,
+        );
+        let qty_per_interval = match instrument.try_make_qty_from_decimal(floored, None) {
+            Ok(quantity) => quantity,
+            Err(e) => {
+                return self.deny_order(
+                    &order,
+                    validation_failed(format!("invalid qty_per_interval={floored}: {e}")),
+                );
+            }
+        };
+        let remainder = total_qty.as_decimal() - floored * interval_count;
 
         if qty_per_interval == total_qty || qty_per_interval < instrument.size_increment() {
             log::warn!(
                 "Submitting for entire size: qty_per_interval={qty_per_interval}, order_quantity={total_qty}"
             );
             self.submit_order(order, None, None)?;
+            self.complete_sequence(primary_id);
             return Ok(());
         }
 
@@ -213,17 +248,80 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
                 "Submitting for entire size: qty_per_interval={qty_per_interval} < min_quantity={min_qty}"
             );
             self.submit_order(order, None, None)?;
+            self.complete_sequence(primary_id);
             return Ok(());
+        }
+
+        let interval = match Duration::try_from_secs_f64(interval_secs) {
+            Ok(interval) => interval,
+            Err(e) => {
+                return self.deny_order(
+                    &order,
+                    validation_failed(format!(
+                        "interval_secs={interval_secs} is not a valid duration: {e}"
+                    )),
+                );
+            }
+        };
+
+        if interval == Duration::ZERO {
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "interval_secs={interval_secs} rounds to a zero duration"
+                )),
+            );
+        }
+        let Ok(interval_ns) = u64::try_from(interval.as_nanos()) else {
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "interval_secs={interval_secs} exceeds the clock nanosecond range"
+                )),
+            );
+        };
+        let timestamp_ns = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+            .clock_mut()
+            .timestamp_ns()
+            .as_u64();
+
+        if timestamp_ns.checked_add(interval_ns).is_none() {
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "interval_secs={interval_secs} exceeds the clock timestamp headroom"
+                )),
+            );
         }
 
         let mut scheduled_sizes: Vec<Quantity> = vec![qty_per_interval; num_intervals as usize];
 
-        // Remainder goes in the last slice
-        let scheduled_total = qty_per_interval_raw * (num_intervals as QuantityRaw);
-        let remainder_raw = total_raw - scheduled_total;
-        if remainder_raw > 0 {
-            let remainder = Quantity::from_raw(remainder_raw, total_qty.precision);
-            scheduled_sizes.push(remainder);
+        if remainder > Decimal::ZERO {
+            let remainder_qty = match instrument.try_make_qty_from_decimal(remainder, None) {
+                Ok(quantity) => quantity,
+                Err(e) => {
+                    return self.deny_order(
+                        &order,
+                        validation_failed(format!("invalid qty_remainder={remainder}: {e}")),
+                    );
+                }
+            };
+            scheduled_sizes.push(remainder_qty);
+        }
+
+        let scheduled_total = scheduled_sizes
+            .iter()
+            .fold(Decimal::ZERO, |total, quantity| {
+                total + quantity.as_decimal()
+            });
+
+        if scheduled_total != total_qty.as_decimal() {
+            return self.deny_order(
+                &order,
+                validation_failed(format!(
+                    "scheduled quantity {scheduled_total} does not equal order quantity {total_qty}"
+                )),
+            );
         }
 
         log::info!("Order execution size schedule: {scheduled_sizes:?}");
@@ -271,15 +369,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
 
         ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
-            .set_timer(
-                primary_id.as_str(),
-                Duration::from_secs_f64(interval_secs),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )?;
+            .set_timer(primary_id.as_str(), interval, None, None, None, None, None)?;
 
         log::info!(
             "Started TWAP execution for {primary_id}: horizon_secs={horizon_secs}, interval_secs={interval_secs}"
@@ -361,6 +451,14 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     }
 });
 
+fn validation_failed(detail: impl Into<String>) -> Ustr {
+    let reason = OrderDeniedReason::ValidationFailed {
+        detail: detail.into(),
+    }
+    .to_string();
+    Ustr::from(&reason)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -371,11 +469,13 @@ mod tests {
         clock::{Clock, TestClock},
         component::Component,
         enums::ComponentTrigger,
+        messages::execution::{SubmitOrder, TradingCommand},
+        msgbus::{self, MessagingSwitchboard, TypedHandler},
     };
-    use nautilus_core::UUID4;
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, TimeInForce},
-        events::{OrderEventAny, order::spec::OrderCanceledSpec},
+        enums::{OrderSide, OrderStatus, TimeInForce},
+        events::{OrderDeniedReason, OrderEventAny, order::spec::OrderCanceledSpec},
         identifiers::{ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
         orders::{LimitOrder, MarketOrder},
         types::Price,
@@ -435,11 +535,12 @@ mod tests {
         params: IndexMap<Ustr, Ustr>,
         quantity: Quantity,
     ) -> OrderAny {
+        let client_order_id = ClientOrderId::from("O-001");
         OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            ClientOrderId::from("O-001"),
+            client_order_id,
             OrderSide::Buy,
             quantity,
             TimeInForce::Gtc,
@@ -453,9 +554,46 @@ mod tests {
             None,
             Some(ExecAlgorithmId::new("TWAP")),
             Some(params),
-            None,
+            Some(client_order_id),
             None,
         ))
+    }
+
+    fn assert_twap_denied(algo: &mut TwapAlgorithm, order: &OrderAny, expected_reason: &str) {
+        let strategy_id = order.strategy_id();
+        {
+            let cache_rc = algo.core.cache_rc();
+            cache_rc
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let handler = TypedHandler::from({
+            let events = events.clone();
+            move |event: &OrderEventAny| events.borrow_mut().push(event.clone())
+        });
+        let topic = format!("events.order.{strategy_id}");
+        msgbus::subscribe_order_events(topic.clone().into(), handler.clone(), None);
+
+        algo.on_order(order.clone()).unwrap();
+        algo.on_order(order.clone()).unwrap();
+
+        msgbus::unsubscribe_order_events(topic.into(), &handler);
+        let cached_order = algo.cache().order(&order.client_order_id()).unwrap();
+        let events = events.borrow();
+
+        assert_eq!(cached_order.status(), OrderStatus::Denied);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            OrderEventAny::Denied(event)
+                if event.reason.as_str() == expected_reason
+                    && event.strategy_id == strategy_id
+                    && event.client_order_id == order.client_order_id()
+        ));
+        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
     }
 
     #[rstest]
@@ -522,9 +660,28 @@ mod tests {
             0.into(),
         ));
 
-        // Should not error, just log and return
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
+        let reason = OrderDeniedReason::UnsupportedOrderType {
+            order_type: OrderType::Limit,
+        }
+        .to_string();
+        assert_twap_denied(&mut algo, &order, &reason);
+    }
+
+    #[rstest]
+    fn test_twap_denies_missing_instrument() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("10"));
+        let order = create_market_order_with_params(params);
+        let reason = OrderDeniedReason::InstrumentNotFound {
+            instrument_id: order.instrument_id(),
+        }
+        .to_string();
+
+        assert_twap_denied(&mut algo, &order, &reason);
     }
 
     #[rstest]
@@ -532,10 +689,12 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
+        add_instrument_to_cache(&algo);
+
         let order = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
-            InstrumentId::from("BTC/USDT.BINANCE"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             ClientOrderId::from("O-001"),
             OrderSide::Buy,
             Quantity::from("1.0"),
@@ -554,9 +713,58 @@ mod tests {
             None,
         ));
 
-        // Should not error, just log and return
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: exec_algorithm_params not found",
+        );
+    }
+
+    #[rstest]
+    #[case(
+        None,
+        Some("10"),
+        "VALIDATION_FAILED: horizon_secs not found in exec_algorithm_params"
+    )]
+    #[case(
+        Some("60"),
+        None,
+        "VALIDATION_FAILED: interval_secs not found in exec_algorithm_params"
+    )]
+    #[case(
+        Some("not-a-number"),
+        Some("10"),
+        "VALIDATION_FAILED: horizon_secs=not-a-number is not a valid number"
+    )]
+    #[case(
+        Some("60"),
+        Some("not-a-number"),
+        "VALIDATION_FAILED: interval_secs=not-a-number is not a valid number"
+    )]
+    fn test_twap_denies_missing_or_malformed_schedule_parameter(
+        #[case] horizon_secs: Option<&str>,
+        #[case] interval_secs: Option<&str>,
+        #[case] expected_reason: &str,
+    ) {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+
+        if let Some(horizon_secs) = horizon_secs {
+            params.insert(Ustr::from("horizon_secs"), Ustr::from(horizon_secs));
+        }
+
+        if let Some(interval_secs) = interval_secs {
+            params.insert(Ustr::from("interval_secs"), Ustr::from(interval_secs));
+        }
+
+        assert_twap_denied(
+            &mut algo,
+            &create_market_order_with_params(params),
+            expected_reason,
+        );
     }
 
     #[rstest]
@@ -571,10 +779,11 @@ mod tests {
         params.insert(Ustr::from("interval_secs"), Ustr::from("60"));
 
         let order = create_market_order_with_params(params);
-        let result = algo.on_order(order);
-
-        assert!(result.is_ok());
-        assert!(algo.scheduled_sizes.is_empty());
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: horizon_secs=30 must be greater than or equal to interval_secs=60",
+        );
     }
 
     #[rstest]
@@ -686,9 +895,9 @@ mod tests {
         register_algorithm(&mut algo);
 
         add_instrument_to_cache(&algo);
+        let instrument = nautilus_model::instruments::stubs::crypto_perpetual_ethusdt();
 
         // 1.0 qty over 60s with 20s intervals = 3 intervals
-        // Raw is scaled to FIXED_PRECISION: 9 (standard) or 16 (high-precision)
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
         params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
@@ -701,22 +910,59 @@ mod tests {
         // First slice spawned, 3 remaining (2 regular + 1 remainder)
         let remaining = algo.scheduled_sizes.get(&primary_id).unwrap();
         assert_eq!(remaining.len(), 3);
+        assert_eq!(
+            remaining,
+            &[
+                Quantity::from("0.333"),
+                Quantity::from("0.333"),
+                Quantity::from("0.001"),
+            ]
+        );
 
-        // Expected raw values depend on FIXED_PRECISION
-        // Standard (9):  1_000_000_000 / 3 = 333_333_333, remainder = 1
-        // High (16): 10_000_000_000_000_000 / 3 = 3_333_333_333_333_333, remainder = 1
-        #[cfg(feature = "high-precision")]
-        {
-            assert_eq!(remaining[0].raw, 3_333_333_333_333_333);
-            assert_eq!(remaining[1].raw, 3_333_333_333_333_333);
-            assert_eq!(remaining[2].raw, 1);
+        for quantity in remaining {
+            assert_eq!(quantity.precision, instrument.size_precision());
+            assert_eq!(quantity.raw % instrument.size_increment().raw, 0);
         }
-        #[cfg(not(feature = "high-precision"))]
-        {
-            assert_eq!(remaining[0].raw, 333_333_333);
-            assert_eq!(remaining[1].raw, 333_333_333);
-            assert_eq!(remaining[2].raw, 1);
-        }
+
+        let first = algo
+            .cache()
+            .order(&ClientOrderId::from("O-001-E1"))
+            .unwrap()
+            .quantity();
+        let total = remaining
+            .iter()
+            .fold(first.as_decimal(), |sum, qty| sum + qty.as_decimal());
+        assert_eq!(total, Quantity::from("1.0").as_decimal());
+    }
+
+    #[rstest]
+    fn test_twap_children_use_instrument_size_precision() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+        let instrument = nautilus_model::instruments::stubs::crypto_perpetual_ethusdt();
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.000000000"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+
+        let spawned = algo
+            .cache()
+            .order(&ClientOrderId::from("O-001-E1"))
+            .unwrap()
+            .quantity();
+        assert_eq!(spawned.precision, instrument.size_precision());
+        assert!(
+            algo.scheduled_sizes[&primary_id]
+                .iter()
+                .all(|quantity| quantity.precision == instrument.size_precision())
+        );
     }
 
     #[rstest]
@@ -733,6 +979,13 @@ mod tests {
 
         let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
         let primary_id = order.client_order_id();
+        let mut submit_params = Params::new();
+        submit_params.insert(
+            "routing_profile".to_string(),
+            serde_json::Value::String("intermediate-slice".to_string()),
+        );
+        algo.core
+            .remember_submit_params(primary_id, Some(submit_params.clone()));
 
         algo.on_order(order).unwrap();
 
@@ -745,6 +998,7 @@ mod tests {
 
         // One slice consumed
         assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
+        assert_eq!(algo.core.submit_params(&primary_id), Some(submit_params));
     }
 
     #[rstest]
@@ -785,9 +1039,34 @@ mod tests {
 
         let order = create_market_order_with_params(params);
         let primary_id = order.client_order_id();
+        let mut submit_params = Params::new();
+        submit_params.insert(
+            "routing_profile".to_string(),
+            serde_json::Value::String("final-slice".to_string()),
+        );
+        algo.core
+            .remember_submit_params(primary_id, Some(submit_params.clone()));
 
         algo.on_order(order).unwrap();
         assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
+        assert_eq!(
+            algo.core.submit_params(&primary_id),
+            Some(submit_params.clone())
+        );
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
 
         // Simulate timer firing for final slice
         let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
@@ -795,6 +1074,14 @@ mod tests {
 
         // Sequence completed, scheduled_sizes removed
         assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert_eq!(
+            received
+                .borrow()
+                .as_ref()
+                .and_then(|cmd| cmd.params.clone()),
+            Some(submit_params),
+        );
+        assert_eq!(algo.core.submit_params(&primary_id), None);
     }
 
     #[rstest]
@@ -810,6 +1097,13 @@ mod tests {
 
         let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
         let primary_id = order.client_order_id();
+        let mut submit_params = Params::new();
+        submit_params.insert(
+            "routing_profile".to_string(),
+            serde_json::Value::String("closed-primary".to_string()),
+        );
+        algo.core
+            .remember_submit_params(primary_id, Some(submit_params));
 
         algo.on_order(order).unwrap();
         assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
@@ -837,6 +1131,7 @@ mod tests {
 
         // Sequence should complete early since primary is closed
         assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert_eq!(algo.core.submit_params(&primary_id), None);
     }
 
     #[rstest]
@@ -917,11 +1212,12 @@ mod tests {
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
         params.insert(Ustr::from("interval_secs"), Ustr::from("10"));
 
+        let client_order_id = ClientOrderId::from("O-002");
         let order = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from("O-002"),
+            client_order_id,
             OrderSide::Buy,
             Quantity::from("2"),
             TimeInForce::Gtc,
@@ -935,15 +1231,60 @@ mod tests {
             None,
             Some(ExecAlgorithmId::new("TWAP")),
             Some(params),
-            None,
+            Some(client_order_id),
             None,
         ));
 
         let primary_id = order.client_order_id();
+        let mut submit_params = Params::new();
+        submit_params.insert(
+            "routing_profile".to_string(),
+            serde_json::Value::String("whole-size".to_string()),
+        );
+        algo.core
+            .remember_submit_params(primary_id, Some(submit_params));
         algo.on_order(order).unwrap();
 
         // Should submit entire size directly (no scheduling)
         assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert_eq!(algo.core.submit_params(&primary_id), None);
+    }
+
+    #[rstest]
+    fn test_twap_submits_entire_size_when_qty_per_interval_below_min_quantity() {
+        use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
+
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.min_quantity = Some(Quantity::from("0.5"));
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+                .unwrap();
+        }
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        let mut submit_params = Params::new();
+        submit_params.insert(
+            "routing_profile".to_string(),
+            serde_json::Value::String("minimum-quantity".to_string()),
+        );
+        algo.core
+            .remember_submit_params(primary_id, Some(submit_params));
+
+        algo.on_order(order).unwrap();
+
+        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert_eq!(algo.core.submit_params(&primary_id), None);
     }
 
     #[rstest]
@@ -958,11 +1299,11 @@ mod tests {
         params.insert(Ustr::from("interval_secs"), Ustr::from("-0.5"));
 
         let order = create_market_order_with_params(params);
-
-        // Should not error but should reject the order (no scheduling)
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
-        assert!(algo.scheduled_sizes.is_empty());
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: interval_secs=-0.5 must be finite and positive",
+        );
     }
 
     #[rstest]
@@ -977,11 +1318,11 @@ mod tests {
         params.insert(Ustr::from("interval_secs"), Ustr::from("1"));
 
         let order = create_market_order_with_params(params);
-
-        // Should not error but should reject the order (no scheduling)
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
-        assert!(algo.scheduled_sizes.is_empty());
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: horizon_secs=-10 must be finite and positive",
+        );
     }
 
     #[rstest]
@@ -996,11 +1337,121 @@ mod tests {
         params.insert(Ustr::from("interval_secs"), Ustr::from("0"));
 
         let order = create_market_order_with_params(params);
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: interval_secs=0 must be finite and positive",
+        );
+    }
 
-        // Should not error but should reject the order (no scheduling)
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
-        assert!(algo.scheduled_sizes.is_empty());
+    #[rstest]
+    fn test_twap_rejects_huge_finite_interval_before_submission() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("2e20"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1e20"));
+
+        let duration_error = Duration::try_from_secs_f64(1e20).unwrap_err();
+        let reason = OrderDeniedReason::ValidationFailed {
+            detail: format!(
+                "interval_secs=100000000000000000000 is not a valid duration: {duration_error}"
+            ),
+        }
+        .to_string();
+        assert_twap_denied(&mut algo, &create_market_order_with_params(params), &reason);
+
+        assert!(received.borrow().is_none());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_subnanosecond_interval_before_submission() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("2e-10"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1e-10"));
+
+        assert_twap_denied(
+            &mut algo,
+            &create_market_order_with_params(params),
+            "VALIDATION_FAILED: interval_secs=0.0000000001 rounds to a zero duration",
+        );
+
+        assert!(received.borrow().is_none());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_interval_exceeding_timestamp_headroom_before_submission() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+        DataActorNative::clock_mut(&mut algo)
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .unwrap()
+            .set_time(UnixNanos::new(u64::MAX - 500_000_000));
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("2"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1"));
+
+        assert_twap_denied(
+            &mut algo,
+            &create_market_order_with_params(params),
+            "VALIDATION_FAILED: interval_secs=1 exceeds the clock timestamp headroom",
+        );
+
+        assert!(received.borrow().is_none());
     }
 
     #[rstest]
@@ -1015,10 +1466,11 @@ mod tests {
         params.insert(Ustr::from("interval_secs"), Ustr::from("NaN"));
 
         let order = create_market_order_with_params(params);
-
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
-        assert!(algo.scheduled_sizes.is_empty());
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: interval_secs=NaN must be finite and positive",
+        );
     }
 
     #[rstest]
@@ -1033,9 +1485,10 @@ mod tests {
         params.insert(Ustr::from("interval_secs"), Ustr::from("10"));
 
         let order = create_market_order_with_params(params);
-
-        let result = algo.on_order(order);
-        assert!(result.is_ok());
-        assert!(algo.scheduled_sizes.is_empty());
+        assert_twap_denied(
+            &mut algo,
+            &order,
+            "VALIDATION_FAILED: horizon_secs=inf must be finite and positive",
+        );
     }
 }

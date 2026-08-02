@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import Currency
+from nautilus_trader.core.nautilus_pyo3 import CurrencyType
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.model import convert_to_raw_int
 from nautilus_trader.model.objects import MONEY_MAX
@@ -30,6 +31,13 @@ from nautilus_trader.model.objects import MONEY_MIN
 AUD = Currency.from_str("AUD")
 USD = Currency.from_str("USD")
 USDT = Currency.from_str("USDT")
+TST9 = Currency(
+    code="TST9",
+    precision=9,
+    iso4217=0,
+    name="Test 9dp",
+    currency_type=CurrencyType.CRYPTO,
+)
 
 
 class TestMoney:
@@ -161,6 +169,11 @@ class TestMoney:
 
         # Assert
         assert result == "Money(1.00, USD)"
+        money = Money.from_raw(
+            convert_to_raw_int("9007199253.999999999", TST9.precision),
+            TST9,
+        )
+        assert repr(money) == "Money(9007199253.999999999, TST9)"
 
     @pytest.mark.parametrize(
         ("value", "currency", "expected"),
@@ -672,14 +685,19 @@ class TestMoneyArithmetic:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Money(50.25, USD), 50],
-            [Money(-50.25, USD), -50],
-            [Money(0.00, USD), 0],
+            ["0", 0],
+            ["0.000000001", 0],
+            ["-0.000000001", 0],
+            ["1.999999999", 1],
+            ["-1.999999999", -1],
+            ["50.25", 50],
+            ["9007199253.999999999", 9_007_199_253],
         ],
     )
-    def test_int_returns_expected_value(self, value: Money, expected: int) -> None:
+    def test_int_returns_expected_value(self, value: str, expected: int) -> None:
         # Arrange, Act
-        result = int(value)
+        money = Money.from_raw(convert_to_raw_int(value, TST9.precision), TST9)
+        result = int(money)
 
         # Assert
         assert isinstance(result, int)

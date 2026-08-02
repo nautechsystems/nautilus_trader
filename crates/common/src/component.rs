@@ -523,6 +523,37 @@ pub fn start_component(id: &Ustr) -> anyhow::Result<()> {
     }
 }
 
+/// Returns the state of a component in the global registry.
+///
+/// # Errors
+///
+/// - Returns an error if the component is not found.
+/// - Returns an error if the component is already borrowed.
+pub fn component_state(id: &Ustr) -> anyhow::Result<ComponentState> {
+    let component_ref = with_component_registry(|registry| {
+        let component_ref = registry
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Component '{id}' not found in global registry"))?;
+
+        if !registry.try_borrow(*id) {
+            anyhow::bail!(
+                "Component '{id}' is already mutably borrowed. \
+                 This would create aliasing mutable references (undefined behavior)."
+            );
+        }
+
+        Ok::<_, anyhow::Error>(component_ref)
+    })?;
+
+    let _guard = BorrowGuard::new(*id);
+
+    // SAFETY: Borrow tracking ensures there is no concurrent mutable lifecycle access.
+    unsafe {
+        let component = &*component_ref.get();
+        Ok(component.state())
+    }
+}
+
 /// Safely calls `stop()` on a component in the global registry.
 ///
 /// # Errors

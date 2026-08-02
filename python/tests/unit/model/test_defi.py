@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import operator
+
+import pytest
 
 from nautilus_trader.model import AmmType
 from nautilus_trader.model import Block
@@ -23,6 +26,8 @@ from nautilus_trader.model import Dex
 from nautilus_trader.model import DexType
 from nautilus_trader.model import Pool
 from nautilus_trader.model import PoolFeeCollect
+from nautilus_trader.model import PoolFeeProtocolCollect
+from nautilus_trader.model import PoolFeeProtocolUpdate
 from nautilus_trader.model import PoolFlash
 from nautilus_trader.model import PoolLiquidityUpdate
 from nautilus_trader.model import PoolLiquidityUpdateType
@@ -264,6 +269,40 @@ def _make_pool_flash(pool):
     )
 
 
+def _make_pool_fee_protocol_update(pool):
+    return PoolFeeProtocolUpdate(
+        chain=pool.chain,
+        dex=pool.dex,
+        pool_identifier=pool.address,
+        instrument_id=pool.instrument_id,
+        block=1,
+        transaction_hash="0x7777777777777777777777777777777777777777777777777777777777777777",
+        transaction_index=0,
+        log_index=1,
+        fee_protocol0_new=2,
+        fee_protocol1_new=3,
+        timestamp=10,
+    )
+
+
+def _make_pool_fee_protocol_collect(pool):
+    return PoolFeeProtocolCollect(
+        chain=pool.chain,
+        dex=pool.dex,
+        pool_identifier=pool.address,
+        instrument_id=pool.instrument_id,
+        block=1,
+        transaction_hash="0x8888888888888888888888888888888888888888888888888888888888888888",
+        transaction_index=0,
+        log_index=1,
+        sender="0x0000000000000000000000000000000000000004",
+        recipient="0x0000000000000000000000000000000000000005",
+        amount0="1",
+        amount1="2",
+        timestamp=10,
+    )
+
+
 def _make_pool_liquidity_update(pool):
     return PoolLiquidityUpdate(
         chain=pool.chain,
@@ -340,3 +379,32 @@ def _make_transaction(chain):
         0,
         "0",
     )
+
+
+@pytest.mark.parametrize(
+    "value_factory",
+    [
+        pytest.param(lambda: Chain(Blockchain.BASE, 8453), id="chain"),
+        pytest.param(lambda: _make_token0(Chain(Blockchain.BASE, 8453)), id="token"),
+        pytest.param(lambda: _make_dex(Chain(Blockchain.BASE, 8453)), id="dex"),
+        pytest.param(_make_pool, id="pool"),
+        pytest.param(lambda: _make_pool_swap(_make_pool()), id="pool_swap"),
+        pytest.param(lambda: _make_pool_liquidity_update(_make_pool()), id="liquidity_update"),
+        pytest.param(lambda: _make_pool_fee_collect(_make_pool()), id="fee_collect"),
+        pytest.param(
+            lambda: _make_pool_fee_protocol_update(_make_pool()),
+            id="fee_protocol_update",
+        ),
+        pytest.param(
+            lambda: _make_pool_fee_protocol_collect(_make_pool()),
+            id="fee_protocol_collect",
+        ),
+        pytest.param(lambda: _make_pool_flash(_make_pool()), id="pool_flash"),
+        pytest.param(lambda: _make_transaction(Chain(Blockchain.BASE, 8453)), id="transaction"),
+    ],
+)
+def test_defi_ordering_comparisons_raise_type_error(value_factory):
+    value = value_factory()
+
+    with pytest.raises(TypeError):
+        operator.lt(value, value)

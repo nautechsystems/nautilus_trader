@@ -580,6 +580,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_balance_locked_buy_returns_error_for_unrepresentable_notional(
+        mut cash_account_million_usd: CashAccount,
+        audusd_sim: CurrencyPair,
+    ) {
+        let result = cash_account_million_usd.calculate_balance_locked(
+            &audusd_sim.into_any(),
+            OrderSide::Buy,
+            Quantity::from("100000000"),
+            Price::from("100000000"),
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_calculate_balance_locked_buy_quanto_uses_quote_currency(
         mut cash_account_million_usd: CashAccount,
         ethbtc_quanto: CryptoFuture,

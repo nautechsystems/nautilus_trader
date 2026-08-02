@@ -31,7 +31,7 @@ use nautilus_model::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::binary_option::BinaryOption,
-    types::{price::Price, quantity::Quantity},
+    types::{money::Money, price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -88,12 +88,18 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("size_increment", DataType::Utf8, false),
             Field::new("activation_ns", DataType::UInt64, false),
             Field::new("expiration_ns", DataType::UInt64, false),
-            Field::new("maker_fee", DataType::Utf8, false),
-            Field::new("taker_fee", DataType::Utf8, false),
+            Field::new("outcome", DataType::Utf8, true), // nullable
+            Field::new("description", DataType::Utf8, true), // nullable
             Field::new("max_quantity", DataType::Utf8, true), // nullable
             Field::new("min_quantity", DataType::Utf8, true), // nullable
-            Field::new("outcome", DataType::Utf8, true),      // nullable
-            Field::new("description", DataType::Utf8, true),  // nullable
+            Field::new("max_notional", DataType::Utf8, true), // nullable
+            Field::new("min_notional", DataType::Utf8, true), // nullable
+            Field::new("max_price", DataType::Utf8, true), // nullable
+            Field::new("min_price", DataType::Utf8, true), // nullable
+            Field::new("margin_init", DataType::Utf8, false),
+            Field::new("margin_maint", DataType::Utf8, false),
+            Field::new("maker_fee", DataType::Utf8, false),
+            Field::new("taker_fee", DataType::Utf8, false),
             Field::new("tick_scheme", DataType::Utf8, true),
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
@@ -126,12 +132,18 @@ impl EncodeToRecordBatch for BinaryOption {
         let mut size_increment_builder = StringBuilder::new();
         let mut activation_ns_builder = UInt64Array::builder(data.len());
         let mut expiration_ns_builder = UInt64Array::builder(data.len());
-        let mut maker_fee_builder = StringBuilder::new();
-        let mut taker_fee_builder = StringBuilder::new();
-        let mut max_quantity_builder = StringBuilder::new();
-        let mut min_quantity_builder = StringBuilder::new();
         let mut outcome_builder = StringBuilder::new();
         let mut description_builder = StringBuilder::new();
+        let mut max_quantity_builder = StringBuilder::new();
+        let mut min_quantity_builder = StringBuilder::new();
+        let mut max_notional_builder = StringBuilder::new();
+        let mut min_notional_builder = StringBuilder::new();
+        let mut max_price_builder = StringBuilder::new();
+        let mut min_price_builder = StringBuilder::new();
+        let mut margin_init_builder = StringBuilder::new();
+        let mut margin_maint_builder = StringBuilder::new();
+        let mut maker_fee_builder = StringBuilder::new();
+        let mut taker_fee_builder = StringBuilder::new();
         let mut tick_scheme_builder = StringBuilder::new();
         let mut info_builder = BinaryBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
@@ -148,8 +160,18 @@ impl EncodeToRecordBatch for BinaryOption {
             size_increment_builder.append_value(bo.size_increment.to_string());
             activation_ns_builder.append_value(bo.activation_ns.as_u64());
             expiration_ns_builder.append_value(bo.expiration_ns.as_u64());
-            maker_fee_builder.append_value(bo.maker_fee.to_string());
-            taker_fee_builder.append_value(bo.taker_fee.to_string());
+
+            if let Some(outcome) = bo.outcome {
+                outcome_builder.append_value(outcome);
+            } else {
+                outcome_builder.append_null();
+            }
+
+            if let Some(desc) = bo.description {
+                description_builder.append_value(desc);
+            } else {
+                description_builder.append_null();
+            }
 
             if let Some(max_qty) = bo.max_quantity {
                 max_quantity_builder.append_value(max_qty.to_string());
@@ -163,17 +185,34 @@ impl EncodeToRecordBatch for BinaryOption {
                 min_quantity_builder.append_null();
             }
 
-            if let Some(outcome) = bo.outcome {
-                outcome_builder.append_value(outcome);
+            if let Some(max_notional) = bo.max_notional {
+                max_notional_builder.append_value(max_notional.to_string());
             } else {
-                outcome_builder.append_null();
+                max_notional_builder.append_null();
             }
 
-            if let Some(desc) = bo.description {
-                description_builder.append_value(desc);
+            if let Some(min_notional) = bo.min_notional {
+                min_notional_builder.append_value(min_notional.to_string());
             } else {
-                description_builder.append_null();
+                min_notional_builder.append_null();
             }
+
+            if let Some(max_price) = bo.max_price {
+                max_price_builder.append_value(max_price.to_string());
+            } else {
+                max_price_builder.append_null();
+            }
+
+            if let Some(min_price) = bo.min_price {
+                min_price_builder.append_value(min_price.to_string());
+            } else {
+                min_price_builder.append_null();
+            }
+
+            margin_init_builder.append_value(bo.margin_init.to_string());
+            margin_maint_builder.append_value(bo.margin_maint.to_string());
+            maker_fee_builder.append_value(bo.maker_fee.to_string());
+            taker_fee_builder.append_value(bo.taker_fee.to_string());
 
             if let Some(tick_scheme) = bo.tick_scheme {
                 tick_scheme_builder.append_value(tick_scheme);
@@ -217,12 +256,18 @@ impl EncodeToRecordBatch for BinaryOption {
                 Arc::new(size_increment_builder.finish()),
                 Arc::new(activation_ns_builder.finish()),
                 Arc::new(expiration_ns_builder.finish()),
-                Arc::new(maker_fee_builder.finish()),
-                Arc::new(taker_fee_builder.finish()),
-                Arc::new(max_quantity_builder.finish()),
-                Arc::new(min_quantity_builder.finish()),
                 Arc::new(outcome_builder.finish()),
                 Arc::new(description_builder.finish()),
+                Arc::new(max_quantity_builder.finish()),
+                Arc::new(min_quantity_builder.finish()),
+                Arc::new(max_notional_builder.finish()),
+                Arc::new(min_notional_builder.finish()),
+                Arc::new(max_price_builder.finish()),
+                Arc::new(min_price_builder.finish()),
+                Arc::new(margin_init_builder.finish()),
+                Arc::new(margin_maint_builder.finish()),
+                Arc::new(maker_fee_builder.finish()),
+                Arc::new(taker_fee_builder.finish()),
                 Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
@@ -275,33 +320,41 @@ pub fn decode_binary_option_batch(
         extract_column::<UInt64Array>(cols, "activation_ns", 8, DataType::UInt64)?;
     let expiration_ns_values =
         extract_column::<UInt64Array>(cols, "expiration_ns", 9, DataType::UInt64)?;
-    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 10, DataType::Utf8)?;
-    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 11, DataType::Utf8)?;
+    let outcome_values = cols
+        .get(10)
+        .ok_or_else(|| EncodingError::MissingColumn("outcome", 10))?;
+    let description_values = cols
+        .get(11)
+        .ok_or_else(|| EncodingError::MissingColumn("description", 11))?;
     let max_quantity_values = cols
         .get(12)
         .ok_or_else(|| EncodingError::MissingColumn("max_quantity", 12))?;
     let min_quantity_values = cols
         .get(13)
         .ok_or_else(|| EncodingError::MissingColumn("min_quantity", 13))?;
-    let outcome_values = cols
-        .get(14)
-        .ok_or_else(|| EncodingError::MissingColumn("outcome", 14))?;
-    let description_values = cols
-        .get(15)
-        .ok_or_else(|| EncodingError::MissingColumn("description", 15))?;
+    let max_notional_values = extract_optional_string_column_by_name(record_batch, "max_notional")?;
+    let min_notional_values = extract_optional_string_column_by_name(record_batch, "min_notional")?;
+    let max_price_values = extract_optional_string_column_by_name(record_batch, "max_price")?;
+    let min_price_values = extract_optional_string_column_by_name(record_batch, "min_price")?;
+    let margin_init_values =
+        extract_column::<StringArray>(cols, "margin_init", 18, DataType::Utf8)?;
+    let margin_maint_values =
+        extract_column::<StringArray>(cols, "margin_maint", 19, DataType::Utf8)?;
+    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 20, DataType::Utf8)?;
+    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 21, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values =
-        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 16, DataType::Binary)?;
+        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 23, DataType::Binary)?;
     let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_event",
-        17,
+        24,
         DataType::UInt64,
     )?;
     let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_init",
-        18,
+        25,
         DataType::UInt64,
     )?;
 
@@ -329,6 +382,10 @@ pub fn decode_binary_option_batch(
         let activation_ns = nautilus_core::UnixNanos::from(activation_ns_values.value(i));
         let expiration_ns = nautilus_core::UnixNanos::from(expiration_ns_values.value(i));
 
+        let margin_init = Decimal::from_str(margin_init_values.value(i))
+            .map_err(|e| EncodingError::ParseError("margin_init", format!("row {i}: {e}")))?;
+        let margin_maint = Decimal::from_str(margin_maint_values.value(i))
+            .map_err(|e| EncodingError::ParseError("margin_maint", format!("row {i}: {e}")))?;
         let maker_fee = Decimal::from_str(maker_fee_values.value(i))
             .map_err(|e| EncodingError::ParseError("maker_fee", format!("row {i}: {e}")))?;
         let taker_fee = Decimal::from_str(taker_fee_values.value(i))
@@ -418,6 +475,24 @@ pub fn decode_binary_option_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
+        let max_notional = match max_notional_values {
+            Some(column) if !column.is_null(i) => {
+                Some(Money::from_str(column.value(i)).map_err(|e| {
+                    EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
+                })?)
+            }
+            _ => None,
+        };
+
+        let min_notional = match min_notional_values {
+            Some(column) if !column.is_null(i) => {
+                Some(Money::from_str(column.value(i)).map_err(|e| {
+                    EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
+                })?)
+            }
+            _ => None,
+        };
+
         let binary_option = BinaryOption::new_checked(
             id,
             raw_symbol,
@@ -433,12 +508,12 @@ pub fn decode_binary_option_batch(
             description,
             max_quantity,
             min_quantity,
-            None, // max_notional - not in Python schema
-            None, // min_notional - not in Python schema
-            None, // max_price - not in Python schema
-            None, // min_price - not in Python schema
-            None, // margin_init - not in Python schema
-            None, // margin_maint - not in Python schema
+            max_notional,
+            min_notional,
+            super::optional_price_value(max_price_values, "max_price", i)?,
+            super::optional_price_value(min_price_values, "min_price", i)?,
+            Some(margin_init),
+            Some(margin_maint),
             Some(maker_fee),
             Some(taker_fee),
             tick_scheme,

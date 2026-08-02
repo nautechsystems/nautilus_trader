@@ -77,7 +77,7 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
     for chunk in unique_condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
         let mut unresolved_in_chunk: Vec<String> = chunk.to_vec();
         let params = GetGammaMarketsParams {
-            condition_ids: Some(chunk.join(",")),
+            condition_ids: Some(chunk.to_vec()),
             closed: Some(true),
             ..Default::default()
         };

@@ -159,6 +159,204 @@ impl DataTesterConfig {
         Ok(config)
     }
 
+    #[getter]
+    #[pyo3(name = "actor_id")]
+    const fn py_actor_id(&self) -> Option<ActorId> {
+        self.base.actor_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    const fn py_client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "bar_types")]
+    fn py_bar_types(&self) -> Option<Vec<BarType>> {
+        self.bar_types.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_book_deltas")]
+    const fn py_subscribe_book_deltas(&self) -> bool {
+        self.subscribe_book_deltas
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_book_depth")]
+    const fn py_subscribe_book_depth(&self) -> bool {
+        self.subscribe_book_depth
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_book_at_interval")]
+    const fn py_subscribe_book_at_interval(&self) -> bool {
+        self.subscribe_book_at_interval
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_quotes")]
+    const fn py_subscribe_quotes(&self) -> bool {
+        self.subscribe_quotes
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_trades")]
+    const fn py_subscribe_trades(&self) -> bool {
+        self.subscribe_trades
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_mark_prices")]
+    const fn py_subscribe_mark_prices(&self) -> bool {
+        self.subscribe_mark_prices
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_index_prices")]
+    const fn py_subscribe_index_prices(&self) -> bool {
+        self.subscribe_index_prices
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_funding_rates")]
+    const fn py_subscribe_funding_rates(&self) -> bool {
+        self.subscribe_funding_rates
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_bars")]
+    const fn py_subscribe_bars(&self) -> bool {
+        self.subscribe_bars
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_instrument")]
+    const fn py_subscribe_instrument(&self) -> bool {
+        self.subscribe_instrument
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_instrument_status")]
+    const fn py_subscribe_instrument_status(&self) -> bool {
+        self.subscribe_instrument_status
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_instrument_close")]
+    const fn py_subscribe_instrument_close(&self) -> bool {
+        self.subscribe_instrument_close
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_option_greeks")]
+    const fn py_subscribe_option_greeks(&self) -> bool {
+        self.subscribe_option_greeks
+    }
+
+    #[getter]
+    #[pyo3(name = "can_unsubscribe")]
+    const fn py_can_unsubscribe(&self) -> bool {
+        self.can_unsubscribe
+    }
+
+    #[getter]
+    #[pyo3(name = "request_instruments")]
+    const fn py_request_instruments(&self) -> bool {
+        self.request_instruments
+    }
+
+    #[getter]
+    #[pyo3(name = "request_quotes")]
+    const fn py_request_quotes(&self) -> bool {
+        self.request_quotes
+    }
+
+    #[getter]
+    #[pyo3(name = "request_trades")]
+    const fn py_request_trades(&self) -> bool {
+        self.request_trades
+    }
+
+    #[getter]
+    #[pyo3(name = "request_bars")]
+    const fn py_request_bars(&self) -> bool {
+        self.request_bars
+    }
+
+    #[getter]
+    #[pyo3(name = "request_book_snapshot")]
+    const fn py_request_book_snapshot(&self) -> bool {
+        self.request_book_snapshot
+    }
+
+    #[getter]
+    #[pyo3(name = "request_book_deltas")]
+    const fn py_request_book_deltas(&self) -> bool {
+        self.request_book_deltas
+    }
+
+    #[getter]
+    #[pyo3(name = "request_funding_rates")]
+    const fn py_request_funding_rates(&self) -> bool {
+        self.request_funding_rates
+    }
+
+    #[getter]
+    #[pyo3(name = "book_depth")]
+    const fn py_book_depth(&self) -> Option<usize> {
+        self.book_depth
+    }
+
+    #[getter]
+    #[pyo3(name = "book_interval_ms")]
+    const fn py_book_interval_ms(&self) -> usize {
+        self.book_interval_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "book_levels_to_print")]
+    const fn py_book_levels_to_print(&self) -> usize {
+        self.book_levels_to_print
+    }
+
+    #[getter]
+    #[pyo3(name = "manage_book")]
+    const fn py_manage_book(&self) -> bool {
+        self.manage_book
+    }
+
+    #[getter]
+    #[pyo3(name = "log_data")]
+    const fn py_log_data(&self) -> bool {
+        self.log_data
+    }
+
+    #[getter]
+    #[pyo3(name = "stats_interval_secs")]
+    const fn py_stats_interval_secs(&self) -> u64 {
+        self.stats_interval_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "log_events")]
+    const fn py_log_events(&self) -> bool {
+        self.base.log_events
+    }
+
+    #[getter]
+    #[pyo3(name = "log_commands")]
+    const fn py_log_commands(&self) -> bool {
+        self.base.log_commands
+    }
+
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
@@ -178,6 +376,7 @@ impl ExecTesterConfig {
         strategy_id = None,
         order_id_tag = None,
         use_hyphens_in_client_order_ids = None,
+        use_uuid_client_order_ids = None,
         external_order_claims = None,
         instrument_id = None,
         client_id = None,
@@ -196,8 +395,11 @@ impl ExecTesterConfig {
         limit_time_in_force = None,
         use_post_only = None,
         limit_aggressive = None,
+        use_quote_quantity = None,
+        use_individual_cancels_on_stop = None,
         cancel_orders_on_stop = None,
         close_positions_on_stop = None,
+        close_positions_qty_precision = None,
         close_positions_time_in_force = None,
         reduce_only_on_stop = None,
         dry_run = None,
@@ -211,6 +413,7 @@ impl ExecTesterConfig {
         strategy_id: Option<StrategyId>,
         order_id_tag: Option<String>,
         use_hyphens_in_client_order_ids: Option<bool>,
+        use_uuid_client_order_ids: Option<bool>,
         external_order_claims: Option<Vec<InstrumentId>>,
         instrument_id: Option<InstrumentId>,
         client_id: Option<ClientId>,
@@ -229,8 +432,11 @@ impl ExecTesterConfig {
         limit_time_in_force: Option<TimeInForce>,
         use_post_only: Option<bool>,
         limit_aggressive: Option<bool>,
+        use_quote_quantity: Option<bool>,
+        use_individual_cancels_on_stop: Option<bool>,
         cancel_orders_on_stop: Option<bool>,
         close_positions_on_stop: Option<bool>,
+        close_positions_qty_precision: Option<u8>,
         close_positions_time_in_force: Option<TimeInForce>,
         reduce_only_on_stop: Option<bool>,
         dry_run: Option<bool>,
@@ -247,6 +453,8 @@ impl ExecTesterConfig {
                 order_id_tag,
                 use_hyphens_in_client_order_ids: use_hyphens_in_client_order_ids
                     .unwrap_or(defaults.base.use_hyphens_in_client_order_ids),
+                use_uuid_client_order_ids: use_uuid_client_order_ids
+                    .unwrap_or(defaults.base.use_uuid_client_order_ids),
                 external_order_claims,
                 log_events: log_events.unwrap_or(defaults.base.log_events),
                 log_commands: log_commands.unwrap_or(defaults.base.log_commands),
@@ -295,14 +503,16 @@ impl ExecTesterConfig {
                 .cancel_replace_stop_orders_to_maintain_offset,
             use_post_only: use_post_only.unwrap_or(defaults.use_post_only),
             limit_aggressive: limit_aggressive.unwrap_or(defaults.limit_aggressive),
-            use_quote_quantity: defaults.use_quote_quantity,
+            use_quote_quantity: use_quote_quantity.unwrap_or(defaults.use_quote_quantity),
             emulation_trigger: defaults.emulation_trigger,
+            use_individual_cancels_on_stop: use_individual_cancels_on_stop
+                .unwrap_or(defaults.use_individual_cancels_on_stop),
             cancel_orders_on_stop: cancel_orders_on_stop.unwrap_or(defaults.cancel_orders_on_stop),
             close_positions_on_stop: close_positions_on_stop
                 .unwrap_or(defaults.close_positions_on_stop),
+            close_positions_qty_precision,
             close_positions_time_in_force,
             reduce_only_on_stop: reduce_only_on_stop.unwrap_or(defaults.reduce_only_on_stop),
-            use_individual_cancels_on_stop: defaults.use_individual_cancels_on_stop,
             use_batch_cancel_on_stop: defaults.use_batch_cancel_on_stop,
             dry_run: dry_run.unwrap_or(defaults.dry_run),
             log_data: log_data.unwrap_or(defaults.log_data),
@@ -313,6 +523,216 @@ impl ExecTesterConfig {
             clamp_to_instrument_price_range: clamp_to_instrument_price_range
                 .unwrap_or(defaults.clamp_to_instrument_price_range),
         }
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    const fn py_strategy_id(&self) -> Option<StrategyId> {
+        self.base.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "order_id_tag")]
+    fn py_order_id_tag(&self) -> Option<&str> {
+        self.base.order_id_tag.as_deref()
+    }
+
+    #[getter]
+    #[pyo3(name = "use_hyphens_in_client_order_ids")]
+    const fn py_use_hyphens_in_client_order_ids(&self) -> bool {
+        self.base.use_hyphens_in_client_order_ids
+    }
+
+    #[getter]
+    #[pyo3(name = "use_uuid_client_order_ids")]
+    const fn py_use_uuid_client_order_ids(&self) -> bool {
+        self.base.use_uuid_client_order_ids
+    }
+
+    #[getter]
+    #[pyo3(name = "external_order_claims")]
+    fn py_external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.base.external_order_claims.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    const fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    const fn py_client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "order_qty")]
+    const fn py_order_qty(&self) -> Quantity {
+        self.order_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_book")]
+    const fn py_subscribe_book(&self) -> bool {
+        self.subscribe_book
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_quotes")]
+    const fn py_subscribe_quotes(&self) -> bool {
+        self.subscribe_quotes
+    }
+
+    #[getter]
+    #[pyo3(name = "subscribe_trades")]
+    const fn py_subscribe_trades(&self) -> bool {
+        self.subscribe_trades
+    }
+
+    #[getter]
+    #[pyo3(name = "open_position_on_start_qty")]
+    const fn py_open_position_on_start_qty(&self) -> Option<Decimal> {
+        self.open_position_on_start_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "open_position_on_first_quote")]
+    const fn py_open_position_on_first_quote(&self) -> bool {
+        self.open_position_on_first_quote
+    }
+
+    #[getter]
+    #[pyo3(name = "open_position_time_in_force")]
+    const fn py_open_position_time_in_force(&self) -> TimeInForce {
+        self.open_position_time_in_force
+    }
+
+    #[getter]
+    #[pyo3(name = "enable_limit_buys")]
+    const fn py_enable_limit_buys(&self) -> bool {
+        self.enable_limit_buys
+    }
+
+    #[getter]
+    #[pyo3(name = "enable_limit_sells")]
+    const fn py_enable_limit_sells(&self) -> bool {
+        self.enable_limit_sells
+    }
+
+    #[getter]
+    #[pyo3(name = "enable_stop_buys")]
+    const fn py_enable_stop_buys(&self) -> bool {
+        self.enable_stop_buys
+    }
+
+    #[getter]
+    #[pyo3(name = "enable_stop_sells")]
+    const fn py_enable_stop_sells(&self) -> bool {
+        self.enable_stop_sells
+    }
+
+    #[getter]
+    #[pyo3(name = "tob_offset_ticks")]
+    const fn py_tob_offset_ticks(&self) -> u64 {
+        self.tob_offset_ticks
+    }
+
+    #[getter]
+    #[pyo3(name = "limit_time_in_force")]
+    const fn py_limit_time_in_force(&self) -> Option<TimeInForce> {
+        self.limit_time_in_force
+    }
+
+    #[getter]
+    #[pyo3(name = "use_post_only")]
+    const fn py_use_post_only(&self) -> bool {
+        self.use_post_only
+    }
+
+    #[getter]
+    #[pyo3(name = "limit_aggressive")]
+    const fn py_limit_aggressive(&self) -> bool {
+        self.limit_aggressive
+    }
+
+    #[getter]
+    #[pyo3(name = "use_quote_quantity")]
+    const fn py_use_quote_quantity(&self) -> bool {
+        self.use_quote_quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "use_individual_cancels_on_stop")]
+    const fn py_use_individual_cancels_on_stop(&self) -> bool {
+        self.use_individual_cancels_on_stop
+    }
+
+    #[getter]
+    #[pyo3(name = "cancel_orders_on_stop")]
+    const fn py_cancel_orders_on_stop(&self) -> bool {
+        self.cancel_orders_on_stop
+    }
+
+    #[getter]
+    #[pyo3(name = "close_positions_on_stop")]
+    const fn py_close_positions_on_stop(&self) -> bool {
+        self.close_positions_on_stop
+    }
+
+    #[getter]
+    #[pyo3(name = "close_positions_qty_precision")]
+    const fn py_close_positions_qty_precision(&self) -> Option<u8> {
+        self.close_positions_qty_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "close_positions_time_in_force")]
+    const fn py_close_positions_time_in_force(&self) -> Option<TimeInForce> {
+        self.close_positions_time_in_force
+    }
+
+    #[getter]
+    #[pyo3(name = "reduce_only_on_stop")]
+    const fn py_reduce_only_on_stop(&self) -> bool {
+        self.reduce_only_on_stop
+    }
+
+    #[getter]
+    #[pyo3(name = "dry_run")]
+    const fn py_dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    #[getter]
+    #[pyo3(name = "log_data")]
+    const fn py_log_data(&self) -> bool {
+        self.log_data
+    }
+
+    #[getter]
+    #[pyo3(name = "can_unsubscribe")]
+    const fn py_can_unsubscribe(&self) -> bool {
+        self.can_unsubscribe
+    }
+
+    #[getter]
+    #[pyo3(name = "clamp_to_instrument_price_range")]
+    const fn py_clamp_to_instrument_price_range(&self) -> bool {
+        self.clamp_to_instrument_price_range
+    }
+
+    #[getter]
+    #[pyo3(name = "log_events")]
+    const fn py_log_events(&self) -> bool {
+        self.base.log_events
+    }
+
+    #[getter]
+    #[pyo3(name = "log_commands")]
+    const fn py_log_commands(&self) -> bool {
+        self.base.log_commands
     }
 
     fn __repr__(&self) -> String {

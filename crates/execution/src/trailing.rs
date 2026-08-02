@@ -23,9 +23,9 @@ use rust_decimal::Decimal;
 
 /// Calculates the new trigger and limit prices for a trailing stop order.
 ///
-/// `trigger_px` and `activation_px` are optional **overrides** for the prices already
-/// carried inside `order`.  If `Some(_)`, they take priority over the values on the
-/// order itself, otherwise the function falls back to the values stored on the order.
+/// `trigger_px` is an optional **override** for the trigger price already carried inside
+/// `order`.  If `Some(_)`, it takes priority over the value on the order itself, otherwise
+/// the function falls back to the value stored on the order.
 ///
 /// # Returns
 /// A tuple with the *newly-set* trigger-price and limit-price (if any).
@@ -39,7 +39,6 @@ use rust_decimal::Decimal;
 pub fn trailing_stop_calculate(
     price_increment: Price,
     trigger_px: Option<Price>,
-    activation_px: Option<Price>,
     order: &OrderAny,
     bid: Option<Price>,
     ask: Option<Price>,
@@ -55,10 +54,10 @@ pub fn trailing_stop_calculate(
         anyhow::bail!("Invalid `OrderType` {order_type} for trailing stop calculation");
     }
 
-    let mut trigger_price = trigger_px
-        .or(order.trigger_price())
-        .or(activation_px)
-        .or(order.activation_price());
+    // Seed from the current trigger only (never the activation price): when the trigger has
+    // not yet materialized it stays `None` here so the offset candidate below becomes the
+    // initial trigger on the first update (matches v1 `TrailingStopCalculator`).
+    let mut trigger_price = trigger_px.or(order.trigger_price());
 
     let mut limit_price = if order_type == OrderType::TrailingStopLimit {
         order.price()
@@ -282,8 +281,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        let result =
-            trailing_stop_calculate(Price::new(0.01, 2), None, None, &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), None, &order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -303,8 +301,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        let result =
-            trailing_stop_calculate(Price::new(0.01, 2), None, None, &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), None, &order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -324,8 +321,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        let result =
-            trailing_stop_calculate(Price::new(0.01, 2), None, None, &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), None, &order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -343,8 +339,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        let result =
-            trailing_stop_calculate(Price::new(0.01, 2), None, None, &order, None, None, None);
+        let result = trailing_stop_calculate(Price::new(0.01, 2), None, &order, None, None, None);
 
         // TODO: Basic error assert for now
         assert!(result.is_err());
@@ -364,7 +359,6 @@ mod tests {
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,
@@ -403,7 +397,6 @@ mod tests {
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
             None,
-            None,
             &order,
             None,
             None,
@@ -439,7 +432,6 @@ mod tests {
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
             None,
-            None,
             &order,
             Some(Price::new(bid, 2)),
             Some(Price::new(ask, 2)),
@@ -473,7 +465,6 @@ mod tests {
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,
@@ -510,7 +501,6 @@ mod tests {
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
             None,
-            None,
             &order,
             Some(Price::new(bid, 2)),
             Some(Price::new(ask, 2)),
@@ -544,7 +534,6 @@ mod tests {
 
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,
@@ -582,7 +571,6 @@ mod tests {
         let result = trailing_stop_calculate(
             Price::new(0.01, 2),
             None,
-            None,
             &order,
             Some(Price::new(bid, 2)),
             Some(Price::new(ask, 2)),
@@ -615,7 +603,6 @@ mod tests {
         let (maybe_trigger, _) = trailing_stop_calculate(
             Price::new(0.01, 2),
             None,
-            None,
             &order,
             None,
             None,
@@ -642,7 +629,6 @@ mod tests {
 
         let (new_trigger, new_limit) = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,
@@ -671,7 +657,6 @@ mod tests {
 
         let (new_trigger, new_limit) = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,
@@ -705,7 +690,6 @@ mod tests {
 
         let (maybe_trigger, _) = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,
@@ -820,7 +804,6 @@ mod tests {
 
         let (new_trigger, new_limit) = trailing_stop_calculate(
             Price::new(0.01, 2),
-            None,
             None,
             &order,
             None,

@@ -5,9 +5,12 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "DERIVE",
+    "DERIVE_CLIENT_ID",
+    "DERIVE_VENUE",
     "DeriveDataClientConfig",
     "DeriveDataClientFactory",
     "DeriveEnvironment",
@@ -17,9 +20,31 @@ __all__ = [
 ]
 
 DERIVE: str
+DERIVE_CLIENT_ID: model.ClientId
+DERIVE_VENUE: model.Venue
 
 @typing.final
 class DeriveDataClientConfig:
+    @property
+    def base_url_rest(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def environment(self) -> DeriveEnvironment: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def ws_timeout_secs(self) -> int | None: ...
+    @property
+    def update_instruments_interval_mins(self) -> int: ...
+    @property
+    def currencies(self) -> list[str]: ...
+    @property
+    def include_expired(self) -> bool: ...
+    @property
+    def auto_load_missing_instruments(self) -> bool: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         base_url_rest: str | None = None,
@@ -32,9 +57,10 @@ class DeriveDataClientConfig:
         currencies: typing.Sequence[str] | None = None,
         include_expired: bool | None = None,
         auto_load_missing_instruments: bool | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
-    def proxy_url(self) -> str | None: ...
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class DeriveDataClientFactory:
@@ -43,6 +69,42 @@ class DeriveDataClientFactory:
 
 @typing.final
 class DeriveExecClientConfig:
+    @property
+    def wallet_address(self) -> str | None: ...
+    @property
+    def subaccount_id(self) -> int | None: ...
+    @property
+    def base_url_rest(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
+    @property
+    def environment(self) -> DeriveEnvironment: ...
+    @property
+    def http_timeout_secs(self) -> int: ...
+    @property
+    def max_retries(self) -> int: ...
+    @property
+    def retry_delay_initial_ms(self) -> int: ...
+    @property
+    def retry_delay_max_ms(self) -> int: ...
+    @property
+    def ws_timeout_secs(self) -> int | None: ...
+    @property
+    def max_fee_per_contract(self) -> decimal.Decimal | None: ...
+    @property
+    def domain_separator(self) -> str | None: ...
+    @property
+    def action_typehash(self) -> str | None: ...
+    @property
+    def trade_module_address(self) -> str | None: ...
+    @property
+    def signature_expiry_secs(self) -> int: ...
+    @property
+    def market_order_slippage_bps(self) -> int: ...
+    @property
+    def max_matching_requests_per_second(self) -> int | None: ...
+    @property
+    def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
         wallet_address: str | None = None,
@@ -56,6 +118,7 @@ class DeriveExecClientConfig:
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        ws_timeout_secs: int | None = None,
         max_fee_per_contract: decimal.Decimal | None = None,
         domain_separator: str | None = None,
         action_typehash: str | None = None,
@@ -63,12 +126,19 @@ class DeriveExecClientConfig:
         signature_expiry_secs: int | None = None,
         market_order_slippage_bps: int | None = None,
         max_matching_requests_per_second: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
-    def proxy_url(self) -> str | None: ...
+    def has_proxy_url(self) -> bool: ...
 
 @typing.final
 class DeriveExecFactoryConfig:
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def account_id(self) -> model.AccountId: ...
+    @property
+    def config(self) -> DeriveExecClientConfig: ...
     def __init__(
         self, trader_id: model.TraderId, account_id: model.AccountId, config: DeriveExecClientConfig
     ) -> None: ...

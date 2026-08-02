@@ -1,9 +1,9 @@
-FROM rust:1.96.0-slim-bookworm@sha256:b5f842fac1e3b4ff718a652a8e0173b62d9403ec826ef4998880b9347db30684 AS rust-toolchain
+FROM public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:99e09cb2284e2ddbb73a995deee3e91783fd04d177602ccf6eab326d778ee777 AS rust-toolchain
 
 # Pin to specific digest for supply-chain security (python:3.13-slim as of 2026-04-30).
 # Keep the version tag: scripts/ci/check-docker-toolchain-pins.bash treats it as the
 # canonical Docker Python version and aligns the site-packages paths below to it.
-FROM python:3.13-slim@sha256:a0779d7c12fc20be6ec6b4ddc901a4fd7657b8a6bc9def9d3fde89ed5efe0a3d AS base
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:a0779d7c12fc20be6ec6b4ddc901a4fd7657b8a6bc9def9d3fde89ed5efe0a3d AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \
@@ -31,7 +31,7 @@ COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
 COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
 
 # Install UV
-COPY --from=ghcr.io/astral-sh/uv:0.11.25@sha256:1e3808aa9023d0980e7c15b1fa7c1ac16ff35925780cf5c459858b2d693f01a9 \
+COPY --from=ghcr.io/astral-sh/uv:0.11.33@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7 \
   /uv /uvx /root/.local/bin/
 
 # Install package requirements
@@ -44,7 +44,7 @@ COPY Cargo.lock ./
 COPY crates ./crates
 COPY patches ./patches
 COPY examples/tutorials ./examples/tutorials
-RUN cargo build --lib --release --all-features
+RUN cargo build --package nautilus-pyo3 --lib --release --all-features
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./

@@ -41,6 +41,7 @@
 //! - `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
 //! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
 //! - `defi`: Enables DeFi (Decentralized Finance) support including blockchain adapters.
+//! - `mimalloc`: Sets [mimalloc](https://github.com/microsoft/mimalloc) as Rust's global allocator (enabled for binary wheels).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -53,8 +54,15 @@
 
 use std::{path::Path, time::Duration};
 
+#[cfg(feature = "mimalloc")]
+use mimalloc::MiMalloc;
 use nautilus_common::live::runtime::shutdown_runtime;
+use nautilus_system::python::controller::PyController;
 use pyo3::{prelude::*, pyfunction};
+
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 const RUNTIME_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
 
@@ -200,6 +208,12 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let n = "trading";
     let submodule = pyo3::wrap_pymodule!(nautilus_trading::python::trading);
     m.add_wrapped(submodule)?;
+
+    // `Controller` drives the trader, so it lives in nautilus-system which depends on
+    // nautilus-trading and therefore cannot register itself from the trading module
+    m.getattr(n)?
+        .cast::<PyModule>()?
+        .add_class::<PyController>()?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;

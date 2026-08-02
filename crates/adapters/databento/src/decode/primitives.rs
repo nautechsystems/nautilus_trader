@@ -63,9 +63,12 @@ pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     match c as u8 as char {
         'A' => Ok(BookAction::Add),
         'C' => Ok(BookAction::Delete),
-        'F' => Ok(BookAction::Update),
         'M' => Ok(BookAction::Update),
         'R' => Ok(BookAction::Clear),
+        // 'F' (Fill) and 'N' (None) are deliberately NOT book actions: fills
+        // are attribution records whose book impact arrives as the explicit
+        // Cancel/Modify of the same match event (`decode_mbo_msg` filters
+        // them out before calling this).
         invalid => anyhow::bail!("Invalid `BookAction`, was '{invalid}'"),
     }
 }
@@ -286,11 +289,18 @@ pub fn precision_from_raw(value: i64) -> u8 {
 /// The precision is derived from the actual tick value to avoid truncation of
 /// fractional tick sizes (e.g., treasury futures with 1/256 or 1/32 ticks).
 /// The derived precision is floored at `precision` (typically the currency precision).
+///
+/// # Panics
+///
+/// Panics if `precision` exceeds the supported `Price` precision.
 #[inline(always)]
 #[must_use]
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
-        0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
+        0 | i64::MAX => {
+            let exponent = i8::try_from(precision).expect("precision exceeded i8 range");
+            Price::from_mantissa_exponent(1, -exponent, precision)
+        }
         _ => {
             let derived = precision_from_raw(value).max(precision);
             Price::from_raw(decode_raw_price_i64(value), derived)
@@ -302,7 +312,7 @@ pub fn decode_price_increment(value: i64, precision: u8) -> Price {
 #[inline(always)]
 #[must_use]
 pub fn decode_quantity(value: u64) -> Quantity {
-    Quantity::from(value)
+    quantity_from_whole(value)
 }
 
 /// Decodes a quantity from the given optional value, where `i64::MAX` indicates missing data.
@@ -314,7 +324,7 @@ pub fn decode_quantity(value: u64) -> Quantity {
 pub fn decode_optional_quantity(value: i64) -> anyhow::Result<Option<Quantity>> {
     match value {
         i64::MAX => Ok(None),
-        value if value >= 0 => Ok(Some(Quantity::from(value))),
+        value if value >= 0 => Ok(Some(quantity_from_whole(value as u64))),
         value => anyhow::bail!("Invalid negative quantity: {value}"),
     }
 }
@@ -355,41 +365,46 @@ pub fn decode_optional_timestamp(value: u64) -> Option<UnixNanos> {
 ///
 /// Returns an error if value is negative (invalid multiplier).
 pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
-    const SCALE: u128 = 1_000_000_000;
+    const SCALE: u64 = 1_000_000_000;
 
     match value {
-        0 | i64::MAX => Ok(Quantity::from(1)),
+        0 | i64::MAX => Ok(quantity_from_whole(1)),
         v if v < 0 => anyhow::bail!("Invalid negative multiplier: {v}"),
         v => {
-            // Work in integers: v is fixed-point with 9 fractional digits.
-            // Build a canonical decimal string without floating-point.
-            let abs = v as u128;
-            let int_part = abs / SCALE;
-            let frac_part = abs % SCALE;
-
-            // Format fractional part with exactly 9 digits, then trim trailing zeros
-            // to keep a canonical representation.
-            if frac_part == 0 {
-                // Pure integer
-                Ok(Quantity::from(int_part as u64))
-            } else {
-                let mut frac_str = format!("{frac_part:09}");
-                while frac_str.ends_with('0') {
-                    frac_str.pop();
-                }
-                let s = format!("{int_part}.{frac_str}");
-                Ok(Quantity::from(s))
+            let mantissa = v as u64;
+            let mut frac_part = mantissa % SCALE;
+            let mut precision = 9u8;
+            while precision > 0 && frac_part.is_multiple_of(10) {
+                frac_part /= 10;
+                precision -= 1;
             }
+
+            Ok(Quantity::from_mantissa_exponent_checked(
+                mantissa, -9, precision,
+            )?)
         }
     }
 }
 
 /// Decodes a lot size from the given value, expressed in standard whole-number units.
+///
+/// # Panics
+///
+/// Panics if `value` is negative.
 #[inline(always)]
 #[must_use]
 pub fn decode_lot_size(value: i32) -> Quantity {
     match value {
-        0 | i32::MAX => Quantity::from(1),
-        value => Quantity::from(value),
+        0 | i32::MAX => quantity_from_whole(1),
+        value => {
+            assert!(value >= 0, "Invalid negative lot size: {value}");
+            quantity_from_whole(value as u64)
+        }
     }
+}
+
+#[inline(always)]
+#[must_use]
+fn quantity_from_whole(value: u64) -> Quantity {
+    Quantity::from_mantissa_exponent(value, 0, 0)
 }

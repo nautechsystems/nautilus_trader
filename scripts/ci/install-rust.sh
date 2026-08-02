@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Update rustup with retries to handle transient network failures.
-
 if ! command -v rustup &> /dev/null; then
   echo "rustup not found, skipping update"
   exit 0
 fi
 
-echo "Updating rustup..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLCHAIN="$(bash "${SCRIPT_DIR}/../rust-toolchain.sh")"
+
+echo "Updating Rust toolchain ${TOOLCHAIN}..."
 
 max_attempts="${INSTALL_ATTEMPTS:-5}"
 
@@ -20,7 +21,7 @@ fi
 set +e
 success=false
 for i in $(seq 1 "$max_attempts"); do
-  rustup update --force
+  rustup update --force "$TOOLCHAIN"
   status=$?
   if [ $status -eq 0 ]; then
     success=true
@@ -35,8 +36,8 @@ done
 set -e
 
 if [ "$success" != "true" ]; then
-  echo "All rustup update retries failed"
+  echo "All Rust toolchain update retries failed"
   exit 1
 fi
 
-echo "rustup update completed successfully"
+echo "Rust toolchain update completed successfully"

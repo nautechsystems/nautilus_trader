@@ -482,6 +482,7 @@ pub fn cancel_many(cancels: Vec<(u32, u64)>) -> ActionRequest {
             .into_iter()
             .map(|(a, o)| CancelRequest { a, o })
             .collect(),
+        fast: None,
     }
 }
 pub fn cancel_by_cloid(asset: u32, cloid: impl Into<String>) -> ActionRequest {
@@ -490,6 +491,7 @@ pub fn cancel_by_cloid(asset: u32, cloid: impl Into<String>) -> ActionRequest {
             asset,
             cloid: cloid.into(),
         }],
+        fast: None,
     }
 }
 pub fn modify(oid: u64, new_order: OrderRequest) -> ActionRequest {
@@ -615,19 +617,16 @@ pub fn classify_action_payload(payload: &serde_json::Value) -> ActionOutcome<'_>
 
 #[derive(Clone, Debug)]
 pub struct WsSender {
-    inner: Arc<tokio::sync::Mutex<mpsc::Sender<HyperliquidWsRequest>>>,
+    inner: mpsc::Sender<HyperliquidWsRequest>,
 }
 
 impl WsSender {
     pub fn new(tx: mpsc::Sender<HyperliquidWsRequest>) -> Self {
-        Self {
-            inner: Arc::new(tokio::sync::Mutex::new(tx)),
-        }
+        Self { inner: tx }
     }
 
     pub async fn send(&self, req: HyperliquidWsRequest) -> Result<()> {
-        let sender = self.inner.lock().await;
-        sender
+        self.inner
             .send(req)
             .await
             .map_err(|_| Error::transport("WebSocket sender closed"))
@@ -679,6 +678,23 @@ mod tests {
             },
             c: None,
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ws_sender_forwards_and_reports_closed_channel() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let sender = WsSender::new(tx);
+
+        sender.send(HyperliquidWsRequest::Ping).await.unwrap();
+        assert!(matches!(rx.recv().await, Some(HyperliquidWsRequest::Ping)));
+
+        drop(rx);
+        let error = sender.send(HyperliquidWsRequest::Ping).await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "transport error: WebSocket sender closed"
+        );
     }
 
     #[rstest]

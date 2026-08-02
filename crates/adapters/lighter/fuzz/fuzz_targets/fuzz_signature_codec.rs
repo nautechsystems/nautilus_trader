@@ -13,8 +13,8 @@
 //! Catches any decoder regression that leaves the result non-canonical or
 //! breaks the encode-decode round trip.
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::schnorr::{SIG_BYTES, Signature};
+use nautilus_live::fuzz::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     if data.len() < SIG_BYTES {

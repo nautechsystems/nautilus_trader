@@ -9,27 +9,27 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model.instru
 
 ## Instrument types
 
-| Instrument type                                          | Class              | Description                                          | Typical adapters                |
-|----------------------------------------------------------|--------------------|------------------------------------------------------|---------------------------------|
-| [`Equity`](equity.md)                                    | Spot               | Listed share or ETF traded on a cash market.         | Databento, Interactive Brokers. |
-| [`CurrencyPair`](currency_pair.md)                       | Spot               | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
-| [`Commodity`](commodity.md)                              | Spot               | Spot commodity such as gold or oil.                  | Interactive Brokers.            |
-| [`Cfd`](cfd.md)                                          | Contract for diff. | Contract for difference tracking an underlying.      | Interactive Brokers.            |
-| [`IndexInstrument`](index_instrument.md)                 | Spot reference     | Reference index, not directly tradable.              | Interactive Brokers.            |
-| [`TokenizedAsset`](tokenized_asset.md)                   | Tokenized spot     | Tokenized asset on a crypto venue.                   | Kraken.                         |
-| [`FuturesContract`](futures_contract.md)                 | Future             | Deliverable futures contract.                        | Databento, Interactive Brokers. |
-| [`FuturesSpread`](futures_spread.md)                     | Futures spread     | Exchange defined futures strategy with several legs. | Databento, Interactive Brokers. |
-| [`CryptoFuture`](crypto_future.md)                       | Crypto future      | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
-| [`CryptoFuturesSpread`](crypto_futures_spread.md)        | Crypto spread      | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
-| [`CryptoPerpetual`](crypto_perpetual.md)                 | Swap               | Crypto perpetual futures contract.                   | Binance, BitMEX, Bybit, dYdX.   |
-| [`PerpetualContract`](perpetual_contract.md)             | Generic swap       | Perpetual futures contract across asset classes.     | Architect AX.                   |
-| [`OptionContract`](option_contract.md)                   | Option             | Exchange traded put or call option.                  | Databento, Interactive Brokers. |
-| [`OptionSpread`](option_spread.md)                       | Option spread      | Exchange defined options strategy with several legs. | Databento, Interactive Brokers. |
-| [`CryptoOption`](crypto_option.md)                       | Crypto option      | Option on a crypto underlying.                       | Bybit, Deribit, OKX, Tardis.    |
-| [`CryptoOptionSpread`](crypto_option_spread.md)          | Crypto spread      | Exchange defined crypto option spread.               | Deribit, OKX.                   |
-| [`BinaryOption`](binary_option.md)                       | Binary outcome     | Binary instrument that settles to 0 or 1.            | Hyperliquid, OKX, Polymarket.   |
-| [`BettingInstrument`](betting_instrument.md)             | Betting market     | Sports or gaming market selection.                   | Betfair.                        |
-| [`SyntheticInstrument`](synthetic_instrument.md)         | Local synthetic    | Formula derived local instrument.                    | Local only.                     |
+| Instrument type                                   | Class              | Description                                          | Typical adapters                |
+| ------------------------------------------------- | ------------------ | ---------------------------------------------------- | ------------------------------- |
+| [`Equity`](equity.md)                             | Spot               | Listed share or ETF traded on a cash market.         | Databento, Interactive Brokers. |
+| [`CurrencyPair`](currency_pair.md)                | Spot               | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
+| [`Commodity`](commodity.md)                       | Spot               | Spot commodity such as gold or oil.                  | Interactive Brokers.            |
+| [`Cfd`](cfd.md)                                   | Contract for diff. | Contract for difference tracking an underlying.      | Interactive Brokers.            |
+| [`IndexInstrument`](index_instrument.md)          | Spot reference     | Reference index, not directly tradable.              | Interactive Brokers.            |
+| [`TokenizedAsset`](tokenized_asset.md)            | Tokenized spot     | Tokenized asset on a crypto venue.                   | Kraken.                         |
+| [`FuturesContract`](futures_contract.md)          | Future             | Deliverable futures contract.                        | Databento, Interactive Brokers. |
+| [`FuturesSpread`](futures_spread.md)              | Futures spread     | Exchange defined futures strategy with several legs. | Databento, Interactive Brokers. |
+| [`CryptoFuture`](crypto_future.md)                | Crypto future      | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
+| [`CryptoFuturesSpread`](crypto_futures_spread.md) | Crypto spread      | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
+| [`CryptoPerpetual`](crypto_perpetual.md)          | Swap               | Crypto perpetual futures contract.                   | Binance, BitMEX, Bybit, dYdX.   |
+| [`PerpetualContract`](perpetual_contract.md)      | Generic swap       | Perpetual futures contract across asset classes.     | Architect AX, Binance.          |
+| [`OptionContract`](option_contract.md)            | Option             | Exchange traded put or call option.                  | Databento, Interactive Brokers. |
+| [`OptionSpread`](option_spread.md)                | Option spread      | Exchange defined options strategy with several legs. | Databento, Interactive Brokers. |
+| [`CryptoOption`](crypto_option.md)                | Crypto option      | Option on a crypto underlying.                       | Bybit, Deribit, OKX, Tardis.    |
+| [`CryptoOptionSpread`](crypto_option_spread.md)   | Crypto spread      | Exchange defined crypto option spread.               | Deribit, OKX.                   |
+| [`BinaryOption`](binary_option.md)                | Binary outcome     | Binary instrument that settles to 0 or 1.            | Hyperliquid, OKX, Polymarket.   |
+| [`BettingInstrument`](betting_instrument.md)      | Betting market     | Sports or gaming market selection.                   | Betfair.                        |
+| [`SyntheticInstrument`](synthetic_instrument.md)  | Local synthetic    | Formula derived local instrument.                    | Local only.                     |
 
 ## Taxonomy
 
@@ -76,30 +76,30 @@ flowchart TD
 Most concrete instruments share the same core shape. Individual type pages list the
 complete constructor and struct fields for that type.
 
-| Field               | Meaning                                                                 |
-|---------------------|-------------------------------------------------------------------------|
-| `id`                | Nautilus `InstrumentId`, formed from a symbol and venue.                |
-| `raw_symbol`        | Native venue symbol before Nautilus normalization.                      |
-| `price_precision`   | Number of decimal places allowed for prices.                            |
-| `size_precision`    | Number of decimal places allowed for quantities.                        |
-| `price_increment`   | Smallest valid price step.                                              |
-| `size_increment`    | Smallest valid quantity step.                                           |
-| `multiplier`        | Contract multiplier used in notional and PnL calculations.              |
-| `lot_size`          | Rounded lot or board size when the venue publishes one.                 |
-| `margin_init`       | Initial margin rate as a decimal fraction of notional value.            |
-| `margin_maint`      | Maintenance margin rate as a decimal fraction of notional value.        |
-| `maker_fee`         | Maker fee rate. Negative values represent rebates.                      |
-| `taker_fee`         | Taker fee rate. Negative values represent rebates.                      |
-| `max_quantity`      | Maximum order quantity when known.                                      |
-| `min_quantity`      | Minimum order quantity when known.                                      |
-| `max_notional`      | Maximum order notional value when known.                                |
-| `min_notional`      | Minimum order notional value when known.                                |
-| `max_price`         | Maximum valid quote or order price when known.                          |
-| `min_price`         | Minimum valid quote or order price when known.                          |
-| `info`              | Adapter metadata preserved from the venue or data source.               |
-| `ts_event`          | UNIX nanosecond timestamp for when the definition event occurred.       |
-| `ts_init`           | UNIX nanosecond timestamp for when Nautilus initialized the object.     |
-| `tick_scheme`       | Registered variable tick scheme name where the type supports one.       |
+| Field             | Meaning                                                             |
+| ----------------- | ------------------------------------------------------------------- |
+| `id`              | Nautilus `InstrumentId`, formed from a symbol and venue.            |
+| `raw_symbol`      | Native venue symbol before Nautilus normalization.                  |
+| `price_precision` | Number of decimal places allowed for prices.                        |
+| `size_precision`  | Number of decimal places allowed for quantities.                    |
+| `price_increment` | Smallest valid price step.                                          |
+| `size_increment`  | Smallest valid quantity step.                                       |
+| `multiplier`      | Contract multiplier used in notional and PnL calculations.          |
+| `lot_size`        | Rounded lot or board size when the venue publishes one.             |
+| `margin_init`     | Initial margin rate as a decimal fraction of notional value.        |
+| `margin_maint`    | Maintenance margin rate as a decimal fraction of notional value.    |
+| `maker_fee`       | Maker fee rate. Negative values represent rebates.                  |
+| `taker_fee`       | Taker fee rate. Negative values represent rebates.                  |
+| `max_quantity`    | Maximum order quantity when known.                                  |
+| `min_quantity`    | Minimum order quantity when known.                                  |
+| `max_notional`    | Maximum order notional value when known.                            |
+| `min_notional`    | Minimum order notional value when known.                            |
+| `max_price`       | Maximum valid quote or order price when known.                      |
+| `min_price`       | Minimum valid quote or order price when known.                      |
+| `info`            | Adapter metadata preserved from the venue or data source.           |
+| `ts_event`        | UNIX nanosecond timestamp for when the definition event occurred.   |
+| `ts_init`         | UNIX nanosecond timestamp for when Nautilus initialized the object. |
+| `tick_scheme`     | Registered variable tick scheme name where the type supports one.   |
 
 ## Symbology
 
@@ -188,7 +188,7 @@ trading venues validate the same constraints, and backtests should not fill orde
 prices or sizes that cannot exist in production.
 
 | Field             | Constrains                           | Example           |
-|-------------------|--------------------------------------|-------------------|
+| ----------------- | ------------------------------------ | ----------------- |
 | `price_precision` | Order prices, trigger prices, fills. | `2` -> `50000.01` |
 | `size_precision`  | Order quantities and fill sizes.     | `5` -> `1.00001`  |
 
@@ -235,7 +235,7 @@ unified Nautilus instrument API.
 
 ## Related guides
 
-- [Data](../data.md) covers market data types that reference instruments.
+- [Data](../data/) covers market data types that reference instruments.
 - [Orders](../orders/) covers order fields that reference instruments.
 - [Synthetics](../synthetics.md) covers local formula-derived instruments.
 - [Python API Reference](/docs/python-api-latest/model/instruments.html) lists Python

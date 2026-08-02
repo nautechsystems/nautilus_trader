@@ -118,7 +118,7 @@ where
 ///
 /// Tardis records do not always carry a venue-provided trade ID (some venues
 /// publish empty strings or omit the field entirely). This hash combines the
-/// symbol, timestamp, price, amount and side so replayed data yields the same
+/// symbol, timestamp, price, amount, and side so replayed data yields the same
 /// identifier across runs. FNV-1a is stable across architectures and crate
 /// versions; the 0x1f delimiter keeps variable-length fields from colliding.
 #[must_use]
@@ -194,6 +194,10 @@ pub fn normalize_symbol_str(
         }
 
         TardisExchange::GateIoFutures if instrument_type == &TardisInstrumentType::Perpetual => {
+            append_suffix(symbol, "-PERP")
+        }
+
+        TardisExchange::MexcFutures if instrument_type == &TardisInstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
@@ -417,6 +421,7 @@ mod tests {
     #[case(TardisExchange::Bybit, "BTCUSDT", "BTCUSDT.BYBIT")]
     #[case(TardisExchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
     #[case(TardisExchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
+    #[case(TardisExchange::Mexc, "BTCUSDT", "BTCUSDT.MEXC")]
     fn test_parse_instrument_id(
         #[case] exchange: TardisExchange,
         #[case] symbol: Ustr,
@@ -469,6 +474,13 @@ mod tests {
         TardisInstrumentType::Perpetual,
         None,
         "BTC-USD-PERP.DYDX"
+    )]
+    #[case(
+        TardisExchange::MexcFutures,
+        "BTC_USDT",
+        TardisInstrumentType::Perpetual,
+        None,
+        "BTC_USDT-PERP.MEXC"
     )]
     fn test_normalize_instrument_id(
         #[case] exchange: TardisExchange,

@@ -39,6 +39,7 @@ use ustr::Ustr;
 
 const TEST_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const TEST_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const TEST_DEPOSIT_WALLET: &str = "0x1111111111111111111111111111111111111111";
 const TEST_TOKEN_ID: &str =
     "71321045679252212594626385532706912750332728571942532289631379312455583992563";
 const ZERO_BYTES32: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -49,16 +50,22 @@ fn signer() -> OrderSigner {
     OrderSigner::new(&key).unwrap()
 }
 
-fn sample_order() -> PolymarketOrder {
+fn sample_order(signature_type: SignatureType) -> PolymarketOrder {
+    let order_address = if signature_type == SignatureType::Poly1271 {
+        TEST_DEPOSIT_WALLET
+    } else {
+        TEST_ADDRESS
+    };
+
     PolymarketOrder {
         salt: 123_456_789,
-        maker: TEST_ADDRESS.to_string(),
-        signer: TEST_ADDRESS.to_string(),
+        maker: order_address.to_string(),
+        signer: order_address.to_string(),
         token_id: Ustr::from(TEST_TOKEN_ID),
         maker_amount: dec!(50000000),
         taker_amount: dec!(100000000),
         side: PolymarketOrderSide::Buy,
-        signature_type: SignatureType::Eoa,
+        signature_type,
         expiration: "0".to_string(),
         timestamp: "1713398400000".to_string(),
         metadata: ZERO_BYTES32.to_string(),
@@ -69,7 +76,7 @@ fn sample_order() -> PolymarketOrder {
 
 fn bench_sign_order(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order();
+    let order = sample_order(SignatureType::Eoa);
     c.bench_function("sign_order", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), false).unwrap();
@@ -80,7 +87,7 @@ fn bench_sign_order(c: &mut Criterion) {
 
 fn bench_sign_order_neg_risk(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order();
+    let order = sample_order(SignatureType::Eoa);
     c.bench_function("sign_order_neg_risk", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), true).unwrap();
@@ -89,8 +96,19 @@ fn bench_sign_order_neg_risk(c: &mut Criterion) {
     });
 }
 
+fn bench_sign_order_poly_1271(c: &mut Criterion) {
+    let signer = signer();
+    let order = sample_order(SignatureType::Poly1271);
+    c.bench_function("sign_order_poly_1271", |b| {
+        b.iter(|| {
+            let sig = signer.sign_order(black_box(&order), false).unwrap();
+            black_box(sig);
+        });
+    });
+}
+
 fn bench_order_hash(c: &mut Criterion) {
-    let order = sample_order();
+    let order = sample_order(SignatureType::Eoa);
     c.bench_function("order_hash", |b| {
         b.iter(|| {
             let h = order_hash(black_box(&order), false).unwrap();
@@ -146,6 +164,7 @@ criterion_group!(
     benches,
     bench_sign_order,
     bench_sign_order_neg_risk,
+    bench_sign_order_poly_1271,
     bench_order_hash,
     bench_signer_construction,
     bench_sign_clob_auth,

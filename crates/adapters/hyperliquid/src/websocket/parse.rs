@@ -45,7 +45,7 @@ use crate::{
             parse_trigger_order_type,
         },
     },
-    data_types::HyperliquidOpenInterest,
+    data_types::{HyperliquidOpenInterest, HyperliquidPublicTrade},
 };
 
 fn parse_price(
@@ -89,6 +89,30 @@ pub fn parse_ws_trade_tick(
         ts_init,
     )
     .context("failed to construct TradeTick from Hyperliquid trade message")
+}
+
+/// Parses a WebSocket trade frame into a complete public Hyperliquid trade.
+pub fn parse_ws_public_trade(
+    trade: &WsTradeData,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<HyperliquidPublicTrade> {
+    let price = parse_price(trade.px, instrument, "trade.px")?;
+    let size = parse_quantity(trade.sz, instrument, "trade.sz")?;
+    let ts_event = millis_to_nanos(trade.time)?;
+
+    Ok(HyperliquidPublicTrade::new(
+        instrument.id(),
+        price,
+        size,
+        AggressorSide::from(trade.side),
+        trade.tid.to_string(),
+        trade.users[0].clone(),
+        trade.users[1].clone(),
+        trade.hash.clone(),
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a WebSocket L2 order book message into [`OrderBookDeltas`].
@@ -347,6 +371,10 @@ pub fn parse_ws_order_status_report(
 
     if let Some(reduce_only) = order.order.reduce_only {
         report = report.with_reduce_only(reduce_only);
+    }
+
+    if let Some(reason) = order.status.rejection_reason() {
+        report = report.with_cancel_reason(reason.to_string());
     }
 
     report = report.with_price(price);
@@ -612,6 +640,58 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        HyperliquidOrderStatusEnum::BadAloPxRejected,
+        "Post only order would have immediately matched"
+    )]
+    #[case(
+        HyperliquidOrderStatusEnum::ReduceOnlyRejected,
+        "Reduce only order would increase position."
+    )]
+    #[case(
+        HyperliquidOrderStatusEnum::IocCancelRejected,
+        "Order could not immediately match against any resting orders"
+    )]
+    fn test_parse_ws_rejection_preserves_venue_reason(
+        #[case] status: HyperliquidOrderStatusEnum,
+        #[case] expected_reason: &str,
+    ) {
+        let instrument = create_test_instrument();
+        let order_data = WsOrderData {
+            order: WsBasicOrderData {
+                coin: Ustr::from("BTC"),
+                side: HyperliquidSide::Buy,
+                limit_px: dec!(50000.0),
+                sz: dec!(1.0),
+                oid: 12345,
+                timestamp: 1704470400000,
+                orig_sz: dec!(1.0),
+                cloid: Some("test-rejection".to_string()),
+                tif: Some(HyperliquidTimeInForce::Alo),
+                reduce_only: Some(false),
+                trigger_px: None,
+                is_market: None,
+                tpsl: None,
+                trigger_activated: None,
+                trailing_stop: None,
+            },
+            status,
+            status_timestamp: 1704470400000,
+        };
+
+        let report = parse_ws_order_status_report(
+            &order_data,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(report.cancel_reason.as_deref(), Some(expected_reason));
+    }
+
+    #[rstest]
     fn test_parse_ws_fill_report_basic() {
         let instrument = create_test_instrument();
         let account_id = AccountId::new("HYPERLIQUID-001");
@@ -789,7 +869,7 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
-        // 3 bids, 2 asks — Depth10 must pad the remaining 7/8 slots with zero orders
+        // 3 bids, 2 asks - Depth10 must pad the remaining 7/8 slots with zero orders
         let book = WsBookData {
             coin: Ustr::from("BTC"),
             levels: [

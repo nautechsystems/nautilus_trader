@@ -31,8 +31,8 @@ use crate::{
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl AccountBalance {
     /// Represents an account balance denominated in a particular currency.
     #[new]
@@ -55,6 +55,30 @@ impl AccountBalance {
         self.free.raw.hash(&mut h);
         self.currency.code.hash(&mut h);
         h.finish() as isize
+    }
+
+    #[getter]
+    #[pyo3(name = "total")]
+    fn py_total(&self) -> Money {
+        self.total
+    }
+
+    #[getter]
+    #[pyo3(name = "locked")]
+    fn py_locked(&self) -> Money {
+        self.locked
+    }
+
+    #[getter]
+    #[pyo3(name = "free")]
+    fn py_free(&self) -> Money {
+        self.free
+    }
+
+    #[getter]
+    #[pyo3(name = "currency")]
+    fn py_currency(&self) -> Currency {
+        self.currency
     }
 
     /// Returns a copy of this balance.
@@ -131,8 +155,8 @@ impl AccountBalance {
     }
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl MarginBalance {
     /// Represents a margin balance.
     ///
@@ -169,6 +193,30 @@ impl MarginBalance {
         self.currency.code.hash(&mut h);
         self.instrument_id.hash(&mut h);
         h.finish() as isize
+    }
+
+    #[getter]
+    #[pyo3(name = "initial")]
+    fn py_initial(&self) -> Money {
+        self.initial
+    }
+
+    #[getter]
+    #[pyo3(name = "maintenance")]
+    fn py_maintenance(&self) -> Money {
+        self.maintenance
+    }
+
+    #[getter]
+    #[pyo3(name = "currency")]
+    fn py_currency(&self) -> Currency {
+        self.currency
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> Option<InstrumentId> {
+        self.instrument_id
     }
 
     /// Returns a copy of this margin balance.

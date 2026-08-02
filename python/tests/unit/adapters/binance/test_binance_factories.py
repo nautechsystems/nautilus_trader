@@ -43,6 +43,25 @@ def test_binance_factories_expose_python_names() -> None:
     assert BinanceExecutionClientFactory().name() == BINANCE
 
 
+def test_binance_config_proxy_readback_exposes_presence_only() -> None:
+    proxy_url = "http://user:password@proxy.example.test"
+    data_config = BinanceDataClientConfig(proxy_url=proxy_url)
+    data_config_without_proxy = BinanceDataClientConfig()
+    exec_config = BinanceExecClientConfig(
+        trader_id=TraderId("TRADER-001"),
+        account_id=AccountId("BINANCE-001"),
+        proxy_url=proxy_url,
+    )
+
+    assert data_config.has_proxy_url is True
+    assert data_config_without_proxy.has_proxy_url is False
+    assert exec_config.has_proxy_url is True
+    assert not hasattr(data_config, "proxy_url")
+    assert not hasattr(exec_config, "proxy_url")
+    assert proxy_url not in repr(data_config)
+    assert proxy_url not in repr(exec_config)
+
+
 def test_live_node_builder_accepts_binance_data_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
 

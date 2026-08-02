@@ -52,8 +52,8 @@ async def main() -> None:
     )
     try:
         client = ib.HistoricalInteractiveBrokersClient(provider, client_config)
-    except RuntimeError as exc:
-        print(f"Failed to connect to IB Gateway/TWS at {host}:{port}: {exc}", flush=True)
+    except RuntimeError as e:
+        print(f"Failed to connect to IB Gateway/TWS at {host}:{port}: {e}", flush=True)
         return
 
     print("Requesting option instruments...", flush=True)

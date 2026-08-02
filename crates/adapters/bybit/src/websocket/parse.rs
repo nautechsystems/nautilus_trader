@@ -50,8 +50,9 @@ use super::{
 use crate::common::{
     enums::{BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
     parse::{
-        get_currency, make_hedge_venue_position_id, parse_book_level, parse_bybit_order_type,
-        parse_millis_timestamp, parse_price_with_precision, parse_quantity_with_precision,
+        bybit_rejection_due_post_only, get_currency, make_hedge_venue_position_id,
+        parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
+        parse_price_with_precision, parse_quantity_with_precision,
     },
 };
 
@@ -780,6 +781,15 @@ pub fn parse_ws_order_status_report(
         }
         BybitOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         BybitOrderStatus::Filled => OrderStatus::Filled,
+        // A post-only order that would take liquidity is reported as Cancelled with
+        // rejectReason=EC_PostOnlyWillTakeLiquidity (not Rejected). Surface it as Rejected
+        // for consistency with the tracked-order event path.
+        BybitOrderStatus::Canceled
+            if filled_qty.is_zero()
+                && bybit_rejection_due_post_only(order.reject_reason.as_str()) =>
+        {
+            OrderStatus::Rejected
+        }
         BybitOrderStatus::Canceled | BybitOrderStatus::PartiallyFilledCanceled => {
             OrderStatus::Canceled
         }
@@ -818,11 +828,10 @@ pub fn parse_ws_order_status_report(
     }
 
     if !order.avg_price.is_empty() && order.avg_price != "0" {
-        let avg_px = order
-            .avg_price
-            .parse::<f64>()
-            .with_context(|| format!("Failed to parse avg_price='{}' as f64", order.avg_price))?;
-        report = report.with_avg_px(avg_px)?;
+        let avg_px = order.avg_price.parse::<Decimal>().with_context(|| {
+            format!("Failed to parse avg_price='{}' as Decimal", order.avg_price)
+        })?;
+        report = report.with_avg_px(avg_px);
     }
 
     if !order.trigger_price.is_empty() && order.trigger_price != "0" {
@@ -897,7 +906,7 @@ pub fn parse_ws_fill_report(
         .parse()
         .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
 
-    let commission_currency = instrument.quote_currency();
+    let commission_currency = get_currency(&execution.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
             "Failed to create commission from execFee='{}'",
@@ -974,6 +983,7 @@ pub fn parse_ws_fill_report_fast(
         LiquiditySide::Taker
     };
 
+    // execution.fast carries no fee data (no rate or currency)
     let commission_currency = instrument.quote_currency();
     let commission = Money::from_decimal(Decimal::ZERO, commission_currency)
         .with_context(|| format!("Failed to create zero commission for {commission_currency}"))?;
@@ -1113,6 +1123,8 @@ pub fn parse_ws_account_state(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::{
         data::BarSpecification,
         enums::{
@@ -1373,6 +1385,30 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_ws_order_avg_price_keeps_every_digit_the_venue_sent() {
+        // 28 significant digits is exactly what `Decimal` holds, and more than `f64` can:
+        // routing the same string through `f64` first collapses it to 30000.500000000004.
+        let raw = "30000.50000000000372529029846";
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order_filled.json");
+        let mut msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+        msg.data[0].avg_price = raw.to_string();
+
+        let report = parse_ws_order_status_report(
+            &msg.data[0],
+            &instrument,
+            AccountId::new("BYBIT-001"),
+            TS,
+        )
+        .unwrap();
+
+        let via_f64: Decimal = raw.parse::<f64>().unwrap().to_string().parse().unwrap();
+        assert_eq!(report.avg_px, Some(Decimal::from_str(raw).unwrap()));
+        assert_ne!(report.avg_px, Some(via_f64));
+    }
+
+    #[rstest]
     fn parse_ws_order_partially_filled_rejected_maps_to_canceled() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_order_partially_filled_rejected.json");
@@ -1391,6 +1427,28 @@ mod tests {
             "O-20251001-164609-APEX-000-49"
         );
         assert_eq!(report.cancel_reason, Some("UNKNOWN".to_string()));
+    }
+
+    #[rstest]
+    fn parse_ws_order_post_only_cancel_maps_to_rejected() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order.json");
+        let mut msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let order = msg.data.first_mut().unwrap();
+        order.reject_reason = Ustr::from("EC_PostOnlyWillTakeLiquidity");
+        order.cum_exec_qty = "0".to_string();
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report =
+            parse_ws_order_status_report(&msg.data[0], &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(
+            report.cancel_reason,
+            Some("EC_PostOnlyWillTakeLiquidity".to_string())
+        );
     }
 
     #[rstest]
@@ -1418,6 +1476,7 @@ mod tests {
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(95900.1));
         assert_eq!(report.commission.as_f64(), 26.3725275);
+        assert_eq!(report.commission.currency.code.as_str(), "USDT");
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
             report.client_order_id.as_ref().unwrap().to_string(),
@@ -1452,6 +1511,7 @@ mod tests {
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(95850.0));
         assert_eq!(report.commission.as_f64(), 0.0);
+        assert_eq!(report.commission.currency.code.as_str(), "USDT");
     }
 
     #[rstest]
@@ -1466,6 +1526,22 @@ mod tests {
         let report = parse_ws_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_uses_payload_fee_currency() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let mut execution = msg.data[0].clone();
+        execution.fee_currency = Ustr::from("BTC");
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_ws_fill_report(&execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.commission.currency.code.as_str(), "BTC");
     }
 
     fn fast_execution(is_maker: bool, order_link_id: &str) -> BybitWsAccountExecutionFast {

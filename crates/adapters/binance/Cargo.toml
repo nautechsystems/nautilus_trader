@@ -23,7 +23,10 @@ crate-type = ["rlib"]
 [features]
 default = ["high-precision"]
 examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
+]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -70,6 +73,7 @@ aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
+csv = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 ed25519-dalek = { workspace = true }
@@ -90,7 +94,9 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-testkit = { workspace = true }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "testers",
+] }
 nautilus-trading = { workspace = true }
 
 axum = { workspace = true }

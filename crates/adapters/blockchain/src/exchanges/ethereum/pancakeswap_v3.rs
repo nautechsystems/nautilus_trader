@@ -27,8 +27,8 @@ use crate::exchanges::{
 
 /// PancakeSwap V3 DEX on Ethereum.
 pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    // PancakeSwap V3 is a Uniswap V3 fork; only Swap differs (appended protocolFees, distinct
-    // topic0), so Swap uses the PancakeSwap parser and the rest reuse the Uniswap V3 parsers.
+    // PancakeSwap V3 is a Uniswap V3 fork; Swap and SetFeeProtocol differ, while the rest reuse
+    // the Uniswap V3 parsers.
     let mut dex = Dex::new(
         chains::ETHEREUM.clone(),
         DexType::PancakeSwapV3,
@@ -43,6 +43,8 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     );
     dex.set_initialize_event("Initialize(uint160,int24)");
     dex.set_flash_event("Flash(address,address,uint256,uint256,uint256,uint256)");
+    dex.set_fee_protocol_update_event("SetFeeProtocol(uint32,uint32,uint32,uint32)");
+    dex.set_fee_protocol_collect_event("CollectProtocol(address,address,uint128,uint128)");
     let mut dex_extended = DexExtended::new(dex);
 
     // HyperSync parsers
@@ -58,6 +60,12 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex_extended
         .set_collect_event_hypersync_parsing(uniswap_v3::collect::parse_collect_event_hypersync);
     dex_extended.set_flash_event_hypersync_parsing(uniswap_v3::flash::parse_flash_event_hypersync);
+    dex_extended.set_fee_protocol_update_event_hypersync_parsing(
+        pancakeswap_v3::fee_protocol_update::parse_fee_protocol_update_event_hypersync,
+    );
+    dex_extended.set_fee_protocol_collect_event_hypersync_parsing(
+        uniswap_v3::fee_protocol_collect::parse_fee_protocol_collect_event_hypersync,
+    );
 
     // RPC parsers
     dex_extended
@@ -69,6 +77,12 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex_extended.set_burn_event_rpc_parsing(uniswap_v3::burn::parse_burn_event_rpc);
     dex_extended.set_collect_event_rpc_parsing(uniswap_v3::collect::parse_collect_event_rpc);
     dex_extended.set_flash_event_rpc_parsing(uniswap_v3::flash::parse_flash_event_rpc);
+    dex_extended.set_fee_protocol_update_event_rpc_parsing(
+        pancakeswap_v3::fee_protocol_update::parse_fee_protocol_update_event_rpc,
+    );
+    dex_extended.set_fee_protocol_collect_event_rpc_parsing(
+        uniswap_v3::fee_protocol_collect::parse_fee_protocol_collect_event_rpc,
+    );
 
     dex_extended
 });

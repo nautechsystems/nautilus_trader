@@ -1601,8 +1601,16 @@ impl KrakenSpotHttpClient {
         for (i, level) in book_data.bids.iter().enumerate() {
             let price_str = level.first().and_then(|v| v.as_str()).unwrap_or("0");
             let size_str = level.get(1).and_then(|v| v.as_str()).unwrap_or("0");
-            let price = Price::new(price_str.parse::<f64>().unwrap_or(0.0), price_precision);
-            let size = Quantity::new(size_str.parse::<f64>().unwrap_or(0.0), size_precision);
+            let price = Price::from_decimal_dp(
+                Decimal::from_str_exact(price_str).unwrap_or(Decimal::ZERO),
+                price_precision,
+            )
+            .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
+            let size = Quantity::from_decimal_dp(
+                Decimal::from_str_exact(size_str).unwrap_or(Decimal::ZERO),
+                size_precision,
+            )
+            .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
             let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
             book.add(order, 0, 0, ts_event);
         }
@@ -1612,8 +1620,16 @@ impl KrakenSpotHttpClient {
         for (i, level) in book_data.asks.iter().enumerate() {
             let price_str = level.first().and_then(|v| v.as_str()).unwrap_or("0");
             let size_str = level.get(1).and_then(|v| v.as_str()).unwrap_or("0");
-            let price = Price::new(price_str.parse::<f64>().unwrap_or(0.0), price_precision);
-            let size = Quantity::new(size_str.parse::<f64>().unwrap_or(0.0), size_precision);
+            let price = Price::from_decimal_dp(
+                Decimal::from_str_exact(price_str).unwrap_or(Decimal::ZERO),
+                price_precision,
+            )
+            .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
+            let size = Quantity::from_decimal_dp(
+                Decimal::from_str_exact(size_str).unwrap_or(Decimal::ZERO),
+                size_precision,
+            )
+            .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
             let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
             book.add(order, 0, 0, ts_event);
         }
@@ -2127,15 +2143,15 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
-        let mut wallet_by_coin: HashMap<Ustr, f64> = HashMap::new();
+        let mut wallet_by_coin: HashMap<Ustr, Decimal> = HashMap::new();
 
         for (currency_code, amount_str) in &balances_raw {
-            let balance = match amount_str.parse::<f64>() {
+            let balance = match Decimal::from_str_exact(amount_str) {
                 Ok(b) => b,
                 Err(_) => continue,
             };
 
-            if balance == 0.0 {
+            if balance.is_zero() {
                 continue;
             }
 
@@ -2152,16 +2168,16 @@ impl KrakenSpotHttpClient {
                 };
 
                 let coin = Ustr::from(normalize_currency_code(base_currency.code.as_str()));
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(0.0);
+                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
-                let side = if wallet_balance > 0.0 {
+                let side = if wallet_balance > Decimal::ZERO {
                     PositionSideSpecified::Long
                 } else {
                     PositionSideSpecified::Flat
                 };
 
                 let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::new(abs_balance, instrument.size_precision());
+                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
 
                 let report = PositionStatusReport::new(
                     account_id,
@@ -2193,14 +2209,15 @@ impl KrakenSpotHttpClient {
                 };
 
                 let coin = Ustr::from(normalize_currency_code(base_currency.code.as_str()));
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(0.0);
+                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
-                if wallet_balance == 0.0 {
+                if wallet_balance.is_zero() {
                     continue;
                 }
 
                 let side = PositionSideSpecified::Long;
-                let quantity = Quantity::new(wallet_balance, instrument.size_precision());
+                let quantity =
+                    Quantity::from_decimal_dp(wallet_balance, instrument.size_precision())?;
 
                 if quantity.is_zero() {
                     continue;

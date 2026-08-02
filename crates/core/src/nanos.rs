@@ -63,6 +63,7 @@ use serde::{
 
 use crate::datetime::{
     NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+    U64_UPPER_BOUND_F64,
 };
 
 /// Represents a duration in nanoseconds.
@@ -142,6 +143,14 @@ impl UnixNanos {
         }
     }
 
+    /// Creates a new [`UnixNanos`] from a signed millisecond timestamp.
+    ///
+    /// Returns `None` if `millis` is negative or the result overflows `u64`.
+    #[must_use]
+    pub const fn from_millis_checked(millis: i64) -> Option<Self> {
+        Self::from_units_checked(millis, NANOSECONDS_IN_MILLISECOND)
+    }
+
     /// Creates a new [`UnixNanos`] from a microsecond timestamp.
     ///
     /// # Panics
@@ -152,6 +161,25 @@ impl UnixNanos {
         match micros.checked_mul(NANOSECONDS_IN_MICROSECOND) {
             Some(nanos) => Self(nanos),
             None => panic!("UnixNanos overflow in from_micros"),
+        }
+    }
+
+    /// Creates a new [`UnixNanos`] from a signed microsecond timestamp.
+    ///
+    /// Returns `None` if `micros` is negative or the result overflows `u64`.
+    #[must_use]
+    pub const fn from_micros_checked(micros: i64) -> Option<Self> {
+        Self::from_units_checked(micros, NANOSECONDS_IN_MICROSECOND)
+    }
+
+    const fn from_units_checked(value: i64, nanos_per_unit: u64) -> Option<Self> {
+        if value < 0 {
+            return None;
+        }
+
+        match value.cast_unsigned().checked_mul(nanos_per_unit) {
+            Some(nanos) => Some(Self(nanos)),
+            None => None,
         }
     }
 
@@ -263,13 +291,13 @@ impl UnixNanos {
         self.0.checked_sub(rhs.into()).map(Self)
     }
 
-    /// Saturating addition – if overflow occurs the value is clamped to `u64::MAX`.
+    /// Saturating addition - if overflow occurs the value is clamped to `u64::MAX`.
     #[must_use]
     pub fn saturating_add_ns<T: Into<u64>>(self, rhs: T) -> Self {
         Self(self.0.saturating_add(rhs.into()))
     }
 
-    /// Saturating subtraction – if underflow occurs the value is clamped to `0`.
+    /// Saturating subtraction - if underflow occurs the value is clamped to `0`.
     #[must_use]
     pub fn saturating_sub_ns<T: Into<u64>>(self, rhs: T) -> Self {
         Self(self.0.saturating_sub(rhs.into()))
@@ -279,14 +307,11 @@ impl UnixNanos {
 // Converts non-negative float seconds to nanoseconds, truncating (not rounding)
 // sub-nanosecond precision for consistency with `datetime::secs_to_nanos`.
 #[expect(
-    clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "value is checked finite, non-negative, and within u64 range before the cast"
 )]
 fn f64_seconds_to_nanos(value: f64) -> Result<u64, String> {
-    const MAX_NS_F64: f64 = u64::MAX as f64;
-
     if !value.is_finite() {
         return Err(format!("Unix timestamp must be finite, was {value}"));
     }
@@ -300,7 +325,7 @@ fn f64_seconds_to_nanos(value: f64) -> Result<u64, String> {
     // result fits inside `u64` *before* truncating / casting.
     let nanos_f64 = value * 1_000_000_000.0;
 
-    if nanos_f64 > MAX_NS_F64 {
+    if nanos_f64 >= U64_UPPER_BOUND_F64 {
         return Err(format!("Unix timestamp {value} seconds is out of range"));
     }
 
@@ -1105,6 +1130,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_float_u64_boundary_fails() {
+        let deserializer = serde::de::value::F64Deserializer::<serde::de::value::Error>::new(
+            18_446_744_073.709_553,
+        );
+        let err = UnixNanos::deserialize(deserializer).unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[rstest]
     fn test_deserialize_invalid_string_fails() {
         let json = "\"not a timestamp\"";
         let result: Result<UnixNanos, _> = serde_json::from_str(json);
@@ -1210,19 +1244,17 @@ mod tests {
             nanos2 in unix_nanos_strategy(),
             nanos3 in unix_nanos_strategy(),
         ) {
-            // Addition should be associative when no overflow occurs
-            if let (Some(sum1), Some(sum2)) = (
-                nanos1.as_u64().checked_add(nanos2.as_u64()),
-                nanos2.as_u64().checked_add(nanos3.as_u64())
-            )
-                && let (Some(left), Some(right)) = (
-                    sum1.checked_add(nanos3.as_u64()),
-                    nanos1.as_u64().checked_add(sum2)
-                ) {
-                    let left_result = UnixNanos::from(left);
-                    let right_result = UnixNanos::from(right);
-                    prop_assert_eq!(left_result, right_result, "Addition should be associative");
-                }
+            let expected = nanos1
+                .as_u64()
+                .checked_add(nanos2.as_u64())
+                .and_then(|sum| sum.checked_add(nanos3.as_u64()));
+
+            if let Some(expected) = expected {
+                let left = (nanos1 + nanos2) + nanos3;
+                let right = nanos1 + (nanos2 + nanos3);
+                prop_assert_eq!(left.as_u64(), expected);
+                prop_assert_eq!(right.as_u64(), expected);
+            }
         }
 
         #[rstest]
@@ -1394,10 +1426,6 @@ mod tests {
         }
 
         #[rstest]
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "test bound mirrors the production guard in f64_seconds_to_nanos"
-        )]
         fn prop_unix_nanos_f64_deserialize_never_panics(val: f64) {
             // Use IntoDeserializer to hit visit_f64 directly,
             // bypassing JSON text encoding ambiguity
@@ -1405,7 +1433,8 @@ mod tests {
             let deserializer: F64Deserializer<ValueError> = val.into_deserializer();
             let result = UnixNanos::deserialize(deserializer);
 
-            if val.is_finite() && val >= 0.0 && val * 1_000_000_000.0 <= u64::MAX as f64 {
+            let upper_bound = 2.0_f64.powi(64);
+            if val.is_finite() && val >= 0.0 && val * 1_000_000_000.0 < upper_bound {
                 prop_assert!(result.is_ok(), "Should succeed for valid f64: {}", val);
             } else {
                 prop_assert!(result.is_err(), "Should error for invalid f64: {}", val);
@@ -1486,6 +1515,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case::valid(1_700_000_000_123, Some(1_700_000_000_123_000_000))]
+    #[case::negative(-1, None)]
+    #[case::overflow(i64::MAX, None)]
+    fn test_from_millis_checked(#[case] millis: i64, #[case] expected: Option<u64>) {
+        assert_eq!(
+            UnixNanos::from_millis_checked(millis).map(|value| value.as_u64()),
+            expected
+        );
+    }
+
+    #[rstest]
     #[case(0, 0)]
     #[case(999_999_999, 0)]
     #[case(1_000_000_000, 1)]
@@ -1556,6 +1596,17 @@ mod tests {
         let us = 1_000_000_123_456_u64;
         let expected = us * 1_000;
         assert_eq!(UnixNanos::from_micros(us).as_u64(), expected);
+    }
+
+    #[rstest]
+    #[case::valid(1_700_000_000_123_456, Some(1_700_000_000_123_456_000))]
+    #[case::negative(-1, None)]
+    #[case::overflow(i64::MAX, None)]
+    fn test_from_micros_checked(#[case] micros: i64, #[case] expected: Option<u64>) {
+        assert_eq!(
+            UnixNanos::from_micros_checked(micros).map(|value| value.as_u64()),
+            expected
+        );
     }
 
     #[rstest]

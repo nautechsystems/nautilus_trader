@@ -110,6 +110,23 @@ fn test_book_order_roundtrip() {
 }
 
 #[rstest]
+fn test_sbe_resolved_raw_width_roundtrip() {
+    // Price and Quantity raws exceed 64 bits only under high precision, so this pins decode to
+    // the model's resolved alias rather than this crate's own feature.
+    let value = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("50000.00"),
+        Quantity::from("20000.00"),
+        123_456,
+    );
+
+    let bytes = value.to_sbe().unwrap();
+    let decoded = BookOrder::from_sbe(&bytes).unwrap();
+
+    assert_book_order_fields(&value, &decoded);
+}
+
+#[rstest]
 fn test_order_book_delta_roundtrip() {
     let value = stub_delta();
 
@@ -258,6 +275,48 @@ fn test_funding_rate_update_zero_values_roundtrip() {
 
     assert_eq!(decoded.interval, Some(0));
     assert_eq!(decoded.next_funding_ns, Some(0.into()));
+}
+
+#[rstest]
+fn test_funding_rate_update_reserved_interval_returns_encode_error() {
+    let value = FundingRateUpdate::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        dec!(0.0001),
+        Some(u16::MAX),
+        None,
+        9876543210.into(),
+        9876543211.into(),
+    );
+
+    let result = value.to_sbe();
+
+    assert_eq!(
+        result,
+        Err(SbeEncodeError::ReservedValue {
+            field: "FundingRateUpdate.interval",
+        })
+    );
+}
+
+#[rstest]
+fn test_funding_rate_update_reserved_next_funding_returns_encode_error() {
+    let value = FundingRateUpdate::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        dec!(0.0001),
+        None,
+        Some(u64::MAX.into()),
+        9876543210.into(),
+        9876543211.into(),
+    );
+
+    let result = value.to_sbe();
+
+    assert_eq!(
+        result,
+        Err(SbeEncodeError::ReservedValue {
+            field: "FundingRateUpdate.next_funding_ns",
+        })
+    );
 }
 
 #[rstest]

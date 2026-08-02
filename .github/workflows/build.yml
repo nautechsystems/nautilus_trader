@@ -6,7 +6,8 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop, test-ci, test-pre-commit]
+    # build.yml owns the shared Rust suite for test-ci-v2; v1 wheels skip that branch.
+    branches: [master, nightly, develop, test-ci, test-ci-v2, test-pre-commit]
   pull_request:
     branches-ignore: [master, nightly]
 
@@ -16,11 +17,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Fork PRs lack repo/org vars, so audit instead of block.
-  EGRESS_POLICY: >-
-    ${{ github.event.pull_request.head.repo.fork && 'audit'
-    || vars.STEP_SECURITY_EGRESS_POLICY
-    || 'block' }}
+  AUDIT_PR: >-
+    ${{ github.event_name == 'pull_request'
+    && (!github.event.pull_request.head.repo.full_name
+    || github.event.pull_request.head.repo.full_name != github.repository) }}
+  UNTRUSTED_PR: >-
+    ${{ github.event_name == 'pull_request'
+    && (!github.event.pull_request.head.repo.full_name
+    || github.event.pull_request.head.repo.full_name != github.repository
+    || !github.event.pull_request.user.login
+    || github.event.pull_request.user.login == 'dependabot[bot]') }}
+  EGRESS_POLICY: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
 
 jobs:
   plan:
@@ -28,14 +35,19 @@ jobs:
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
+      untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Export CI policy
+        id: policy
+        run: echo "untrusted_pr=${UNTRUSTED_PR}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -53,19 +65,25 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    # Fork PRs stay GitHub-hosted.
+    if: ${{ !cancelled() }}
+    needs: plan
+    # Untrusted PRs stay GitHub-hosted
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     env:
-      # Self-hosted keeps Rust artifacts outside the workspace.
+      # Self-hosted keeps Rust artifacts outside the workspace
       CARGO_TARGET_DIR: >-
-        ${{ github.event.pull_request.head.repo.fork
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
         && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
       CARGO_CI_PROFILE: >-
-        ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr' || 'nextest' }}
       # Scopes incremental clippy/doc checks; empty for non-PR/push events.
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -73,7 +91,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -98,11 +116,12 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           build-type: "pre-commit"
-          rust-cache-enabled: >-
-            ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+          rust-cache-enabled: "false"
 
-      - name: Limit Cargo build jobs on GitHub-hosted runners
-        if: github.event.pull_request.head.repo.fork
+      - name: Limit Cargo build jobs on untrusted PR runners
+        if: >-
+          github.event_name == 'pull_request'
+          && needs.plan.outputs.untrusted_pr != 'false'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Run pre-commit
@@ -120,7 +139,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -139,11 +158,8 @@ jobs:
       - name: Run cargo-deny (advisories, licenses, sources, bans)
         run: |
           cargo deny --all-features check advisories licenses sources bans
-          cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
-            --locked --all-features check --config .cargo/deny-fuzz.toml \
-            advisories licenses sources bans
-          cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
-            --locked --all-features check --config .cargo/deny-fuzz.toml \
+          cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
+            --config .cargo/deny-fuzz.toml --locked --all-features check \
             advisories licenses sources bans
 
   # Supply chain security auditing (master only - gates releases)
@@ -155,7 +171,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -174,13 +190,141 @@ jobs:
       - name: Run cargo-vet
         run: |
           cargo vet --locked
-          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
-            --store-path .supply-chain
-          cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
             --store-path .supply-chain
 
+  rust-tests-linux-x86:
+    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-rust-tests == 'true'
+    name: rust tests (ubuntu-22.04)
+    runs-on: >-
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
+      && 'ubuntu-22.04'
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
+    needs:
+      - plan
+      - pre-commit
+    env:
+      CARGO_CI_PROFILE: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr'
+        || github.event_name == 'push'
+        && (github.ref_name == 'develop' || github.ref_name == 'test-ci')
+        && 'ci-pr'
+        || 'nextest' }}
+      CARGO_TARGET_DIR: >-
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'target/rust-tests-linux-x86'
+        || github.event_name == 'push'
+        && (github.ref_name == 'develop' || github.ref_name == 'test-ci')
+        && 'target/rust-tests-linux-x86'
+        || '/home/runner/.cache/cargo-target/rust-tests-linux-x86' }}
+      RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
+    services:
+      redis:
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
+    # yamllint enable rule:line-length
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
+          # Develop and test-ci produce the cache restored by GitHub-hosted PR jobs.
+          rust-cache-enabled: >-
+            ${{ (runner.environment == 'github-hosted'
+            || github.event_name == 'push'
+            && (github.ref_name == 'develop' || github.ref_name == 'test-ci'))
+            && 'true' || 'false' }}
+          rust-cache-key: rust-tests-linux-x86
+          rust-cache-workspaces: . -> target/rust-tests-linux-x86
+          rust-cache-on-failure: "false"
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: runner.environment == 'github-hosted'
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+
+      - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
+      - name: Report disk space before Rust tests
+        run: bash scripts/ci/report-disk-space.bash "before Rust tests"
+
+      - name: Run Rust doctests
+        run: >-
+          make cargo-test-doc
+          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+
+      - name: Report disk space after Rust doctests
+        if: always()
+        run: bash scripts/ci/report-disk-space.bash "after Rust doctests"
+
+      - name: Run Rust tests
+        run: >-
+          make cargo-test NEXTEST_PROFILE=ci
+          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+
+      - name: Report disk space after Rust tests
+        if: always()
+        run: bash scripts/ci/report-disk-space.bash "after Rust tests"
+
   build-linux-x86:
-    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
+    if: >-
+      !cancelled()
+      && github.ref != 'refs/heads/test-pre-commit'
+      && github.ref != 'refs/heads/test-ci-v2'
+      && (needs.plan.result != 'success' || needs.plan.outputs.run-tests == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -192,33 +336,41 @@ jobs:
       run:
         shell: bash
     # Ubuntu 22.04 (glibc 2.35) keeps the wheel runtime range broad.
-    # Fork PRs stay GitHub-hosted.
+    # Untrusted PRs stay GitHub-hosted; all other Linux x86 work stays self-hosted
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
     runs-on: >-
-      ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+      ${{ github.event_name == 'pull_request'
+      && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
-      || github.event_name == 'pull_request'
-      && fromJson('["self-hosted", "Linux", "X64", "build"]')
-      || github.event_name == 'push' && github.ref_name == 'develop'
-      && fromJson('["self-hosted", "Linux", "X64", "build"]')
-      || fromJson('["depot-ubuntu-22.04-8"]') }}
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     needs:
       - plan
       - pre-commit
+      - rust-tests-linux-x86
     env:
       BUILD_MODE: >-
-        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
-        && 'ci-pr' || 'release' }}
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr'
+        || 'release' }}
       CARGO_CI_PROFILE: >-
-        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
-        && 'ci-pr' || 'nextest' }}
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'ci-pr'
+        || 'nextest' }}
       PARALLEL_BUILD: >-
-        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
-        && 'false' || 'true' }}
-      # Self-hosted develop pushes keep Rust artifacts outside the workspace so
+        ${{ github.event_name == 'pull_request'
+        && needs.plan.outputs.untrusted_pr != 'false'
+        && 'false'
+        || 'true' }}
+      # Self-hosted mainline pushes keep Rust artifacts outside the workspace so
       # they survive actions/checkout's git clean -ffdx between runs.
       CARGO_TARGET_DIR: >-
-        ${{ github.event_name == 'push' && github.ref_name == 'develop'
+        ${{ github.event_name == 'push'
+        && (github.ref_name == 'develop'
+        || github.ref_name == 'master'
+        || github.ref_name == 'nightly'
+        || github.ref_name == 'test-ci')
         && format('/home/runner/.cache/cargo-target/build-linux-x86/py{0}', matrix.python-version)
         || format('{0}/target/build-linux-x86', github.workspace) }}
       RUST_BACKTRACE: 1
@@ -248,10 +400,30 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Require Linux build prerequisites
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
+          RUN_RUST_TESTS: ${{ needs.plan.outputs.run-rust-tests }}
+          RUST_TESTS_RESULT: ${{ needs.rust-tests-linux-x86.result }}
+        run: |
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "::error::CI planning did not pass."
+            exit 1
+          fi
+          if [ "$PRE_COMMIT_RESULT" != "success" ]; then
+            echo "::error::Pre-commit did not pass."
+            exit 1
+          fi
+          if [ "$RUN_RUST_TESTS" = "true" ] && [ "$RUST_TESTS_RESULT" != "success" ]; then
+            echo "::error::Rust tests did not pass."
+            exit 1
+          fi
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -268,20 +440,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
-          # Persistent CARGO_TARGET_DIR on the self-hosted build pool replaces
-          # Swatinem/rust-cache for develop push builds.
-          rust-cache-enabled: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'false' || 'true' }}
-          rust-cache-key: build-linux-x86
-          rust-cache-workspaces: . -> target/build-linux-x86
-          rust-cache-save-if: ${{ github.event_name == 'push' }}
+          free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
+          rust-cache-enabled: "false"
 
       - name: Limit Cargo build jobs on GitHub-hosted runners
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        if: runner.environment == 'github-hosted'
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Install Nautilus CLI
         env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -292,44 +460,6 @@ jobs:
           POSTGRES_USERNAME: postgres
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
-      # Fork-PR runners vary in disk size; fail early with a clear message
-      # rather than a cryptic linker Bus error when a small VM runs out.
-      - name: Check available disk space
-        if: >-
-          needs.plan.outputs.run-rust-tests == 'true'
-          && github.event_name == 'pull_request'
-          && github.event.pull_request.head.repo.fork
-        run: |
-          echo "::group::Disk space before Rust tests"
-          df -h /
-          echo "::endgroup::"
-          avail_gb=$(($(df -Pk / | awk 'NR==2 {print $4}') / 1024 / 1024))
-          echo "Available on / : ${avail_gb}G"
-          if [ "${avail_gb}" -lt 25 ]; then
-            echo "::error::Only ${avail_gb}G free, runner too small for the Rust build. Re-run for a larger VM."
-            exit 1
-          elif [ "${avail_gb}" -lt 40 ]; then
-            echo "::warning::Only ${avail_gb}G free, the Rust build may run out of space, re-run if it fails."
-          fi
-
-      - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
-
-      - name: Run Rust tests (adapters)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
-
-      - name: Clean Rust test artifacts
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: |
-          rm -rf "${CARGO_TARGET_DIR}/nextest"
-          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
-          df -h . "${CARGO_TARGET_DIR}"
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
@@ -345,6 +475,10 @@ jobs:
         run: |
           uv run --no-sync pytest --ignore=tests/performance_tests \
             -n logical --dist=loadgroup --reruns 2 --reruns-delay 1
+
+      - name: Run supported Python doctests
+        if: matrix.python-version == '3.13'
+        run: bash scripts/ci/test-python-doctests.bash v1 .
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -364,13 +498,15 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
     runs-on: depot-ubuntu-22.04-arm-8
-    # ARM stays off PRs, develop pushes, and pre-commit-only test runs.
+    # ARM stays off PRs, develop and test-ci pushes, v2 validation, and pre-commit-only test runs
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' ||
+            github.ref_name == 'test-ci' ||
+            github.ref_name == 'test-ci-v2' ||
             github.ref_name == 'test-pre-commit'))
         || github.event_name == 'pull_request'
       )
@@ -379,6 +515,7 @@ jobs:
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_CI_PROFILE: nextest
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
       RUST_BACKTRACE: 1
     # yamllint disable rule:line-length
@@ -407,7 +544,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -433,7 +570,7 @@ jobs:
 
       - name: Install Nautilus CLI
         env:
-          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
@@ -446,18 +583,17 @@ jobs:
           POSTGRES_DATABASE: nautilus
 
       - name: Cached test data
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
         uses: ./.github/actions/common-test-data
 
-      - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
-
-      - name: Run Rust tests (adapters)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-adapters EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
+      - name: Run Rust tests
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
+        run: >-
+          make cargo-test NEXTEST_PROFILE=ci
+          EXTRA_FEATURES="capnp,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
 
       - name: Clean Rust test artifacts
-        if: needs.plan.outputs.run-rust-tests == 'true'
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
           df -h .
@@ -482,11 +618,13 @@ jobs:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-macos:
-    # macOS stays off develop pushes and pre-commit-only test runs.
+    # macOS stays off develop and test-ci pushes, v2 validation, and pre-commit-only test runs
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       github.event_name == 'push' &&
       github.ref != 'refs/heads/develop' &&
+      github.ref != 'refs/heads/test-ci' &&
+      github.ref != 'refs/heads/test-ci-v2' &&
       github.ref != 'refs/heads/test-pre-commit'
     strategy:
       fail-fast: false
@@ -505,13 +643,14 @@ jobs:
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -538,24 +677,28 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
-          rust-cache-key: build-macos
+          rust-cache-key: build-macos-${{ matrix.python-version }}
           rust-cache-workspaces: . -> target/build-macos
           rust-cache-on-failure: "false"
           rust-cache-save-if: ${{ github.event_name == 'push' }}
-
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
-      - name: Set compile jobs from cache state
-        run: bash scripts/ci/set-cargo-build-jobs.sh
+          uv-cache-enabled: "false"
 
       - name: Run Rust tests (core)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
+        env:
+          CARGO_BUILD_WARNINGS: warn
+        run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
-      - name: Run Rust tests (adapters)
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+      - name: Clean Rust test artifacts
+        if: needs.plan.outputs.run-rust-tests == 'true' && matrix.python-version == '3.13'
+        run: |
+          rm -rf "${CARGO_TARGET_DIR}/nextest"
+          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
+          if [ -d "$CARGO_TARGET_DIR" ]; then
+            df -h . "$CARGO_TARGET_DIR"
+          else
+            df -h .
+          fi
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
@@ -586,7 +729,9 @@ jobs:
           cargo -Vv || true
           python --version || true
           which python || true
-          env | rg '^(ARCHFLAGS|CARGO|DYLD_LIBRARY_PATH|LD_LIBRARY_PATH|LIBRARY_PATH|PYO3|RUST)=' || true
+          macos_env_pattern='^(ARCHFLAGS|CARGO[A-Z_]*|DYLD_LIBRARY_PATH|LD_LIBRARY_PATH|'
+          macos_env_pattern="${macos_env_pattern}LIBRARY_PATH|PYO3[A-Z_]*|RUST[A-Z_]*)="
+          env | grep -E "$macos_env_pattern" || true
           echo "::endgroup::"
 
           if [ ! -d "$MACOS_WHEEL_TARGET_DIR" ]; then
@@ -641,13 +786,15 @@ jobs:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-windows:
-    # Windows stays off PRs, develop pushes, and pre-commit-only test runs.
+    # Windows stays off PRs, develop and test-ci pushes, v2 validation, and pre-commit-only test runs
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' ||
+            github.ref_name == 'test-ci' ||
+            github.ref_name == 'test-ci-v2' ||
             github.ref_name == 'test-pre-commit'))
         || github.event_name == 'pull_request'
       )
@@ -705,9 +852,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           github_ref: ${{ github.ref }}
 
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
       - name: Run tests
         run: |
           uv run --no-sync python -m pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
@@ -743,7 +887,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -805,7 +949,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -838,8 +982,7 @@ jobs:
         if: steps.gate.outputs.override_active != 'true'
         run: |
           cargo audit --deny unsound
-          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/Cargo.lock
-          cargo audit --deny unsound --file crates/adapters/derive/fuzz/Cargo.lock
+          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/pornin/Cargo.lock
 
       - name: Run osv-scanner
         id: osv-scan
@@ -852,8 +995,7 @@ jobs:
             --format json
             --output=/github/workspace/osv-results.json
             --lockfile=Cargo.lock
-            --lockfile=crates/adapters/lighter/fuzz/Cargo.lock
-            --lockfile=crates/adapters/derive/fuzz/Cargo.lock
+            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock
 
@@ -884,7 +1026,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -942,7 +1084,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1013,7 +1155,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1059,7 +1201,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1147,7 +1289,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1191,7 +1333,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1214,7 +1356,7 @@ jobs:
 
       # https://github.com/taiki-e/install-action
       - name: Install cargo-hack
-        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-hack
 
@@ -1223,6 +1365,9 @@ jobs:
 
       - name: Run check-features
         run: make check-features
+
+      - name: Run check-all-targets
+        run: make check-all-targets
 
   tag-release:
     needs:
@@ -1236,7 +1381,6 @@ jobs:
       - release-docs-features-preflight
     permissions:
       contents: write # Required for pushing tags and upload release assets
-      actions: write # Required for creating releases
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
@@ -1246,7 +1390,7 @@ jobs:
       # Security hardening
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1304,7 +1448,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1351,7 +1495,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1391,7 +1535,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1480,7 +1624,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -1589,7 +1733,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
+          egress-policy: ${{ env.AUDIT_PR == 'true' && 'audit' || env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}

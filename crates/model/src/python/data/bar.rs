@@ -172,7 +172,9 @@ impl BarSpecification {
             )));
         }
         let td = self.timedelta();
-        Ok(td.num_nanoseconds().unwrap() as u64)
+        td.num_nanoseconds()
+            .map(|ns| ns as u64)
+            .ok_or_else(|| to_pyvalue_err(format!("Interval overflows nanoseconds, was {td:?}")))
     }
 
     /// Creates a `BarSpecification` from a Python `timedelta` and price type.
@@ -342,8 +344,8 @@ impl BarType {
         composite_step: usize,
         composite_aggregation: BarAggregation,
         composite_aggregation_source: AggregationSource,
-    ) -> Self {
-        Self::new_composite(
+    ) -> PyResult<Self> {
+        Self::new_composite_checked(
             instrument_id,
             spec,
             aggregation_source,
@@ -351,6 +353,7 @@ impl BarType {
             composite_aggregation,
             composite_aggregation_source,
         )
+        .map_err(to_pyvalue_err)
     }
 
     /// Returns whether this instance is a standard bar type.
@@ -435,7 +438,7 @@ impl Bar {
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let bar_type_obj: Bound<'_, PyAny> = obj.getattr("bar_type")?.extract()?;
         let bar_type_str: String = bar_type_obj.call_method0("__str__")?.extract()?;
-        let bar_type = BarType::from(bar_type_str);
+        let bar_type = BarType::from_str(&bar_type_str).map_err(to_pyvalue_err)?;
 
         let open_py: Bound<'_, PyAny> = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
@@ -462,7 +465,7 @@ impl Bar {
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
-        Ok(Self::new(
+        Self::new_checked(
             bar_type,
             open,
             high,
@@ -471,7 +474,8 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 }
 
@@ -638,14 +642,18 @@ impl Bar {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -726,8 +734,7 @@ impl Bar {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::Python;
+    use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
@@ -805,7 +812,7 @@ mod tests {
 
         Python::initialize();
         Python::attach(|py| {
-            let bar_pyobject = bar.into_py_any_unwrap(py);
+            let bar_pyobject = bar.into_py_any(py).unwrap();
             let parsed_bar = Bar::from_pyobject(bar_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_bar, bar);
         });

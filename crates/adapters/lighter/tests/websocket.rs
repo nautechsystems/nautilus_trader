@@ -62,6 +62,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
 const PERP_MARKET_INDEX: i16 = 0;
@@ -331,6 +332,7 @@ impl ClientHarness {
             LighterEnvironment::Testnet,
             Arc::clone(&registry),
             TransportBackend::default(),
+            5,
             None,
         );
         client.cache_instruments(vec![
@@ -650,6 +652,7 @@ async fn test_send_tx_errors_when_handler_unavailable() {
         LighterEnvironment::Testnet,
         registry,
         TransportBackend::default(),
+        5,
         None,
     );
 
@@ -1176,7 +1179,7 @@ async fn test_ticker_frame_resolves_via_channel_index() {
     let mut harness = ClientHarness::build(addr).await;
 
     // Use the existing fixture but rewrite `s` to a symbol that does NOT
-    // match any cached raw_symbol — verifies the handler resolves from the
+    // match any cached raw_symbol - verifies the handler resolves from the
     // channel field, not the payload symbol field.
     let mut frame = load_json("ws_ticker_update.json");
     frame["ticker"]["s"] = json!("UNRELATED");
@@ -1243,11 +1246,8 @@ async fn test_market_stats_frame_emits_mark_index_and_funding_updates() {
             NautilusWsMessage::FundingRate(update) => {
                 saw_funding = true;
                 assert_eq!(update.instrument_id, harness.instrument(PERP_MARKET_INDEX));
-                assert_eq!(update.rate.to_string(), "0.000001");
-                assert_eq!(
-                    update.next_funding_ns,
-                    Some(UnixNanos::from(1_774_886_400_000_000_000))
-                );
+                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.next_funding_ns, None);
             }
             _ => {}
         }
@@ -1771,7 +1771,7 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
     // Drain events until Reconnected lands. The network layer reconnects
     // after `RECONNECT_BASE_BACKOFF` (250 ms) plus jitter, so a few seconds
     // is plenty of headroom.
-    let mut saw_reconnected = false;
+    let mut reconnect_epoch = None;
 
     for _ in 0..20 {
         let Some(event) = next_event_within(&mut harness.client, Duration::from_secs(3)).await
@@ -1779,14 +1779,15 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
             break;
         };
 
-        if matches!(event, NautilusWsMessage::Reconnected) {
-            saw_reconnected = true;
+        if let NautilusWsMessage::Reconnected { connection_epoch } = event {
+            reconnect_epoch = Some(connection_epoch);
             break;
         }
     }
-    assert!(
-        saw_reconnected,
-        "expected Reconnected after server-driven close"
+    assert_eq!(
+        reconnect_epoch,
+        Some(1),
+        "first replacement connection must own epoch 1",
     );
 
     // The spawn loop replays both topics from `subscription_args`. Order is

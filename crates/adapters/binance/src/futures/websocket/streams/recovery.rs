@@ -41,6 +41,7 @@ use crate::{
     common::{
         enums::{BinanceEnvironment, BinanceProductType},
         symbol::format_instrument_id,
+        urls::get_futures_user_stream_url,
     },
     futures::http::{client::BinanceFuturesHttpClient, query::BinanceOpenOrdersParamsBuilder},
 };
@@ -60,6 +61,7 @@ pub(crate) struct WsBuildParams {
     pub api_secret: String,
     pub private_base_url: String,
     pub transport_backend: TransportBackend,
+    pub proxy_url: Option<String>,
 }
 
 /// Context captured by the recovery driver task. All fields are cheaply
@@ -82,7 +84,8 @@ pub(crate) async fn build_and_connect_user_stream(
     params: &WsBuildParams,
     listen_key: &str,
 ) -> anyhow::Result<BinanceFuturesWebSocketClient> {
-    let private_url = format!("{}?listenKey={}", params.private_base_url, listen_key);
+    let private_url =
+        get_futures_user_stream_url(params.product_type, &params.private_base_url, listen_key);
 
     let mut ws_client = BinanceFuturesWebSocketClient::new(
         params.product_type,
@@ -93,12 +96,13 @@ pub(crate) async fn build_and_connect_user_stream(
         Some(20),
         params.transport_backend,
     )
-    .context("failed to construct Binance Futures private WebSocket client")?;
+    .context("failed to construct Binance Futures private WebSocket client")?
+    .with_proxy(params.proxy_url.clone());
 
     log::debug!("Connecting to Binance Futures user data stream...");
-    ws_client.connect().await.map_err(|e| {
-        log::error!("Binance Futures private WebSocket connection failed: {e:?}");
-        anyhow::anyhow!("failed to connect Binance Futures private WebSocket: {e}")
+    ws_client.connect().await.map_err(|_| {
+        log::error!("Binance Futures private WebSocket connection failed");
+        anyhow::anyhow!("failed to connect Binance Futures private WebSocket")
     })?;
     log::debug!("Connected to Binance Futures user data stream");
 
@@ -274,12 +278,13 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
         Ok(orders) => {
             for order in orders {
                 let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
-                let (instrument_id, size_precision) =
+                let (instrument_id, price_precision, size_precision) =
                     resolve_precision(&instruments, &symbol_ustr, product_type);
 
                 match order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
                     instrument_id,
+                    price_precision,
                     size_precision,
                     ctx.dispatch_ctx.treat_expired_as_canceled,
                     ts_init,
@@ -308,12 +313,13 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
         Ok(algo_orders) => {
             for algo_order in algo_orders {
                 let symbol_ustr = ustr::Ustr::from(algo_order.symbol.as_str());
-                let (instrument_id, size_precision) =
+                let (instrument_id, price_precision, size_precision) =
                     resolve_precision(&instruments, &symbol_ustr, product_type);
 
                 match algo_order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
                     instrument_id,
+                    price_precision,
                     size_precision,
                     ts_init,
                 ) {
@@ -352,14 +358,18 @@ fn resolve_precision(
     >,
     symbol_ustr: &ustr::Ustr,
     product_type: BinanceProductType,
-) -> (InstrumentId, u8) {
+) -> (InstrumentId, u8, u8) {
     if let Some(instrument) = instruments.get(symbol_ustr) {
-        (instrument.id(), instrument.quantity_precision() as u8)
+        (
+            instrument.id(),
+            instrument.price_precision() as u8,
+            instrument.quantity_precision() as u8,
+        )
     } else {
         // Fallback when the instrument is not cached: derive the venue id
         // via the Futures-aware formatter (matches dispatch_ws_message) and
         // use a conservative precision so venue state still propagates.
-        (format_instrument_id(symbol_ustr, product_type), 8u8)
+        (format_instrument_id(symbol_ustr, product_type), 8u8, 8u8)
     }
 }
 
@@ -445,10 +455,11 @@ mod tests {
         let symbol = Ustr::from("BTCUSDT");
         instruments.insert(symbol, usdm_instrument("BTCUSDT", 3));
 
-        let (id, size_precision) =
+        let (id, price_precision, size_precision) =
             resolve_precision(&instruments, &symbol, BinanceProductType::UsdM);
 
         assert_eq!(id, InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap());
+        assert_eq!(price_precision, 2);
         assert_eq!(size_precision, 3);
     }
 
@@ -457,11 +468,12 @@ mod tests {
         let instruments: DashMap<Ustr, BinanceFuturesInstrument> = DashMap::new();
         let symbol = Ustr::from("BTCUSDT");
 
-        let (id, size_precision) =
+        let (id, price_precision, size_precision) =
             resolve_precision(&instruments, &symbol, BinanceProductType::UsdM);
 
         // The P3 fix: USD-M perps must produce `-PERP` suffix, not raw symbol
         assert_eq!(id, InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap());
+        assert_eq!(price_precision, 8);
         assert_eq!(size_precision, 8);
     }
 
@@ -470,10 +482,11 @@ mod tests {
         let instruments: DashMap<Ustr, BinanceFuturesInstrument> = DashMap::new();
         let symbol = Ustr::from("BTCUSD_PERP");
 
-        let (id, size_precision) =
+        let (id, price_precision, size_precision) =
             resolve_precision(&instruments, &symbol, BinanceProductType::CoinM);
 
         assert_eq!(id, InstrumentId::from_str("BTCUSD_PERP.BINANCE").unwrap());
+        assert_eq!(price_precision, 8);
         assert_eq!(size_precision, 8);
     }
 
@@ -483,10 +496,11 @@ mod tests {
         let symbol = Ustr::from("BTCUSD_PERP");
         instruments.insert(symbol, coinm_instrument("BTCUSD_PERP", 0));
 
-        let (id, size_precision) =
+        let (id, price_precision, size_precision) =
             resolve_precision(&instruments, &symbol, BinanceProductType::CoinM);
 
         assert_eq!(id, InstrumentId::from_str("BTCUSD_PERP.BINANCE").unwrap());
+        assert_eq!(price_precision, 1);
         assert_eq!(size_precision, 0);
     }
 }

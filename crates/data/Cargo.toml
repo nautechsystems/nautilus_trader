@@ -30,7 +30,10 @@ ffi = [
   "nautilus-persistence/ffi",
   "streaming",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
+]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
@@ -89,4 +92,9 @@ tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
 # Run with `cargo bench -p nautilus-data --bench engine`
 [[bench]]
 name = "engine"
+harness = false
+
+# Run with `cargo bench -p nautilus-data --bench aggregation`
+[[bench]]
+name = "aggregation"
 harness = false

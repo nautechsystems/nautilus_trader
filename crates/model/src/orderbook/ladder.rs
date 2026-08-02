@@ -159,7 +159,15 @@ impl BookLadder {
 
     /// Adds an order to the ladder at its price level.
     ///
-    /// For `L1_MBP` books, behavior depends on flags:
+    /// For `L2_MBP` and `L3_MBO` books, an order ID lives at exactly one price
+    /// level within a ladder: re-adding an ID at a different price moves the
+    /// order to the new level's FIFO tail. This is a no-op for `L2_MBP`, whose
+    /// IDs are price hashes, and covers `L3_MBO` venue IDs as well as `F_TOB`
+    /// side-constant IDs.
+    ///
+    /// `L1_MBP` is exempt: batch accumulation must compare levels sharing the
+    /// side-constant ID before retaining only the best.
+    /// `L1_MBP` behavior depends on flags:
     /// - `F_MBP` or `F_SNAPSHOT` (multi-level batch): Retains best after each add to prevent
     ///   accumulation even if `F_LAST` is never sent.
     /// - `F_TOB` or no batch flags (single replacement): Clears existing levels first,
@@ -179,6 +187,18 @@ impl BookLadder {
         }
 
         let book_price = order.to_book_price();
+
+        if self.book_type != BookType::L1_MBP
+            && let Some(existing_price) = self.cache.get(&order.order_id).copied()
+            && existing_price != book_price
+            && let Some(existing_level) = self.levels.get_mut(&existing_price)
+        {
+            existing_level.delete(&order);
+            if existing_level.is_empty() {
+                self.levels.remove(&existing_price);
+            }
+        }
+
         self.cache.insert(order.order_id, book_price);
 
         if let Some(level) = self.levels.get_mut(&book_price) {
@@ -627,7 +647,7 @@ mod tests {
             OrderSide::Sell,
             Price::from("13.00"),
             Quantity::from(200),
-            0,
+            3,
         );
 
         ladder.add_bulk(&[order1, order2, order3, order4]);
@@ -1289,9 +1309,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_l3_order_id_collision_no_ghost_levels() {
-        // Regression test: L3 venue order IDs 1 and 2 should not trigger L1 ghost level removal
-        // Real L3 feeds routinely use order IDs 1 or 2, which match the side constants
+    fn test_l3_order_id_collision_moves_order() {
         let mut ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
 
         // Add order with ID 1 at 100.00 (matches Buy side constant)
@@ -1305,38 +1323,127 @@ mod tests {
 
         assert_eq!(ladder.len(), 1);
 
-        // Add another order with ID 1 at a different price 99.00
-        // For L3, this is a DIFFERENT order (different price), should create second level
         let order2 = BookOrder {
             side: OrderSide::Buy,
             price: Price::from("99.00"),
             size: Quantity::from(60),
-            order_id: 1, // Same ID, different price - valid in L3
+            order_id: 1,
         };
         ladder.add(order2, 0);
 
-        // Should have both levels - L3 allows duplicate order IDs at different prices
+        assert_eq!(ladder.len(), 1, "Order ID 1 must live at exactly one level");
         assert_eq!(
-            ladder.len(),
-            2,
-            "L3 should allow order ID 1 at multiple price levels"
+            ladder.top().unwrap().price.value,
+            Price::from("99.00"),
+            "Order should have moved to 99.00"
         );
-
-        let prices: Vec<Price> = ladder.levels.keys().map(|bp| bp.value).collect();
-        assert!(
-            prices.contains(&Price::from("100.00")),
-            "Level at 100.00 should still exist"
+        assert_eq!(
+            ladder.top().unwrap().first().unwrap().size,
+            Quantity::from(60),
+            "Size should come from the re-added order"
         );
-        assert!(
-            prices.contains(&Price::from("99.00")),
-            "Level at 99.00 should exist"
+        assert_eq!(
+            ladder.cache.len(),
+            1,
+            "Cache should track exactly one entry for the moved order"
         );
     }
 
     #[rstest]
-    fn test_l1_vs_l3_different_behavior_same_order_id() {
-        // Demonstrates the difference between L1 and L3 behavior for same order ID
+    fn test_l3_duplicate_order_id_update_and_delete_leave_no_ghost() {
+        let mut ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
 
+        let order1 = BookOrder {
+            side: OrderSide::Buy,
+            price: Price::from("100.00"),
+            size: Quantity::from(50),
+            order_id: 1,
+        };
+        ladder.add(order1, 0);
+
+        let order2 = BookOrder {
+            side: OrderSide::Buy,
+            price: Price::from("99.00"),
+            size: Quantity::from(60),
+            order_id: 1,
+        };
+        ladder.add(order2, 0);
+
+        let zero_update = BookOrder {
+            side: OrderSide::Buy,
+            price: Price::from("99.00"),
+            size: Quantity::zero(9),
+            order_id: 1,
+        };
+        ladder.update(zero_update, 0);
+
+        assert!(
+            ladder.is_empty(),
+            "Zero-size update must not ghost the order"
+        );
+        assert!(ladder.cache.is_empty());
+
+        ladder.add(order1, 0);
+        ladder.add(order2, 0);
+        ladder.delete(order2, 0, 0.into());
+
+        assert!(ladder.is_empty(), "Delete must not ghost the order");
+        assert!(ladder.cache.is_empty());
+    }
+
+    #[rstest]
+    #[case::bids(OrderSideSpecified::Buy, OrderSide::Buy, "100.00", "99.00")]
+    #[case::asks(OrderSideSpecified::Sell, OrderSide::Sell, "100.00", "101.00")]
+    fn test_move_leaves_other_orders_at_old_level(
+        #[case] side_spec: OrderSideSpecified,
+        #[case] side: OrderSide,
+        #[case] old_price: &str,
+        #[case] new_price: &str,
+    ) {
+        let mut ladder = BookLadder::new(side_spec, BookType::L3_MBO);
+
+        let moved = BookOrder {
+            side,
+            price: Price::from(old_price),
+            size: Quantity::from(50),
+            order_id: 1,
+        };
+        let staying = BookOrder {
+            side,
+            price: Price::from(old_price),
+            size: Quantity::from(30),
+            order_id: 2,
+        };
+        ladder.add(moved, 0);
+        ladder.add(staying, 0);
+
+        let moved_new = BookOrder {
+            side,
+            price: Price::from(new_price),
+            size: Quantity::from(60),
+            order_id: 1,
+        };
+        ladder.add(moved_new, 0);
+
+        assert_eq!(
+            ladder.len(),
+            2,
+            "Old level must survive with the remaining order"
+        );
+        let old_level = ladder
+            .levels
+            .get(&BookPrice::new(Price::from(old_price), side_spec))
+            .expect("Old level should remain");
+        assert_eq!(old_level.get_orders(), vec![staying]);
+        let new_level = ladder
+            .levels
+            .get(&BookPrice::new(Price::from(new_price), side_spec))
+            .expect("New level should exist");
+        assert_eq!(new_level.get_orders(), vec![moved_new]);
+    }
+
+    #[rstest]
+    fn test_l1_vs_l3_duplicate_order_id_replacement() {
         // L1 behavior with replacement (flags=0): successive adds replace
         let mut l1_ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L1_MBP);
         let side_constant = OrderSide::Buy as u64;
@@ -1364,7 +1471,6 @@ mod tests {
             "L1 should have replaced the old level"
         );
 
-        // L3 behavior: order ID can be reused at different prices (different orders)
         let mut l3_ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
 
         let order3 = BookOrder {
@@ -1379,11 +1485,20 @@ mod tests {
             side: OrderSide::Buy,
             price: Price::from("101.00"),
             size: Quantity::from(60),
-            order_id: 1, // Same ID but different order
+            order_id: 1,
         };
         l3_ladder.add(order4, 0);
 
-        assert_eq!(l3_ladder.len(), 2, "L3 should have 2 levels");
+        assert_eq!(
+            l3_ladder.len(),
+            1,
+            "L3 should move the order to its new price level"
+        );
+        assert_eq!(
+            l3_ladder.top().unwrap().price.value,
+            Price::from("101.00"),
+            "L3 order should have moved to 101.00"
+        );
     }
 
     #[rstest]

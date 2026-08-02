@@ -39,13 +39,14 @@ use axum::{
 };
 use nautilus_binance::{
     common::{
+        bar::BinanceBar,
         consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
         enums::BinanceProductType,
     },
     config::BinanceDataClientConfig,
     data_types::{
-        BinanceFuturesLiquidation, BinanceFuturesOpenInterest, BinanceFuturesOpenInterestHist,
-        BinanceFuturesTicker,
+        BinanceFuturesLiquidation, BinanceFuturesMarkPriceUpdate, BinanceFuturesOpenInterest,
+        BinanceFuturesOpenInterestHist, BinanceFuturesTicker,
     },
     futures::BinanceFuturesDataClient,
 };
@@ -55,27 +56,36 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            DataResponse, RequestCustomData, RequestFundingRates,
+            DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
+            RequestTrades,
             subscribe::{
-                SubscribeBookDeltas, SubscribeCustomData, SubscribeMarkPrices, SubscribeQuotes,
-                SubscribeTrades,
+                SubscribeBars, SubscribeBookDeltas, SubscribeCustomData, SubscribeMarkPrices,
+                SubscribeQuotes, SubscribeTrades,
             },
-            unsubscribe::{UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades},
+            unsubscribe::{
+                UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades,
+            },
         },
     },
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{CustomData, Data, DataType},
+    data::{
+        BarType, BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
+    },
     enums::{BookAction, BookType, OrderSide, RecordFlag},
     identifiers::InstrumentId,
+    instruments::InstrumentAny,
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::json;
+
+type MarketQuery = (String, HashMap<String, String>);
+type MarketQueries = Arc<Mutex<Vec<MarketQuery>>>;
 
 #[derive(Clone)]
 struct DataTestServerState {
@@ -92,6 +102,7 @@ struct DataTestServerState {
     send_ticker_on_connect: bool,
     subscriptions: Arc<Mutex<Vec<Vec<String>>>>,
     unsubscriptions: Arc<Mutex<Vec<Vec<String>>>>,
+    market_queries: MarketQueries,
 }
 
 impl Default for DataTestServerState {
@@ -110,6 +121,7 @@ impl Default for DataTestServerState {
             send_ticker_on_connect: false,
             subscriptions: Arc::new(Mutex::new(Vec::new())),
             unsubscriptions: Arc::new(Mutex::new(Vec::new())),
+            market_queries: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -160,6 +172,15 @@ fn open_interest_hist_data_type_for_instrument(
     )
 }
 
+fn binance_bar_data_type(bar_type: BarType) -> DataType {
+    let mut metadata = Params::new();
+    metadata.insert(
+        "bar_type".to_string(),
+        serde_json::Value::String(bar_type.to_string()),
+    );
+    DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
+}
+
 fn json_response(body: &serde_json::Value) -> Response {
     (
         StatusCode::OK,
@@ -167,6 +188,15 @@ fn json_response(body: &serde_json::Value) -> Response {
         body.to_string(),
     )
         .into_response()
+}
+
+fn load_fixture(name: &str) -> serde_json::Value {
+    let path = format!(
+        "{}/test_data/futures/http_json/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let content = std::fs::read_to_string(&path).expect("Failed to read fixture");
+    serde_json::from_str(&content).expect("Failed to parse fixture JSON")
 }
 
 async fn handle_ws(
@@ -210,11 +240,16 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                 }
 
                 for stream in streams {
+                    let symbol = stream
+                        .split_once('@')
+                        .map_or(stream.as_str(), |(symbol, _)| symbol)
+                        .to_ascii_uppercase();
+
                     if stream.contains("@aggTrade") {
                         let trade = json!({
                             "e": "aggTrade",
                             "E": 1700000000000_i64,
-                            "s": "BTCUSDT",
+                            "s": symbol,
                             "a": 1,
                             "p": "50000.00",
                             "q": "0.001",
@@ -231,7 +266,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                             "u": 12345,
                             "E": 1700000000000_i64,
                             "T": 1700000000000_i64,
-                            "s": "BTCUSDT",
+                            "s": symbol,
                             "b": "50000.00",
                             "B": "1.000",
                             "a": "50001.00",
@@ -243,6 +278,33 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                         let ticker = ticker_stream_payload();
                         tokio::time::sleep(Duration::from_millis(50)).await;
                         let _result = socket.send(Message::Text(ticker.to_string().into())).await;
+                    } else if stream.contains("@kline_") {
+                        let kline = json!({
+                            "e": "kline",
+                            "E": 1700000059999_i64,
+                            "s": symbol,
+                            "k": {
+                                "t": 1700000000000_i64,
+                                "T": 1700000059999_i64,
+                                "s": "BTCUSDT",
+                                "i": "1m",
+                                "f": 201,
+                                "L": 207,
+                                "o": "50000.00",
+                                "c": "50002.00",
+                                "h": "50003.00",
+                                "l": "49999.00",
+                                "v": "7.500",
+                                "n": 7,
+                                "x": true,
+                                "q": "375007.50",
+                                "V": "3.250",
+                                "Q": "162501.25",
+                                "B": "0"
+                            }
+                        });
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        let _result = socket.send(Message::Text(kline.to_string().into())).await;
                     } else if stream.contains("@depth") {
                         for index in 0..state.depth_update_repetitions {
                             let update_offset = index as u64;
@@ -440,6 +502,23 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
         ]));
     }
 
+    if params.get("pair").is_some_and(|pair| pair == "BTCUSD")
+        && params
+            .get("contractType")
+            .is_some_and(|contract_type| contract_type == "CURRENT_QUARTER")
+        && params.get("period").is_some_and(|period| period == "5m")
+    {
+        return json_response(&json!([
+            {
+                "pair": "BTCUSD",
+                "contractType": "CURRENT_QUARTER",
+                "sumOpenInterest": "300.0",
+                "sumOpenInterestValue": "2500.0",
+                "timestamp": 1700001200000_i64
+            }
+        ]));
+    }
+
     (
         StatusCode::BAD_REQUEST,
         [("content-type", "application/json")],
@@ -481,51 +560,126 @@ async fn handle_funding_rate(raw_query: RawQuery) -> Response {
         .into_response()
 }
 
+fn futures_agg_trades_response(
+    state: &DataTestServerState,
+    raw_query: &RawQuery,
+    path: &str,
+) -> Response {
+    let query = serde_urlencoded::from_str::<HashMap<String, String>>(
+        raw_query.0.as_deref().unwrap_or_default(),
+    )
+    .unwrap();
+    let time = query
+        .get("startTime")
+        .or_else(|| query.get("endTime"))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    state
+        .market_queries
+        .lock()
+        .unwrap()
+        .push((path.to_string(), query));
+    let quantity = if path.starts_with("/dapi") {
+        "2"
+    } else {
+        "0.123"
+    };
+    json_response(&json!([{
+        "a": 101,
+        "p": "50001.23",
+        "q": quantity,
+        "f": 201,
+        "l": 207,
+        "T": time,
+        "m": false
+    }]))
+}
+
+async fn handle_usdm_agg_trades(
+    State(state): State<DataTestServerState>,
+    raw_query: RawQuery,
+) -> Response {
+    futures_agg_trades_response(&state, &raw_query, "/fapi/v1/aggTrades")
+}
+
+async fn handle_coinm_agg_trades(
+    State(state): State<DataTestServerState>,
+    raw_query: RawQuery,
+) -> Response {
+    futures_agg_trades_response(&state, &raw_query, "/dapi/v1/aggTrades")
+}
+
+fn futures_klines_response(
+    state: &DataTestServerState,
+    raw_query: &RawQuery,
+    path: &str,
+) -> Response {
+    let query = serde_urlencoded::from_str::<HashMap<String, String>>(
+        raw_query.0.as_deref().unwrap_or_default(),
+    )
+    .unwrap();
+    let close_time = query
+        .get("endTime")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() - 1_000);
+    state
+        .market_queries
+        .lock()
+        .unwrap()
+        .push((path.to_string(), query));
+    json_response(&json!([[
+        close_time - 59_999,
+        "50000.00",
+        "50003.00",
+        "49999.00",
+        "50002.00",
+        "8",
+        close_time,
+        "375007.50",
+        7,
+        "3",
+        "162501.25",
+        "0"
+    ]]))
+}
+
+async fn handle_usdm_klines(
+    State(state): State<DataTestServerState>,
+    raw_query: RawQuery,
+) -> Response {
+    futures_klines_response(&state, &raw_query, "/fapi/v1/klines")
+}
+
+async fn handle_coinm_klines(
+    State(state): State<DataTestServerState>,
+    raw_query: RawQuery,
+) -> Response {
+    futures_klines_response(&state, &raw_query, "/dapi/v1/klines")
+}
+
 fn create_data_test_router(state: DataTestServerState) -> Router {
     Router::new()
         .route("/fapi/v1/ping", get(|| async { json_response(&json!({})) }))
+        .route("/dapi/v1/ping", get(|| async { json_response(&json!({})) }))
         .route(
             "/fapi/v1/exchangeInfo",
-            get(|| async {
-                json_response(&json!({
-                    "timezone": "UTC",
-                    "serverTime": 1700000000000_i64,
-                    "rateLimits": [],
-                    "exchangeFilters": [],
-                    "symbols": [{
-                        "symbol": "BTCUSDT",
-                        "pair": "BTCUSDT",
-                        "contractType": "PERPETUAL",
-                        "deliveryDate": 4133404800000_i64,
-                        "onboardDate": 1569398400000_i64,
-                        "status": "TRADING",
-                        "baseAsset": "BTC",
-                        "quoteAsset": "USDT",
-                        "marginAsset": "USDT",
-                        "pricePrecision": 2,
-                        "quantityPrecision": 3,
-                        "baseAssetPrecision": 8,
-                        "quotePrecision": 8,
-                        "maintMarginPercent": "2.5000",
-                        "requiredMarginPercent": "5.0000",
-                        "underlyingType": "COIN",
-                        "settlePlan": 0,
-                        "triggerProtect": "0.0500",
-                        "filters": [
-                            {"filterType": "PRICE_FILTER", "minPrice": "0.10", "maxPrice": "1000000", "tickSize": "0.10"},
-                            {"filterType": "LOT_SIZE", "minQty": "0.001", "maxQty": "1000", "stepSize": "0.001"},
-                            {"filterType": "MIN_NOTIONAL", "notional": "5"}
-                        ],
-                        "orderTypes": ["LIMIT", "MARKET", "STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TRAILING_STOP_MARKET"],
-                        "timeInForce": ["GTC", "IOC", "FOK", "GTD"]
-                    }]
-                }))
-            }),
+            get(|| async { json_response(&load_fixture("exchange_info_usdm.json")) }),
+        )
+        .route(
+            "/dapi/v1/exchangeInfo",
+            get(|| async { json_response(&load_fixture("exchange_info_delivery_coinm.json")) }),
         )
         .route("/fapi/v1/depth", get(handle_depth))
+        .route("/fapi/v1/aggTrades", get(handle_usdm_agg_trades))
+        .route("/dapi/v1/aggTrades", get(handle_coinm_agg_trades))
+        .route("/fapi/v1/klines", get(handle_usdm_klines))
+        .route("/dapi/v1/klines", get(handle_coinm_klines))
         .route("/fapi/v1/openInterest", get(handle_open_interest))
         .route("/dapi/v1/openInterest", get(handle_open_interest_coinm))
-        .route("/futures/data/openInterestHist", get(handle_open_interest_hist))
+        .route(
+            "/futures/data/openInterestHist",
+            get(handle_open_interest_hist),
+        )
         .route("/fapi/v1/fundingRate", get(handle_funding_rate))
         .route("/ws", get(handle_ws))
         .with_state(state)
@@ -637,6 +791,88 @@ async fn test_client_creation() {
     assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
     assert_eq!(client.venue(), Some(*BINANCE_VENUE));
     assert!(!client.is_connected());
+}
+
+#[derive(Clone, Copy)]
+enum AggregateTradeBounds {
+    Start,
+    End,
+    Both,
+}
+
+#[rstest]
+#[case::usdm(
+    BinanceProductType::UsdM,
+    "BTCUSDT_260925.BINANCE",
+    "btcusdt_260925@bookTicker"
+)]
+#[case::coinm(
+    BinanceProductType::CoinM,
+    "BTCUSD_260925.BINANCE",
+    "btcusd_260925@bookTicker"
+)]
+#[tokio::test]
+async fn test_delivery_instrument_connects_and_subscribes_with_raw_symbol(
+    #[case] product_type: BinanceProductType,
+    #[case] expected_id: &str,
+    #[case] expected_stream: &str,
+) {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, mut rx) =
+        create_test_data_client_for_product_type(base_url_http, base_url_ws, product_type);
+    let instrument_id = InstrumentId::from(expected_id);
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                matches!(
+                    event,
+                    DataEvent::Instrument(InstrumentAny::CryptoFuture(future))
+                        if future.id == instrument_id
+                )
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .subscribe_quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let found = recorded_streams_include(&state.subscriptions, expected_stream);
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                matches!(event, DataEvent::Data(Data::Quote(quote)) if quote.instrument_id == instrument_id)
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 }
 
 #[rstest]
@@ -906,6 +1142,65 @@ async fn test_request_open_interest_hist_coinm_uses_pair_and_contract_type_mappi
 
 #[rstest]
 #[tokio::test]
+async fn test_request_open_interest_hist_coinm_delivery_uses_exchange_contract_type() {
+    let addr = start_data_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, mut rx) = create_test_data_client_for_product_type(
+        base_url_http,
+        base_url_ws,
+        BinanceProductType::CoinM,
+    );
+    let instrument_id = InstrumentId::from("BTCUSD_260925.BINANCE");
+    let data_type = open_interest_hist_data_type_for_instrument(instrument_id, "5m");
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .request_data(RequestCustomData::new(
+            *BINANCE_CLIENT_ID,
+            data_type.clone(),
+            None,
+            None,
+            Some(NonZeroUsize::new(1).unwrap()),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Response(DataResponse::Data(resp)) = event else {
+                    return false;
+                };
+                let Some(custom) = resp.data.as_ref().downcast_ref::<CustomData>() else {
+                    return false;
+                };
+
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesOpenInterestHist>()
+                    .is_some_and(|payload| {
+                        payload.instrument_id == instrument_id
+                            && payload.points.len() == 1
+                            && payload.points[0].sum_open_interest == Decimal::from(300)
+                            && custom.data_type == data_type
+                    })
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_open_interest_requires_instrument_id_metadata() {
     let addr = start_data_test_server().await;
     let base_url_http = format!("http://{addr}");
@@ -994,6 +1289,283 @@ async fn test_request_funding_rates_emits_response() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[case::usdm(
+    BinanceProductType::UsdM,
+    "BTCUSDT_260925.BINANCE",
+    "/fapi/v1/aggTrades",
+    "BTCUSDT_260925",
+    dec!(50001.2),
+    dec!(0.123),
+    AggregateTradeBounds::Both
+)]
+#[case::coinm(
+    BinanceProductType::CoinM,
+    "BTCUSD_260925.BINANCE",
+    "/dapi/v1/aggTrades",
+    "BTCUSD_260925",
+    dec!(50001.2),
+    dec!(2),
+    AggregateTradeBounds::Both
+)]
+#[case::start_only(
+    BinanceProductType::UsdM,
+    "BTCUSDT_260925.BINANCE",
+    "/fapi/v1/aggTrades",
+    "BTCUSDT_260925",
+    dec!(50001.2),
+    dec!(0.123),
+    AggregateTradeBounds::Start
+)]
+#[case::end_only(
+    BinanceProductType::CoinM,
+    "BTCUSD_260925.BINANCE",
+    "/dapi/v1/aggTrades",
+    "BTCUSD_260925",
+    dec!(50001.2),
+    dec!(2),
+    AggregateTradeBounds::End
+)]
+#[tokio::test]
+async fn test_request_bounded_aggregate_trades_routes_futures_product(
+    #[case] product_type: BinanceProductType,
+    #[case] instrument: &str,
+    #[case] expected_path: &str,
+    #[case] expected_symbol: &str,
+    #[case] expected_price: Decimal,
+    #[case] expected_size: Decimal,
+    #[case] bounds: AggregateTradeBounds,
+) {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let (mut client, mut rx) = create_test_data_client_for_product_type(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        product_type,
+    );
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from(instrument);
+    let start = chrono::Utc::now() - chrono::Duration::minutes(10);
+    let end = start + chrono::Duration::minutes(5);
+    let (request_start, request_end) = match bounds {
+        AggregateTradeBounds::Start => (Some(start), None),
+        AggregateTradeBounds::End => (None, Some(end)),
+        AggregateTradeBounds::Both => (Some(start), Some(end)),
+    };
+    let expected_start = request_start.map(|value| value.timestamp_millis().to_string());
+    let expected_end = request_end.map(|value| value.timestamp_millis().to_string());
+    let expected_event_time = request_start
+        .as_ref()
+        .or(request_end.as_ref())
+        .unwrap()
+        .timestamp_millis();
+
+    client
+        .request_trades(RequestTrades::new(
+            instrument_id,
+            request_start,
+            request_end,
+            Some(NonZeroUsize::new(456).unwrap()),
+            Some(*BINANCE_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for aggregate trades")
+        .expect("data channel closed");
+    let DataEvent::Response(DataResponse::Trades(response)) = event else {
+        panic!("expected trades response");
+    };
+    let queries = state.market_queries.lock().unwrap();
+    let (path, query) = &queries[0];
+    assert_eq!(path, expected_path);
+    assert_eq!(
+        query.get("symbol").map(String::as_str),
+        Some(expected_symbol)
+    );
+    assert_eq!(
+        query.get("startTime").map(String::as_str),
+        expected_start.as_deref()
+    );
+    assert_eq!(
+        query.get("endTime").map(String::as_str),
+        expected_end.as_deref()
+    );
+    assert_eq!(query.get("limit").map(String::as_str), Some("456"));
+    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.data[0].price.as_decimal(), expected_price);
+    assert_eq!(response.data[0].size.as_decimal(), expected_size);
+    assert_eq!(response.data[0].trade_id.to_string(), "101");
+    assert_eq!(
+        response.data[0].ts_event,
+        UnixNanos::from_millis(expected_event_time as u64)
+    );
+    assert_eq!(response.data[0].ts_init, response.data[0].ts_event);
+}
+
+#[rstest]
+#[case::usdm(
+    BinanceProductType::UsdM,
+    "BTCUSDT_260925.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    "/fapi/v1/klines",
+    "BTCUSDT_260925"
+)]
+#[case::coinm(
+    BinanceProductType::CoinM,
+    "BTCUSD_260925.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    "/dapi/v1/klines",
+    "BTCUSD_260925"
+)]
+#[tokio::test]
+async fn test_request_historical_binance_bars_routes_futures_product(
+    #[case] product_type: BinanceProductType,
+    #[case] bar_type_raw: &str,
+    #[case] expected_path: &str,
+    #[case] expected_symbol: &str,
+) {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let (mut client, mut rx) = create_test_data_client_for_product_type(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        product_type,
+    );
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let bar_type = BarType::from(bar_type_raw);
+    let data_type = binance_bar_data_type(bar_type);
+    let start = chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
+    let end = chrono::DateTime::from_timestamp_millis(1_700_000_059_999).unwrap();
+
+    client
+        .request_data(RequestCustomData::new(
+            *BINANCE_CLIENT_ID,
+            data_type.clone(),
+            Some(start),
+            Some(end),
+            Some(NonZeroUsize::new(321).unwrap()),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for BinanceBar history")
+        .expect("data channel closed");
+    let DataEvent::Response(DataResponse::Data(response)) = event else {
+        panic!("expected custom data response");
+    };
+    let bars = response
+        .data
+        .as_ref()
+        .downcast_ref::<Vec<BinanceBar>>()
+        .expect("expected BinanceBar vector");
+    let queries = state.market_queries.lock().unwrap();
+    let (path, query) = &queries[0];
+    assert_eq!(path, expected_path);
+    assert_eq!(
+        query.get("symbol").map(String::as_str),
+        Some(expected_symbol)
+    );
+    assert_eq!(query.get("interval").map(String::as_str), Some("1m"));
+    assert_eq!(
+        query.get("startTime").map(String::as_str),
+        Some("1700000000000")
+    );
+    assert_eq!(
+        query.get("endTime").map(String::as_str),
+        Some("1700000059999")
+    );
+    assert_eq!(query.get("limit").map(String::as_str), Some("321"));
+    assert_eq!(response.data_type, data_type);
+    assert_eq!(bars.len(), 1);
+    assert_eq!(bars[0].bar_type, bar_type);
+    assert_eq!(bars[0].open.as_decimal(), dec!(50000));
+    assert_eq!(bars[0].high.as_decimal(), dec!(50003));
+    assert_eq!(bars[0].low.as_decimal(), dec!(49999));
+    assert_eq!(bars[0].close.as_decimal(), dec!(50002));
+    assert_eq!(bars[0].volume.as_decimal(), dec!(8));
+    assert_eq!(bars[0].quote_volume, dec!(375007.50));
+    assert_eq!(bars[0].count, 7);
+    assert_eq!(bars[0].taker_buy_base_volume, dec!(3));
+    assert_eq!(bars[0].taker_buy_quote_volume, dec!(162501.25));
+    assert_eq!(bars[0].ts_init, bars[0].ts_event);
+}
+
+#[rstest]
+#[case(
+    "BTCUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL",
+    "historical BinanceBar requests require LAST price type"
+)]
+#[case(
+    "BTCUSDT-PERP.BINANCE-1-TICK-LAST-EXTERNAL",
+    "historical BinanceBar requests require time aggregation"
+)]
+fn test_request_historical_binance_bars_rejects_non_venue_bar_types(
+    #[case] bar_type: &str,
+    #[case] expected: &str,
+) {
+    let (client, _rx) = create_test_data_client(
+        "http://127.0.0.1:1".to_string(),
+        "ws://127.0.0.1:1/ws".to_string(),
+    );
+    let bar_type = BarType::from(bar_type);
+    let request = RequestCustomData::new(
+        *BINANCE_CLIENT_ID,
+        binance_bar_data_type(bar_type),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let error = client.request_data(request).unwrap_err();
+
+    assert_eq!(error.to_string(), expected);
+}
+
+#[rstest]
+#[case(
+    "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-INTERNAL",
+    "Binance historical bars require EXTERNAL aggregation"
+)]
+#[case(
+    "BTCUSDT-PERP.BINANCE-1-TICK-LAST-EXTERNAL",
+    "Binance historical bars require time aggregation"
+)]
+fn test_request_bars_rejects_non_venue_bar_types(#[case] bar_type: &str, #[case] expected: &str) {
+    let (client, _rx) = create_test_data_client(
+        "http://127.0.0.1:1".to_string(),
+        "ws://127.0.0.1:1/ws".to_string(),
+    );
+    let request = RequestBars::new(
+        BarType::from(bar_type),
+        None,
+        None,
+        None,
+        Some(*BINANCE_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let error = client.request_bars(request).unwrap_err();
+
+    assert_eq!(error.to_string(), expected);
 }
 
 #[rstest]
@@ -1094,6 +1666,266 @@ async fn test_subscribe_quotes() {
 
 #[rstest]
 #[tokio::test]
+async fn test_subscribe_l1_mbp_uses_book_ticker_and_rejects_invalid_depth() {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L1_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(NonZeroUsize::new(1).unwrap()),
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let data = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected top-of-book quote");
+    let Data::Quote(quote) = data else {
+        panic!("expected top-of-book quote");
+    };
+    assert!(recorded_streams_include(
+        &state.subscriptions,
+        "btcusdt@bookTicker"
+    ));
+    assert_eq!(quote.instrument_id, instrument_id);
+    assert_eq!(quote.bid_price.as_decimal(), dec!(50000.00));
+    assert_eq!(quote.bid_size.as_decimal(), dec!(1.000));
+    assert_eq!(quote.ask_price.as_decimal(), dec!(50001.00));
+    assert_eq!(quote.ask_size.as_decimal(), dec!(0.500));
+
+    let data = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected L1 deltas");
+    let Data::Deltas(deltas) = data else {
+        panic!("expected L1 deltas");
+    };
+    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+
+    let invalid = client.subscribe_book_deltas(SubscribeBookDeltas::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        BookType::L1_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(NonZeroUsize::new(2).unwrap()),
+        false,
+        None,
+        None,
+    ));
+    assert_eq!(
+        invalid.unwrap_err().to_string(),
+        "Binance Futures L1_MBP supports depth 1 only"
+    );
+
+    let conflict = client.subscribe_book_deltas(SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(NonZeroUsize::new(5).unwrap()),
+        false,
+        None,
+        None,
+    ));
+    assert_eq!(
+        conflict.unwrap_err().to_string(),
+        "cannot subscribe L1_MBP and L2_MBP for the same Binance Futures instrument"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_top_of_book_reference_count_shares_quote_and_l1_stream() {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    client
+        .subscribe_quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L1_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let count = state
+                .subscriptions
+                .lock()
+                .unwrap()
+                .iter()
+                .flatten()
+                .filter(|stream| stream.as_str() == "btcusdt@bookTicker")
+                .count();
+            async move { count == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .unsubscribe_quotes(&UnsubscribeQuotes::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!recorded_streams_include(
+        &state.unsubscriptions,
+        "btcusdt@bookTicker"
+    ));
+
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let found = recorded_streams_include(&state.unsubscriptions, "btcusdt@bookTicker");
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_bars_emits_core_and_binance_bars() {
+    let state = DataTestServerState::default();
+    let addr = start_data_test_server_with_state(state.clone()).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+
+    client
+        .subscribe_bars(SubscribeBars::new(
+            bar_type,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let core = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected core bar");
+    let custom = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected BinanceBar custom data");
+    let Data::Bar(core) = core else {
+        panic!("expected core bar");
+    };
+    let Data::Custom(custom) = custom else {
+        panic!("expected BinanceBar custom data");
+    };
+    let payload = custom
+        .data
+        .as_any()
+        .downcast_ref::<BinanceBar>()
+        .expect("expected BinanceBar payload");
+
+    assert!(recorded_streams_include(
+        &state.subscriptions,
+        "btcusdt@kline_1m"
+    ));
+    assert_eq!(core.bar_type, bar_type);
+    assert_eq!(core.open.as_decimal(), dec!(50000.00));
+    assert_eq!(core.high.as_decimal(), dec!(50003.00));
+    assert_eq!(core.low.as_decimal(), dec!(49999.00));
+    assert_eq!(core.close.as_decimal(), dec!(50002.00));
+    assert_eq!(core.volume.as_decimal(), dec!(7.500));
+    assert_eq!(payload.bar_type, bar_type);
+    assert_eq!(payload.open, core.open);
+    assert_eq!(payload.high, core.high);
+    assert_eq!(payload.low, core.low);
+    assert_eq!(payload.close, core.close);
+    assert_eq!(payload.volume, core.volume);
+    assert_eq!(payload.quote_volume, dec!(375007.50));
+    assert_eq!(payload.count, 7);
+    assert_eq!(payload.taker_buy_base_volume, dec!(3.250));
+    assert_eq!(payload.taker_buy_quote_volume, dec!(162501.25));
+    assert_eq!(payload.ts_event, core.ts_event);
+    assert_eq!(payload.ts_init, core.ts_init);
+
+    let second_error = client
+        .subscribe_bars(SubscribeBars::new(
+            BarType::from("BTCUSDT-PERP.BINANCE-1-SECOND-LAST-EXTERNAL"),
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap_err();
+    assert_eq!(
+        second_error.to_string(),
+        "Binance Futures does not support second-level kline intervals"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_book_deltas() {
     let addr = start_data_test_server().await;
     let base_url_http = format!("http://{addr}");
@@ -1171,6 +2003,66 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(replayed.deltas[3].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(replayed.deltas[3].order.size.as_decimal(), dec!(1.500));
     assert_eq!(replayed.deltas[3].flags, RecordFlag::F_LAST as u8);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_book_snapshot_returns_exact_futures_book() {
+    let addr = start_data_test_server().await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            Some(NonZeroUsize::new(5).unwrap()),
+            Some(*BINANCE_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for book snapshot")
+        .expect("data channel closed");
+    let DataEvent::Response(DataResponse::Book(response)) = event else {
+        panic!("expected book snapshot response");
+    };
+    let bids = response.data.bids(None).collect::<Vec<_>>();
+    let asks = response.data.asks(None).collect::<Vec<_>>();
+    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.data.book_type, BookType::L2_MBP);
+    assert_eq!(bids.len(), 2);
+    assert_eq!(asks.len(), 2);
+    assert_eq!(bids[0].price.value.as_decimal(), dec!(50000.00));
+    assert_eq!(bids[0].size_decimal(), dec!(1.000));
+    assert_eq!(bids[1].price.value.as_decimal(), dec!(49999.00));
+    assert_eq!(bids[1].size_decimal(), dec!(2.000));
+    assert_eq!(asks[0].price.value.as_decimal(), dec!(50001.00));
+    assert_eq!(asks[0].size_decimal(), dec!(0.500));
+    assert_eq!(asks[1].price.value.as_decimal(), dec!(50002.00));
+    assert_eq!(asks[1].size_decimal(), dec!(1.500));
+
+    let error = client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            Some(NonZeroUsize::new(6).unwrap()),
+            Some(*BINANCE_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "invalid Binance Futures order-book depth 6; valid values are [5, 10, 20, 50, 100, 500, 1000]"
+    );
 }
 
 #[rstest]
@@ -1574,7 +2466,28 @@ async fn test_subscribe_mark_prices() {
 
     wait_until_async(
         || {
-            let found = rx.try_recv().is_ok_and(|e| matches!(e, DataEvent::Data(_)));
+            let found = loop {
+                match rx.try_recv() {
+                    Ok(DataEvent::Data(Data::Custom(custom))) => {
+                        let Some(update) = custom
+                            .data
+                            .as_any()
+                            .downcast_ref::<BinanceFuturesMarkPriceUpdate>()
+                        else {
+                            continue;
+                        };
+                        break update.instrument_id == instrument_id
+                            && update.mark_price.as_decimal() == dec!(50000.50)
+                            && update.index_price.as_decimal() == dec!(50000.25)
+                            && update.estimated_settle_price.as_decimal() == dec!(50000.75)
+                            && update.funding_rate == dec!(0.00010000)
+                            && update.next_funding_time
+                                == Some(UnixNanos::from_millis(1700028800000));
+                    }
+                    Ok(_) => {}
+                    Err(_) => break false,
+                }
+            };
             async move { found }
         },
         Duration::from_secs(5),
@@ -2624,4 +3537,27 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
+    let bid = OrderBookDelta::new(
+        quote.instrument_id,
+        BookAction::Update,
+        BookOrder::new(OrderSide::Buy, quote.bid_price, quote.bid_size, 0),
+        RecordFlag::F_MBP as u8,
+        sequence,
+        quote.ts_event,
+        quote.ts_init,
+    );
+    let ask = OrderBookDelta::new(
+        quote.instrument_id,
+        BookAction::Update,
+        BookOrder::new(OrderSide::Sell, quote.ask_price, quote.ask_size, 0),
+        RecordFlag::F_MBP as u8 | RecordFlag::F_LAST as u8,
+        sequence,
+        quote.ts_event,
+        quote.ts_init,
+    );
+
+    OrderBookDeltas::new(quote.instrument_id, vec![bid, ask])
 }
