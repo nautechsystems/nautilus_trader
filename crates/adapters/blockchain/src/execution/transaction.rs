@@ -50,6 +50,8 @@ impl TransactionPurpose {
 pub enum TransactionStatus {
     /// Broadcast accepted (or possibly accepted), awaiting inclusion.
     Pending,
+    /// Definitively rejected by the RPC node before acceptance.
+    Rejected,
     /// Included on-chain with a successful receipt.
     Included,
     /// Included on-chain with a reverted receipt.
@@ -62,6 +64,7 @@ impl TransactionStatus {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Pending => "pending",
+            Self::Rejected => "rejected",
             Self::Included => "included",
             Self::Reverted => "reverted",
         }

@@ -361,7 +361,8 @@ impl BlockchainExecutionClient {
     ///
     /// Returns an error if the amount is zero, the client is not connected, another
     /// transaction is in flight, no durable store is configured, or any RPC, policy,
-    /// signing, persistence, or broadcast step fails.
+    /// signing, persistence, or broadcast step fails. A persistence failure after signing
+    /// leaves the in-flight slot occupied because database commit acknowledgement is ambiguous.
     pub async fn wrap(&mut self, amount_wei: U256) -> anyhow::Result<B256> {
         if amount_wei.is_zero() {
             anyhow::bail!("Wrap amount must be positive");
@@ -387,7 +388,8 @@ impl BlockchainExecutionClient {
     ///
     /// Returns an error if the router is not allowlisted, the client is not connected,
     /// another transaction is in flight, no durable store is configured, or any RPC,
-    /// policy, signing, persistence, or broadcast step fails.
+    /// policy, signing, persistence, or broadcast step fails. A persistence failure after signing
+    /// leaves the in-flight slot occupied because database commit acknowledgement is ambiguous.
     pub async fn approve(
         &mut self,
         token: Address,
@@ -471,6 +473,10 @@ impl BlockchainExecutionClient {
         input: Bytes,
         purpose: TransactionPurpose,
     ) -> anyhow::Result<B256> {
+        if !self.core.is_connected() {
+            anyhow::bail!("Blockchain execution client is not connected");
+        }
+
         if let Some(in_flight) = &self.in_flight {
             anyhow::bail!(
                 "Transaction {} ({}, nonce {}) is still awaiting inclusion; at most one transaction can be in flight",
@@ -538,6 +544,14 @@ impl BlockchainExecutionClient {
         };
 
         let tx_hash_string = tx_hash.to_string();
+        // Claim the slot before the cancellable write: PostgreSQL may commit before this future
+        // resumes, so cancellation cannot safely restore the pre-transaction state.
+        self.in_flight = Some(InFlightTransaction {
+            nonce,
+            tx_hash,
+            purpose,
+        });
+
         self.cache
             .add_execution_transaction(
                 self.chain.chain_id,
@@ -546,7 +560,12 @@ impl BlockchainExecutionClient {
                 purpose.as_str(),
                 TransactionStatus::Pending.as_str(),
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to persist transaction {tx_hash}: {e}; the in-flight slot stays occupied"
+                )
+            })?;
 
         match self
             .http_rpc_client
@@ -561,11 +580,6 @@ impl BlockchainExecutionClient {
                 }
             }
             Err(BroadcastError::TimeoutAfterSend) => {
-                self.in_flight = Some(InFlightTransaction {
-                    nonce,
-                    tx_hash,
-                    purpose,
-                });
                 anyhow::bail!(
                     "Broadcast of transaction {tx_hash} timed out after send; the persisted record reconciles instead of rebroadcasting"
                 );
@@ -574,23 +588,27 @@ impl BlockchainExecutionClient {
                 // Transport or response failure: acceptance is ambiguous (the failure may also
                 // predate dispatch; see BroadcastError::Failed), so occupy the slot and
                 // reconcile rather than risk a rebroadcast
-                self.in_flight = Some(InFlightTransaction {
-                    nonce,
-                    tx_hash,
-                    purpose,
-                });
                 anyhow::bail!(
                     "Broadcast of transaction {tx_hash} failed ambiguously ({message}); the persisted record reconciles instead of rebroadcasting"
                 );
             }
-            Err(e) => anyhow::bail!(e),
+            Err(error @ BroadcastError::Rejected { .. }) => {
+                self.cache
+                    .update_execution_transaction_status(
+                        self.chain.chain_id,
+                        &tx_hash_string,
+                        TransactionStatus::Rejected.as_str(),
+                    )
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to persist rejection of transaction {tx_hash}: {e}; the in-flight slot stays occupied"
+                        )
+                    })?;
+                self.in_flight = None;
+                anyhow::bail!(error);
+            }
         }
-
-        self.in_flight = Some(InFlightTransaction {
-            nonce,
-            tx_hash,
-            purpose,
-        });
 
         let receipt = self
             .poll_for_receipt(&tx_hash, RECEIPT_MAX_POLLS, RECEIPT_POLL_INTERVAL)
@@ -638,19 +656,32 @@ impl BlockchainExecutionClient {
         max_polls: u32,
         interval: Duration,
     ) -> anyhow::Result<Option<RpcTransactionReceipt>> {
+        let mut last_error = None;
+        let mut observed_pending = false;
+
         for attempt in 0..max_polls {
             if attempt > 0 {
                 tokio::time::sleep(interval).await;
             }
 
-            if let Some(receipt) = self
-                .http_rpc_client
-                .get_transaction_receipt(tx_hash)
-                .await?
-            {
-                return Ok(Some(receipt));
+            match self.http_rpc_client.get_transaction_receipt(tx_hash).await {
+                Ok(Some(receipt)) => return Ok(Some(receipt)),
+                Ok(None) => observed_pending = true,
+                Err(e) => {
+                    log::warn!(
+                        "Receipt poll {}/{} for transaction {tx_hash} failed: {e}",
+                        attempt + 1,
+                        max_polls
+                    );
+                    last_error = Some(e);
+                }
             }
         }
+
+        if !observed_pending && let Some(e) = last_error {
+            return Err(e);
+        }
+
         Ok(None)
     }
 }
@@ -803,6 +834,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.signer = None;
         self.core.set_disconnected();
         Ok(())
     }
@@ -894,6 +926,10 @@ mod tests {
         include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_null.json");
     const SEND_RAW_TRANSACTION: &str =
         include_str!("../../test_data/execution/rpc_eth_send_raw_transaction.json");
+    const SEND_RAW_TRANSACTION_REJECTED: &str =
+        include_str!("../../test_data/execution/rpc_eth_send_raw_transaction_rejected.json");
+    const RPC_METHOD_NOT_FOUND: &str =
+        include_str!("../../test_data/execution/rpc_error_method_not_found.json");
 
     const WALLET: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
     const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
@@ -1269,6 +1305,7 @@ mod tests {
     #[tokio::test]
     async fn wrap_refuses_without_durable_store() {
         let (mut client, _) = client_with_mock_rpc(ready_rpc_state()).await;
+        client.core.set_connected();
 
         let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
 
@@ -1302,6 +1339,7 @@ mod tests {
     #[tokio::test]
     async fn in_flight_guard_rejects_second_transaction() {
         let (mut client, _) = client_with_mock_rpc(ready_rpc_state()).await;
+        client.core.set_connected();
         client.in_flight = Some(InFlightTransaction {
             nonce: 7,
             tx_hash: B256::ZERO,
@@ -1389,6 +1427,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disconnect_revokes_signer_and_blocks_execution() {
+        let (mut client, state) = client_with_mock_rpc(ready_rpc_state()).await;
+        client.core.set_connected();
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+
+        client.disconnect().await.unwrap();
+        let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
+
+        assert!(!client.is_connected());
+        assert!(client.signer.is_none());
+        assert!(
+            error.to_string().contains("is not connected"),
+            "was: {error}"
+        );
+        assert!(state.recorded_requests().is_empty());
+    }
+
+    #[tokio::test]
     async fn poll_for_receipt_returns_none_after_exhaustion() {
         let state = ready_rpc_state().with_response("eth_getTransactionReceipt", RECEIPT_NULL);
         let (client, state) = client_with_mock_rpc(state).await;
@@ -1401,6 +1457,459 @@ mod tests {
         assert!(receipt.is_none());
         let requests = state.recorded_requests();
         assert_eq!(requests.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn poll_for_receipt_returns_last_error_when_every_poll_fails() {
+        let state =
+            ready_rpc_state().with_response("eth_getTransactionReceipt", RPC_METHOD_NOT_FOUND);
+        let (client, state) = client_with_mock_rpc(state).await;
+
+        let error = client
+            .poll_for_receipt(&B256::ZERO, 3, Duration::ZERO)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "eth_getTransactionReceipt RPC error -32601"
+        );
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn poll_for_receipt_returns_none_after_pending_then_errors() {
+        let state = ready_rpc_state().with_response_sequence(
+            "eth_getTransactionReceipt",
+            &[RECEIPT_NULL, RPC_METHOD_NOT_FOUND, RPC_METHOD_NOT_FOUND],
+        );
+        let (client, state) = client_with_mock_rpc(state).await;
+
+        let receipt = client
+            .poll_for_receipt(&B256::ZERO, 3, Duration::ZERO)
+            .await
+            .unwrap();
+
+        assert!(receipt.is_none());
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_persistence_keeps_in_flight_slot() {
+        let Some((admin_pool, pg_config)) = connect_test_postgres("persistence cancellation").await
+        else {
+            return;
+        };
+
+        let schema = format!("execution_persist_cancel_test_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+
+        let observer_options: sqlx::postgres::PgConnectOptions = pg_config.clone().into();
+        let observer_pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(observer_options)
+            .await
+            .unwrap();
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
+            .await
+            .unwrap();
+
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS);
+        let addr = start_mock_rpc_server(state.clone()).await;
+
+        let mut client = test_client(format!("http://{addr}"));
+        client.cache.database = Some(database);
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
+
+        let mut lock_transaction = admin_pool.begin().await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "LOCK TABLE {schema}.execution_transaction IN ACCESS EXCLUSIVE MODE"
+        )))
+        .execute(&mut *lock_transaction)
+        .await
+        .unwrap();
+
+        let value = U256::from(1_000_000_000_000_000u64);
+        let mut wrap = Box::pin(client.wrap(value));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                tokio::select! {
+                    result = &mut wrap => {
+                        panic!("persistence completed while the table was locked: {result:?}")
+                    }
+                    () = tokio::time::sleep(Duration::from_millis(1)) => {}
+                }
+
+                let waiting = sqlx::query_scalar::<_, bool>(
+                    r#"
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_locks AS locks
+                        JOIN pg_class AS relations ON relations.oid = locks.relation
+                        JOIN pg_namespace AS namespaces ON namespaces.oid = relations.relnamespace
+                        WHERE namespaces.nspname = $1
+                          AND relations.relname = 'execution_transaction'
+                          AND NOT locks.granted
+                    )
+                    "#,
+                )
+                .bind(&schema)
+                .fetch_one(&observer_pool)
+                .await
+                .unwrap();
+
+                if waiting {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        drop(wrap);
+
+        let in_flight = client.in_flight.unwrap();
+        let second_error = client
+            .wrap(U256::from(2_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+        let expected_tx = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            value,
+            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
+        );
+        let (expected_hash, _) = sign_eip1559_transaction(
+            expected_tx,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.tx_hash, expected_hash);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert!(
+            second_error
+                .to_string()
+                .contains("still awaiting inclusion"),
+            "was: {second_error}"
+        );
+        assert_eq!(broadcasts, 0);
+
+        lock_transaction.rollback().await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn persistence_failure_keeps_unbroadcast_slot() {
+        let Some((admin_pool, pg_config)) = connect_test_postgres("persistence failure").await
+        else {
+            return;
+        };
+
+        let schema = format!("execution_persist_fail_test_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TABLE {schema}.execution_transaction"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS);
+        let addr = start_mock_rpc_server(state.clone()).await;
+
+        let mut client = test_client(format!("http://{addr}"));
+        client.cache.database = Some(database);
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
+
+        let value = U256::from(1_000_000_000_000_000u64);
+        let error = client.wrap(value).await.unwrap_err();
+        let in_flight = client.in_flight.unwrap();
+        let second_error = client
+            .wrap(U256::from(2_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+        let expected_tx = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            value,
+            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
+        );
+        let (expected_hash, _) = sign_eip1559_transaction(
+            expected_tx,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let error_message = error.to_string();
+        assert!(
+            error_message.starts_with(&format!(
+                "Failed to persist transaction {expected_hash}: Failed to insert into execution_transaction table"
+            )),
+            "was: {error_message}"
+        );
+        assert!(
+            error_message.ends_with("the in-flight slot stays occupied"),
+            "was: {error_message}"
+        );
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.tx_hash, expected_hash);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert!(
+            second_error
+                .to_string()
+                .contains("still awaiting inclusion"),
+            "was: {second_error}"
+        );
+        assert_eq!(broadcasts, 0);
+
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancellation_after_dispatch_keeps_record_and_in_flight_slot() {
+        let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast cancellation").await
+        else {
+            return;
+        };
+
+        let schema = format!("execution_cancel_test_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
+            .await
+            .unwrap();
+
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_sleep(
+                "eth_sendRawTransaction",
+                Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
+            );
+        let addr = start_mock_rpc_server(state.clone()).await;
+
+        let mut client = test_client(format!("http://{addr}"));
+        client.cache.database = Some(database);
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
+
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        tokio::select! {
+            result = &mut wrap => panic!("broadcast completed before cancellation: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if state.recorded_requests().iter().any(|request| {
+                        request["method"] == "eth_sendRawTransaction"
+                    }) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }) => result.unwrap(),
+        }
+        drop(wrap);
+
+        let in_flight = client.in_flight.unwrap();
+        let error = client
+            .wrap(U256::from(2_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let record = client
+            .cache
+            .get_execution_transaction(42161, &in_flight.tx_hash.to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+
+        assert!(
+            error.to_string().contains("still awaiting inclusion"),
+            "was: {error}"
+        );
+        assert_eq!(record.nonce, 7);
+        assert_eq!(record.purpose, "wrap");
+        assert_eq!(record.status, "pending");
+        assert_eq!(broadcasts, 1);
+
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejected_broadcast_marks_record_rejected_before_releasing_slot() {
+        let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast rejection").await
+        else {
+            return;
+        };
+
+        let schema = format!("execution_rejected_test_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
+            .await
+            .unwrap();
+
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED);
+        let addr = start_mock_rpc_server(state.clone()).await;
+
+        let mut client = test_client(format!("http://{addr}"));
+        client.cache.database = Some(database);
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let (purpose, status): (String, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT purpose, status FROM {schema}.execution_transaction"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Broadcast rejected with RPC error -32000"),
+            "was: {error}"
+        );
+        assert!(client.in_flight.is_none());
+        assert_eq!(purpose, "wrap");
+        assert_eq!(status, "rejected");
+        assert_eq!(broadcasts, 1);
+
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejected_broadcast_keeps_slot_when_status_update_fails() {
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("broadcast rejection persistence failure").await
+        else {
+            return;
+        };
+
+        let schema = format!("execution_rejected_update_test_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
+            .await
+            .unwrap();
+
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED)
+            .with_sleep("eth_sendRawTransaction", Duration::from_secs(1));
+        let addr = start_mock_rpc_server(state.clone()).await;
+
+        let mut client = test_client(format!("http://{addr}"));
+        client.cache.database = Some(database);
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
+
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        tokio::select! {
+            result = &mut wrap => panic!("broadcast completed before database failure: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if state.recorded_requests().iter().any(|request| {
+                        request["method"] == "eth_sendRawTransaction"
+                    }) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }) => result.unwrap(),
+        }
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TABLE {schema}.execution_transaction"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let error = wrap.await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("Failed to persist rejection"),
+            "was: {error}"
+        );
+        let in_flight = client.in_flight.unwrap();
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1430,6 +1939,7 @@ mod tests {
         let mut client = test_client(format!("http://{addr}"));
         client.cache.database = Some(database);
         client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -1478,7 +1988,10 @@ mod tests {
         let state = ready_rpc_state()
             .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
             .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response_sequence(
+                "eth_getTransactionReceipt",
+                &[RPC_METHOD_NOT_FOUND, RECEIPT_SUCCESS, RECEIPT_SUCCESS],
+            )
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
         let addr = start_mock_rpc_server(state.clone()).await;
 
@@ -1487,6 +2000,7 @@ mod tests {
         let mut client = test_client_from_config(config, test_pool());
         client.cache.database = Some(database);
         client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
 
         let wrap_hash = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -1532,6 +2046,11 @@ mod tests {
             let payload = broadcast["params"][0].as_str().unwrap();
             assert!(payload.starts_with("0x02"), "was: {payload}");
         }
+        let receipt_polls = requests
+            .iter()
+            .filter(|request| request["method"] == "eth_getTransactionReceipt")
+            .count();
+        assert_eq!(receipt_polls, 3);
 
         // Unlimited approval policy encoded U256::MAX in the approve calldata
         let estimates: Vec<_> = requests
@@ -1579,6 +2098,7 @@ mod tests {
         let mut client = test_client(format!("http://{addr}"));
         client.cache.database = Some(database);
         client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000u64))

@@ -446,7 +446,8 @@ planned and described here before they land.
 The `BlockchainExecutionClient` implements `connect`/`disconnect` with a wallet balance refresh at
 connect (native currency and, when a token universe is configured, ERC-20 tokens), RPC chain ID
 verification against configuration, and signer initialization from `signer_private_key_env` (see
-[Transaction signing and broadcast](#transaction-signing-and-broadcast)).
+[Transaction signing and broadcast](#transaction-signing-and-broadcast)). Disconnect removes the
+signer, and transaction operations reject a disconnected client before any execution RPC call.
 
 ### Supported order slice
 
@@ -530,8 +531,11 @@ Signer and transaction policy:
   configuration error.
 - At most one transaction is in flight across wraps and approvals, and across swaps once they
   land: a submission guard rejects any new transaction while another awaits inclusion, keeping the
-  `pending` nonce authoritative. The nonce comes from `eth_getTransactionCount` with the `pending`
-  tag.
+  `pending` nonce authoritative. After signing, the client occupies this slot before the
+  cancellable persistence write and keeps it through broadcast. A persistence error also keeps the
+  slot because the database may have committed before its acknowledgement was lost. Dropping an
+  in‑progress operation while persistence or broadcast is pending therefore cannot admit another
+  transaction. The nonce comes from `eth_getTransactionCount` with the `pending` tag.
 - Fees derive from `eth_maxPriorityFeePerGas` plus the latest base fee with `base_fee_buffer_bps`;
   `max_fee_per_gas_wei` is a required hard ceiling that rejects the transaction when current
   conditions exceed it.
@@ -540,14 +544,17 @@ Signer and transaction policy:
 - The client persists the transaction record (nonce, transaction hash, chain ID, purpose, status)
   to the adapter's Postgres cache database before broadcast; with no durable store configured the
   client refuses to submit. Wrap and approve return only after the receipt confirms inclusion, and
-  the persisted status moves from `pending` to `included` or `reverted`. Order submission (planned)
-  will ack as submitted only after broadcast acceptance.
+  the persisted status moves from `pending` to `included` or `reverted`. A definitive node rejection
+  moves the status to `rejected` and releases the in‑flight slot only when that update succeeds.
+  Order submission (planned) will ack as submitted only after broadcast acceptance.
 
 Execution RPC calls use per‑request timeouts, and a `null` result is a legitimate pending response
-(a receipt that does not exist yet), not an error. Broadcast failures classify before retry: an
-`already known` response is acceptance, a node‑level rejection is definitive, and an ambiguous
-failure after sending (timeout, reset, or an unreadable response) reconciles through the persisted
-record rather than rebroadcasting.
+(a receipt that does not exist yet), not an error. Receipt observation retries RPC errors within the
+bounded poll window without rebroadcasting. Exhaustion returns the last error if every observation
+failed, or an inclusion timeout after any `null` response; both outcomes keep the in‑flight slot
+occupied. Broadcast failures classify before retry: an `already known` response is acceptance, a
+node‑level rejection is definitive, and an ambiguous failure after sending (timeout, reset, or an
+unreadable response) reconciles through the persisted record rather than rebroadcasting.
 
 ### Risk and validation boundaries
 
@@ -578,6 +585,9 @@ the purpose, and a status in the `execution_transaction` table; wrap and approve
 before broadcast today, and order submission will key its records by `client_order_id` with the
 venue parameters. On restart (planned), pending records will reload and resume from on‑chain
 observation.
+
+Wrap and approve records use `pending`, `rejected`, `included`, and `reverted`. A rejected broadcast
+is terminal only after its status update succeeds.
 
 Order state will derive from transaction observation:
 
@@ -637,10 +647,12 @@ Automated execution tests never use a live network:
 - Mocked-RPC unit tests in the adapter crate cover calldata encoding for `deposit`, `approve`,
   and `allowance`, EIP-1559 signing against a fixed-key reference vector, nonce selection with
   the `pending` tag, fee and gas policy including ceiling rejections, preflight ready and
-  not-ready states, receipt parsing including the null-pending and reverted cases, broadcast
-  classification (`already known`, rejection, timeout after send), and transaction persistence
-  against a temporary Postgres schema (skipped when Postgres is unavailable). JSON-RPC fixtures
-  live as files under the crate's `test_data/execution/` directory.
+  not-ready states, receipt parsing including the null-pending and reverted cases, receipt RPC
+  retry without rebroadcast, broadcast classification (`already known`, rejection, timeout after
+  send), disconnect signer revocation, cancellation during persistence and after request dispatch,
+  and successful and failed initial and terminal-status persistence against a temporary Postgres
+  schema (skipped when Postgres is unavailable). JSON-RPC fixtures live as files under the crate's
+  `test_data/execution/` directory.
 - A pinned‑block Anvil integration forks Arbitrum at block 489000000 with
   `anvil --fork-url <RPC> --fork-block-number 489000000 --chain-id 42161` and runs wrap, approve,
   and preflight against localhost only, asserting receipt status 1, positive gas usage, the WETH

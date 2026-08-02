@@ -548,7 +548,7 @@ pub(crate) mod tests {
     /// Mock JSON-RPC HTTP server for tests, serving canned responses from fixture files.
     pub(crate) mod mock {
         use std::{
-            collections::HashMap,
+            collections::{HashMap, VecDeque},
             net::SocketAddr,
             sync::{Arc, Mutex},
             time::Duration,
@@ -561,6 +561,7 @@ pub(crate) mod tests {
         #[derive(Clone, Default)]
         pub(crate) struct MockRpcState {
             responses: HashMap<String, String>,
+            response_sequences: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
             call_responses: HashMap<String, String>,
             sleep_methods: HashMap<String, Duration>,
             requests: Arc<Mutex<Vec<Value>>>,
@@ -572,6 +573,17 @@ pub(crate) mod tests {
             pub(crate) fn with_response(mut self, method: &str, response_json: &str) -> Self {
                 self.responses
                     .insert(method.to_string(), response_json.to_string());
+                self
+            }
+
+            /// Serves the given raw JSON-RPC response bodies for `method` in order.
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_response_sequence(self, method: &str, responses: &[&str]) -> Self {
+                self.response_sequences.lock().unwrap().insert(
+                    method.to_string(),
+                    responses.iter().map(ToString::to_string).collect(),
+                );
                 self
             }
 
@@ -621,6 +633,17 @@ pub(crate) mod tests {
                 {
                     return response.clone();
                 }
+            }
+
+            let queued_response = state
+                .response_sequences
+                .lock()
+                .unwrap()
+                .get_mut(method)
+                .and_then(VecDeque::pop_front);
+
+            if let Some(response) = queued_response {
+                return response;
             }
 
             if let Some(response) = state.responses.get(method) {
