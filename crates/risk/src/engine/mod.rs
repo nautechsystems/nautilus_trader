@@ -1781,7 +1781,10 @@ impl RiskEngine {
                         // Use base-currency free balance for sell checks
                         let base_free = match &account {
                             AccountAny::Margin(_) => None,
-                            AccountAny::Cash(cash) => cash.balance_free(Some(base_currency)),
+                            AccountAny::Cash(cash) => Some(
+                                cash.balance_free(Some(base_currency))
+                                    .unwrap_or_else(|| Money::zero(base_currency)),
+                            ),
                             AccountAny::Betting(betting) => {
                                 betting.balance_free(Some(base_currency))
                             }

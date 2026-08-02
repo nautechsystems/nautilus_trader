@@ -45,14 +45,17 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
 use nautilus_model::{
     accounts::{AccountAny, BettingAccount, CashAccount, MarginAccount, stubs::cash_account},
-    data::{QuoteTick, stubs::quote_audusd},
+    data::{
+        QuoteTick,
+        stubs::{quote_audusd, quote_ethusdt_binance},
+    },
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
-        PositionEvent, PositionOpened,
+        AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
+        OrderSubmitted, PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
         order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
@@ -6060,7 +6063,132 @@ fn margin_account_with_usdt_balance(total: &str, locked: &str, free: &str) -> Ma
 }
 
 #[rstest]
-fn test_submit_order_margin_account_buy_within_free_balance(
+#[case::unheld(None, "1.000", false, false, Some("0 ETH"), Some("1 ETH"))]
+#[case::held_within_balance(Some("2 ETH"), "1.000", false, false, None, None)]
+#[case::held_exceeding_balance(Some("2 ETH"), "3.000", false, false, Some("2 ETH"), Some("3 ETH"))]
+#[case::borrowing_unheld(None, "1.000", true, false, None, None)]
+#[case::reduce_only_unheld(None, "1.000", false, true, None, None)]
+fn test_submit_order_cash_account_sell_checks_asset_balance(
+    #[case] asset_balance: Option<&str>,
+    #[case] quantity: &str,
+    #[case] allow_borrowing: bool,
+    #[case] reduce_only: bool,
+    #[case] expected_free: Option<&str>,
+    #[case] expected_cum_notional: Option<&str>,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    quote_ethusdt_binance: QuoteTick,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+
+    let mut balances = vec![AccountBalance::new(
+        Money::from("10000 USDT"),
+        Money::from("0 USDT"),
+        Money::from("10000 USDT"),
+    )];
+
+    if let Some(asset_balance) = asset_balance {
+        let balance = Money::from(asset_balance);
+        balances.push(AccountBalance::new(
+            balance,
+            Money::zero(balance.currency),
+            balance,
+        ));
+    }
+    let account_state = AccountState::new(
+        AccountId::from("BINANCE-001"),
+        AccountType::Cash,
+        balances,
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        None,
+    );
+    simple_cache
+        .add_account(AccountAny::Cash(CashAccount::new(
+            account_state,
+            true,
+            allow_borrowing,
+        )))
+        .unwrap();
+    simple_cache.add_quote(quote_ethusdt_binance).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(quantity))
+        .reduce_only(reduce_only)
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let ts_init = risk_engine.clock().borrow().timestamp_ns();
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_eth_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        ts_init,
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    match (expected_free, expected_cum_notional) {
+        (Some(expected_free), Some(expected_cum_notional)) => {
+            assert_eq!(process_messages.len(), 1);
+            assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+            assert_eq!(
+                process_messages[0].message().unwrap(),
+                Ustr::from(
+                    &OrderDeniedReason::CumNotionalExceedsFreeBalance {
+                        free: Money::from(expected_free),
+                        cum_notional: Money::from(expected_cum_notional),
+                    }
+                    .to_string()
+                )
+            );
+            assert_eq!(execute_messages.len(), 0);
+        }
+        (None, None) => {
+            assert_eq!(process_messages.len(), 0);
+            assert_eq!(execute_messages.len(), 1);
+            assert_eq!(
+                execute_messages[0].instrument_id(),
+                instrument_eth_usdt.id()
+            );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy)]
+#[case::sell(OrderSide::Sell)]
+fn test_submit_order_margin_account_within_free_balance(
+    #[case] order_side: OrderSide,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -6073,8 +6201,7 @@ fn test_submit_order_margin_account_buy_within_free_balance(
         .add_instrument(instrument_eth_usdt.clone())
         .unwrap();
 
-    // ETHUSDT margin_init=1.0, 10x leverage: margin = notional / 10
-    // Buy 1 ETH @ $3000 -> notional = $3000 -> margin = $300
+    // ETHUSDT margin_init=1.0, 10x leverage: 1 ETH @ $3000 requires $300 margin
     let mut margin_acct = margin_account_with_usdt_balance("100000 USDT", "0 USDT", "100000 USDT");
     margin_acct.set_default_leverage(dec!(10));
     simple_cache
@@ -6097,7 +6224,7 @@ fn test_submit_order_margin_account_buy_within_free_balance(
 
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
-        .side(OrderSide::Buy)
+        .side(order_side)
         .quantity(Quantity::from("1.000"))
         .build();
 

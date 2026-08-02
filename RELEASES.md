@@ -295,6 +295,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 live node connection timeouts reporting the node as running (#4528), thanks @folknor
 - Fixed v2 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
 - Fixed v2 strategy orders bypassing risk checks in live and backtest runners
+- Fixed v2 `RiskEngine` balance checks for non‑reducing multi‑currency cash sells when the asset balance was absent
 - Fixed v2 `RiskEngine` skipping cash and betting account balance checks for reduce-only buy orders
 - Fixed v2 `RiskEngine` rate-limit modify-order rejections omitting the order `account_id`
 - Fixed v2 matching engine filling triggered stop-limit orders beyond their limit price
