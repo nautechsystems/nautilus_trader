@@ -41,7 +41,7 @@ use crate::{
     common::{
         bar::BinanceBar,
         enums::BinanceKlineInterval,
-        parse::{parse_price_at_precision, parse_quantity_at_precision},
+        parse::{parse_millis_or_init, parse_price_at_precision, parse_quantity_at_precision},
     },
     data_types::BinanceSpotTicker,
 };
@@ -89,7 +89,7 @@ pub fn parse_trade(
         AggressorSide::Buyer
     };
 
-    let ts_event = UnixNanos::from_millis(msg.trade_time as u64);
+    let ts_event = parse_millis_or_init(msg.trade_time, "Spot JSON trade time", ts_init);
 
     Ok(TradeTick::new(
         instrument_id,
@@ -127,8 +127,9 @@ pub fn parse_book_ticker(
     let ts_event = msg
         .transaction_time
         .or(msg.event_time)
-        .and_then(|ts| u64::try_from(ts).ok())
-        .map_or(ts_init, UnixNanos::from_millis);
+        .map_or(ts_init, |value| {
+            parse_millis_or_init(value, "Spot JSON book ticker time", ts_init)
+        });
 
     Ok(QuoteTick::new(
         instrument_id,
@@ -221,7 +222,7 @@ pub fn parse_depth_diff(
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Spot JSON depth event time", ts_init);
     let sequence = msg.final_update_id;
 
     let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());
@@ -387,7 +388,8 @@ pub fn parse_kline(
         )
     })?;
 
-    let ts_event = UnixNanos::from_millis(msg.kline.close_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.kline.close_time, "Spot JSON kline close time", ts_init);
 
     Ok(Some(BinanceBar::new(
         bar_type,
@@ -409,7 +411,7 @@ pub fn parse_kline(
 ///
 /// # Errors
 ///
-/// Returns an error if any numeric or timestamp field is invalid.
+/// Returns an error if any numeric field is invalid.
 pub fn parse_ticker(
     msg: &BinanceSpotTickerMsg,
     instrument: &InstrumentAny,
@@ -418,11 +420,7 @@ pub fn parse_ticker(
     let decimal = |field: &str, value: &str| {
         Decimal::from_str(value).with_context(|| format!("invalid {field} `{value}`"))
     };
-    let millis = |field: &str, value: i64| {
-        u64::try_from(value)
-            .map(UnixNanos::from_millis)
-            .map_err(|_| anyhow::anyhow!("invalid negative {field} `{value}`"))
-    };
+    let millis = |field: &str, value: i64| parse_millis_or_init(value, field, ts_init);
 
     Ok(BinanceSpotTicker {
         instrument_id: instrument.id(),
@@ -441,12 +439,12 @@ pub fn parse_ticker(
         low_price: decimal("low price", &msg.low_price)?,
         volume: decimal("volume", &msg.volume)?,
         quote_volume: decimal("quote volume", &msg.quote_volume)?,
-        open_time: millis("open time", msg.open_time)?,
-        close_time: millis("close time", msg.close_time)?,
+        open_time: millis("Spot JSON ticker open time", msg.open_time),
+        close_time: millis("Spot JSON ticker close time", msg.close_time),
         first_trade_id: msg.first_trade_id,
         last_trade_id: msg.last_trade_id,
         num_trades: msg.num_trades,
-        ts_event: millis("event time", msg.event_time)?,
+        ts_event: millis("Spot JSON ticker event time", msg.event_time),
         ts_init,
     })
 }
@@ -528,6 +526,29 @@ mod tests {
             tick.size.as_decimal(),
             Decimal::from_str("0.10000001").unwrap()
         );
+    }
+
+    #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_trade_falls_back_for_invalid_timestamp(#[case] trade_time: i64) {
+        let instrument = sample_instrument();
+        let msg = BinanceSpotTradeMsg {
+            event_type: "trade".to_string(),
+            event_time: 1_700_000_000_000,
+            symbol: Ustr::from("ETHUSDT"),
+            trade_id: 42,
+            price: "123.45678901".to_string(),
+            quantity: "0.10000001".to_string(),
+            trade_time,
+            is_buyer_maker: false,
+        };
+
+        let ts_init = UnixNanos::from(1);
+        let trade = parse_trade(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(trade.ts_event, ts_init);
+        assert_eq!(trade.ts_init, ts_init);
     }
 
     #[rstest]

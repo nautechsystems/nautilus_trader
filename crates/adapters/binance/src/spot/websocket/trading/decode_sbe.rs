@@ -473,10 +473,10 @@ fn map_expiry_reason(reason: expiry_reason::ExpiryReason) -> Option<String> {
     }
 }
 
-/// Converts SBE microsecond timestamp to JSON millisecond timestamp.
+/// Converts an SBE microsecond timestamp to a JSON millisecond timestamp.
 #[inline]
 fn us_to_ms(us: i64) -> i64 {
-    us / 1000
+    if us < 0 { us } else { us / 1_000 }
 }
 
 /// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] without floating-point.
@@ -1269,8 +1269,13 @@ mod tests {
 
     #[rstest]
     fn test_us_to_ms() {
-        assert_eq!(us_to_ms(1709654400000000), 1709654400000);
-        assert_eq!(us_to_ms(1709654400123456), 1709654400123);
+        assert_eq!(us_to_ms(1_709_654_400_000_000), 1_709_654_400_000);
+        assert_eq!(us_to_ms(1_709_654_400_123_456), 1_709_654_400_123);
+    }
+
+    #[rstest]
+    fn test_us_to_ms_preserves_negative_submillisecond_value() {
+        assert_eq!(us_to_ms(-1), -1);
     }
 
     #[rstest]

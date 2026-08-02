@@ -57,9 +57,9 @@ use crate::{
         encoder::decode_client_order_id,
         enums::{BinancePositionSide, BinanceProductType},
         parse::{
-            parse_price_at_precision, parse_quantity_at_precision, parse_required_decimal,
-            parse_required_price_at_precision, parse_required_quantity_at_precision,
-            price_at_precision, quantity_at_precision,
+            parse_millis_or_init, parse_price_at_precision, parse_quantity_at_precision,
+            parse_required_decimal, parse_required_price_at_precision,
+            parse_required_quantity_at_precision, price_at_precision, quantity_at_precision,
         },
         symbol::format_instrument_id,
     },
@@ -305,7 +305,8 @@ pub(crate) fn dispatch_order_update(
     let order = &msg.order;
     let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.event_time, "Futures order dispatch event time", ts_init);
 
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
@@ -970,7 +971,7 @@ pub(crate) fn dispatch_trade_lite(
 ) {
     let symbol_ustr = ustr::Ustr::from(msg.symbol.as_str());
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Futures TRADE_LITE event time", ts_init);
 
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
@@ -1281,7 +1282,8 @@ pub(crate) fn dispatch_algo_update(
 
     let algo_data = &msg.algo_order;
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.event_time, "Futures algo dispatch event time", ts_init);
     let client_order_id = match decode_algo_client_id(algo_data) {
         Ok(client_order_id) => client_order_id,
         Err(e) => {

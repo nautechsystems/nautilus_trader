@@ -95,7 +95,7 @@ use crate::{
         instruments::BinanceInstrumentSelector,
         models::BinanceErrorResponse,
         parse::{
-            parse_coinm_instrument_with_fees, parse_required_price_at_precision,
+            parse_coinm_instrument_with_fees, parse_millis, parse_required_price_at_precision,
             parse_required_quantity_at_precision, parse_usdm_instrument_with_fees,
         },
         symbol::{format_binance_symbol, format_instrument_id},
@@ -2946,7 +2946,7 @@ impl BinanceFuturesHttpClient {
         trades
             .iter()
             .map(|trade| {
-                let ts_init = UnixNanos::from_millis(trade.time as u64);
+                let ts_init = parse_millis(trade.time, "Futures aggregate trade time")?;
                 parse_futures_agg_trade_tick(
                     trade,
                     instrument_id,
@@ -3007,7 +3007,7 @@ impl BinanceFuturesHttpClient {
 
         let mut result = Vec::with_capacity(klines.len());
         for kline in klines {
-            let ts_init = UnixNanos::from_millis(kline.close_time as u64);
+            let ts_init = parse_millis(kline.close_time, "Futures kline close time")?;
             let bar = parse_futures_kline_binance_bar(
                 &kline,
                 bar_type,
@@ -3157,7 +3157,7 @@ fn parse_futures_trade_tick(
         .map_err(|e| anyhow::anyhow!("invalid Futures trade id {}: {e}", trade.id))?;
     let size = parse_required_quantity_at_precision(&trade.qty, size_precision, "trade.qty")
         .map_err(|e| anyhow::anyhow!("invalid Futures trade id {}: {e}", trade.id))?;
-    let ts_event = UnixNanos::from_millis(trade.time as u64);
+    let ts_event = parse_millis(trade.time, "Futures trade time")?;
 
     let aggressor_side = if trade.is_buyer_maker {
         AggressorSide::Seller
@@ -3218,7 +3218,7 @@ fn parse_futures_kline_binance_bar(
     let volume =
         parse_required_quantity_at_precision(&kline.volume, size_precision, "kline.volume")
             .map_err(|e| anyhow::anyhow!("invalid Futures kline {}: {e}", kline.open_time))?;
-    let ts_event = UnixNanos::from_millis(kline.close_time as u64);
+    let ts_event = parse_millis(kline.close_time, "Futures kline close time")?;
 
     let quote_volume = kline.quote_volume.parse::<Decimal>().map_err(|e| {
         anyhow::anyhow!(
@@ -3275,7 +3275,7 @@ fn parse_futures_funding_rate_update(
     let funding_rate = rate.funding_rate.parse::<Decimal>().map_err(|e| {
         anyhow::anyhow!("invalid Futures funding rate at {}: {e}", rate.funding_time)
     })?;
-    let ts_event = UnixNanos::from_millis(rate.funding_time as u64);
+    let ts_event = parse_millis(rate.funding_time, "Futures funding time")?;
 
     Ok(FundingRateUpdate::new(
         instrument_id,

@@ -72,6 +72,46 @@ const CONTRACT_TYPE_NEXT_MONTH: &str = "NEXT_MONTH";
 const CONTRACT_TYPE_CURRENT_QUARTER: &str = "CURRENT_QUARTER";
 const CONTRACT_TYPE_NEXT_QUARTER: &str = "NEXT_QUARTER";
 
+pub(crate) fn parse_millis(value: i64, field: &str) -> anyhow::Result<UnixNanos> {
+    parse_timestamp(value, UnixNanos::from_millis_checked(value), field)
+}
+
+pub(crate) fn parse_micros(value: i64, field: &str) -> anyhow::Result<UnixNanos> {
+    parse_timestamp(value, UnixNanos::from_micros_checked(value), field)
+}
+
+fn parse_timestamp(
+    value: i64,
+    timestamp: Option<UnixNanos>,
+    field: &str,
+) -> anyhow::Result<UnixNanos> {
+    timestamp.ok_or_else(|| {
+        if value < 0 {
+            anyhow::anyhow!("invalid negative Binance {field} timestamp: {value}")
+        } else {
+            anyhow::anyhow!("Binance {field} timestamp is outside the UnixNanos range: {value}")
+        }
+    })
+}
+
+pub(crate) fn parse_millis_or_init(value: i64, field: &str, ts_init: UnixNanos) -> UnixNanos {
+    timestamp_or_init(parse_millis(value, field), ts_init)
+}
+
+pub(crate) fn parse_micros_or_init(value: i64, field: &str, ts_init: UnixNanos) -> UnixNanos {
+    timestamp_or_init(parse_micros(value, field), ts_init)
+}
+
+fn timestamp_or_init(timestamp: anyhow::Result<UnixNanos>, ts_init: UnixNanos) -> UnixNanos {
+    match timestamp {
+        Ok(timestamp) => timestamp,
+        Err(e) => {
+            log::warn!("{e}; using initialization timestamp");
+            ts_init
+        }
+    }
+}
+
 fn parse_tradifi_asset_class(symbol: &BinanceFuturesUsdSymbol) -> anyhow::Result<AssetClass> {
     let underlying_type = symbol.underlying_type.as_deref().with_context(|| {
         format!(
@@ -352,8 +392,8 @@ pub(crate) fn parse_usdm_instrument_with_fees(
             Ok(InstrumentAny::CryptoPerpetual(instrument))
         }
         ContractKind::Delivery => {
-            let activation_ns = parse_futures_timestamp(symbol.onboard_date, "onboardDate")?;
-            let expiration_ns = parse_futures_timestamp(symbol.delivery_date, "deliveryDate")?;
+            let activation_ns = parse_millis(symbol.onboard_date, "Futures onboardDate")?;
+            let expiration_ns = parse_millis(symbol.delivery_date, "Futures deliveryDate")?;
             let instrument = CryptoFuture::new(
                 instrument_id,
                 raw_symbol,
@@ -505,8 +545,8 @@ pub(crate) fn parse_coinm_instrument_with_fees(
         );
         Ok(InstrumentAny::CryptoPerpetual(instrument))
     } else {
-        let activation_ns = parse_futures_timestamp(symbol.onboard_date, "onboardDate")?;
-        let expiration_ns = parse_futures_timestamp(symbol.delivery_date, "deliveryDate")?;
+        let activation_ns = parse_millis(symbol.onboard_date, "Futures onboardDate")?;
+        let expiration_ns = parse_millis(symbol.delivery_date, "Futures deliveryDate")?;
         let instrument = CryptoFuture::new(
             instrument_id,
             raw_symbol,
@@ -539,15 +579,6 @@ pub(crate) fn parse_coinm_instrument_with_fees(
         );
         Ok(InstrumentAny::CryptoFuture(instrument))
     }
-}
-
-fn parse_futures_timestamp(value: i64, field: &str) -> anyhow::Result<UnixNanos> {
-    let millis = u64::try_from(value)
-        .with_context(|| format!("Invalid Binance Futures {field} timestamp '{value}'"))?;
-    let nanos = millis
-        .checked_mul(1_000_000)
-        .context("Binance Futures timestamp overflowed nanoseconds")?;
-    Ok(UnixNanos::from(nanos))
 }
 
 /// SBE status value for Trading.
@@ -883,7 +914,7 @@ pub fn parse_spot_trades_sbe(
         };
 
         // SBE trade timestamps are in microseconds
-        let ts_event = UnixNanos::from(trade.time as u64 * 1_000);
+        let ts_event = parse_micros(trade.time, "Spot SBE trade time")?;
 
         let tick = TradeTick::new(
             instrument_id,
@@ -1034,7 +1065,7 @@ pub fn parse_order_status_report_sbe(
     };
 
     // Parse timestamps (SBE uses microseconds)
-    let ts_event = UnixNanos::from_micros(order.update_time as u64);
+    let ts_event = parse_micros(order.update_time, "Spot SBE order update time")?;
 
     // Build order list ID if present
     let order_list_id = order.order_list_id.and_then(|id| {
@@ -1049,7 +1080,7 @@ pub fn parse_order_status_report_sbe(
     let post_only = order.order_type == SbeOrderType::LimitMaker;
 
     // Parse order creation time (SBE uses microseconds)
-    let ts_accepted = UnixNanos::from_micros(order.time as u64);
+    let ts_accepted = parse_micros(order.time, "Spot SBE order time")?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -1176,7 +1207,7 @@ pub fn parse_new_order_response_sbe(
     };
 
     // SBE uses microseconds; for new orders transact_time is both creation and event time
-    let ts_event = UnixNanos::from_micros(response.transact_time as u64);
+    let ts_event = parse_micros(response.transact_time, "Spot SBE transaction time")?;
     let ts_accepted = ts_event;
 
     let order_list_id = response.order_list_id.and_then(|id| {
@@ -1280,7 +1311,7 @@ pub fn parse_fill_report_sbe(
     };
 
     // Parse timestamp (SBE uses microseconds)
-    let ts_event = UnixNanos::from_micros(trade.time as u64);
+    let ts_event = parse_micros(trade.time, "Spot SBE account trade time")?;
 
     Ok(FillReport::new(
         account_id,
@@ -1349,7 +1380,7 @@ pub fn parse_klines_to_binance_bars(
         let count = u64::try_from(kline.num_trades).map_err(|_| {
             anyhow::anyhow!("invalid negative kline trade count {}", kline.num_trades)
         })?;
-        let ts_event = UnixNanos::from_micros(kline.close_time as u64);
+        let ts_event = parse_micros(kline.close_time, "Spot SBE kline close time")?;
 
         let bar = crate::common::bar::BinanceBar::new(
             bar_type,

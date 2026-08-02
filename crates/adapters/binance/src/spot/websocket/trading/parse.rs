@@ -34,7 +34,7 @@ use crate::common::{
     encoder::decode_client_order_id,
     enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
     parse::{
-        parse_required_decimal, parse_required_price_at_precision,
+        parse_millis_or_init, parse_required_decimal, parse_required_price_at_precision,
         parse_required_quantity_at_precision,
     },
 };
@@ -56,7 +56,7 @@ pub fn parse_spot_exec_report_to_order_status(
     let client_order_id =
         decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Spot execution event time", ts_init);
 
     let order_side = match msg.side {
         BinanceSide::Buy => OrderSide::Buy,
@@ -145,7 +145,7 @@ pub fn parse_spot_exec_report_to_fill(
         decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let trade_id = TradeId::new(msg.trade_id.to_string());
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Spot execution event time", ts_init);
 
     let order_side = match msg.side {
         BinanceSide::Buy => OrderSide::Buy,
@@ -200,7 +200,8 @@ pub fn parse_spot_account_position(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> AccountState {
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.event_time, "Spot account position event time", ts_init);
 
     let balances: Vec<AccountBalance> = msg
         .balances
@@ -371,6 +372,31 @@ mod tests {
 
         let error = result.unwrap_err().to_string();
         assert!(error.contains("original_qty"));
+    }
+
+    #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_execution_report_falls_back_for_invalid_timestamp(#[case] event_time: i64) {
+        let json = load_fixture_string("spot/user_data_json/execution_report_new.json");
+        let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        msg.event_time = event_time;
+
+        let ts_init = UnixNanos::from(1);
+        let report = parse_spot_exec_report_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            AccountId::from("BINANCE-001"),
+            false,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.ts_accepted, ts_init);
+        assert_eq!(report.ts_last, ts_init);
+        assert_eq!(report.ts_init, ts_init);
     }
 
     #[rstest]

@@ -24,6 +24,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
+use crate::common::parse::parse_micros_or_init;
 use crate::spot::sbe::stream::{
     BestBidAskStreamEvent, DepthDiffStreamEvent, DepthSnapshotStreamEvent, MessageHeader,
     StreamDecodeError, TradesStreamEvent, template_id,
@@ -97,7 +98,11 @@ pub fn parse_trades_event(
                 event.qty_exponent,
                 size_precision,
             );
-            let ts_event = UnixNanos::from_micros(event.transact_time_us as u64);
+            let ts_event = parse_micros_or_init(
+                event.transact_time_us,
+                "Spot SBE stream transaction time",
+                ts_init,
+            );
 
             let trade = TradeTick::new(
                 instrument_id,
@@ -148,7 +153,7 @@ pub fn parse_bbo_event(
         event.qty_exponent,
         size_precision,
     );
-    let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
+    let ts_event = parse_micros_or_init(event.event_time_us, "Spot SBE BBO event time", ts_init);
 
     QuoteTick::new(
         instrument_id,
@@ -173,7 +178,11 @@ pub fn parse_depth_snapshot(
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
+    let ts_event = parse_micros_or_init(
+        event.event_time_us,
+        "Spot SBE depth snapshot event time",
+        ts_init,
+    );
     let sequence = event.book_update_id as u64;
 
     let mut deltas = Vec::with_capacity(event.bids.len() + event.asks.len() + 1);
@@ -269,7 +278,11 @@ pub fn parse_depth_diff(
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
+    let ts_event = parse_micros_or_init(
+        event.event_time_us,
+        "Spot SBE depth diff event time",
+        ts_init,
+    );
     let sequence = event.last_book_update_id as u64;
 
     let mut deltas = Vec::with_capacity(event.bids.len() + event.asks.len());
@@ -573,6 +586,30 @@ mod tests {
             quote.ts_event,
             UnixNanos::from(1_700_000_000_000_000_000u64)
         );
+        assert_eq!(quote.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_bbo_event_falls_back_for_invalid_timestamp(#[case] event_time_us: i64) {
+        let instrument = sample_instrument();
+        let event = BestBidAskStreamEvent {
+            event_time_us,
+            book_update_id: 123,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bid_price_mantissa: 12_345,
+            bid_qty_mantissa: 25_000,
+            ask_price_mantissa: 12_350,
+            ask_qty_mantissa: 30_000,
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let ts_init = UnixNanos::from(1);
+        let quote = parse_bbo_event(&event, &instrument, ts_init);
+
+        assert_eq!(quote.ts_event, ts_init);
         assert_eq!(quote.ts_init, ts_init);
     }
 

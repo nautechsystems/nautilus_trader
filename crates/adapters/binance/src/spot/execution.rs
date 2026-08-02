@@ -86,7 +86,7 @@ use crate::{
         encoder::{decode_client_order_id, encode_broker_id},
         enums::{BinanceSide, BinanceTimeInForce},
         parse::{
-            parse_required_decimal, parse_required_price_at_precision,
+            parse_millis_or_init, parse_required_decimal, parse_required_price_at_precision,
             parse_required_quantity_at_precision,
         },
         urls::{get_http_base_url_with_us, get_spot_user_stream_url},
@@ -2590,7 +2590,7 @@ fn dispatch_tracked_execution_report(
     ts_init: UnixNanos,
 ) {
     let venue_order_id = VenueOrderId::new(report.order_id.to_string());
-    let ts_event = UnixNanos::from_millis(report.event_time as u64);
+    let ts_event = parse_millis_or_init(report.event_time, "Spot execution event time", ts_init);
 
     match report.execution_type {
         BinanceSpotExecutionType::New => {

@@ -46,7 +46,10 @@ use crate::{
     common::{
         bar::BinanceBar,
         enums::{BinanceKlineInterval, BinanceWsEventType},
-        parse::{parse_required_price_at_precision, parse_required_quantity_at_precision},
+        parse::{
+            parse_millis, parse_millis_or_init, parse_required_price_at_precision,
+            parse_required_quantity_at_precision,
+        },
     },
     data_types::{BinanceFuturesMarkPriceUpdate, BinanceFuturesTicker},
 };
@@ -80,7 +83,7 @@ pub fn parse_agg_trade(
         AggressorSide::Buyer
     };
 
-    let ts_event = UnixNanos::from_millis(msg.trade_time as u64);
+    let ts_event = parse_millis_or_init(msg.trade_time, "Futures aggregate trade time", ts_init);
     let trade_id = TradeId::new(msg.agg_trade_id.to_string());
 
     Ok(TradeTick::new(
@@ -123,7 +126,7 @@ pub fn parse_trade(
         AggressorSide::Buyer
     };
 
-    let ts_event = UnixNanos::from_millis(msg.trade_time as u64);
+    let ts_event = parse_millis_or_init(msg.trade_time, "Futures trade time", ts_init);
     let trade_id = TradeId::new(msg.trade_id.to_string());
 
     Ok(TradeTick::new(
@@ -168,7 +171,11 @@ pub fn parse_book_ticker(
         .parse::<f64>()
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
-    let ts_event = UnixNanos::from_millis(msg.transaction_time as u64);
+    let ts_event = parse_millis_or_init(
+        msg.transaction_time,
+        "Futures book ticker transaction time",
+        ts_init,
+    );
 
     Ok(QuoteTick::new(
         instrument_id,
@@ -195,7 +202,11 @@ pub fn parse_depth_update(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let ts_event = UnixNanos::from_millis(msg.transaction_time as u64);
+    let ts_event = parse_millis_or_init(
+        msg.transaction_time,
+        "Futures depth update transaction time",
+        ts_init,
+    );
 
     let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());
 
@@ -309,9 +320,18 @@ pub fn parse_mark_price(
         .parse::<Decimal>()
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Futures mark price event time", ts_init);
     let next_funding_ns = if msg.next_funding_time > 0 {
-        Some(UnixNanos::from_millis(msg.next_funding_time as u64))
+        match parse_millis(
+            msg.next_funding_time,
+            "Futures mark price next funding time",
+        ) {
+            Ok(timestamp) => Some(timestamp),
+            Err(e) => {
+                log::warn!("{e}; omitting next funding time");
+                None
+            }
+        }
     } else {
         None
     };
@@ -365,12 +385,12 @@ pub fn parse_ticker(
         parse_ticker_decimal("low_price", &msg.low_price)?,
         parse_ticker_decimal("volume", &msg.volume)?,
         parse_ticker_decimal("quote_volume", &msg.quote_volume)?,
-        ticker_unix_nanos_from_millis("open_time", msg.open_time)?,
-        ticker_unix_nanos_from_millis("close_time", msg.close_time)?,
+        parse_millis_or_init(msg.open_time, "Futures ticker open time", ts_init),
+        parse_millis_or_init(msg.close_time, "Futures ticker close time", ts_init),
         msg.first_trade_id,
         msg.last_trade_id,
         msg.num_trades,
-        ticker_unix_nanos_from_millis("event_time", msg.event_time)?,
+        parse_millis_or_init(msg.event_time, "Futures ticker event time", ts_init),
         ts_init,
     ))
 }
@@ -379,13 +399,6 @@ fn parse_ticker_decimal(field: &str, value: &str) -> BinanceWsResult<Decimal> {
     Decimal::from_str(value).map_err(|e| {
         BinanceWsError::ParseError(format!("invalid Binance ticker {field}='{value}': {e}"))
     })
-}
-
-fn ticker_unix_nanos_from_millis(field: &str, value: i64) -> BinanceWsResult<UnixNanos> {
-    let millis = u64::try_from(value).map_err(|e| {
-        BinanceWsError::ParseError(format!("invalid Binance ticker {field}='{value}': {e}"))
-    })?;
-    Ok(UnixNanos::from_millis(millis))
 }
 
 /// Converts a Binance kline interval to a Nautilus `BarSpecification`.
@@ -482,7 +495,7 @@ pub fn parse_kline(
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
     // Use the kline close time as the event timestamp
-    let ts_event = UnixNanos::from_millis(msg.kline.close_time as u64);
+    let ts_event = parse_millis_or_init(msg.kline.close_time, "Futures kline close time", ts_init);
 
     let bar = BinanceBar::new(
         bar_type,
@@ -607,6 +620,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_agg_trade_falls_back_for_invalid_timestamp(#[case] trade_time: i64) {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesAggTradeMsg = load_market_fixture("agg_trade_stream.json");
+        msg.trade_time = trade_time;
+
+        let ts_init = UnixNanos::from(1);
+        let trade = parse_agg_trade(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(trade.ts_event, ts_init);
+        assert_eq!(trade.ts_init, ts_init);
+    }
+
+    #[rstest]
     fn test_parse_trade() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
@@ -710,6 +738,21 @@ mod tests {
         assert_eq!(custom.next_funding_time, funding.next_funding_ns);
         assert_eq!(custom.ts_event, mark.ts_event);
         assert_eq!(custom.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case::zero(0)]
+    #[case::negative(-1)]
+    fn test_parse_mark_price_preserves_missing_funding_time(#[case] next_funding_time: i64) {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");
+        msg.next_funding_time = next_funding_time;
+
+        let (_, _, funding, custom) =
+            parse_mark_price(&msg, &instrument, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(funding.next_funding_ns, None);
+        assert_eq!(custom.next_funding_time, None);
     }
 
     #[rstest]

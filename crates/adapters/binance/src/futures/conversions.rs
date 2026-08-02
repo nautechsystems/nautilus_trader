@@ -15,11 +15,11 @@
 
 //! Value conversions between Nautilus domain types and Binance Futures venue types.
 
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::UnixNanos;
 use nautilus_model::{enums::OrderSide, types::Currency};
 use rust_decimal::Decimal;
 
-use crate::common::enums::BinancePositionSide;
+use crate::common::{enums::BinancePositionSide, parse::parse_millis};
 
 const BNFCR_ASSET: &str = "BNFCR";
 
@@ -132,13 +132,7 @@ pub(crate) fn parse_good_till_date(value: Option<i64>) -> anyhow::Result<Option<
         return Ok(None);
     };
 
-    let millis = u64::try_from(value)
-        .map_err(|_| anyhow::anyhow!("invalid negative Binance goodTillDate: {value}"))?;
-    let nanos = millis
-        .checked_mul(NANOSECONDS_IN_MILLISECOND)
-        .ok_or_else(|| anyhow::anyhow!("Binance goodTillDate is outside the UnixNanos range"))?;
-
-    Ok(Some(UnixNanos::from(nanos)))
+    parse_millis(value, "goodTillDate").map(Some)
 }
 
 #[cfg(test)]

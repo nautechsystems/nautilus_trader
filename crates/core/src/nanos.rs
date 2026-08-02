@@ -143,6 +143,14 @@ impl UnixNanos {
         }
     }
 
+    /// Creates a new [`UnixNanos`] from a signed millisecond timestamp.
+    ///
+    /// Returns `None` if `millis` is negative or the result overflows `u64`.
+    #[must_use]
+    pub const fn from_millis_checked(millis: i64) -> Option<Self> {
+        Self::from_units_checked(millis, NANOSECONDS_IN_MILLISECOND)
+    }
+
     /// Creates a new [`UnixNanos`] from a microsecond timestamp.
     ///
     /// # Panics
@@ -153,6 +161,25 @@ impl UnixNanos {
         match micros.checked_mul(NANOSECONDS_IN_MICROSECOND) {
             Some(nanos) => Self(nanos),
             None => panic!("UnixNanos overflow in from_micros"),
+        }
+    }
+
+    /// Creates a new [`UnixNanos`] from a signed microsecond timestamp.
+    ///
+    /// Returns `None` if `micros` is negative or the result overflows `u64`.
+    #[must_use]
+    pub const fn from_micros_checked(micros: i64) -> Option<Self> {
+        Self::from_units_checked(micros, NANOSECONDS_IN_MICROSECOND)
+    }
+
+    const fn from_units_checked(value: i64, nanos_per_unit: u64) -> Option<Self> {
+        if value < 0 {
+            return None;
+        }
+
+        match value.cast_unsigned().checked_mul(nanos_per_unit) {
+            Some(nanos) => Some(Self(nanos)),
+            None => None,
         }
     }
 
@@ -1488,6 +1515,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case::valid(1_700_000_000_123, Some(1_700_000_000_123_000_000))]
+    #[case::negative(-1, None)]
+    #[case::overflow(i64::MAX, None)]
+    fn test_from_millis_checked(#[case] millis: i64, #[case] expected: Option<u64>) {
+        assert_eq!(
+            UnixNanos::from_millis_checked(millis).map(|value| value.as_u64()),
+            expected
+        );
+    }
+
+    #[rstest]
     #[case(0, 0)]
     #[case(999_999_999, 0)]
     #[case(1_000_000_000, 1)]
@@ -1558,6 +1596,17 @@ mod tests {
         let us = 1_000_000_123_456_u64;
         let expected = us * 1_000;
         assert_eq!(UnixNanos::from_micros(us).as_u64(), expected);
+    }
+
+    #[rstest]
+    #[case::valid(1_700_000_000_123_456, Some(1_700_000_000_123_456_000))]
+    #[case::negative(-1, None)]
+    #[case::overflow(i64::MAX, None)]
+    fn test_from_micros_checked(#[case] micros: i64, #[case] expected: Option<u64>) {
+        assert_eq!(
+            UnixNanos::from_micros_checked(micros).map(|value| value.as_u64()),
+            expected
+        );
     }
 
     #[rstest]

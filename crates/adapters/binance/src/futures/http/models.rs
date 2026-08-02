@@ -49,7 +49,7 @@ use crate::{
             BinanceTradingStatus, BinanceWorkingType,
         },
         models::BinanceRateLimit,
-        parse::parse_required_decimal,
+        parse::{parse_millis, parse_required_decimal},
     },
     futures::conversions::{normalize_futures_asset, parse_good_till_date},
 };
@@ -980,7 +980,9 @@ impl BinanceFuturesAccountInfo {
 
         let ts_event = self
             .update_time
-            .map_or(ts_init, |t| UnixNanos::from_millis(t as u64));
+            .map(|value| parse_millis(value, "Futures account update time"))
+            .transpose()?
+            .unwrap_or(ts_init);
 
         Ok(AccountState::new(
             account_id,
@@ -1126,7 +1128,9 @@ impl BinanceFuturesOrder {
     ) -> anyhow::Result<OrderStatusReport> {
         let ts_event = self
             .update_time
-            .map_or(ts_init, |t| UnixNanos::from_millis(t as u64));
+            .map(|value| parse_millis(value, "Futures order update time"))
+            .transpose()?
+            .unwrap_or(ts_init);
 
         let client_order_id =
             decode_client_order_id(&self.client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)?;
@@ -1271,7 +1275,7 @@ impl BinanceUserTrade {
         bnfcr_currency: Currency,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
-        let ts_event = UnixNanos::from_millis(self.time as u64);
+        let ts_event = parse_millis(self.time, "Futures user trade time")?;
 
         let venue_order_id = VenueOrderId::new(self.order_id.to_string());
         let trade_id = TradeId::new(self.id.to_string());
@@ -1454,7 +1458,9 @@ impl BinanceFuturesAlgoOrder {
         let ts_event = self
             .update_time
             .or(self.create_time)
-            .map_or(ts_init, |t| UnixNanos::from_millis(t as u64));
+            .map(|value| parse_millis(value, "Futures algo order time"))
+            .transpose()?
+            .unwrap_or(ts_init);
 
         let client_order_id =
             decode_client_order_id(&self.client_algo_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)?;
@@ -1564,7 +1570,8 @@ impl BinanceFuturesAlgoOrder {
         }
 
         if let Some(trigger_time) = self.trigger_time {
-            report = report.with_ts_triggered(UnixNanos::from_millis(trigger_time as u64));
+            report =
+                report.with_ts_triggered(parse_millis(trigger_time, "Futures algo trigger time")?);
         }
 
         Ok(report)

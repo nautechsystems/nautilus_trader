@@ -44,7 +44,7 @@ use crate::{
             BinanceTimeInForce, BinanceWorkingType,
         },
         parse::{
-            parse_required_decimal, parse_required_price_at_precision,
+            parse_millis_or_init, parse_required_decimal, parse_required_price_at_precision,
             parse_required_quantity_at_precision,
         },
     },
@@ -66,7 +66,7 @@ pub fn parse_futures_order_update_to_order_status(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let order = &msg.order;
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Futures order update event time", ts_init);
 
     let client_order_id = decode_order_client_id(order)?;
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
@@ -116,8 +116,9 @@ pub fn parse_futures_order_update_to_order_status(
     report.post_only = order.order_type == BinanceFuturesOrderType::Limit
         && order.time_in_force == BinanceTimeInForce::Gtx;
 
-    if let Some(expire_time) = parse_good_till_date(order.good_till_date)? {
-        report.expire_time = Some(expire_time);
+    match parse_good_till_date(order.good_till_date) {
+        Ok(expire_time) => report.expire_time = expire_time,
+        Err(e) => log::warn!("{e}; omitting Futures order expiry"),
     }
 
     if let Some(stop_price) =
@@ -218,7 +219,7 @@ pub fn parse_futures_order_update_to_fill(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let order = &msg.order;
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event = parse_millis_or_init(msg.event_time, "Futures fill event time", ts_init);
 
     let client_order_id = decode_order_client_id(order)?;
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
@@ -287,7 +288,8 @@ pub fn parse_futures_algo_update_to_order_status(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<OrderStatusReport>> {
-    let ts_event = UnixNanos::from_millis(event_time as u64);
+    let ts_event =
+        parse_millis_or_init(event_time, "Futures algo order update event time", ts_init);
 
     let client_order_id = decode_algo_client_id(algo_data)?;
 
@@ -341,8 +343,9 @@ pub fn parse_futures_algo_update_to_order_status(
         report.trigger_type = Some(parse_working_type(algo_data.working_type));
     }
 
-    if let Some(expire_time) = parse_good_till_date(algo_data.good_till_date)? {
-        report.expire_time = Some(expire_time);
+    match parse_good_till_date(algo_data.good_till_date) {
+        Ok(expire_time) => report.expire_time = expire_time,
+        Err(e) => log::warn!("{e}; omitting Futures algo order expiry"),
     }
 
     Ok(Some(report))
@@ -355,7 +358,8 @@ pub fn parse_futures_account_update(
     bnfcr_currency: Currency,
     ts_init: UnixNanos,
 ) -> Option<AccountState> {
-    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
+    let ts_event =
+        parse_millis_or_init(msg.event_time, "Futures account update event time", ts_init);
 
     let balances: Vec<AccountBalance> = msg
         .account
@@ -612,6 +616,32 @@ mod tests {
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
         assert_eq!(report.venue_order_id, VenueOrderId::new("8886774"));
         assert_eq!(report.client_order_id, Some(ClientOrderId::from("TEST")));
+    }
+
+    #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_order_update_to_order_status_falls_back_for_invalid_timestamp(
+        #[case] event_time: i64,
+    ) {
+        let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
+        msg.event_time = event_time;
+
+        let ts_init = UnixNanos::from(1);
+        let report = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            false,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.ts_accepted, ts_init);
+        assert_eq!(report.ts_last, ts_init);
+        assert_eq!(report.ts_init, ts_init);
     }
 
     #[rstest]

@@ -176,6 +176,7 @@ adapter set. The following limits remain deferred:
 - Fixed cross-thread `RustLocal` callback access that could cause undefined behavior (#4496), thanks @folknor
 - Fixed time-event callback teardown aborting during thread-local destruction (#4516), thanks @folknor
 - Fixed float time conversions saturating and real‑time `AtomicTime` returning placeholder timestamps or aborting
+- Fixed out-of-range Binance timestamps aborting live adapters or silently wrapping; streams warn and use receive time
 - Fixed underflow and currency-mismatch panics from out-of-order fill events (#4483), thanks @folknor
 - Fixed fixed-risk position sizing panics from invalid inputs, overflow, and quantity conversion (#4573), thanks @dfjmax
 - Fixed v2 `CompetitionAwareFillModel` and `VolumeSensitiveFillModel` panics on invalid or overflowing liquidity

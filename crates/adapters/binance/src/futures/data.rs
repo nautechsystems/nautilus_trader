@@ -47,7 +47,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, Params,
-    datetime::{NANOSECONDS_IN_MILLISECOND, datetime_to_unix_nanos},
+    datetime::datetime_to_unix_nanos,
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -75,7 +75,8 @@ use crate::{
         consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE},
         enums::{BinanceEnvironment, BinanceProductType},
         parse::{
-            bar_spec_to_binance_interval, parse_price_at_precision, parse_quantity_at_precision,
+            bar_spec_to_binance_interval, parse_millis, parse_millis_or_init,
+            parse_price_at_precision, parse_quantity_at_precision,
             parse_required_price_at_precision, parse_required_quantity_at_precision,
             quote_to_l1_deltas,
         },
@@ -434,12 +435,6 @@ impl BinanceFuturesDataClient {
             .with_context(|| format!("invalid Binance open interest `{field}` value `{value}`"))
     }
 
-    fn unix_nanos_from_millis_i64(field: &str, value: i64) -> anyhow::Result<UnixNanos> {
-        let millis = u64::try_from(value)
-            .with_context(|| format!("invalid Binance open interest `{field}` value `{value}`"))?;
-        Ok(UnixNanos::from_millis(millis))
-    }
-
     fn liquidation_data_type(instrument_id: InstrumentId) -> DataType {
         let mut metadata = Params::new();
         metadata.insert(
@@ -670,6 +665,11 @@ impl BinanceFuturesDataClient {
             }
             BinanceFuturesWsStreamsMessage::ForceOrder(ref liq_msg) => {
                 if let Some(instrument) = cache.get(&liq_msg.order.symbol) {
+                    let ts_event = parse_millis_or_init(
+                        liq_msg.event_time,
+                        "Futures liquidation event time",
+                        ts_init,
+                    );
                     let parse_price = |value: &str, field: &str| -> anyhow::Result<Price> {
                         parse_required_price_at_precision(
                             value,
@@ -705,7 +705,7 @@ impl BinanceFuturesDataClient {
                                 average_price,
                                 last_filled_qty,
                                 accumulated_qty,
-                                UnixNanos::from_millis(liq_msg.event_time as u64),
+                                ts_event,
                                 ts_init,
                             ));
 
@@ -1313,8 +1313,12 @@ fn parse_order_book_snapshot(
     ts_init: UnixNanos,
 ) -> OrderBookDeltas {
     let sequence = order_book.last_update_id as u64;
-    let ts_event = order_book.transaction_time.map_or(ts_init, |t| {
-        UnixNanos::from((t as u64) * NANOSECONDS_IN_MILLISECOND)
+    let ts_event = order_book.transaction_time.map_or(ts_init, |value| {
+        parse_millis_or_init(
+            value,
+            "Futures order book snapshot transaction time",
+            ts_init,
+        )
     });
 
     let total_levels = order_book.bids.len() + order_book.asks.len();
@@ -2693,8 +2697,10 @@ impl DataClient for BinanceFuturesDataClient {
                                 return;
                             }
                         };
-                        let ts_event =
-                            match Self::unix_nanos_from_millis_i64("time", open_interest.time) {
+                        let ts_event = match parse_millis(
+                            open_interest.time,
+                            "Futures open interest time",
+                        ) {
                                 Ok(value) => value,
                                 Err(e) => {
                                     log::error!(
@@ -2789,9 +2795,9 @@ impl DataClient for BinanceFuturesDataClient {
                                         "sum_open_interest_value",
                                         &point.sum_open_interest_value,
                                     )?,
-                                    Self::unix_nanos_from_millis_i64(
-                                        "timestamp",
+                                    parse_millis(
                                         point.timestamp,
+                                        "Futures historical open interest timestamp",
                                     )?,
                                 ))
                             })
@@ -3263,6 +3269,35 @@ mod tests {
         assert_eq!(deltas.deltas[2].order.price.as_decimal(), dec!(102.00));
         assert_eq!(deltas.deltas[2].order.size.as_decimal(), dec!(0.700));
         assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(deltas.ts_event, UnixNanos::from(1));
+        assert_eq!(deltas.ts_init, UnixNanos::from(1));
+    }
+
+    #[rstest]
+    #[case::negative(-1)]
+    #[case::overflow(i64::MAX)]
+    fn test_parse_order_book_snapshot_falls_back_for_invalid_timestamp(
+        #[case] transaction_time: i64,
+    ) {
+        let order_book = BinanceOrderBook {
+            last_update_id: 10,
+            bids: vec![],
+            asks: vec![],
+            event_time: None,
+            transaction_time: Some(transaction_time),
+        };
+
+        let ts_init = UnixNanos::from(1);
+        let deltas = parse_order_book_snapshot(
+            &order_book,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            2,
+            3,
+            ts_init,
+        );
+
+        assert_eq!(deltas.ts_event, ts_init);
+        assert_eq!(deltas.ts_init, ts_init);
     }
 
     #[rstest]
