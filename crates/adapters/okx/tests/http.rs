@@ -83,6 +83,7 @@ struct TestServerState {
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_history_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_detail_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    mark_price_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     option_summary_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     option_summary_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     price_limit_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
@@ -352,6 +353,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let order_detail_state = state.clone();
     let order_place_state = state.clone();
     let order_cancel_state = state.clone();
+    let mark_price_state = state.clone();
     let algo_details_state = state.clone();
     let algo_pending_state = state.clone();
     let algo_history_state = state.clone();
@@ -641,7 +643,21 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         )
         .route(
             "/api/v5/public/mark-price",
-            get(|| async { Json(load_test_data("http_get_mark_price.json")) }),
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = mark_price_state.clone();
+                async move {
+                    state.mark_price_queries.lock().await.push(params.clone());
+                    if params.get("instType").map(String::as_str) != Some("SWAP") {
+                        return Json(json!({
+                            "code": "51000",
+                            "msg": "Parameter instType error",
+                            "data": [],
+                        }));
+                    }
+
+                    Json(load_test_data("http_get_mark_price.json"))
+                }
+            }),
         )
         .route(
             "/api/v5/public/opt-summary",
@@ -5842,6 +5858,42 @@ async fn test_http_request_price_limit_uses_instrument_symbol() {
 
     let queries = state.price_limit_queries.lock().await;
     assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_mark_price_uses_instrument_type_and_symbol() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let mark = client
+        .request_mark_price(InstrumentId::from("BTC-USDT-SWAP.OKX"))
+        .await
+        .unwrap();
+
+    assert_eq!(mark.instrument_id, InstrumentId::from("BTC-USDT-SWAP.OKX"));
+    assert_eq!(mark.value, Price::from("84660.1"));
+    assert_eq!(mark.ts_event, UnixNanos::from(1_744_590_349_506_000_000));
+
+    let queries = state.mark_price_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].get("instType"), Some(&"SWAP".to_string()));
     assert_eq!(queries[0].get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
 }
 

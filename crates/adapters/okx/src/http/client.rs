@@ -2581,7 +2581,9 @@ impl OKXHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<MarkPriceUpdate> {
+        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let mut params = GetMarkPriceParamsBuilder::default();
+        params.inst_type(okx_instrument_type(&inst)?);
         params.inst_id(instrument_id.symbol.inner());
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
@@ -2594,7 +2596,6 @@ impl OKXHttpClient {
         let raw = resp
             .first()
             .ok_or_else(|| anyhow::anyhow!("No mark price returned from OKX"))?;
-        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         let mark_price =
