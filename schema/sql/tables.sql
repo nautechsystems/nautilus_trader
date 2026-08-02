@@ -652,3 +652,13 @@ CREATE TABLE IF NOT EXISTS "pool_tick" (
     FOREIGN KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index)
         REFERENCES pool_snapshot(chain_id, pool_identifier, block, transaction_index, log_index) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS "execution_transaction" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    nonce BIGINT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,
+    UNIQUE (chain_id, transaction_hash)
+);

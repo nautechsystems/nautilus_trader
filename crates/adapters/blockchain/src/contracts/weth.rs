@@ -13,12 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Smart contract interfaces and utilities for blockchain interactions.
-//!
-//! This module provides tools for interacting with various smart contracts on EVM-compatible
-//! blockchains, including standard token contracts (ERC20) and DeFi protocol contracts.
+use alloy::sol;
 
-pub mod base;
-pub mod erc20;
-pub mod uniswap_v3_pool;
-pub mod weth;
+sol! {
+    #[sol(rpc)]
+    contract WETH9 {
+        function deposit() external payable;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::sol_types::SolCall;
+    use nautilus_core::hex;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_deposit_calldata_matches_known_vector() {
+        let calldata = WETH9::depositCall {}.abi_encode();
+
+        // deposit() selector 0xd0e30db0 with no arguments
+        assert_eq!(hex::encode(&calldata), "d0e30db0");
+    }
+}

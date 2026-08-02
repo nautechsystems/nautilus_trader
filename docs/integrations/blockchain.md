@@ -109,12 +109,12 @@ RPC_WSS_URL=wss://your-rpc.example
 - `RPC_HTTP_URL` or `--rpc-url` is required for contract reads and snapshot hydration.
 - `RPC_WSS_URL` is only needed for WSS RPC live streams.
 
-Execution will add further variables (see [Execution](#execution)):
+Execution adds further variables (see [Execution](#execution)):
 
-- The signer private key will be read from the variable named by the `signer_private_key_env`
+- The signer private key is read from the variable named by the `signer_private_key_env`
   configuration field, never from configuration directly.
-- `BLOCKCHAIN_FORK_TESTS=1` and `BLOCKCHAIN_FORK_RPC_URL` will gate the pinned‑block Anvil
-  integration suite, which points Anvil's `--fork-url` at a read‑only Arbitrum RPC and sends signed
+- `BLOCKCHAIN_FORK_TESTS=1` and `BLOCKCHAIN_FORK_RPC_URL` gate the pinned‑block Anvil integration
+  suite, which points Anvil's `--fork-url` at a read‑only Arbitrum RPC and sends signed
   transactions to localhost only.
 
 For token setup and quota details, see Envio's
@@ -438,12 +438,15 @@ PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `po
 ## Execution
 
 :::note
-Execution support is under active development. The specifications in this section describe planned
-behavior and will land in upcoming releases.
+Execution support is under active development. Preflight, wrap, and approve operations and the
+shared EIP-1559 transaction path are implemented; order submission, swaps, and reconciliation are
+planned and described here before they land.
 :::
 
-The `BlockchainExecutionClient` currently implements `connect`/`disconnect` and a wallet balance
-refresh at connect (native currency and, when a token universe is configured, ERC-20 tokens).
+The `BlockchainExecutionClient` implements `connect`/`disconnect` with a wallet balance refresh at
+connect (native currency and, when a token universe is configured, ERC-20 tokens), RPC chain ID
+verification against configuration, and signer initialization from `signer_private_key_env` (see
+[Transaction signing and broadcast](#transaction-signing-and-broadcast)).
 
 ### Supported order slice
 
@@ -492,22 +495,26 @@ deployment whose signature carries a deadline):
 
 ### Preflight, wrapping, and approval
 
-Preflight, WETH wrapping, and router approval will be explicit operations, separate from
+Preflight, WETH wrapping, and router approval are explicit operations on the client, separate from
 `submit_order`:
 
-- **Preflight** will be read‑only: it verifies the chain ID, deployed bytecode at the router, pool,
-  and token addresses, wallet balances, router allowance, and current fee conditions, and returns a
-  structured report.
-- **Wrap** will submit a WETH `deposit()` transaction carrying native value, only on explicit
-  command.
-- **Approve** will submit an ERC-20 `approve(router, amount)` transaction, only on explicit
-  command, with the approval amount policy set by `unlimited_approval`.
+- **Preflight** is read‑only: it resolves the pool from its `InstrumentId` through the shared
+  engine cache, verifies the chain ID, deployed bytecode at the router, pool, and token addresses,
+  wallet native and token balances, the exact router allowance of the pool's base (input) token,
+  and current fee conditions, and returns a structured, sanitized report. It contains no RPC URLs,
+  keys, or raw signed transactions, and it changes no state.
+- **Wrap** submits a WETH `deposit()` transaction carrying native value, only on explicit command.
+- **Approve** submits an ERC-20 `approve(router, amount)` transaction, only on explicit command,
+  with the approval amount policy set by `unlimited_approval`. The router must be in the
+  `router_addresses` allowlist.
+
+Wrap and approve each build their transaction through the shared EIP-1559 path, persist a
+transaction record before broadcast, and return after the transaction is included on-chain.
 
 ### Transaction signing and broadcast
 
-Transactions will be built and signed locally as EIP-1559 typed transactions through Alloy
-primitives (the workspace Alloy dependency's `consensus` and `eips` features will be enabled for
-these paths):
+Transactions are built and signed locally as EIP-1559 typed transactions through Alloy primitives
+(the workspace Alloy dependency's `consensus` and `eips` features are enabled for these paths):
 
 - Building an `alloy::consensus::TxEip1559` (chain ID, nonce, gas, fees, `to`, `value`, `input`).
 - Signing with `alloy::signers::local::PrivateKeySigner` (k256) over
@@ -517,31 +524,36 @@ these paths):
 
 Signer and transaction policy:
 
-- The private key will come from the environment variable named by `signer_private_key_env`; it is
+- The private key comes from the environment variable named by `signer_private_key_env`; it is
   never logged, serialized, or stored in configuration. One signer is supported. At connect, the
   address derived from the key must equal the configured `wallet_address`; a mismatch is a
   configuration error.
-- At most one transaction will be in flight across swaps, wraps, and approvals: a submission guard
-  rejects any new transaction while another awaits inclusion, keeping the `pending` nonce
-  authoritative. The nonce will come from `eth_getTransactionCount` with the `pending` tag.
-- Fees will derive from `eth_maxPriorityFeePerGas` plus the latest base fee with
-  `base_fee_buffer_bps`; `max_fee_per_gas_wei` is a required hard ceiling that rejects the order
-  when current conditions exceed it.
-- Gas will come from `eth_estimateGas` plus `gas_buffer_bps`; a buffered estimate above the
-  `gas_limit` ceiling rejects the order before signing rather than clamping to the ceiling.
-- The client will persist the `(client_order_id, nonce, tx_hash)` mapping to the adapter's Postgres
-  cache database before broadcast; with no durable store configured the client refuses to submit.
-  The order is acked as submitted only after broadcast acceptance.
+- At most one transaction is in flight across wraps and approvals, and across swaps once they
+  land: a submission guard rejects any new transaction while another awaits inclusion, keeping the
+  `pending` nonce authoritative. The nonce comes from `eth_getTransactionCount` with the `pending`
+  tag.
+- Fees derive from `eth_maxPriorityFeePerGas` plus the latest base fee with `base_fee_buffer_bps`;
+  `max_fee_per_gas_wei` is a required hard ceiling that rejects the transaction when current
+  conditions exceed it.
+- Gas comes from `eth_estimateGas` plus `gas_buffer_bps`; a buffered estimate above the `gas_limit`
+  ceiling rejects the transaction before signing rather than clamping to the ceiling.
+- The client persists the transaction record (nonce, transaction hash, chain ID, purpose, status)
+  to the adapter's Postgres cache database before broadcast; with no durable store configured the
+  client refuses to submit. Wrap and approve return only after the receipt confirms inclusion, and
+  the persisted status moves from `pending` to `included` or `reverted`. Order submission (planned)
+  will ack as submitted only after broadcast acceptance.
 
-Execution RPC calls will use per‑request timeouts, and a `null` result is a legitimate pending
-response (a receipt that does not exist yet), not an error. Broadcast failures will classify before
-retry: an `already known` response is acceptance, and a timeout after sending reconciles through
-the persisted record rather than rebroadcasting.
+Execution RPC calls use per‑request timeouts, and a `null` result is a legitimate pending response
+(a receipt that does not exist yet), not an error. Broadcast failures classify before retry: an
+`already known` response is acceptance, a node‑level rejection is definitive, and an ambiguous
+failure after sending (timeout, reset, or an unreadable response) reconciles through the persisted
+record rather than rebroadcasting.
 
 ### Risk and validation boundaries
 
 Generic pre‑trade risk will stay in the engine. Venue‑specific gates will live in the adapter as a
-configuration‑driven limiter:
+configuration‑driven limiter. Chain ID verification, the router allowlist, gas and fee ceilings,
+and the in‑flight limit are enforced today; the remaining limiter rows land with order submission:
 
 | Check                 | Boundary       | Enforcement                                               |
 | --------------------- | -------------- | --------------------------------------------------------- |
@@ -559,11 +571,13 @@ Every limiter rejection will refuse the order before signing and report a struct
 
 ### Persistence and reconciliation
 
-Execution persistence will add only new keys and tables: existing Redis, PostgreSQL, and other
-state will never be mutated or cleared, and upgrades will load existing data unchanged. Before any order ack, the
-client will persist a transaction record keyed by `client_order_id` carrying the nonce, the signed
-transaction hash, the chain ID, the venue parameters, and a status. On restart, pending records
-will reload and resume from on‑chain observation.
+Execution persistence adds only new keys and tables: existing Redis, PostgreSQL, and other state is
+never mutated or cleared, and upgrades load existing data unchanged. Before any broadcast, the
+client persists a transaction record carrying the nonce, the signed transaction hash, the chain ID,
+the purpose, and a status in the `execution_transaction` table; wrap and approve records persist
+before broadcast today, and order submission will key its records by `client_order_id` with the
+venue parameters. On restart (planned), pending records will reload and resume from on‑chain
+observation.
 
 Order state will derive from transaction observation:
 
@@ -589,41 +603,66 @@ to commission.
 
 ### Execution configuration
 
-The `BlockchainExecutionClientConfig` will gain these additive fields:
+The `BlockchainExecutionClientConfig` gains additive fields, exposed to Python following the
+`BlockchainDataClientConfig` pattern. These fields exist for preflight, wrap, and approve:
 
-| Field                            | Default  | Description                                             |
-| -------------------------------- | -------- | ------------------------------------------------------- |
-| `signer_private_key_env`         | Required | Name of the environment variable holding the signer key |
-| `router_addresses`               | Required | Allowed SwapRouter addresses per DEX                    |
-| `allowed_token_pairs`            | Required | Allowed (token in, token out) address pairs             |
-| `slippage_bps`                   | Required | Default slippage applied to quotes                      |
-| `max_slippage_bps`               | Required | Limiter ceiling for slippage                            |
-| `max_order_amount`               | Required | Limiter per‑order raw amount ceiling (base token units) |
-| `max_fee_per_gas_wei`            | Required | Fee ceiling                                             |
-| `base_fee_buffer_bps`            | Required | Buffer over the derived base fee                        |
-| `gas_limit`                      | Required | Gas ceiling; buffered estimates above it reject         |
-| `gas_buffer_bps`                 | Required | Buffer over `eth_estimateGas`                           |
-| `deadline_seconds`               | Required | Swap deadline offset from the latest block timestamp    |
-| `max_quote_age_blocks`           | Required | Freshness bound for the local quote                     |
-| `receipt_timeout_secs`           | Required | Inclusion timeout before the dropped path               |
-| `unlimited_approval`             | `false`  | Approve the router unlimited instead of exact need      |
-| `weth_address`                   | Required | Wrapped native token for wrap operations                |
-| `postgres_cache_database_config` | Required | Durable store for execution records; required to submit |
+| Field                            | Default  | Description                                              |
+| -------------------------------- | -------- | -------------------------------------------------------- |
+| `signer_private_key_env`         | Required | Name of the environment variable holding the signer key  |
+| `router_addresses`               | Required | Allowlist of SwapRouter addresses; at least one required |
+| `max_fee_per_gas_wei`            | Required | Fee ceiling                                              |
+| `base_fee_buffer_bps`            | Required | Buffer over the derived base fee                         |
+| `gas_limit`                      | Required | Gas ceiling; buffered estimates above it reject          |
+| `gas_buffer_bps`                 | Required | Buffer over `eth_estimateGas`                            |
+| `unlimited_approval`             | `false`  | Approve the router unlimited instead of exact need       |
+| `weth_address`                   | Required | Wrapped native token for wrap operations                 |
+| `postgres_cache_database_config` | `None`   | Durable store for execution records; required to submit  |
+
+These fields are planned with order submission support:
+
+| Field                  | Default  | Description                                             |
+| ---------------------- | -------- | ------------------------------------------------------- |
+| `allowed_token_pairs`  | Required | Allowed (token in, token out) address pairs             |
+| `slippage_bps`         | Required | Default slippage applied to quotes                      |
+| `max_slippage_bps`     | Required | Limiter ceiling for slippage                            |
+| `max_order_amount`     | Required | Limiter per‑order raw amount ceiling (base token units) |
+| `deadline_seconds`     | Required | Swap deadline offset from the latest block timestamp    |
+| `max_quote_age_blocks` | Required | Freshness bound for the local quote                     |
+| `receipt_timeout_secs` | Required | Inclusion timeout before the dropped path               |
 
 ### Execution testing
 
-Automated execution tests will never use a live network:
+Automated execution tests never use a live network:
 
-- Mocked-RPC unit tests will cover calldata encoding, EIP-1559 signing against fixed vectors, quote
-  and slippage arithmetic, nonce selection, limiter rejections, instrument resolution, receipt
-  classification, and reconciliation transitions, with JSON-RPC fixtures stored as files.
-- A pinned‑block Anvil integration will fork Arbitrum at a fixed block with
-  `anvil --fork-url <RPC> --fork-block-number <N>`, run wrap, approve, and a minimal WETH to USDC
-  swap against localhost only, and assert receipt status 1, positive gas usage, and a positive
-  USDC balance delta. The suite is gated behind `BLOCKCHAIN_FORK_TESTS=1` and
-  `BLOCKCHAIN_FORK_RPC_URL` and never runs in default CI. The fork‑source RPC only reads chain
-  state, so signed transactions never leave localhost. Anvil does not emulate Arbitrum's ArbOS gas
-  pricing, so gas estimation behavior is covered by mocked RPC responses, not the fork suite.
+- Mocked-RPC unit tests in the adapter crate cover calldata encoding for `deposit`, `approve`,
+  and `allowance`, EIP-1559 signing against a fixed-key reference vector, nonce selection with
+  the `pending` tag, fee and gas policy including ceiling rejections, preflight ready and
+  not-ready states, receipt parsing including the null-pending and reverted cases, broadcast
+  classification (`already known`, rejection, timeout after send), and transaction persistence
+  against a temporary Postgres schema (skipped when Postgres is unavailable). JSON-RPC fixtures
+  live as files under the crate's `test_data/execution/` directory.
+- A pinned‑block Anvil integration forks Arbitrum at block 489000000 with
+  `anvil --fork-url <RPC> --fork-block-number 489000000 --chain-id 42161` and runs wrap, approve,
+  and preflight against localhost only, asserting receipt status 1, positive gas usage, the WETH
+  balance delta, the router allowance, and the persisted records. The suite is gated behind
+  `BLOCKCHAIN_FORK_TESTS=1` and `BLOCKCHAIN_FORK_RPC_URL` and never runs in default CI. The
+  fork‑source RPC only reads chain state and needs archive access at the pinned block, so signed
+  transactions never leave localhost. Anvil does not emulate Arbitrum's ArbOS gas pricing, so gas
+  estimation behavior is covered by mocked RPC responses, not the fork suite.
+
+To run the fork suite with Foundry's Anvil installed:
+
+```bash
+BLOCKCHAIN_FORK_TESTS=1 BLOCKCHAIN_FORK_RPC_URL="https://your-archive-capable-arbitrum-rpc.example.com" \
+cargo nextest run -p nautilus-blockchain --features hypersync --test execution_fork
+```
+
+The suite spawns Anvil itself on a random localhost port, requires a reachable Postgres for the
+persistence path, and writes an evidence packet (commit, fork block, Anvil version, transaction
+hashes with gas used and receipt status, and SHA-256 sums) to
+`target/blockchain-fork-evidence/`. A missing gate variable, unreachable Postgres, or absent
+`anvil` makes the test skip while still reporting success; the evidence packet is the proof it
+ran.
 
 ## Smoke tests
 
@@ -868,9 +907,9 @@ A new protocol family needs the design pass above.
 
 ## Current limitations
 
-- Order submission is not yet implemented: the execution client is a scaffold that connects and
-  refreshes wallet balances once, with order methods, account state, and signing still to land. See
-  [Execution](#execution).
+- Order submission is not yet implemented: the client connects, refreshes wallet balances, and
+  supports explicit preflight, wrap, and approve operations; order methods, account state, and
+  reconciliation are still to land. See [Execution](#execution).
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
   final-state Multicall hydration.
 - `multicall_calls_per_rpc_request` documents the intended batching limit, but some final snapshot

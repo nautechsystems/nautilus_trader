@@ -543,6 +543,34 @@ pub fn transform_row_to_dex_pool_data(
     }
 }
 
+/// A data transfer object that maps database rows to persisted execution transaction records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionTransactionRow {
+    pub nonce: u64,
+    pub transaction_hash: String,
+    pub purpose: String,
+    pub status: String,
+}
+
+impl<'r> FromRow<'r, PgRow> for ExecutionTransactionRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let nonce_i64 = row.try_get::<i64, _>("nonce")?;
+        let nonce = u64::try_from(nonce_i64).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid negative nonce {nonce_i64}").into())
+        })?;
+        let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
+        let purpose = row.try_get::<String, _>("purpose")?;
+        let status = row.try_get::<String, _>("status")?;
+
+        Ok(Self {
+            nonce,
+            transaction_hash,
+            purpose,
+            status,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::datetime::{

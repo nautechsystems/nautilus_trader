@@ -18,11 +18,14 @@
 use std::sync::Arc;
 
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::defi::{Chain, DexType};
+use nautilus_model::{
+    defi::{Chain, DexType},
+    identifiers::{AccountId, TraderId},
+};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
-use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
+use crate::config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
@@ -154,6 +157,109 @@ impl BlockchainDataClientConfig {
             self.wss_rpc_url,
             self.use_hypersync_for_live_data,
             self.from_block
+        )
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl BlockchainExecutionClientConfig {
+    /// Configuration for blockchain execution clients.
+    #[new]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (trader_id, client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None))]
+    fn py_new(
+        trader_id: TraderId,
+        client_id: AccountId,
+        #[gen_stub(
+            override_type(
+                type_repr = "nautilus_trader.model.Chain",
+                imports = ("nautilus_trader.model",),
+            ),
+        )]
+        chain: &Chain,
+        wallet_address: String,
+        http_rpc_url: String,
+        signer_private_key_env: String,
+        router_addresses: Vec<String>,
+        weth_address: String,
+        max_fee_per_gas_wei: u64,
+        base_fee_buffer_bps: u32,
+        gas_limit: u64,
+        gas_buffer_bps: u32,
+        tokens: Option<Vec<String>>,
+        rpc_requests_per_second: Option<u32>,
+        unlimited_approval: bool,
+        #[gen_stub(
+            override_type(
+                type_repr = "typing.Optional[nautilus_trader.infrastructure.PostgresConnectOptions]",
+                imports = ("typing", "nautilus_trader.infrastructure"),
+            ),
+        )]
+        postgres_cache_database_config: Option<PostgresConnectOptions>,
+        transport_backend: Option<TransportBackend>,
+    ) -> Self {
+        Self::builder()
+            .trader_id(trader_id)
+            .client_id(client_id)
+            .chain(chain.clone())
+            .wallet_address(wallet_address)
+            .http_rpc_url(http_rpc_url)
+            .signer_private_key_env(signer_private_key_env)
+            .router_addresses(router_addresses)
+            .weth_address(weth_address)
+            .max_fee_per_gas_wei(max_fee_per_gas_wei)
+            .base_fee_buffer_bps(base_fee_buffer_bps)
+            .gas_limit(gas_limit)
+            .gas_buffer_bps(gas_buffer_bps)
+            .maybe_tokens(tokens)
+            .maybe_rpc_requests_per_second(rpc_requests_per_second)
+            .unlimited_approval(unlimited_approval)
+            .maybe_postgres_cache_database_config(postgres_cache_database_config)
+            .transport_backend(transport_backend.unwrap_or_default())
+            .build()
+    }
+
+    /// Returns the trader ID.
+    #[getter]
+    const fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    /// Returns the account ID.
+    #[getter]
+    const fn client_id(&self) -> AccountId {
+        self.client_id
+    }
+
+    /// Returns the chain configuration.
+    #[getter]
+    #[gen_stub(
+        override_return_type(
+            type_repr = "nautilus_trader.model.Chain",
+            imports = ("nautilus_trader.model",),
+        ),
+    )]
+    fn chain(&self) -> Chain {
+        self.chain.clone()
+    }
+
+    /// Returns the RPC requests per second limit.
+    #[getter]
+    const fn rpc_requests_per_second(&self) -> Option<u32> {
+        self.rpc_requests_per_second
+    }
+
+    #[getter]
+    const fn has_postgres_cache_database_config(&self) -> bool {
+        self.postgres_cache_database_config.is_some()
+    }
+
+    /// Returns a string representation of the configuration.
+    fn __repr__(&self) -> String {
+        format!(
+            "BlockchainExecutionClientConfig(chain={:?}, wallet_address={}, http_rpc_url={})",
+            self.chain.name, self.wallet_address, self.http_rpc_url
         )
     }
 }

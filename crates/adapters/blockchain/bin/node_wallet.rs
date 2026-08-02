@@ -66,6 +66,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "0x40BD670A58238e6E230c430BBb5cE6ec0d40df48".to_string(),
         ])
         .http_rpc_url(arbitrum_rpc_url)
+        .signer_private_key_env(String::from("BLOCKCHAIN_PRIVATE_KEY"))
+        .router_addresses(vec![String::from(
+            "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+        )])
+        .weth_address(String::from("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"))
+        .max_fee_per_gas_wei(100_000_000_000)
+        .base_fee_buffer_bps(2_000)
+        .gas_limit(1_000_000)
+        .gas_buffer_bps(2_000)
         .build();
     let ethereum_config = BlockchainExecutionClientConfig::builder()
         .trader_id(trader_id)
@@ -79,6 +88,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "0x4fE83213D56308330EC302a8BD641f1d0113A4Cc".to_string(),
         ])
         .http_rpc_url(ethereum_rpc_url)
+        .signer_private_key_env(String::from("BLOCKCHAIN_PRIVATE_KEY"))
+        .router_addresses(vec![String::from(
+            "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+        )])
+        .weth_address(String::from("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"))
+        .max_fee_per_gas_wei(100_000_000_000)
+        .base_fee_buffer_bps(2_000)
+        .gas_limit(1_000_000)
+        .gas_buffer_bps(2_000)
         .build();
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core_execution_client = ExecutionClientCore::new(

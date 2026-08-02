@@ -47,7 +47,7 @@ sol! {
 
 /// Standard Multicall3 address (same on all EVM chains).
 pub const MULTICALL3_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
-const DEFAULT_MULTICALL_CALLS_PER_RPC_REQUEST: u32 = 200;
+pub(crate) const DEFAULT_MULTICALL_CALLS_PER_RPC_REQUEST: u32 = 200;
 
 /// Base contract functionality for interacting with blockchain contracts.
 ///
@@ -61,6 +61,8 @@ pub struct BaseContract {
     multicall_address: Address,
     /// Maximum number of contract calls encoded into one Multicall RPC request.
     multicall_calls_per_rpc_request: usize,
+    /// Per-request RPC timeout in seconds, when bounded.
+    rpc_timeout_secs: Option<u64>,
 }
 
 /// Represents a single contract call for batching in multicall.
@@ -95,6 +97,21 @@ impl BaseContract {
         client: Arc<BlockchainHttpRpcClient>,
         multicall_calls_per_rpc_request: u32,
     ) -> Self {
+        Self::new_with_multicall_limit_and_timeout(client, multicall_calls_per_rpc_request, None)
+    }
+
+    /// Creates a new base contract interface with an explicit Multicall request size and
+    /// per-request RPC timeout.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the multicall address is invalid (which should never happen with the hardcoded address).
+    #[must_use]
+    pub fn new_with_multicall_limit_and_timeout(
+        client: Arc<BlockchainHttpRpcClient>,
+        multicall_calls_per_rpc_request: u32,
+        rpc_timeout_secs: Option<u64>,
+    ) -> Self {
         let multicall_address =
             validate_address(MULTICALL3_ADDRESS).expect("Invalid multicall address");
         let multicall_calls_per_rpc_request = (multicall_calls_per_rpc_request as usize).max(1);
@@ -103,6 +120,7 @@ impl BaseContract {
             client,
             multicall_address,
             multicall_calls_per_rpc_request,
+            rpc_timeout_secs,
         }
     }
 
@@ -129,7 +147,7 @@ impl BaseContract {
 
         let encoded_response = self
             .client
-            .execute_rpc_call::<String>(rpc_request)
+            .execute_rpc_call_with_timeout::<String>(rpc_request, self.rpc_timeout_secs)
             .await
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("RPC call failed: {e}")))?;
 
@@ -184,7 +202,7 @@ impl BaseContract {
 
         let encoded_response = self
             .client
-            .execute_rpc_call::<String>(rpc_request)
+            .execute_rpc_call_with_timeout::<String>(rpc_request, self.rpc_timeout_secs)
             .await
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("Multicall failed: {e}")))?;
 

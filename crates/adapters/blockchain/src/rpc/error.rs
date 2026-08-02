@@ -40,3 +40,26 @@ pub enum BlockchainRpcClientError {
     #[error("No message received")]
     NoMessageReceived,
 }
+
+/// Classifies `eth_sendRawTransaction` broadcast failures to determine retry behavior.
+#[derive(Debug, Error)]
+pub enum BroadcastError {
+    /// The request timed out after the transaction was sent; the node may have accepted it.
+    #[error("Broadcast timed out after send; the transaction may have been accepted by the node")]
+    TimeoutAfterSend,
+    /// The node definitively rejected the broadcast with an RPC error (sanitized: numeric code
+    /// only).
+    #[error("Broadcast rejected with RPC error {code}")]
+    Rejected {
+        /// The JSON-RPC error code returned by the node.
+        code: i32,
+    },
+    /// The broadcast failed in a way that leaves acceptance ambiguous (transport failure or an
+    /// unreadable response), conservatively treated as possibly accepted. Non-timeout transport
+    /// failures are deliberately bucketed here even though some (for example connection refused)
+    /// may never have reached the node: the HTTP client does not expose the connect-phase
+    /// distinction, and the conservative outcome reconciles through the persisted record instead
+    /// of rebroadcasting.
+    #[error("Broadcast failed ambiguously: {0}")]
+    Failed(String),
+}

@@ -18,15 +18,17 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use nautilus_blockchain::{
-    config::BlockchainDataClientConfig, constants::BLOCKCHAIN,
-    factories::BlockchainDataClientFactory, python,
+    config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
+    constants::BLOCKCHAIN,
+    factories::BlockchainDataClientFactory,
+    python,
 };
 use nautilus_common::{
     cache::Cache, clock::TestClock, live::runner::replace_data_event_sender, messages::DataEvent,
 };
 use nautilus_model::{
     defi::{DexType, chain::chains},
-    identifiers::ClientId,
+    identifiers::{AccountId, ClientId, TraderId},
 };
 use nautilus_network::{python as network_python, websocket::TransportBackend};
 use nautilus_system::get_global_pyo3_registry;
@@ -60,6 +62,65 @@ fn test_blockchain_python_config_accepts_transport_backend() {
             &blockchain_module,
             &network_module,
         );
+    });
+}
+
+#[rstest]
+fn test_blockchain_python_execution_config_constructs_from_python() {
+    setup_data_event_sender();
+    Python::initialize();
+
+    Python::attach(|py| {
+        let blockchain_module = register_blockchain_python_module(py);
+        let config_type = blockchain_module
+            .getattr("BlockchainExecutionClientConfig")
+            .expect("BlockchainExecutionClientConfig should be available");
+
+        let config = config_type
+            .call1((
+                TraderId::from("TRADER-001"),
+                AccountId::from("BLOCKCHAIN-001"),
+                chains::ARBITRUM.clone(),
+                "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "https://arb-mainnet.example.com",
+                "BLOCKCHAIN_PRIVATE_KEY",
+                vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564"],
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+                1_000_000_000_u64,
+                2_000_u32,
+                1_000_000_u64,
+                2_000_u32,
+            ))
+            .expect("BlockchainExecutionClientConfig should construct from Python");
+
+        let getter_value: String = config
+            .getattr("signer_private_key_env")
+            .expect("signer_private_key_env getter should exist")
+            .extract()
+            .expect("signer_private_key_env getter should return a string");
+        assert_eq!(getter_value, "BLOCKCHAIN_PRIVATE_KEY");
+
+        let extracted = config
+            .extract::<BlockchainExecutionClientConfig>()
+            .expect("execution config should extract");
+
+        assert_eq!(extracted.chain.chain_id, 42161);
+        assert_eq!(extracted.signer_private_key_env, "BLOCKCHAIN_PRIVATE_KEY");
+        assert_eq!(
+            extracted.router_addresses,
+            vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string()]
+        );
+        assert_eq!(
+            extracted.weth_address,
+            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+        );
+        assert!(!extracted.unlimited_approval);
+        assert_eq!(extracted.max_fee_per_gas_wei, 1_000_000_000);
+        assert_eq!(extracted.base_fee_buffer_bps, 2_000);
+        assert_eq!(extracted.gas_limit, 1_000_000);
+        assert_eq!(extracted.gas_buffer_bps, 2_000);
+        assert!(extracted.postgres_cache_database_config.is_none());
+        assert_eq!(extracted.transport_backend, TransportBackend::default());
     });
 }
 

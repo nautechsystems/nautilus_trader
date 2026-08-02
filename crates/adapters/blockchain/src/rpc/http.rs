@@ -15,17 +15,23 @@
 
 use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
-use alloy::primitives::{Address, U256};
-use bytes::Bytes;
+use alloy::primitives::{Address, B256, Bytes, U256};
+use bytes::Bytes as HttpBytes;
 use nautilus_core::hex;
 use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
 use nautilus_network::{
-    http::{HttpClient, Method},
+    http::{HttpClient, HttpClientError, Method},
     ratelimiter::quota::Quota,
 };
 use serde::de::DeserializeOwned;
 
-use crate::rpc::error::BlockchainRpcClientError;
+use crate::rpc::{
+    error::{BlockchainRpcClientError, BroadcastError},
+    types::{RpcBlock, RpcTransactionReceipt},
+};
+
+/// Per-request timeout for execution RPC calls, in seconds.
+pub const EXECUTION_RPC_TIMEOUT_SECS: u64 = 10;
 
 /// Client for making HTTP-based RPC requests to blockchain nodes.
 ///
@@ -74,7 +80,8 @@ impl BlockchainHttpRpcClient {
     async fn send_rpc_request(
         &self,
         rpc_request: serde_json::Value,
-    ) -> Result<Bytes, BlockchainRpcClientError> {
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpBytes, BlockchainRpcClientError> {
         let body_bytes = serde_json::to_vec(&rpc_request).map_err(|e| {
             BlockchainRpcClientError::ClientError(format!("Failed to serialize request: {e}"))
         })?;
@@ -90,7 +97,7 @@ impl BlockchainHttpRpcClient {
                 None,
                 Some(headers),
                 Some(body_bytes),
-                None,
+                timeout_secs,
                 None,
             )
             .await
@@ -109,7 +116,21 @@ impl BlockchainHttpRpcClient {
         &self,
         rpc_request: serde_json::Value,
     ) -> anyhow::Result<T> {
-        match self.send_rpc_request(rpc_request).await {
+        self.execute_rpc_call_with_timeout(rpc_request, None).await
+    }
+
+    /// Executes an Ethereum JSON-RPC call with an optional per-request timeout and deserializes
+    /// the response into the specified type T.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP RPC request fails or the response cannot be parsed.
+    pub async fn execute_rpc_call_with_timeout<T: DeserializeOwned>(
+        &self,
+        rpc_request: serde_json::Value,
+        timeout_secs: Option<u64>,
+    ) -> anyhow::Result<T> {
+        match self.send_rpc_request(rpc_request, timeout_secs).await {
             Ok(bytes) => match serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()) {
                 Ok(parsed) => {
                     // Check for non-standard rate limit error (e.g., Infura)
@@ -192,6 +213,21 @@ impl BlockchainHttpRpcClient {
     ///
     /// Returns an error if the RPC call fails or if the returned balance string cannot be parsed as a valid U256.
     pub async fn get_balance(&self, address: &Address, block: Option<u64>) -> anyhow::Result<U256> {
+        self.get_balance_with_timeout(address, block, None).await
+    }
+
+    /// Retrieves the balance of the specified Ethereum address at the given block with an
+    /// optional per-request timeout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or if the returned balance string cannot be parsed as a valid U256.
+    pub async fn get_balance_with_timeout(
+        &self,
+        address: &Address,
+        block: Option<u64>,
+        timeout_secs: Option<u64>,
+    ) -> anyhow::Result<U256> {
         let block_param = if let Some(block_number) = block {
             serde_json::json!(format!("0x{:x}", block_number))
         } else {
@@ -204,7 +240,9 @@ impl BlockchainHttpRpcClient {
             "method": "eth_getBalance",
             "params": [address, block_param]
         });
-        let hex_string: String = self.execute_rpc_call(request).await?;
+        let hex_string: String = self
+            .execute_rpc_call_with_timeout(request, timeout_secs)
+            .await?;
 
         U256::from_str(&hex_string)
             .map_err(|e| anyhow::anyhow!("Failed to parse balance hex string '{hex_string}': {e}"))
@@ -255,5 +293,629 @@ impl BlockchainHttpRpcClient {
         });
 
         self.execute_rpc_call(request).await
+    }
+
+    /// Executes an execution-path JSON-RPC call with a per-request timeout and sanitized errors.
+    ///
+    /// A `null` result maps to `Ok(None)`, which is a legitimate pending response (for example a
+    /// receipt that does not exist yet), not an error. Errors carry the RPC method and numeric
+    /// code only, never the endpoint URL or request payload.
+    async fn execute_execution_rpc_call<T: DeserializeOwned>(
+        &self,
+        method: &'static str,
+        params: serde_json::Value,
+    ) -> anyhow::Result<Option<T>> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params,
+        });
+
+        let bytes = self
+            .send_rpc_request(request, Some(EXECUTION_RPC_TIMEOUT_SECS))
+            .await
+            .map_err(|_| anyhow::anyhow!("{method} request failed"))?;
+
+        let parsed = serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref())
+            .map_err(|_| anyhow::anyhow!("Failed to parse {method} response"))?;
+
+        if parsed.jsonrpc.is_none()
+            && let (Some(code), Some(_message)) = (parsed.code, parsed.message)
+        {
+            anyhow::bail!("{method} RPC error {code}");
+        }
+
+        if let Some(error) = parsed.error {
+            anyhow::bail!("{method} RPC error {}", error.code);
+        }
+
+        Ok(parsed.result)
+    }
+
+    /// Returns the chain ID reported by the RPC node via `eth_chainId`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn chain_id(&self) -> anyhow::Result<u64> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call("eth_chainId", serde_json::json!([]))
+            .await?;
+        parse_hex_quantity_result("eth_chainId", result)
+            .and_then(|v| u64::try_from(v).map_err(Into::into))
+    }
+
+    /// Returns the deployed bytecode at the given address via `eth_getCode` at the latest block.
+    ///
+    /// An address with no deployed contract returns empty bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn get_code(&self, address: &Address) -> anyhow::Result<Bytes> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call("eth_getCode", serde_json::json!([address, "latest"]))
+            .await?;
+        let hex_string = result.ok_or_else(|| anyhow::anyhow!("eth_getCode returned no result"))?;
+        let stripped = hex_string.strip_prefix("0x").unwrap_or(&hex_string);
+        let bytes = hex::decode(stripped)
+            .map_err(|e| anyhow::anyhow!("Failed to decode eth_getCode result: {e}"))?;
+        Ok(Bytes::from(bytes))
+    }
+
+    /// Returns the next nonce for the given address via `eth_getTransactionCount`
+    /// with the `pending` tag, making the pending pool state authoritative.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn get_transaction_count_pending(&self, address: &Address) -> anyhow::Result<u64> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call(
+                "eth_getTransactionCount",
+                serde_json::json!([address, "pending"]),
+            )
+            .await?;
+        parse_hex_quantity_result("eth_getTransactionCount", result)
+            .and_then(|v| u64::try_from(v).map_err(Into::into))
+    }
+
+    /// Estimates the gas required for a transaction via `eth_estimateGas`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails (including node-side revert of the simulated
+    /// transaction) or the result is missing or malformed.
+    pub async fn estimate_gas(
+        &self,
+        from: &Address,
+        to: &Address,
+        value: U256,
+        data: &[u8],
+    ) -> anyhow::Result<u64> {
+        let call = serde_json::json!({
+            "from": from,
+            "to": to,
+            "value": format!("0x{value:x}"),
+            "data": hex::encode_prefixed(data),
+        });
+        let result: Option<String> = self
+            .execute_execution_rpc_call("eth_estimateGas", serde_json::json!([call]))
+            .await?;
+        parse_hex_quantity_result("eth_estimateGas", result)
+            .and_then(|v| u64::try_from(v).map_err(Into::into))
+    }
+
+    /// Returns the node's suggested max priority fee per gas in wei
+    /// via `eth_maxPriorityFeePerGas`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn max_priority_fee_per_gas(&self) -> anyhow::Result<u128> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call("eth_maxPriorityFeePerGas", serde_json::json!([]))
+            .await?;
+        parse_hex_quantity_result("eth_maxPriorityFeePerGas", result)
+    }
+
+    /// Returns the latest block via `eth_getBlockByNumber` with the `latest` tag.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn latest_block(&self) -> anyhow::Result<RpcBlock> {
+        let result: Option<RpcBlock> = self
+            .execute_execution_rpc_call(
+                "eth_getBlockByNumber",
+                serde_json::json!(["latest", false]),
+            )
+            .await?;
+        result.ok_or_else(|| anyhow::anyhow!("eth_getBlockByNumber returned no result"))
+    }
+
+    /// Returns the receipt for the given transaction hash via `eth_getTransactionReceipt`.
+    ///
+    /// A `null` result maps to `Ok(None)`: the transaction is pending and no receipt
+    /// exists yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the response is malformed.
+    pub async fn get_transaction_receipt(
+        &self,
+        tx_hash: &B256,
+    ) -> anyhow::Result<Option<RpcTransactionReceipt>> {
+        self.execute_execution_rpc_call("eth_getTransactionReceipt", serde_json::json!([tx_hash]))
+            .await
+    }
+
+    /// Broadcasts a signed raw transaction via `eth_sendRawTransaction`.
+    ///
+    /// Broadcast failures classify before retry: an `already known` response is acceptance
+    /// (returns `expected_tx_hash`), and a timeout after sending is
+    /// [`BroadcastError::TimeoutAfterSend`] so the caller reconciles through the persisted
+    /// record rather than rebroadcasting.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`BroadcastError`] classifying the failure. Errors are sanitized: they carry
+    /// the numeric RPC code only, never the endpoint URL or the signed payload.
+    pub async fn send_raw_transaction(
+        &self,
+        raw_tx: &[u8],
+        expected_tx_hash: &B256,
+    ) -> Result<B256, BroadcastError> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_sendRawTransaction",
+            "params": [hex::encode_prefixed(raw_tx)],
+        });
+
+        let body_bytes = serde_json::to_vec(&request)
+            .map_err(|e| BroadcastError::Failed(format!("Failed to serialize request: {e}")))?;
+
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let response = self
+            .http_client
+            .request(
+                Method::POST,
+                self.http_rpc_url.clone(),
+                None,
+                Some(headers),
+                Some(body_bytes),
+                Some(EXECUTION_RPC_TIMEOUT_SECS),
+                None,
+            )
+            .await
+            .map_err(|e| classify_broadcast_transport_error(&e))?;
+
+        let parsed = serde_json::from_slice::<RpcNodeHttpResponse<String>>(&response.body)
+            .map_err(|_| {
+                BroadcastError::Failed("Failed to parse broadcast response".to_string())
+            })?;
+
+        if let Some(error) = parsed.error {
+            if error.message.contains("already known") {
+                log::warn!(
+                    "Broadcast returned 'already known' for transaction {expected_tx_hash}; treating as acceptance"
+                );
+                return Ok(*expected_tx_hash);
+            }
+            return Err(BroadcastError::Rejected { code: error.code });
+        }
+
+        let hex_string = parsed
+            .result
+            .ok_or_else(|| BroadcastError::Failed("Broadcast returned no result".to_string()))?;
+
+        B256::from_str(&hex_string)
+            .map_err(|e| BroadcastError::Failed(format!("Failed to parse broadcast result: {e}")))
+    }
+}
+
+/// Classifies a broadcast transport failure: a timeout after sending reconciles through the
+/// persisted record. Any other transport failure is treated as ambiguous-after-send too, even
+/// though some (for example connection refused) may never have reached the node; the HTTP
+/// client does not expose the connect-phase distinction, so the conservative outcome never
+/// risks a rebroadcast. Sanitized to never carry the endpoint URL or request payload.
+fn classify_broadcast_transport_error(error: &HttpClientError) -> BroadcastError {
+    match error {
+        HttpClientError::TimeoutError(_) => BroadcastError::TimeoutAfterSend,
+        _ => BroadcastError::Failed("transport error".to_string()),
+    }
+}
+
+/// Parses a required hex-quantity JSON-RPC result, erroring on a missing result.
+fn parse_hex_quantity_result(method: &str, result: Option<String>) -> anyhow::Result<u128> {
+    let hex_string = result.ok_or_else(|| anyhow::anyhow!("{method} returned no result"))?;
+    let stripped = hex_string.strip_prefix("0x").unwrap_or(&hex_string);
+    u128::from_str_radix(stripped, 16)
+        .map_err(|e| anyhow::anyhow!("Failed to parse {method} result '{hex_string}': {e}"))
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use alloy::primitives::{address, b256};
+    use rstest::rstest;
+
+    use super::*;
+
+    /// Mock JSON-RPC HTTP server for tests, serving canned responses from fixture files.
+    pub(crate) mod mock {
+        use std::{
+            collections::HashMap,
+            net::SocketAddr,
+            sync::{Arc, Mutex},
+            time::Duration,
+        };
+
+        use axum::{Router, extract::State, routing::post};
+        use serde_json::Value;
+
+        /// State for the mock JSON-RPC server: canned responses per method plus a request log.
+        #[derive(Clone, Default)]
+        pub(crate) struct MockRpcState {
+            responses: HashMap<String, String>,
+            call_responses: HashMap<String, String>,
+            sleep_methods: HashMap<String, Duration>,
+            requests: Arc<Mutex<Vec<Value>>>,
+        }
+
+        impl MockRpcState {
+            /// Serves the given raw JSON-RPC response body for `method`.
+            #[must_use]
+            pub(crate) fn with_response(mut self, method: &str, response_json: &str) -> Self {
+                self.responses
+                    .insert(method.to_string(), response_json.to_string());
+                self
+            }
+
+            /// Serves the given raw JSON-RPC response body for `eth_call` requests whose calldata
+            /// starts with `selector` (hex with `0x` prefix).
+            #[must_use]
+            pub(crate) fn with_call_response(
+                mut self,
+                selector: &str,
+                response_json: &str,
+            ) -> Self {
+                self.call_responses
+                    .insert(selector.to_string(), response_json.to_string());
+                self
+            }
+
+            /// Delays responses to `method` by `duration`, simulating an unresponsive node.
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_sleep(mut self, method: &str, duration: Duration) -> Self {
+                self.sleep_methods.insert(method.to_string(), duration);
+                self
+            }
+
+            /// Returns every JSON-RPC request body the server received, in order.
+            #[must_use]
+            pub(crate) fn recorded_requests(&self) -> Vec<Value> {
+                self.requests.lock().unwrap().clone()
+            }
+        }
+
+        async fn handle(State(state): State<MockRpcState>, body: String) -> String {
+            let request: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+            state.requests.lock().unwrap().push(request.clone());
+
+            let method = request["method"].as_str().unwrap_or_default();
+
+            if let Some(duration) = state.sleep_methods.get(method) {
+                tokio::time::sleep(*duration).await;
+            }
+
+            if method == "eth_call" {
+                let data = request["params"][0]["data"].as_str().unwrap_or_default();
+                let selector_len = "0x".len() + 8;
+                if data.len() >= selector_len
+                    && let Some(response) = state.call_responses.get(&data[..selector_len])
+                {
+                    return response.clone();
+                }
+            }
+
+            if let Some(response) = state.responses.get(method) {
+                return response.clone();
+            }
+
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32601, "message": "method not found"}
+            })
+            .to_string()
+        }
+
+        /// Starts a mock JSON-RPC server on a random localhost port and returns its address.
+        pub(crate) async fn start_mock_rpc_server(state: MockRpcState) -> SocketAddr {
+            let app = Router::new().route("/", post(handle)).with_state(state);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            addr
+        }
+    }
+
+    use mock::{MockRpcState, start_mock_rpc_server};
+
+    const CHAIN_ID_ARBITRUM: &str =
+        include_str!("../../test_data/execution/rpc_eth_chain_id_arbitrum.json");
+    const GET_CODE_DEPLOYED: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_code_deployed.json");
+    const GET_CODE_EMPTY: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_code_empty.json");
+    const TRANSACTION_COUNT: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_transaction_count.json");
+    const ESTIMATE_GAS: &str = include_str!("../../test_data/execution/rpc_eth_estimate_gas.json");
+    const MAX_PRIORITY_FEE: &str =
+        include_str!("../../test_data/execution/rpc_eth_max_priority_fee_per_gas.json");
+    const BLOCK_BY_NUMBER: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_block_by_number.json");
+    const RECEIPT_NULL: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_null.json");
+    const RECEIPT_SUCCESS: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_success.json");
+    const SEND_RAW_TRANSACTION: &str =
+        include_str!("../../test_data/execution/rpc_eth_send_raw_transaction.json");
+    const SEND_RAW_TRANSACTION_ALREADY_KNOWN: &str =
+        include_str!("../../test_data/execution/rpc_eth_send_raw_transaction_already_known.json");
+    const SEND_RAW_TRANSACTION_REJECTED: &str =
+        include_str!("../../test_data/execution/rpc_eth_send_raw_transaction_rejected.json");
+
+    async fn client_for(state: MockRpcState) -> (BlockchainHttpRpcClient, MockRpcState) {
+        let addr = start_mock_rpc_server(state.clone()).await;
+        (
+            BlockchainHttpRpcClient::new(format!("http://{addr}"), None, None),
+            state,
+        )
+    }
+
+    #[tokio::test]
+    async fn chain_id_parses_hex_quantity() {
+        let (client, _) =
+            client_for(MockRpcState::default().with_response("eth_chainId", CHAIN_ID_ARBITRUM))
+                .await;
+
+        assert_eq!(client.chain_id().await.unwrap(), 42161);
+    }
+
+    #[tokio::test]
+    async fn chain_id_error_is_sanitized_to_method_and_code() {
+        let (client, _) = client_for(MockRpcState::default()).await;
+
+        let error = client.chain_id().await.unwrap_err();
+
+        let message = error.to_string();
+        assert!(
+            message.contains("eth_chainId RPC error -32601"),
+            "was: {message}"
+        );
+        assert!(!message.contains("method not found"), "was: {message}");
+    }
+
+    #[tokio::test]
+    async fn get_code_returns_deployed_bytecode() {
+        let (client, _) =
+            client_for(MockRpcState::default().with_response("eth_getCode", GET_CODE_DEPLOYED))
+                .await;
+
+        let code = client
+            .get_code(&address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"))
+            .await
+            .unwrap();
+
+        assert!(!code.is_empty());
+        assert!(code.starts_with(&[0x60, 0x80]));
+    }
+
+    #[tokio::test]
+    async fn get_code_returns_empty_for_eoa() {
+        let (client, _) =
+            client_for(MockRpcState::default().with_response("eth_getCode", GET_CODE_EMPTY)).await;
+
+        let code = client
+            .get_code(&address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"))
+            .await
+            .unwrap();
+
+        assert!(code.is_empty());
+    }
+
+    #[tokio::test]
+    async fn transaction_count_uses_pending_tag() {
+        let (client, state) = client_for(
+            MockRpcState::default().with_response("eth_getTransactionCount", TRANSACTION_COUNT),
+        )
+        .await;
+
+        let nonce = client
+            .get_transaction_count_pending(&address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"))
+            .await
+            .unwrap();
+
+        assert_eq!(nonce, 7);
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["method"], "eth_getTransactionCount");
+        assert_eq!(requests[0]["params"][1], "pending");
+    }
+
+    #[tokio::test]
+    async fn estimate_gas_sends_call_object() {
+        let (client, state) =
+            client_for(MockRpcState::default().with_response("eth_estimateGas", ESTIMATE_GAS))
+                .await;
+
+        let gas = client
+            .estimate_gas(
+                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
+                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                U256::from(1_000_000_000_000_000_000u64),
+                &[0xd0, 0xe3, 0x0d, 0xb0],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(gas, 65_000);
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 1);
+        let call = &requests[0]["params"][0];
+        assert_eq!(call["from"], "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assert_eq!(call["to"], "0x82af49447d8a07e3bd95bd0d56f35241523fbab1");
+        assert_eq!(call["value"], "0xde0b6b3a7640000");
+        assert_eq!(call["data"], "0xd0e30db0");
+    }
+
+    #[tokio::test]
+    async fn max_priority_fee_parses_hex_quantity() {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_maxPriorityFeePerGas", MAX_PRIORITY_FEE),
+        )
+        .await;
+
+        assert_eq!(client.max_priority_fee_per_gas().await.unwrap(), 10_000_000);
+    }
+
+    #[tokio::test]
+    async fn latest_block_parses_number_timestamp_and_base_fee() {
+        let (client, state) = client_for(
+            MockRpcState::default().with_response("eth_getBlockByNumber", BLOCK_BY_NUMBER),
+        )
+        .await;
+
+        let block = client.latest_block().await.unwrap();
+
+        assert_eq!(block.number, 30_346_560);
+        assert_eq!(block.timestamp, 1_761_888_800);
+        assert_eq!(block.base_fee_per_gas, Some(100_000_000));
+        let requests = state.recorded_requests();
+        assert_eq!(requests[0]["params"][0], "latest");
+    }
+
+    #[tokio::test]
+    async fn transaction_receipt_maps_null_result_to_none() {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_getTransactionReceipt", RECEIPT_NULL),
+        )
+        .await;
+
+        let receipt = client
+            .get_transaction_receipt(&b256!(
+                "9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"
+            ))
+            .await
+            .unwrap();
+
+        assert!(receipt.is_none());
+    }
+
+    #[tokio::test]
+    async fn transaction_receipt_parses_success_fields() {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS),
+        )
+        .await;
+
+        let receipt = client
+            .get_transaction_receipt(&b256!(
+                "9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            receipt.transaction_hash,
+            b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a")
+        );
+        assert_eq!(receipt.block_number, 30_346_561);
+        assert_eq!(receipt.gas_used, 50_112);
+        assert!(receipt.status);
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_returns_node_hash() {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION),
+        )
+        .await;
+
+        let hash = client
+            .send_raw_transaction(
+                &[0x02, 0xf8],
+                &b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            hash,
+            b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_treats_already_known_as_acceptance() {
+        let (client, _) = client_for(
+            MockRpcState::default()
+                .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_ALREADY_KNOWN),
+        )
+        .await;
+
+        let expected = b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a");
+        let hash = client
+            .send_raw_transaction(&[0x02, 0xf8], &expected)
+            .await
+            .unwrap();
+
+        assert_eq!(hash, expected);
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_rejection_is_sanitized_to_code() {
+        let (client, _) = client_for(
+            MockRpcState::default()
+                .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED),
+        )
+        .await;
+
+        let error = client
+            .send_raw_transaction(
+                &[0x02, 0xf8],
+                &b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"),
+            )
+            .await
+            .unwrap_err();
+
+        match error {
+            BroadcastError::Rejected { code } => assert_eq!(code, -32000),
+            other => panic!("Expected BroadcastError::Rejected, was {other}"),
+        }
+        let message = error.to_string();
+        assert!(!message.contains("nonce too low"), "was: {message}");
+    }
+
+    #[rstest]
+    fn broadcast_error_classification_maps_timeout_after_send() {
+        let timeout = HttpClientError::TimeoutError("timed out".to_string());
+        let transport = HttpClientError::Error("refused".to_string());
+
+        assert!(matches!(
+            classify_broadcast_transport_error(&timeout),
+            BroadcastError::TimeoutAfterSend
+        ));
+        assert!(matches!(
+            classify_broadcast_transport_error(&transport),
+            BroadcastError::Failed(_)
+        ));
     }
 }

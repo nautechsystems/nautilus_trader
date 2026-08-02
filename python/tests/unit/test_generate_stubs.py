@@ -1646,6 +1646,11 @@ ADAPTER_CONFIG_FIELD_READBACK_REPLACEMENTS = {
         "postgres_cache_database_config",
     ): "has_postgres_cache_database_config",
     (
+        "nautilus_trader.adapters.blockchain",
+        "BlockchainExecutionClientConfig",
+        "postgres_cache_database_config",
+    ): "has_postgres_cache_database_config",
+    (
         "nautilus_trader.adapters.interactive_brokers",
         "DockerizedIBGatewayConfig",
         "password",

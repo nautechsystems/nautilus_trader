@@ -33,6 +33,8 @@ sol! {
         function symbol() external view returns (string);
         function decimals() external view returns (uint8);
         function balanceOf(address account) external view returns (uint256);
+        function allowance(address owner, address spender) external view returns (uint256);
+        function approve(address spender, uint256 amount) external returns (bool);
     }
 }
 
@@ -97,6 +99,24 @@ impl Erc20Contract {
     pub fn new(client: Arc<BlockchainHttpRpcClient>, enforce_token_fields: bool) -> Self {
         Self {
             base: BaseContract::new(client),
+            enforce_token_fields,
+        }
+    }
+
+    /// Creates a new ERC20 contract interface with the specified RPC client and a per-request
+    /// RPC timeout applied to its reads.
+    #[must_use]
+    pub fn new_with_timeout(
+        client: Arc<BlockchainHttpRpcClient>,
+        rpc_timeout_secs: Option<u64>,
+        enforce_token_fields: bool,
+    ) -> Self {
+        Self {
+            base: BaseContract::new_with_multicall_limit_and_timeout(
+                client,
+                super::base::DEFAULT_MULTICALL_CALLS_PER_RPC_REQUEST,
+                rpc_timeout_secs,
+            ),
             enforce_token_fields,
         }
     }
@@ -278,6 +298,33 @@ impl Erc20Contract {
         ERC20::balanceOfCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
+
+    /// Fetches the exact allowance an owner has granted a spender for this ERC20 token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the contract call fails.
+    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
+    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
+    pub async fn allowance(
+        &self,
+        token_address: &Address,
+        owner: &Address,
+        spender: &Address,
+    ) -> Result<U256, BlockchainRpcClientError> {
+        let call_data = ERC20::allowanceCall {
+            owner: *owner,
+            spender: *spender,
+        }
+        .abi_encode();
+        let result = self
+            .base
+            .execute_call(token_address, &call_data, None)
+            .await?;
+
+        ERC20::allowanceCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
 }
 
 /// Attempts to decode a revert reason from failed call data.
@@ -415,6 +462,11 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
+    use crate::rpc::http::tests::mock::{MockRpcState, start_mock_rpc_server};
+
+    const CALL_BALANCE: &str = include_str!("../../test_data/execution/rpc_eth_call_balance.json");
+    const CALL_ALLOWANCE: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_allowance.json");
 
     #[fixture]
     fn token_address() -> Address {
@@ -652,12 +704,12 @@ mod tests {
     #[rstest]
     fn test_parse_non_abi_encoded_long_string(
         non_abi_encoded_long_string_result: Multicall3::Result,
-        token_address: Address,
+        non_abi_encoded_token_address: Address,
     ) {
         let result = parse_erc20_string_result(
             &non_abi_encoded_long_string_result,
             Erc20Field::Name,
-            &token_address,
+            &non_abi_encoded_token_address,
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -668,7 +720,7 @@ mod tests {
                 raw_data,
             } => {
                 assert_eq!(field, "Name");
-                assert_eq!(address, token_address);
+                assert_eq!(address, non_abi_encoded_token_address);
                 assert!(reason.contains("type check failed"));
                 assert_eq!(
                     raw_data,
@@ -678,5 +730,81 @@ mod tests {
             }
             _ => panic!("Expected DecodingError"),
         }
+    }
+
+    #[rstest]
+    fn test_approve_calldata_matches_known_vector() {
+        let spender = address!("E592427A0AEce92De3Edee1F18E0157C05861564");
+        let calldata = ERC20::approveCall {
+            spender,
+            amount: U256::from(1_000_000_000_000_000_000u64),
+        }
+        .abi_encode();
+
+        // approve(address,uint256) selector 0x095ea7b3, spender word, amount word
+        let expected = format!(
+            "095ea7b3{:0>64}{:0>64}",
+            "e592427a0aece92de3edee1f18e0157c05861564", "0de0b6b3a7640000"
+        );
+        assert_eq!(hex::encode(&calldata), expected);
+    }
+
+    #[rstest]
+    fn test_allowance_calldata_matches_known_vector() {
+        let owner = address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+        let spender = address!("E592427A0AEce92De3Edee1F18E0157C05861564");
+        let calldata = ERC20::allowanceCall { owner, spender }.abi_encode();
+
+        // allowance(address,address) selector 0xdd62ed3e, owner word, spender word
+        let expected = format!(
+            "dd62ed3e{:0>64}{:0>64}",
+            "f39fd6e51aad88f6f4ce6ab8827279cfffb92266", "e592427a0aece92de3edee1f18e0157c05861564"
+        );
+        assert_eq!(hex::encode(&calldata), expected);
+    }
+
+    #[tokio::test]
+    async fn test_balance_of_against_mock_rpc() {
+        let state = MockRpcState::default().with_call_response("0x70a08231", CALL_BALANCE);
+        let addr = start_mock_rpc_server(state).await;
+        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
+            format!("http://{addr}"),
+            None,
+            None,
+        ));
+        let contract = Erc20Contract::new(rpc_client, true);
+
+        let balance = contract
+            .balance_of(
+                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(balance, U256::from(500_000_000_000_000_000u64));
+    }
+
+    #[tokio::test]
+    async fn test_allowance_against_mock_rpc() {
+        let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
+        let addr = start_mock_rpc_server(state).await;
+        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
+            format!("http://{addr}"),
+            None,
+            None,
+        ));
+        let contract = Erc20Contract::new(rpc_client, true);
+
+        let allowance = contract
+            .allowance(
+                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
+                &address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(allowance, U256::from(1_000_000_000_000_000_000u64));
     }
 }

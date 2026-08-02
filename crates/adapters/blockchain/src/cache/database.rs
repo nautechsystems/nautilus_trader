@@ -43,8 +43,8 @@ use crate::{
         consistency::CachedBlocksConsistencyStatus,
         copy::PostgresCopyHandler,
         rows::{
-            BlockTimestampRow, PoolRow, TokenRow, parse_cached_block_timestamp,
-            transform_row_to_dex_pool_data,
+            BlockTimestampRow, ExecutionTransactionRow, PoolRow, TokenRow,
+            parse_cached_block_timestamp, transform_row_to_dex_pool_data,
         },
         types::{U128Pg, U256Pg},
     },
@@ -2962,6 +2962,92 @@ impl BlockchainCacheDatabase {
         });
 
         Box::pin(stream)
+    }
+
+    /// Persists an execution transaction record to the `execution_transaction` table.
+    ///
+    /// Records are written before broadcast so a signed transaction is never forgotten;
+    /// the unique `(chain_id, transaction_hash)` constraint makes re-insertion idempotent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn add_execution_transaction(
+        &self,
+        chain_id: u32,
+        nonce: u64,
+        transaction_hash: &str,
+        purpose: &str,
+        status: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction (chain_id, nonce, transaction_hash, purpose, status)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (chain_id, transaction_hash)
+            DO NOTHING
+        ",
+        )
+        .bind(chain_id as i32)
+        .bind(nonce as i64)
+        .bind(transaction_hash)
+        .bind(purpose)
+        .bind(status)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into execution_transaction table: {e}"))
+    }
+
+    /// Updates the status of a persisted execution transaction record.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn update_execution_transaction_status(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+        status: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "
+            UPDATE execution_transaction
+            SET status = $3
+            WHERE chain_id = $1 AND transaction_hash = $2
+        ",
+        )
+        .bind(chain_id as i32)
+        .bind(transaction_hash)
+        .bind(status)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to update execution_transaction table: {e}"))
+    }
+
+    /// Loads an execution transaction record by chain ID and transaction hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn get_execution_transaction(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+    ) -> anyhow::Result<Option<ExecutionTransactionRow>> {
+        sqlx::query_as::<_, ExecutionTransactionRow>(
+            "
+            SELECT nonce, transaction_hash, purpose, status
+            FROM execution_transaction
+            WHERE chain_id = $1 AND transaction_hash = $2
+        ",
+        )
+        .bind(chain_id as i32)
+        .bind(transaction_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load from execution_transaction table: {e}"))
     }
 }
 

@@ -5820,6 +5820,8 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "aws-lc-rs",
+ "axum",
  "bon",
  "bytes",
  "dotenvy",
