@@ -32,8 +32,8 @@ use serde::{self, Deserialize, Serialize};
 
 use crate::{
     common::enums::{
-        OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode,
-        OKXPositionSide, OKXTradeMode,
+        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
+        OKXPositionMode, OKXPositionSide, OKXTradeMode,
     },
     http::error::BuildError,
 };
@@ -581,7 +581,21 @@ pub struct GetOrderListParams {
     pub limit: Option<u32>,
 }
 
-/// Parameters for the GET /api/v5/trade/order-algo-* endpoints.
+/// Parameters for the GET /api/v5/trade/order-algo endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetAlgoOrderParams {
+    /// Algo order identifier assigned by OKX (optional).
+    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    pub algo_id: Option<String>,
+    /// Client supplied algo order identifier (optional).
+    #[serde(rename = "algoClOrdId", skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+}
+
+/// Parameters for the GET /api/v5/trade/orders-algo-* endpoints.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]
 #[builder(setter(into, strip_option))]
@@ -603,7 +617,7 @@ pub struct GetAlgoOrdersParams {
     pub ord_type: Option<OKXAlgoOrderType>,
     /// State filter (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub state: Option<OKXOrderStatus>,
+    pub state: Option<OKXAlgoOrderStatus>,
     /// Pagination cursor - fetch records after this value (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,

@@ -95,11 +95,12 @@ use super::{
         OKXSpreadOrder, OKXSpreadTrade, OKXTransactionDetail,
     },
     query::{
-        GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
-        GetCandlesticksParamsBuilder, GetEventContractEventsParams, GetEventContractMarketsParams,
-        GetEventContractSeriesParams, GetFundingRateHistoryParams, GetIndexTickerParams,
-        GetIndexTickerParamsBuilder, GetInstrumentsParams, GetInstrumentsParamsBuilder,
-        GetMarkPriceParams, GetMarkPriceParamsBuilder, GetOptionSummaryParams, GetOrderBookParams,
+        GetAlgoOrderParams, GetAlgoOrderParamsBuilder, GetAlgoOrdersParams,
+        GetAlgoOrdersParamsBuilder, GetCandlesticksParams, GetCandlesticksParamsBuilder,
+        GetEventContractEventsParams, GetEventContractMarketsParams, GetEventContractSeriesParams,
+        GetFundingRateHistoryParams, GetIndexTickerParams, GetIndexTickerParamsBuilder,
+        GetInstrumentsParams, GetInstrumentsParamsBuilder, GetMarkPriceParams,
+        GetMarkPriceParamsBuilder, GetOptionSummaryParams, GetOrderBookParams,
         GetOrderHistoryParams, GetOrderHistoryParamsBuilder, GetOrderListParams,
         GetOrderListParamsBuilder, GetPositionTiersParams, GetPositionsHistoryParams,
         GetPositionsParams, GetPositionsParamsBuilder, GetPriceLimitParams,
@@ -118,8 +119,8 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXAlgoOrderType, OKXContractType, OKXEnvironment, OKXInstrumentStatus,
-            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXContractType, OKXEnvironment,
+            OKXInstrumentStatus, OKXInstrumentType, OKXOrderType, OKXPositionMode, OKXPositionSide,
             OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
             conditional_order_to_algo_type,
         },
@@ -1586,6 +1587,29 @@ impl OKXRawHttpClient {
         self.send_request(
             Method::GET,
             "/api/v5/trade/order",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Retrieves a single algo order's details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-get-algo-order-details>
+    pub async fn get_algo_order(
+        &self,
+        params: GetAlgoOrderParams,
+    ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/order-algo",
             Some(&params),
             None,
             true,
@@ -6131,7 +6155,7 @@ impl OKXHttpClient {
         instrument_id: Option<InstrumentId>,
         algo_id: Option<String>,
         algo_client_order_id: Option<ClientOrderId>,
-        state: Option<OKXOrderStatus>,
+        state: Option<OKXAlgoOrderStatus>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
@@ -6152,6 +6176,62 @@ impl OKXHttpClient {
         let mut reports = Vec::new();
         let mut seen: AHashSet<(String, String)> = AHashSet::new();
 
+        if has_specific_lookup {
+            let mut params_builder = GetAlgoOrderParamsBuilder::default();
+
+            if let Some(algo_id) = algo_id {
+                params_builder.algo_id(algo_id);
+            }
+
+            if let Some(client_order_id) = algo_client_order_id {
+                params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
+            }
+
+            let params = params_builder
+                .build()
+                .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
+            let mut orders = self.inner.get_algo_order(params).await?;
+
+            if let Some(state) = state {
+                orders.retain(|order| order.state == state);
+            }
+
+            self.collect_algo_reports(
+                account_id,
+                &orders,
+                &mut instruments_cache,
+                ts_init,
+                &mut seen,
+                &mut reports,
+            )
+            .await?;
+
+            if let Some(limit) = limit {
+                reports.truncate(limit as usize);
+            }
+
+            return Ok(reports);
+        }
+
+        let query_pending = state.is_none()
+            || matches!(
+                state,
+                Some(OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause)
+            );
+        let history_state = match state {
+            None | Some(OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause) => None,
+            Some(
+                OKXAlgoOrderStatus::Effective
+                | OKXAlgoOrderStatus::OrderPlaced
+                | OKXAlgoOrderStatus::PartiallyEffective
+                | OKXAlgoOrderStatus::Filled,
+            ) => Some(OKXAlgoOrderStatus::Effective),
+            Some(OKXAlgoOrderStatus::Canceled) => Some(OKXAlgoOrderStatus::Canceled),
+            Some(OKXAlgoOrderStatus::OrderFailed | OKXAlgoOrderStatus::PartiallyFailed) => {
+                Some(OKXAlgoOrderStatus::OrderFailed)
+            }
+        };
+
         for ord_type in [
             OKXAlgoOrderType::Oco,
             OKXAlgoOrderType::Conditional,
@@ -6166,50 +6246,45 @@ impl OKXHttpClient {
                 params_builder.inst_id(inst_id.symbol.inner().to_string());
             }
 
-            if let Some(algo_id) = algo_id.as_ref() {
-                params_builder.algo_id(algo_id.clone());
-            }
-
-            if let Some(client_order_id) = algo_client_order_id.as_ref() {
-                params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
-            }
-
-            if let Some(state) = state {
-                params_builder.state(state);
-            }
-
-            let params = params_builder
+            let mut params = params_builder
                 .build()
                 .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
 
-            let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
-            let pending = self.paginate_algo_pending(&params, remaining).await?;
-            self.collect_algo_reports(
-                account_id,
-                &pending,
-                &mut instruments_cache,
-                ts_init,
-                &mut seen,
-                &mut reports,
-            )
-            .await?;
-
-            if has_specific_lookup && !reports.is_empty() {
-                return Ok(reports);
-            }
-
-            if let Some(lim) = limit
-                && reports.len() >= lim as usize
-            {
-                reports.truncate(lim as usize);
-                return Ok(reports);
-            }
-
-            // `/orders-algo-history` rejects anything but `state`/`algoId`
-            // with 50015; `algoClOrdId` alone is not accepted.
-            if state.is_some() || algo_id.is_some() {
+            if query_pending {
                 let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
-                let history = self.paginate_algo_history(&params, remaining).await?;
+                let mut pending = self.paginate_algo_pending(&params, remaining).await?;
+
+                if let Some(state) = state {
+                    pending.retain(|order| order.state == state);
+                }
+
+                self.collect_algo_reports(
+                    account_id,
+                    &pending,
+                    &mut instruments_cache,
+                    ts_init,
+                    &mut seen,
+                    &mut reports,
+                )
+                .await?;
+
+                if let Some(lim) = limit
+                    && reports.len() >= lim as usize
+                {
+                    reports.truncate(lim as usize);
+                    return Ok(reports);
+                }
+            }
+
+            if let Some(history_state) = history_state {
+                params.state = Some(history_state);
+                let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
+                let mut history = self.paginate_algo_history(&params, remaining).await?;
+
+                if let Some(state) = state {
+                    history.retain(|order| order.state == state);
+                }
+
                 self.collect_algo_reports(
                     account_id,
                     &history,
@@ -6219,10 +6294,6 @@ impl OKXHttpClient {
                     &mut reports,
                 )
                 .await?;
-
-                if has_specific_lookup && !reports.is_empty() {
-                    return Ok(reports);
-                }
 
                 if let Some(lim) = limit
                     && reports.len() >= lim as usize

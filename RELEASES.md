@@ -162,6 +162,7 @@ adapter set. The following limits remain deferred:
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 - Changed Bybit repay result status fields from `String` to `BybitRepayStatus`
 - Changed Lighter `LighterHttpError` to add `HistoryIncomplete`; update exhaustive matches
+- Changed OKX algo order state filters from `OKXOrderStatus` to `OKXAlgoOrderStatus`
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
 - Removed `Copy` and `Clone` from Rust `CVec`; move values instead (#4499), thanks @folknor
 - Removed Rust `CANCELLABLE_ORDER_STATUSES` and cancellable status set functions; use `OrderStatus::is_cancellable()`
@@ -468,6 +469,7 @@ adapter set. The following limits remain deferred:
 - Fixed Lighter reconnect auth rotation not reaching the venue (#4603), thanks @folknor
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed OKX v2 yearly candle bar validation and round trips
+- Fixed OKX algo order status report state filtering and single-order lookups
 - Fixed Polymarket v1 and v2 allowances for the current Neg Risk adapter
 - Fixed Polymarket auto-loaded instruments not reaching WebSocket subscription (#4574), thanks for reporting @nietoga
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
