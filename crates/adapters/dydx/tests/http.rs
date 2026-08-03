@@ -24,7 +24,7 @@ use axum::{
     response::{IntoResponse, Json},
     routing::get,
 };
-use chrono::{Duration as ChronoDuration, Utc};
+use jiff::{SignedDuration, Timestamp, tz::Offset};
 use nautilus_common::{live::get_runtime, testing::wait_until_async};
 use nautilus_dydx::{
     common::{
@@ -575,8 +575,8 @@ async fn test_trades_chronological_order() {
 
     assert!(trades.trades.len() >= 2);
     for i in 0..trades.trades.len() - 1 {
-        let current_time = trades.trades[i].created_at.timestamp_millis();
-        let next_time = trades.trades[i + 1].created_at.timestamp_millis();
+        let current_time = trades.trades[i].created_at.as_millisecond();
+        let next_time = trades.trades[i + 1].created_at.as_millisecond();
         assert!(
             current_time <= next_time,
             "Trades should be in chronological order"
@@ -599,8 +599,8 @@ async fn test_candles_time_range() {
 
     assert!(candles.candles.len() >= 2);
     for i in 0..candles.candles.len() - 1 {
-        let current_time = candles.candles[i].started_at.timestamp_millis();
-        let next_time = candles.candles[i + 1].started_at.timestamp_millis();
+        let current_time = candles.candles[i].started_at.as_millisecond();
+        let next_time = candles.candles[i + 1].started_at.as_millisecond();
         assert!(
             current_time <= next_time,
             "Candles should be in chronological order"
@@ -1799,15 +1799,15 @@ async fn mock_candles_paginated(Query(params): Query<HashMap<String, String>>) -
 
     let end_time = params
         .get("toISO")
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map_or_else(Utc::now, |dt| dt.with_timezone(&Utc));
+        .and_then(|s| s.parse::<Timestamp>().ok())
+        .unwrap_or_else(Timestamp::now);
 
     let mut candles = Vec::new();
 
     for i in 0..limit {
-        let bar_time = end_time - ChronoDuration::minutes(i as i64);
+        let bar_time = end_time - SignedDuration::from_mins(i as i64);
         candles.push(generate_candle(
-            &bar_time.to_rfc3339(),
+            &bar_time.display_with_offset(Offset::UTC).to_string(),
             "50000.0",
             "50100.0",
             "49900.0",
@@ -1928,8 +1928,8 @@ async fn test_candles_chronological_order_single_page() {
 
     // Verify chronological order (each candle should be later than or equal to the previous)
     for i in 1..candles.candles.len() {
-        let current = candles.candles[i].started_at.timestamp_millis();
-        let prev = candles.candles[i - 1].started_at.timestamp_millis();
+        let current = candles.candles[i].started_at.as_millisecond();
+        let prev = candles.candles[i - 1].started_at.as_millisecond();
         assert!(
             current <= prev,
             "Candles should be in reverse chronological order at index {i}: {current} should be <= {prev}"
@@ -1983,8 +1983,8 @@ async fn test_candles_with_time_range() {
 
     let client = DydxHttpClient::new(Some(base_url), 60, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let end = Utc::now();
-    let start = end - ChronoDuration::hours(2);
+    let end = Timestamp::now();
+    let start = end - SignedDuration::from_hours(2);
 
     let candles = client
         .request_candles(
@@ -2624,9 +2624,7 @@ async fn test_request_trade_ticks_respects_start_boundary() {
     client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
-    let start = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:01:45.000Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let start = "2024-01-01T00:01:45.000Z".parse::<Timestamp>().unwrap();
     let ticks = client
         .request_trade_ticks(instrument_id, Some(start), None, None)
         .await

@@ -1040,7 +1040,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         // Build time filter from start if provided.
         let time_filter = if let Some(start) = cmd.start {
             let start_dt = start.to_datetime_utc();
-            start_dt.format("%Y%m%d-%H:%M:%S").to_string()
+            start_dt.strftime("%Y%m%d-%H:%M:%S").to_string()
         } else {
             String::new()
         };

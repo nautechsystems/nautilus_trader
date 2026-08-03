@@ -95,8 +95,8 @@
 //! | decode raw         |  ~14  |
 //! | decode passthrough |  ~13  |
 //!
-//! Uses stack-allocated base62 output, manual civil time arithmetic (no
-//! chrono), and direct byte-level hex/digit parsing to avoid heap allocations
+//! Uses stack-allocated base62 output, manual civil time arithmetic, and
+//! direct byte-level hex/digit parsing to avoid heap allocations
 //! on the hot path.
 //!
 //! Note: `cargo bench` cannot currently run in this workspace due to a

@@ -400,7 +400,7 @@ pub(super) fn calculate_historical_bar_subscription_duration(
 ) -> ibapi::market_data::historical::Duration {
     use ibapi::market_data::historical::ToDuration;
 
-    let bar_seconds = bar_type.spec().timedelta().num_seconds().max(1);
+    let bar_seconds = bar_type.spec().timedelta().as_secs().max(1);
     let requested_seconds =
         ((now_ns.as_u64().saturating_sub(start_ns.as_u64())) / 1_000_000_000) as i64;
     let minimum_seconds = bar_seconds.saturating_mul(HISTORICAL_BAR_MIN_COUNT);

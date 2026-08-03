@@ -17,7 +17,7 @@
 
 use std::collections::HashSet;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
@@ -267,8 +267,8 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -311,8 +311,8 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

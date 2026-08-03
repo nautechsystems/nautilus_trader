@@ -88,9 +88,8 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

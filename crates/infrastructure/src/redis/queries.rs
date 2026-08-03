@@ -17,8 +17,8 @@ use std::{collections::HashMap, str::FromStr};
 
 use ahash::AHashMap;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use futures::future::join_all;
+use jiff::Timestamp;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
@@ -1001,8 +1001,9 @@ fn convert_timestamps(value: &mut Value) {
                     && let Value::Number(n) = v
                     && let Some(n) = n.as_u64()
                 {
-                    let dt = DateTime::<Utc>::from_timestamp_nanos(n.cast_signed());
-                    *v = Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
+                    let dt = Timestamp::from_nanosecond(i128::from(n))
+                        .expect("UnixNanos is within Jiff's timestamp range");
+                    *v = Value::String(format!("{dt:.9}"));
                 }
                 convert_timestamps(v);
             }
@@ -1022,15 +1023,10 @@ fn convert_timestamp_strings(value: &mut Value) {
             for (key, v) in map {
                 if is_timestamp_field(key)
                     && let Value::String(s) = v
-                    && let Ok(dt) = DateTime::parse_from_rfc3339(s)
+                    && let Ok(dt) = s.parse::<Timestamp>()
                 {
-                    *v = Value::Number(
-                        (dt.with_timezone(&Utc)
-                            .timestamp_nanos_opt()
-                            .expect("Invalid DateTime")
-                            .cast_unsigned())
-                        .into(),
-                    );
+                    let nanos = u64::try_from(dt.as_nanosecond()).expect("Invalid timestamp");
+                    *v = Value::Number(nanos.into());
                 }
                 convert_timestamp_strings(v);
             }

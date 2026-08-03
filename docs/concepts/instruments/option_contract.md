@@ -51,7 +51,7 @@ Examples include equity options, index options, and futures options.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{AssetClass, OptionKind},
@@ -61,8 +61,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+let activation: Timestamp = "2021-09-17T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2021-12-17T00:00:00Z".parse().unwrap();
 
 let aapl_call = OptionContract::builder()
     .instrument_id(InstrumentId::from("AAPL211217C00150000.OPRA"))
@@ -73,8 +73,8 @@ let aapl_call = OptionContract::builder()
     .option_kind(OptionKind::Call)
     .strike_price(Price::from("150.00"))
     .currency(Currency::from("USD"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
     .price_increment(Price::from("0.01"))
     .multiplier(Quantity::from("100"))

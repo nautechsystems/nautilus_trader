@@ -24,6 +24,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
+use jiff::Timestamp;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
@@ -1144,7 +1145,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 loop {
                     let start = if from_id.is_none() {
                         Some(
-                            chrono::DateTime::from_timestamp_millis(window_start)
+                            Timestamp::from_millisecond(window_start)
                                 .context("invalid Binance Spot account-trades start time")?,
                         )
                     } else {
@@ -1152,7 +1153,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     };
                     let end = if from_id.is_none() {
                         Some(
-                            chrono::DateTime::from_timestamp_millis(window_end)
+                            Timestamp::from_millisecond(window_end)
                                 .context("invalid Binance Spot account-trades end time")?,
                         )
                     } else {

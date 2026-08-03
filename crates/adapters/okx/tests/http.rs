@@ -33,7 +33,7 @@ use axum::{
     response::{IntoResponse, Json},
     routing::{get, post},
 };
-use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -1645,14 +1645,8 @@ async fn test_http_request_order_status_reports_routes_spread_request() {
         .await
         .unwrap();
     client.cache_instruments(&instruments);
-    let start = Utc
-        .timestamp_millis_opt(1_700_000_000_000)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(1_700_000_002_000)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_002_000).unwrap();
 
     let reports = client
         .request_order_status_reports(
@@ -1889,14 +1883,8 @@ async fn test_http_request_fill_reports_routes_spread_request() {
         .await
         .unwrap();
     client.cache_instruments(&instruments);
-    let start = Utc
-        .timestamp_millis_opt(1_700_000_000_000)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(1_700_000_002_000)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_002_000).unwrap();
 
     let reports = client
         .request_fill_reports(
@@ -2435,8 +2423,8 @@ async fn test_request_trades_pagination_parameters() {
         client.cache_instrument(instrument);
     }
 
-    let start = Utc::now() - ChronoDuration::minutes(5);
-    let end = Utc::now();
+    let start = Timestamp::now() - SignedDuration::from_mins(5);
+    let end = Timestamp::now();
 
     let trades = client
         .request_trades(
@@ -2704,7 +2692,7 @@ async fn test_request_trades_range_mode_pagination() {
             "/api/v5/market/history-trades",
             get({
                 move |Query(params): Query<HashMap<String, String>>| async move {
-                    let now_ms = Utc::now().timestamp_millis();
+                    let now_ms = Timestamp::now().as_millisecond();
                     // OKX backwards semantics: 'after' is used for backward pagination (get older trades)
                     let after_trade_id = params.get("after").and_then(|s| s.parse::<i64>().ok());
 
@@ -2798,8 +2786,8 @@ async fn test_request_trades_range_mode_pagination() {
 
     // Regression test for issue #2997 where Range mode pagination could get stuck
     // when all trades on a page are filtered out
-    let start = Utc::now() - ChronoDuration::hours(2);
-    let end = Utc::now() - ChronoDuration::hours(1);
+    let start = Timestamp::now() - SignedDuration::from_hours(2);
+    let end = Timestamp::now() - SignedDuration::from_hours(1);
 
     let trades = client
         .request_trades(
@@ -2815,8 +2803,8 @@ async fn test_request_trades_range_mode_pagination() {
 
     for trade in &trades {
         let trade_ts = trade.ts_event.as_i64();
-        let start_ns = start.timestamp_nanos_opt().unwrap();
-        let end_ns = end.timestamp_nanos_opt().unwrap();
+        let start_ns = i64::try_from(start.as_nanosecond()).unwrap();
+        let end_ns = i64::try_from(end.as_nanosecond()).unwrap();
         assert!(
             trade_ts >= start_ns && trade_ts <= end_ns,
             "Trade timestamp should be within requested range"
@@ -2972,8 +2960,8 @@ async fn test_request_bars_range_mode_pagination() {
 
     // Regression test for issue #3145 where Range mode pagination could get stuck
     // when all bars on a page are filtered out
-    let start = Utc::now() - ChronoDuration::hours(2);
-    let end = Utc::now() - ChronoDuration::hours(1);
+    let start = Timestamp::now() - SignedDuration::from_hours(2);
+    let end = Timestamp::now() - SignedDuration::from_hours(1);
 
     let bars = client
         .request_bars(bar_type, Some(start), Some(end), Some(100))
@@ -2984,8 +2972,8 @@ async fn test_request_bars_range_mode_pagination() {
 
     for bar in &bars {
         let bar_ts = bar.ts_event.as_i64();
-        let start_ns = start.timestamp_nanos_opt().unwrap();
-        let end_ns = end.timestamp_nanos_opt().unwrap();
+        let start_ns = i64::try_from(start.as_nanosecond()).unwrap();
+        let end_ns = i64::try_from(end.as_nanosecond()).unwrap();
         assert!(
             bar_ts >= start_ns && bar_ts <= end_ns,
             "Bar timestamp should be within requested range"
@@ -3024,8 +3012,8 @@ async fn test_request_trades_multi_page_chronological_order() {
     }
 
     // Request range that spans multiple pages (typical page = 100 trades)
-    let start = Utc::now() - ChronoDuration::minutes(10);
-    let end = Utc::now();
+    let start = Timestamp::now() - SignedDuration::from_mins(10);
+    let end = Timestamp::now();
 
     let trades = client
         .request_trades(
@@ -3136,7 +3124,7 @@ async fn test_request_trades_overlapping_pages_chronological_order() {
     }
 
     // Use Range mode with end timestamp to trigger backward pagination
-    let end = Utc::now();
+    let end = Timestamp::now();
     let trades = client
         .request_trades(InstrumentId::from("BTC-USD.OKX"), None, Some(end), Some(10))
         .await
@@ -3253,7 +3241,7 @@ async fn test_request_trades_default_limit_with_end_only() {
     }
 
     // Request with end timestamp but no limit (should default to 100)
-    let end = Utc::now();
+    let end = Timestamp::now();
     let trades = client
         .request_trades(
             InstrumentId::from("BTC-USD.OKX"),
@@ -3297,7 +3285,7 @@ async fn test_request_trades_historical_with_filtered_pages() {
             "/api/v5/market/history-trades",
             get({
                 move |Query(params): Query<HashMap<String, String>>| async move {
-                    let now_ms = Utc::now().timestamp_millis();
+                    let now_ms = Timestamp::now().as_millisecond();
                     // OKX backwards semantics: 'after' is used for backward pagination
                     let after_trade_id = params.get("after").and_then(|s| s.parse::<i64>().ok());
 
@@ -3402,9 +3390,9 @@ async fn test_request_trades_historical_with_filtered_pages() {
     }
 
     // Request trades from 2.5 hours ago to 1.5 hours ago
-    let now = Utc::now();
-    let start = now - ChronoDuration::milliseconds(2 * 3600 * 1000 + 1800 * 1000);
-    let end = now - ChronoDuration::milliseconds(3600 * 1000 + 1800 * 1000);
+    let now = Timestamp::now();
+    let start = now - SignedDuration::from_millis(2 * 3600 * 1000 + 1800 * 1000);
+    let end = now - SignedDuration::from_millis(3600 * 1000 + 1800 * 1000);
 
     let trades = client
         .request_trades(
@@ -3452,7 +3440,7 @@ async fn test_request_trades_multiple_trades_same_id() {
 
                     // OKX backwards semantics: 'after' is used for backward pagination
                     let after_id = params.get("after");
-                    let now_ms = Utc::now().timestamp_millis();
+                    let now_ms = Timestamp::now().as_millisecond();
 
                     let data = if after_id.is_none() {
                         vec![
@@ -3506,8 +3494,8 @@ async fn test_request_trades_multiple_trades_same_id() {
     }
 
     // Request with time range to trigger multi-page pagination
-    let start = Utc::now() - ChronoDuration::hours(1);
-    let end = Utc::now();
+    let start = Timestamp::now() - SignedDuration::from_hours(1);
+    let end = Timestamp::now();
     let trades = client
         .request_trades(
             InstrumentId::from("BTC-USD.OKX"),

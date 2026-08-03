@@ -117,7 +117,7 @@ impl BarSpecification {
     /// since months and years have variable lengths.
     #[getter]
     #[pyo3(name = "timedelta")]
-    fn py_timedelta(&self) -> PyResult<chrono::TimeDelta> {
+    fn py_timedelta(&self) -> PyResult<jiff::SignedDuration> {
         if !self.is_time_aggregated() {
             return Err(to_pyvalue_err(format!(
                 "Timedelta not supported for aggregation type: {:?}",
@@ -172,22 +172,21 @@ impl BarSpecification {
             )));
         }
         let td = self.timedelta();
-        td.num_nanoseconds()
-            .map(|ns| ns as u64)
-            .ok_or_else(|| to_pyvalue_err(format!("Interval overflows nanoseconds, was {td:?}")))
+        u64::try_from(td.as_nanos())
+            .map_err(|_| to_pyvalue_err(format!("Interval overflows nanoseconds, was {td:?}")))
     }
 
     /// Creates a `BarSpecification` from a Python `timedelta` and price type.
     #[staticmethod]
     #[pyo3(name = "from_timedelta")]
-    fn py_from_timedelta(duration: chrono::TimeDelta, price_type: PriceType) -> PyResult<Self> {
-        if duration.num_milliseconds() <= 0 {
+    fn py_from_timedelta(duration: jiff::SignedDuration, price_type: PriceType) -> PyResult<Self> {
+        if duration.as_millis() <= 0 {
             return Err(to_pyvalue_err(format!(
                 "Duration must be positive, was {duration:?}"
             )));
         }
-        let total_secs_f64 = duration.num_milliseconds() as f64 / 1000.0;
-        let days = duration.num_days();
+        let total_secs_f64 = duration.as_millis() as f64 / 1000.0;
+        let days = duration.as_hours() / 24;
 
         let (step, aggregation) = if days >= 7 {
             (days / 7, BarAggregation::Week)

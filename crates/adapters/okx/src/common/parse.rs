@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use jiff::Timestamp;
 pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
     deserialize_optional_string_to_u64, deserialize_string_to_u64,
@@ -340,15 +341,14 @@ pub fn parse_millisecond_timestamp(timestamp_ms: u64) -> UnixNanos {
 /// Returns an error if the string is not a valid RFC 3339 datetime or if the
 /// timestamp cannot be represented in nanoseconds.
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
-    let dt = chrono::DateTime::parse_from_rfc3339(timestamp)?;
-    let nanos = dt.timestamp_nanos_opt().ok_or_else(|| {
-        anyhow::anyhow!("Failed to extract nanoseconds from timestamp: {timestamp}")
-    })?;
-
+    let dt = timestamp.parse::<Timestamp>()?;
+    let nanos = dt.as_nanosecond();
     if nanos < 0 {
         anyhow::bail!("Negative nanosecond timestamp from: {timestamp}");
     }
-    Ok(UnixNanos::from(nanos as u64))
+    let nanos = u64::try_from(nanos)
+        .with_context(|| format!("Timestamp is outside the UnixNanos range: {timestamp}"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Converts a textual price to a [`Price`] using the given precision.
@@ -2811,8 +2811,8 @@ pub fn parse_account_state(
     ))
 }
 
-/// Converts an optional `UnixNanos` to an optional `DateTime<Utc>`.
-pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<chrono::DateTime<chrono::Utc>> {
+/// Converts an optional `UnixNanos` to an optional `Timestamp`.
+pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<jiff::Timestamp> {
     value.map(|nanos| nanos.to_datetime_utc())
 }
 

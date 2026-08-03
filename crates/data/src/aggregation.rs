@@ -27,7 +27,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::{Duration, TimeDelta};
+use jiff::SignedDuration;
 use nautilus_common::{
     clock::{Clock, TestClock},
     timer::{TimeEvent, TimeEventCallback},
@@ -1767,7 +1767,7 @@ pub struct TimeBarAggregator {
     next_close_ns: UnixNanos,
     first_close_ns: UnixNanos,
     bar_build_delay: u64,
-    time_bars_origin_offset: Option<TimeDelta>,
+    time_bars_origin_offset: Option<SignedDuration>,
     skip_first_non_full_bar: bool,
     pub historical_mode: bool,
     historical_events: Vec<TimeEvent>,
@@ -1806,7 +1806,7 @@ impl TimeBarAggregator {
         build_with_no_updates: bool,
         timestamp_on_close: bool,
         interval_type: BarIntervalType,
-        time_bars_origin_offset: Option<TimeDelta>,
+        time_bars_origin_offset: Option<SignedDuration>,
         bar_build_delay: u64,
         skip_first_non_full_bar: bool,
     ) -> Self {
@@ -1879,7 +1879,7 @@ impl TimeBarAggregator {
         let now = self.clock.borrow().utc_now();
         let mut start_time =
             get_time_bar_start(now, &self.bar_type(), self.time_bars_origin_offset);
-        start_time += TimeDelta::microseconds(self.bar_build_delay as i64);
+        start_time += SignedDuration::from_micros(self.bar_build_delay as i64);
 
         // Closing a partial bar at the transition from historical to backtest data
         let fire_immediately = start_time == now;
@@ -1905,7 +1905,7 @@ impl TimeBarAggregator {
             if fire_immediately {
                 self.next_close_ns = start_time_ns;
             } else {
-                let interval_duration = Duration::nanoseconds(self.interval_ns.as_i64());
+                let interval_duration = SignedDuration::from_nanos(self.interval_ns.as_i64());
                 self.next_close_ns = UnixNanos::from(start_time + interval_duration);
             }
 

@@ -21,8 +21,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::TimeZone;
-use chrono_tz::US::Eastern;
+use jiff::civil::Date;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_backtest::{
     config::SimulatedVenueConfig,
@@ -47,7 +46,7 @@ use nautilus_common::{
         typed_handler::TypedHandler,
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, datetime::get_timezone};
 use nautilus_execution::models::{
     fee::{FeeModelAny, MakerTakerFeeModel},
     latency::StaticLatencyModel,
@@ -3553,13 +3552,20 @@ fn rollover_records() -> Vec<InterestRateRecord> {
 }
 
 fn rollover_timestamp(year: i32, month: u32, day: u32) -> UnixNanos {
-    let timestamp = Eastern
-        .with_ymd_and_hms(year, month, day, 17, 1, 0)
-        .single()
+    let timezone = get_timezone("America/New_York").unwrap();
+    let datetime = Date::new(
+        i16::try_from(year).unwrap(),
+        i8::try_from(month).unwrap(),
+        i8::try_from(day).unwrap(),
+    )
+    .unwrap()
+    .at(17, 1, 0, 0);
+    let timestamp = timezone
+        .to_ambiguous_timestamp(datetime)
+        .unambiguous()
         .unwrap()
-        .timestamp_nanos_opt()
-        .unwrap()
-        .cast_unsigned();
+        .as_nanosecond();
+    let timestamp = u64::try_from(timestamp).unwrap();
     UnixNanos::from(timestamp)
 }
 

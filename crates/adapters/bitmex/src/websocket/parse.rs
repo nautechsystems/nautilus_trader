@@ -18,7 +18,7 @@
 use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
-use chrono::Timelike;
+use jiff::tz::Offset;
 use nautilus_core::{UnixNanos, uuid::UUID4};
 #[cfg(test)]
 use nautilus_model::types::Currency;
@@ -1102,9 +1102,10 @@ pub fn parse_instrument_msg(
 #[must_use]
 pub fn parse_funding_msg(msg: &BitmexFundingMsg, ts_init: UnixNanos) -> FundingRateUpdate {
     let instrument_id = InstrumentId::from(format!("{}.BITMEX", msg.symbol));
-    let interval_hours = msg.funding_interval.hour();
-    let interval_minutes = msg.funding_interval.minute();
-    let interval = Some((interval_hours * 60 + interval_minutes) as u16);
+    let funding_interval = Offset::UTC.to_datetime(msg.funding_interval);
+    let interval_hours = u16::from(funding_interval.hour().cast_unsigned());
+    let interval_minutes = u16::from(funding_interval.minute().cast_unsigned());
+    let interval = Some(interval_hours * 60 + interval_minutes);
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
 
     FundingRateUpdate::new(
@@ -1202,7 +1203,7 @@ pub fn parse_margin_account_state(msg: &BitmexMarginMsg, ts_init: UnixNanos) -> 
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use nautilus_model::{
         enums::{AggressorSide, BookAction, LiquiditySide, PositionSide},
         identifiers::Symbol,
@@ -1489,9 +1490,7 @@ mod tests {
         let instrument = create_test_perpetual_instrument();
 
         let msg = BitmexTradeBinMsg {
-            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: "2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap(),
             symbol: Ustr::from("XBTUSD"),
             open: 50_000.0,
             high: 49_990.0,
@@ -1928,7 +1927,7 @@ mod tests {
             withdrawable_margin: None,
             maker_fee_discount: None,
             taker_fee_discount: None,
-            timestamp: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
+            timestamp: Timestamp::from_second(1_700_000_000).unwrap(),
             foreign_margin_balance: None,
             foreign_requirement: None,
         };
@@ -1979,7 +1978,7 @@ mod tests {
             withdrawable_margin: None,
             maker_fee_discount: None,
             taker_fee_discount: None,
-            timestamp: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
+            timestamp: Timestamp::from_second(1_700_000_000).unwrap(),
             foreign_margin_balance: None,
             foreign_requirement: None,
         };

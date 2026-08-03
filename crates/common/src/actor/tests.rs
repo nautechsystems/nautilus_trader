@@ -2385,8 +2385,8 @@ fn test_request_quotes_rejects_invalid_time_range(
     let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
     clock.borrow_mut().set_time(now_ns);
     let now = clock.borrow().utc_now();
-    let start = start_offset_secs.map(|offset| now + chrono::Duration::seconds(offset));
-    let end = end_offset_secs.map(|offset| now + chrono::Duration::seconds(offset));
+    let start = start_offset_secs.map(|offset| now + jiff::SignedDuration::from_secs(offset));
+    let end = end_offset_secs.map(|offset| now + jiff::SignedDuration::from_secs(offset));
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();

@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use jiff::Timestamp;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
@@ -54,13 +55,12 @@ use crate::{
 
 /// Parses an RFC 3339 timestamp string to `UnixNanos`.
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
-    let dt = chrono::DateTime::parse_from_rfc3339(timestamp)
+    let dt = timestamp
+        .parse::<Timestamp>()
         .context(format!("Failed to parse timestamp '{timestamp}'"))?;
-    let nanos = dt
-        .timestamp_nanos_opt()
+    let nanos = u64::try_from(dt.as_nanosecond())
         .context(format!("Timestamp out of range: '{timestamp}'"))?;
-    anyhow::ensure!(nanos >= 0, "Negative timestamp: '{timestamp}'");
-    Ok(UnixNanos::from(nanos as u64))
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Parses a Unix epoch seconds string to `UnixNanos`.

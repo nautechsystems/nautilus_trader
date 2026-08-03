@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
 };
@@ -970,14 +970,14 @@ impl LighterHttpClient {
         &self,
         instrument: &InstrumentAny,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> LighterHttpResult<Vec<Bar>> {
         let market_id = self.market_index(instrument)?;
         let resolution = LighterCandleResolution::try_from(&bar_type)?;
         let interval_ms = resolution.interval_millis();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         if let (Some(start), Some(end)) = (start, end)
             && start >= end
@@ -998,8 +998,8 @@ impl LighterHttpClient {
         let requested_limit = limit.filter(|n| *n > 0).map(|n| n as usize);
         let target_limit = requested_limit.unwrap_or(DEFAULT_BARS_LIMIT);
         let start_was_unspecified = start.is_none();
-        let end_ms = end.timestamp_millis().max(0);
-        let now_ms = now.timestamp_millis();
+        let end_ms = end.as_millisecond().max(0);
+        let now_ms = now.as_millisecond();
 
         if end_ms == 0 {
             return Ok(Vec::new());
@@ -1012,7 +1012,7 @@ impl LighterHttpClient {
                 let lookback_ms = interval_ms.saturating_mul(lookback_bars);
                 end_ms.saturating_sub(lookback_ms)
             },
-            |dt| dt.timestamp_millis().max(0),
+            |dt| dt.as_millisecond().max(0),
         );
 
         if start_ms >= end_ms {
@@ -1110,8 +1110,8 @@ impl LighterHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument: &InstrumentAny,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
     ) -> LighterHttpResult<Vec<FundingRateUpdate>> {
         if !matches!(instrument, InstrumentAny::CryptoPerpetual(_)) {
@@ -1124,7 +1124,7 @@ impl LighterHttpClient {
         let market_id = self.market_index(instrument)?;
         let resolution = LighterFundingResolution::OneHour;
         let interval_ms = resolution.interval_millis();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         if let (Some(start), Some(end)) = (start, end)
             && start >= end
@@ -1145,7 +1145,7 @@ impl LighterHttpClient {
         let requested_limit = limit.filter(|n| *n > 0);
         let target_limit = requested_limit.unwrap_or(DEFAULT_FUNDING_RATES_LIMIT);
         let start_was_unspecified = start.is_none();
-        let end_ms = end.timestamp_millis().max(0);
+        let end_ms = end.as_millisecond().max(0);
 
         if end_ms == 0 {
             return Ok(Vec::new());
@@ -1158,7 +1158,7 @@ impl LighterHttpClient {
                 let lookback_ms = interval_ms.saturating_mul(lookback_rows);
                 end_ms.saturating_sub(lookback_ms)
             },
-            |dt| dt.timestamp_millis().max(0),
+            |dt| dt.as_millisecond().max(0),
         );
 
         if start_ms >= end_ms {

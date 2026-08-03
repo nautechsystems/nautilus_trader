@@ -27,7 +27,7 @@ use std::{
 
 use anyhow::Context;
 use arc_swap::ArcSwap;
-use chrono::{DateTime, Utc};
+use jiff::{Timestamp, tz::Offset};
 use nautilus_core::{
     AtomicMap, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
@@ -610,8 +610,12 @@ impl CoinbaseRawHttpClient {
         let mut cursor: Option<String> = None;
 
         loop {
-            let start_str = query.start.map(|s| s.to_rfc3339());
-            let end_str = query.end.map(|e| e.to_rfc3339());
+            let start_str = query
+                .start
+                .map(|s| s.display_with_offset(Offset::UTC).to_string());
+            let end_str = query
+                .end
+                .map(|e| e.display_with_offset(Offset::UTC).to_string());
             let limit_str = query.limit.map(|l| l.to_string());
 
             let mut pairs: Vec<(&str, &str)> = Vec::new();
@@ -678,8 +682,12 @@ impl CoinbaseRawHttpClient {
         let mut cursor: Option<String> = None;
 
         loop {
-            let start_str = query.start.map(|s| s.to_rfc3339());
-            let end_str = query.end.map(|e| e.to_rfc3339());
+            let start_str = query
+                .start
+                .map(|s| s.display_with_offset(Offset::UTC).to_string());
+            let end_str = query
+                .end
+                .map(|e| e.display_with_offset(Offset::UTC).to_string());
             let limit_str = query.limit.map(|l| l.to_string());
 
             let mut pairs: Vec<(&str, &str)> = Vec::new();
@@ -1192,8 +1200,8 @@ impl CoinbaseHttpClient {
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let query = OrderListQuery {
@@ -1244,8 +1252,8 @@ impl CoinbaseHttpClient {
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
         venue_order_id: Option<VenueOrderId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
         let query = FillListQuery {

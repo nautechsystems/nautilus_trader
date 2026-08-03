@@ -15,7 +15,7 @@
 
 //! Data models for Kraken WebSocket v2 API messages.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
@@ -403,7 +403,7 @@ pub struct KrakenWsMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<Ustr>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<DateTime<Utc>>,
+    pub timestamp: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -439,7 +439,7 @@ pub struct KrakenWsTickerData {
     pub change: Decimal,
     #[serde(with = "decimal")]
     pub change_pct: Decimal,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -452,7 +452,7 @@ pub struct KrakenWsTradeData {
     pub qty: Decimal,
     pub ord_type: KrakenOrderType,
     pub trade_id: i64,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -463,7 +463,7 @@ pub struct KrakenWsBookData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asks: Option<Vec<KrakenWsBookLevel>>,
     pub checksum: Option<u32>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,7 +478,7 @@ pub struct KrakenWsBookLevel {
 pub struct KrakenWsOhlcData {
     pub symbol: Ustr,
     pub interval: u32,
-    pub interval_begin: DateTime<Utc>,
+    pub interval_begin: Timestamp,
     #[serde(with = "decimal")]
     pub open: Decimal,
     #[serde(with = "decimal")]
@@ -561,7 +561,7 @@ pub struct KrakenWsExecutionData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
     /// Event timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Execution/trade ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exec_id: Option<String>,
@@ -674,10 +674,7 @@ mod tests {
         assert_eq!(ticker.bid, dec!(105944.20));
         assert_eq!(ticker.ask, dec!(105944.30));
         assert_eq!(ticker.last, dec!(105899.40));
-        assert_eq!(
-            ticker.timestamp.timestamp_nanos_opt().unwrap(),
-            1_671_960_659_123_456_000
-        );
+        assert_eq!(ticker.timestamp.as_nanosecond(), 1_671_960_659_123_456_000);
     }
 
     #[rstest]
@@ -744,10 +741,7 @@ mod tests {
         assert!(book.bids.is_some());
         assert!(book.asks.is_some());
         assert!(book.checksum.is_some());
-        assert_eq!(
-            book.timestamp.timestamp_nanos_opt().unwrap(),
-            1_696_613_755_440_295_000
-        );
+        assert_eq!(book.timestamp.as_nanosecond(), 1_696_613_755_440_295_000);
 
         let bids = book.bids.unwrap();
         assert_eq!(bids.len(), 3);
@@ -766,10 +760,7 @@ mod tests {
 
         let book: KrakenWsBookData =
             serde_json::from_str(message.data[0].get()).expect("Failed to parse book data");
-        assert_eq!(
-            book.timestamp.timestamp_nanos_opt().unwrap(),
-            1_696_613_755_440_295_000
-        );
+        assert_eq!(book.timestamp.as_nanosecond(), 1_696_613_755_440_295_000);
         assert!(book.checksum.is_some());
     }
 

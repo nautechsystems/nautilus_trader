@@ -1102,9 +1102,9 @@ impl DataClient for DeriveDataClient {
         let limit = request.limit.map(NonZeroUsize::get);
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
-        let from_timestamp = start.map(|dt| dt.timestamp_millis());
+        let from_timestamp = start.map(|dt| dt.as_millisecond());
         let to_timestamp = Some(match end {
-            Some(dt) => dt.timestamp_millis(),
+            Some(dt) => dt.as_millisecond(),
             None => i64::try_from(clock.get_time_ms())
                 .context("Derive current time exceeds i64 milliseconds")?,
         });
@@ -1212,8 +1212,8 @@ impl DataClient for DeriveDataClient {
         let limit = request.limit.map(NonZeroUsize::get);
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
-        let start_ms = start.map(|dt| dt.timestamp_millis());
-        let end_ms = end.map(|dt| dt.timestamp_millis());
+        let start_ms = start.map(|dt| dt.as_millisecond());
+        let end_ms = end.map(|dt| dt.as_millisecond());
 
         self.spawn_task("request_funding_rates", async move {
             let result = match http_client
@@ -1309,9 +1309,9 @@ impl DataClient for DeriveDataClient {
         // and start to one window of `limit` buckets (or 1000) before end.
         let request_time = clock.get_time_ns();
         let now_secs = (request_time.as_u64() / NANOSECONDS_IN_SECOND) as i64;
-        let end_ts = end.map_or(now_secs, |dt| dt.timestamp());
+        let end_ts = end.map_or(now_secs, |dt| dt.as_second());
         let default_span = i64::from(period) * limit.unwrap_or(DERIVE_CANDLES_DEFAULT_LIMIT) as i64;
-        let start_ts = start.map_or(end_ts - default_span, |dt| dt.timestamp());
+        let start_ts = start.map_or(end_ts - default_span, |dt| dt.as_second());
 
         self.spawn_task("request_bars", async move {
             // Venue caps each call at 5000 candles; walk backwards by shrinking

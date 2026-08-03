@@ -70,13 +70,13 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 cosmrs = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 dydx-proto = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 rustls = { workspace = true }

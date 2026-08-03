@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_model::enums::OrderSide;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -336,7 +336,7 @@ impl DydxWsGenericMsg {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxBlockHeightSubscribedContents {
     pub height: String,
-    pub time: DateTime<Utc>,
+    pub time: Timestamp,
 }
 
 /// Block height subscription confirmed message.
@@ -353,7 +353,7 @@ pub struct DydxWsBlockHeightSubscribedData {
 pub struct DydxBlockHeightChannelContents {
     #[serde(rename = "blockHeight")]
     pub block_height: String,
-    pub time: DateTime<Utc>,
+    pub time: Timestamp,
 }
 
 /// Block height channel data message.
@@ -474,7 +474,7 @@ pub struct DydxTrade {
     /// Trade price.
     pub price: String,
     /// Trade timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Trade type.
     #[serde(rename = "type")]
     pub trade_type: DydxTradeType,
@@ -508,7 +508,7 @@ pub struct DydxCandle {
     /// Resolution/timeframe.
     pub resolution: DydxCandleResolution,
     /// Start time.
-    pub started_at: DateTime<Utc>,
+    pub started_at: Timestamp,
     /// Starting open interest.
     pub starting_open_interest: String,
     /// Market ticker.

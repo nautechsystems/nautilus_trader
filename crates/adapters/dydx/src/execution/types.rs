@@ -18,7 +18,7 @@
 //! This module centralizes type definitions used across order submission,
 //! transaction management, and WebSocket handling components.
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
@@ -95,7 +95,7 @@ impl OrderLifetime {
 
         // Check if expire_time is within the short-term window
         if let Some(expire_ts) = expire_time {
-            let now = Utc::now().timestamp();
+            let now = Timestamp::now().as_second();
             let time_until_expiry = expire_ts - now;
             if time_until_expiry > 0 && (time_until_expiry as f64) <= max_short_term_secs {
                 return Self::ShortTerm;
@@ -216,19 +216,25 @@ pub struct OrderContext {
 pub fn calculate_conditional_order_expiration(
     time_in_force: TimeInForce,
     expire_time: Option<i64>,
-) -> Result<DateTime<Utc>, DydxError> {
+) -> Result<Timestamp, DydxError> {
     if let Some(expire_ts) = expire_time {
-        DateTime::from_timestamp(expire_ts, 0)
-            .ok_or_else(|| DydxError::Parse(format!("Invalid expire timestamp: {expire_ts}")))
+        Timestamp::from_second(expire_ts)
+            .map_err(|_| DydxError::Parse(format!("Invalid expire timestamp: {expire_ts}")))
     } else {
         let expiration = match time_in_force {
-            TimeInForce::Gtc => Utc::now() + Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS),
+            TimeInForce::Gtc => {
+                Timestamp::now()
+                    + SignedDuration::from_hours(24 * GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS)
+            }
             TimeInForce::Ioc | TimeInForce::Fok => {
                 // IOC/FOK don't typically apply to conditional orders, use short expiration
-                Utc::now() + Duration::hours(1)
+                Timestamp::now() + SignedDuration::from_hours(1)
             }
             // GTD without expire_time, or any other TIF - use long default
-            _ => Utc::now() + Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS),
+            _ => {
+                Timestamp::now()
+                    + SignedDuration::from_hours(24 * GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS)
+            }
         };
         Ok(expiration)
     }
@@ -293,7 +299,7 @@ mod tests {
     #[rstest]
     fn test_order_lifetime_short_expire_time() {
         // Expire time 30 seconds from now should be short-term (within 60s max)
-        let expire_time = Some(Utc::now().timestamp() + 30);
+        let expire_time = Some(Timestamp::now().as_second() + 30);
         let lifetime = OrderLifetime::from_time_in_force(
             TimeInForce::Gtc,
             expire_time,
@@ -306,7 +312,7 @@ mod tests {
     #[rstest]
     fn test_order_lifetime_long_expire_time() {
         // Expire time 5 minutes from now should be long-term (beyond 60s max)
-        let expire_time = Some(Utc::now().timestamp() + 300);
+        let expire_time = Some(Timestamp::now().as_second() + 300);
         let lifetime = OrderLifetime::from_time_in_force(
             TimeInForce::Gtd,
             expire_time,
@@ -319,7 +325,7 @@ mod tests {
     #[rstest]
     fn test_order_lifetime_expire_at_boundary() {
         // Expire time exactly at max_short_term_secs should be short-term
-        let expire_time = Some(Utc::now().timestamp() + 60);
+        let expire_time = Some(Timestamp::now().as_second() + 60);
         let lifetime = OrderLifetime::from_time_in_force(
             TimeInForce::Gtd,
             expire_time,
@@ -332,7 +338,7 @@ mod tests {
     #[rstest]
     fn test_order_lifetime_expire_just_beyond_boundary() {
         // Expire time 1 second beyond max should be long-term
-        let expire_time = Some(Utc::now().timestamp() + 61);
+        let expire_time = Some(Timestamp::now().as_second() + 61);
         let lifetime = OrderLifetime::from_time_in_force(
             TimeInForce::Gtd,
             expire_time,

@@ -33,6 +33,7 @@ use axum::{
     response::Response,
     routing::get,
 };
+use jiff::Timestamp;
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_dydx::{
@@ -2933,7 +2934,6 @@ async fn test_subaccount_subscription_failure() {
 #[rstest]
 #[tokio::test]
 async fn test_block_height_parsing() {
-    use chrono::Utc;
     use nautilus_dydx::websocket::messages::{
         DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData,
     };
@@ -2946,7 +2946,7 @@ async fn test_block_height_parsing() {
         version: "4.0.0".to_string(),
         contents: DydxBlockHeightChannelContents {
             block_height: test_block_height.to_string(),
-            time: Utc::now(),
+            time: Timestamp::now(),
         },
     };
 
@@ -2960,7 +2960,6 @@ async fn test_block_height_parsing() {
 #[rstest]
 #[tokio::test]
 async fn test_block_height_invalid_format() {
-    use chrono::Utc;
     use nautilus_dydx::websocket::messages::{
         DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData,
     };
@@ -2973,7 +2972,7 @@ async fn test_block_height_invalid_format() {
         version: "4.0.0".to_string(),
         contents: DydxBlockHeightChannelContents {
             block_height: invalid_block_height.to_string(),
-            time: Utc::now(),
+            time: Timestamp::now(),
         },
     };
 
@@ -2987,7 +2986,6 @@ async fn test_block_height_invalid_format() {
 #[rstest]
 #[tokio::test]
 async fn test_block_height_subscribed_parsing() {
-    use chrono::Utc;
     use nautilus_dydx::websocket::messages::{
         DydxBlockHeightSubscribedContents, DydxWsBlockHeightSubscribedData,
     };
@@ -2999,7 +2997,7 @@ async fn test_block_height_subscribed_parsing() {
         id: "v4_block_height".to_string(),
         contents: DydxBlockHeightSubscribedContents {
             height: test_height.to_string(),
-            time: Utc::now(),
+            time: Timestamp::now(),
         },
     };
 

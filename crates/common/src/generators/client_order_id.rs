@@ -19,8 +19,8 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, Timelike};
 use itoa::Buffer;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
 
@@ -53,8 +53,12 @@ fn write_fixed_prefix(
     use_hyphens: bool,
     epoch_second: u64,
 ) {
-    let now_utc = DateTime::from_timestamp_millis((epoch_second * 1_000) as i64)
-        .expect("Milliseconds timestamp should be within valid range");
+    let now_utc = Offset::UTC.to_datetime(
+        Timestamp::from_second(
+            i64::try_from(epoch_second).expect("seconds timestamp should fit i64"),
+        )
+        .expect("seconds timestamp should be within valid range"),
+    );
 
     buf.clear();
 

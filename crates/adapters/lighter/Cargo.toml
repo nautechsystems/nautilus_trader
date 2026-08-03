@@ -78,10 +78,10 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, optional = true }

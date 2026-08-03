@@ -46,7 +46,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
@@ -738,9 +738,8 @@ impl OKXRawHttpClient {
         let api_passphrase = credential.api_passphrase().to_string();
 
         // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
-        let now = Utc::now();
-        let millis = now.timestamp_subsec_millis();
-        let timestamp = now.format("%Y-%m-%dT%H:%M:%S").to_string() + &format!(".{millis:03}Z");
+        let now = Timestamp::now();
+        let timestamp = format!("{now:.3}");
         let signature = credential.sign_bytes(&timestamp, method.as_str(), path, body);
 
         let mut headers = HashMap::new();
@@ -2938,8 +2937,8 @@ impl OKXHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         let mut params = GetFundingRateHistoryParams {
@@ -2949,11 +2948,11 @@ impl OKXHttpClient {
 
         // OKX uses "before" for newer-than and "after" for older-than
         if let Some(start) = start {
-            params.before = Some(start.timestamp_millis().to_string());
+            params.before = Some(start.as_millisecond().to_string());
         }
 
         if let Some(end) = end {
-            params.after = Some(end.timestamp_millis().to_string());
+            params.after = Some(end.as_millisecond().to_string());
         }
 
         params.limit = limit;
@@ -3003,8 +3002,8 @@ impl OKXHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const OKX_TRADES_MAX_LIMIT: u32 = 100;
@@ -3024,7 +3023,7 @@ impl OKXHttpClient {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         if let Some(s) = start
             && s > now
@@ -3047,8 +3046,8 @@ impl OKXHttpClient {
             (Some(_), Some(_)) => Mode::Range,
         };
 
-        let start_ms = start.map(|s| s.timestamp_millis());
-        let end_ms = end.map(|e| e.timestamp_millis());
+        let start_ms = start.map(|s| s.as_millisecond());
+        let end_ms = end.map(|e| e.as_millisecond());
 
         let ts_init = self.generate_ts_init();
         let inst = self.instrument_from_cache_by_id(instrument_id)?;
@@ -3338,7 +3337,7 @@ impl OKXHttpClient {
     /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
     ///   - Used when: start is Some AND age > 100 days
     ///
-    /// Age is calculated as `Utc::now() - start` at the time of the first request.
+    /// Age is calculated as `Timestamp::now() - start` at the time of the first request.
     ///
     /// # Supported Aggregations
     ///
@@ -3364,8 +3363,8 @@ impl OKXHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        mut end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        mut end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
         const HISTORY_SPLIT_DAYS: i64 = 100;
@@ -3389,7 +3388,7 @@ impl OKXHttpClient {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         if let Some(s) = start
             && s > now
@@ -3433,12 +3432,12 @@ impl OKXHttpClient {
             (Some(_), Some(_)) => Mode::Range,
         };
 
-        let start_ns = start.and_then(|s| s.timestamp_nanos_opt());
-        let end_ns = end.and_then(|e| e.timestamp_nanos_opt());
+        let start_ns = start.and_then(|s| i64::try_from(s.as_nanosecond()).ok());
+        let end_ns = end.and_then(|e| i64::try_from(e.as_nanosecond()).ok());
 
         // Floor start and ceiling end to bar boundaries for cleaner API requests
         let start_ms = start.map(|s| {
-            let ms = s.timestamp_millis();
+            let ms = s.as_millisecond();
 
             if slot_ms > 0 {
                 (ms / slot_ms) * slot_ms // Floor to nearest bar boundary
@@ -3447,7 +3446,7 @@ impl OKXHttpClient {
             }
         });
         let end_ms = end.map(|e| {
-            let ms = e.timestamp_millis();
+            let ms = e.as_millisecond();
 
             if slot_ms > 0 {
                 ((ms + slot_ms - 1) / slot_ms) * slot_ms // Ceiling to nearest bar boundary
@@ -3455,7 +3454,7 @@ impl OKXHttpClient {
                 ms
             }
         });
-        let now_ms = now.timestamp_millis();
+        let now_ms = now.as_millisecond();
 
         let instrument_id = bar_type.instrument_id();
         let symbol = instrument_id.symbol;
@@ -3977,8 +3976,8 @@ impl OKXHttpClient {
         account_id: AccountId,
         instrument_type: Option<OKXInstrumentType>,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
@@ -4120,8 +4119,8 @@ impl OKXHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
@@ -4135,11 +4134,11 @@ impl OKXHttpClient {
         }
 
         if let Some(start) = start {
-            history_builder.begin(start.timestamp_millis().to_string());
+            history_builder.begin(start.as_millisecond().to_string());
         }
 
         if let Some(end) = end {
-            history_builder.end(end.timestamp_millis().to_string());
+            history_builder.end(end.as_millisecond().to_string());
         }
 
         if let Some(limit) = spread_page_limit(limit) {
@@ -4599,8 +4598,8 @@ impl OKXHttpClient {
         account_id: AccountId,
         instrument_type: Option<OKXInstrumentType>,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
         if instrument_id
@@ -4710,8 +4709,8 @@ impl OKXHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
         let mut builder = GetSpreadTradesParamsBuilder::default();
@@ -4721,11 +4720,11 @@ impl OKXHttpClient {
         }
 
         if let Some(start) = start {
-            builder.begin(start.timestamp_millis().to_string());
+            builder.begin(start.as_millisecond().to_string());
         }
 
         if let Some(end) = end {
-            builder.end(end.timestamp_millis().to_string());
+            builder.end(end.as_millisecond().to_string());
         }
 
         if let Some(limit) = spread_page_limit(limit) {

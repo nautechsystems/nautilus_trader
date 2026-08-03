@@ -70,10 +70,10 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

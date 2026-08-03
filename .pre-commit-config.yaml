@@ -390,6 +390,14 @@ repos:
         files: "Cargo\\.toml$"
         pass_filenames: false
 
+      - id: check-jiff-features
+        name: check Jiff features
+        description: Locks resolved Jiff feature policy across Rust and Python builds
+        entry: bash .pre-commit-hooks/check_jiff_features.sh
+        language: system
+        files: "(^|/)(Cargo\\.(toml|lock))$"
+        pass_filenames: false
+
       - id: check-workspace-test-coverage
         name: check workspace test coverage
         description: Reconciles workspace members with Rust test selection

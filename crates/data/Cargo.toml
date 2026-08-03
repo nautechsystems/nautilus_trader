@@ -68,9 +68,9 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

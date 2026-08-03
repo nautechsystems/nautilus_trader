@@ -15,7 +15,7 @@
 
 //! Python bindings exposing OKX HTTP helper functions and data conversions.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::python::{
     IntoPyObjectNautilusExt, params::value_to_pyobject, to_pyruntime_err, to_pyvalue_err,
 };
@@ -514,8 +514,8 @@ impl OKXHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -554,7 +554,7 @@ impl OKXHttpClient {
     /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
     ///   - Used when: start is Some AND age > 100 days
     ///
-    /// Age is calculated as `Utc::now() - start` at the time of the first request.
+    /// Age is calculated as `Timestamp::now() - start` at the time of the first request.
     ///
     /// # Supported Aggregations
     ///
@@ -583,8 +583,8 @@ impl OKXHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -642,8 +642,8 @@ impl OKXHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -788,8 +788,8 @@ impl OKXHttpClient {
         account_id: AccountId,
         instrument_type: Option<OKXInstrumentType>,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -912,8 +912,8 @@ impl OKXHttpClient {
         account_id: AccountId,
         instrument_type: Option<OKXInstrumentType>,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

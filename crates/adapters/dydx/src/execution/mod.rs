@@ -2375,7 +2375,7 @@ impl ExecutionClient for DydxExecutionClient {
             .context("failed to fetch initial block height")?;
         // Use current time as approximation; actual timestamps will come from WebSocket updates
         self.block_time_monitor
-            .record_block(initial_height.0 as u64, chrono::Utc::now());
+            .record_block(initial_height.0 as u64, jiff::Timestamp::now());
         log::debug!("Initial block height: {}", initial_height.0);
 
         *self.grpc_client.write().await = Some(grpc_client.clone());
@@ -3063,7 +3063,7 @@ where
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use nautilus_common::{
         cache::Cache, clock::TestClock, factories::OrderFactory, messages::ExecutionEvent,
     };
@@ -3196,7 +3196,9 @@ mod tests {
 
         let mut client =
             DydxExecutionClient::new(core, config, "dydx1test".to_string(), 0).unwrap();
-        client.block_time_monitor.record_block(100, Utc::now());
+        client
+            .block_time_monitor
+            .record_block(100, Timestamp::now());
 
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         client.emitter.set_sender(sender);

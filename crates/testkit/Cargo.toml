@@ -41,7 +41,7 @@ testers = [
   "dep:async-trait",
   "dep:bon",
   "dep:bytes",
-  "dep:chrono",
+  "dep:jiff",
   "dep:indexmap",
   "dep:log",
   "dep:nautilus-model",
@@ -94,9 +94,9 @@ async-trait = { workspace = true, optional = true }
 aws-lc-rs = { workspace = true, optional = true }
 bon = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
 indexmap = { workspace = true, optional = true }
 itchy = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 parquet = { workspace = true, features = ["zstd"], optional = true }
 rand = { workspace = true, optional = true }

@@ -17,7 +17,7 @@
 
 use std::str::FromStr;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -448,8 +448,8 @@ impl DydxHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
         timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -490,8 +490,8 @@ impl DydxHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -530,8 +530,8 @@ impl DydxHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

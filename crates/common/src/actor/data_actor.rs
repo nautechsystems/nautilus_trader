@@ -24,8 +24,8 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, correctness::check_predicate_true};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
@@ -2293,8 +2293,8 @@ pub trait DataActor: Component {
         &mut self,
         data_type: DataType,
         client_id: ClientId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
@@ -2327,8 +2327,8 @@ pub trait DataActor: Component {
     fn request_instrument(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
@@ -2360,8 +2360,8 @@ pub trait DataActor: Component {
     fn request_instruments(
         &mut self,
         venue: Option<Venue>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
@@ -2424,8 +2424,8 @@ pub trait DataActor: Component {
     fn request_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -2460,8 +2460,8 @@ pub trait DataActor: Component {
     fn request_book_depth(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
@@ -2497,8 +2497,8 @@ pub trait DataActor: Component {
     fn request_quotes(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -2532,8 +2532,8 @@ pub trait DataActor: Component {
     fn request_trades(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -2567,8 +2567,8 @@ pub trait DataActor: Component {
     fn request_bars(
         &mut self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -2602,8 +2602,8 @@ pub trait DataActor: Component {
     fn request_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -4567,8 +4567,8 @@ impl DataActorCore {
         &self,
         data_type: DataType,
         client_id: ClientId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
@@ -4607,8 +4607,8 @@ impl DataActorCore {
     pub fn request_instrument(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
@@ -4646,8 +4646,8 @@ impl DataActorCore {
     pub fn request_instruments(
         &self,
         venue: Option<Venue>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
@@ -4720,8 +4720,8 @@ impl DataActorCore {
     pub fn request_book_deltas(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -4762,8 +4762,8 @@ impl DataActorCore {
     pub fn request_book_depth(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
@@ -4806,8 +4806,8 @@ impl DataActorCore {
     pub fn request_quotes(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -4848,8 +4848,8 @@ impl DataActorCore {
     pub fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -4890,8 +4890,8 @@ impl DataActorCore {
     pub fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -4938,8 +4938,8 @@ impl DataActorCore {
     pub fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -5037,9 +5037,9 @@ impl DataActorNative for DataActorCore {
 }
 
 fn check_timestamps(
-    now: DateTime<Utc>,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    now: Timestamp,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
 ) -> anyhow::Result<()> {
     if let Some(start) = start {
         check_predicate_true(start <= now, "start was > now")?;

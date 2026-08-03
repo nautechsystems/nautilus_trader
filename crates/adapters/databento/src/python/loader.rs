@@ -17,8 +17,8 @@
 
 use std::{collections::HashMap, path::PathBuf};
 
-use chrono::NaiveTime;
 use databento::dbn;
+use jiff::civil::Time;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::{
@@ -703,9 +703,9 @@ fn decode_config_from_overrides(
 }
 
 // Parses a `HH:MM` or `HH:MM:SS` wall-clock time
-fn parse_expiration_time(value: &str) -> Result<NaiveTime, String> {
-    NaiveTime::parse_from_str(value, "%H:%M:%S")
-        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M"))
+fn parse_expiration_time(value: &str) -> Result<Time, String> {
+    value
+        .parse::<Time>()
         .map_err(|_| format!("Invalid expiration time '{value}', expected 'HH:MM' or 'HH:MM:SS'"))
 }
 
@@ -713,8 +713,8 @@ fn parse_expiration_time(value: &str) -> Result<NaiveTime, String> {
 mod tests {
     use std::collections::HashMap;
 
-    use chrono::NaiveTime;
     use databento::dbn;
+    use jiff::civil::Time;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -740,10 +740,7 @@ mod tests {
             .option_expiration
             .get(&dbn::Dataset::OpraPillar)
             .unwrap();
-        assert_eq!(
-            rule.default_time,
-            NaiveTime::from_hms_opt(15, 30, 0).unwrap()
-        );
+        assert_eq!(rule.default_time, Time::constant(15, 30, 0, 0));
         assert!(rule.overrides.is_empty());
     }
 
@@ -757,12 +754,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             rule.overrides.get(&Ustr::from("SPX")).copied(),
-            Some(NaiveTime::from_hms_opt(9, 30, 0).unwrap())
+            Some(Time::constant(9, 30, 0, 0))
         );
-        assert_eq!(
-            rule.default_time,
-            NaiveTime::from_hms_opt(16, 0, 0).unwrap()
-        );
+        assert_eq!(rule.default_time, Time::constant(16, 0, 0, 0));
     }
 
     #[rstest]

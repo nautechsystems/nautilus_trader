@@ -33,7 +33,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::{
     cache::INSTRUMENT_NOT_FOUND,
     clients::DataClient,
@@ -2587,7 +2587,7 @@ async fn test_futures_domain_request_trades() {
     assert_eq!(limited[0].trade_id, trades[trades.len() - 1].trade_id);
 
     // Anchored requests page forward from `start` with `sort=asc`
-    let start = DateTime::<Utc>::from_timestamp(1_700_000_000, 0);
+    let start = Some(Timestamp::from_second(1_700_000_000).unwrap());
     let result = client
         .request_trades(instrument_id, start, None, None)
         .await;

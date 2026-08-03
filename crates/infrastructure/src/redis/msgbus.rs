@@ -40,6 +40,7 @@ use std::{
 
 use bytes::Bytes;
 use futures::stream::Stream;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_common::{
     enums::SerializationEncoding,
     live::get_runtime,
@@ -901,7 +902,12 @@ async fn run_heartbeat(
 }
 
 fn create_heartbeat_msg() -> BusMessage {
-    let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
+    let payload = Bytes::from(
+        Timestamp::now()
+            .display_with_offset(Offset::UTC)
+            .to_string()
+            .into_bytes(),
+    );
     BusMessage::with_str_topic(
         HEARTBEAT_TOPIC,
         BusPayloadType::Custom(Ustr::default()),

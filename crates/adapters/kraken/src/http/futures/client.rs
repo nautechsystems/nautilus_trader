@@ -26,7 +26,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
@@ -1296,8 +1296,8 @@ impl KrakenFuturesHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<TradeTick>, KrakenHttpError> {
         let instrument = self
@@ -1311,8 +1311,8 @@ impl KrakenFuturesHttpClient {
         let raw_symbol = instrument.raw_symbol().to_string();
         let ts_init = self.generate_ts_init();
 
-        let since = start.map(|dt| dt.timestamp_millis());
-        let before = end.map(|dt| dt.timestamp_millis());
+        let since = start.map(|dt| dt.as_millisecond());
+        let before = end.map(|dt| dt.as_millisecond());
 
         // Executions are oldest-anchored for `sort=asc`; count-only fetches the
         // newest page with `sort=desc` (reversed to ascending below)
@@ -1347,8 +1347,8 @@ impl KrakenFuturesHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
         let instrument_id = bar_type.instrument_id();
@@ -1367,9 +1367,9 @@ impl KrakenFuturesHttpClient {
             .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
 
         // Kraken Futures OHLC API expects Unix timestamp in seconds
-        let from = start.map(|dt| dt.timestamp());
-        let to = end.map(|dt| dt.timestamp());
-        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let from = start.map(|dt| dt.as_second());
+        let to = end.map(|dt| dt.as_second());
+        let end_ns = end.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
 
         let response = self
             .inner
@@ -1473,8 +1473,8 @@ impl KrakenFuturesHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>, KrakenHttpError> {
         let instrument = self
@@ -1487,20 +1487,17 @@ impl KrakenFuturesHttpClient {
 
         let raw_symbol = instrument.raw_symbol().to_string();
         let ts_init = self.generate_ts_init();
-        let start_ns = start.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
-        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let start_ns = start.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
+        let end_ns = end.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
 
         let response = self.inner.get_historical_funding_rates(&raw_symbol).await?;
 
         let mut rates = Vec::new();
 
         for entry in &response.rates {
-            let ts_event = entry
-                .timestamp
-                .parse::<DateTime<Utc>>()
-                .map_or(ts_init, |dt| {
-                    UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                });
+            let ts_event = entry.timestamp.parse::<Timestamp>().map_or(ts_init, |dt| {
+                UnixNanos::from(u64::try_from(dt.as_nanosecond()).unwrap_or(0))
+            });
 
             if let Some(s) = start_ns
                 && ts_event.as_u64() < s
@@ -1601,8 +1598,8 @@ impl KrakenFuturesHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let ts_init = self.generate_ts_init();
@@ -1693,8 +1690,8 @@ impl KrakenFuturesHttpClient {
 
         if !open_only {
             // Kraken Futures order events API expects Unix timestamp in milliseconds
-            let start_ms = start.map(|dt| dt.timestamp_millis());
-            let end_ms = end.map(|dt| dt.timestamp_millis());
+            let start_ms = start.map(|dt| dt.as_millisecond());
+            let end_ms = end.map(|dt| dt.as_millisecond());
             let response = self
                 .inner
                 .get_order_events(end_ms, start_ms, None)
@@ -1738,8 +1735,8 @@ impl KrakenFuturesHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> anyhow::Result<Vec<FillReport>> {
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
@@ -1752,23 +1749,23 @@ impl KrakenFuturesHttpClient {
             anyhow::bail!("Failed to get fills: {error_msg}");
         }
 
-        let start_ms = start.map(|dt| dt.timestamp_millis());
-        let end_ms = end.map(|dt| dt.timestamp_millis());
+        let start_ms = start.map(|dt| dt.as_millisecond());
+        let end_ms = end.map(|dt| dt.as_millisecond());
 
         for fill in response.fills {
             if let Some(start_threshold) = start_ms
-                && let Ok(fill_ts) = DateTime::parse_from_rfc3339(&fill.fill_time)
+                && let Ok(fill_ts) = fill.fill_time.parse::<Timestamp>()
             {
-                let fill_ms = fill_ts.timestamp_millis();
+                let fill_ms = fill_ts.as_millisecond();
                 if fill_ms < start_threshold {
                     continue;
                 }
             }
 
             if let Some(end_threshold) = end_ms
-                && let Ok(fill_ts) = DateTime::parse_from_rfc3339(&fill.fill_time)
+                && let Ok(fill_ts) = fill.fill_time.parse::<Timestamp>()
             {
-                let fill_ms = fill_ts.timestamp_millis();
+                let fill_ms = fill_ts.as_millisecond();
                 if fill_ms > end_threshold {
                     continue;
                 }

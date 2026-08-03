@@ -532,8 +532,8 @@ async fn test_trades_chronological_order() {
 
     // dYdX returns trades in reverse chronological order (newest first)
     for i in 0..trades.trades.len() - 1 {
-        let current = trades.trades[i].created_at.timestamp_millis();
-        let next = trades.trades[i + 1].created_at.timestamp_millis();
+        let current = trades.trades[i].created_at.as_millisecond();
+        let next = trades.trades[i + 1].created_at.as_millisecond();
         assert!(
             current >= next,
             "Trades should be in reverse chronological order (newest first)"
@@ -640,8 +640,8 @@ async fn test_candles_chronological_order() {
 
     // dYdX returns candles in reverse chronological order (newest first)
     for i in 0..candles.candles.len() - 1 {
-        let current = candles.candles[i].started_at.timestamp_millis();
-        let next = candles.candles[i + 1].started_at.timestamp_millis();
+        let current = candles.candles[i].started_at.as_millisecond();
+        let next = candles.candles[i + 1].started_at.as_millisecond();
         assert!(
             current >= next,
             "Candles should be in reverse chronological order (newest first)"

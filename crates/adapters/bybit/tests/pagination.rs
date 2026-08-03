@@ -22,7 +22,7 @@
 use std::{collections::HashMap, net::SocketAddr};
 
 use axum::{Router, extract::Query, response::Json, routing::get};
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nautilus_bybit::{
     common::{consts::BYBIT_VENUE, enums::BybitProductType, parse::parse_linear_instrument},
     http::{
@@ -61,7 +61,7 @@ async fn mock_klines_paginated(Query(params): Query<HashMap<String, String>>) ->
     let end_ms = params
         .get("end")
         .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or_else(|| Utc::now().timestamp_millis());
+        .unwrap_or_else(|| Timestamp::now().as_millisecond());
 
     // Generate bars going backwards from end_ms
     // Each bar is 1 minute apart
@@ -82,7 +82,7 @@ async fn mock_klines_paginated(Query(params): Query<HashMap<String, String>>) ->
             "symbol": "ETHUSDT",
             "list": klines
         },
-        "time": Utc::now().timestamp_millis()
+        "time": Timestamp::now().as_millisecond()
     }))
 }
 
@@ -126,7 +126,7 @@ async fn mock_instruments_info(Query(_params): Query<HashMap<String, String>>) -
                 "settleCoin": "USDT"
             }]
         },
-        "time": Utc::now().timestamp_millis()
+        "time": Timestamp::now().as_millisecond()
     }))
 }
 
@@ -187,8 +187,8 @@ async fn test_bars_chronological_order_single_page() {
     };
     let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
 
-    let end = Utc::now();
-    let start = end - Duration::hours(1);
+    let end = Timestamp::now();
+    let start = end - SignedDuration::from_hours(1);
 
     let bars = client
         .request_bars(
@@ -235,8 +235,8 @@ async fn test_bars_chronological_order_multiple_pages() {
     };
     let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
 
-    let end = Utc::now();
-    let start = end - Duration::days(2); // Request enough to trigger multiple pages
+    let end = Timestamp::now();
+    let start = end - SignedDuration::from_hours(2 * 24); // Request enough to trigger multiple pages
 
     let bars = client
         .request_bars(
@@ -286,8 +286,8 @@ async fn test_bars_limit_returns_most_recent() {
     };
     let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
 
-    let end = Utc::now();
-    let start = end - Duration::days(3); // Request way more than limit
+    let end = Timestamp::now();
+    let start = end - SignedDuration::from_hours(3 * 24); // Request way more than limit
 
     let bars = client
         .request_bars(
@@ -310,8 +310,8 @@ async fn test_bars_limit_returns_most_recent() {
     }
 
     // The last bar should be the most recent (close to end time)
-    let last_bar_time = DateTime::from_timestamp_nanos(bars.last().unwrap().ts_event.as_i64());
-    let time_diff = (end - last_bar_time).num_minutes().abs();
+    let last_bar_time = bars.last().unwrap().ts_event.to_datetime_utc();
+    let time_diff = (end - last_bar_time).get_minutes().abs();
     assert!(
         time_diff < 100,
         "Last bar should be close to end time, but was {time_diff} minutes away"

@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use jiff::tz::Offset;
 use nautilus_core::UnixNanos;
 pub use nautilus_core::serialization::{
     deserialize_decimal_from_str, deserialize_decimal_or_zero,
@@ -105,14 +106,12 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error when the nanosecond value is outside the range
-/// representable by [`chrono::DateTime::<chrono::Utc>::from_timestamp`].
+/// Returns an error when the nanosecond value is outside the Jiff timestamp range.
 pub fn format_rfc3339_from_nanos(ts: UnixNanos) -> anyhow::Result<String> {
-    let secs = (ts.as_u64() / 1_000_000_000) as i64;
-    let nanos = (ts.as_u64() % 1_000_000_000) as u32;
-    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos)
-        .map(|dt| dt.to_rfc3339())
-        .ok_or_else(|| anyhow::anyhow!("UnixNanos {ts} is out of range for chrono::DateTime"))
+    Ok(ts
+        .to_datetime_utc()
+        .display_with_offset(Offset::UTC)
+        .to_string())
 }
 
 /// Converts a Nautilus [`BarType`] to a [`CoinbaseGranularity`].

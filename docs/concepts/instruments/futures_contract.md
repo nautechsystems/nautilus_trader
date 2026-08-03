@@ -50,7 +50,7 @@ currency futures.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
@@ -60,8 +60,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+let activation: Timestamp = "2021-09-10T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2021-12-17T00:00:00Z".parse().unwrap();
 
 let esz21 = FuturesContract::builder()
     .instrument_id(InstrumentId::from("ESZ21.GLBX"))
@@ -69,8 +69,8 @@ let esz21 = FuturesContract::builder()
     .asset_class(AssetClass::Index)
     .exchange(Ustr::from("XCME"))
     .underlying(Ustr::from("ES"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .currency(Currency::from("USD"))
     .price_precision(2)
     .price_increment(Price::from("0.25"))

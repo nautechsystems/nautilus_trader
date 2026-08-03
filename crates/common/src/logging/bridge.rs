@@ -55,8 +55,8 @@ where
         mut writer: Writer<'_>,
         event: &Event<'_>,
     ) -> std::fmt::Result {
-        let now = chrono::Utc::now();
-        let timestamp = now.format("%Y-%m-%dT%H:%M:%S%.9fZ");
+        let now = jiff::Timestamp::now();
+        let timestamp = format!("{now:.9}");
 
         let level = match *event.metadata().level() {
             Level::TRACE => "[TRACE]",
