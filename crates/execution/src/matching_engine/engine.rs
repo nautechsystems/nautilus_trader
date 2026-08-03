@@ -78,18 +78,6 @@ use crate::{
 
 const OPTION_SETTLEMENT_ID_ATTEMPTS: usize = 16;
 
-struct OptionSettlementLeg {
-    order: OrderAny,
-    venue_order_id: VenueOrderId,
-    trade_id: TradeId,
-    position_id: Option<PositionId>,
-    fill: OrderFilled,
-}
-
-struct OptionSettlementPlan {
-    legs: Vec<OptionSettlementLeg>,
-}
-
 /// An order matching engine for a single market.
 pub struct OrderMatchingEngine {
     /// The venue for the matching engine.
@@ -159,6 +147,18 @@ impl Debug for OrderMatchingEngine {
             .field("instrument", &self.instrument.id())
             .finish()
     }
+}
+
+struct OptionSettlementLeg {
+    order: OrderAny,
+    venue_order_id: VenueOrderId,
+    trade_id: TradeId,
+    position_id: Option<PositionId>,
+    fill: OrderFilled,
+}
+
+struct OptionSettlementPlan {
+    legs: Vec<OptionSettlementLeg>,
 }
 
 impl OrderMatchingEngine {
@@ -2389,13 +2389,10 @@ impl OrderMatchingEngine {
             self.instrument,
             InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
         ) {
-            // Cancel at the first trigger, before settlement: `iterate` matches
-            // resting orders ahead of this check, so leaving them open through a
-            // settlement retry window would grant post-expiry matching
-            // opportunities on every subsequent iteration. Latched, not repeated:
-            // a queueing event handler can leave the cached order status behind
-            // the dispatched cancellation, so a retry's cache scan would emit a
-            // duplicate `Canceled` for the same order.
+            // `iterate` matches resting orders ahead of this check, so cancel at
+            // the first trigger rather than after settlement. Latched because a
+            // queueing handler leaves the cached status behind the dispatch, and
+            // a retry's scan would then re-cancel.
             if !self.option_expiration_orders_canceled {
                 self.option_expiration_orders_canceled = true;
                 self.cancel_open_orders_for_expiration();
@@ -2581,9 +2578,8 @@ impl OrderMatchingEngine {
         let custom_option_price = self.settlement_price;
         let should_exercise = self.option_should_exercise(underlying_price);
 
-        // Built once: the cache cannot mutate between collision attempts, and
-        // rescanning every cached order and position per leg per attempt would
-        // make expiration O(legs x trade history).
+        // Built once: the cache cannot mutate between collision attempts, and a
+        // per-attempt rescan would make expiration O(legs x trade history).
         let cached_trade_ids = self.option_cached_trade_ids();
 
         for _ in 0..OPTION_SETTLEMENT_ID_ATTEMPTS {
@@ -7124,8 +7120,6 @@ mod tests {
 
     #[rstest]
     fn test_option_cached_trade_ids_preserves_order_and_position_union() {
-        // This preserves existing behavior while the cache scan avoids full ID-set and vector
-        // materializations; it is not a regression for a behavioral bug.
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
         let order_trade_id = TradeId::from("ORDER-ONLY-TRADE-ID");
