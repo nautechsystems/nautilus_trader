@@ -41,13 +41,28 @@ class BestPriceFillModel:
     ) -> None: ...
 
 @typing.final
-class CappedOptionFeeModel:
-    def __init__(
-        self,
+class CappedOptionFeeModel(FeeModel):
+    def __new__(
+        cls,
         maker_rate: decimal.Decimal | None = None,
         taker_rate: decimal.Decimal | None = None,
         cap_rate: decimal.Decimal | None = None,
-    ) -> None: ...
+    ) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
+    def get_commission_with_context(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+        underlying_px: model.Price | None = None,
+    ) -> model.Money: ...
 
 @typing.final
 class CompetitionAwareFillModel:
@@ -120,7 +135,7 @@ class ExecutionEngineConfig:
     ) -> ExecutionEngineConfig: ...
 
 class FeeModel:
-    def __init__(self) -> None: ...
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> typing.Self: ...
     def get_commission(
         self,
         _order: typing.Any,
@@ -134,7 +149,7 @@ class FeeModel:
         fill_quantity: model.Quantity,
         fill_px: model.Price,
         instrument: typing.Any,
-        _underlying_px: model.Price | None = ...,
+        _underlying_px: model.Price | None = None,
     ) -> model.Money: ...
 
 class FillModel:
@@ -151,13 +166,20 @@ class FillModel:
     ) -> model.OrderBook | None: ...
 
 @typing.final
-class FixedFeeModel:
-    def __init__(
-        self,
+class FixedFeeModel(FeeModel):
+    def __new__(
+        cls,
         commission: model.Money,
         charge_commission_once: bool | None = None,
         change_commission_once: bool | None = None,
-    ) -> None: ...
+    ) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class LimitOrderPartialFillModel:
@@ -166,8 +188,15 @@ class LimitOrderPartialFillModel:
     ) -> None: ...
 
 @typing.final
-class MakerTakerFeeModel:
-    def __init__(self) -> None: ...
+class MakerTakerFeeModel(FeeModel):
+    def __new__(cls) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class MarketHoursFillModel:
@@ -188,8 +217,15 @@ class OrderEmulatorConfig:
     def debug(self) -> bool: ...
 
 @typing.final
-class PerContractFeeModel:
-    def __init__(self, commission: model.Money) -> None: ...
+class PerContractFeeModel(FeeModel):
+    def __new__(cls, commission: model.Money) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class ProbabilisticFillModel:
@@ -198,8 +234,15 @@ class ProbabilisticFillModel:
     ) -> None: ...
 
 @typing.final
-class ProbabilityPriceFeeModel:
-    def __init__(self) -> None: ...
+class ProbabilityPriceFeeModel(FeeModel):
+    def __new__(cls) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class SizeAwareFillModel:
@@ -224,10 +267,17 @@ class ThreeTierFillModel:
     ) -> None: ...
 
 @typing.final
-class TieredNotionalOptionFeeModel:
-    def __init__(
-        self, maker_rate: decimal.Decimal | None = None, taker_rate: decimal.Decimal | None = None
-    ) -> None: ...
+class TieredNotionalOptionFeeModel(FeeModel):
+    def __new__(
+        cls, maker_rate: decimal.Decimal | None = None, taker_rate: decimal.Decimal | None = None
+    ) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class TwoTierFillModel:

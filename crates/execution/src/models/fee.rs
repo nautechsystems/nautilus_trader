@@ -25,6 +25,9 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+#[cfg(feature = "python")]
+use crate::python::fee::PyFeeModel;
+
 pub trait FeeModel {
     /// Calculates commission for a fill.
     ///
@@ -224,14 +227,15 @@ impl Default for FeeModelAny {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        extends = PyFeeModel,
+        skip_from_py_object
+    )
 )]
 pub struct FixedFeeModel {
     commission: Money,
@@ -277,14 +281,15 @@ impl FeeModel for FixedFeeModel {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        extends = PyFeeModel,
+        skip_from_py_object
+    )
 )]
 pub struct PerContractFeeModel {
     commission: Money,
@@ -304,6 +309,11 @@ impl PerContractFeeModel {
     }
 }
 
+fn mul_checked(lhs: Decimal, rhs: Decimal) -> anyhow::Result<Decimal> {
+    lhs.checked_mul(rhs)
+        .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))
+}
+
 impl FeeModel for PerContractFeeModel {
     fn get_commission(
         &self,
@@ -312,9 +322,9 @@ impl FeeModel for PerContractFeeModel {
         _fill_px: Price,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
-        let total = self.commission.as_decimal()
-            * fill_quantity.as_decimal()
-            * spread_contract_count(instrument)?;
+        let contracts = spread_contract_count(instrument)?;
+        let total = mul_checked(self.commission.as_decimal(), fill_quantity.as_decimal())
+            .and_then(|v| mul_checked(v, contracts))?;
         Money::from_decimal(total, self.commission.currency).map_err(Into::into)
     }
 }
@@ -361,14 +371,15 @@ fn spread_leg_ratio_parts(ratio: &str, symbol: &str) -> Option<i64> {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        extends = PyFeeModel,
+        skip_from_py_object
+    )
 )]
 pub struct MakerTakerFeeModel;
 
@@ -387,10 +398,7 @@ impl FeeModel for MakerTakerFeeModel {
             Some(LiquiditySide::Taker) => instrument.taker_fee(),
             Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
         };
-        let commission = notional
-            .as_decimal()
-            .checked_mul(rate)
-            .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
+        let commission = mul_checked(notional.as_decimal(), rate)?;
 
         Money::from_decimal(commission, notional.currency).map_err(Into::into)
     }
@@ -409,14 +417,15 @@ impl FeeModel for MakerTakerFeeModel {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        extends = PyFeeModel,
+        skip_from_py_object
+    )
 )]
 pub struct ProbabilityPriceFeeModel;
 
@@ -443,9 +452,11 @@ impl FeeModel for ProbabilityPriceFeeModel {
             Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
         };
 
-        let commission =
-            (fill_quantity.as_decimal() * fee_rate * fill_price * (Decimal::ONE - fill_price))
-                .round_dp(5);
+        let one_minus_p = Decimal::ONE - fill_price;
+        let commission = mul_checked(fill_quantity.as_decimal(), fee_rate)
+            .and_then(|v| mul_checked(v, fill_price))
+            .and_then(|v| mul_checked(v, one_minus_p))
+            .map(|v| v.round_dp(5))?;
 
         Money::from_decimal(commission, instrument.quote_currency()).map_err(Into::into)
     }
@@ -454,14 +465,15 @@ impl FeeModel for ProbabilityPriceFeeModel {
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        extends = PyFeeModel,
+        skip_from_py_object
+    )
 )]
 pub struct CappedOptionFeeModel {
     maker_rate: Option<Decimal>,
@@ -537,11 +549,11 @@ impl FeeModel for CappedOptionFeeModel {
         } else {
             let underlying_px =
                 underlying_px.ok_or_else(|| anyhow::anyhow!("Underlying price is required"))?;
-            rate * underlying_px.as_decimal()
+            mul_checked(rate, underlying_px.as_decimal())?
         };
-        let cap_fee = self.cap * fill_px.as_decimal();
-        let fee_per_contract = rate_fee.min(cap_fee) * multiplier;
-        let total = fee_per_contract * fill_quantity.as_decimal();
+        let cap_fee = mul_checked(self.cap, fill_px.as_decimal())?;
+        let fee_per_contract = mul_checked(rate_fee.min(cap_fee), multiplier)?;
+        let total = mul_checked(fee_per_contract, fill_quantity.as_decimal())?;
         Money::from_decimal(total, commission_currency(instrument)).map_err(Into::into)
     }
 }
@@ -549,14 +561,15 @@ impl FeeModel for CappedOptionFeeModel {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        extends = PyFeeModel,
+        skip_from_py_object
+    )
 )]
 pub struct TieredNotionalOptionFeeModel {
     maker_rate: Option<Decimal>,
@@ -598,10 +611,7 @@ impl FeeModel for TieredNotionalOptionFeeModel {
         let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
         let notional =
             instrument.try_calculate_notional_value(fill_quantity, fill_px, Some(false))?;
-        let total = notional
-            .as_decimal()
-            .checked_mul(rate)
-            .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
+        let total = mul_checked(notional.as_decimal(), rate)?;
         Money::from_decimal(total, notional.currency).map_err(Into::into)
     }
 }
@@ -791,6 +801,31 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission, Money::from("2.34 USD"));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_decimal_overflow_returns_error() {
+        let commission = Money::from("9000000000 USD");
+        let fee_model = PerContractFeeModel::new(commission).unwrap();
+        let mut spread = option_spread();
+        spread.id = InstrumentId::from("((1000000000))SPY C410___(1)SPY C400.SMART");
+        let instrument = InstrumentAny::OptionSpread(spread);
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("9000000000"))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+        let result = fee_model.get_commission(
+            &accepted_order,
+            Quantity::from("9000000000"),
+            Price::from("1.0"),
+            &instrument,
+        );
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "commission calculation overflow"
+        );
     }
 
     #[rstest]
@@ -1099,6 +1134,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_probability_price_fee_model_decimal_overflow_returns_error(
+        mut binary_option: BinaryOption,
+    ) {
+        binary_option.maker_fee = Decimal::MAX;
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Maker, "0.500");
+        let fee_model = ProbabilityPriceFeeModel;
+
+        let result = fee_model.get_commission(
+            &fill,
+            Quantity::from("5.00"),
+            Price::from("0.500"),
+            &instrument,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "commission calculation overflow"
+        );
+    }
+
+    #[rstest]
     fn test_fee_model_handle_calls_custom_model_without_model_clone() {
         let calls = Rc::new(Cell::new(0));
         let expected_commission = Money::from("1.23 USD");
@@ -1194,6 +1251,27 @@ mod tests {
     }
 
     #[rstest]
+    fn test_probability_price_fee_model_rejects_fill_price_out_of_range(
+        binary_option: BinaryOption,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(binary_option);
+        let fill = binary_option_fill_order(&instrument, LiquiditySide::Taker, "0.500");
+        let fee_model = ProbabilityPriceFeeModel;
+
+        let result = fee_model.get_commission(
+            &fill,
+            Quantity::from("1.00"),
+            Price::from("1.5"),
+            &instrument,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "ProbabilityPriceFeeModel requires a fill price in [0, 1]"
+        );
+    }
+
+    #[rstest]
     #[case::maker(Some(dec!(-0.0001)), Some(dec!(0.0003)), None, "maker_rate")]
     #[case::taker(Some(dec!(0.0001)), Some(dec!(-0.0003)), None, "taker_rate")]
     #[case::cap(Some(dec!(0.0001)), Some(dec!(0.0003)), Some(dec!(-0.125)), "cap_rate")]
@@ -1233,6 +1311,28 @@ mod tests {
 
         assert_eq!(commission.currency, Currency::USD());
         assert_eq!(commission.as_decimal(), dec!(10.00));
+    }
+
+    #[rstest]
+    fn test_capped_option_fee_model_decimal_overflow_returns_error(
+        crypto_option_btc_deribit: CryptoOption,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let fill = option_fill_order(&instrument, LiquiditySide::Maker);
+        let fee_model = CappedOptionFeeModel::new(Some(Decimal::MAX), None, None).unwrap();
+
+        let result = fee_model.get_commission_with_context(
+            &fill,
+            Quantity::from("2.0"),
+            Price::from("100.00"),
+            &instrument,
+            Some(Price::from("50000.00")),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "commission calculation overflow"
+        );
     }
 
     #[rstest]
@@ -1365,6 +1465,27 @@ mod tests {
 
         assert_eq!(commission.currency, Currency::USD());
         assert_eq!(commission.as_decimal(), expected_commission);
+    }
+
+    #[rstest]
+    fn test_tiered_notional_option_fee_model_decimal_overflow_returns_error(
+        crypto_option_btc_deribit: CryptoOption,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let fill = option_fill_order(&instrument, LiquiditySide::Maker);
+        let fee_model = TieredNotionalOptionFeeModel::new(Some(Decimal::MAX), None).unwrap();
+
+        let result = fee_model.get_commission(
+            &fill,
+            Quantity::from("2.0"),
+            Price::from("100.00"),
+            &instrument,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "commission calculation overflow"
+        );
     }
 
     #[rstest]
