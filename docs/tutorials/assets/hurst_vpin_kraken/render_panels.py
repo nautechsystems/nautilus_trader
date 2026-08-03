@@ -34,6 +34,7 @@ from plotly.subplots import make_subplots
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
 
+
 LOG_PATH = Path(os.environ.get("BACKTEST_LOG", "/tmp/backtest.log"))  # noqa: S108
 OUT = Path(__file__).resolve().parent
 

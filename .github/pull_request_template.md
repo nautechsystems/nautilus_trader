@@ -38,7 +38,7 @@
 ## Documentation
 
 - [ ] Documentation changes follow the style guide (`docs/developer_guide/docs.md`)
-- [ ] For PyO3 binding or wrapped Rust doc changes, I ran `make py-stubs-v2` and committed the generated output
+- [ ] For PyO3 binding or wrapped Rust doc changes, I ran `make py-stubs` and committed the generated output
 
 ## Testing
 

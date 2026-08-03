@@ -15,6 +15,14 @@
 
 from decimal import Decimal
 
+from tests.providers import TestInstrumentProvider
+from tests.unit.model.factories import make_fill_report
+from tests.unit.model.factories import make_market_order_snapshot_values
+from tests.unit.model.factories import make_order_initialized
+from tests.unit.model.factories import make_order_status_report
+from tests.unit.model.factories import make_position_fill
+from tests.unit.model.factories import make_position_status_report
+
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
@@ -48,13 +56,6 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.model import TriggerType
 from nautilus_trader.model import Venue
 from nautilus_trader.model import VenueOrderId
-from tests.providers import TestInstrumentProvider
-from tests.unit.model.factories import make_fill_report
-from tests.unit.model.factories import make_market_order_snapshot_values
-from tests.unit.model.factories import make_order_initialized
-from tests.unit.model.factories import make_order_status_report
-from tests.unit.model.factories import make_position_fill
-from tests.unit.model.factories import make_position_status_report
 
 
 def test_fill_report_to_dict_and_from_dict_roundtrip(audusd_id):

@@ -62,13 +62,13 @@ API level.
 The online documentation shows a subset of examples. For the full set, see the
 repository on GitHub:
 
-| Directory                                                                            | Contains                                                       |
-| :----------------------------------------------------------------------------------- | :------------------------------------------------------------- |
-| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Fully runnable, self‑contained Python examples                 |
-| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                       |
-| [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features    |
-| [nautilus_trader/examples/](../../nautilus_trader/examples/)                         | Pure‑Python examples of strategies, indicators, and exec algos |
-| [tests/unit_tests/](../../tests/unit_tests/)                                         | Unit tests covering core functionality and edge cases          |
+| Directory                                                                            | Contains                                                    |
+| :----------------------------------------------------------------------------------- | :---------------------------------------------------------- |
+| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Fully runnable, self‑contained Python examples              |
+| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                    |
+| [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features |
+| [python/examples/](../../python/examples/)                                           | Python examples using the Rust‑native package               |
+| [python/tests/unit/](../../python/tests/unit/)                                       | Unit tests covering core functionality and edge cases       |
 
 ## Running in Docker
 

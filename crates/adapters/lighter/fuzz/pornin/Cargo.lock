@@ -1294,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1347,7 +1347,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -1362,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1387,7 +1387,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1480,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",

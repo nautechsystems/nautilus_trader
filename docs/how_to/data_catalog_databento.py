@@ -45,6 +45,7 @@ from pathlib import Path
 
 from databento import DBNStore
 
+
 # %% [markdown]
 # We'll prepare a directory for the raw Databento DBN format data, which we'll use for the rest of the tutorial.
 
@@ -100,6 +101,7 @@ from pathlib import Path
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
 
 # %%
 CATALOG_PATH = Path.cwd() / "catalog"

@@ -62,7 +62,7 @@ is still `nautilus_trader`.
 
 Run this command outside a NautilusTrader source checkout. The repository root uses an
 `exclude-newer` uv policy for reproducible development, which can filter out newly published v2
-wheels. Inside a source checkout, use [Build Python v2 from source](#8-build-python-v2-from-source)
+wheels. Inside a source checkout, use [Build Python from source](#8-build-python-from-source)
 instead.
 
 Current v2 wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
@@ -145,21 +145,21 @@ To install a specific development wheel (e.g., `1.221.0a20250912` for September 
 uv pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
 ```
 
-### Python v2 branch development wheels
+### Branch development wheels
 
-Branch development wheels for the v2 Rust + PyO3 package publish to a separate v2 index from
+Branch development wheels for the Rust + PyO3 package publish to the main package index from
 `develop` and `nightly`:
 
 ```bash
-uv pip install --pre --index-url=https://packages.nautechsystems.io/v2/simple/ nautilus-trader
+uv pip install --pre --index-url=https://packages.nautechsystems.io/simple/ nautilus-trader
 ```
 
-| Platform           | v2 Develop | v2 Nightly |
-| :----------------- | :--------- | :--------- |
-| `Linux (x86_64)`   | ✓          | ✓          |
-| `Linux (ARM64)`    | -          | ✓          |
-| `macOS (ARM64)`    | -          | ✓          |
-| `Windows (x86_64)` | -          | ✓          |
+| Platform           | Develop | Nightly |
+| :----------------- | :------ | :------ |
+| `Linux (x86_64)`   | ✓       | ✓       |
+| `Linux (ARM64)`    | -       | ✓       |
+| `macOS (ARM64)`    | -       | ✓       |
+| `Windows (x86_64)` | -       | ✓       |
 
 The installed import name is still `nautilus_trader`. Run this command outside a NautilusTrader
 source checkout so the repository's `exclude-newer` uv policy does not filter out newly published
@@ -273,7 +273,7 @@ Clone the source with `git`, and install from the project's root directory:
 ```bash
 git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
 cd nautilus_trader
-uv sync --all-extras
+make sync
 ```
 
 For development hosts and CI runner images, see the
@@ -303,7 +303,7 @@ Cap'n Proto is a development dependency. It is not required when installing pre-
 ### 7. Set environment variables
 
 Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
-the repository root after `uv sync`:
+the repository root after `make sync`:
 
 ```bash
 # Set the Python executable path for PyO3
@@ -324,32 +324,30 @@ The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`
 Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 :::
 
-### 8. Build Python v2 from source
+### 8. Build Python from source
 
-This path builds the PyO3 package from the `python/` directory and installs it into `python/.venv`.
-Use it from a NautilusTrader source checkout, when a v2 development wheel is not available for your
-platform, or when you need local Rust changes.
+This path builds the PyO3 package from the `python/` directory and installs it into the root `.venv`.
+Use it from a NautilusTrader source checkout when a development wheel is not available for your
+platform or when you need local Rust changes.
 
 From the repository root:
 
 ```bash
-make build-debug-v2
+make build-debug
 ```
 
-This target syncs `python/.venv`, builds the Rust extension with maturin, and regenerates Python
-type stubs. It uses `target-v2/` for Cargo artifacts so it does not conflict with the legacy Python
-build in `target/`.
+This target syncs `.venv`, builds the Rust extension with maturin, and regenerates Python type
+stubs. It uses `target/` for Cargo artifacts.
 
-Run a Python v2 example with the v2 environment:
+Run a Python example with the project environment:
 
 ```bash
-cd python
-.venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python python/examples/lighter/data_tester.py --lighter-environment testnet
 ```
 
-For direct commands and test targets, see the [Python v2 README][python-v2-readme].
+For direct commands and test targets, see the [Python package README][python-readme].
 
-[python-v2-readme]: https://github.com/nautechsystems/nautilus_trader/blob/develop/python/README.md
+[python-readme]: https://github.com/nautechsystems/nautilus_trader/blob/develop/python/README.md
 
 ## From GitHub release
 

@@ -9,7 +9,7 @@ repos:
     hooks:
       - id: forbid-new-submodules
       - id: end-of-file-fixer
-        types_or: [rust, cython, python, markdown]
+        types_or: [rust, python, markdown]
       - id: mixed-line-ending
       - id: trailing-whitespace
       - id: debug-statements
@@ -71,14 +71,14 @@ repos:
       - id: typos
         description: Checks for common typos
         args: ["--force-exclude"]
-        types_or: [rust, python, cython, toml, yaml, rst, markdown]
+        types_or: [rust, python, toml, yaml, rst, markdown]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3
     hooks:
       - id: codespell
         description: Checks for common misspellings
-        types_or: [rust, python, cython, toml, yaml, rst, markdown]
+        types_or: [rust, python, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
     # Pinned to v8.30.1: autoupdate occasionally selects the lower v8.30.0 tag
@@ -150,8 +150,8 @@ repos:
         description: Fail on hidden control or zero-width unicode characters in source
         entry: bash .pre-commit-hooks/check_hidden_chars.sh
         language: system
-        types_or: [rust, python, cython, toml, markdown, yaml, json, text]
-        files: "\\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*"
+        types_or: [rust, python, toml, markdown, yaml, json, text]
+        files: "\\.(rs|py|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*"
 
       - id: check-unicode-typography
         name: check Unicode typography
@@ -174,7 +174,7 @@ repos:
         entry: bash .pre-commit-hooks/check_non_latin_text.sh
         language: system
         types: [text]
-        files: "\\.(rs|py|pyx|md|toml|yaml|yml)$"
+        files: "\\.(rs|py|md|toml|yaml|yml)$"
 
       - id: check-toml-codegen
         name: check toml-codegen
@@ -188,7 +188,7 @@ repos:
         description: Ensures `[tool.uv].no-build-package` matches `uv.lock`
         entry: bash scripts/check-no-build-packages.sh
         language: system
-        files: ^(uv\.lock|python/uv\.lock|pyproject\.toml|python/pyproject\.toml)$
+        files: ^python/(uv\.lock|pyproject\.toml)$
         pass_filenames: false
 
       - id: check-docker-toolchain-pins
@@ -199,7 +199,7 @@ repos:
         files: >-
           (?x)^(
             \.docker/(DockerfileUbuntu|nautilus_trader\.dockerfile|jupyterlab\.dockerfile)|
-            pyproject\.toml|
+            python/pyproject\.toml|
             rust-toolchain\.toml|
             scripts/(uv-version|rust-toolchain)\.sh|
             scripts/ci/check-docker-toolchain-pins\.bash
@@ -243,13 +243,13 @@ repos:
         description: Enforces error variable naming conventions
         entry: bash .pre-commit-hooks/check_error_conventions.sh
         language: system
-        types_or: [rust, python, cython]
+        types_or: [rust, python]
         pass_filenames: false
 
-      - id: check-no-legacy-paths-v2
-        name: check no legacy paths v2
+      - id: check-no-legacy-paths
+        name: check no legacy paths
         description: Fails on legacy nautilus_pyo3 references anywhere under python/
-        entry: bash .pre-commit-hooks/check_no_legacy_paths_v2.sh
+        entry: bash .pre-commit-hooks/check_no_legacy_paths.sh
         language: system
         files: ^python/
         pass_filenames: false
@@ -438,7 +438,7 @@ repos:
         pass_filenames: false
 
   ##############################################################################
-  #  Python/Cython formatting and linting
+  #  Python formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
@@ -458,19 +458,10 @@ repos:
     hooks:
       - id: ruff
         name: ruff
-        args: ["--fix"]
+        args: ["--fix", "--config", "python/pyproject.toml"]
       - id: ruff-format
         name: ruff-format
-
-  - repo: https://github.com/pycqa/isort
-    # Pinned to 8.0.1: do not bump until isort 9.x leaves alpha
-    rev: 8.0.1
-    hooks:
-      - id: isort
-        name: isort (cython)
-        types: [cython]
-        entry: "isort"
-        args: ["--settings-file", "pyproject.toml"]
+        args: ["--config", "python/pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
     # Pinned to 1.7.7 because v1.7.8 conflicts with this repo's Ruff docstring rules
@@ -490,21 +481,12 @@ repos:
           - "--recursive"
           - "--in-place"
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    # Pinned to v1.20.2: pyproject.toml constrains mypy to <2.0.0; do not bump to v2.x
-    rev: v1.20.2
-    hooks:
-      - id: mypy
-        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
-        exclude: (^python/|^nautilus_trader/.*\.pyi$|^docs/(getting_started|tutorials)/)
-        args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
-        additional_dependencies: [msgspec, types-frozendict, types-pytz, types-redis, types-requests, types-toml]
-
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.33 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.33 # Must match [tool.uv] required-version in python/pyproject.toml
     hooks:
       - id: uv-lock
-        files: ^(uv\.lock|python/uv\.lock)$
+        args: ["--project", "python"]
+        files: ^python/(uv\.lock|pyproject\.toml)$
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.9.1

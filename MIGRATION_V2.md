@@ -1,9 +1,7 @@
 # Migrate from v1 to v2
 
-NautilusTrader v2 is the Rust core and PyO3 Python package under `python/`. It becomes the primary
-Python path when `develop` switches to that package. Until that cutover, the main distribution and
-general documentation still describe the legacy v1 Cython package. Use this guide to prepare a
-migration.
+NautilusTrader v2 is the Rust core and PyO3 Python package under `python/`. It is the primary Python
+path on `develop`. Use this guide to migrate from the legacy v1 Cython package.
 
 After cutover, v1 moves to the `develop_v1` branch for approximately three months of critical
 security backports. It does not receive new feature or parity work.
@@ -24,15 +22,14 @@ uv pip install --pre nautilus_trader
 Run this block outside a NautilusTrader source checkout. The repository's `exclude-newer` uv policy
 can filter out newly published release-candidate wheels.
 
-To build from source, build the package in its dedicated `python/.venv`:
+To build from source, build the package from the repository root:
 
 ```bash
-make build-debug-v2
-cd python
+make build-debug
 .venv/bin/python -c 'import nautilus_trader; print(nautilus_trader.__version__)'
 ```
 
-The root `.venv` and root `pyproject.toml` belong to the legacy v1 build during the transition.
+The source build uses the root `.venv` and `target/` directories.
 See [Installation](docs/getting_started/installation.md) for platform support and package-index options.
 
 ## Port Python code

@@ -35,12 +35,12 @@ from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.currencies import BTC
-from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money

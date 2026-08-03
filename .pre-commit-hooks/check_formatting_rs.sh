@@ -32,7 +32,7 @@ echo "Checking for blank line above \`if\` statements (Rust)..."
 
 # rg exits 0 (matches), 1 (no matches), or 2+ (error)
 rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*if\s' crates tests examples docs --type rust 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading '^\s*if\s' crates examples docs --type rust 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -41,7 +41,7 @@ fi
 if [[ -n "$output" ]]; then
 
   match_guard_locations=$(
-    rg -0 -l --no-messages '^\s*if\s' crates tests examples docs --type rust |
+    rg -0 -l --no-messages '^\s*if\s' crates examples docs --type rust |
       xargs -0 awk '
         FNR == 1 { in_if = 0 }
         /^[[:space:]]*if[[:space:]]/ {
@@ -221,7 +221,7 @@ fi
 echo "Checking for blank line above \`match\` blocks (Rust)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*match\s' crates tests examples docs --type rust 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading '^\s*match\s' crates examples docs --type rust 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -373,7 +373,7 @@ fi
 echo "Checking for blank line above \`for\` loops (Rust)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?for\s" crates tests examples docs --type rust 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?for\s" crates examples docs --type rust 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -524,7 +524,7 @@ fi
 echo "Checking for blank line above \`while\` loops (Rust)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?while\s" crates tests examples docs --type rust 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?while\s" crates examples docs --type rust 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -675,7 +675,7 @@ fi
 echo "Checking for blank line above \`loop\` blocks (Rust)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?loop\s" crates tests examples docs --type rust 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?loop\s" crates examples docs --type rust 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -825,7 +825,7 @@ fi
 echo "Checking for blank line above \`spawn\` calls (Rust)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading -e '^\s*spawn\(' -e '\.spawn\(' -e '::spawn\(' crates tests examples docs --type rust 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading -e '^\s*spawn\(' -e '\.spawn\(' -e '::spawn\(' crates examples docs --type rust 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -1143,7 +1143,7 @@ while IFS= read -r file; do
     echo
     MODULE_ORDER_VIOLATIONS=$((MODULE_ORDER_VIOLATIONS + 1))
   done <<< "$module_output"
-done < <(rg --files crates tests examples docs -g 'mod.rs' -g '!**/generated/**' 2> /dev/null)
+done < <(rg --files crates examples docs -g 'mod.rs' -g '!**/generated/**' 2> /dev/null)
 
 VIOLATIONS=$((VIOLATIONS + MODULE_ORDER_VIOLATIONS))
 
@@ -1164,5 +1164,5 @@ if [ $VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 
-echo "✓ Formatting conventions are valid (Rust)"
+echo "Formatting conventions are valid (Rust)"
 exit 0

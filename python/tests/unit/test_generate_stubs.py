@@ -2237,7 +2237,7 @@ def test_generated_config_stubs_include_signature_defaults():
         if updated != content:
             mismatches.append(stub_file.relative_to(WORKSPACE_ROOT).as_posix())
 
-    assert mismatches == [], "Run `make py-stubs-v2`; stale config defaults in " + ", ".join(
+    assert mismatches == [], "Run `make py-stubs`; stale config defaults in " + ", ".join(
         mismatches,
     )
 

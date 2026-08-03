@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces testing conventions:
 # 1. Rust: Prefer #[rstest] over #[test] for consistency and parametrization support
-# 2. Python v2: Do not probe PyO3 panic paths in process with pytest.raises(BaseException)
+# 2. Python: Do not probe PyO3 panic paths in process with pytest.raises(BaseException)
 
 set -euo pipefail
 
@@ -82,10 +82,10 @@ while IFS=: read -r file line_num line_content; do
 done < "$aaa_results"
 
 ################################################################################
-# Check Python v2 tests for broad BaseException panic probes
+# Check Python tests for broad BaseException panic probes
 ################################################################################
 
-echo "Checking Python v2 testing conventions..."
+echo "Checking Python testing conventions..."
 
 rg -n 'pytest\.raises\(BaseException' python/tests --type py 2> /dev/null > "$python_results" || true
 
@@ -96,7 +96,7 @@ while IFS=: read -r file line_num line_content; do
 
   echo -e "${RED}Error:${NC} Found broad BaseException probe in $file:$line_num"
   echo "  Found: $trimmed_line"
-  echo "  Reason: v2 PyO3 panic paths can pass in debug and abort the interpreter in release"
+  echo "  Reason: PyO3 panic paths can pass in debug and abort the interpreter in release"
   echo "  Use: signature checks, specific Python exceptions, or subprocess isolation"
   echo
   VIOLATIONS=$((VIOLATIONS + 1))
@@ -113,7 +113,7 @@ if [ $VIOLATIONS -gt 0 ]; then
   echo "  - Rust: Use #[rstest] instead of #[test] for consistency"
   echo "  - #[tokio::test] is acceptable for async tests without parametrization"
   echo "  - Do not use // Arrange / // Act / // Assert comments in Rust tests (Python convention)"
-  echo "  - Python v2: Do not use pytest.raises(BaseException) in python/tests/ to probe PyO3 panic paths"
+  echo "  - Python: Do not use pytest.raises(BaseException) in python/tests/ to probe PyO3 panic paths"
   echo
   echo "To fix:"
   echo "  - Replace #[test] with #[rstest] in your test functions"
@@ -122,5 +122,5 @@ if [ $VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 
-echo "✓ All testing conventions are valid"
+echo "All testing conventions are valid"
 exit 0

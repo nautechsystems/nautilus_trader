@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
@@ -34,7 +35,6 @@ from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import VenueOrderId
-from tests.providers import TestInstrumentProvider
 
 
 USD = Currency.from_str("USD")

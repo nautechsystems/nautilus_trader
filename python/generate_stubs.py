@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Custom build script for nautilus-trader v2 with automatic stub generation.
+Custom build script for nautilus-trader with automatic stub generation.
 
 This script can be used as:
 1. A standalone stub generator: python generate_stubs.py
@@ -3196,7 +3196,7 @@ def build_extension() -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NautilusTrader v2 build script")
+    parser = argparse.ArgumentParser(description="NautilusTrader build script")
     parser.add_argument(
         "action",
         nargs="?",
@@ -3207,7 +3207,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    print(f"Starting nautilus-trader v2 {args.action}...")
+    print(f"Starting nautilus-trader {args.action}...")
 
     try:
         if args.action in ["stubs", "all"]:

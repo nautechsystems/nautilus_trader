@@ -115,6 +115,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
+
 # Create a EUR/USD instrument on the SIM venue
 EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
 

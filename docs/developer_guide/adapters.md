@@ -98,7 +98,7 @@ venue's real boundaries and keep shared behavior above those splits.
 
 Python package files live under `python/nautilus_trader/adapters/<adapter>/`. In current Rust‑native
 adapters, the package usually re‑exports generated bindings. Change Rust binding metadata or other
-generator inputs, then run `make py-stubs-v2`; do not edit generated `.pyi` files.
+generator inputs, then run `make py-stubs`; do not edit generated `.pyi` files.
 
 ### Repository and Python wiring
 
@@ -972,8 +972,8 @@ For Python‑exposed adapters, test the Rust module before testing broad Python 
 Use `instrument_any_to_pyobject` and `pyobject_to_instrument_any` at Python instrument boundaries
 to preserve the concrete instrument variant in both directions.
 
-Regenerate stubs with `make py-stubs-v2` after changing exported Rust types or signatures. The
-[generated drift check](../../scripts/ci/check-v2-generated-drift.bash) verifies that generator
+Regenerate stubs with `make py-stubs` after changing exported Rust types or signatures. The
+[generated drift check](../../scripts/ci/check-generated-drift.bash) verifies that generator
 inputs and committed `.pyi` output agree.
 
 ## Performance and robustness

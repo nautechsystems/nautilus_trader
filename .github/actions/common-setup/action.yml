@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ""
   rust-cache-workspaces:
-    description: Optional rust-cache workspace mapping, e.g. ". -> target-v2/py3.13"
+    description: Optional rust-cache workspace mapping, e.g. ". -> target/py3.13"
     required: false
     default: ""
   rust-cache-on-failure:

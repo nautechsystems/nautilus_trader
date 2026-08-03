@@ -91,7 +91,7 @@ excluded_files=(
   CLA.md
   RELEASES.md
   patches/upstream/README.md
-  tests/integration/sample/resources/payload.json
+  python/tests/integration/sample/resources/payload.json
   tests/test_data/payload.csv
 )
 for file in "${excluded_files[@]}"; do
@@ -100,7 +100,7 @@ done
 expect_success "$excluded_case" "${excluded_files[@]}"
 
 authored_resource_case="$CASE_ROOT/reject-authored-resource"
-authored_resource_file="tests/integration/sample/resources/__init__.py"
+authored_resource_file="python/tests/integration/sample/resources/__init__.py"
 write_codepoint "$authored_resource_case/$authored_resource_file" 2014
 expect_failure "$authored_resource_case" "$authored_resource_file" "U+2014 EM DASH"
 

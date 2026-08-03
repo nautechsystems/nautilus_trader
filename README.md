@@ -463,7 +463,7 @@ It's possible to install from source using pip if you first install the build de
     ```bash
     git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
     cd nautilus_trader
-    uv sync --all-extras
+    make sync
     ```
 
 > [!NOTE]
@@ -471,7 +471,7 @@ It's possible to install from source using pip if you first install the build de
 > The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 
 6. Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
-   the repository root after `uv sync`:
+   the repository root after `make sync`:
 
     ```bash
     # Set the Python executable path for PyO3
@@ -506,20 +506,19 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 - `make install`: Installs in `release` build mode with all dependency groups and extras.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
-- `make install-deps`: Installs Python dependencies without building the package.
-- `make build`: Runs the build script in `release` build mode (default).
-- `make build-debug`: Runs the build script in `debug` build mode.
-- `make build-wheel`: Runs uv build with a wheel format in `release` mode.
-- `make build-wheel-debug`: Runs uv build with a wheel format in `debug` mode.
+- `make sync`: Installs Python dependencies without building the package.
+- `make build`: Builds and installs the package in `release` mode (default).
+- `make build-debug`: Builds and installs the package in `debug` mode.
+- `make build-wheel`: Builds a wheel in `release` mode.
 - `make cargo-test`: Runs all Rust crate tests using `cargo-nextest`.
 - `make clean`: Deletes build artifacts, caches, and build directories.
 - `make distclean`: **CAUTION** Removes all artifacts not in the git index when run with
   `FORCE=1`. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
-- `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
+- `make ruff`: Runs Ruff over all files using `python/pyproject.toml` (with autofix).
 - `make pytest`: Runs all tests with `pytest`.
-- `make test-performance`: Runs performance tests with [codspeed](https://codspeed.io).
+- `make cargo-ci-benches`: Builds the Rust benchmarks used by CI.
 
 > [!TIP]
 >
@@ -534,9 +533,9 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 Indicators and strategies can be developed in Python, Cython, or Rust. For performance and
 latency-sensitive applications, we recommend Rust. Below are some examples:
 
-- [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
-- [indicator](/nautilus_trader/indicators/) implementations written in Cython.
-- [strategy](/nautilus_trader/examples/strategies/) examples written in Python.
+- [indicator](/examples/backtest/example_07_using_indicators/strategy.py) example written in Python.
+- [indicator](/python/nautilus_trader/indicators/) implementations exposed through PyO3.
+- [strategy](/examples/backtest/example_01_load_bars_from_custom_csv/strategy.py) example written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Docker
@@ -576,18 +575,18 @@ http://127.0.0.1:8888/lab
 
 ## Development
 
-We aim to provide the most pleasant developer experience possible for this hybrid codebase of Rust, Python, and Cython.
+We aim to provide the most pleasant developer experience possible for this hybrid Rust and Python codebase.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/) for helpful information.
 
 > [!TIP]
 >
-> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
+> Run `make build-debug` to compile after Rust changes for the most efficient development workflow.
 
-After changes to v2 PyO3 bindings, stub annotations, or wrapped Rust docs, regenerate the
+After changes to PyO3 bindings, stub annotations, or wrapped Rust docs, regenerate the
 generated Python artifacts from the repository root:
 
 ```bash
-make py-stubs-v2
+make py-stubs
 ```
 
 Commit the generated `.pyi` files and PyO3 wrapper doc comments changed by this target. See

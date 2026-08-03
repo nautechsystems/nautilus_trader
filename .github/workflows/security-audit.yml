@@ -7,9 +7,10 @@ name: security-audit
 #   - Pull requests: GitHub path filters create a workflow run only when
 #     audit-relevant paths change. The gate job remains as a second check
 #     before the audit jobs run.
-#   - Pushes to develop / master / test-security: GitHub path filters create a
-#     workflow run only when audit-relevant paths change. The gate job remains as
-#     a second check before the audit jobs run.
+#   - Pushes to develop / master / test-ci / test-security: GitHub path filters
+#     create a workflow run only when audit-relevant paths change. The gate job
+#     remains as a second check before the audit jobs run. An active, expiring
+#     SECURITY_GATE_OVERRIDE skips audit jobs for push runs only.
 
 permissions:
   contents: read
@@ -29,8 +30,6 @@ on:
       - Cargo.toml
       - crates/**/Cargo.toml
       - crates/**/fuzz/Cargo.lock
-      - uv.lock
-      - pyproject.toml
       - .pre-commit-config.yaml
       - python/uv.lock
       - python/pyproject.toml
@@ -50,7 +49,7 @@ on:
       - .github/actions/**
       - .github/workflows/**
   push:
-    branches: [develop, master, test-security]
+    branches: [develop, master, test-ci, test-security]
     paths: *security_audit_paths
   schedule:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
@@ -84,7 +83,18 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
-        run: bash scripts/ci/security-audit-gate.sh
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
+        run: |
+          override="${SECURITY_GATE_OVERRIDE}"
+          if [ "$EVENT_NAME" = "push" ] &&
+            [ -n "$override" ] &&
+            [ "$(date -u +%s)" -lt "$(date -u -d "$override" +%s 2>/dev/null || echo 0)" ]; then
+            echo "::warning::Security audit override active until $override"
+            echo "audit_needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bash scripts/ci/security-audit-gate.sh
 
   zizmor:
     name: zizmor
@@ -259,7 +269,7 @@ jobs:
         # aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
         # exclude-newer window while aiohttp source builds are disabled.
         run: >
-          uv export --no-hashes --frozen |
+          uv export --project python --no-hashes --frozen |
           uv run --no-project --no-build --with "pip-audit==$(bash scripts/tool-version.sh pip-audit)" --
           pip-audit --disable-pip --no-deps -r /dev/stdin
           --ignore-vuln GHSA-jg22-mg44-37j8
@@ -290,5 +300,4 @@ jobs:
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
             --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
-            --lockfile=uv.lock
             --lockfile=python/uv.lock

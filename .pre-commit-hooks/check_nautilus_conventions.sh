@@ -33,14 +33,14 @@ output=$(rg -n -B 5 \
   --no-heading \
   --glob '!crates/persistence/macros/**' \
   'nautilus_[a-z_]+(?:::[a-z_]+)+::[A-Z][A-Za-z0-9_]+' \
-  crates tests examples \
+  crates examples \
   --type rust \
   2> /dev/null || true)
 
 VIOLATIONS=0
 
 if [[ -z "$output" ]]; then
-  echo "✓ Nautilus import conventions are valid"
+  echo "Nautilus import conventions are valid"
 else
   seen_violations="" # Track unique violations (POSIX compatible, no associative arrays)
 
@@ -124,7 +124,7 @@ else
     echo
     echo "Add '// nautilus-import-ok' comment to allow specific exceptions"
   else
-    echo "✓ Nautilus import conventions are valid"
+    echo "Nautilus import conventions are valid"
   fi
 
 fi # end of if [[ -z "$output" ]]
@@ -155,7 +155,7 @@ if [[ -n "$banner_output" ]]; then
   echo "Use module structure, impl blocks, or doc comments instead"
   echo "See: docs/developer_guide/rust.md#box-style-banner-comments"
 else
-  echo "✓ No box-style banner comments found"
+  echo "No box-style banner comments found"
 fi
 
 # Check for std::fmt convention violations
@@ -282,7 +282,7 @@ if [ $FMT_VIOLATIONS -gt 0 ]; then
   echo "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result"
   echo "  - Use stringify! with debug_struct: f.debug_struct(stringify!(MyType))"
 else
-  echo "✓ std::fmt conventions are valid"
+  echo "std::fmt conventions are valid"
 fi
 
 # Check for ", got" phrasing in error messages
@@ -290,8 +290,8 @@ echo "Checking for ', got' phrasing..."
 
 # Search for ", got" followed by space, punctuation, or end-of-line
 got_output=$(rg -n ', got[[:space:][:punct:]]|, got$' \
-  crates tests examples nautilus_trader \
-  --type rust --type py --type cython \
+  crates python examples \
+  --type rust --type py \
   --glob '!docs/**' \
   2> /dev/null || true)
 
@@ -309,7 +309,7 @@ if [[ -n "$got_output" ]]; then
   echo "  See: docs/developer_guide/coding_standards.md#terminology-and-phrasing"
 else
   GOT_VIOLATIONS=0
-  echo "✓ No ', got' phrasing found"
+  echo "No ', got' phrasing found"
 fi
 
 # Check for fully qualified macro calls
@@ -318,7 +318,7 @@ echo "Checking for fully qualified macro calls..."
 MACRO_VIOLATIONS=0
 macro_output=$(rg -n --no-heading \
   'nautilus_(common|trading)::(nautilus_actor|nautilus_strategy)!' \
-  crates tests examples \
+  crates examples \
   --type rust \
   2> /dev/null || true)
 
@@ -350,7 +350,7 @@ if [[ -n "$macro_output" ]]; then
     echo "'use nautilus_trading::nautilus_strategy;' and call the macro unqualified"
   fi
 else
-  echo "✓ No fully qualified macro calls found"
+  echo "No fully qualified macro calls found"
 fi
 
 # Check that the exposed Python submodule set is unchanged
@@ -468,10 +468,10 @@ if [ -f "$PYO3_LIB" ]; then
     echo "register its class into an existing submodule instead. If the change is intended,"
     echo "update EXPECTED_PYO3_MODULES in this script."
   else
-    echo "✓ Python submodule registrations are unchanged"
+    echo "Python submodule registrations are unchanged"
   fi
 else
-  echo "✓ Python submodule registrations skipped ($PYO3_LIB not found)"
+  echo "Python submodule registrations skipped ($PYO3_LIB not found)"
 fi
 
 # Exit with error if any violations found
@@ -480,5 +480,5 @@ if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -g
 fi
 
 echo
-echo "✓ All Nautilus conventions are valid"
+echo "All Nautilus conventions are valid"
 exit 0

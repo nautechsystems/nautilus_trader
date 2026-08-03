@@ -20,13 +20,12 @@ FLAMEGRAPH_VERSION := $(shell bash scripts/cargo-tool-version.sh flamegraph)
 LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
 # Tool versions from tools.toml
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
-UV_VERSION := $(shell bash scripts/uv-version.sh)
-UV_V2_REQUIRED_SPEC := $(shell awk -F'"' '\
+UV_REQUIRED_SPEC := $(shell awk -F'"' '\
 	/^\[tool\.uv\]/ { in_section=1; next } \
 	/^\[/ { in_section=0 } \
 	in_section && /^[[:space:]]*required-version[[:space:]]*=/ { print $$2; exit } \
 ' python/pyproject.toml)
-UV_V2_REQUIRED_VERSION := $(patsubst ==%,%,$(UV_V2_REQUIRED_SPEC))
+UV_REQUIRED_VERSION := $(patsubst ==%,%,$(UV_REQUIRED_SPEC))
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
@@ -35,8 +34,6 @@ empty :=
 space := $(empty) $(empty)
 comma := ,
 
-# Build verbosity defaults to true and can be overridden
-VERBOSE ?= true
 # Nextest shows failures and the final summary unless verbose output is requested
 NEXTEST_VERBOSE ?= false
 ifeq ($(NEXTEST_VERBOSE),true)
@@ -46,16 +43,15 @@ NEXTEST_OUTPUT_ARGS := --status-level fail --final-status-level flaky
 endif
 
 # UV_SYNC_FLAGS controls whether uv keeps packages not managed by this project
-# Set UV_SYNC_FLAGS= to make uv prune packages not in uv.lock
+# Set UV_SYNC_FLAGS= to make uv prune packages not in python/uv.lock
 UV_SYNC_FLAGS ?= --inexact
-
-V2_CARGO_TARGET_DIR ?= $(CURDIR)/target-v2
+UV_PROJECT_ENVIRONMENT ?= $(CURDIR)/.venv
+export UV_PROJECT_ENVIRONMENT
 
 PIP_AUDIT_IGNORE_FLAGS :=
 
-# TARGET_DIR controls where cargo places build artifacts.
-# Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
-TARGET_DIR ?= target
+# TARGET_DIR controls where Cargo places build artifacts
+TARGET_DIR ?= $(CURDIR)/target
 
 # Compiler configuration
 # Uses clang by default (required by ed25519-blake2b and other deps).
@@ -142,19 +138,6 @@ endif
 # CARGO_CI_PROFILE selects the Cargo compile profile used by nextest.
 CARGO_CI_PROFILE ?= nextest
 
-PYTHON_CPU_COUNT_LIMIT ?= 32
-LOCAL_PYTHON_CPU_COUNT_LIMIT := $(shell \
-	n='$(HOST_CPU_COUNT)'; limit='$(PYTHON_CPU_COUNT_LIMIT)'; \
-	if [ "$$n" -gt "$$limit" ]; then printf '%s' "$$limit"; fi)
-
-ifneq ($(origin PYTHON_CPU_COUNT),undefined)
-export PYTHON_CPU_COUNT
-else
-ifneq ($(strip $(LOCAL_PYTHON_CPU_COUNT_LIMIT)),)
-export PYTHON_CPU_COUNT := $(LOCAL_PYTHON_CPU_COUNT_LIMIT)
-endif
-endif
-
 # Select the appropriate flag for `cargo nextest` depending on FAIL_FAST.
 ifeq ($(FAIL_FAST),true)
 FAIL_FAST_FLAG :=
@@ -202,8 +185,7 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 # clippy reports it under this selection.
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
 
-CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
-	build-debug-pyo3 build-wheel build-wheel-debug build-dry-run check-code \
+CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel py-stubs check-code \
 	check-code-standard-precision \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	docs docs-rust docsrs-check cargo-build cargo-check check-features hawk cargo-test \
@@ -213,7 +195,7 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
 	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
 	cargo-test-coverage-crate-% cargo-test-coverage-html \
 	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
-	cargo-miri-plugin cargo-miri cargo-ci-benches build-debug-v2 py-stubs-v2 \
+	cargo-miri-plugin cargo-miri cargo-ci-benches \
 	install-cli
 
 # Apple ld can emit compact-unwind size warnings for large Rust binaries
@@ -278,77 +260,59 @@ RESET  := \033[0m
 
 #== Installation
 
-.PHONY: install-deps
-install-deps:  #-- Install Python dependencies only (no package build)
-	$(info $(M) Installing Python dependencies...)
-	$Q uv sync --active --all-groups --all-extras $(UV_SYNC_FLAGS) --no-install-package nautilus_trader
-
-.PHONY: sync-deps
-sync-deps: UV_SYNC_FLAGS =
-sync-deps: install-deps  #-- Sync Python dependencies exactly (prune packages not in uv.lock)
+.PHONY: sync
+sync:  #-- Sync Python dependencies without building the package
+	@if [ -z "$(UV_REQUIRED_SPEC)" ]; then \
+		printf "$(RED)ERROR: Could not find required-version in python/pyproject.toml$(RESET)\n"; \
+		exit 1; \
+	fi
+	@if [ "$(UV_REQUIRED_SPEC)" = "$(UV_REQUIRED_VERSION)" ]; then \
+		printf "$(RED)ERROR: python/pyproject.toml required-version must use ==A.B.C, found $(UV_REQUIRED_SPEC)$(RESET)\n"; \
+		exit 1; \
+	fi
+	@found="$$(uv --version 2>/dev/null | awk '{print $$2}' || true)"; \
+	if [ -z "$$found" ]; then \
+		printf "$(RED)ERROR: uv not found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update --version $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	if [ "$$found" != "$(UV_REQUIRED_VERSION)" ]; then \
+		printf "$(RED)ERROR: uv $$found found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update --version $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		exit 1; \
+	fi
+	$(info $(M) Syncing Python dependencies...)
+	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --all-extras --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: install
-install: install-deps
-install: export BUILD_MODE=release
-install:  #-- Install in release mode with all dependencies and extras
-	$(info $(M) Installing NautilusTrader in release mode...)
-	$Q uv sync --active --all-groups --all-extras $(UV_SYNC_FLAGS)
+install: build  #-- Install the package in release mode
 
 .PHONY: install-debug
-install-debug: install-deps
-install-debug: export BUILD_MODE=debug
-install-debug:  #-- Install in debug mode for development
-	$(info $(M) Installing NautilusTrader in debug mode...)
-	$Q uv sync --active --all-groups --all-extras $(UV_SYNC_FLAGS)
+install-debug: build-debug  #-- Install the package in debug mode
 
 #== Build
 
 .PHONY: build
-build: install-deps
-build: export BUILD_MODE=release
-build: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build:  #-- Build the package in release mode
-	uv run --active --no-sync build.py
+build: py-stubs  #-- Build and install the package in release mode
+	$(info $(M) Building the Python extension in release mode...)
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop --release
 
 .PHONY: build-debug
-build-debug: install-deps
-build-debug: export BUILD_MODE=debug
-build-debug: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build-debug:  #-- Build the package in debug mode (recommended for development)
-ifeq ($(VERBOSE),true)
-	$(info $(M) Building in debug mode with verbose output...)
-	uv run --active --no-sync build.py
-else
-	$(info $(M) Building in debug mode (errors will still be shown)...)
-	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
-endif
-
-.PHONY: build-debug-pyo3
-build-debug-pyo3: export BUILD_MODE=debug-pyo3
-build-debug-pyo3: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
-ifeq ($(VERBOSE),true)
-	$(info $(M) Building in debug mode with PyO3 debug symbols...)
-	uv run --active --no-sync build.py
-else
-	$(info $(M) Building in debug mode with PyO3 debug symbols (errors will still be shown)...)
-	uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
-endif
+build-debug: py-stubs  #-- Build and install the package in debug mode
+	$(info $(M) Building the Python extension in debug mode...)
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop
 
 .PHONY: build-wheel
-build-wheel: export BUILD_MODE=release
-build-wheel:  #-- Build wheel distribution in release mode
-	uv build --wheel
+build-wheel: sync  #-- Build a wheel distribution in release mode
+	$(info $(M) Building the Python wheel in release mode...)
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin build --release --out ../dist
 
-.PHONY: build-wheel-debug
-build-wheel-debug: export BUILD_MODE=debug
-build-wheel-debug:  #-- Build wheel distribution in debug mode
-	uv build --wheel
+.PHONY: py-stubs
+py-stubs: sync  #-- Regenerate Python type stubs from Rust bindings
+	$(info $(M) Generating Python type stubs...)
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync python generate_stubs.py
 
-.PHONY: build-dry-run
-build-dry-run: export DRY_RUN=true
-build-dry-run:  #-- Show build commands without executing them
-	uv run --active --no-sync build.py
+.PHONY: check-generated-drift
+check-generated-drift:  #-- Check generated stubs and docstrings are committed
+	$Q bash scripts/ci/check-generated-drift.bash
 
 #== Clean
 
@@ -372,30 +336,28 @@ ib-stop:  #-- Stop local TWS/IBC processes and Docker IB Gateway containers
 
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
-	$Q rm -rf dist target target-v2 crates/pyo3/target-v2 2>/dev/null || true
+	$Q rm -rf dist target 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
-clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
+clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, and .pyc files)
 	@echo "Cleaning build artifacts..."
 	# Clean Rust build artifacts (keep final libraries)
-	find target target-v2 -name "*.rlib" -delete 2>/dev/null || true
-	find target target-v2 -name "*.rmeta" -delete 2>/dev/null || true
-	rm -rf target/*/build target/*/deps target-v2/*/build target-v2/*/deps 2>/dev/null || true
+	find target -name "*.rlib" -delete 2>/dev/null || true
+	find target -name "*.rmeta" -delete 2>/dev/null || true
+	rm -rf target/*/build target/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
 	find . -type d -name "__pycache__" -not -path "*/.venv*" -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.c" -not -path "*/.venv*" -not -path "./target/*" -not -path "./target-v2/*" -exec rm -f {} + 2>/dev/null || true
 	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "*/.venv*" -exec rm -f {} + 2>/dev/null || true
 	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "*/.venv*" -exec rm -f {} + 2>/dev/null || true
-	rm -rf build/ cython_debug/ 2>/dev/null || true
+	rm -rf build/ 2>/dev/null || true
 	# Clean test artifacts
 	rm -rf .coverage .benchmarks 2>/dev/null || true
 
 .PHONY: clean-caches
 clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
-	rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
+	rm -rf .pytest_cache .mypy_cache .ruff_cache python/.pytest_cache python/.mypy_cache python/.ruff_cache 2>/dev/null || true
 	-uv cache prune --force
 	-cargo clean --workspace
-	-CARGO_TARGET_DIR=target-v2 cargo clean --workspace
 
 .PHONY: distclean
 distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
@@ -404,14 +366,14 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 		exit 1; \
 	fi
 	@echo "WARNING: removing all untracked files (git clean -fxd)..."
-	git clean -fxd -e tests/test_data/large/ -e tests/test_data/local/ -e .venv
+	git clean -fxd -e tests/test_data/large/ -e tests/test_data/local/ -e .venv/
 
 #== Code Quality
 
 .PHONY: format
 format:  #-- Format Rust (with nightly) and Python code
 	cargo +nightly fmt
-	uv run --active --no-sync ruff format . --force-exclude
+	VIRTUAL_ENV= uv run --project python --no-sync ruff format . --config python/pyproject.toml --force-exclude
 
 .PHONY: pre-commit
 pre-commit:  #-- Run all pre-commit hooks on all files
@@ -423,13 +385,10 @@ pre-commit:  #-- Run all pre-commit hooks on all files
 check-code:  #-- Run clippy on lib/test targets and ruff --fix (use HYPERSYNC=true to include hypersync feature)
 	$(info $(M) Running code quality checks...)
 	@cargo clippy --workspace --lib --tests --features "$(CARGO_FEATURES)" --profile nextest -- -D warnings
-	@uv run --active --no-sync ruff check . --fix --force-exclude
+	@VIRTUAL_ENV= uv run --project python --no-sync ruff check . --config python/pyproject.toml --fix --force-exclude
 	@printf "$(GREEN)Checks passed$(RESET)\n"
 
 .PHONY: check-code-standard-precision
-# Keep the generated Cython/C bindings on their committed high-precision setting; the Rust
-# compilation is driven by the cargo feature, so only binding generation would drift here.
-check-code-standard-precision: export HIGH_PRECISION=1
 check-code-standard-precision:  #-- Run clippy on lib/test targets with standard precision
 	$(info $(M) Running standard-precision code quality checks...)
 	@cargo clippy $(STANDARD_PRECISION_ARGS) --profile nextest -- -D warnings
@@ -458,7 +417,7 @@ endef
 
 .PHONY: pre-flight
 pre-flight: export CARGO_TARGET_DIR=$(TARGET_DIR)
-pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, DST, build-debug, pytest)
+pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, and audit)
 	$(info $(M) Running pre-flight checks...)
 	@if ! git diff --quiet; then \
 		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
@@ -466,7 +425,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, DST, bui
 		exit 1; \
 	fi
 	@$(timer_start) \
-		$(MAKE) --no-print-directory install-deps \
+		$(MAKE) --no-print-directory sync \
 		&& $(MAKE) --no-print-directory format \
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
@@ -474,14 +433,15 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, DST, bui
 		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
 		&& $(MAKE) --no-print-directory build-debug \
+		&& $(MAKE) --no-print-directory check-generated-drift \
 		&& $(MAKE) --no-print-directory pytest \
-		&& $(MAKE) --no-print-directory pytest-doctest \
+		&& $(MAKE) --no-print-directory pytest-doctest mypy \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)
 
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
-	uv run --active --no-sync ruff check . --fix --force-exclude
+	VIRTUAL_ENV= uv run --project python --no-sync ruff check . --config python/pyproject.toml --fix --force-exclude
 
 .PHONY: clippy
 clippy:  #-- Run clippy linter (check only, workspace lints)
@@ -526,15 +486,15 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 
 .PHONY: update
 update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
-	$Q uv lock --upgrade
+	$Q cd python && VIRTUAL_ENV= uv lock --upgrade
 
 .PHONY: update-uv
 update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
-	$(info $(M) Ensuring uv $(UV_VERSION) is installed...)
-	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_VERSION)" ]; then \
-		printf "$(GREEN)uv $(UV_VERSION) already installed$(RESET)\n"; \
+	$(info $(M) Ensuring uv $(UV_REQUIRED_VERSION) is installed...)
+	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_REQUIRED_VERSION)" ]; then \
+		printf "$(GREEN)uv $(UV_REQUIRED_VERSION) already installed$(RESET)\n"; \
 	else \
-		curl -LsSf https://astral.sh/uv/$(UV_VERSION)/install.sh | sh; \
+		curl -LsSf https://astral.sh/uv/$(UV_REQUIRED_VERSION)/install.sh | sh; \
 	fi
 
 .PHONY: install-tools
@@ -575,8 +535,8 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	@$(call audit_step,cargo deny lighter fuzz,cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml --config .cargo/deny-fuzz.toml --locked --all-features check advisories licenses sources bans)
 	@$(call audit_step,cargo vet,cargo vet --locked)
 	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml --store-path .supply-chain)
-	@$(call audit_step,pip-audit,uv export --frozen | sed '/^-e /d' | uv run --no-project --with pip-audit -- pip-audit --disable-pip --require-hashes -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
-	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock)
+	@$(call audit_step,pip-audit,uv export --project python --frozen | sed '/^-e /d' | uv run --no-project --with pip-audit -- pip-audit --disable-pip --require-hashes -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
+	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock --lockfile=python/uv.lock)
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -592,9 +552,8 @@ cargo-vet: check-vet-installed  #-- Run cargo-vet supply chain audit
 docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 
 .PHONY: docs-python
-docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	uv run --active --no-sync sphinx-build -M html ./docs/api_reference ./api_reference
+	VIRTUAL_ENV= uv run --project python --no-sync sphinx-build -M html ./docs/api_reference ./api_reference
 
 # Path to extra HTML injected into every rustdoc <head>. Left empty here so the
 # markup stays with whichever build supplies it, rather than living in this repo.
@@ -610,7 +569,7 @@ docsrs-check: export DOCS_RS=1
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +nightly hack --workspace --ignore-private --ignore-unknown-features \
-		--features arrow,capnp,cloud,cython-compat,defi,display \
+		--features arrow,capnp,cloud,defi,display \
 		--features example-databento,examples,ffi,high-precision,host \
 		--features hypersync,indicators,live,node,persistence,plugin \
 		--features postgres,redis,replay,sbe,simulation,streaming,stubs \
@@ -948,8 +907,6 @@ cargo-test-lib:  #-- Run Rust library tests only with high precision
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: export RUST_BACKTRACE=1
-# See check-code-standard-precision: keep generated bindings off the standard-precision setting.
-cargo-test-standard-precision: export HIGH_PRECISION=1
 cargo-test-standard-precision: check-nextest-installed
 cargo-test-standard-precision:  #-- Run Rust tests with standard precision (debug profile)
 	cargo nextest run $(STANDARD_PRECISION_ARGS) $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) $(NEXTEST_OUTPUT_ARGS)
@@ -1201,107 +1158,21 @@ init-db:  #-- Initialize PostgreSQL database schema
 
 #== Python Testing
 
-PYTEST_WORKERS ?= $(shell python3 -c "import os; print(min($(PYTHON_CPU_COUNT_LIMIT), os.cpu_count() or $(PYTHON_CPU_COUNT_LIMIT)))")
-
 .PHONY: pytest
-pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
-	$(info $(M) Running Python tests in parallel with immediate failure reporting (workers=$(PYTEST_WORKERS))...)
-	uv run --active --no-sync pytest -qq -rfE --new-first --failed-first --tb=line -n $(PYTEST_WORKERS) --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
-
-.PHONY: pytest-doctest
-pytest-doctest:  #-- Build v1 and run its supported Python doctests
-	$(info $(M) Running supported v1 Python doctests...)
-	$Q VIRTUAL_ENV="$(CURDIR)/.venv" $(MAKE) --no-print-directory build-debug
-	$Q bash scripts/ci/test-python-doctests.bash v1 "$(CURDIR)"
-
-.PHONY: test-performance
-test-performance:  #-- Run performance tests with codspeed benchmarking
-	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
-
-#== v2 (python/)
-# Unset VIRTUAL_ENV so uv targets the python/.venv, not the parent v1 venv.
-
-.PHONY: sync-v2
-sync-v2:  #-- Sync v2 Python dependencies (without building the package)
-	@if [ -z "$(UV_V2_REQUIRED_SPEC)" ]; then \
-		printf "$(RED)ERROR: Could not find required-version in python/pyproject.toml$(RESET)\n"; \
-		exit 1; \
-	fi
-	@if [ "$(UV_V2_REQUIRED_SPEC)" = "$(UV_V2_REQUIRED_VERSION)" ]; then \
-		printf "$(RED)ERROR: python/pyproject.toml required-version must use ==A.B.C, found $(UV_V2_REQUIRED_SPEC)$(RESET)\n"; \
-		exit 1; \
-	fi
-	@found="$$(uv --version 2>/dev/null | awk '{print $$2}' || true)"; \
-	if [ -z "$$found" ]; then \
-		printf "$(RED)ERROR: uv not found, ==$(UV_V2_REQUIRED_VERSION) required; run \`uv self update --version $(UV_V2_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
-		exit 1; \
-	fi; \
-	if [ "$$found" != "$(UV_V2_REQUIRED_VERSION)" ]; then \
-		printf "$(RED)ERROR: uv $$found found, ==$(UV_V2_REQUIRED_VERSION) required; run \`uv self update --version $(UV_V2_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
-		exit 1; \
-	fi
-	@printf "$(M) Syncing v2 Python dependencies...\n"
-	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --all-extras --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
-
-.PHONY: build-debug-v2
-build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)
-	@$(MAKE) --no-print-directory py-stubs-v2
-	$(info $(M) Building v2 extension in debug mode...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(V2_CARGO_TARGET_DIR) uv run --no-sync maturin develop
-
-.PHONY: py-stubs-v2
-py-stubs-v2: sync-v2  #-- Regenerate v2 Python type stubs from Rust bindings
-	$(info $(M) Generating v2 Python type stubs...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(V2_CARGO_TARGET_DIR) uv run --no-sync python generate_stubs.py
-
-.PHONY: check-v2-generated-drift
-check-v2-generated-drift:  #-- Check v2 generated stubs and docstrings are committed
-	$Q bash scripts/ci/check-v2-generated-drift.bash
-
-.PHONY: update-v2
-update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)
-	$(info $(M) Updating v2 uv lockfile...)
-	$Q cd python && VIRTUAL_ENV= uv lock --upgrade
-
-.PHONY: pytest-v2
-pytest-v2: build-debug-v2  #-- Run v2 Python tests
-	$(info $(M) Running v2 Python tests...)
+pytest: build-debug  #-- Run Python tests
+	$(info $(M) Running Python tests...)
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/ --ignore=tests/unit/test_live_node.py
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
 
-.PHONY: pytest-doctest-v2
-pytest-doctest-v2: build-debug-v2  #-- Run supported v2 Python doctests
-	$(info $(M) Running supported v2 Python doctests...)
-	$Q bash scripts/ci/test-python-doctests.bash v2 "$(CURDIR)/python"
+.PHONY: pytest-doctest
+pytest-doctest: build-debug  #-- Run supported Python doctests
+	$(info $(M) Running supported Python doctests...)
+	$Q bash scripts/ci/test-python-doctests.bash "$(CURDIR)/python"
 
-.PHONY: mypy-v2
-mypy-v2: build-debug-v2  #-- Type-check supported v2 Python authoring workflows
-	$(info $(M) Type-checking supported v2 Python authoring workflows...)
+.PHONY: mypy
+mypy: build-debug  #-- Type-check supported Python authoring workflows
+	$(info $(M) Type-checking supported Python authoring workflows...)
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync mypy examples tests/type_checking/supported.py
-
-.PHONY: pre-flight-v2
-pre-flight-v2: export CARGO_TARGET_DIR=target-v2
-pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, DST, build, generated drift, audit)
-	$(info $(M) Running v2 pre-flight checks...)
-	@if ! git diff --quiet; then \
-		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
-		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
-		exit 1; \
-	fi
-	@$(timer_start) \
-		$(MAKE) --no-print-directory install-deps \
-		&& $(MAKE) --no-print-directory format \
-		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
-		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
-		&& $(MAKE) --no-print-directory cargo-test-extras \
-		&& $(MAKE) --no-print-directory cargo-test-sim \
-		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
-		&& $(MAKE) --no-print-directory build-debug-v2 \
-		&& $(MAKE) --no-print-directory check-v2-generated-drift \
-		&& $(MAKE) --no-print-directory pytest-v2 \
-		&& $(MAKE) --no-print-directory pytest-doctest-v2 mypy-v2 \
-		&& $(MAKE) --no-print-directory security-audit \
-	$(call timer_end,Pre-flight)
 
 #== CLI Tools
 
@@ -1317,7 +1188,6 @@ help:  #-- Show this help message and exit
 	@printf "$(GRAY)Requires GNU Make. Windows users can install it via MSYS2 or WSL.$(RESET)\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) for quiet debug-build output$(RESET)\n"
 	@printf "$(GRAY)      Use $(CYAN)make <target> NEXTEST_VERBOSE=true$(GRAY) for verbose Nextest output$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"

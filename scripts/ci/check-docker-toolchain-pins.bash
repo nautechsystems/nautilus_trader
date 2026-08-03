@@ -53,7 +53,7 @@ check_refs() {
 check_python_alignment() {
   local nautilus_df=".docker/nautilus_trader.dockerfile"
   local ubuntu_df=".docker/DockerfileUbuntu"
-  local pyproject="pyproject.toml"
+  local pyproject="python/pyproject.toml"
   local base_ref py_version minor digest requires lower upper ref found
 
   base_ref="$(grep -Eo 'public\.ecr\.aws/docker/library/python:3\.[0-9]+-slim@sha256:[0-9a-f]+' "${REPO_ROOT}/${nautilus_df}" | head -n1 || true)"
@@ -113,7 +113,7 @@ check_python_alignment() {
 
 check_refs \
   "uv ${UV_VERSION}" \
-  "pyproject.toml [tool.uv].required-version" \
+  "python/pyproject.toml [tool.uv].required-version" \
   "$EXPECTED_UV_PREFIX" \
   'ghcr\.io/astral-sh/uv:[^[:space:]\\]+@sha256:[0-9a-f]+' \
   ".docker/DockerfileUbuntu" \

@@ -27,7 +27,7 @@ FFI boundary. Strips Rust intra-doc link brackets and converts :: to .
 for Python conventions.
 
 Usage:
-    python generate_docstrings.py [--dry-run] [--crate NAME]
+    python generate_docstrings.py [--dry-run] [--crate NAME] [--verbose]
 
 """
 
@@ -383,6 +383,7 @@ def process_crate(  # noqa: C901
     crate_name: str,
     src_dir: Path,
     dry_run: bool = False,
+    verbose: bool = False,
 ) -> int:
     """
     Process a single crate, updating PyO3 doc comments.
@@ -390,14 +391,17 @@ def process_crate(  # noqa: C901
     Returns number of doc comments updated.
 
     """
-    print(f"Processing crate: {crate_name}")
+    if verbose:
+        print(f"Processing crate: {crate_name}")
 
     source_docs = collect_source_docs(src_dir)
-    print(f"  Collected {len(source_docs)} source doc comments")
+    if verbose:
+        print(f"  Collected {len(source_docs)} source doc comments")
 
     python_dir = src_dir / "python"
     if not python_dir.is_dir():
-        print("  No python/ directory, skipping")
+        if verbose:
+            print("  No python/ directory, skipping")
         return 0
 
     total_updates = 0
@@ -487,6 +491,11 @@ def main() -> None:
         dest="crate_name",
         help="Process only this crate (e.g. 'network')",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show per-crate traversal details",
+    )
     args = parser.parse_args()
 
     crate_dirs = get_crate_src_dirs(args.crate_name)
@@ -497,7 +506,12 @@ def main() -> None:
 
     total = 0
     for name, src_dir in crate_dirs:
-        total += process_crate(name, src_dir, dry_run=args.dry_run)
+        total += process_crate(
+            name,
+            src_dir,
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+        )
 
     prefix = "would be " if args.dry_run else ""
     print(f"\nTotal: {total} doc comments {prefix}updated")

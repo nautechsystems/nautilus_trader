@@ -20,7 +20,7 @@ use std::path::PathBuf;
 /// Returns the workspace root directory path.
 ///
 /// This is the directory containing the top-level `Cargo.toml` with the
-/// `[workspace]` section, typically where `pyproject.toml` and `docs/` are located.
+/// `[workspace]` section, typically where `python/` and `docs/` are located.
 ///
 /// # Panics
 ///
@@ -72,11 +72,11 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_workspace_root_contains_pyproject() {
+    fn test_workspace_root_contains_python_pyproject() {
         let root = get_workspace_root_path();
         assert!(
-            root.join("pyproject.toml").exists(),
-            "Workspace root should contain pyproject.toml, was: {root:?}"
+            root.join("python/pyproject.toml").is_file(),
+            "Workspace root should contain python/pyproject.toml, was: {root:?}"
         );
     }
 

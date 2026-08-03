@@ -71,7 +71,7 @@ def schedule_node_stop(node: object, delay_seconds: int) -> None:
     if delay_seconds <= 0:
         return
 
-    subprocess.Popen(  # noqa: S603
+    subprocess.Popen(
         ["/bin/sh", "-c", f"sleep {delay_seconds}; kill -{signal.SIGINT} {os.getpid()}"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

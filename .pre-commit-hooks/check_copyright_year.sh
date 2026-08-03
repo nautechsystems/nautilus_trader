@@ -25,10 +25,7 @@ FAILED=0
 # Files to exclude from missing header warnings
 is_excluded_from_header_check() {
   local file="$1"
-  [[ "$file" == "build.py" ]] ||
-    [[ "$file" == nautilus_trader/core/rust/* ]] ||
-    [[ "$file" == */core/rust/* ]] ||
-    [[ "$file" == examples/* ]] ||
+  [[ "$file" == examples/* ]] ||
     [[ "$file" == */examples/* ]]
 }
 
@@ -42,22 +39,22 @@ while IFS=: read -r file _ line_content; do
     YEAR="${BASH_REMATCH[1]}"
 
     if [[ "$YEAR" -lt "$CURRENT_YEAR" ]]; then
-      echo "✗ $file: Copyright year is $YEAR, expected >=$CURRENT_YEAR"
+      echo "ERROR: $file: Copyright year is $YEAR, expected >=$CURRENT_YEAR"
       FAILED=1
     fi
   fi
-done < <(rg --line-number --no-heading "Copyright \(C\) 2015-[0-9]{4}" -g '*.rs' -g '*.py' -g '*.pyx' -g '*.pxd')
+done < <(rg --line-number --no-heading "Copyright \(C\) 2015-[0-9]{4}" -g '*.rs' -g '*.py')
 
 # Get list of files with copyright headers (sorted for comm)
-rg --files-with-matches "Copyright \(C\)" -g '*.rs' -g '*.py' -g '*.pyx' -g '*.pxd' 2> /dev/null | sort > /tmp/files_with_headers.$$ || true
+rg --files-with-matches "Copyright \(C\)" -g '*.rs' -g '*.py' 2> /dev/null | sort > /tmp/files_with_headers.$$ || true
 
 # Get all tracked files (sorted for comm)
-git ls-files '*.rs' '*.py' '*.pyx' '*.pxd' | sort > /tmp/all_files.$$
+git ls-files '*.rs' '*.py' | sort > /tmp/all_files.$$
 
 # Find files without headers (in all_files but not in files_with_headers)
 while IFS= read -r file; do
   if ! is_excluded_from_header_check "$file"; then
-    echo "⚠️  $file: Missing copyright header"
+    echo "WARNING: $file: Missing copyright header"
   fi
 done < <(comm -23 /tmp/all_files.$$ /tmp/files_with_headers.$$)
 
@@ -70,5 +67,5 @@ if [[ $FAILED -eq 1 ]]; then
   exit 1
 fi
 
-echo "✓ All copyright years are current or forward-dated"
+echo "All copyright years are current or forward-dated"
 exit 0

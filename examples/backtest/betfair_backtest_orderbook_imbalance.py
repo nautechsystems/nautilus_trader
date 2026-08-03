@@ -18,6 +18,8 @@ import time
 from decimal import Decimal
 
 import pandas as pd
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 from nautilus_trader.adapters.betfair import BETFAIR_CLIENT_ID
 from nautilus_trader.adapters.betfair import BETFAIR_VENUE
@@ -32,8 +34,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
-from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
-from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 if __name__ == "__main__":

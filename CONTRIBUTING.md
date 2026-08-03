@@ -29,17 +29,9 @@ You also need to sign the [Contributor License Agreement](CLA.md) before we can 
 
 ## Find the right package
 
-The repository holds two packages during the v2 transition, so check which one your change belongs
-in before you start:
-
-- `crates/` and `python/` hold v2: the Rust core and its PyO3 Python package.
-- `nautilus_trader/` holds v1: the legacy Cython package, still the main distribution until cutover.
-
-We are not accepting contributions to v1. New features, enhancements, and bug fixes all go to v2.
-
-Both packages install and import as `nautilus_trader`, so use a separate virtual environment for each
-and never install both into one. See [MIGRATION_V2.md](MIGRATION_V2.md) for the full picture. If you
-aren't sure which package fits, ask in the issue.
+The Rust workspace lives under `crates/`, and the PyO3 Python package lives under `python/`. See
+[MIGRATION_V2.md](MIGRATION_V2.md) when porting code from the legacy v1 package on `develop_v1`.
+If you aren't sure where a change belongs, ask in the issue.
 
 ## Set up your environment
 
@@ -55,7 +47,8 @@ make install-tools
 prek install
 ```
 
-`make install-tools` reads pinned versions from `Cargo.toml`, `tools.toml`, and `pyproject.toml`. See
+`make install-tools` reads pinned versions from `Cargo.toml`, `tools.toml`, and
+`python/pyproject.toml`. See
 [Install development tools](docs/developer_guide/environment_setup.md#2-install-development-tools)
 for the full list, what each tool does, and which tools install separately.
 
@@ -64,9 +57,7 @@ for the full list, what each tool does, and which tools install separately.
 Include tests that cover your change. Running the relevant target locally first saves a round trip:
 
 - `make cargo-test` runs the Rust tests.
-- `make pytest-v2` runs the v2 Python tests, building the extension and stubs first.
-- `make pytest` runs the v1 Python tests, which v2 changes can break through the PyO3 bridge. Run
-  `make build-debug` first so it tests your current build.
+- `make pytest` runs the Python tests, building the extension and stubs first.
 
 Rust tests use `#[rstest]` rather than `#[test]`, including non-parameterized ones, and pre-commit
 enforces this (`#[tokio::test]` is fine for async tests). See
@@ -82,7 +73,7 @@ below).
 These are the checks that most often send a PR back:
 
 - Run `make format` and `make pre-commit` so CI passes on the first attempt.
-- If you changed v2 PyO3 bindings or the Rust docs behind them, run `make py-stubs-v2` and commit the
+- If you changed PyO3 bindings or the Rust docs behind them, run `make py-stubs` and commit the
   generated output. These stubs are generated rather than hand-edited, and CI fails on drift. See
   [Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts).
 - Give new Rust files the standard copyright header. See

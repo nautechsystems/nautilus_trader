@@ -24,10 +24,10 @@ To install the latest Python v2 release candidate:
 uv pip install --pre nautilus_trader
 ```
 
-To build Python v2 from source, run from the repository root:
+To build the Python package from source, run from the repository root:
 
 ```bash
-make build-debug-v2
+make build-debug
 ```
 
 For branch development wheels and source-build prerequisites, see

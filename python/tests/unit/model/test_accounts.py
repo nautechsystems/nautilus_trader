@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountBalance
@@ -44,7 +45,6 @@ from nautilus_trader.model import VenueOrderId
 from nautilus_trader.model import betting_account_from_account_events
 from nautilus_trader.model import cash_account_from_account_events
 from nautilus_trader.model import margin_account_from_account_events
-from tests.providers import TestInstrumentProvider
 
 
 def test_cash_account_properties_and_balances():

@@ -17,6 +17,7 @@ import inspect
 from decimal import Decimal
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.model import AssetClass
 from nautilus_trader.model import BettingInstrument
@@ -46,7 +47,6 @@ from nautilus_trader.model import Symbol
 from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import TokenizedAsset
 from nautilus_trader.model import Venue
-from tests.providers import TestInstrumentProvider
 
 
 GENERIC_INSTRUMENT_TYPES = (

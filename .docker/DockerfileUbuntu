@@ -23,7 +23,6 @@ FROM public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:99e09cb2284e
 FROM public.ecr.aws/docker/library/ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ENV BUILD_MODE=release
 ENV RUST_BACKTRACE=1
 ENV CARGO_INCREMENTAL=0
 ENV CC="clang"
@@ -39,6 +38,7 @@ RUN apt-get update && apt-get install -y \
     make \
     capnproto \
     libcapnp-dev \
+    patchelf \
     gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 

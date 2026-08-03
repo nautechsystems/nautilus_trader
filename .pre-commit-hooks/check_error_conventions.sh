@@ -98,8 +98,6 @@ while IFS=: read -r file line_num line_content; do
   fi
 done < <(rg -n '^[[:space:]]*except[*]?.*[[:space:]]as[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*:' \
   --type py \
-  --type-add 'pyx:*.pyx' \
-  --type pyx \
   . 2> /dev/null || true)
 
 ################################################################################
@@ -115,5 +113,5 @@ if [ $VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 
-echo "✓ All error variable names are valid"
+echo "All error variable names are valid"
 exit 0
