@@ -42,7 +42,8 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
+    LiveBookResync, LiveBookResyncPhase, NEW_MARKET_EMPTY_RECHECK_DELAY,
+    NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
     instruments::{TokenMeta, cache_instrument_if_active},
 };
 use crate::{
@@ -95,6 +96,7 @@ pub(super) struct WsMessageContext {
     pub(super) resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     pub(super) resolve_watch_apply_mutex: Arc<StdMutex<()>>,
     pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    pub(super) live_book_resyncs: Arc<DashMap<InstrumentId, LiveBookResync>>,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     pub(super) rtds_feed: PolymarketRtdsFeed,
@@ -191,23 +193,39 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     ts_init,
                 ) {
                     Ok(deltas) => {
-                        let mut book = ctx
-                            .order_books
-                            .entry(instrument_id)
-                            .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+                        let buffered = if !ctx
+                            .pending_snapshot_after_tick_change
+                            .contains(&instrument_id)
+                            && let Some(mut resync) = ctx.live_book_resyncs.get_mut(&instrument_id)
+                            && resync.phase != LiveBookResyncPhase::Passthrough
+                        {
+                            resync.buffered_deltas.push(deltas.clone());
+                            true
+                        } else {
+                            false
+                        };
 
-                        match book.apply_deltas(&deltas) {
-                            Ok(()) => book_seeded = true,
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to apply book snapshot for {instrument_id}: {e}"
-                                );
+                        if !buffered {
+                            let mut book = ctx
+                                .order_books
+                                .entry(instrument_id)
+                                .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+
+                            match book.apply_deltas(&deltas) {
+                                Ok(()) => {
+                                    book_seeded = true;
+                                    let data: NautilusData =
+                                        OrderBookDeltas_API::new(deltas).into();
+                                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                                        log::error!("Failed to emit book deltas: {e}");
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to apply book snapshot for {instrument_id}: {e}"
+                                    );
+                                }
                             }
-                        }
-
-                        let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
-                        if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                            log::error!("Failed to emit book deltas: {e}");
                         }
                     }
                     Err(e) => log::error!("Failed to parse book snapshot: {e}"),
@@ -332,15 +350,29 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 RecordFlag::F_LAST as u8;
 
                             let deltas = OrderBookDeltas::new(instrument_id, parsed);
-                            if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
-                                && let Err(e) = book.apply_deltas(&deltas)
+                            let buffered = if let Some(mut resync) =
+                                ctx.live_book_resyncs.get_mut(&instrument_id)
+                                && resync.phase != LiveBookResyncPhase::Passthrough
                             {
-                                log::error!("Failed to apply book deltas for {instrument_id}: {e}");
-                            }
+                                resync.buffered_deltas.push(deltas.clone());
+                                true
+                            } else {
+                                false
+                            };
 
-                            let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
-                            if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                                log::error!("Failed to emit book deltas: {e}");
+                            if !buffered {
+                                if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
+                                    && let Err(e) = book.apply_deltas(&deltas)
+                                {
+                                    log::error!(
+                                        "Failed to apply book deltas for {instrument_id}: {e}"
+                                    );
+                                }
+
+                                let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
+                                if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                                    log::error!("Failed to emit book deltas: {e}");
+                                }
                             }
                         }
                     }
@@ -492,6 +524,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             // Book epoch transition; see module docs.
             let instrument_id = meta.instrument_id;
             ctx.order_books.remove(&instrument_id);
+            if let Some(mut resync) = ctx.live_book_resyncs.get_mut(&instrument_id) {
+                resync.buffered_deltas.clear();
+                resync.phase = LiveBookResyncPhase::Passthrough;
+            }
 
             if ctx.active_delta_subs.contains(&instrument_id) {
                 ctx.pending_snapshot_after_tick_change.insert(instrument_id);
@@ -774,7 +810,7 @@ mod tests {
     };
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
-        data::{CustomData as ModelCustomData, DataType},
+        data::{CustomData as ModelCustomData, DataType, OrderBookDelta},
         enums::{InstrumentCloseType, OrderSide, PositionSide},
         events::{PositionEvent, PositionOpened},
         identifiers::{
@@ -978,6 +1014,7 @@ mod tests {
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             resolve_watch_apply_mutex: Arc::new(StdMutex::new(())),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            live_book_resyncs: Arc::new(DashMap::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 default_config.new_market_fetch_max_concurrency,
@@ -1115,6 +1152,7 @@ mod tests {
             resolve_poll_watchlist: client.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
+            live_book_resyncs: client.live_book_resyncs.clone(),
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
             rtds_feed: client.rtds_feed.clone(),
@@ -3600,6 +3638,129 @@ mod tests {
     }
 
     #[rstest]
+    fn live_book_resync_buffers_price_change_without_mutating_or_emitting() {
+        let asset_id_str = "0xTOKEN_RESYNC";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_id = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        )
+        .id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        ctx.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+
+        handle_market_message(make_price_change(market, asset_id_str, "0.50", "20"), &ctx);
+
+        assert!(data_rx.try_recv().is_err());
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book.best_bid_price(), None);
+        drop(book);
+        let resync = ctx
+            .live_book_resyncs
+            .get(&instrument_id)
+            .expect("resync state");
+        assert_eq!(resync.buffered_deltas.len(), 1);
+    }
+
+    #[rstest]
+    fn live_book_resync_buffers_ws_snapshot_without_mutating_or_emitting() {
+        let asset_id_str = "0xTOKEN_RESYNC_SNAPSHOT";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_id = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        )
+        .id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+
+        handle_market_message(make_snapshot(market, asset_id_str, &[("0.42", "10")]), &ctx);
+
+        assert!(data_rx.try_recv().is_err());
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        let resync = ctx
+            .live_book_resyncs
+            .get(&instrument_id)
+            .expect("resync state");
+        assert_eq!(resync.phase, LiveBookResyncPhase::Buffering);
+        assert_eq!(resync.buffered_deltas.len(), 1);
+    }
+
+    #[rstest]
+    fn tick_size_change_cancels_live_book_resync_buffer_before_epoch_gate() {
+        let asset_id_str = "0xTOKEN_RESYNC_TICK";
+        let market = "0xMARKET";
+        let (ctx, _data_rx) = make_ws_ctx();
+        let instrument_id = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        )
+        .id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: vec![OrderBookDeltas::new(
+                    instrument_id,
+                    vec![OrderBookDelta::clear(
+                        instrument_id,
+                        0,
+                        UnixNanos::from(1),
+                        UnixNanos::from(1),
+                    )],
+                )],
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+
+        handle_market_message(
+            make_tick_change(market, asset_id_str, "0.001", "0.01"),
+            &ctx,
+        );
+
+        let resync = ctx
+            .live_book_resyncs
+            .get(&instrument_id)
+            .expect("resync state");
+        assert_eq!(resync.phase, LiveBookResyncPhase::Passthrough);
+        assert!(resync.buffered_deltas.is_empty());
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+    }
+
+    #[rstest]
     fn price_change_batches_interleaved_changes_by_instrument() {
         let asset_a = "0xTOKEN-A";
         let asset_b = "0xTOKEN-B";
@@ -3957,6 +4118,23 @@ mod tests {
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
         ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: vec![OrderBookDeltas::new(
+                    instrument_id,
+                    vec![OrderBookDelta::clear(
+                        instrument_id,
+                        0,
+                        UnixNanos::from(1),
+                        UnixNanos::from(1),
+                    )],
+                )],
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
 
         let empty = MarketWsMessage::Book(PolymarketBookSnapshot {
             market: Ustr::from(market),
@@ -3977,5 +4155,53 @@ mod tests {
             !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
             "empty snapshot must not emit Data events: {events:?}",
         );
+        let resync = ctx
+            .live_book_resyncs
+            .get(&instrument_id)
+            .expect("live resync remains active");
+        assert_eq!(resync.phase, LiveBookResyncPhase::Buffering);
+        assert_eq!(resync.buffered_deltas.len(), 1);
+    }
+
+    #[rstest]
+    fn tick_gate_snapshot_seeds_book_while_live_resync_remains_buffering() {
+        let asset_id_str = "0xTOKEN_RESYNC_TICK_SNAPSHOT";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_id = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        )
+        .id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+
+        handle_market_message(make_snapshot(market, asset_id_str, &[("0.42", "10")]), &ctx);
+
+        assert!(data_rx.try_recv().is_ok());
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book.best_ask_price(), Some(Price::from("0.42")));
+        drop(book);
+        let resync = ctx
+            .live_book_resyncs
+            .get(&instrument_id)
+            .expect("resync state");
+        assert_eq!(resync.phase, LiveBookResyncPhase::Buffering);
+        assert!(resync.buffered_deltas.is_empty());
     }
 }

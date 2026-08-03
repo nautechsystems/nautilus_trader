@@ -29,6 +29,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::{
+    LiveBookResync,
     instruments::TokenMeta,
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
@@ -88,6 +89,7 @@ fn has_live_runtime_state(
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    live_book_resyncs: &Arc<DashMap<InstrumentId, LiveBookResync>>,
     pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
 ) -> bool {
@@ -95,6 +97,7 @@ fn has_live_runtime_state(
         || active_delta_subs.contains(&instrument_id)
         || active_trade_subs.contains(&instrument_id)
         || pending_snapshot_after_tick_change.contains(&instrument_id)
+        || live_book_resyncs.contains_key(&instrument_id)
         || order_books.contains_key(&instrument_id)
         || last_quotes.contains_key(&instrument_id)
     {
@@ -131,6 +134,7 @@ pub(crate) async fn retire_local_instrument_state(
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    live_book_resyncs: &Arc<DashMap<InstrumentId, LiveBookResync>>,
     pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
@@ -157,6 +161,7 @@ pub(crate) async fn retire_local_instrument_state(
     }
 
     pending_snapshot_after_tick_change.remove(&instrument_id);
+    live_book_resyncs.remove(&instrument_id);
     {
         let mut pending = pending_auto_loads
             .lock()
@@ -192,6 +197,7 @@ pub(crate) async fn retire_expired_local_instruments(
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    live_book_resyncs: &Arc<DashMap<InstrumentId, LiveBookResync>>,
     pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
@@ -223,6 +229,7 @@ pub(crate) async fn retire_expired_local_instruments(
                 active_delta_subs,
                 active_trade_subs,
                 pending_snapshot_after_tick_change,
+                live_book_resyncs,
                 pending_auto_loads,
                 ws_open_tokens,
             )
@@ -245,6 +252,7 @@ pub(crate) async fn retire_expired_local_instruments(
             active_trade_subs,
             resolve_poll_watchlist,
             pending_snapshot_after_tick_change,
+            live_book_resyncs,
             pending_auto_loads,
             ws_open_tokens,
             ws_sub_mutex,
@@ -370,6 +378,7 @@ mod tests {
         let active_trade_subs = Arc::new(AtomicSet::new());
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let live_book_resyncs = Arc::new(DashMap::new());
         let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
@@ -409,6 +418,7 @@ mod tests {
             &active_trade_subs,
             &resolve_poll_watchlist,
             &pending_snapshot_after_tick_change,
+            &live_book_resyncs,
             &pending_auto_loads,
             &ws_open_tokens,
             &ws_sub_mutex,
@@ -440,6 +450,7 @@ mod tests {
             &active_trade_subs,
             &resolve_poll_watchlist,
             &pending_snapshot_after_tick_change,
+            &live_book_resyncs,
             &pending_auto_loads,
             &ws_open_tokens,
             &ws_sub_mutex,

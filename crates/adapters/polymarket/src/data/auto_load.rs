@@ -110,6 +110,7 @@ impl PolymarketDataClient {
         let last_quotes = self.last_quotes.clone();
         let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let live_book_resyncs = self.live_book_resyncs.clone();
 
         get_runtime().spawn(async move {
             // Coalesce concurrent misses into one Gamma call.
@@ -230,6 +231,7 @@ impl PolymarketDataClient {
                                 &active_trade_subs,
                                 &resolve_poll_watchlist,
                                 &pending_snapshot_after_tick_change,
+                                &live_book_resyncs,
                                 &pending,
                                 &ws_open_tokens,
                                 &ws_sub_mutex,

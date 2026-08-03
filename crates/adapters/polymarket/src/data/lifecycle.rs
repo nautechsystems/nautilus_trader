@@ -89,6 +89,7 @@ impl PolymarketDataClient {
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            live_book_resyncs: self.live_book_resyncs.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             rtds_feed: self.rtds_feed.clone(),
@@ -142,6 +143,7 @@ impl PolymarketDataClient {
         let active_delta_subs = self.active_delta_subs.clone();
         let active_trade_subs = self.active_trade_subs.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let live_book_resyncs = self.live_book_resyncs.clone();
         let pending_auto_loads = self.pending_auto_loads.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
@@ -163,6 +165,7 @@ impl PolymarketDataClient {
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            live_book_resyncs: self.live_book_resyncs.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             rtds_feed: self.rtds_feed.clone(),
@@ -202,6 +205,7 @@ impl PolymarketDataClient {
                             &active_trade_subs,
                             &watchlist,
                             &pending_snapshot_after_tick_change,
+                            &live_book_resyncs,
                             &pending_auto_loads,
                             &ws_open_tokens,
                             &ws_sub_mutex,
@@ -324,6 +328,8 @@ impl PolymarketDataClient {
         self.active_delta_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_trade_subs = std::sync::Arc::new(AtomicSet::new());
         self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
+        self.live_book_resyncs.clear();
+        self.live_book_resyncs = std::sync::Arc::new(DashMap::new());
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
         self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy(
@@ -427,7 +433,7 @@ mod tests {
         live::runner::{replace_data_event_sender, replace_exec_event_sender},
         messages::{
             DataEvent, ExecutionEvent,
-            data::{SubscribeCustomData, UnsubscribeCustomData},
+            data::{SubscribeCustomData, UnsubscribeBookDeltas, UnsubscribeCustomData},
         },
         testing::wait_until_async,
     };
@@ -450,7 +456,10 @@ mod tests {
     use serde_json::Value;
     use ustr::Ustr;
 
-    use super::{super::NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP, *};
+    use super::{
+        super::{LiveBookResync, LiveBookResyncPhase, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP},
+        *,
+    };
     use crate::{
         common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
         config::PolymarketDataClientConfig,
@@ -620,6 +629,15 @@ mod tests {
         client
             .pending_snapshot_after_tick_change
             .insert(instrument_id);
+        client.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
         client
             .pending_auto_loads
             .lock()
@@ -659,6 +677,16 @@ mod tests {
         client
             .pending_snapshot_after_tick_change
             .insert(instrument_id);
+        client.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+        let old_live_book_resyncs = client.live_book_resyncs.clone();
         client
             .pending_auto_loads
             .lock()
@@ -679,6 +707,12 @@ mod tests {
         assert!(client.ws_open_tokens.is_empty());
         assert!(client.new_market_inflight_keys.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
+        assert!(client.live_book_resyncs.is_empty());
+        assert!(old_live_book_resyncs.is_empty());
+        assert!(!Arc::ptr_eq(
+            &old_live_book_resyncs,
+            &client.live_book_resyncs
+        ));
         assert!(
             client
                 .pending_auto_loads
@@ -687,6 +721,37 @@ mod tests {
                 .is_empty()
         );
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    fn unsubscribe_book_deltas_clears_live_resync_state() {
+        let mut client = make_client_for_reset_test();
+        let instrument_id = InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET");
+        client.active_delta_subs.insert(instrument_id);
+        client.live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: UUID4::new(),
+                pending_responses: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+
+        client
+            .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+                instrument_id,
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("unsubscribe book deltas");
+
+        assert!(!client.active_delta_subs.contains(&instrument_id));
+        assert!(!client.live_book_resyncs.contains_key(&instrument_id));
     }
 
     #[rstest]
@@ -1089,6 +1154,7 @@ mod tests {
             &client.active_trade_subs,
             &client.resolve_poll_watchlist,
             &client.pending_snapshot_after_tick_change,
+            &client.live_book_resyncs,
             &client.pending_auto_loads,
             &client.ws_open_tokens,
             &client.ws_sub_mutex,
@@ -1323,6 +1389,7 @@ mod tests {
                 &client.active_trade_subs,
                 &client.resolve_poll_watchlist,
                 &client.pending_snapshot_after_tick_change,
+                &client.live_book_resyncs,
                 &client.pending_auto_loads,
                 &client.ws_open_tokens,
                 &client.ws_sub_mutex,

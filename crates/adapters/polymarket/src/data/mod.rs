@@ -50,11 +50,11 @@ use nautilus_common::{
     msgbus::TypedHandler,
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet,
+    AtomicMap, AtomicSet, Params, UUID4,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::QuoteTick,
+    data::{OrderBookDeltas, QuoteTick},
     enums::BookType,
     events::PositionEvent,
     identifiers::{ClientId, InstrumentId, Venue},
@@ -92,6 +92,7 @@ use crate::{
 const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
 pub(super) const NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS: usize = 1;
 pub(super) const NEW_MARKET_EMPTY_RECHECK_DELAY: Duration = Duration::from_millis(500);
+pub(super) const LIVE_BOOK_RESYNC_PARAM: &str = "resync_live_book";
 
 fn clamp_new_market_fetch_max_concurrency(value: usize) -> usize {
     value.clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP)
@@ -127,6 +128,7 @@ pub struct PolymarketDataClient {
     resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     resolve_watch_apply_mutex: Arc<StdMutex<()>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    live_book_resyncs: Arc<DashMap<InstrumentId, LiveBookResync>>,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
@@ -214,6 +216,7 @@ impl PolymarketDataClient {
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             resolve_watch_apply_mutex: Arc::new(StdMutex::new(())),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            live_book_resyncs: Arc::new(DashMap::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 fetch_max_concurrency,
@@ -572,6 +575,7 @@ impl DataClient for PolymarketDataClient {
         self.active_delta_subs.remove(&instrument_id);
         self.pending_snapshot_after_tick_change
             .remove(&instrument_id);
+        self.live_book_resyncs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
@@ -622,4 +626,26 @@ impl DataClient for PolymarketDataClient {
 
         Ok(())
     }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct PendingBookSnapshotResponse {
+    request_id: UUID4,
+    client_id: ClientId,
+    params: Option<Params>,
+}
+
+#[derive(Debug)]
+pub(super) struct LiveBookResync {
+    generation: UUID4,
+    pending_responses: Arc<StdMutex<Vec<PendingBookSnapshotResponse>>>,
+    buffered_deltas: Vec<OrderBookDeltas>,
+    phase: LiveBookResyncPhase,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum LiveBookResyncPhase {
+    Buffering,
+    Completing,
+    Passthrough,
 }

@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Context;
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{
     live::get_runtime,
     messages::{
@@ -27,10 +28,16 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::datetime::datetime_to_unix_nanos;
-use nautilus_model::{data::CustomData, instruments::Instrument};
+use nautilus_core::{UUID4, UnixNanos, datetime::datetime_to_unix_nanos};
+use nautilus_model::{
+    data::{CustomData, Data as NautilusData, OrderBookDeltas, OrderBookDeltas_API},
+    identifiers::InstrumentId,
+    instruments::Instrument,
+    orderbook::OrderBook,
+};
 
 use super::{
+    LIVE_BOOK_RESYNC_PARAM, LiveBookResync, LiveBookResyncPhase, PendingBookSnapshotResponse,
     PolymarketDataClient, dispatch::WsMessageContext, instruments::cache_instrument_if_active,
 };
 use crate::{
@@ -43,6 +50,95 @@ use crate::{
         pause_resolve_watch_entries, request_params_has_explicit_condition_selector,
     },
 };
+
+fn replay_buffered_book_deltas(
+    order_books: &DashMap<InstrumentId, OrderBook>,
+    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instrument_id: InstrumentId,
+    buffered_deltas: impl IntoIterator<Item = OrderBookDeltas>,
+    after: Option<UnixNanos>,
+) {
+    for deltas in buffered_deltas {
+        if after.is_some_and(|snapshot_ts| deltas.ts_event <= snapshot_ts) {
+            continue;
+        }
+
+        if let Some(mut live_book) = order_books.get_mut(&instrument_id)
+            && let Err(e) = live_book.apply_deltas(&deltas)
+        {
+            log::error!("Failed to replay buffered book deltas for {instrument_id}: {e}");
+            continue;
+        }
+
+        let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
+        if let Err(e) = sender.send(DataEvent::Data(data)) {
+            log::error!("Failed to emit buffered book deltas: {e}");
+        }
+    }
+}
+
+fn close_live_book_resync_admission(
+    live_book_resyncs: &DashMap<InstrumentId, LiveBookResync>,
+    instrument_id: InstrumentId,
+    generation: UUID4,
+) -> Option<Vec<PendingBookSnapshotResponse>> {
+    let mut resync = live_book_resyncs.get_mut(&instrument_id)?;
+    if resync.generation != generation || resync.phase != LiveBookResyncPhase::Buffering {
+        return None;
+    }
+
+    resync.phase = LiveBookResyncPhase::Completing;
+    let responses = std::mem::take(
+        &mut *resync
+            .pending_responses
+            .lock()
+            .expect("live book resync response mutex poisoned"),
+    );
+    Some(responses)
+}
+
+fn join_or_start_live_book_resync(
+    live_book_resyncs: &DashMap<InstrumentId, LiveBookResync>,
+    instrument_id: InstrumentId,
+    generation: UUID4,
+    pending_response: PendingBookSnapshotResponse,
+    pending_responses: Arc<StdMutex<Vec<PendingBookSnapshotResponse>>>,
+) -> bool {
+    match live_book_resyncs.entry(instrument_id) {
+        Entry::Occupied(mut entry) => {
+            if entry.get().phase == LiveBookResyncPhase::Buffering {
+                entry
+                    .get_mut()
+                    .pending_responses
+                    .lock()
+                    .expect("live book resync response mutex poisoned")
+                    .push(pending_response);
+                return true;
+            }
+
+            let buffered_deltas = if entry.get().phase == LiveBookResyncPhase::Completing {
+                std::mem::take(&mut entry.get_mut().buffered_deltas)
+            } else {
+                Vec::new()
+            };
+            entry.insert(LiveBookResync {
+                generation,
+                pending_responses,
+                buffered_deltas,
+                phase: LiveBookResyncPhase::Buffering,
+            });
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(LiveBookResync {
+                generation,
+                pending_responses,
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            });
+        }
+    }
+    false
+}
 
 pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustomData) {
     if request.data_type.type_name() != RESOLVE_REQUEST_TYPE_NAME {
@@ -88,6 +184,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
         resolve_poll_watchlist: client.resolve_poll_watchlist.clone(),
         resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
         pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
+        live_book_resyncs: client.live_book_resyncs.clone(),
         new_market_inflight_keys: client.new_market_inflight_keys.clone(),
         new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
         rtds_feed: client.rtds_feed.clone(),
@@ -349,6 +446,33 @@ pub(super) fn request_book_snapshot(
     let request_id = request.request_id;
     let params = request.params;
     let clock = client.clock;
+    let pending_response = PendingBookSnapshotResponse {
+        request_id,
+        client_id,
+        params: params.clone(),
+    };
+    let pending_responses = Arc::new(StdMutex::new(vec![pending_response.clone()]));
+    let resync_live_book = params
+        .as_ref()
+        .and_then(|params| params.get_bool(LIVE_BOOK_RESYNC_PARAM))
+        .unwrap_or(false);
+
+    if resync_live_book
+        && join_or_start_live_book_resync(
+            &client.live_book_resyncs,
+            instrument_id,
+            request_id,
+            pending_response,
+            pending_responses.clone(),
+        )
+    {
+        return Ok(());
+    }
+
+    let live_book_resyncs = client.live_book_resyncs.clone();
+    let order_books = client.order_books.clone();
+    let active_delta_subs = client.active_delta_subs.clone();
+    let pending_snapshot_after_tick_change = client.pending_snapshot_after_tick_change.clone();
 
     get_runtime().spawn(async move {
         match clob_client
@@ -357,22 +481,109 @@ pub(super) fn request_book_snapshot(
             .context("failed to request book snapshot from Polymarket")
         {
             Ok(book) => {
-                let response = DataResponse::Book(BookResponse::new(
-                    request_id,
-                    client_id,
-                    instrument_id,
-                    book,
-                    None,
-                    None,
-                    clock.get_time_ns(),
-                    params,
-                ));
+                let pending_responses = if resync_live_book {
+                    close_live_book_resync_admission(&live_book_resyncs, instrument_id, request_id)
+                        .unwrap_or_else(|| {
+                            std::mem::take(
+                                &mut *pending_responses
+                                    .lock()
+                                    .expect("pending response mutex poisoned"),
+                            )
+                        })
+                } else {
+                    std::mem::take(
+                        &mut *pending_responses
+                            .lock()
+                            .expect("pending response mutex poisoned"),
+                    )
+                };
+                for pending in pending_responses {
+                    let response = DataResponse::Book(BookResponse::new(
+                        pending.request_id,
+                        pending.client_id,
+                        instrument_id,
+                        book.clone(),
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        pending.params,
+                    ));
 
-                if let Err(e) = sender.send(DataEvent::Response(response)) {
-                    log::error!("Failed to send book snapshot response: {e}");
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send book snapshot response: {e}");
+                    }
                 }
+
+                if resync_live_book
+                    && let Some(mut resync) = live_book_resyncs.get_mut(&instrument_id)
+                    && resync.generation == request_id
+                {
+                    if resync.phase == LiveBookResyncPhase::Completing
+                        && active_delta_subs.contains(&instrument_id)
+                        && !pending_snapshot_after_tick_change.contains(&instrument_id)
+                    {
+                        let snapshot_ts = book.ts_last;
+                        let snapshot_deltas = book.to_deltas(snapshot_ts, clock.get_time_ns());
+                        order_books.insert(instrument_id, book);
+
+                        let data: NautilusData = OrderBookDeltas_API::new(snapshot_deltas).into();
+                        if let Err(e) = sender.send(DataEvent::Data(data)) {
+                            log::error!("Failed to emit live book resync snapshot: {e}");
+                        }
+
+                        replay_buffered_book_deltas(
+                            &order_books,
+                            &sender,
+                            instrument_id,
+                            resync.buffered_deltas.drain(..),
+                            Some(snapshot_ts),
+                        );
+                    }
+
+                    resync.buffered_deltas.clear();
+                    resync.phase = LiveBookResyncPhase::Passthrough;
+                }
+
+                let _ = live_book_resyncs.remove_if(&instrument_id, |_, resync| {
+                    resync.generation == request_id
+                        && resync.phase == LiveBookResyncPhase::Passthrough
+                });
             }
-            Err(e) => log::error!("Book snapshot request failed: {e:?}"),
+            Err(e) => {
+                if resync_live_book {
+                    let _ = close_live_book_resync_admission(
+                        &live_book_resyncs,
+                        instrument_id,
+                        request_id,
+                    );
+                }
+                if resync_live_book
+                    && let Some(mut resync) = live_book_resyncs.get_mut(&instrument_id)
+                    && resync.generation == request_id
+                {
+                    if resync.phase == LiveBookResyncPhase::Completing
+                        && active_delta_subs.contains(&instrument_id)
+                        && !pending_snapshot_after_tick_change.contains(&instrument_id)
+                    {
+                        replay_buffered_book_deltas(
+                            &order_books,
+                            &sender,
+                            instrument_id,
+                            resync.buffered_deltas.drain(..),
+                            None,
+                        );
+                    }
+
+                    resync.buffered_deltas.clear();
+                    resync.phase = LiveBookResyncPhase::Passthrough;
+                }
+
+                let _ = live_book_resyncs.remove_if(&instrument_id, |_, resync| {
+                    resync.generation == request_id
+                        && resync.phase == LiveBookResyncPhase::Passthrough
+                });
+                log::error!("Book snapshot request failed: {e:?}");
+            }
         }
     });
 
@@ -454,4 +665,207 @@ pub(super) fn request_trades(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use dashmap::DashMap;
+    use nautilus_common::messages::DataEvent;
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        data::{BookOrder, Data as NautilusData, OrderBookDelta, OrderBookDeltas},
+        enums::{BookAction, BookType, OrderSide, RecordFlag},
+        identifiers::{ClientId, InstrumentId},
+        orderbook::OrderBook,
+        types::{Price, Quantity},
+    };
+
+    use super::{
+        LiveBookResync, LiveBookResyncPhase, PendingBookSnapshotResponse,
+        close_live_book_resync_admission, join_or_start_live_book_resync,
+        replay_buffered_book_deltas,
+    };
+
+    #[test]
+    fn live_resync_completion_atomically_closes_response_admission() {
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let generation = UUID4::new();
+        let pending_responses = Arc::new(Mutex::new(vec![PendingBookSnapshotResponse {
+            request_id: generation,
+            client_id: ClientId::from("POLYMARKET"),
+            params: None,
+        }]));
+        let live_book_resyncs = DashMap::new();
+        live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation,
+                pending_responses: pending_responses.clone(),
+                buffered_deltas: Vec::new(),
+                phase: LiveBookResyncPhase::Buffering,
+            },
+        );
+
+        let drained =
+            close_live_book_resync_admission(&live_book_resyncs, instrument_id, generation)
+                .expect("matching generation should close admission");
+
+        assert_eq!(drained.len(), 1);
+        assert!(pending_responses.lock().expect("response mutex").is_empty());
+        assert_eq!(
+            live_book_resyncs
+                .get(&instrument_id)
+                .expect("live resync")
+                .phase,
+            LiveBookResyncPhase::Completing,
+        );
+    }
+
+    #[test]
+    fn replacement_generation_inherits_completing_buffer() {
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let old_generation = UUID4::new();
+        let live_book_resyncs = DashMap::new();
+        live_book_resyncs.insert(
+            instrument_id,
+            LiveBookResync {
+                generation: old_generation,
+                pending_responses: Arc::new(Mutex::new(Vec::new())),
+                buffered_deltas: vec![add_bid(instrument_id, "0.41", 90)],
+                phase: LiveBookResyncPhase::Completing,
+            },
+        );
+        let new_generation = UUID4::new();
+        let pending_response = PendingBookSnapshotResponse {
+            request_id: new_generation,
+            client_id: ClientId::from("POLYMARKET"),
+            params: None,
+        };
+
+        let joined = join_or_start_live_book_resync(
+            &live_book_resyncs,
+            instrument_id,
+            new_generation,
+            pending_response,
+            Arc::new(Mutex::new(Vec::new())),
+        );
+
+        let resync = live_book_resyncs
+            .get(&instrument_id)
+            .expect("replacement live resync");
+        assert!(!joined);
+        assert_eq!(resync.generation, new_generation);
+        assert_eq!(resync.phase, LiveBookResyncPhase::Buffering);
+        assert_eq!(resync.buffered_deltas.len(), 1);
+    }
+
+    fn add_bid(instrument_id: InstrumentId, price: &str, ts_event: u64) -> OrderBookDeltas {
+        OrderBookDeltas::new(
+            instrument_id,
+            vec![OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from(price),
+                    Quantity::from("10"),
+                    ts_event,
+                ),
+                RecordFlag::F_LAST as u8,
+                ts_event,
+                UnixNanos::from(ts_event),
+                UnixNanos::from(ts_event),
+            )],
+        )
+    }
+
+    fn add_ask(instrument_id: InstrumentId, price: &str, ts_event: u64) -> OrderBookDeltas {
+        OrderBookDeltas::new(
+            instrument_id,
+            vec![OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from(price),
+                    Quantity::from("10"),
+                    ts_event,
+                ),
+                RecordFlag::F_LAST as u8,
+                ts_event,
+                UnixNanos::from(ts_event),
+                UnixNanos::from(ts_event),
+            )],
+        )
+    }
+
+    #[test]
+    fn live_resync_replays_only_deltas_newer_than_snapshot() {
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let order_books = dashmap::DashMap::new();
+        order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        replay_buffered_book_deltas(
+            &order_books,
+            &sender,
+            instrument_id,
+            [
+                add_bid(instrument_id, "0.41", 90),
+                add_bid(instrument_id, "0.42", 110),
+            ],
+            Some(UnixNanos::from(100)),
+        );
+
+        let book = order_books.get(&instrument_id).expect("book entry");
+        let adapter_bid = book.best_bid_price();
+        assert_eq!(adapter_bid, Some(Price::from("0.42")));
+        drop(book);
+        let emitted = match receiver.try_recv() {
+            Ok(DataEvent::Data(NautilusData::Deltas(deltas))) => deltas,
+            other => panic!("expected emitted book deltas, found {other:?}"),
+        };
+        let mut cache_book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        cache_book
+            .apply_deltas(&emitted)
+            .expect("apply emitted deltas");
+        assert_eq!(cache_book.best_bid_price(), adapter_bid);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn failed_live_resync_replays_every_buffered_delta() {
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let order_books = dashmap::DashMap::new();
+        let mut old_book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        old_book
+            .apply_deltas(&add_ask(instrument_id, "0.60", 80))
+            .expect("seed old book");
+        order_books.insert(instrument_id, old_book);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        replay_buffered_book_deltas(
+            &order_books,
+            &sender,
+            instrument_id,
+            [
+                add_bid(instrument_id, "0.41", 90),
+                add_bid(instrument_id, "0.42", 110),
+            ],
+            None,
+        );
+
+        let book = order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.42")));
+        assert_eq!(book.best_ask_price(), Some(Price::from("0.60")));
+        drop(book);
+        assert!(receiver.try_recv().is_ok());
+        assert!(receiver.try_recv().is_ok());
+        assert!(receiver.try_recv().is_err());
+    }
 }

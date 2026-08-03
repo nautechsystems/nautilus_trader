@@ -17,7 +17,9 @@
 
 use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
 
+use anyhow::Context;
 use nautilus_core::{
+    UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -708,14 +710,22 @@ impl PolymarketClobPublicClient {
             .get_book(token_id)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
+        let ts_event = UnixNanos::from_millis(
+            resp.timestamp
+                .parse::<u64>()
+                .context("invalid Polymarket book snapshot timestamp")?,
+        );
 
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        if resp.bids.is_empty() && resp.asks.is_empty() {
+            book.clear(0, ts_event);
+        }
 
         for (i, level) in resp.bids.iter().enumerate() {
             let price = parse_price(&level.price, price_precision)?;
             let size = parse_quantity(&level.size, size_precision)?;
             let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
-            book.add(order, 0, i as u64, Default::default());
+            book.add(order, 0, i as u64, ts_event);
         }
 
         let bids_len = resp.bids.len();
@@ -723,7 +733,7 @@ impl PolymarketClobPublicClient {
             let price = parse_price(&level.price, price_precision)?;
             let size = parse_quantity(&level.size, size_precision)?;
             let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
-            book.add(order, 0, (bids_len + i) as u64, Default::default());
+            book.add(order, 0, (bids_len + i) as u64, ts_event);
         }
 
         log::debug!(
@@ -797,6 +807,7 @@ mod tests {
     #[rstest]
     fn test_build_order_book_from_clob_response() {
         let resp = ClobBookResponse {
+            timestamp: "1700000000000".to_string(),
             bids: vec![
                 ClobBookLevel {
                     price: "0.48".to_string(),
@@ -838,6 +849,7 @@ mod tests {
     #[rstest]
     fn test_build_order_book_empty_response() {
         let resp = ClobBookResponse {
+            timestamp: "1700000000000".to_string(),
             bids: vec![],
             asks: vec![],
         };

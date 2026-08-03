@@ -1,0 +1,15 @@
+{
+  "market": "0x9d839bf0aa31324b9848f5b89841b779238a7c07dee2f7fca675d934e8ab5bf2",
+  "asset_id": "72610532355343625199299853218161700546393390326785971247545541945337255643692",
+  "timestamp": "1785734468581",
+  "hash": "d7df883ae546b09533a4f485bfae0810da1af04e",
+  "bids": [
+    {"price": "0.001", "size": "667.12"},
+    {"price": "0.002", "size": "6.99"}
+  ],
+  "asks": [],
+  "min_order_size": "5",
+  "tick_size": "0.001",
+  "neg_risk": true,
+  "last_trade_price": ""
+}

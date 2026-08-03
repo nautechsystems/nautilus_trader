@@ -24,7 +24,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU16, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -35,6 +35,7 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
+    http::StatusCode,
     response::{Json, Response},
     routing::get,
 };
@@ -47,14 +48,20 @@ use nautilus_common::{
         DataEvent, DataResponse,
         data::{
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBookDepth10, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeQuotes, UnsubscribeInstrument,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeQuotes,
+            UnsubscribeInstrument,
         },
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{enums::BookType, identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_model::{
+    data::Data as NautilusData,
+    enums::{BookType, RecordFlag},
+    identifiers::InstrumentId,
+    instruments::InstrumentAny,
+};
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use nautilus_polymarket::{
     common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
@@ -119,6 +126,9 @@ struct TestServerState {
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_request_count: Arc<AtomicUsize>,
     book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    book_request_count: Arc<AtomicUsize>,
+    book_response_delay_ms: Arc<AtomicUsize>,
+    book_status_code: Arc<AtomicU16>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
@@ -139,14 +149,21 @@ async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Js
     Json(serde_json::json!({"markets": markets}))
 }
 
-async fn handle_book(State(state): State<TestServerState>) -> Json<Value> {
+async fn handle_book(State(state): State<TestServerState>) -> (StatusCode, Json<Value>) {
+    state.book_request_count.fetch_add(1, Ordering::Relaxed);
+    let delay_ms = state.book_response_delay_ms.load(Ordering::Relaxed);
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms as u64)).await;
+    }
     let body = state
         .book_response
         .lock()
         .await
         .clone()
         .unwrap_or_else(|| load_json("clob_book_response.json"));
-    Json(body)
+    let status = StatusCode::from_u16(state.book_status_code.load(Ordering::Relaxed))
+        .unwrap_or(StatusCode::OK);
+    (status, Json(body))
 }
 
 async fn handle_trades(State(state): State<TestServerState>) -> Json<Value> {
@@ -698,6 +715,322 @@ async fn test_request_book_snapshot_returns_book_response() {
         book_response_count, 1,
         "request_book_snapshot must send a DataResponse::Book; events were: {events:?}",
     );
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, DataEvent::Data(NautilusData::Deltas(_)))),
+        "a standard historical request must not mutate the live book; events were: {events:?}",
+    );
+}
+
+fn live_resync_params() -> Params {
+    let mut params = Params::new();
+    params.insert("resync_live_book".to_string(), serde_json::json!(true));
+    params
+}
+
+async fn create_live_book_client(
+    state: &TestServerState,
+) -> (
+    PolymarketDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    InstrumentId,
+) {
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = create_test_data_client(addr);
+    let instrument_id = yes_instrument_id();
+
+    let request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("prime cache");
+    let _ = collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ))
+        .expect("subscribe book deltas");
+
+    (client, rx, instrument_id)
+}
+
+async fn collect_live_resync_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    request_id: UUID4,
+) -> Vec<DataEvent> {
+    let mut events = Vec::new();
+    let mut received_response = false;
+    let mut received_snapshot = false;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !received_response || !received_snapshot {
+            let event = rx.recv().await.expect("data event channel closed");
+            received_response |= matches!(
+                &event,
+                DataEvent::Response(response) if response.correlation_id() == &request_id
+            );
+            received_snapshot |= matches!(
+                &event,
+                DataEvent::Data(NautilusData::Deltas(deltas))
+                    if deltas.deltas.iter().all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+            );
+            events.push(event);
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for live resync {request_id}"));
+    events
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_book_snapshot_live_resync_emits_snapshot_and_response() {
+    let state = TestServerState::default();
+    let (client, mut rx, instrument_id) = create_live_book_client(&state).await;
+
+    let snapshot_request_id = UUID4::new();
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            snapshot_request_id,
+            UnixNanos::default(),
+            Some(live_resync_params()),
+        ))
+        .expect("request live book resync");
+
+    let events = collect_live_resync_events(&mut rx, snapshot_request_id).await;
+    let snapshots = events
+        .iter()
+        .filter_map(|event| match event {
+            DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(snapshots.len(), 1, "events were: {events:?}");
+    assert!(
+        snapshots[0]
+            .deltas
+            .iter()
+            .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags)),
+    );
+    let response_position = events
+        .iter()
+        .position(|event| matches!(event, DataEvent::Response(DataResponse::Book(_))))
+        .expect("historical response");
+    let snapshot_position = events
+        .iter()
+        .position(|event| matches!(event, DataEvent::Data(NautilusData::Deltas(_))))
+        .expect("live snapshot");
+    assert!(
+        response_position < snapshot_position,
+        "events were: {events:?}"
+    );
+    assert_eq!(state.book_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_book_snapshot_live_resync_emits_empty_ask_snapshot() {
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(load_json("clob_book_response_empty_ask.json"));
+    let (client, mut rx, instrument_id) = create_live_book_client(&state).await;
+
+    let request_id = UUID4::new();
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            Some(live_resync_params()),
+        ))
+        .expect("request one-sided live book resync");
+
+    let events = collect_live_resync_events(&mut rx, request_id).await;
+    let snapshot = events.iter().find_map(|event| match event {
+        DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas),
+        _ => None,
+    });
+    let response = events.iter().find_map(|event| match event {
+        DataEvent::Response(DataResponse::Book(response)) => Some(response),
+        _ => None,
+    });
+
+    let snapshot = snapshot.expect("one-sided snapshot event");
+    assert_eq!(snapshot.deltas.len(), 2);
+    assert!(
+        snapshot
+            .deltas
+            .iter()
+            .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+    );
+    let response = response.expect("empty historical response");
+    assert!(response.data.best_bid_price().is_some());
+    assert!(response.data.best_ask_price().is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_failed_live_resync_does_not_leave_request_coalescing_stuck() {
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(serde_json::json!({
+        "timestamp": "invalid",
+        "bids": [],
+        "asks": [],
+    }));
+    let (client, mut rx, instrument_id) = create_live_book_client(&state).await;
+
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(live_resync_params()),
+        ))
+        .expect("request failing live book resync");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.book_request_count.load(Ordering::Relaxed) == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(25)).await;
+
+    *state.book_response.lock().await = None;
+    let retry_request_id = UUID4::new();
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            retry_request_id,
+            UnixNanos::default(),
+            Some(live_resync_params()),
+        ))
+        .expect("retry live book resync");
+
+    let events = collect_live_resync_events(&mut rx, retry_request_id).await;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, DataEvent::Data(NautilusData::Deltas(_))))
+    );
+    assert_eq!(state.book_request_count.load(Ordering::Relaxed), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_failure_live_resync_allows_retry() {
+    let state = TestServerState::default();
+    state.book_status_code.store(
+        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+        Ordering::Relaxed,
+    );
+    let (client, mut rx, instrument_id) = create_live_book_client(&state).await;
+
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(live_resync_params()),
+        ))
+        .expect("request failing live book resync");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.book_request_count.load(Ordering::Relaxed) == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(25)).await;
+
+    state
+        .book_status_code
+        .store(StatusCode::OK.as_u16(), Ordering::Relaxed);
+    let retry_request_id = UUID4::new();
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            instrument_id,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            retry_request_id,
+            UnixNanos::default(),
+            Some(live_resync_params()),
+        ))
+        .expect("retry live book resync");
+
+    let events = collect_live_resync_events(&mut rx, retry_request_id).await;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, DataEvent::Data(NautilusData::Deltas(_))))
+    );
+    assert_eq!(state.book_request_count.load(Ordering::Relaxed), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_book_snapshot_live_resync_coalesces_concurrent_requests() {
+    let state = TestServerState::default();
+    state.book_response_delay_ms.store(100, Ordering::Relaxed);
+    let (client, mut rx, instrument_id) = create_live_book_client(&state).await;
+
+    let first_request_id = UUID4::new();
+    let second_request_id = UUID4::new();
+    for request_id in [first_request_id, second_request_id] {
+        client
+            .request_book_snapshot(RequestBookSnapshot::new(
+                instrument_id,
+                None,
+                Some(*POLYMARKET_CLIENT_ID),
+                request_id,
+                UnixNanos::default(),
+                Some(live_resync_params()),
+            ))
+            .expect("request live book resync");
+    }
+
+    let events =
+        collect_data_events_until_response(&mut rx, second_request_id, Duration::from_secs(5))
+            .await;
+    let response_ids = events
+        .iter()
+        .filter_map(|event| match event {
+            DataEvent::Response(DataResponse::Book(response)) => Some(response.correlation_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(response_ids.contains(&first_request_id));
+    assert!(response_ids.contains(&second_request_id));
+    assert_eq!(state.book_request_count.load(Ordering::Relaxed), 1);
 }
 
 #[rstest]

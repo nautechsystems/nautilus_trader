@@ -351,9 +351,10 @@ pub struct ClobBookLevel {
 
 /// Response from the CLOB `GET /book` endpoint.
 ///
-/// Extra fields (`market`, `asset_id`, `hash`, `timestamp`) are silently ignored.
+/// Extra fields (`market`, `asset_id`, `hash`) are silently ignored.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ClobBookResponse {
+    pub timestamp: String,
     pub bids: Vec<ClobBookLevel>,
     pub asks: Vec<ClobBookLevel>,
 }
