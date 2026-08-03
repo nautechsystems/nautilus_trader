@@ -13,8 +13,6 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, prek, swap space).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
-- **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for
-  multiple Python versions.
 - **generate-sbom-retry**: wraps Docker SBOM generation with bounded retries.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.
@@ -30,24 +28,18 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   A dedicated Linux x86 job runs the workspace Rust suite once, and the required Python wheel jobs
   fail when that prerequisite fails. The plan step skips builds on docs-only changes and skips Rust
   tests on Python-only changes.
-- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs for every pull request targeting
-  `develop`; its plan step skips builds for docs-only changes. The main build workflow owns the
-  shared workspace Rust suite. This workflow runs Linux x86 builds on the self-hosted `build-v2`
-  pool and the full Python test suite against wheels for every supported platform during the
-  nightly merge. It owns cross-platform nightly validation outside the v1 wheel publication jobs.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
   `nightly`, and manual dispatch.
-- **coverage.yml**: coverage report generation, currently paused and runs only on `workflow_dispatch`.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`)
   using Buildx and native ARM runners.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
 - **nightly-tests.yml**: extended turmoil network tests plus Cargo publish-plan and dry-run checks
   that run daily at 12:00 UTC to give early visibility on `develop` before `nightly-merge` at
-  14:00 UTC. It does not repeat the v1 platform build-and-test matrices.
-- **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
+  14:00 UTC. It does not repeat the platform build‑and‑test matrices.
+- **performance.yml**: Rust tests and benchmarks on `nightly`.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
   cargo-vet, pip-audit, osv-scanner, and Zizmor).
 - **openssf-scorecard.yml**: OpenSSF Scorecard posture scan on weekly schedule and manual dispatch.
@@ -71,7 +63,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 - **Dependency pinning**: Key tools (prek, Python versions, Rust toolchain, cargo-nextest, uv) are
   locked to fixed versions or SHAs. The uv version is pinned via `required-version` in
-  `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
+  `python/pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
   Release and audit helper Python CLIs are pinned in `tools.toml`.
 - **Dependency cooldown**: Python dependency resolution excludes packages published within the last
   3 days (`exclude-newer = "3 days"` in `[tool.uv]`). This gives the community time to detect and
@@ -146,12 +138,12 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   declare a GitHub Environment can override the repo or org value with an environment-scoped variable. The
   publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. Security audit
   jobs read repo and org variables directly and run in audit mode for fork PRs when variables are absent.
-- **Untrusted PR handling**: `build.yml` and `build-v2.yml` use self-hosted runners only for
-  same-repository, non-Dependabot PRs with a known author. Fork and missing-origin PRs use
-  GitHub-hosted runners with `egress-policy: audit` because they cannot read the repository or
-  organization endpoint variables. Dependabot and missing-author PRs also use GitHub-hosted
+- **Untrusted PR handling**: `build.yml` uses self‑hosted runners only for same‑repository,
+  non‑Dependabot PRs with a known author. Fork and missing‑origin PRs use GitHub‑hosted runners with
+  `egress-policy: audit` because they cannot read the repository or organization endpoint variables.
+  Dependabot and missing‑author PRs also use GitHub‑hosted
   runners, but retain the configured egress policy, which defaults to `block`. These jobs run with
-  read-only permissions and no access to Actions secrets.
+  read‑only permissions and no access to Actions secrets.
 
 ### Security gate override
 

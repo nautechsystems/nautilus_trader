@@ -43,7 +43,7 @@ if [[ -z "$asset_path" ]]; then
   exit 1
 fi
 
-if tar -tzf "$asset_path" | grep -E '/target(-v2)?/' > "$target_entries"; then
+if tar -tzf "$asset_path" | grep '/target/' > "$target_entries"; then
   echo "::error::sdist contains Rust target artifacts:"
   head -n 20 "$target_entries"
   exit 1

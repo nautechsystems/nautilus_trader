@@ -213,8 +213,7 @@ pyo3-async-runtimes = { version = "0.29.0", default-features = false, features =
   "tokio",
   "tokio-runtime",
 ] }
-# Pinned: 0.21+ rejects module paths outside the pymodule root. Stub generation still uses
-# two paths: legacy Cython compatibility plus v2 without the nautilus_pyo3 namespace.
+# Pinned: 0.21+ rejects generated package module paths outside the pymodule root.
 pyo3-stub-gen = { version = "=0.20.0", default-features = false, features = [
   "rust_decimal",
 ] }
@@ -418,7 +417,7 @@ store = { path = '.supply-chain' }
 [profile.dev]
 opt-level = 0
 debug = false # Improves compile times
-debug-assertions = false # Fails Cython build if true
+debug-assertions = false
 overflow-checks = false # test profile keeps these on for catching overflow bugs
 strip = "debuginfo" # Improves compile times
 lto = false
