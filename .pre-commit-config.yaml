@@ -59,7 +59,7 @@ repos:
       - id: taplo-format
 
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.14.0
+    rev: v2.15.1
     hooks:
       - id: hadolint-docker
         name: dockerfile-lint
@@ -482,7 +482,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.0
+    rev: v0.16.1
     hooks:
       - id: ruff
         name: ruff
@@ -510,7 +510,7 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.33 # Must match [tool.uv] required-version in python/pyproject.toml
+    rev: 0.12.0 # Must match [tool.uv] required-version in python/pyproject.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]
@@ -525,7 +525,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.23.1
+    rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
         name: markdownlint
