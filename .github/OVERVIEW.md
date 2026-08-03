@@ -24,7 +24,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   wheel builds, artifact uploads, release asset uploads, Trusted Publishing to PyPI and crates.io,
   release preflights, release attestations, registry verification, release checksum publication,
   final release asset verification, and final GitHub release publication and attestation
-  verification. The nightly merge builds and publishes wheels for every supported platform.
+  verification. Pushes to `nightly` build and publish wheels for every supported platform.
   A dedicated Linux x86 job runs the workspace Rust suite once, and the required Python wheel jobs
   fail when that prerequisite fails. The plan step skips builds on docs-only changes and skips Rust
   tests on Python-only changes.
@@ -34,14 +34,16 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   `nightly`, and manual dispatch.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`)
   using Buildx and native ARM runners.
+- **dst.yml**: runs deterministic simulation smoke tests on `nightly` and manual dispatch.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
-- **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
-- **nightly-tests.yml**: extended turmoil network tests plus Cargo publish-plan and dry-run checks
-  that run daily at 12:00 UTC to give early visibility on `develop` before `nightly-merge` at
-  14:00 UTC. It does not repeat the platform build‑and‑test matrices.
+- **nightly-merge.yml**: fast-forwards `nightly` to the latest successful `develop` build.
+- **nightly-miri.yml**: runs Miri against the core, model, and plugin crates each day at 13:00 UTC.
+- **nightly-tests.yml**: runs standard-precision Clippy, extended turmoil network tests, and Cargo
+  publish-plan and dry-run checks each day at 12:00 UTC. It gives early visibility on `develop`
+  before `nightly-merge` at 14:00 UTC without repeating the platform build‑and‑test matrices.
 - **performance.yml**: Rust tests and benchmarks on `nightly`.
-- **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
-  cargo-vet, pip-audit, osv-scanner, and Zizmor).
+- **security-audit.yml**: runs change-aware and scheduled supply chain checks (cargo-audit,
+  cargo-deny, cargo-vet, pip-audit, osv-scanner, and Zizmor).
 - **openssf-scorecard.yml**: OpenSSF Scorecard posture scan on weekly schedule and manual dispatch.
   The scheduled run publishes badge/API results; all runs upload SARIF to code scanning.
 
@@ -132,12 +134,14 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ### Runtime hardening
 
-- **Hardened runners**: All workflows employ `step-security/harden-runner` to reduce attack surface and
-  monitor outbound traffic. All workflows default `egress-policy` to `block`. Set
-  `STEP_SECURITY_EGRESS_POLICY=audit` only as a temporary rollback while expanding an allow list. Jobs that
-  declare a GitHub Environment can override the repo or org value with an environment-scoped variable. The
-  publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. Security audit
-  jobs read repo and org variables directly and run in audit mode for fork PRs when variables are absent.
+- **Hardened runners**: Workflows use `step-security/harden-runner` on supported runners to reduce
+  attack surface and monitor outbound traffic. Depot Windows wheel jobs omit it because its post step
+  currently assumes `C:\agent` exists. Workflows default `egress-policy` to `block`. Set
+  `STEP_SECURITY_EGRESS_POLICY=audit` only as a temporary rollback while expanding an allow list.
+  Jobs that declare a GitHub Environment can override the repo or org value with an
+  environment-scoped variable. The publish environments (`r2-develop`, `r2-nightly`, `release`) can
+  use this override too. Security audit jobs read repo and org variables directly and run in audit
+  mode for fork PRs when variables are absent.
 - **Untrusted PR handling**: `build.yml` uses self‑hosted runners only for same‑repository,
   non‑Dependabot PRs with a known author. Fork and missing‑origin PRs use GitHub‑hosted runners with
   `egress-policy: audit` because they cannot read the repository or organization endpoint variables.
@@ -174,11 +178,11 @@ a warning but does not indicate a vulnerability.
 ### Allowed network endpoints
 
 The `step-security/harden-runner` action restricts network access to approved endpoints.
-All three variables are stored in GitHub as single-line, space-delimited values. The pinned
+Endpoint variables are stored in GitHub as single-line, space-delimited values. The pinned
 `step-security/harden-runner` version does not enforce newline-delimited values correctly
 in `block` mode.
 
-All workflows read these GitHub variables:
+Workflows use these GitHub variables by role:
 
 - `STEP_SECURITY_EGRESS_POLICY`: StepSecurity egress mode for the job. Workflows default to `block`. Set
   `audit` only as a temporary override while expanding an allow list.
@@ -189,7 +193,8 @@ All workflows read these GitHub variables:
 Some workflows add job-specific endpoints inline (e.g., `upload.pypi.org:443` for publishing,
 `auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds, and Scorecard publishing
 plus lookup endpoints such as `api.scorecard.dev:443`, `fulcio.sigstore.dev:443`, and
-`tuf-repo-cdn.sigstore.dev:443`).
+`tuf-repo-cdn.sigstore.dev:443`). The Windows CLI build also permits GlobalSign OCSP and CRL
+endpoints so Schannel can verify GitHub release certificates.
 
 Security audit jobs do not use deployment environments. They do not need environment secrets, and
 environment branch policies block same-repo contributor PRs before the audit steps can start.
@@ -222,6 +227,29 @@ sum.golang.org:443                           # Go checksum database
 storage.googleapis.com:443                   # Go module downloads (via proxy)
 registry.npmjs.org:443                       # npm packages (actionlint hook)
 api.snapcraft.io:443                         # Ubuntu snap API (runner infra)
+static.rust-lang.org:443                     # Rust toolchain downloads
+crates.io:443                                # Rust crate registry
+index.crates.io:443                          # Rust crate index
+static.crates.io:443                         # Rust crate downloads
+fulcio.sigstore.dev:443                      # Sigstore certificate authority
+rekor.sigstore.dev:443                       # Sigstore transparency log
+www.bestpractices.dev:443                    # OpenSSF Best Practices
+oss-fuzz-build-logs.storage.googleapis.com:443  # OSS-Fuzz build logs
+api.osv.dev:443                              # OSV vulnerability database
+api.deps.dev:443                             # deps.dev API
+tuf-repo-cdn.sigstore.dev:443                # Sigstore TUF repository
+tuf-repo.github.com:443                      # GitHub TUF repository
+tmaproduction.blob.core.windows.net:443      # GitHub attestation bundles
+production.cloudfront.docker.com:443         # Docker image content
+deb.debian.org:80                            # Debian packages
+security.debian.org:80                       # Debian security updates
+releases.astral.sh:443                       # Astral tool releases
+registry-1.docker.io:443                     # Docker registry
+auth.docker.io:443                           # Docker authentication
+pkg-containers.githubusercontent.com:443     # GitHub container packages
+timestamp.sigstore.dev:443                   # Sigstore timestamp authority
+go.dev:443                                   # Go tool downloads
+dl.google.com:443                            # Google tool downloads
 ```
 
 #### `CI_ALLOWED_ENDPOINTS`
@@ -258,6 +286,11 @@ ports.ubuntu.com:80                                          # Ubuntu ports (HTT
 fulcio.sigstore.dev:443                                      # Sigstore certificate authority
 rekor.sigstore.dev:443                                       # Sigstore transparency log
 codspeed.io:443                                              # CodSpeed benchmarking
+api.codspeed.io:443                                          # CodSpeed API
+prod-codspeed-storagestack-reportbucket06758118-r1k0it05uytl.s3.eu-west-1.amazonaws.com:443  # CodSpeed reports
+api.osv.dev:443                                              # OSV vulnerability database
+d2glxqk2uabbnd.cloudfront.net:443                            # CI download CDN
+d5l0dvt14r5h8.cloudfront.net:443                             # CI download CDN
 ```
 
 #### `SECURITY_AUDIT_ALLOWED_ENDPOINTS`

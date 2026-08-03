@@ -43,6 +43,7 @@ COPY python/pyproject.toml python/uv.lock ./python/
 RUN cd python && uv sync --frozen --no-install-package nautilus-trader
 
 COPY python/nautilus_trader ./python/nautilus_trader
+ARG CARGO_BUILD_JOBS=2
 RUN cd python && uv run --no-sync maturin build --release --out ../dist
 RUN uv pip install --system dist/*.whl
 RUN find /usr/local/lib/python3.13/site-packages -name "*.pyc" -exec rm -f {} \;
