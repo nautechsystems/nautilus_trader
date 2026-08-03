@@ -107,7 +107,7 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string.
 ///
-/// All `u64` nanosecond values are representable.
+/// All `UnixNanos` values are representable by this formatter.
 #[pyfunction(
     name = "unix_nanos_to_iso8601",
     signature = (timestamp_ns, nanos_precision=Some(true))

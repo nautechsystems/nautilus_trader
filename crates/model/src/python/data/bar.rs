@@ -108,7 +108,7 @@ impl BarSpecification {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(BarSpecification))
     }
 
-    /// Returns the `TimeDelta` interval for this bar specification.
+    /// Returns the `SignedDuration` interval for this bar specification.
     ///
     /// # Notes
     ///
