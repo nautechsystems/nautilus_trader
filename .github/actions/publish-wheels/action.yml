@@ -4,16 +4,23 @@ description: Publish wheels to Cloudflare R2
 runs:
   using: "composite"
   steps:
+    - name: Validate wheel artifacts
+      shell: bash
+      run: |
+        manifest="${RUNNER_TEMP}/publish-wheels-manifest.tsv"
+        delete_manifest="${RUNNER_TEMP}/publish-wheels-delete.txt"
+        index_file="${RUNNER_TEMP}/publish-wheels-index.html"
+        bash scripts/ci/validate-wheel-artifacts.bash "$manifest"
+        echo "PUBLISH_WHEELS_MANIFEST=$manifest" >> "$GITHUB_ENV"
+        echo "PUBLISH_WHEELS_DELETE_MANIFEST=$delete_manifest" >> "$GITHUB_ENV"
+        echo "PUBLISH_WHEELS_INDEX_FILE=$index_file" >> "$GITHUB_ENV"
+
     - name: Configure AWS CLI for Cloudflare R2
       shell: bash
       run: |
         set -euo pipefail
-        echo "Configuring AWS CLI for Cloudflare R2..."
-
-        # AWS CLI v2 is pre-installed on GitHub runners
         aws --version
 
-        # Configure credentials for Cloudflare R2
         mkdir -p ~/.aws
         {
           echo "[default]"
@@ -34,30 +41,8 @@ runs:
           echo "    use_fips_endpoint = false"
         } > ~/.aws/config
 
-        # Disable metadata lookups to avoid network to IMDS by default
-        export AWS_EC2_METADATA_DISABLED=true
+        echo "AWS_EC2_METADATA_DISABLED=true" >> "$GITHUB_ENV"
 
-    - name: Upload new wheels to Cloudflare R2
+    - name: Publish and verify wheels
       shell: bash
-      run: |
-        bash ./scripts/ci/publish-wheels-r2-upload-new-wheels.sh
-
-    - name: Remove old wheels from Cloudflare R2
-      shell: bash
-      run: |
-        bash ./scripts/ci/publish-wheels-r2-remove-old-wheels.sh
-
-    - name: Generate index.html
-      shell: bash
-      run: |
-        bash ./scripts/ci/publish-wheels-generate-index.sh
-
-    - name: Upload index.html to Cloudflare R2
-      shell: bash
-      run: |
-        bash ./scripts/ci/publish-wheels-r2-upload-index.sh
-
-    - name: Verify uploaded files in Cloudflare R2
-      shell: bash
-      run: |-
-        bash ./scripts/ci/publish-wheels-r2-verify-files.sh
+      run: bash scripts/ci/publish-wheels-r2.bash

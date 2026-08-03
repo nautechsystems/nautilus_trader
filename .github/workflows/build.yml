@@ -50,6 +50,11 @@ jobs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
+      publish_r2: ${{ steps.wheel-publication.outputs.publish_r2 }}
+      publish_development: ${{ steps.wheel-publication.outputs.publish_development }}
+      publish_environment: ${{ steps.wheel-publication.outputs.publish_environment }}
+      wheel_matrix: ${{ steps.wheel-publication.outputs.wheel_matrix }}
+      wheel_version: ${{ steps.wheel-publication.outputs.wheel_version }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -80,6 +85,13 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/plan.sh
+
+      - name: Plan wheel publication
+        id: wheel-publication
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: bash scripts/ci/plan-wheel-publication.bash
 
   pre-commit:
     name: pre-commit
@@ -236,6 +248,8 @@ jobs:
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
+        env:
+          PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
         run: |
           bash ../scripts/ci/update-pyproject-version.sh
 
@@ -446,6 +460,8 @@ jobs:
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
+        env:
+          PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
         run: bash ../scripts/ci/update-pyproject-version.sh
 
       - name: Build wheel
@@ -509,6 +525,8 @@ jobs:
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
+        env:
+          PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
         run: bash ../scripts/ci/update-pyproject-version.sh
 
       - name: Build wheel
@@ -568,6 +586,8 @@ jobs:
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
+        env:
+          PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
         run: bash ../scripts/ci/update-pyproject-version.sh
 
       - name: Build wheel
@@ -652,6 +672,7 @@ jobs:
 
   publish:
     needs:
+      - plan
       - build
       - build-linux-arm
       - build-macos
@@ -668,20 +689,26 @@ jobs:
       needs.build-linux-arm.result != 'failure' &&
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
-      (github.ref_name == 'develop' ||
-       github.ref_name == 'nightly' && needs.security-gate-nightly.result == 'success')
-    environment: r2-${{ github.ref_name }}
+      github.event_name == 'push' &&
+      needs.plan.outputs.publish_r2 == 'true' &&
+      (needs.plan.outputs.wheel_matrix != 'nightly' ||
+       needs.security-gate-nightly.result == 'success')
+    environment: ${{ needs.plan.outputs.publish_environment }}
+    concurrency:
+      group: publish-wheels-r2-simple-nautilus-trader
+      cancel-in-progress: false
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
       id-token: write # Required for attestations
       attestations: write # Required for attestations
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      CLOUDFLARE_R2_PREFIX: "simple/nautilus-trader"
+      PUBLISH_WHEELS_INDEX_URL: "https://packages.nautechsystems.io/simple"
+      PUBLISH_WHEEL_MATRIX: ${{ needs.plan.outputs.wheel_matrix }}
+      PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
@@ -689,6 +716,7 @@ jobs:
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            packages.nautechsystems.io:443
             tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
@@ -697,11 +725,25 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Block develop publish after failed security audit
-        if: github.ref_name == 'develop'
+      - name: Require successful same-commit security audit
+        if: needs.plan.outputs.publish_development == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/ci/check-security-audit-result.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Get uv version
+        id: uv-version
+        run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: ${{ steps.uv-version.outputs.uv_version }}
 
       - name: Download built wheels
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -725,6 +767,10 @@ jobs:
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
 
       - name: Fetch and delete artifacts for current run
         shell: bash

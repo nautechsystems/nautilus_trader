@@ -30,8 +30,7 @@ PREFIX="${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}"
 PREFIX="${PREFIX%/}"
 APPLY=false
 case "${1:-}" in
-  "")
-    ;;
+  "") ;;
   "--apply")
     APPLY=true
     ;;
@@ -73,11 +72,6 @@ if [[ "$APPLY" == true ]]; then
     fi
   done
 
-  if compgen -G "${REPO_ROOT}/dist/nautilus_trader-*.whl" > /dev/null; then
-    echo "ERROR: local dist wheels exist under ${REPO_ROOT}/dist" >&2
-    echo "Move them before regenerating the R2 index, or they can enter index.html without upload." >&2
-    exit 1
-  fi
 fi
 
 ORPHANS=(
@@ -132,6 +126,30 @@ if [[ "$APPLY" != true ]]; then
   exit 0
 fi
 
+INDEX_DIR="$(mktemp -d)"
+trap 'rm -rf "$INDEX_DIR"' EXIT
+export PUBLISH_WHEELS_MANIFEST="${INDEX_DIR}/manifest.tsv"
+export PUBLISH_WHEELS_DELETE_MANIFEST="${INDEX_DIR}/delete.txt"
+export PUBLISH_WHEELS_INDEX_FILE="${INDEX_DIR}/index.html"
+: > "$PUBLISH_WHEELS_MANIFEST"
+: > "$PUBLISH_WHEELS_DELETE_MANIFEST"
+for f in "${ORPHANS[@]}"; do
+  if [[ -n "${existing_names[$f]:-}" ]]; then
+    printf '%s\n' "$f" >> "$PUBLISH_WHEELS_DELETE_MANIFEST"
+  fi
+done
+
+echo "Preparing and uploading an index without the orphan wheels..."
+cd "${REPO_ROOT}"
+export CLOUDFLARE_R2_BUCKET_NAME="${BUCKET}"
+export CLOUDFLARE_R2_PREFIX="${PREFIX}"
+export CLOUDFLARE_R2_REGION="${CLOUDFLARE_R2_REGION:-auto}"
+
+# Re-export AWS_* and CLOUDFLARE_R2_URL for the sub-scripts.
+env -u PYTHONHOME bash ./scripts/ci/publish-wheels-generate-index.sh
+env -u PYTHONHOME bash ./scripts/ci/publish-wheels-r2-upload-index.sh
+
+echo ""
 echo "Deleting ${present_count} present orphan wheels..."
 for f in "${ORPHANS[@]}"; do
   if [[ -n "${existing_names[$f]:-}" ]]; then
@@ -141,17 +159,6 @@ for f in "${ORPHANS[@]}"; do
     echo "  skip missing: ${f}"
   fi
 done
-
-echo ""
-echo "Regenerating index.html via existing CI scripts..."
-cd "${REPO_ROOT}"
-export CLOUDFLARE_R2_BUCKET_NAME="${BUCKET}"
-export CLOUDFLARE_R2_PREFIX="${PREFIX}"
-export CLOUDFLARE_R2_REGION="${CLOUDFLARE_R2_REGION:-auto}"
-
-# Re-export AWS_* and CLOUDFLARE_R2_URL for the sub-scripts.
-env -u PYTHONHOME bash ./scripts/ci/publish-wheels-generate-index.sh
-env -u PYTHONHOME bash ./scripts/ci/publish-wheels-r2-upload-index.sh
 
 echo ""
 echo "Verifying final state..."

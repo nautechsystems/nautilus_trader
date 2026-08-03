@@ -7,10 +7,10 @@ name: security-audit
 #   - Pull requests: GitHub path filters create a workflow run only when
 #     audit-relevant paths change. The gate job remains as a second check
 #     before the audit jobs run.
-#   - Pushes to develop / master / test-ci / test-security: GitHub path filters
-#     create a workflow run only when audit-relevant paths change. The gate job
-#     remains as a second check before the audit jobs run. An active, expiring
-#     SECURITY_GATE_OVERRIDE skips audit jobs for push runs only.
+#   - Pushes to develop / master / test-ci / test-security: every commit creates
+#     a workflow run. Development-wheel publication commits force all audit jobs.
+#     Other pushes retain the path gate. An active, expiring
+#     SECURITY_GATE_OVERRIDE skips forced audit jobs for push runs only.
 
 permissions:
   contents: read
@@ -25,7 +25,7 @@ env:
 
 on:
   pull_request:
-    paths: &security_audit_paths
+    paths:
       - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
       - crates/**/Cargo.toml
@@ -42,15 +42,21 @@ on:
       - .cargo/audit.toml
       - rust-toolchain.toml
       - scripts/cargo-tool-version.sh
+      - scripts/purge-orphan-dev-wheels.sh
       - scripts/rust-toolchain.sh
       - scripts/uv-version.sh
+      - scripts/ci/check-security-audit-result.sh
+      - scripts/ci/plan-wheel-publication.bash
+      - scripts/ci/publish-wheels*
       - scripts/ci/security-audit-gate.sh
+      - scripts/ci/test-publish-wheels.bash
+      - scripts/ci/update-pyproject-version.sh
+      - scripts/ci/validate-wheel-artifacts.bash
       - .zizmor.yml
       - .github/actions/**
       - .github/workflows/**
   push:
     branches: [develop, master, test-ci, test-security]
-    paths: *security_audit_paths
   schedule:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
@@ -61,6 +67,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       audit_needed: ${{ steps.filter.outputs.audit_needed }}
+      override_active: ${{ steps.filter.outputs.override_active }}
     steps:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
@@ -85,15 +92,10 @@ jobs:
           PUSH_AFTER_SHA: ${{ github.event.after }}
           SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
         run: |
-          override="${SECURITY_GATE_OVERRIDE}"
-          if [ "$EVENT_NAME" = "push" ] &&
-            [ -n "$override" ] &&
-            [ "$(date -u +%s)" -lt "$(date -u -d "$override" +%s 2>/dev/null || echo 0)" ]; then
-            echo "::warning::Security audit override active until $override"
-            echo "audit_needed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          mode="$(bash scripts/ci/publish-wheels-policy.bash "$EVENT_NAME" "$GITHUB_REF_NAME")"
+          if [ "$mode" = "development" ]; then
+            export FORCE_SECURITY_AUDIT=true
           fi
-
           bash scripts/ci/security-audit-gate.sh
 
   zizmor:
@@ -301,3 +303,61 @@ jobs:
             --lockfile=Cargo.lock
             --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
             --lockfile=python/uv.lock
+
+  audit-result:
+    name: audit-result
+    if: always()
+    needs:
+      - changes
+      - zizmor
+      - cargo-audit
+      - cargo-deny
+      - cargo-vet
+      - pip-audit
+      - osv-scanner
+    runs-on: ubuntu-22.04
+    env:
+      AUDIT_NEEDED: ${{ needs.changes.outputs.audit_needed }}
+      CHANGES_RESULT: ${{ needs.changes.result }}
+      ZIZMOR_RESULT: ${{ needs.zizmor.result }}
+      CARGO_AUDIT_RESULT: ${{ needs.cargo-audit.result }}
+      CARGO_DENY_RESULT: ${{ needs.cargo-deny.result }}
+      CARGO_VET_RESULT: ${{ needs.cargo-vet.result }}
+      PIP_AUDIT_RESULT: ${{ needs.pip-audit.result }}
+      OSV_SCANNER_RESULT: ${{ needs.osv-scanner.result }}
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+
+      - name: Require the planned audit result
+        shell: bash
+        run: |-
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Security audit planning did not succeed"
+            exit 1
+          fi
+
+          if [ "$AUDIT_NEEDED" = "true" ]; then
+            expected=success
+          elif [ "$AUDIT_NEEDED" = "false" ]; then
+            expected=skipped
+          else
+            echo "::error::Security audit planning produced no decision"
+            exit 1
+          fi
+
+          for result in \
+            "$ZIZMOR_RESULT" \
+            "$CARGO_AUDIT_RESULT" \
+            "$CARGO_DENY_RESULT" \
+            "$CARGO_VET_RESULT" \
+            "$PIP_AUDIT_RESULT" \
+            "$OSV_SCANNER_RESULT"; do
+            if [ "$result" != "$expected" ]; then
+              echo "::error::Expected audit job result $expected, found $result"
+              exit 1
+            fi
+          done
