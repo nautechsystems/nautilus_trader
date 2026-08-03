@@ -134,6 +134,7 @@ impl BlockTimeWindow {
             let Ok(time_diff_ms) = i64::try_from(t1.duration_until(*t2).as_millis()) else {
                 continue;
             };
+
             if time_diff_ms <= 0 {
                 continue; // Invalid time difference (clock skew or reorg)
             }

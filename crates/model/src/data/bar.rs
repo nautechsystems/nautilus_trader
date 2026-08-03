@@ -293,6 +293,7 @@ pub fn get_time_bar_start(
                 let next_year = year
                     .checked_add(step_i32)
                     .expect("year arithmetic overflow");
+
                 if year_start(next_year) > now {
                     break;
                 }

@@ -784,6 +784,7 @@ impl DydxWebSocketClient {
                                         "time",
                                         time.display_with_offset(jiff::tz::Offset::UTC).to_string(),
                                     );
+
                                     if let Ok(py_obj) = dict.into_py_any(py) {
                                         call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     }
