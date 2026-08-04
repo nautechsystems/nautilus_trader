@@ -3755,8 +3755,14 @@ impl ParquetDataCatalog {
                     continue;
                 };
 
+                let expected_prefix = if data_name.starts_with("custom/") {
+                    format!("data/{data_name}/")
+                } else {
+                    format!("{data_name}/")
+                };
+
                 if let Some(data_relative_path) =
-                    relative_path.strip_prefix(&format!("{data_name}/"))
+                    relative_path.strip_prefix(&expected_prefix)
                 {
                     if let Some(identifiers) = identifiers {
                         let identifier_path = data_relative_path
@@ -3948,8 +3954,12 @@ impl ParquetDataCatalog {
         }
 
         // Convert data class name to filename (e.g., "quotes" -> "quotes")
-        // The data_cls should already be in the correct format (snake_case)
-        let data_name = to_snake_case(data_cls);
+        // Custom data types must preserve their `custom/` prefix and exact casing for discovery
+        let data_name = if data_cls.starts_with("custom/") {
+            data_cls.to_string()
+        } else {
+            to_snake_case(data_cls)
+        };
 
         // List all feather files for this data class
         let feather_files =

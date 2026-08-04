@@ -5161,3 +5161,64 @@ fn test_instrument_roundtrip_with_unregistered_base_currency() {
     assert_eq!(decoded.base_currency.code.as_str(), unknown_code);
     assert_eq!(decoded.base_currency.currency_type, CurrencyType::Crypto);
 }
+
+#[test]
+fn test_convert_stream_to_data_custom_data_daily_roundtrip() {
+    ensure_test_custom_data_registered();
+
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let root_path = _temp_dir.path();
+
+    let instance_id = "2026-07-24";
+    let subdirectory = "live";
+
+    // Write three RustTestHashMapCustomData records for "ident_a"
+    // and three for "ident_b" through FeatherWriter.
+    let mut writer = nautilus_persistence::backend::writer::FeatherWriter::new(
+        root_path.to_str().unwrap(),
+        instance_id,
+        subdirectory,
+        None,
+    ).unwrap();
+
+    let dt = "2026-07-24T00:00:00Z".parse::<nautilus_core::dt::DateTime>().unwrap();
+
+    for ident in ["ident_a", "ident_b"] {
+        for i in 0..3 {
+            let data = nautilus_model::custom::CustomData::new(
+                "RustTestHashMapCustomData",
+                b"{}",
+                ident,
+                (dt.as_nanos() as u64) + i,
+            ).unwrap();
+            writer.write_custom_data(&data).unwrap();
+        }
+    }
+    
+    // Close writers
+    writer.close().unwrap();
+
+    catalog
+        .convert_stream_to_data(
+            instance_id,
+            "custom/RustTestHashMapCustomData",
+            Some(subdirectory),
+            None,
+            false,
+        )
+        .unwrap();
+
+    let queried = catalog
+        .query_custom_data_dynamic(
+            "RustTestHashMapCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(queried.len(), 6, "expected all 6 written records back");
+}
