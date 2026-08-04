@@ -4,7 +4,7 @@ Render the AX XAU-PERP book imbalance tutorial panels from a backtest run.
 Usage:
 
     uv sync --extra visualization
-    GC_DBN=tests/test_data/local/Databento/gc_gold_quotes.dbn.zst \
+    GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
         python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 
 Replays a Databento ``GC.v.0`` mbp-1 file through the shipped
@@ -55,7 +55,7 @@ OUT = Path(__file__).resolve().parent
 GC_DBN = Path(
     os.environ.get(
         "GC_DBN",
-        "tests/test_data/local/Databento/gc_gold_quotes.dbn.zst",
+        "test_data/local/Databento/gc_gold_quotes.dbn.zst",
     ),
 )
 

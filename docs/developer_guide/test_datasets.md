@@ -6,11 +6,11 @@ policy are documented under [legacy datasets](#legacy-datasets).
 
 ## Dataset categories
 
-**Small data** (< 1 MB) is checked directly into `tests/test_data/<source>/`
+**Small data** (< 1 MB) is checked directly into `test_data/<source>/`
 alongside a `metadata.json` file. These files are always available without network access.
 
 **Large data** (> 1 MB) is hosted as Parquet in the R2 test-data bucket.
-A SHA-256 checksum is recorded in `tests/test_data/large/checksums.json`.
+A SHA-256 checksum is recorded in `test_data/large/checksums.json`.
 The `ensure_test_data_exists()` helper downloads the file on first use and verifies integrity.
 
 **User-fetched data** is used when a vendor license, entitlement model, or access control does not
@@ -152,8 +152,8 @@ sharing. Treat this as a separate operational path, not as part of the public te
 
 1. Curate the data following the workflow above.
 2. Write `metadata.json` with all required fields.
-3. For small data: commit to `tests/test_data/<source>/`.
-4. For large data: upload Parquet to R2, add checksum to `tests/test_data/large/checksums.json`.
+3. For small data: commit to `test_data/<source>/`.
+4. For large data: upload Parquet to R2, add checksum to `test_data/large/checksums.json`.
 5. For user-fetched data: commit the manifest and fetch instructions only. Keep the source and
    derived data out of the repo and out of the public R2 bucket.
 6. Add path helper functions to `crates/testkit/src/common.rs` when shared testkit access is needed.
@@ -162,13 +162,13 @@ sharing. Treat this as a separate operational path, not as part of the public te
 For user-fetched data, prefer this layout:
 
 ```text
-tests/test_data/<source>/<slug>/
+test_data/<source>/<slug>/
   metadata.json
   manifest.json
   README.md
 ```
 
-Use `tests/test_data/local/<source>/<slug>/` as the standard local cache path for generated
+Use `test_data/local/<source>/<slug>/` as the standard local cache path for generated
 artifacts. Keep raw vendor downloads in a sibling `vendor/` directory under the same cache path
 when local retention is needed.
 
@@ -187,7 +187,7 @@ Recommended manifest fields:
 | `source_type`       | `api`, `portal-download`, `purchased-archive`, etc.         |
 | `source_filters`    | Symbols, event IDs, market IDs, date ranges, or file names. |
 | `target_files`      | Output Nautilus Parquet files expected after conversion.    |
-| `cache_dir`         | Local output location relative to `tests/test_data/local/`. |
+| `cache_dir`         | Local output location relative to `test_data/local/`.       |
 | `fetch_command`     | Suggested command or script entry point.                    |
 | `transform_command` | Suggested local conversion command.                         |
 | `env`               | Required environment variables.                             |
@@ -232,7 +232,7 @@ When a schema change invalidates a large Parquet file, regenerate it from the
 original source data using the curation tests below. After regenerating:
 
 1. `sha256sum /tmp/<output_file>.parquet`
-2. Update `tests/test_data/large/checksums.json` with the new hash.
+2. Update `test_data/large/checksums.json` with the new hash.
 3. Update the corresponding `metadata.json` (sha256, size_bytes).
 4. Upload the Parquet file to R2.
 5. Commit `checksums.json` and `metadata.json` (this also busts the CI cache).
@@ -261,7 +261,7 @@ Source: `tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz` fro
 
 ```bash
 # Download source (free sample, no API key needed)
-wget -O tests/test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz \
+wget -O test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz \
   "https://datasets.tardis.dev/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz"
 
 # Regenerate parquet (output: /tmp/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet)
@@ -272,12 +272,12 @@ cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocaptur
 
 Several tutorials load user-provided market data. The `NAUTILUS_DATA_DIR` environment variable
 overrides the base data path used by these tutorials. The test suite sets this variable to
-`tests/test_data/local/` so that tutorials run against small sample files stored locally.
+`test_data/local/` so that tutorials run against small sample files stored locally.
 
 ### Directory layout
 
 ```text
-tests/test_data/local/
+test_data/local/
   Binance/
     BTCUSDT_T_DEPTH_2022-11-01_depth_snap.csv
     BTCUSDT_T_DEPTH_2022-11-01_depth_update.csv
@@ -287,20 +287,20 @@ tests/test_data/local/
     DAT_ASCII_EURUSD_T_202001.csv.gz
 ```
 
-The `tests/test_data/local/` directory is gitignored. Tests skip when the data is absent.
+The `test_data/local/` directory is gitignored. Tests skip when the data is absent.
 
 ### Obtaining the data
 
 **Binance depth snapshots** are available from the
 [Binance public data portal](https://data.binance.vision/). Download the BTCUSDT T_DEPTH files
-for 2022-11-01 and place the snap and update CSVs under `tests/test_data/local/Binance/`. For
+for 2022-11-01 and place the snap and update CSVs under `test_data/local/Binance/`. For
 testing, a subset of rows (e.g. first 10,000) is sufficient.
 
 **Bybit ob500 orderbook data** is available from the Bybit CDN:
 
 ```bash
 curl -L "https://quote-saver.bycsi.com/orderbook/linear/XRPUSDT/2024-12-01_XRPUSDT_ob500.data.zip" \
-  -o tests/test_data/local/Bybit/2024-12-01_XRPUSDT_ob500.data.zip
+  -o test_data/local/Bybit/2024-12-01_XRPUSDT_ob500.data.zip
 ```
 
 The full file is ~360 MB. For testing, extract the first few hundred lines and repackage as a
@@ -308,7 +308,7 @@ smaller zip.
 
 **HISTDATA tick data** is available from [histdata.com](https://www.histdata.com/). Download
 EUR/USD ASCII tick data for any month and place the CSV (or `.csv.gz`) under
-`tests/test_data/local/HISTDATA/`.
+`test_data/local/HISTDATA/`.
 
 ### Running the tests
 
@@ -324,14 +324,14 @@ These datasets predate this policy and use raw vendor formats (CSV/CSV.gz)
 without `metadata.json`. They remain valid for existing tests. New datasets
 should follow the Parquet standard above.
 
-| Dataset                    | Source   | Format           | Location                  | Status   |
-| -------------------------- | -------- | ---------------- | ------------------------- | -------- |
-| Tardis Deribit L2 deltas   | Tardis   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
-| ITCH AAPL L3 deltas        | NASDAQ   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
-| HISTDATA EURUSD.SIM quotes | HISTDATA | Parquet (large)  | `tests/test_data/large/`  | Migrated |
-| Tardis Deribit L2          | Tardis   | CSV (checked in) | `tests/test_data/tardis/` | Legacy   |
-| Tardis Binance snapshots   | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
-| Tardis Bitmex trades       | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
+| Dataset                    | Source   | Format           | Location            | Status   |
+| -------------------------- | -------- | ---------------- | ------------------- | -------- |
+| Tardis Deribit L2 deltas   | Tardis   | Parquet (large)  | `test_data/large/`  | Curated  |
+| ITCH AAPL L3 deltas        | NASDAQ   | Parquet (large)  | `test_data/large/`  | Curated  |
+| HISTDATA EURUSD.SIM quotes | HISTDATA | Parquet (large)  | `test_data/large/`  | Migrated |
+| Tardis Deribit L2          | Tardis   | CSV (checked in) | `test_data/tardis/` | Legacy   |
+| Tardis Binance snapshots   | Tardis   | CSV.gz (large)   | `test_data/large/`  | Legacy   |
+| Tardis Bitmex trades       | Tardis   | CSV.gz (large)   | `test_data/large/`  | Legacy   |
 
 The former `nautechsystems/nautilus_data` catalog maps to the HISTDATA EURUSD.SIM Parquet
 files above. Raw HISTDATA CSV files remain user-fetched.

@@ -4,7 +4,7 @@ Render the AX EURUSD-PERP mean reversion tutorial panels from a backtest run.
 Usage:
 
     uv sync --extra visualization
-    TRUEFX_CSV=tests/test_data/local/truefx/EURUSD-2025-12.csv \
+    TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
         python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 
 Replays TrueFX EUR/USD ticks through the shipped ``BBMeanReversion`` strategy,
@@ -49,7 +49,7 @@ from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 
 OUT = Path(__file__).resolve().parent
 TRUEFX_CSV = Path(
-    os.environ.get("TRUEFX_CSV", "tests/test_data/local/truefx/EURUSD-2025-12.csv"),
+    os.environ.get("TRUEFX_CSV", "test_data/local/truefx/EURUSD-2025-12.csv"),
 )
 
 THEME = get_theme("nautilus_dark")

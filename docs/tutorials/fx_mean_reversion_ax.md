@@ -284,7 +284,7 @@ tearsheet theme.
 
 ```bash
 uv sync --extra visualization
-TRUEFX_CSV=tests/test_data/local/truefx/EURUSD-2025-12.csv \
+TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
     python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 ```
 

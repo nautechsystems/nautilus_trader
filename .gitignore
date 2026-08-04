@@ -184,17 +184,18 @@ bench_data/
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 nautilus_trader.egg-info
-tests/test_data/catalog/
-tests/test_data/large/*
-tests/test_data/local/
+/test_data/catalog/
+/test_data/large/*
+/test_data/local/
+/test_data/**/data/**
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
-tests/test_data/**/backtest/**
+/test_data/**/backtest/**
 
 
 # Exceptions
-!tests/test_data/large/checksums.json
-!tests/test_data/large/*.metadata.json
-!tests/test_data/nautilus/*/**.parquet
+!/test_data/large/checksums.json
+!/test_data/large/*.metadata.json
+!/test_data/nautilus/*/**.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*

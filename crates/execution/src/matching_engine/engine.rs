@@ -7783,7 +7783,7 @@ mod tests {
     }
 
     // Replays real GLBX MBO flow (records 9150..10650 of
-    // tests/test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst as JSON),
+    // test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst as JSON),
     // joining the touch periodically; the mid-stream start also exercises
     // unseen-id ignore paths
     #[rstest]

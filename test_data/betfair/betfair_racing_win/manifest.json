@@ -14,7 +14,7 @@
     "betfair_1.245077076_2025-06-26_deltas.parquet"
   ],
   "cache_dir": "betfair/betfair_racing_win",
-  "fetch_command": "Copy 1.245077076.gz to tests/test_data/local/betfair/",
-  "transform_command": "cargo run -p nautilus-betfair --example betfair-load-file -- tests/test_data/local/betfair/1.245077076.gz",
+  "fetch_command": "Copy 1.245077076.gz to test_data/local/betfair/",
+  "transform_command": "cargo run -p nautilus-betfair --example betfair-load-file -- test_data/local/betfair/1.245077076.gz",
   "notes": "Horse racing WIN market at Nottingham with 6 runners (2 removed pre-race). Complete lifecycle from OPEN through CLOSED with BSP settlement. Winner: runner 75925986 (BSP 2.446)."
 }

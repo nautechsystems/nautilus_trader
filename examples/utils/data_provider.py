@@ -14,13 +14,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from pathlib import Path
+
 import pandas as pd
 
-from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+
+TEST_DATA_DIR = Path(__file__).resolve().parents[2] / "test_data"
 
 
 def prepare_demo_data_eurusd_futures_1min():
@@ -35,7 +39,7 @@ def prepare_demo_data_eurusd_futures_1min():
     )
 
     # CSV file containing 1-minute bars instrument data above
-    csv_file_path = rf"{TEST_DATA_DIR}/xcme/6EH4.{VENUE_NAME}_1min_bars_20240101_20240131.csv.gz"
+    csv_file_path = TEST_DATA_DIR / f"xcme/6EH4.{VENUE_NAME}_1min_bars_20240101_20240131.csv.gz"
 
     # Load raw data from CSV file and restructure them into required format for BarDataWrangler
     df = pd.read_csv(csv_file_path, header=0, index_col=False)

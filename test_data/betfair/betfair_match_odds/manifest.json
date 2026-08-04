@@ -12,7 +12,7 @@
     "betfair_1.253378068_2026-02-17_deltas.parquet"
   ],
   "cache_dir": "betfair/betfair_match_odds",
-  "fetch_command": "Copy 1.253378068.gz to tests/test_data/local/betfair/",
-  "transform_command": "cargo run -p nautilus-betfair --example betfair-load-file -- tests/test_data/local/betfair/1.253378068.gz",
+  "fetch_command": "Copy 1.253378068.gz to test_data/local/betfair/",
+  "transform_command": "cargo run -p nautilus-betfair --example betfair-load-file -- test_data/local/betfair/1.253378068.gz",
   "notes": "Football MATCH_ODDS market with 3 runners (home/draw/away). Complete lifecycle from OPEN through CLOSED with BSP settlement. Winner: runner 2426 (BSP 2.22)."
 }

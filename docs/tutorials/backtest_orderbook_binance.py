@@ -293,7 +293,7 @@ engine.trader.generate_account_report(Venue("BINANCE"))
 #
 # ```bash
 # uv sync --extra visualization
-# NAUTILUS_DATA_DIR=tests/test_data/local \
+# NAUTILUS_DATA_DIR=test_data/local \
 #     python3 docs/tutorials/assets/backtest_orderbook_binance/render_panels.py
 # ```
 #

@@ -200,5 +200,5 @@ dmypy.json
 
 # Nautilus
 docs/
-tests/
+test_data/
 !docs/tutorials

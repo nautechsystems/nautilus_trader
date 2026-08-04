@@ -76,7 +76,7 @@ flowchart LR
 Place the file at:
 
 ```
-tests/test_data/local/betfair/1.253378068.gz
+test_data/local/betfair/1.253378068.gz
 ```
 
 This path is gitignored and not shipped with the repository. The bundled

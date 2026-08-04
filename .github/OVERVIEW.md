@@ -12,7 +12,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **attest-sbom-retry**: wraps Docker SBOM attestation with bounded retries.
 - **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, prek, swap space).
-- **common-test-data**: caches large test data under `tests/test_data/large`.
+- **common-test-data**: caches large test data under `test_data/large`.
 - **generate-sbom-retry**: wraps Docker SBOM generation with bounded retries.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.

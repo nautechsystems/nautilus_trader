@@ -4,7 +4,7 @@ Render the Binance order book imbalance tutorial panels from a backtest run.
 Usage:
 
     uv sync --extra visualization
-    NAUTILUS_DATA_DIR=tests/test_data/local \
+    NAUTILUS_DATA_DIR=test_data/local \
         python3 docs/tutorials/assets/backtest_orderbook_binance/render_panels.py
 
 Replays the same first one million Binance T_DEPTH BTCUSDT 2022-11-01 deltas as

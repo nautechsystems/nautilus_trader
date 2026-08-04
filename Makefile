@@ -366,7 +366,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 		exit 1; \
 	fi
 	@echo "WARNING: removing all untracked files (git clean -fxd)..."
-	git clean -fxd -e tests/test_data/large/ -e tests/test_data/local/ -e .venv/
+	git clean -fxd -e test_data/large/ -e test_data/local/ -e .venv/
 
 #== Code Quality
 

@@ -10,11 +10,11 @@ the Betfair Exchange Streaming API on 2025-06-26.
 
 ## Setup
 
-Copy `1.245077076.gz` to `tests/test_data/local/betfair/`.
+Copy `1.245077076.gz` to `test_data/local/betfair/`.
 
 ## Usage
 
 ```bash
 cargo run -p nautilus-betfair --example betfair-load-file -- \
-  tests/test_data/local/betfair/1.245077076.gz
+  test_data/local/betfair/1.245077076.gz
 ```

@@ -281,7 +281,7 @@ theme.
 
 ```bash
 uv sync --extra visualization
-GC_DBN=tests/test_data/local/Databento/gc_gold_quotes.dbn.zst \
+GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
     python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 ```
 

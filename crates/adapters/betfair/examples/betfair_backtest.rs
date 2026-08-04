@@ -53,7 +53,7 @@ use nautilus_model::{
 };
 use nautilus_trading::examples::actors::BookImbalanceActor;
 
-const DATA_FILE: &str = "tests/test_data/local/betfair/1.253378068.gz";
+const DATA_FILE: &str = "test_data/local/betfair/1.253378068.gz";
 const LOG_INTERVAL: u64 = 5000;
 
 /// Loads a Betfair `.gz` streaming file and separates instruments from data.
@@ -128,7 +128,7 @@ fn main() -> anyhow::Result<()> {
     let filepath = resolve_filepath();
     if !filepath.exists() {
         anyhow::bail!(
-            "File not found: {}\n\nCopy Betfair .gz files to tests/test_data/local/betfair/",
+            "File not found: {}\n\nCopy Betfair .gz files to test_data/local/betfair/",
             filepath.display()
         );
     }

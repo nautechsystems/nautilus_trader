@@ -622,14 +622,15 @@ For Binance order book deltas:
 The following Python example applies both steps:
 
 ```python
-from nautilus_trader import TEST_DATA_DIR
+from pathlib import Path
+
 from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 # Load raw data
-data_path = TEST_DATA_DIR / "binance" / "btcusdt-depth-snap.csv"
+data_path = Path("test_data/binance/btcusdt-depth-snap.csv")
 df = load_binance_order_book_deltas(data_path)
 
 # Set up a wrangler
