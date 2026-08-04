@@ -22,8 +22,8 @@ import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import BTC

@@ -367,8 +367,10 @@ During live trading, generate reports periodically:
 ```python
 import pandas as pd
 
+from nautilus_trader.common import DataActor
 
-class ReportingActor(Actor):
+
+class ReportingActor(DataActor):
     def on_start(self):
         # Schedule periodic reporting
         self.clock.set_timer(

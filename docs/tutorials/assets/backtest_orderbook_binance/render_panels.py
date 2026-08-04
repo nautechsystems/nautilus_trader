@@ -28,11 +28,12 @@ from plotly.subplots import make_subplots
 from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import BTC
@@ -61,13 +62,20 @@ NEUTRAL = COLORS["neutral"]
 GRID = COLORS["grid"]
 
 
-class TopBookSamplerConfig(ActorConfig, frozen=True):
-    instrument_id: InstrumentId
-    book_type: str = "L2_MBP"
-    sample_every_secs: int = 1
+class TopBookSamplerConfig(DataActorConfig):
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        book_type: str = "L2_MBP",
+        sample_every_secs: int = 1,
+        **_kwargs,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.book_type = book_type
+        self.sample_every_secs = sample_every_secs
 
 
-class TopBookSampler(Actor):
+class TopBookSampler(DataActor):
     """
     Capture top-of-book once every ``sample_every_secs`` seconds.
     """
@@ -79,9 +87,9 @@ class TopBookSampler(Actor):
         self._interval_ns = config.sample_every_secs * 1_000_000_000
 
     def on_start(self) -> None:
-        self.subscribe_order_book_deltas(self.config.instrument_id, BookType.L2_MBP)
+        self.subscribe_book_deltas(self.config.instrument_id, BookType.L2_MBP)
 
-    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+    def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
         ts = deltas.ts_event
         if ts - self._last_sample_ns < self._interval_ns:
             return
@@ -139,7 +147,7 @@ def run_backtest(nrows: int = 3_000_000):
 
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
-        logging=LoggingConfig(log_level="ERROR"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     )
     engine = BacktestEngine(config=config)
 

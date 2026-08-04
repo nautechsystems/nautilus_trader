@@ -37,7 +37,7 @@ Generate a tearsheet with default settings:
 
 ```python
 from nautilus_trader.analysis import create_tearsheet
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
 
 # After running your backtest
 engine.run()
@@ -87,7 +87,7 @@ cache and reports are no longer available.
 Control which charts appear and how they're styled:
 
 ```python
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetDrawdownChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetRunInfoChart
@@ -284,7 +284,7 @@ The `TearsheetConfig` class provides declarative control over tearsheet generati
 
 ```python
 from nautilus_trader.analysis import GridLayout
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetDrawdownChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
@@ -386,7 +386,7 @@ renderer draws traces directly onto a shared subplot grid cell, so its signature
 `fig` plus the `row` and `col` to render into.
 
 ```python
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetCustomChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
@@ -568,7 +568,7 @@ or included in tearsheets:
 from nautilus_trader.analysis import create_bars_with_fills
 from nautilus_trader.analysis import create_tearsheet
 from nautilus_trader.analysis import TearsheetBarsWithFillsChart
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.model.data import BarType

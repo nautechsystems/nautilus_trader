@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Derive Python v2 data tester example.
+Derive Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Derive. Pass --run to start subscriptions.
@@ -85,7 +85,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Derive Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Derive Python data tester.")
     parser.add_argument("--derive-environment", choices=["testnet", "mainnet"], default="testnet")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"ETH-PERP.{DERIVE}")

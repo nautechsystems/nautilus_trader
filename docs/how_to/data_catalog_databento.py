@@ -206,7 +206,7 @@ trades = loader.load_trades(
 catalog.write_data(trades)
 
 # %%
-trades = catalog.trade_ticks([instrument_id])
+trades = catalog.trades([instrument_id])
 
 # %%
 len(trades)

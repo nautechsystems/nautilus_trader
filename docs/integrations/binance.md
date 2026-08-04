@@ -1263,7 +1263,7 @@ Set `use_agg_trade_ticks=True` to use aggregated trades (`False` by default).
 For Futures (USD-M and COIN-M), the WebSocket trade subscription always uses
 `@aggTrade`. Binance only publishes aggregated trades on the Futures WebSocket;
 the legacy `@trade` stream was undocumented and has been silenced. The HTTP
-`request_trade_ticks` path continues to honour `use_agg_trade_ticks`.
+`request_trades` path continues to honour `use_agg_trade_ticks`.
 :::
 
 ### Commission rate queries

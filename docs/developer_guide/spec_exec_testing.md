@@ -40,7 +40,9 @@ when you need to register adapter client factories before the node is built.
 
 ```python
 from nautilus_trader.common import Environment
-from nautilus_trader.live import LiveExecEngineConfig, LiveNode, LiveRiskEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
 
 node = (

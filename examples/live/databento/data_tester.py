@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Databento Python v2 data tester example.
+Databento Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Databento. Pass --run to start subscriptions.
@@ -77,7 +77,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Databento Python v2 data tester.",
+        description="Build or run the Databento Python data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default="BTCUSDT.BINANCE")

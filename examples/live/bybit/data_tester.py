@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Bybit Python v2 data tester example.
+Bybit Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Bybit. Pass --run to start subscriptions.
@@ -80,7 +80,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Bybit Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Bybit Python data tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"BTCUSDT-LINEAR.{BYBIT}")
     parser.add_argument("--run", action="store_true")

@@ -6,7 +6,7 @@ evidence that liquidity traded at its price, so it can fill resting orders on th
 Set `trade_execution=False` to use trades as strategy data without letting them trigger matching:
 
 ```python
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType

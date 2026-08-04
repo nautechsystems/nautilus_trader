@@ -66,16 +66,17 @@ from pathlib import Path
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.loaders import BybitOrderBookDeltaDataLoader
-from nautilus_trader.backtest.node import BacktestDataConfig
-from nautilus_trader.backtest.node import BacktestEngineConfig
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.node import BacktestRunConfig
-from nautilus_trader.backtest.node import BacktestVenueConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model import OrderBookDelta
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
@@ -178,7 +179,7 @@ strategies = [
 config = BacktestRunConfig(
     engine=BacktestEngineConfig(
         strategies=strategies,
-        logging=LoggingConfig(log_level="ERROR"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     ),
     data=data_configs,
     venues=venues_configs,
@@ -198,7 +199,7 @@ result = node.run()
 result
 
 # %%
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.model import Venue
 
 

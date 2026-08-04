@@ -57,7 +57,8 @@ To detect unclaimed external orders in your strategy, check `order.strategy_id.v
 These orders participate in portfolio calculations and position tracking like any other order.
 :::
 
-For all live trading options, see the `LiveExecEngineConfig` [API Reference](/docs/python-api-latest/config.html#nautilus_trader.live.config.LiveExecEngineConfig).
+For all live trading options, see the `LiveExecEngineConfig`
+[API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecEngineConfig).
 
 ## Reconciliation procedure
 

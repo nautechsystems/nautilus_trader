@@ -716,7 +716,7 @@ Polymarket lists thousands of active markets and new markets appear throughout t
 the full universe at startup is rarely practical. The data adapter auto-loads missing instruments on
 demand so that strategies can subscribe to markets that are not in the cache:
 
-- When a strategy issues `subscribe_quote_ticks`, `subscribe_trade_ticks`, `subscribe_order_book_deltas`,
+- When a strategy issues `subscribe_quotes`, `subscribe_trades`, `subscribe_book_deltas`,
   or `request_instrument` for an instrument that is not cached, the adapter registers the request and
   waits `auto_load_debounce_ms` (default 100 ms) so that concurrent requests coalesce.
 - It then issues a single batched Gamma API call. Batches larger than the Gamma `condition_ids`
@@ -812,8 +812,8 @@ class PolymarketHousekeeping(Strategy):
     def on_position_closed(self, event: PositionClosed) -> None:
         # Drop the market once the position is closed and you have no further interest.
         instrument_id = event.instrument_id
-        self.unsubscribe_quote_ticks(instrument_id)
-        self.unsubscribe_order_book_deltas(instrument_id)
+        self.unsubscribe_quotes(instrument_id)
+        self.unsubscribe_book_deltas(instrument_id)
         self.cache.purge_instrument(instrument_id)
 ```
 

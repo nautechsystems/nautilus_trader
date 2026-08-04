@@ -5,12 +5,12 @@ the methods its logic requires.
 
 **Capabilities**:
 
-- All `Actor` capabilities.
+- All `DataActor` capabilities.
 - Order management.
 
 **Relationship with actors**:
-The `Strategy` class inherits from `Actor`, which means strategies have access to all actor functionality
-plus order management capabilities.
+The `Strategy` class inherits from `DataActor`, which means strategies have access to all data actor
+functionality plus order management capabilities.
 
 :::tip
 We recommend reviewing the [Actors](actors.md) guide before diving into strategy development.
@@ -59,7 +59,7 @@ A trading strategy inherits from `Strategy`, so you must define a constructor.
 At minimum, initialize the base class:
 
 ```python
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.trading import Strategy
 
 
 class MyStrategy(Strategy):
@@ -109,31 +109,42 @@ def on_load(self, state: dict[str, bytes]) -> None:
 These handlers receive data updates, including built-in market data and custom user-defined data.
 
 ```python
-from nautilus_trader.core import Data
+from collections.abc import Sequence
+from typing import Any
+
+from nautilus_trader.common import Signal
+from nautilus_trader.model import CustomData
 from nautilus_trader.model import OrderBook
+from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import Bar
+from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import OrderBookDepth10
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model import OptionChainSlice
 from nautilus_trader.model import OptionGreeks
-from nautilus_trader.model.instruments import Instrument
-
-def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
-def on_order_book(self, order_book: OrderBook) -> None:
-def on_quote_tick(self, tick: QuoteTick) -> None:
-def on_trade_tick(self, tick: TradeTick) -> None:
+def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
+def on_book(self, order_book: OrderBook) -> None:
+def on_quote(self, tick: QuoteTick) -> None:
+def on_trade(self, tick: TradeTick) -> None:
 def on_bar(self, bar: Bar) -> None:
-def on_instrument(self, instrument: Instrument) -> None:
+def on_instrument(self, instrument: Any) -> None:
 def on_instrument_status(self, data: InstrumentStatus) -> None:
 def on_instrument_close(self, data: InstrumentClose) -> None:
 def on_option_greeks(self, greeks: OptionGreeks) -> None:
 def on_option_chain(self, chain: OptionChainSlice) -> None:
-def on_historical_data(self, data: Data) -> None:
-def on_data(self, data: Data) -> None:  # Custom data passed to this handler
-def on_signal(self, signal: Data) -> None:  # Custom signals passed to this handler
+def on_historical_data(self, data: CustomData) -> None:
+def on_historical_book_deltas(self, deltas: Sequence[OrderBookDelta]) -> None:
+def on_historical_book_depth(self, depths: Sequence[OrderBookDepth10]) -> None:
+def on_historical_quotes(self, quotes: Sequence[QuoteTick]) -> None:
+def on_historical_trades(self, trades: Sequence[TradeTick]) -> None:
+def on_historical_funding_rates(self, rates: Sequence[FundingRateUpdate]) -> None:
+def on_historical_bars(self, bars: Sequence[Bar]) -> None:
+def on_data(self, data: CustomData) -> None:
+def on_signal(self, signal: Signal) -> None:
 ```
 
 #### Order management
@@ -143,7 +154,6 @@ These handlers receive events related to orders.
 
 1. Specific handler (e.g., `on_order_accepted`, `on_order_rejected`, etc.)
 2. `on_order_event(...)`
-3. `on_event(...)`
 
 ```python
 from nautilus_trader.model.events import OrderAccepted
@@ -190,7 +200,6 @@ These handlers receive events related to positions.
 
 1. Specific handler (e.g., `on_position_opened`, `on_position_changed`, etc.)
 2. `on_position_event(...)`
-3. `on_event(...)`
 
 ```python
 from nautilus_trader.model.events import PositionChanged
@@ -204,16 +213,9 @@ def on_position_closed(self, event: PositionClosed) -> None:
 def on_position_event(self, event: PositionEvent) -> None:  # All position event messages are eventually passed to this handler
 ```
 
-#### Generic event handling
-
-This handler will eventually receive all event messages which arrive at the strategy, including those for
-which no other specific handler exists.
-
-```python
-from nautilus_trader.core.message import Event
-
-def on_event(self, event: Event) -> None:
-```
+Use `on_time_event()` for timer events, `on_order_event()` for aggregate order events, and
+`on_position_event()` for aggregate position events. The Python API does not expose a generic
+`on_event()` hook.
 
 #### Handler example
 
@@ -243,17 +245,10 @@ def on_start(self) -> None:
     self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
     # Get historical data and subscribe to live data
-    self.request_bars(
-        self.bar_type,
-        callback=lambda _: self.subscribe_bars(self.bar_type),
-    )
-    self.subscribe_quote_ticks(self.instrument_id)
+    self.request_bars(self.bar_type)
+    self.subscribe_bars(self.bar_type)
+    self.subscribe_quotes(self.instrument_id)
 ```
-
-Live bars are subscribed via the `request_bars()` `callback` so the stream starts only
-once history has loaded; see
-[Working with bars: request vs. subscribe](data/index.md#working-with-bars-request-vs-subscribe)
-for why this matters under `validate_data_sequence=True`.
 
 ### Clock and timers
 
@@ -283,7 +278,7 @@ unix_nanos: int = self.clock.timestamp_ns()
 
 #### Time alerts
 
-Time alerts can be set which will result in a `TimeEvent` being dispatched to the `on_event` handler at the
+Time alerts can be set which will result in a `TimeEvent` being dispatched to the `on_time_event` handler at the
 specified alert time. In a live context, this might be slightly delayed by a few microseconds.
 
 This example sets a time alert to trigger one minute from the current time:
@@ -326,8 +321,8 @@ The following example fetches data from the cache (assuming some instrument ID a
 These methods return `None` if the requested data is not available.
 
 ```python
-last_quote = self.cache.quote_tick(self.instrument_id)
-last_trade = self.cache.trade_tick(self.instrument_id)
+last_quote = self.cache.quote(self.instrument_id)
+last_trade = self.cache.trade(self.instrument_id)
 last_bar = self.cache.bar(bar_type)
 ```
 
@@ -382,11 +377,9 @@ See the [`Portfolio` API Reference](/docs/python-api-latest/portfolio.html) for 
 
 #### Reports and analysis
 
-The `Portfolio` also exposes a `PortfolioAnalyzer`, which accepts a flexible amount of data
-(to accommodate different lookback windows). The analyzer tracks and generates performance
-metrics and statistics.
-
-See the [`PortfolioAnalyzer` API Reference](/docs/python-api-latest/analysis.html) and [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
+Use `Portfolio.statistics()` and `Portfolio.snapshots()` for performance analysis. See the
+[Analysis API Reference](/docs/python-api-latest/analysis.html) and
+[Portfolio statistics](portfolio.md#portfolio-statistics) guide.
 
 ### Trading commands
 
@@ -402,7 +395,7 @@ can still be initialized directly with the `Order.__init__(...)` constructor if 
 The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
 
 - If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`.
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`.
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecutionAlgorithm`.
 - Otherwise, the command will *firstly* be sent to the `RiskEngine`.
 
 This example submits a `LIMIT` BUY order for emulation (see [Emulated Orders](orders/emulated.md)):
@@ -430,7 +423,7 @@ def buy(self) -> None:
 
 :::info
 You can specify both order emulation and an execution algorithm. In this case, the order is
-first sent to the `OrderEmulator`, and upon release is then routed to the `ExecAlgorithm`.
+first sent to the `OrderEmulator`, and upon release is then routed to the `ExecutionAlgorithm`.
 :::
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
@@ -451,7 +444,7 @@ def buy(self) -> None:
         quantity=self.instrument.make_qty(self.trade_size),
         time_in_force=TimeInForce.FOK,
         exec_algorithm_id=ExecAlgorithmId("TWAP"),
-        exec_algorithm_params={"horizon_secs": 20, "interval_secs": 2.5},
+        exec_algorithm_params={"horizon_secs": "20", "interval_secs": "2.5"},
     )
 
     self.submit_order(order)
@@ -468,7 +461,7 @@ If the order is currently *open* then the status will become `PENDING_CANCEL`.
 The component a `CancelOrder`, `CancelAllOrders`, or `BatchCancelOrders` command will flow to for execution depends on the following:
 
 - If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecAlgorithm`.
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecutionAlgorithm`.
 - Otherwise, the order will *firstly* be sent to the `ExecutionEngine`.
 
 :::info
@@ -478,23 +471,27 @@ Any managed GTD timer will also be canceled after the command has left the strat
 The following shows how to cancel an individual order:
 
 ```python
-self.cancel_order(order)
+self.cancel_order(order.client_order_id)
 ```
 
 The following shows how to cancel a batch of orders:
 
 ```python
-from nautilus_trader.model.orders import Order
+from nautilus_trader.model import ClientOrderId
 
 
-my_order_list: list[Order] = [order1, order2, order3]
-self.cancel_orders(my_order_list)
+client_order_ids: list[ClientOrderId] = [
+    order1.client_order_id,
+    order2.client_order_id,
+    order3.client_order_id,
+]
+self.cancel_orders(client_order_ids)
 ```
 
 The following shows how to cancel all orders:
 
 ```python
-self.cancel_all_orders()
+self.cancel_all_orders(self.instrument_id)
 ```
 
 #### Modifying orders
@@ -524,7 +521,7 @@ from nautilus_trader.model import Quantity
 
 
 new_quantity: Quantity = Quantity.from_int(5)
-self.modify_order(order, new_quantity)
+self.modify_order(order.client_order_id, quantity=new_quantity)
 ```
 
 :::info
@@ -569,7 +566,7 @@ semantics (e.g., bracket orders with interdependencies).
 To check if an exit is in progress (e.g., to skip order submission logic), use `is_exiting()`:
 
 ```python
-def on_quote_tick(self, tick: QuoteTick) -> None:
+def on_quote(self, tick: QuoteTick) -> None:
     if self.is_exiting():
         return  # Skip order logic during exit
     # ... normal order logic
@@ -606,20 +603,43 @@ Here is an example configuration:
 
 ```python
 from decimal import Decimal
-from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model import Bar, BarType
+from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.trading import Strategy
+from nautilus_trader.config import StrategyConfig
 
 
 # Configuration definition
 class MyStrategyConfig(StrategyConfig):
-    instrument_id: InstrumentId  # example value: "ETHUSDT-PERP.BINANCE"
-    bar_type: BarType  # example value: "ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-EXTERNAL"
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
-    trade_size: Decimal
-    order_id_tag: str
+    _CUSTOM_FIELDS = (
+        "instrument_id",
+        "bar_type",
+        "fast_ema_period",
+        "slow_ema_period",
+        "trade_size",
+    )
+
+    def __new__(cls, *args, **kwargs):
+        for field in cls._CUSTOM_FIELDS:
+            kwargs.pop(field, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        bar_type: BarType,
+        trade_size: Decimal,
+        fast_ema_period: int = 10,
+        slow_ema_period: int = 20,
+        **_kwargs,
+    ) -> None:
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.bar_type = bar_type
+        self.trade_size = trade_size
+        self.fast_ema_period = fast_ema_period
+        self.slow_ema_period = slow_ema_period
 
 
 # Strategy definition
@@ -649,7 +669,7 @@ class MyStrategy(Strategy):
 config = MyStrategyConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-15-MINUTE[LAST]-EXTERNAL"),
-    trade_size=Decimal(1),
+    trade_size=Decimal("1"),
     order_id_tag="001",
 )
 

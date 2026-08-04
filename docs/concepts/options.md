@@ -20,16 +20,16 @@ The platform defines several option instrument types:
 Greeks-relevant metadata varies by instrument type:
 
 - `OptionContract`, `CryptoOption`: full Greeks inputs including `strike_price`,
-  `option_kind` (CALL/PUT), `expiration_utc`, `underlying`, `multiplier`.
+  `option_kind` (CALL/PUT), `expiration_ns`, `underlying`, `multiplier`.
 - `OptionSpread`, `CryptoOptionSpread`: a combination of up to 4 option legs,
-  each weighted by a ratio. Has `underlying`, `expiration_utc`, and
+  each weighted by a ratio. Has `underlying`, `expiration_ns`, and
   `strategy_type` (vertical, calendar, straddle, etc.). Per-leg `strike_price`
   and `option_kind` live on each leg's `OptionContract`/`CryptoOption`, not on
   the spread itself. Greeks are computed per leg and aggregated. Spreads are
   commonly used for orders (the exchange executes as a single order), while
   the individual legs appear as positions. `CryptoOptionSpread` additionally
   carries `is_inverse` and `settlement_currency` for venues like Deribit.
-- `BinaryOption`: has `expiration_utc` and `outcome`/`description`, but no
+- `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
 ## Subscribing to Greeks
@@ -265,7 +265,7 @@ flowchart TD
     DE -- "publish_slice()" --> MGR
     MGR -- "OptionChainSlice" --> DE
     DE -- publish --> MB((MessageBus))
-    MB -- "on_option_chain" --> S[Actor / Strategy]
+    MB -- "on_option_chain" --> S[DataActor / Strategy]
     DE -- "sub/unsub" --> DC
 ```
 

@@ -1,7 +1,7 @@
 # Options Data and Greeks (Bybit)
 
 :::note
-This is a **Rust-only** v2 system tutorial. It uses the Rust `LiveNode`
+This is a **Rust-only** system tutorial. It uses the Rust `LiveNode`
 with the Bybit adapter to stream live option Greeks and aggregated chain
 snapshots.
 :::
@@ -507,7 +507,7 @@ GREEKS_LOG=/tmp/bybit_greeks.log CHAIN_LOG=/tmp/bybit_chain.log \
   the chain for a surface-level view.
 - **Add quote and depth subscriptions**. Call `subscribe_quotes` for
   top-of-book `QuoteTick` updates on individual option contracts. Call
-  `subscribe_order_book_deltas` when you need the dedicated option
+  `subscribe_book_deltas` when you need the dedicated option
   orderbook stream. Bybit supports option depths 25 and 100.
 - **Options execution**. The
   [delta-neutral strategy tutorial](delta_neutral_options_bybit.md) walks

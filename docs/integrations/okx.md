@@ -211,8 +211,8 @@ orders remain unchanged.
 
 ### RPI market data
 
-Pass `params={"rpi": True}` to `subscribe_order_book_deltas` or
-`request_order_book_snapshot` to use the public `books-rpi` channel or
+Pass `params={"rpi": True}` to `subscribe_book_deltas` or
+`request_book_snapshot` to use the public `books-rpi` channel or
 `GET /api/v5/market/books-rpi`. The feed combines organic quantity with RPI quantity that is
 available for execution.
 

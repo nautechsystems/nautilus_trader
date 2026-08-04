@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Lighter Python v2 data tester example.
+Lighter Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Lighter. Pass --run to start subscriptions.
@@ -81,7 +81,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Lighter Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Lighter Python data tester.")
     parser.add_argument("--lighter-environment", choices=["testnet", "mainnet"], default="testnet")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"BTC-PERP.{LIGHTER}")

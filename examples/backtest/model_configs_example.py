@@ -14,153 +14,109 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
-from nautilus_trader.backtest.config import ImportableFeeModelConfig
-from nautilus_trader.backtest.config import ImportableFillModelConfig
-from nautilus_trader.backtest.config import ImportableLatencyModelConfig
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import FixedFeeModel
+from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.execution import PerContractFeeModel
+from nautilus_trader.execution import ProbabilisticFillModel
+from nautilus_trader.execution import StaticLatencyModel
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
 
 
 if __name__ == "__main__":
-    # Example strategy configuration
-    strategy_config = ImportableStrategyConfig(
-        strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
-        config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-        config={
-            "instrument_id": "AAPL.NASDAQ",
-            "bar_type": "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
-            "fast_ema_period": 10,
-            "slow_ema_period": 20,
-            "trade_size": 100,
-        },
-    )
-
     # Configure backtest engine
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
-        strategies=[strategy_config],
+        logging=LoggerConfig(stdout_level=LogLevel.INFO),
     )
 
-    # Create importable fill model configs
-    fill_model_config = ImportableFillModelConfig(
-        fill_model_path="nautilus_trader.backtest.models:FillModel",
-        config_path="nautilus_trader.backtest.config:FillModelConfig",
-        config={
-            "prob_fill_on_limit": 0.95,  # 95% chance of limit orders filling
-            "prob_slippage": 0.05,  # 5% chance of slippage
-            "random_seed": 42,  # For reproducibility
-        },
+    fill_model = ProbabilisticFillModel(
+        prob_fill_on_limit=0.95,
+        prob_slippage=0.05,
+        random_seed=42,
     )
 
-    # Create importable latency model configs
-    latency_model_config = ImportableLatencyModelConfig(
-        latency_model_path="nautilus_trader.backtest.models:LatencyModel",
-        config_path="nautilus_trader.backtest.config:LatencyModelConfig",
-        config={
-            "base_latency_nanos": 5_000_000,  # 5 milliseconds base latency
-            "insert_latency_nanos": 2_000_000,  # Additional 2ms for inserts
-            "update_latency_nanos": 3_000_000,  # Additional 3ms for updates
-            "cancel_latency_nanos": 1_000_000,  # Additional 1ms for cancels
-        },
+    latency_model = StaticLatencyModel(
+        base_latency_nanos=5_000_000,
+        insert_latency_nanos=2_000_000,
+        update_latency_nanos=3_000_000,
+        cancel_latency_nanos=1_000_000,
     )
 
-    # Example of different importable fee models
-    maker_taker_fee_model_config = ImportableFeeModelConfig(
-        fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
-        config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
-        config={},  # Empty config for MakerTakerFeeModel as it doesn't require parameters
+    maker_taker_fee_model = MakerTakerFeeModel()
+    fixed_fee_model = FixedFeeModel(
+        commission=Money.from_str("1.50 USD"),
+        charge_commission_once=True,
     )
-
-    fixed_fee_model_config = ImportableFeeModelConfig(
-        fee_model_path="nautilus_trader.backtest.models:FixedFeeModel",
-        config_path="nautilus_trader.backtest.config:FixedFeeModelConfig",
-        config={
-            "commission": "1.50 USD",
-            "charge_commission_once": True,
-        },
+    per_contract_fee_model = PerContractFeeModel(
+        commission=Money.from_str("0.01 USD"),
     )
-
-    per_contract_fee_model_config = ImportableFeeModelConfig(
-        fee_model_path="nautilus_trader.backtest.models:PerContractFeeModel",
-        config_path="nautilus_trader.backtest.config:PerContractFeeModelConfig",
-        config={
-            "commission": "0.01 USD",
-        },
-    )
-
-    # Another example with different parameters
-    custom_fixed_fee_model_config = ImportableFeeModelConfig(
-        fee_model_path="nautilus_trader.backtest.models:FixedFeeModel",
-        config_path="nautilus_trader.backtest.config:FixedFeeModelConfig",
-        config={
-            "commission": "2.00 USD",
-            "charge_commission_once": False,
-        },
+    recurring_fixed_fee_model = FixedFeeModel(
+        commission=Money.from_str("2.00 USD"),
+        charge_commission_once=False,
     )
 
     # Create venue configs with different models
     venue_config1 = BacktestVenueConfig(
         name="NASDAQ",
-        oms_type="NETTING",
-        account_type="CASH",
-        base_currency="USD",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
         starting_balances=["1000000 USD"],
-        book_type="L1_MBP",
-        fill_model=fill_model_config,
-        latency_model=latency_model_config,
-        fee_model=maker_taker_fee_model_config,
+        book_type=BookType.L1_MBP,
+        fill_model=fill_model,
+        latency_model=latency_model,
+        fee_model=maker_taker_fee_model,
     )
 
     venue_config2 = BacktestVenueConfig(
         name="NYSE",
-        oms_type="NETTING",
-        account_type="CASH",
-        base_currency="USD",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
         starting_balances=["1000000 USD"],
-        book_type="L1_MBP",
-        fill_model=fill_model_config,
-        latency_model=latency_model_config,
-        fee_model=fixed_fee_model_config,
+        book_type=BookType.L1_MBP,
+        fill_model=fill_model,
+        latency_model=latency_model,
+        fee_model=fixed_fee_model,
     )
 
     venue_config3 = BacktestVenueConfig(
         name="CME",
-        oms_type="NETTING",
-        account_type="MARGIN",
-        base_currency="USD",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
         starting_balances=["1000000 USD"],
-        book_type="L1_MBP",
-        fill_model=fill_model_config,
-        latency_model=latency_model_config,
-        fee_model=per_contract_fee_model_config,
+        book_type=BookType.L1_MBP,
+        fill_model=fill_model,
+        latency_model=latency_model,
+        fee_model=per_contract_fee_model,
     )
 
     # Create venue config with custom fixed fee model
     venue_config4 = BacktestVenueConfig(
         name="BATS",
-        oms_type="NETTING",
-        account_type="CASH",
-        base_currency="USD",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
         starting_balances=["1000000 USD"],
-        book_type="L1_MBP",
-        fill_model=fill_model_config,
-        latency_model=latency_model_config,
-        fee_model=custom_fixed_fee_model_config,
+        book_type=BookType.L1_MBP,
+        fill_model=fill_model,
+        latency_model=latency_model,
+        fee_model=recurring_fixed_fee_model,
     )
 
     # Create data config (this is just a placeholder - you would need actual data)
     data_config = BacktestDataConfig(
+        data_type="QuoteTick",
         catalog_path="./data",
-        data_cls=QuoteTick,
         instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
     )
 
@@ -172,23 +128,15 @@ if __name__ == "__main__":
     )
 
     # Create and run the backtest node
-    node = BacktestNode(configs=[run_config])
+    node = BacktestNode([run_config])
 
     # Note: This example won't actually run without proper data
     # results = node.run()
 
-    print("Example of using importable model configs in BacktestVenueConfig")
-    print(
-        f"Venue 1 uses ImportableFeeModelConfig with MakerTakerFeeModel: {venue_config1.fee_model}",
-    )
-    print(
-        f"Venue 2 uses ImportableFeeModelConfig with FixedFeeModel: {venue_config2.fee_model.config}",
-    )
-    print(
-        f"Venue 3 uses ImportableFeeModelConfig with PerContractFeeModel: {venue_config3.fee_model.config}",
-    )
-    print(
-        f"Venue 4 uses ImportableFeeModelConfig with custom FixedFeeModel: {venue_config4.fee_model.config}",
-    )
-    print(f"Fill model config: {venue_config1.fill_model.config}")
-    print(f"Latency model config: {venue_config1.latency_model.config}")
+    print("Example of passing model objects to BacktestVenueConfig")
+    print(f"Venue 1 fee model: {venue_config1.fee_model}")
+    print(f"Venue 2 fee model: {venue_config2.fee_model}")
+    print(f"Venue 3 fee model: {venue_config3.fee_model}")
+    print(f"Venue 4 fee model: {venue_config4.fee_model}")
+    print(f"Fill model: {venue_config1.fill_model}")
+    print(f"Latency model: {venue_config1.latency_model}")

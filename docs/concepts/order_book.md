@@ -39,26 +39,29 @@ Strategies and actors subscribe to order book updates through the following meth
 Subscriptions and handlers are part of the Python strategy/actor layer:
 
 ```python
+from nautilus_trader.model import BookType
+
+
 # Incremental book deltas
-self.subscribe_order_book_deltas(instrument_id)
+self.subscribe_book_deltas(instrument_id, BookType.L2_MBP)
 
 # Aggregated depth snapshots (up to 10 levels)
-self.subscribe_order_book_depth(instrument_id)
+self.subscribe_book_depth10(instrument_id, BookType.L2_MBP)
 
 # Full book snapshots at a timed interval
-self.subscribe_order_book_at_interval(instrument_id, interval_ms=1000)
+self.subscribe_book_at_interval(instrument_id, BookType.L2_MBP, interval_ms=1000)
 ```
 
 Each subscription type delivers data to the corresponding handler:
 
 ```python
-def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
+def on_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
 
 
-def on_order_book_depth(self, depth: OrderBookDepth10) -> None: ...
+def on_book_depth(self, depth: OrderBookDepth10) -> None: ...
 
 
-def on_order_book(self, order_book: OrderBook) -> None: ...
+def on_book(self, order_book: OrderBook) -> None: ...
 ```
 
 ## Accessing the book

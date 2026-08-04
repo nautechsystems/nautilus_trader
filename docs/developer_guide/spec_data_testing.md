@@ -28,13 +28,14 @@ Before running data tests:
 
 **Python node setup**:
 
-Legacy examples still use `nautilus_trader.live.node.TradingNode`, but new Rust-backed
+Legacy examples still use `nautilus_trader.live.LiveNode`, but new Rust-backed
 PyO3 adapters should prefer `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
 when you need to register adapter client factories before the node is built.
 
 ```python
 from nautilus_trader.common import Environment
-from nautilus_trader.live import LiveDataEngineConfig, LiveNode
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
 
 node = (
@@ -172,7 +173,7 @@ Test order book subscription modes and snapshot requests.
 | ------------------ | -------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                  |
 | **Action**         | DataTester subscribes to order book deltas.                                            |
-| **Event sequence** | `OrderBookDeltas` events received in `on_order_book_deltas`.                           |
+| **Event sequence** | `OrderBookDeltas` events received in `on_book_deltas`.                                 |
 | **Pass criteria**  | Deltas received with valid instrument ID; at least one delta contains bid/ask updates. |
 | **Skip when**      | Adapter does not support order book data.                                              |
 
@@ -203,7 +204,7 @@ DataTesterConfig::builder()
 | ------------------ | ----------------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                                 |
 | **Action**         | DataTester subscribes to periodic order book snapshots.                                               |
-| **Event sequence** | `OrderBook` events received in `on_order_book` at configured interval.                                |
+| **Event sequence** | `OrderBook` events received in `on_book` at configured interval.                                      |
 | **Pass criteria**  | Book snapshots received with bid/ask levels; updates arrive at approximately the configured interval. |
 | **Skip when**      | Adapter does not support order book data.                                                             |
 
@@ -238,7 +239,7 @@ DataTesterConfig::builder()
 | ------------------ | ------------------------------------------------------------------------------------ |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                |
 | **Action**         | DataTester subscribes to `OrderBookDepth10` snapshots.                               |
-| **Event sequence** | `OrderBookDepth10` events received in `on_order_book_depth`.                         |
+| **Event sequence** | `OrderBookDepth10` events received in `on_book_depth`.                               |
 | **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
 | **Skip when**      | Adapter does not support book depth subscriptions.                                   |
 
@@ -363,7 +364,7 @@ Test quote tick subscriptions and historical requests.
 | ------------------ | --------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                             |
 | **Action**         | DataTester subscribes to quotes on start.                                         |
-| **Event sequence** | `QuoteTick` events received in `on_quote_tick`.                                   |
+| **Event sequence** | `QuoteTick` events received in `on_quote`.                                        |
 | **Pass criteria**  | At least one `QuoteTick` received with valid bid/ask prices and sizes; bid < ask. |
 | **Skip when**      | Never.                                                                            |
 
@@ -392,7 +393,7 @@ DataTesterConfig::builder()
 | ------------------ | ----------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                             |
 | **Action**         | DataTester requests historical quote ticks.                       |
-| **Event sequence** | Historical quotes received via `on_historical_data` callback.     |
+| **Event sequence** | Historical quote batches received via `on_historical_quotes`.     |
 | **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices, and sizes. |
 | **Skip when**      | Adapter does not support historical quote requests.               |
 
@@ -423,7 +424,7 @@ Test trade tick subscriptions and historical requests.
 | ------------------ | ----------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                         |
 | **Action**         | DataTester subscribes to trades on start.                                     |
-| **Event sequence** | `TradeTick` events received in `on_trade_tick`.                               |
+| **Event sequence** | `TradeTick` events received in `on_trade`.                                    |
 | **Pass criteria**  | At least one `TradeTick` received with valid price, size, and aggressor side. |
 | **Skip when**      | Never.                                                                        |
 
@@ -452,7 +453,7 @@ DataTesterConfig::builder()
 | ------------------ | -------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                |
 | **Action**         | DataTester requests historical trade ticks.                          |
-| **Event sequence** | Historical trades received via `on_historical_data` callback.        |
+| **Event sequence** | Historical trade batches received via `on_historical_trades`.        |
 | **Pass criteria**  | Trades received with valid timestamps, prices, sizes, and trade IDs. |
 | **Skip when**      | Adapter does not support historical trade requests.                  |
 

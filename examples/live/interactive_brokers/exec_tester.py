@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Interactive Brokers Python v2 execution tester example.
+Interactive Brokers Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to TWS or IB Gateway. Pass --run to connect. Pass --live-orders only when the
@@ -115,7 +115,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Interactive Brokers Python v2 exec tester.",
+        description="Build or run the Interactive Brokers Python exec tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="IB-001")

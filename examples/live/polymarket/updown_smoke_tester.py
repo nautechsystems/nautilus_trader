@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Polymarket Python v2 Up/Down smoke tester example.
+Polymarket Python Up/Down smoke tester example.
 
 The default path builds a live node configured with the Rust-backed Up/Down event slug
 builder without connecting to Polymarket or submitting orders. Pass --run to connect in
@@ -161,7 +161,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Polymarket Python v2 Up/Down smoke tester.",
+        description="Build or run the Polymarket Python Up/Down smoke tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="POLYMARKET-001")

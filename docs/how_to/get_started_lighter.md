@@ -1,7 +1,7 @@
 # Get Started with Lighter
 
-Lighter is available through the v2 Rust engine. You can use it from a pure Rust project, or from
-Python v2 through PyO3 bindings that expose the same Rust data and execution clients to a Python
+Lighter is available through the Rust engine. You can use it from a pure Rust project, or from
+Python through PyO3 bindings that expose the same Rust data and execution clients to a Python
 `LiveNode`.
 
 The shortest path is to start with public data. Once data subscriptions work, add execution
@@ -12,16 +12,16 @@ credentials and then add a strategy that can submit orders.
 | Path        | Use when                                            | First step                                 |
 | :---------- | :-------------------------------------------------- | :----------------------------------------- |
 | Pure Rust   | You want a compiled app with no Python runtime.     | Copy the Rust quickstart.                  |
-| Python v2   | You want Python scripts on the Rust engine.         | Run the Python v2 data tester.             |
+| Python      | You want Python scripts on the Rust engine.         | Run the Python data tester.                |
 | RWA example | You want Databento signal data and Lighter trading. | Read the composite market making tutorial. |
 
 Start from these files:
 
 - Rust quickstart: `examples/quickstarts/lighter-rust-data-client/`.
-- Python v2 data tester: `examples/live/lighter/data_tester.py`.
+- Python data tester: `examples/live/lighter/data_tester.py`.
 - RWA tutorial: [Composite market making tutorial][lighter-rwa-composite-mm].
 
-The Rust and Python v2 paths both use these pieces:
+The Rust and Python paths both use these pieces:
 
 - `LighterDataClientConfig` selects mainnet or testnet and optional transport settings.
 - `LighterExecClientConfig` adds trader/account IDs and resolves credentials.
@@ -92,13 +92,13 @@ export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 
 Use `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET` for mainnet.
 
-## Python v2 starter
+## Python starter
 
-Python v2 uses the Rust engine through PyO3. Install a Python v2 development wheel outside a source
-checkout, or build the v2 package from source before running these examples. See
-[Python v2 installation][python-v2-install].
+Python uses the Rust engine through PyO3. Install a Python development wheel outside a source
+checkout, or build the package from source before running these examples. See
+[Python installation][python-install].
 
-From the repository root with Python v2 installed:
+From the repository root with Python installed:
 
 ```bash
 .venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
@@ -144,7 +144,7 @@ The starter paths prove client wiring, subscriptions, and credential lookup. The
 replace the tester with a strategy:
 
 - Use [Write a Strategy (Rust)](write_rust_strategy.md) for a pure Rust strategy.
-- Use `examples/live/lighter/nvda_composite_mm.py` for Python v2 node wiring with the built-in
+- Use `examples/live/lighter/nvda_composite_mm.py` for Python node wiring with the built-in
   Rust `CompositeMarketMaker` strategy.
 - Use [Composite market making on Lighter RWA][lighter-rwa-composite-mm] when you need the full
   Databento signal setup.
@@ -162,4 +162,4 @@ account, can take several minutes under the standard 60 req/min quota, and affec
 strategy or market when the account has broader exposure.
 
 [lighter-rwa-composite-mm]: ../tutorials/lighter_rwa_composite_mm.md
-[python-v2-install]: ../getting_started/installation.md#branch-development-wheels
+[python-install]: ../getting_started/installation.md#branch-development-wheels

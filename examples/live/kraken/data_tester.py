@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Kraken Python v2 data tester example.
+Kraken Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Kraken. Pass --run to start subscriptions.
@@ -76,7 +76,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Kraken Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Kraken Python data tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"PF_XBTUSD.{KRAKEN}")
     parser.add_argument("--run", action="store_true")

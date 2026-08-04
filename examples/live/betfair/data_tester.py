@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Betfair Python v2 data tester example.
+Betfair Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Betfair. Pass --run to connect.
@@ -78,7 +78,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Betfair Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Betfair Python data tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-currency", default="GBP")
     parser.add_argument("--market-id", default="1.234567890")

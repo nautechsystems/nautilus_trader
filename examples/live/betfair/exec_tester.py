@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Betfair Python v2 execution tester example.
+Betfair Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to Betfair or submitting orders. Pass --run to connect. Pass --live-orders
@@ -113,7 +113,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Betfair Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Betfair Python exec tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="BETFAIR-001")
     parser.add_argument("--account-currency", default="GBP")

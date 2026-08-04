@@ -90,9 +90,9 @@ method based on what the call site communicates, not whether the value can chang
   Using a method signals the cost to the caller.
   Examples: `events()`, `adjustments()`, `client_order_ids()`, `trade_ids()`.
 
-## Python v2 live callback routing
+## Python live callback routing
 
-Python v2 live nodes keep one runtime invariant: Tokio worker threads do not run
+Python live nodes keep one runtime invariant: Tokio worker threads do not run
 Python code during live trading.
 
 `LiveNode::py_run` releases the GIL while the Rust async runtime runs. Worker-side
@@ -102,7 +102,7 @@ channel. The runner drains that channel during startup buffering and the main
 select loop, then executes callbacks on the live event loop thread.
 
 This path is a boundary for unavoidable user Python callback work. It is not a
-place to move adapter, provider, data, or execution logic into Python. Python v2
+place to move adapter, provider, data, or execution logic into Python. Python
 adapter modules configure Rust adapters and register factories; Rust owns adapter
 operations. If worker-side Rust work needs a Python callback, route it through a
 specific event type that belongs in the live runner.
@@ -111,7 +111,7 @@ When adding Python-aware live code:
 
 - Prefer an existing runner event channel.
 - Keep callback bodies short because they run synchronously on the live event loop.
-- Do not call `Python::attach` from Tokio worker tasks in Python v2 live trading.
+- Do not call `Python::attach` from Tokio worker tasks in Python live trading.
 - Do not add adapter business logic in Python to fit callback routing.
 
 ### Test naming

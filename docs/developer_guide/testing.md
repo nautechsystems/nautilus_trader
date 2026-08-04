@@ -142,7 +142,7 @@ Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid 
 ### Python tests
 
 The Python test suite lives under `python/tests/` and tests the Rust‑backed PyO3 package. It requires
-a built extension module and uses the Python project under `python/`.
+a built extension module and uses the Python project under `python/`. From the repository root, run:
 
 ```bash
 make pytest

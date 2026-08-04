@@ -92,8 +92,8 @@ print(gateway.port)
 ```
 
 Start `DockerizedIBGateway` separately, then pass its `host` and `port` to the data and execution
-configs. The `dockerized_gateway` constructor argument is reserved but is not wired into those
-Python clients.
+configs. Passing a non-`None` `dockerized_gateway` argument to either client config raises
+`ValueError` because Python does not own the container lifecycle.
 
 Set `read_only_api=False` only when the gateway must submit orders. The default container is
 `ghcr.io/gnzsnz/ib-gateway:stable`; `vnc_port` accepts ports from `5900` through `5999` when remote

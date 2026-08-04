@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Sandbox Python v2 execution tester example.
+Sandbox Python execution tester example.
 
 The default path builds a sandbox node and attaches the native Rust ExecTester without
 submitting orders. Pass --run to start the node. Pass --live-orders only when you intend
@@ -108,7 +108,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Sandbox Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Sandbox Python exec tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="SANDBOX-001")
     parser.add_argument("--venue", default=SANDBOX)

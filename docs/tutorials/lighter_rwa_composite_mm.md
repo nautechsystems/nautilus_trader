@@ -8,7 +8,7 @@ current Lighter inventory.
 
 The setup uses a Rust [`LiveNode`][live-node], while the strategy itself runs as the native
 Rust `CompositeMarketMaker` strategy. If you are new to the Lighter adapter, start with
-[Get started with Lighter][lighter-get-started] first. That guide isolates the Rust and Python v2
+[Get started with Lighter][lighter-get-started] first. That guide isolates the Rust and Python
 data-client paths before this tutorial adds Databento signal data and live order flow.
 
 ## Introduction
@@ -179,7 +179,7 @@ instead of hiding it in a custom strategy.
 There are two ways to run this: from a NautilusTrader checkout via the shipped
 [Lighter NVDA composite market maker example][example-script] binary, or by
 copying the node wiring below into a `main` in your own project that depends on
-the crates from [Project setup](#project-setup). A Python v2 counterpart also lives at
+the crates from [Project setup](#project-setup). A Python counterpart also lives at
 [`examples/live/lighter/nvda_composite_mm.py`][python-example-script]; it uses the same Rust
 strategy through PyO3.
 

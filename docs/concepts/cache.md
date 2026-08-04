@@ -31,7 +31,7 @@ flowchart LR
     data[Data]
     engine[DataEngine]
     cache[Cache]
-    callback["Strategy callback:<br/>on_quote_tick(...)"]
+    callback["Strategy callback:<br/>on_quote(...)"]
 
     data --> engine --> cache --> callback
 ```
@@ -72,12 +72,14 @@ def on_bar(self, bar: Bar) -> None:
 ## Configuration
 
 Use the `CacheConfig` class to configure the `Cache` behavior and capacity.
-You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](architecture.md#environment-contexts).
+You can provide this configuration either to a `BacktestEngine` or a `LiveNode`, depending on your [environment context](architecture.md#environment-contexts).
 
 Here's a basic example of configuring the `Cache`:
 
 ```python
-from nautilus_trader.config import CacheConfig, BacktestEngineConfig, TradingNodeConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import LiveNodeConfig
 
 # For backtesting
 engine_config = BacktestEngineConfig(
@@ -88,7 +90,7 @@ engine_config = BacktestEngineConfig(
 )
 
 # For live trading
-node_config = TradingNodeConfig(
+node_config = LiveNodeConfig(
     cache=CacheConfig(
         tick_capacity=10_000,
         bar_capacity=5_000,
@@ -187,7 +189,7 @@ node.run().await?;
 With the default `LiveExecEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
 `CacheConfig.flush_on_start = true` clears the backing instead. Direct backing injection is not yet
-available from the Python v2 `LiveNode` surface.
+available from the Python `LiveNode` surface.
 
 ## Using the cache
 
@@ -221,18 +223,16 @@ has_bars = self.cache.has_bars(
 
 ```python
 # Get quotes
-quotes = self.cache.quote_ticks(
+quotes = self.cache.quotes(
     instrument_id
 )  # Returns list[QuoteTick] or an empty list if no quotes found
-latest_quote = self.cache.quote_tick(
-    instrument_id
-)  # Returns QuoteTick or None if no such object exists
-second_last_quote = self.cache.quote_tick(
+latest_quote = self.cache.quote(instrument_id)  # Returns QuoteTick or None if no such object exists
+second_last_quote = self.cache.quote(
     instrument_id, index=1
 )  # Returns QuoteTick or None if no such object exists
 
 # Check quote availability
-quote_count = self.cache.quote_tick_count(
+quote_count = self.cache.quote_count(
     instrument_id
 )  # Returns the number of quotes in cache for this instrument
 has_quotes = self.cache.has_quote_ticks(
@@ -244,18 +244,16 @@ has_quotes = self.cache.has_quote_ticks(
 
 ```python
 # Get trades
-trades = self.cache.trade_ticks(
+trades = self.cache.trades(
     instrument_id
 )  # Returns list[TradeTick] or an empty list if no trades found
-latest_trade = self.cache.trade_tick(
-    instrument_id
-)  # Returns TradeTick or None if no such object exists
-second_last_trade = self.cache.trade_tick(
+latest_trade = self.cache.trade(instrument_id)  # Returns TradeTick or None if no such object exists
+second_last_trade = self.cache.trade(
     instrument_id, index=1
 )  # Returns TradeTick or None if no such object exists
 
 # Check trade availability
-trade_count = self.cache.trade_tick_count(
+trade_count = self.cache.trade_count(
     instrument_id
 )  # Returns the number of trades in cache for this instrument
 has_trades = self.cache.has_trade_ticks(
@@ -325,8 +323,8 @@ class MarketDataStrategy(Strategy):
         prev_prev_bar = bars[2]  # Third to last bar
 
         # Get latest quote and trade
-        latest_quote = self.cache.quote_tick(self.instrument_id)
-        latest_trade = self.cache.trade_tick(self.instrument_id)
+        latest_quote = self.cache.quote(self.instrument_id)
+        latest_trade = self.cache.trade(self.instrument_id)
 
         if latest_quote is not None:
             current_spread = latest_quote.ask_price - latest_quote.bid_price

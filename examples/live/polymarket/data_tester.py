@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Polymarket Python v2 data tester example.
+Polymarket Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Polymarket. Pass --run to start subscriptions.
@@ -85,7 +85,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Polymarket Python v2 data tester.",
+        description="Build or run the Polymarket Python data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--event-slug", default="fed-decision-in-september-762")

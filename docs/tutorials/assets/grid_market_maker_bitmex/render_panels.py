@@ -33,11 +33,12 @@ from plotly.subplots import make_subplots
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMaker
 from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMakerConfig
 from nautilus_trader.model.currencies import BTC
@@ -76,12 +77,18 @@ NROWS_QUOTES = 200_000
 NROWS_TRADES = 30_000
 
 
-class QuoteSamplerConfig(ActorConfig, frozen=True):
-    instrument_id: InstrumentId
-    sample_every_secs: int = 1
+class QuoteSamplerConfig(DataActorConfig):
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        sample_every_secs: int = 1,
+        **_kwargs,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.sample_every_secs = sample_every_secs
 
 
-class QuoteSampler(Actor):
+class QuoteSampler(DataActor):
     def __init__(self, config: QuoteSamplerConfig) -> None:
         super().__init__(config)
         self.samples: list[dict] = []
@@ -89,9 +96,9 @@ class QuoteSampler(Actor):
         self._interval_ns = config.sample_every_secs * 1_000_000_000
 
     def on_start(self) -> None:
-        self.subscribe_quote_ticks(self.config.instrument_id)
+        self.subscribe_quotes(self.config.instrument_id)
 
-    def on_quote_tick(self, tick: QuoteTick) -> None:
+    def on_quote(self, tick: QuoteTick) -> None:
         ts = tick.ts_event
         if ts - self._last_sample_ns < self._interval_ns:
             return
@@ -157,7 +164,7 @@ def run_backtest():
     engine = BacktestEngine(
         BacktestEngineConfig(
             trader_id=TraderId("BACKTESTER-001"),
-            logging=LoggingConfig(log_level="ERROR"),
+            logging=LoggerConfig(stdout_level=LogLevel.ERROR),
         ),
     )
     BITMEX = Venue("BITMEX")

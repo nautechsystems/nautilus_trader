@@ -220,13 +220,13 @@ already carries the data needed by the strategy.
 
 Nautilus subscription methods map to Databento schemas as follows:
 
-| Nautilus subscription method    | Default schema | Available Databento schemas                                                  | Nautilus data type |
-| :------------------------------ | :------------- | :--------------------------------------------------------------------------- | :----------------- |
-| `subscribe_quote_ticks()`       | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`        |
-| `subscribe_trade_ticks()`       | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`        |
-| `subscribe_order_book_depth()`  | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
-| `subscribe_order_book_deltas()` | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`  |
-| `subscribe_bars()`              | varies         | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`              |
+| Nautilus subscription method | Default schema | Available Databento schemas                                                  | Nautilus data type |
+| :--------------------------- | :------------- | :--------------------------------------------------------------------------- | :----------------- |
+| `subscribe_quotes()`         | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`        |
+| `subscribe_trades()`         | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`        |
+| `subscribe_book_depth10()`   | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
+| `subscribe_book_deltas()`    | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`  |
+| `subscribe_bars()`           | varies         | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`              |
 
 :::warning
 The "Available Databento schemas" column lists adapter-supported choices for
@@ -236,7 +236,7 @@ schema. For example, `EQUS.MINI` cannot serve `mbo`, `mbp-10`, `statistics`, or
 :::
 
 :::note
-The examples below assume a `Strategy` or `Actor` context where `self` has
+The examples below assume a `Strategy` or `DataActor` context where `self` has
 subscription methods. Import the required types:
 
 ```python
@@ -255,31 +255,31 @@ DATABENTO_CLIENT_ID = ClientId.from_str("DATABENTO")
 
 ```python
 # Default MBP-1 quotes (may include trades)
-self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+self.subscribe_quotes(instrument_id, client_id=DATABENTO_CLIENT_ID)
 
 # Explicit MBP-1 schema
-self.subscribe_quote_ticks(
+self.subscribe_quotes(
     instrument_id=instrument_id,
     params={"schema": "mbp-1"},
     client_id=DATABENTO_CLIENT_ID,
 )
 
 # 1-second BBO snapshots (adapter emits QuoteTick only)
-self.subscribe_quote_ticks(
+self.subscribe_quotes(
     instrument_id=instrument_id,
     params={"schema": "bbo-1s"},
     client_id=DATABENTO_CLIENT_ID,
 )
 
 # Consolidated quotes across venues
-self.subscribe_quote_ticks(
+self.subscribe_quotes(
     instrument_id=instrument_id,
     params={"schema": "cbbo-1s"},  # or "cmbp-1" for consolidated MBP
     client_id=DATABENTO_CLIENT_ID,
 )
 
 # Trade-sampled BBO (includes quotes and trades)
-self.subscribe_quote_ticks(
+self.subscribe_quotes(
     instrument_id=instrument_id,
     params={"schema": "tbbo"},  # Receives QuoteTick and TradeTick on the message bus
     client_id=DATABENTO_CLIENT_ID,
@@ -290,17 +290,17 @@ self.subscribe_quote_ticks(
 
 ```python
 # Trade ticks only
-self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+self.subscribe_trades(instrument_id, client_id=DATABENTO_CLIENT_ID)
 
 # Trades from MBP-1 feed (only when trade events occur)
-self.subscribe_trade_ticks(
+self.subscribe_trades(
     instrument_id=instrument_id,
     params={"schema": "mbp-1"},
     client_id=DATABENTO_CLIENT_ID,
 )
 
 # Trade-sampled data (includes quotes at trade time)
-self.subscribe_trade_ticks(
+self.subscribe_trades(
     instrument_id=instrument_id,
     params={"schema": "tbbo"},  # Also provides quotes at trade events
     client_id=DATABENTO_CLIENT_ID,
@@ -310,10 +310,13 @@ self.subscribe_trade_ticks(
 ### Order book depth subscriptions (MBP and L2)
 
 ```python
+from nautilus_trader.model import BookType
+
+
 # Subscribe to top 10 levels of market depth
-self.subscribe_order_book_depth(
+self.subscribe_book_depth10(
     instrument_id=instrument_id,
-    depth=10,  # MBP-10 schema is automatically selected
+    book_type=BookType.L2_MBP,  # MBP-10 schema is automatically selected
 )
 
 # The depth parameter must be 10 for Databento
@@ -324,7 +327,7 @@ self.subscribe_order_book_depth(
 
 ```python
 # Subscribe to full order book updates (market by order)
-self.subscribe_order_book_deltas(
+self.subscribe_book_deltas(
     instrument_id=instrument_id,
     book_type=BookType.L3_MBO,  # Uses MBO schema
 )
@@ -853,20 +856,8 @@ The live client reconnects automatically on:
 
 #### Reconnection strategy
 
-Backoff strategy depends on the timeout configuration:
-
-**With timeout** (default 10 minutes):
-
-- Exponential backoff capped at **60 seconds**.
-- Pattern: 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s, and so on (with jitter).
-- Reconnects quickly within the timeout window.
-
-**Without timeout** (`reconnect_timeout_mins=None`):
-
-- Exponential backoff capped at **10 minutes**.
-- Pattern: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 512s, 600s, 600s,
-  and so on (with jitter).
-- Suited for unattended systems through overnight closures and scheduled maintenance.
+The factory-backed live client uses an internal 10-minute reconnection window with exponential
+backoff capped at 60 seconds. `DatabentoLiveClientConfig` does not expose a reconnection timeout.
 
 All reconnections include:
 
@@ -878,23 +869,6 @@ Individual unsubscribe requests log a warning and are ignored because Databento
 live sessions do not support granular unsubscribe. Stop the session to remove a
 subscription from the live gateway.
 
-#### Timeout configuration
-
-The `reconnect_timeout_mins` parameter controls how long the client attempts reconnection:
-
-**Default (10 minutes)**: Suitable for most use cases.
-
-- Handles transient network issues.
-- Survives scheduled gateway restarts.
-- Stops retrying overnight when markets close.
-- Requires manual intervention for longer outages.
-
-:::warning
-Setting `reconnect_timeout_mins=None` retries indefinitely. Use only for
-unattended systems that must survive overnight market closures. This can mask
-persistent configuration or authentication issues.
-:::
-
 #### Scheduled maintenance
 
 Databento restarts live gateways on this schedule (all clients disconnect):
@@ -905,8 +879,7 @@ Databento restarts live gateways on this schedule (all clients disconnect):
 | All ICE venues     | Sunday 09:45 UTC  |
 | All other datasets | Sunday 10:30 UTC  |
 
-The default 10-minute timeout covers typical restarts. For unattended systems,
-use `reconnect_timeout_mins=None` or a longer value. See the
+The internal 10-minute timeout covers typical restarts. See the
 [Databento Maintenance Schedule](https://databento.com/docs/api-reference-live/basics/maintenance-schedule)
 for details.
 

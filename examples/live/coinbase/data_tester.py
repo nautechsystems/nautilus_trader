@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Coinbase Python v2 data tester example.
+Coinbase Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Coinbase. Pass --run to start subscriptions.
@@ -81,7 +81,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Coinbase Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Coinbase Python data tester.")
     parser.add_argument("--coinbase-environment", choices=["live", "sandbox"], default="live")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"BTC-USD.{COINBASE}")

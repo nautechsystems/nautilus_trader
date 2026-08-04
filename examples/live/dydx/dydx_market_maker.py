@@ -36,7 +36,7 @@ from nautilus_trader.adapters.dydx import DydxExecClientConfig
 from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
 from nautilus_trader.adapters.dydx import DydxLiveExecClientFactory
 from nautilus_trader.adapters.dydx.constants import DYDX
-from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig

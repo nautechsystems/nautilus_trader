@@ -951,15 +951,15 @@ Provide the applicable tester entry points:
 
 - Rust: `crates/adapters/<adapter>/examples/node_data_tester.rs` and
   `node_exec_tester.rs`, with product subdirectories when protocols split by product.
-- Python v2: `examples/live/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
+- Python: `examples/live/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
   the Rust config and factory classes.
 
-Python v2 tester scripts build without connecting by default and require `--run` to connect.
+Python tester scripts build without connecting by default and require `--run` to connect.
 Execution testers require the separate `--live-orders` opt‑in before order submission. Preserve
 that safety boundary. Rust tester controls currently vary; inspect them before running, and make
 any new or revised execution tester default to `ExecTester` dry‑run behavior.
 
-### Python v2 boundary testing
+### Python boundary testing
 
 For Python‑exposed adapters, test the Rust module before testing broad Python workflows. Verify:
 

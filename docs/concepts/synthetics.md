@@ -6,7 +6,7 @@ Nautilus instrument with the synthetic venue code `SYNTH`.
 
 Synthetic instruments are useful for:
 
-- Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds.
+- Enabling `DataActor` and `Strategy` components to subscribe to quote or trade feeds.
 - Triggering emulated orders from derived prices.
 - Constructing bars from synthetic quotes or trades.
 
@@ -145,7 +145,7 @@ synthetic = SyntheticInstrument(
 
 self._synthetic_id = synthetic.id
 self.add_synthetic(synthetic)
-self.subscribe_quote_ticks(self._synthetic_id)
+self.subscribe_quotes(self._synthetic_id)
 ```
 
 :::note

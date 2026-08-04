@@ -26,7 +26,7 @@ The low-level API centers on `BacktestEngine`. Create the engine with a
 
 ```python
 from nautilus_trader.backtest import BacktestEngine
-from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.config import BacktestEngineConfig
 
 engine = BacktestEngine(BacktestEngineConfig())
 engine.add_venue(...)
@@ -100,11 +100,11 @@ The high-level API centers on `BacktestNode`. Each `BacktestRunConfig` contains:
 Build the node before adding strategies through its run-specific methods:
 
 ```python
-from nautilus_trader.backtest import BacktestDataConfig
-from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestNode
-from nautilus_trader.backtest import BacktestRunConfig
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -142,7 +142,7 @@ Set `BacktestEngineConfig.shutdown_on_error=True` to request a normal shutdown w
 emits an error record:
 
 ```python
-from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.config import BacktestEngineConfig
 
 config = BacktestEngineConfig(shutdown_on_error=True)
 ```

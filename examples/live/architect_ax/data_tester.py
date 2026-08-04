@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Architect AX Python v2 data tester example.
+Architect AX Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to AX Exchange. Pass --run to start Sandbox subscriptions.
@@ -89,7 +89,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Architect AX Python v2 data tester.",
+        description="Build or run the Architect AX Python data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"XAG-PERP.{AX}")

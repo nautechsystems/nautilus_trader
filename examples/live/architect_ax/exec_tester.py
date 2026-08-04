@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Architect AX Python v2 execution tester example.
+Architect AX Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to AX Exchange or submitting orders. Pass --run to connect to Sandbox. Pass
@@ -123,7 +123,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Architect AX Python v2 exec tester.",
+        description="Build or run the Architect AX Python exec tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="AX-001")

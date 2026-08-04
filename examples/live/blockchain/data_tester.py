@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Blockchain Python v2 data tester example.
+Blockchain Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to the configured RPC endpoint. Pass --run to start subscriptions.
@@ -81,7 +81,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Blockchain Python v2 data tester.",
+        description="Build or run the Blockchain Python data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--http-rpc-url", default="https://arb1.arbitrum.io/rpc")

@@ -134,7 +134,7 @@ awaits the post-stop delay, disconnects clients, and stops the engines. It does 
 the process.
 
 ```python
-from nautilus_trader.live import LiveNodeConfig
+from nautilus_trader.config import LiveNodeConfig
 
 config = LiveNodeConfig(shutdown_on_error=True)
 ```

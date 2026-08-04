@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-OKX Python v2 data tester example.
+OKX Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to OKX. Pass --run to start subscriptions.
@@ -89,7 +89,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the OKX Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the OKX Python data tester.")
     parser.add_argument("--okx-environment", choices=["live", "demo"], default="demo")
     parser.add_argument(
         "--instrument-type",

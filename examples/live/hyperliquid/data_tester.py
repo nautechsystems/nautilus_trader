@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Hyperliquid Python v2 data tester example.
+Hyperliquid Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to Hyperliquid. Pass --run to start subscriptions.
@@ -77,7 +77,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Hyperliquid Python v2 data tester.",
+        description="Build or run the Hyperliquid Python data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"BTC-USD-PERP.{HYPERLIQUID}")

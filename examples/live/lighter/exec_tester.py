@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Lighter Python v2 execution tester example.
+Lighter Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to Lighter or submitting orders. Pass --run to connect. Pass --live-orders
@@ -110,7 +110,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Lighter Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Lighter Python exec tester.")
     parser.add_argument("--lighter-environment", choices=["testnet", "mainnet"], default="testnet")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="LIGHTER-001")

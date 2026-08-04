@@ -628,7 +628,7 @@ precision. `mantissa` is only valid when `nSigFigs=5` and accepts `1`, `2`, or
 ```python
 from nautilus_trader.model import BookType
 
-self.subscribe_order_book_deltas(
+self.subscribe_book_deltas(
     instrument_id=instrument_id,
     book_type=BookType.L2_MBP,
     params={"n_sig_figs": 5, "mantissa": 2},

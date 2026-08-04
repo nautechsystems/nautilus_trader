@@ -35,8 +35,8 @@ from pathlib import Path
 import pandas as pd
 
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMaker
 from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMakerConfig

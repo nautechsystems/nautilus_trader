@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Lighter NVDA RWA composite market making example (Python v2).
+Lighter NVDA RWA composite market making Python example.
 
 Builds a live node with Databento ``NVDA.EQUS`` quotes as the signal instrument and Lighter
 ``NVDA-PERP.LIGHTER`` data and execution as the target instrument, running the native Rust
@@ -127,7 +127,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Lighter NVDA composite market maker (Python v2).",
+        description="Build or run the Lighter NVDA composite market maker in Python.",
     )
     parser.add_argument("--lighter-environment", choices=["testnet", "mainnet"], default="testnet")
     parser.add_argument("--trader-id", default="TESTER-001")

@@ -24,20 +24,18 @@ can handle events at whatever granularity you need.
 
 1. Specific handler (e.g. `on_order_filled`)
 2. `on_order_event` (receives all order events)
-3. `on_event` (receives everything)
 
 ### Position events
 
 1. Specific handler (e.g. `on_position_opened`)
 2. `on_position_event` (receives all position events)
-3. `on_event` (receives everything)
 
 ### Time events
 
 Timers and alerts produce `TimeEvent` objects. Pass a `callback` when calling
 `set_timer` or `set_time_alert` to direct events to your own method. If you
 omit the callback, a callback previously registered under the same name is
-used when present; otherwise the event is delivered to `on_event` instead.
+used when present; otherwise the event is delivered to `on_time_event`.
 
 ## Order events
 
@@ -226,24 +224,12 @@ The `Portfolio` subscribes to these events internally to maintain exposure
 and balance tracking. See [`AccountState`](account_state.md) for the full
 field list.
 
-## Event subscriptions
+## Event handling
 
-Beyond strategy handlers, actors can subscribe to specific event streams for
-instruments they do not trade. These subscriptions use the `MessageBus`
-directly and do not involve the `DataEngine`.
-
-| Topic pattern                           | Receives                                 |
-| --------------------------------------- | ---------------------------------------- |
-| `events.order_filled.{instrument_id}`   | Fill events for one instrument.          |
-| `events.order_canceled.{instrument_id}` | Cancel events for one instrument.        |
-| `events.order.{strategy_id}`            | All order events routed to one strategy. |
-| `events.order.*`                        | All strategy‑routed order events.        |
-
-These are useful for monitoring actors that track execution quality or fill
-rates across strategies without participating in order management.
-
-For details and examples, see
-[Order event subscriptions](../actors.md#order-event-subscriptions).
+Strategies receive order events through specific callbacks such as `on_order_filled()` or the
+aggregate `on_order_event()` callback. Python data actors do not expose order event callbacks or
+the raw message bus. Use signals to send derived values from a strategy to a data actor. See
+[Actors: order event handling](../actors.md#order-event-handling).
 
 ## Related guides
 

@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Binance Python v2 execution tester example.
+Binance Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to Binance or submitting orders. Pass --run to connect. Pass --live-orders
@@ -117,7 +117,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Binance Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Binance Python exec tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="BINANCE-001")
     parser.add_argument("--instrument", default=f"BTCUSDT.{BINANCE}")

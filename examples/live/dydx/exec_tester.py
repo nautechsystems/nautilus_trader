@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-DYdX Python v2 execution tester example.
+DYdX Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to dYdX or submitting orders. Pass --run to connect. Pass --live-orders only
@@ -112,7 +112,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the dYdX Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the dYdX Python exec tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="DYDX-001")
     parser.add_argument("--instrument", default=f"ETH-USD-PERP.{DYDX}")

@@ -26,8 +26,9 @@ Run with:
 import json
 import sys
 
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import ImportableStrategyConfig as _ISC
 from nautilus_trader.core.nautilus_pyo3.backtest import BacktestEngine
-from nautilus_trader.core.nautilus_pyo3.backtest import BacktestEngineConfig
 from nautilus_trader.core.nautilus_pyo3.model import AccountType
 from nautilus_trader.core.nautilus_pyo3.model import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3.model import Currency
@@ -37,7 +38,6 @@ from nautilus_trader.core.nautilus_pyo3.model import Price
 from nautilus_trader.core.nautilus_pyo3.model import Quantity
 from nautilus_trader.core.nautilus_pyo3.model import QuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import Venue
-from nautilus_trader.core.nautilus_pyo3.trading import ImportableStrategyConfig as _ISC
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 

@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-BitMEX Python v2 data tester example.
+BitMEX Python data tester example.
 
 The default path builds a live node and attaches the built-in Rust DataTester without
 connecting to BitMEX. Pass --run to start subscriptions.
@@ -77,7 +77,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the BitMEX Python v2 data tester.")
+    parser = argparse.ArgumentParser(description="Build or run the BitMEX Python data tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--instrument", default=f"XBTUSD.{BITMEX}")
     parser.add_argument("--run", action="store_true")

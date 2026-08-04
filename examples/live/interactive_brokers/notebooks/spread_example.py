@@ -40,6 +40,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 from nautilus_trader.live.node import TradingNode
@@ -52,7 +53,6 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import generic_spread_id_to_list
 from nautilus_trader.model.identifiers import new_generic_spread_id
-from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
 
 

@@ -37,7 +37,7 @@ The low-level API accepts model types directly:
 
 ```python
 from nautilus_trader.backtest import BacktestEngine
-from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -55,7 +55,7 @@ engine.add_venue(
 The high-level API accepts the same enum values but represents starting balances as strings:
 
 ```python
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -76,7 +76,7 @@ simulation should reserve the instrument's fixed initial and maintenance margin 
 without reducing them by account leverage.
 
 ```python
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType

@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Bybit Python v2 execution tester example.
+Bybit Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to Bybit or submitting orders. Pass --run to connect. Pass --live-orders only
@@ -117,7 +117,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Bybit Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Bybit Python exec tester.")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="BYBIT-001")
     parser.add_argument("--instrument", default=f"ETHUSDT-LINEAR.{BYBIT}")

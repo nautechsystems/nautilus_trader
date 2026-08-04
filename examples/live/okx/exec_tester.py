@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-OKX Python v2 execution tester example.
+OKX Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to OKX or submitting orders. Pass --run to connect. Pass --live-orders only
@@ -129,7 +129,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the OKX Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the OKX Python exec tester.")
     parser.add_argument("--okx-environment", choices=["live", "demo"], default="demo")
     parser.add_argument(
         "--instrument-type",

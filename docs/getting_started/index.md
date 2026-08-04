@@ -46,7 +46,7 @@ The high‑level API requires a Parquet‑based data catalog. The low‑level AP
 in‑memory data but has no live‑trading path.
 
 :::warning[One node per process]
-Running multiple `BacktestNode` or `TradingNode` instances concurrently in the same
+Running multiple `BacktestNode` or `LiveNode` instances concurrently in the same
 process is not supported due to global singleton state. Sequential execution with
 proper disposal between runs is supported.
 
@@ -85,6 +85,6 @@ docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly
 Then open <http://localhost:8888> in your browser.
 
 :::warning
-Examples use `log_level="ERROR"` because Nautilus logging exceeds Jupyter's stdout rate
-limit, causing notebooks to hang at lower log levels.
+Examples use `LoggerConfig(stdout_level=LogLevel.ERROR)` because Nautilus logging exceeds
+Jupyter's stdout rate limit, causing notebooks to hang at lower log levels.
 :::

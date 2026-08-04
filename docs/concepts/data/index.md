@@ -251,7 +251,7 @@ def on_start(self) -> None:
     bar_type = BarType.from_str("6EH4.XCME-50-VOLUME-LAST-INTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
 
-    # Deliver historical bars to on_historical_data
+    # Deliver historical bars to on_historical_bars
     self.request_bars(bar_type, start=start)
 
     # Deliver live bars to on_bar
@@ -286,8 +286,7 @@ def on_start(self) -> None:
     bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
 
-    # Provide the aggregation chain in dependency order
-    self.request_aggregated_bars([bar_type], start=start)
+    self.request_bars(bar_type, start=start)
 
     # Deliver live updates to on_bar
     self.subscribe_bars(bar_type)
@@ -310,13 +309,12 @@ hourly_bar_type = BarType.from_str("6EH4.XCME-1-HOUR-LAST-INTERNAL@5-MINUTE-INTE
 
 ### Working with bars: request vs. subscribe
 
-NautilusTrader provides three operations for working with bars:
+NautilusTrader provides two operations for working with bars:
 
-| Method                      | Purpose                                                  | Delivery handler       |
-| --------------------------- | -------------------------------------------------------- | ---------------------- |
-| `request_bars()`            | Fetch historical data for a standard `BarType`.          | `on_historical_data()` |
-| `request_aggregated_bars()` | Build internal bars from a dependency‑ordered type list. | `on_historical_data()` |
-| `subscribe_bars()`          | Subscribe to live bars.                                  | `on_bar()`             |
+| Method             | Purpose                 | Delivery handler       |
+| ------------------ | ----------------------- | ---------------------- |
+| `request_bars()`   | Fetch historical bars.  | `on_historical_bars()` |
+| `subscribe_bars()` | Subscribe to live bars. | `on_bar()`             |
 
 `subscribe_bars()` expects the instrument for the `BarType` in the cache. The same precondition
 applies to other live market data subscriptions.
@@ -326,18 +324,13 @@ These methods work together in a typical workflow:
 1. `request_bars()` loads historical data to initialize indicators or strategy state.
 1. `subscribe_bars()` continues the stream with live bars.
 
-:::tip[Request and subscribe ordering]
-
-When `validate_data_sequence=True` (common with live adapters such as Interactive Brokers),
-calling `subscribe_bars()` immediately after `request_bars()` can cause a race condition:
-live bars arriving before the historical batch may cause the validator to discard older
-warmup bars. Pass a `callback` to `request_bars()` and subscribe from the callback.
-
-:::
-
-Use the callback in `on_start()`:
+The request returns a correlation ID. Historical data arrives through `on_historical_bars()` as a
+`Sequence[Bar]`; live data arrives through `on_bar()` one bar at a time.
 
 ```python
+from collections.abc import Sequence
+
+
 def on_start(self) -> None:
     bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL")
     start = self.clock.utc_now() - timedelta(days=30)
@@ -345,52 +338,18 @@ def on_start(self) -> None:
     # Register indicators before requesting history
     self.register_indicator_for_bars(bar_type, self.my_indicator)
 
-    # Start the live stream after the historical request completes
-    self.request_bars(
-        bar_type,
-        start=start,
-        callback=lambda _: self.subscribe_bars(bar_type),
-    )
-```
+    self.request_bars(bar_type, start=start)
+    self.subscribe_bars(bar_type)
 
-Define these strategy handlers to receive the data:
 
-```python
-def on_historical_data(self, data):
-    # Process historical data from either request method
-    pass
+def on_historical_bars(self, bars: Sequence[Bar]) -> None:
+    for bar in bars:
+        self.log.info(f"Historical bar: {bar}")
 
 
 def on_bar(self, bar):
     # Process individual bars from subscribe_bars()
     pass
-```
-
-### Historical data requests with aggregation
-
-Use `request_bars()` for standard historical bar types and `request_aggregated_bars()` for
-on‑the‑fly aggregation:
-
-```python
-start = self.clock.utc_now() - timedelta(days=30)
-
-# Request external 1-minute bars
-self.request_bars(
-    BarType.from_str("6EH4.XCME-1-MINUTE-LAST-EXTERNAL"),
-    start=start,
-)
-
-# Aggregate bars from historical trade ticks
-self.request_aggregated_bars(
-    [BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL")],
-    start=start,
-)
-
-# Aggregate 5-minute bars from 1-minute bars
-self.request_aggregated_bars(
-    [BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")],
-    start=start,
-)
 ```
 
 ### Register indicators before requesting data
@@ -437,7 +396,7 @@ apply to all time‑based aggregation from milliseconds through years:
 | `time_bars_build_delay`             | `int`  | `0`           | Delay in microseconds before building a bar. Useful in backtests to ensure data at bar boundary timestamps is processed before the timer fires. |
 
 ```python
-from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.config import DataEngineConfig
 
 config = DataEngineConfig(
     time_bars_timestamp_on_close=True,
@@ -542,21 +501,16 @@ Data loaders are specific to a source format. For example, Binance order book CS
 
 ### Data wranglers
 
-The `nautilus_trader.persistence.wranglers` module provides wranglers for each NautilusTrader data
-type. Common v1 wranglers include:
+The `nautilus_trader.persistence` module provides Rust-backed wranglers for each NautilusTrader
+data type:
 
 - `OrderBookDeltaDataWrangler`
+- `OrderBookDepth10DataWrangler`
 - `QuoteTickDataWrangler`
 - `TradeTickDataWrangler`
 - `BarDataWrangler`
 
-For Arrow v2 and PyO3 workflows, the v2 module also provides `OrderBookDepth10DataWranglerV2`.
-
-:::warning
-DataWrangler v2 components accept the fixed‑width Arrow v2 schema and return PyO3 objects. These
-objects are not compatible with code that expects legacy v1 Cython objects, such as direct
-insertion into a v1 `BacktestEngine`.
-:::
+These wranglers accept fixed‑width Arrow record batch bytes and return Python model objects.
 
 ### Fixed-point precision and raw values
 
@@ -579,7 +533,7 @@ which can produce an incorrect value.
 
 #### Automatic raw value correction
 
-Legacy catalog data written by earlier v2 wranglers can contain raw values with floating‑point
+Legacy catalog data written by earlier wranglers can contain raw values with floating‑point
 errors. Those wranglers used `int(value * FIXED_SCALAR)` instead of precision‑aware conversion:
 
 ```python
@@ -677,7 +631,7 @@ Initialize a catalog for data already stored at a local path:
 
 ```python
 from pathlib import Path
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 
 
 CATALOG_PATH = Path.cwd() / "catalog"
@@ -996,112 +950,12 @@ When a backtest runs, the `BacktestNode` processes each `BacktestDataConfig`:
 1. Load required instrument definitions.
 1. Sort the data and add it to the backtest engine.
 
-### `DataCatalogConfig`: on-the-fly data loading
+### Direct catalog access
 
-`DataCatalogConfig` gives runtime access to a catalog, including historical data requests.
-Use it instead of `BacktestDataConfig` when the run cannot list all required data in advance.
-
-#### Core parameters
-
-**Required parameters:**
-
-- `path`: Path to the data catalog directory.
-
-**Optional parameters:**
-
-- `fs_protocol`: Filesystem protocol, such as `file`, `s3`, `gcs`, or `az`.
-- `fs_storage_options`: Protocol‑specific storage options.
-- `fs_rust_storage_options`: Protocol‑specific storage options for the Rust backend.
-- `name`: Optional name identifier for the catalog configuration.
-
-#### Basic usage examples
-
-**Local catalog configuration:**
-
-```python
-from nautilus_trader.persistence.config import DataCatalogConfig
-
-catalog_config = DataCatalogConfig(
-    path="/path/to/catalog", fs_protocol="file", name="local_market_data"
-)
-
-catalog = catalog_config.as_catalog()
-```
-
-**Cloud storage configuration:**
-
-```python
-catalog_config = DataCatalogConfig(
-    path="s3://my-bucket/market-data/",
-    fs_protocol="s3",
-    fs_storage_options={
-        "key": "your-access-key",
-        "secret": "your-secret-key",
-        "region": "us-west-2",
-        "endpoint_url": "https://s3.us-west-2.amazonaws.com",
-    },
-    name="cloud_market_data",
-)
-```
-
-#### Integration with live trading
-
-Add `DataCatalogConfig` to a live node configuration for historical data access:
-
-```python
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.persistence.config import DataCatalogConfig
-
-catalog_config = DataCatalogConfig(
-    path="/data/nautilus/catalog", fs_protocol="file", name="historical_data"
-)
-
-node_config = TradingNodeConfig(
-    # ... other configurations
-    catalogs=[catalog_config],
-)
-```
-
-#### Streaming configuration
-
-Use `StreamingConfig` to stream live or backtest data to a catalog:
-
-```python
-import pandas as pd
-
-from nautilus_trader.persistence.config import RotationMode
-from nautilus_trader.persistence.config import StreamingConfig
-
-streaming_config = StreamingConfig(
-    catalog_path="/path/to/streaming/catalog",
-    fs_protocol="file",
-    flush_interval_ms=1000,  # Flush every second
-    replace_existing=False,
-    rotation_mode=RotationMode.INTERVAL,
-    rotation_interval=pd.Timedelta(hours=1),
-    max_file_size=1024 * 1024 * 100,  # 100MB max file size
-)
-```
-
-#### Use cases
-
-**Historical data analysis:**
-
-- Load historical data during live trading for strategy calculations.
-- Access reference data for instrument lookups.
-- Retrieve past performance metrics.
-
-**Dynamic data loading:**
-
-- Load data based on runtime conditions.
-- Implement custom data loading strategies.
-- Support multiple catalog sources.
-
-**Research and development:**
-
-- Interactive data exploration in Jupyter notebooks.
-- Ad hoc analysis and backtesting.
-- Data quality validation and monitoring.
+Use `ParquetDataCatalog` to query or write a catalog directly. Use `BacktestDataConfig` when a
+`BacktestNode` should load catalog data for a run. `LiveNodeConfig` does not accept catalog
+configuration; request historical data through a configured data client or query the catalog
+directly.
 
 ### Query system and dual backend architecture
 
@@ -1269,40 +1123,9 @@ outside the range.
 
 ### Feather streaming and conversion
 
-During a backtest, the catalog can stream data to temporary Feather files and convert them to
-Parquet for later queries.
-
-**Option Greeks streaming:**
-
-```python
-from option_trader.greeks import GreeksData
-from nautilus_trader.persistence.config import StreamingConfig
-
-# 1. Configure streaming for custom data
-streaming = StreamingConfig(
-    catalog_path=catalog.path,
-    include_types=[GreeksData],
-    flush_interval_ms=1000,
-)
-
-# 2. Run backtest with streaming enabled
-engine_config = BacktestEngineConfig(streaming=streaming)
-results = node.run()
-
-# 3. Convert streamed data to permanent catalog
-catalog.convert_stream_to_data(
-    results[0].instance_id,
-    GreeksData,
-)
-
-# 4. Query converted data
-greeks_data = catalog.query(
-    data_cls=GreeksData,
-    start="2024-01-01",
-    end="2024-01-31",
-    where="delta > 0.5",
-)
-```
+The Python API exposes `StreamingFeatherWriter` for direct streaming. It does not expose a
+`StreamingConfig` for `BacktestNode`. `ParquetDataCatalog.convert_stream_to_data()` converts a
+completed Feather stream to Parquet when the application manages the writer lifecycle.
 
 ## Data migrations
 
@@ -1663,7 +1486,7 @@ Register the Arrow schema before streaming custom data to Feather or writing it 
 ```python
 register_arrow(GreeksData, GreeksData.schema(), GreeksData.to_catalog, GreeksData.from_catalog)
 
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 
 catalog = ParquetDataCatalog(".")
 
@@ -1697,12 +1520,12 @@ GreeksTestData(
 
 #### Python-only custom data with the PyO3 catalog
 
-For custom data with the Rust‑backed `ParquetDataCatalog` from `nautilus_pyo3`, use
+For custom data with the Rust-backed `ParquetDataCatalog`, use
 `@customdataclass_pyo3()` instead of `@customdataclass`. It adds JSON and Arrow IPC methods. Register
 the class once after defining it:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.core.nautilus_pyo3.model import CustomData
 from nautilus_trader.core.nautilus_pyo3.model import DataType
 from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class

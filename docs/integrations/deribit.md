@@ -209,7 +209,7 @@ subscriber to both the combo and an underlying leg sees one combo tick plus one 
 that combo trade, not duplicate ticks against the same instrument.
 
 To have the Deribit data client open the real leg trade channels alongside a combo trade
-subscription, pass `params={"subscribe_combo_legs": True}` to `subscribe_trade_ticks`. When
+subscription, pass `params={"subscribe_combo_legs": True}` to `subscribe_trades`. When
 unsubscribing that combo trade stream, Nautilus also closes the leg subscriptions opened by
 this opt-in.
 
@@ -310,22 +310,25 @@ The data client chooses the order book interval as follows:
 3. Uses Deribit's public `100ms` grouped feed when the connection is not authenticated.
 
 ```python
+from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 
 # Public 100ms aggregated feed when no API credentials are configured.
-strategy.subscribe_order_book_deltas(instrument_id)
+strategy.subscribe_book_deltas(instrument_id, BookType.L2_MBP)
 
 # Raw feed. This is also the authenticated default when no interval is supplied.
-strategy.subscribe_order_book_deltas(
+strategy.subscribe_book_deltas(
     instrument_id,
+    BookType.L2_MBP,
     params={"interval": "raw"},
 )
 
 # Force an aggregated feed on an authenticated connection.
-strategy.subscribe_order_book_deltas(
+strategy.subscribe_book_deltas(
     instrument_id,
+    BookType.L2_MBP,
     params={"interval": "100ms", "depth": 10},
 )
 ```

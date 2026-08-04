@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Derive Python v2 execution tester example.
+Derive Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to Derive or submitting orders. Pass --run to connect, and pass --live-orders
@@ -119,7 +119,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Derive Python v2 exec tester.")
+    parser = argparse.ArgumentParser(description="Build or run the Derive Python exec tester.")
     parser.add_argument("--derive-environment", choices=["testnet", "mainnet"], default="testnet")
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="DERIVE-001")

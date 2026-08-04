@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Polymarket Python v2 execution tester example.
+Polymarket Python execution tester example.
 
 The default path builds a live node and attaches the native Rust ExecTester without
 connecting to Polymarket or submitting orders. Pass --run to connect. Use
@@ -138,7 +138,7 @@ def main() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build or run the Polymarket Python v2 exec tester.",
+        description="Build or run the Polymarket Python exec tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
     parser.add_argument("--account-id", default="POLYMARKET-001")

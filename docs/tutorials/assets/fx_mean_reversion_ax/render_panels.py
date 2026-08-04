@@ -25,10 +25,11 @@ from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
 from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
 from nautilus_trader.model.currencies import USD
@@ -124,7 +125,7 @@ def run_backtest():
     engine = BacktestEngine(
         BacktestEngineConfig(
             trader_id=TraderId("BACKTESTER-001"),
-            logging=LoggingConfig(log_level="ERROR"),
+            logging=LoggerConfig(stdout_level=LogLevel.ERROR),
             cache=CacheConfig(bar_capacity=200_000, tick_capacity=10_000),
         ),
     )

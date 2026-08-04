@@ -4,7 +4,7 @@
 # Use `BacktestNode` for config-driven backtesting with the Parquet data catalog.
 # This is the recommended path for production workflows because the strategies,
 # actors, and execution algorithms you build here carry forward to live trading
-# with `TradingNode`.
+# with `LiveNode`.
 #
 # This tutorial loads FX quote tick data, writes it to a catalog, and backtests
 # an EMA cross strategy on a simulated FX ECN venue.
@@ -24,15 +24,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.backtest.node import BacktestDataConfig
-from nautilus_trader.backtest.node import BacktestEngineConfig
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.node import BacktestRunConfig
-from nautilus_trader.backtest.node import BacktestVenueConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model import QuoteTick
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import CSVTickDataLoader
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -123,7 +123,7 @@ catalog.write_data(ticks)
 # %% [markdown]
 # ## Query the catalog
 #
-# The catalog provides methods like `.instruments()` and `.quote_ticks()` to
+# The catalog provides methods like `.instruments()` and `.quotes()` to
 # query stored data and determine the available time range.
 
 # %%
@@ -137,7 +137,7 @@ instrument
 
 # %%
 # Query quote ticks from catalog to determine the data range
-all_ticks = catalog.quote_ticks(instrument_ids=[EURUSD.id.value])
+all_ticks = catalog.quotes(instrument_ids=[EURUSD.id.value])
 print(f"Total ticks in catalog: {len(all_ticks)}")
 
 if all_ticks:
@@ -154,7 +154,7 @@ if all_ticks:
     # Preview selected data
     start_ns = all_ticks[0].ts_init
     end_ns = dt_to_unix_nanos(first_tick_time + pd.Timedelta(days=14))
-    selected_quote_ticks = catalog.quote_ticks(
+    selected_quote_ticks = catalog.quotes(
         instrument_ids=[EURUSD.id.value],
         start=start_ns,
         end=end_ns,
@@ -232,7 +232,7 @@ config = BacktestRunConfig(
 #
 # `BacktestNode` processes all data in timestamp order with deterministic
 # execution semantics. The architectural patterns (strategies, actors, execution
-# algorithms) carry forward to live trading with `TradingNode`.
+# algorithms) carry forward to live trading with `LiveNode`.
 
 # %%
 node = BacktestNode(configs=[config])

@@ -18,7 +18,7 @@ from nautilus_trader.adapters.tardis import TARDIS
 from nautilus_trader.adapters.tardis import TARDIS_CLIENT_ID
 from nautilus_trader.adapters.tardis import TardisDataClientConfig
 from nautilus_trader.adapters.tardis import TardisLiveDataClientFactory
-from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig

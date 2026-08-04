@@ -271,7 +271,7 @@ sequenceDiagram
     DE->>DE: handle_quote(quote)
     DE->>Cache: add_quote(quote)
     DE->>MB: publish_quote(topic, quote)
-    MB->>Strategy: on_quote_tick(quote)
+    MB->>Strategy: on_quote(quote)
 ```
 
 **Step by step:**
@@ -285,13 +285,13 @@ sequenceDiagram
    `DataEngine::process_data`, which dispatches to `handle_quote`.
 4. **Cache stores the quote.** `handle_quote` writes the quote into the `Cache`
    via `cache.add_quote(quote)`, making it available to any component through
-   `self.cache.quote_tick(instrument_id)`.
+   `self.cache.quote(instrument_id)`.
 5. **MessageBus publishes.** The engine publishes the quote on a topic derived
    from the instrument ID (e.g. `data.quotes.BINANCE.BTCUSDT-PERP`). The
    `MessageBus` finds all handlers subscribed to that topic.
-6. **Strategy handler fires.** Each subscribed strategy's `on_quote_tick(quote)`
+6. **Strategy handler fires.** Each subscribed strategy's `on_quote(quote)`
    runs on the single-threaded kernel. The quote is already in the cache before
-   the handler executes, so `self.cache.quote_tick(instrument_id)` returns the
+   the handler executes, so `self.cache.quote(instrument_id)` returns the
    same quote.
 
 :::tip
@@ -693,7 +693,7 @@ library, or from third party library dependencies.
 ### Processes and threads
 
 :::warning[One node per process]
-Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in the same process is not supported due to global singleton state:
+Running multiple `LiveNode` or `BacktestNode` instances **concurrently** in the same process is not supported due to global singleton state:
 
 - **Backtest force-stop flag** - The `_FORCE_STOP` global flag is shared across all engines in the process.
 - **Logger mode and timestamps** - The logging subsystem uses global state; backtests flip between static and real-time modes.
@@ -701,7 +701,7 @@ Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in t
 
 **Sequential execution** of multiple nodes (one after another with proper disposal between runs) is fully supported and used in the test suite.
 
-For production deployments, add multiple strategies to a **single TradingNode** within a process.
+For production deployments, add multiple strategies to a **single LiveNode** within a process.
 For parallel execution or workload isolation, run each node in its own separate process.
 :::
 

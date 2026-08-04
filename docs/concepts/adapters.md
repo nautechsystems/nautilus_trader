@@ -98,7 +98,7 @@ if __name__ == "__main__":
 
 ### Live trading
 
-Each integration handles this differently. An `InstrumentProvider` within a `TradingNode`
+Each integration handles this differently. An `InstrumentProvider` within a `LiveNode`
 generally offers two loading behaviors:
 
 - Load all instruments on start:
@@ -129,8 +129,13 @@ and normalize incoming data into Nautilus types.
 Actors and strategies can request data using built-in methods. Data returns via callbacks:
 
 ```python
-from nautilus_trader.model import Instrument, InstrumentId
-from nautilus_trader.trading.strategy import Strategy
+from collections.abc import Sequence
+from typing import Any
+
+from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.trading import Strategy
 
 
 class MyStrategy(Strategy):
@@ -141,11 +146,11 @@ class MyStrategy(Strategy):
         # Request historical bars
         self.request_bars(BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"))
 
-    def on_instrument(self, instrument: Instrument) -> None:
+    def on_instrument(self, instrument: Any) -> None:
         self.log.info(f"Received instrument: {instrument.id}")
 
-    def on_historical_data(self, data) -> None:
-        self.log.info(f"Received historical data: {data}")
+    def on_historical_bars(self, bars: Sequence[Bar]) -> None:
+        self.log.info(f"Received {len(bars)} historical bars")
 ```
 
 ### Subscribing to data
@@ -156,13 +161,13 @@ For real-time data, use subscription methods:
 def on_start(self) -> None:
     # Assumes the instrument has already been loaded into the cache
     # Subscribe to live trade updates
-    self.subscribe_trade_ticks(InstrumentId.from_str("BTCUSDT-PERP.BINANCE"))
+    self.subscribe_trades(InstrumentId.from_str("BTCUSDT-PERP.BINANCE"))
 
     # Subscribe to live bars
     self.subscribe_bars(BarType.from_str("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"))
 
 
-def on_trade_tick(self, tick: TradeTick) -> None:
+def on_trade(self, tick: TradeTick) -> None:
     self.log.info(f"Trade: {tick}")
 
 

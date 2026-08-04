@@ -14,6 +14,10 @@ Scripts within each environment context directory are organized by integration.
 Rust‑native adapter testers use generic names such as `data_tester.py` and `exec_tester.py` under
 `live/<adapter>/`. Adapter‑prefixed scripts in the same directories may use older APIs.
 
+Examples that still import v1‑only modules such as `nautilus_trader.examples` or
+`nautilus_trader.test_kit` remain as legacy references. Current examples import only public modules
+available from the installed package.
+
 Ensure that the `nautilus_trader` package is either compiled from source or installed via pip before
 running the examples. See the [installation guide](https://nautilustrader.io/docs/latest/getting_started/installation)
 for more information.
