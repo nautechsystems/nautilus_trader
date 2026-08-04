@@ -45,9 +45,10 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            InstrumentResponse, RequestInstrument, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeTrades,
+            InstrumentResponse, RequestCustomData, RequestInstrument, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeTrades,
         },
     },
     testing::wait_until_async,
@@ -57,16 +58,18 @@ use nautilus_deribit::{
     common::{consts::DERIBIT_CLIENT_ID, enums::DeribitEnvironment},
     config::DeribitDataClientConfig,
     data::DeribitDataClient,
+    data_types::DeribitBookSummary,
     http::models::DeribitProductType,
 };
 use nautilus_model::{
-    data::{BarType, Data, TradeTick},
+    data::{BarType, CustomData, Data, DataType, TradeTick},
     enums::BookType,
     identifiers::InstrumentId,
 };
 use nautilus_network::http::HttpClient;
 use nautilus_testkit::events::drain_data_events;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -197,6 +200,11 @@ async fn handle_jsonrpc_request(
     match method {
         "public/get_instruments" => handle_get_instruments(id, params).await,
         "public/get_combos" => handle_get_combos(id).await,
+        "public/get_book_summary_by_currency" => {
+            let mut data = load_json("http_get_book_summary_by_currency.json");
+            data["id"] = json!(id);
+            Json(data).into_response()
+        }
         "public/get_instrument" => {
             state
                 .get_instrument_request_count
@@ -1667,6 +1675,268 @@ async fn test_data_client_emits_instruments_on_connect() {
     assert!(
         instruments_received.load(Ordering::Relaxed) > 0,
         "Expected to receive instrument events on connect"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+fn book_summary_data_type(currency: &str, kind: &str) -> DataType {
+    let mut metadata = Params::new();
+    metadata.insert(
+        "currency".to_string(),
+        serde_json::Value::String(currency.to_string()),
+    );
+    metadata.insert(
+        "kind".to_string(),
+        serde_json::Value::String(kind.to_string()),
+    );
+    DataType::new(
+        "DeribitBookSummary",
+        Some(metadata),
+        None, // selector-only; adapter must canonicalize identifier
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_book_summaries_round_trip() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let request_data_type = book_summary_data_type("btc", "option");
+    assert_eq!(request_data_type.identifier(), None);
+
+    client
+        .request_data(RequestCustomData::new(
+            *DERIBIT_CLIENT_ID,
+            request_data_type.clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let response = loop {
+        let event = tokio::time::timeout(TEST_TIMEOUT, rx.recv())
+            .await
+            .expect("timeout waiting for book summary response")
+            .expect("channel closed");
+
+        if let DataEvent::Response(DataResponse::Data(response)) = event {
+            break response;
+        }
+    };
+
+    let items = response
+        .data
+        .as_ref()
+        .downcast_ref::<Vec<CustomData>>()
+        .expect("expected Vec<CustomData> payload");
+
+    assert_eq!(items.len(), 2);
+    assert_eq!(response.data_type.type_name(), "DeribitBookSummary");
+    assert_eq!(
+        response.data_type.identifier(),
+        Some("BTC:option"),
+        "adapter must canonicalize response identity"
+    );
+    assert_eq!(
+        response
+            .data_type
+            .metadata()
+            .and_then(|m| m.get("currency"))
+            .and_then(|v| v.as_str()),
+        Some("BTC"),
+    );
+    assert_eq!(
+        response
+            .data_type
+            .metadata()
+            .and_then(|m| m.get("kind"))
+            .and_then(|v| v.as_str()),
+        Some("option"),
+    );
+
+    for custom in items {
+        assert_eq!(custom.data_type.type_name(), "DeribitBookSummary");
+        assert_eq!(custom.data_type.identifier(), Some("BTC:option"));
+    }
+
+    let first = items[0]
+        .data
+        .as_any()
+        .downcast_ref::<DeribitBookSummary>()
+        .expect("expected DeribitBookSummary");
+    assert_eq!(
+        first.instrument_id,
+        InstrumentId::from("BTC-28MAR25-90000-C.DERIBIT")
+    );
+    assert_eq!(first.instrument_name, "BTC-28MAR25-90000-C");
+    assert_eq!(first.mark_price, Some(dec!(0.042)));
+    assert_eq!(first.mark_iv, Some(dec!(55.2)));
+    assert_eq!(first.bid_price, Some(dec!(0.040)));
+    assert_eq!(first.ask_price, Some(dec!(0.042)));
+    assert_eq!(first.open_interest, Some(dec!(123.5)));
+    assert_eq!(first.last_price, Some(dec!(0.0415)));
+    assert_eq!(first.underlying_price, Some(dec!(95000.5)));
+    assert_ne!(first.ts_event, UnixNanos::default());
+    assert_eq!(first.ts_event, first.ts_init);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_book_summaries_rejects_missing_currency() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let data_type = DataType::new("DeribitBookSummary", None, None);
+    let result = client.request_data(RequestCustomData::new(
+        *DERIBIT_CLIENT_ID,
+        data_type,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+    assert!(result.is_err(), "missing currency must reject");
+
+    // No response should be emitted for the rejected request.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .is_err()
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_book_summaries_defaults_kind_and_uppercases_currency() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    // Selector-only: lowercase currency, omit kind, no catalog identifier.
+    let mut metadata = Params::new();
+    metadata.insert(
+        "currency".to_string(),
+        serde_json::Value::String("eth".to_string()),
+    );
+    let request_data_type = DataType::new("DeribitBookSummary", Some(metadata), None);
+
+    client
+        .request_data(RequestCustomData::new(
+            *DERIBIT_CLIENT_ID,
+            request_data_type,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let response = loop {
+        let event = tokio::time::timeout(TEST_TIMEOUT, rx.recv())
+            .await
+            .expect("timeout waiting for book summary response")
+            .expect("channel closed");
+
+        if let DataEvent::Response(DataResponse::Data(response)) = event {
+            break response;
+        }
+    };
+
+    assert_eq!(response.data_type.type_name(), "DeribitBookSummary");
+    assert_eq!(response.data_type.identifier(), Some("ETH:option"));
+    assert_eq!(
+        response
+            .data_type
+            .metadata()
+            .and_then(|m| m.get("currency"))
+            .and_then(|v| v.as_str()),
+        Some("ETH"),
+    );
+    assert_eq!(
+        response
+            .data_type
+            .metadata()
+            .and_then(|m| m.get("kind"))
+            .and_then(|v| v.as_str()),
+        Some("option"),
+    );
+
+    let items = response
+        .data
+        .as_ref()
+        .downcast_ref::<Vec<CustomData>>()
+        .expect("expected Vec<CustomData> payload");
+
+    for custom in items {
+        assert_eq!(custom.data_type.identifier(), Some("ETH:option"));
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_data_ignores_unsupported_custom_type() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let data_type = DataType::new("NotADeribitType", None, None);
+    let result = client.request_data(RequestCustomData::new(
+        *DERIBIT_CLIENT_ID,
+        data_type,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+    assert!(result.is_ok(), "unsupported type is soft-ignored");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .is_err()
     );
 
     client.disconnect().await.unwrap();

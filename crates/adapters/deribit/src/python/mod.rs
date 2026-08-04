@@ -36,7 +36,7 @@ use pyo3::prelude::*;
 use crate::{
     common::consts::{DERIBIT, DERIBIT_CLIENT_ID, DERIBIT_VENUE},
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
-    data_types::{DeribitVolatilityIndex, register_deribit_custom_data},
+    data_types::{DeribitBookSummary, DeribitVolatilityIndex, register_deribit_custom_data},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
 
@@ -109,6 +109,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::DeribitEnvironment>()?;
     m.add_class::<crate::websocket::enums::DeribitUpdateInterval>()?;
     m.add_class::<DeribitVolatilityIndex>()?;
+    m.add_class::<DeribitBookSummary>()?;
     m.add_class::<DeribitDataClientConfig>()?;
     m.add_class::<DeribitExecClientConfig>()?;
     m.add_class::<DeribitDataClientFactory>()?;
@@ -154,6 +155,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     register_deribit_custom_data();
     let _result = ensure_rust_extractor_registered::<DeribitVolatilityIndex>();
+    let _book_summary = ensure_rust_extractor_registered::<DeribitBookSummary>();
 
     Ok(())
 }
