@@ -19,7 +19,7 @@ Example: option-chain backtest from a Tardis-backed catalog.
 The catalog must already contain option instruments plus per-instrument QuoteTick
 and OptionGreeks data, such as data written by the Tardis Machine replay pipeline.
 
-Run with a built v2 extension:
+Run with a built extension:
     python examples/backtest/tardis_option_chain.py --catalog-path /path/to/catalog
 """
 

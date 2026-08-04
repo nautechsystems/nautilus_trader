@@ -137,14 +137,14 @@ The `BlackScholesGreeksResult` returned by these functions contains: `price`, `v
 ### GreeksCalculator
 
 The legacy Cython `GreeksCalculator` class in `nautilus_trader/model/greeks.pyx` computes
-Black-Scholes Greeks from cached market data. A PyO3 calculator is also exposed from
-`nautilus_trader.common.GreeksCalculator` for the v2 runtime surface.
+Black‑Scholes Greeks from cached market data. The current PyO3 calculator is exposed from
+`nautilus_trader.common.GreeksCalculator`.
 Both calculators use the cache and clock and are accessible from actors or strategies.
 
 ```python
-from nautilus_trader.model.greeks import GreeksCalculator  # legacy Cython
+from nautilus_trader.common import GreeksCalculator
 
-# v2 PyO3: from nautilus_trader.common import GreeksCalculator
+# Legacy Cython: from nautilus_trader.model.greeks import GreeksCalculator
 
 # Typically created in on_start()
 calculator = GreeksCalculator(cache=self.cache, clock=self.clock)
@@ -298,27 +298,12 @@ addition (`+`) for combining positions and scalar multiplication (`*`) for scali
 | `vega`  | `float` | Portfolio vega.        |
 | `theta` | `float` | Portfolio theta.       |
 
-### YieldCurveData
+### Yield curves
 
-`YieldCurveData` stores an interest rate or dividend yield curve. The `GreeksCalculator`
-looks up curves from the cache by currency code (for interest rates) or by underlying
-instrument ID (for dividend yields).
-
-```python
-from nautilus_trader.model.greeks_data import YieldCurveData
-import numpy as np
-
-curve = YieldCurveData(
-    ts_event=0,
-    ts_init=0,
-    curve_name="USD",
-    tenors=np.array([0.25, 0.5, 1.0, 2.0]),
-    interest_rates=np.array([0.04, 0.042, 0.045, 0.048]),
-)
-
-# Callable: interpolates rate for a given tenor
-rate = curve(0.75)  # quadratic interpolation
-```
+The current Python API does not expose the Rust `YieldCurveData` type. Pass
+`flat_interest_rate` and `flat_dividend_yield` to `GreeksCalculator` methods when
+Python calculations need rates that differ from the defaults. Rust callers can use
+`YieldCurveData` for interpolated interest rate or dividend yield curves.
 
 ## Choosing between the two paths
 

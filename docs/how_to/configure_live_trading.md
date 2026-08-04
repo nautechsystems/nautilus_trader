@@ -170,7 +170,7 @@ let backing = RedisMessageBusFactory::new(redis_config).create(
 )?;
 ```
 
-Python v2 injects the same Redis factory through `LiveNodeBuilder`:
+Python injects the same Redis factory through `LiveNodeBuilder`:
 
 ```python
 from nautilus_trader.common import Environment

@@ -16,7 +16,7 @@
 """
 Legacy TradingNode script demonstrating the Python adapter event_slug_builder feature.
 
-This script uses the legacy Python Polymarket provider. The Rust Python v2
+This script uses the legacy Python Polymarket provider. The current Rust Python
 adapter keeps provider logic in Rust and uses PolymarketUpDownEventSlugConfig
 for Up/Down event slug generation.
 

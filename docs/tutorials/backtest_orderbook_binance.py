@@ -13,8 +13,8 @@
 #
 # Top-of-book imbalance is a microstructure signal: when the smaller resting
 # side at the BBO drops well below the larger side, the book is leaning. The
-# `OrderBookImbalance` strategy ships in `nautilus_trader.examples` and works
-# in two stages on every order book update:
+# tutorial's `OrderBookImbalance` strategy works in two stages on every order
+# book update:
 #
 # - Compute `min(bid_size, ask_size) / max(bid_size, ask_size)`. Higher means
 #   balanced; lower means leaning.
@@ -33,7 +33,7 @@
 #     end
 #
 #     subgraph Engine ["BacktestEngine"]
-#         W["OrderBookDeltaDataWrangler"]
+#         W["deltas_from_frame"]
 #         B["Per-instrument OrderBook"]
 #         C["Cache.order_book"]
 #     end
@@ -60,6 +60,9 @@
 # - Python 3.12+
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
 #   (`pip install nautilus_trader`)
+# - The sibling [`orderbook_data.py`](./orderbook_data.py) and
+#   [`orderbook_imbalance.py`](./orderbook_imbalance.py) files. Keep them next
+#   to this tutorial when downloading or converting it with Jupytext.
 # - Binance T_DEPTH CSVs for the day you want to replay. The bundled tutorial
 #   uses BTCUSDT 2022-11-01 from
 #   [data.binance.vision](https://data.binance.vision). Place them under the
@@ -68,26 +71,36 @@
 # %%
 import os
 import shutil
-from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
-
 from nautilus_trader.adapters.binance import load_binance_order_book_deltas
-from nautilus_trader.common import LogLevel
-from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestNode
-from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import LoggerConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import (
+    BacktestDataConfig,
+    BacktestEngineConfig,
+    BacktestRunConfig,
+    BacktestVenueConfig,
+    ImportableStrategyConfig,
+    LoggerConfig,
+)
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import (
+    AccountType,
+    BookType,
+    Currency,
+    CurrencyPair,
+    InstrumentId,
+    OmsType,
+    Price,
+    Quantity,
+    Symbol,
+    Venue,
+)
 from nautilus_trader.persistence import ParquetDataCatalog
-from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
+from orderbook_data import deltas_from_frame
 
 # %% [markdown]
 # ## Loading data
@@ -121,19 +134,29 @@ df_update = load_binance_order_book_deltas(path_update, nrows=nrows)
 df_update.head()
 
 # %% [markdown]
-# ### Process deltas using a wrangler
+# ### Build current model objects
 #
-# `OrderBookDeltaDataWrangler` tags each level event with the instrument ID
-# and emits an `OrderBookDelta` ready for the engine. Sort by `ts_init` so the
-# data engine sees deltas in true publication order regardless of how the snap
-# and update files interleave.
+# Define the instrument with the public model API, then convert each loader row
+# to an `OrderBookDelta`. Sort by `ts_init` so the data engine sees deltas in
+# true publication order regardless of how the snapshot and update files
+# interleave.
 
 # %%
-BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-wrangler = OrderBookDeltaDataWrangler(BTCUSDT_BINANCE)
+BTCUSDT_BINANCE = CurrencyPair(
+    instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+    raw_symbol=Symbol("BTCUSDT"),
+    base_currency=Currency.from_str("BTC"),
+    quote_currency=Currency.from_str("USDT"),
+    price_precision=2,
+    size_precision=6,
+    price_increment=Price(0.01, precision=2),
+    size_increment=Quantity(0.000001, precision=6),
+    ts_event=0,
+    ts_init=0,
+)
 
-deltas = wrangler.process(df_snap)
-deltas += wrangler.process(df_update)
+deltas = deltas_from_frame(df_snap, BTCUSDT_BINANCE)
+deltas += deltas_from_frame(df_update, BTCUSDT_BINANCE)
 deltas.sort(key=lambda x: x.ts_init)
 deltas[:10]
 
@@ -150,11 +173,11 @@ if CATALOG_PATH.exists():
     shutil.rmtree(CATALOG_PATH)
 CATALOG_PATH.mkdir()
 
-catalog = ParquetDataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %%
-catalog.write_data([BTCUSDT_BINANCE])
-catalog.write_data(deltas)
+catalog.write_instruments([BTCUSDT_BINANCE])
+catalog.write_order_book_deltas(deltas)
 
 # %%
 catalog.instruments()
@@ -163,7 +186,11 @@ catalog.instruments()
 start = dt_to_unix_nanos(pd.Timestamp("2022-11-01", tz="UTC"))
 end = dt_to_unix_nanos(pd.Timestamp("2022-11-04", tz="UTC"))
 
-deltas = catalog.order_book_deltas(start=start, end=end)
+deltas = catalog.query_order_book_deltas(
+    identifiers=[str(BTCUSDT_BINANCE.id)],
+    start=start,
+    end=end,
+)
 print(len(deltas))
 deltas[:10]
 
@@ -176,12 +203,12 @@ deltas[:10]
 
 # %%
 instrument = catalog.instruments()[0]
-book_type = "L2_MBP"
+book_type = BookType.L2_MBP
 
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_cls=OrderBookDelta,
+        data_type="OrderBookDelta",
         instrument_id=instrument.id,
     ),
 ]
@@ -189,34 +216,32 @@ data_configs = [
 venues_configs = [
     BacktestVenueConfig(
         name="BINANCE",
-        oms_type="NETTING",
-        account_type="CASH",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
         base_currency=None,
         starting_balances=["20 BTC", "100000 USDT"],
         book_type=book_type,
     ),
 ]
 
-strategies = [
-    ImportableStrategyConfig(
-        strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
-        config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-        config={
-            "instrument_id": instrument.id,
-            "book_type": book_type,
-            "max_trade_size": Decimal("1.000"),
-            "min_seconds_between_triggers": 1.0,
-        },
-    ),
-]
+strategy_config = ImportableStrategyConfig(
+    strategy_path="orderbook_imbalance:OrderBookImbalance",
+    config_path="orderbook_imbalance:OrderBookImbalanceConfig",
+    config={
+        "instrument_id": str(instrument.id),
+        "book_type": book_type.name,
+        "max_trade_size": "1.000",
+        "min_seconds_between_triggers": 1.0,
+    },
+)
 
 config = BacktestRunConfig(
     engine=BacktestEngineConfig(
-        strategies=strategies,
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     ),
     data=data_configs,
     venues=venues_configs,
+    dispose_on_completion=False,
 )
 
 config
@@ -226,6 +251,8 @@ config
 
 # %%
 node = BacktestNode(configs=[config])
+node.build()
+node.add_strategy_from_config(config.id, strategy_config)
 
 result = node.run()
 
@@ -233,19 +260,13 @@ result = node.run()
 result
 
 # %%
-from nautilus_trader.backtest import BacktestEngine
-from nautilus_trader.model import Venue
-
-
-engine: BacktestEngine = node.get_engine(config.id)
-
-engine.trader.generate_order_fills_report()
+node.generate_order_fills_report(config.id)
 
 # %%
-engine.trader.generate_positions_report()
+node.generate_positions_report(config.id)
 
 # %%
-engine.trader.generate_account_report(Venue("BINANCE"))
+node.generate_account_report(config.id, venue=Venue("BINANCE"))
 
 # %% [markdown]
 # ## What the run produces

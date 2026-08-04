@@ -373,7 +373,7 @@ ingress is the concrete runtime source. Rust callers can install `RedisMessageBu
 separately injected egress or ingress. A factory always installs egress and creates ingress only when
 `external_streams` is non‑empty.
 
-Python v2 exposes the same builder method for built‑in factory classes, including
+Python exposes the same builder method for built‑in factory classes, including
 `RedisMessageBusFactory`. It does not accept arbitrary Python factory classes.
 
 The built-in Redis ingress starts each configured stream at the current timestamp, so entries that
@@ -474,8 +474,8 @@ specifying which types of messages should be excluded from external publication.
 
 ```python
 from nautilus_trader.config import MessageBusConfig
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import TradeTick
 
 # Create a MessageBusConfig instance with types filtering
 message_bus = MessageBusConfig(types_filter=[QuoteTick, TradeTick])

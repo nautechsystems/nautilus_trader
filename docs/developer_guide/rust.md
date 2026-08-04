@@ -517,11 +517,11 @@ Every Python‑exposed type and function needs the matching `pyo3-stub-gen` anno
 
 ### Generated Python artifacts
 
-The v2 Python surface commits generated `.pyi` files under `python/nautilus_trader/` and generated
+The Python surface commits generated `.pyi` files under `python/nautilus_trader/` and generated
 wrapper doc comments under `crates/**/src/python/`. Regenerate both with:
 
 ```bash
-make py-stubs-v2
+make py-stubs
 ```
 
 Run the target after changing a Python‑exposed Rust item, its stub annotation, its core doc comments,
@@ -532,8 +532,8 @@ only through `extension-module` explicitly to `cargo_features` in `python/genera
 otherwise its exported types disappear from the generated stubs. The Interactive Brokers `gateway`
 feature is the model.
 
-The v2 targets require the uv version pinned by `required-version` in `python/pyproject.toml`.
-`make sync-v2`, `make py-stubs-v2`, and `make build-debug-v2` stop before syncing when the installed
+The Python targets require the uv version pinned by `required-version` in `python/pyproject.toml`.
+`make sync`, `make py-stubs`, and `make build-debug` stop before syncing when the installed
 version differs. Use the update command printed by the preflight.
 
 Do not edit wrapper `///` comments in `crates/**/src/python/`. Edit the core Rust item docs and

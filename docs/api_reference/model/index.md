@@ -19,5 +19,5 @@
    objects.md
    orders.md
    position.md
-   tick_scheme.md
+   reports.md
 ```

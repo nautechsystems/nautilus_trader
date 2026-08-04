@@ -1,10 +1,10 @@
 # Data Testing Spec
 
 This section defines a rigorous test matrix for validating adapter data
-functionality using the `DataTester` actor. Both Python
-(`nautilus_trader.test_kit.strategies.tester_data`) and Rust
-(`nautilus_testkit::testers`) provide the `DataTester`. Each test case is
-identified by a prefixed ID (e.g. TC-D01) and grouped by functionality.
+functionality using the Rust `DataTester` actor. Python exposes it as a built‑in
+actor configured through `nautilus_trader.testkit.DataTesterConfig`; Rust code
+imports it from `nautilus_testkit::testers`. Each test case is identified by a
+prefixed ID (e.g. TC-D01) and grouped by functionality.
 
 **Each adapter must pass the subset of tests matching its supported data types.**
 
@@ -28,8 +28,8 @@ Before running data tests:
 
 **Python node setup**:
 
-Legacy examples still use `nautilus_trader.live.LiveNode`, but new Rust-backed
-PyO3 adapters should prefer `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
+Legacy examples still use `nautilus_trader.live.node.TradingNode`, but current Rust‑backed
+PyO3 adapters use `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
 when you need to register adapter client factories before the node is built.
 
 ```python
@@ -37,6 +37,7 @@ from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
+from nautilus_trader.testkit import DataTesterConfig
 
 node = (
     LiveNode.builder("TESTER-001", TraderId("TESTER-001"), Environment.SANDBOX)
@@ -45,7 +46,12 @@ node = (
     .build()
 )
 
-node.add_actor_from_config(importable_actor_config)
+tester_config = DataTesterConfig(
+    client_id=client_id,
+    instrument_ids=[instrument_id],
+    subscribe_quotes=True,
+)
+node.add_builtin_actor("DataTester", tester_config)
 # Register remaining components, then start or run
 ```
 
