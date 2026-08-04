@@ -218,6 +218,9 @@ fn extract_provider_config_from_pyobject(
     let event_slug_builder = getattr_optional(obj, "event_slug_builder")?
         .map(|value| extract_event_slug_builder(&value))
         .transpose()?;
+    let series_ids = getattr_optional(obj, "series_ids")?
+        .map(|value| value.extract::<Vec<u64>>())
+        .transpose()?;
     let log_warnings = getattr_optional(obj, "log_warnings")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -234,6 +237,7 @@ fn extract_provider_config_from_pyobject(
         event_slugs,
         market_slugs,
         event_slug_builder,
+        series_ids,
         log_warnings,
         use_gamma_markets,
     };

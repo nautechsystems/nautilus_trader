@@ -182,6 +182,8 @@ class PolymarketInstrumentProviderConfig:
     @property
     def event_slug_builder(self) -> PolymarketUpDownEventSlugConfig | None: ...
     @property
+    def series_ids(self) -> list[int] | None: ...
+    @property
     def log_warnings(self) -> bool: ...
     @property
     def use_gamma_markets(self) -> bool: ...
@@ -195,6 +197,7 @@ class PolymarketInstrumentProviderConfig:
         event_slug_builder: PolymarketUpDownEventSlugConfig | None = None,
         log_warnings: bool | None = None,
         use_gamma_markets: bool | None = None,
+        series_ids: typing.Sequence[int] | None = None,
     ) -> None: ...
 
 @typing.final

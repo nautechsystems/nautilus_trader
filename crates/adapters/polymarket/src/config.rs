@@ -190,6 +190,8 @@ pub struct PolymarketInstrumentProviderConfig {
     pub market_slugs: Option<Vec<String>>,
     /// Optional Rust-backed Up/Down event slug builder.
     pub event_slug_builder: Option<PolymarketUpDownEventSlugConfig>,
+    /// Optional Gamma series IDs whose active events resolve to markets during bootstrap.
+    pub series_ids: Option<Vec<u64>>,
     /// Whether provider warnings should be logged.
     #[builder(default = true)]
     pub log_warnings: bool,
@@ -208,6 +210,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketInstrumentProviderConfig {
     event_slugs: Option<Vec<String>>,
     market_slugs: Option<Vec<String>>,
     event_slug_builder: Option<PolymarketUpDownEventSlugConfig>,
+    series_ids: Option<Vec<u64>>,
     log_warnings: bool,
     use_gamma_markets: bool,
 });
@@ -226,10 +229,26 @@ impl PolymarketInstrumentProviderConfig {
 
     #[must_use]
     pub fn should_load_all(&self) -> bool {
-        self.load_all
-            || self.event_slug_builder.is_some()
+        self.load_all || self.has_explicit_scope()
+    }
+
+    /// Returns whether any explicit bootstrap scope (slug, builder, or series) is configured.
+    #[must_use]
+    pub fn has_explicit_scope(&self) -> bool {
+        self.event_slug_builder.is_some()
             || self.event_slugs.as_ref().is_some_and(|s| !s.is_empty())
             || self.market_slugs.as_ref().is_some_and(|s| !s.is_empty())
+            || self.has_series_ids()
+    }
+
+    #[must_use]
+    pub fn has_series_ids(&self) -> bool {
+        self.series_ids.as_ref().is_some_and(|ids| !ids.is_empty())
+    }
+
+    #[must_use]
+    pub fn has_nonempty_filters(&self) -> bool {
+        self.filters.as_ref().is_some_and(|map| !map.is_empty())
     }
 
     #[must_use]
@@ -676,6 +695,28 @@ mod tests {
             err.to_string()
                 .contains("event_slug_builder.interval_mins must be positive")
         );
+    }
+
+    #[rstest]
+    fn provider_config_series_ids_trigger_load_all() {
+        let config = PolymarketInstrumentProviderConfig {
+            series_ids: Some(vec![10684]),
+            ..PolymarketInstrumentProviderConfig::default()
+        };
+
+        assert!(config.has_series_ids());
+        assert!(config.should_load_all());
+    }
+
+    #[rstest]
+    fn provider_config_empty_series_ids_do_not_trigger_load_all() {
+        let config = PolymarketInstrumentProviderConfig {
+            series_ids: Some(Vec::new()),
+            ..PolymarketInstrumentProviderConfig::default()
+        };
+
+        assert!(!config.has_series_ids());
+        assert!(!config.should_load_all());
     }
 
     #[rstest]

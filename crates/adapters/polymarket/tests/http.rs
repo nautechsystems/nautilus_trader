@@ -45,8 +45,8 @@ use nautilus_polymarket::{
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
     filters::{
-        EventParamsFilter, EventSlugFilter, GammaQueryFilter, MarketSlugFilter, SearchFilter,
-        TagFilter,
+        EventParamsFilter, EventSlugFilter, GammaQueryFilter, InstrumentFilter, MarketSlugFilter,
+        PredicateFilter, SearchFilter, TagFilter,
     },
     http::{
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
@@ -97,6 +97,7 @@ struct TestServerState {
     gamma_force_error: Arc<std::sync::atomic::AtomicBool>,
     gamma_event_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
     gamma_events_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    gamma_events_force_error: Arc<std::sync::atomic::AtomicBool>,
     gamma_events_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     gamma_events_query_log: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     gamma_events_query_pair_log: QueryPairLog,
@@ -132,6 +133,7 @@ impl Default for TestServerState {
             gamma_force_error: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             gamma_event_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             gamma_events_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_events_force_error: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             gamma_events_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             gamma_events_query_log: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             gamma_events_query_pair_log: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -509,6 +511,13 @@ async fn handle_gamma_events(
         .await
         .push(query_pairs(&uri));
 
+    if state
+        .gamma_events_force_error
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
     if let Some(slug) = params.get("slug") {
         let slug_map = state.gamma_event_slug_responses.lock().await;
         if let Some(v) = slug_map.get(slug) {
@@ -536,6 +545,13 @@ async fn handle_gamma_events_keyset(
         .lock()
         .await
         .push(query_pairs(&uri));
+
+    if state
+        .gamma_events_force_error
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
 
     if let Some(page) = state.gamma_events_pages.lock().await.pop_front() {
         return Json(page).into_response();
@@ -1767,6 +1783,95 @@ async fn test_provider_initialize_uses_instrument_config_event_slugs() {
 
 #[rstest]
 #[tokio::test]
+async fn test_provider_initialize_uses_instrument_config_series_ids() {
+    let state = TestServerState::default();
+
+    let market1 = gamma_market_with_slug(
+        "series-market-1",
+        "0xcondition_series1",
+        ["62000000000000000001", "62000000000000000002"],
+    );
+    let market2 = gamma_market_with_slug(
+        "series-market-2",
+        "0xcondition_series2",
+        ["62000000000000000003", "62000000000000000004"],
+    );
+    let event = gamma_event_with_markets("series-event", &[market1, market2]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![10684, 10192]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+
+    // 2 markets × 2 outcomes = 4 instruments
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+
+    let log = state.gamma_events_query_pair_log.lock().await;
+    let mut actual = log[0].clone();
+    actual.sort();
+    let expected = vec![
+        ("active".to_string(), "true".to_string()),
+        ("closed".to_string(), "false".to_string()),
+        ("limit".to_string(), "500".to_string()),
+        ("series_id".to_string(), "10192".to_string()),
+        ("series_id".to_string(), "10684".to_string()),
+    ];
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_composes_series_ids_with_filters() {
+    let state = TestServerState::default();
+
+    let filtered_market = gamma_market_with_slug(
+        "tag-market",
+        "0xcondition_tag",
+        ["63000000000000000001", "63000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    let series_market = gamma_market_with_slug(
+        "series-market",
+        "0xcondition_series",
+        ["63000000000000000003", "63000000000000000004"],
+    );
+    let event = gamma_event_with_markets("series-event", &[series_market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+
+    // The tag-filtered market and the series market both load: 2 markets × 2 outcomes.
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.get("tag_id").is_some_and(|value| value == "84")),
+        "tag_id filter should still be queried alongside series scope"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_fetch_configured_instruments_uses_rust_event_slug_builder_result() {
     let event_slug_builder = PolymarketUpDownEventSlugConfig {
         assets: vec!["btc".to_string()],
@@ -1809,6 +1914,424 @@ async fn test_fetch_configured_instruments_uses_rust_event_slug_builder_result()
             .id()
             .to_string()
             .contains("0xcondition_builder_evt")
+    }));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_composes_series_ids_with_registered_filters() {
+    let state = TestServerState::default();
+
+    // Served for the registered `TagFilter`; the series markets arrive via `/events`.
+    let filtered_market = gamma_market_with_slug(
+        "registered-tag-market",
+        "0xcondition_registered_tag",
+        ["66000000000000000001", "66000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    let series_market = gamma_market_with_slug(
+        "registered-series-market",
+        "0xcondition_registered_series",
+        ["66000000000000000003", "66000000000000000004"],
+    );
+    let event = gamma_event_with_markets("registered-series-event", &[series_market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::with_filter(
+        http_client,
+        Some(config),
+        Arc::new(TagFilter::from_tag_id(84)),
+    );
+
+    provider.initialize(false).await.unwrap();
+
+    // Bootstrap must match what the interval refresh would return: both scopes,
+    // 2 markets x 2 outcomes.
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.get("tag_id").is_some_and(|value| value == "84")),
+        "registered filter should still be queried alongside the series scope"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_load_does_not_mark_partial_scoped_store_initialized() {
+    let state = TestServerState::default();
+
+    let filtered_market = gamma_market_with_slug(
+        "clobber-tag-market",
+        "0xcondition_clobber_tag",
+        ["67000000000000000001", "67000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    // The bulk filtered load succeeds, then the additive series scope fails, which
+    // is exactly the partially-loaded, still-uninitialized state.
+    state
+        .gamma_events_force_error
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider
+        .initialize(false)
+        .await
+        .expect_err("series failure should surface");
+    assert!(!provider.store().is_initialized());
+
+    // An auto-load miss must not fall back to a full-universe load on a scoped
+    // provider: that would mark the store initialized and make the retrying
+    // `initialize(false)` skip the series scope it still owes.
+    let unknown = InstrumentId::from("0xcondition_absent-67000000000000000009.POLYMARKET");
+    provider
+        .load(&unknown, None)
+        .await
+        .expect_err("unknown instrument should not resolve");
+
+    assert!(
+        !provider.store().is_initialized(),
+        "scoped provider must stay uninitialized so the failed scope is retried"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_retries_scopes_after_series_failure() {
+    let state = TestServerState::default();
+
+    let filtered_market = gamma_market_with_slug(
+        "retry-tag-market",
+        "0xcondition_retry_tag",
+        ["65000000000000000001", "65000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    // The bulk filtered load succeeds, then the additive series scope fails.
+    state
+        .gamma_events_force_error
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider
+        .initialize(false)
+        .await
+        .expect_err("series failure should surface");
+
+    // A partially loaded store must not look initialized, otherwise the retry
+    // below short-circuits and the series scope never loads.
+    assert!(!provider.store().is_initialized());
+
+    let series_market = gamma_market_with_slug(
+        "retry-series-market",
+        "0xcondition_retry_series",
+        ["65000000000000000003", "65000000000000000004"],
+    );
+    let event = gamma_event_with_markets("retry-series-event", &[series_market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+    state
+        .gamma_events_force_error
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+
+    provider
+        .initialize(false)
+        .await
+        .expect("retry should complete every scope");
+
+    // Both scopes now present: 2 markets × 2 outcomes.
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_uses_series_ids() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "fetch-series-market",
+        "0xcondition_fetch_series",
+        ["64000000000000000001", "64000000000000000002"],
+    );
+    let event = gamma_event_with_markets("fetch-series-event", &[market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![10684, 10192]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+
+    let instruments =
+        nautilus_polymarket::providers::fetch_configured_instruments(&http_client, &config, &[])
+            .await
+            .expect("series scope should fetch instruments");
+
+    assert_eq!(instruments.len(), 2);
+    assert!(instruments.iter().all(|instrument| {
+        instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_fetch_series")
+    }));
+
+    let log = state.gamma_events_query_pair_log.lock().await;
+    let mut actual = log[0].clone();
+    actual.sort();
+    let expected = vec![
+        ("active".to_string(), "true".to_string()),
+        ("closed".to_string(), "false".to_string()),
+        ("limit".to_string(), "500".to_string()),
+        ("series_id".to_string(), "10192".to_string()),
+        ("series_id".to_string(), "10684".to_string()),
+    ];
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_composes_filters_with_series_scope() {
+    let state = TestServerState::default();
+
+    // Served for the `TagFilter` query; the series markets arrive via `/events`.
+    let filtered_market = gamma_market_with_slug(
+        "fetch-tag-market",
+        "0xcondition_fetch_tag",
+        ["64100000000000000001", "64100000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    let series_market = gamma_market_with_slug(
+        "fetch-series-market",
+        "0xcondition_fetch_series",
+        ["64100000000000000003", "64100000000000000004"],
+    );
+    let event = gamma_event_with_markets("fetch-series-event", &[series_market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let filters: Vec<Arc<dyn InstrumentFilter>> = vec![Arc::new(TagFilter::from_tag_id(84))];
+
+    let instruments = nautilus_polymarket::providers::fetch_configured_instruments(
+        &http_client,
+        &config,
+        &filters,
+    )
+    .await
+    .expect("filters should compose with the series scope");
+
+    // Both scopes load: the tag-filtered market and the series market, 2 outcomes each.
+    assert_eq!(instruments.len(), 4);
+    assert!(
+        instruments.iter().any(|instrument| instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_fetch_tag")),
+        "filter-selected market should not be dropped by the series scope"
+    );
+    assert!(instruments.iter().any(|instrument| {
+        instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_fetch_series")
+    }));
+
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.get("tag_id").is_some_and(|value| value == "84")),
+        "tag_id filter should still be queried alongside the series scope"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_composes_load_ids_with_series_scope() {
+    let state = TestServerState::default();
+
+    // No bulk scope is configured, so `/markets` only serves the condition ID lookup.
+    let load_id_market = gamma_market_with_slug(
+        "fetch-ids-market",
+        "0xcondition_fetch_ids",
+        ["64200000000000000001", "64200000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([load_id_market]));
+
+    let series_market = gamma_market_with_slug(
+        "fetch-series-market",
+        "0xcondition_fetch_series",
+        ["64200000000000000003", "64200000000000000004"],
+    );
+    let event = gamma_event_with_markets("fetch-series-event", &[series_market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        load_ids: Some(vec![InstrumentId::from(
+            "0xcondition_fetch_ids-64200000000000000001.POLYMARKET",
+        )]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+
+    let instruments =
+        nautilus_polymarket::providers::fetch_configured_instruments(&http_client, &config, &[])
+            .await
+            .expect("load_ids should compose with the series scope");
+
+    assert_eq!(instruments.len(), 4);
+    assert!(
+        instruments.iter().any(|instrument| instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_fetch_ids")),
+        "load_ids market should load alongside the series scope"
+    );
+    assert!(instruments.iter().any(|instrument| {
+        instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_fetch_series")
+    }));
+
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.contains_key("condition_ids")),
+        "load_ids should issue a condition_ids lookup"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_load_ids_are_not_intersected_with_filters() {
+    let state = TestServerState::default();
+
+    let load_id_market = gamma_market_with_slug(
+        "ids-outside-filter",
+        "0xcondition_outside_filter",
+        ["68000000000000000001", "68000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([load_id_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        load_ids: Some(vec![InstrumentId::from(
+            "0xcondition_outside_filter-68000000000000000001.POLYMARKET",
+        )]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+
+    let instruments =
+        nautilus_polymarket::providers::fetch_configured_instruments(&http_client, &config, &[])
+            .await
+            .expect("load_ids should fetch instruments");
+
+    assert!(
+        instruments.iter().any(|instrument| instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_outside_filter")),
+        "an explicitly named instrument must load even when it falls outside the filters"
+    );
+
+    // The discriminating assertion: the condition-ID lookup must carry no filter
+    // params. Intersecting the two scopes silently drops IDs outside the filters.
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    let id_query = markets_queries
+        .iter()
+        .find(|params| params.contains_key("condition_ids"))
+        .expect("a condition_ids query should have been issued");
+    assert!(
+        !id_query.contains_key("tag_id"),
+        "load_ids must be queried by condition ID alone: {id_query:?}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_keeps_series_rejected_by_registered_filter() {
+    let state = TestServerState::default();
+
+    let series_market = gamma_market_with_slug(
+        "reject-series-market",
+        "0xcondition_reject_series",
+        ["69000000000000000001", "69000000000000000002"],
+    );
+    let event = gamma_event_with_markets("reject-series-event", &[series_market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        series_ids: Some(vec![11312]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+
+    // Rejects everything. `accept` belongs to results of filter-driven queries, so it
+    // must not reach instruments the series scope contributed -- otherwise a refresh
+    // would drop what the provider bootstrap loaded unconditionally.
+    let filters: Vec<Arc<dyn InstrumentFilter>> = vec![Arc::new(PredicateFilter::new(
+        "reject-all",
+        |_instrument| false,
+    ))];
+
+    let instruments = nautilus_polymarket::providers::fetch_configured_instruments(
+        &http_client,
+        &config,
+        &filters,
+    )
+    .await
+    .expect("series scope should fetch instruments");
+
+    assert_eq!(
+        instruments.len(),
+        2,
+        "series instruments must survive a registered filter that rejects them"
+    );
+    assert!(instruments.iter().all(|instrument| {
+        instrument
+            .id()
+            .to_string()
+            .contains("0xcondition_reject_series")
     }));
 }
 
