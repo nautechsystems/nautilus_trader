@@ -607,12 +607,12 @@ pub struct DeribitOrderBook {
     pub interest_rate: Option<Decimal>,
 }
 
-/// Book summary data from `/public/get_book_summary_by_currency` endpoint.
+/// Wire DTO for `/public/get_book_summary_by_currency` entries.
 ///
-/// Each entry represents a single instrument's book summary including the
-/// forward/underlying price used for ATM determination.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DeribitBookSummary {
+/// Pure venue payload (no engine timestamps). Convert to the domain
+/// [`crate::data_types::DeribitBookSummary`] before emitting custom data.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeribitBookSummaryRaw {
     /// Unique instrument identifier (e.g. "BTC-28MAR25-90000-C")
     pub instrument_name: String,
     /// The forward/underlying price for implied volatility calculations
@@ -624,8 +624,145 @@ pub struct DeribitBookSummary {
     /// Mark price for the instrument
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub mark_price: Option<Decimal>,
-    /// The time when the instrument was created (milliseconds since UNIX epoch)
+    /// Mid price
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mid_price: Option<Decimal>,
+    /// Best bid price
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub bid_price: Option<Decimal>,
+    /// Best ask price
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub ask_price: Option<Decimal>,
+    /// Last traded price (`last` on the wire)
+    #[serde(
+        default,
+        rename = "last",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
+    pub last_price: Option<Decimal>,
+    /// Mark implied volatility (options; may be absent on some product kinds)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mark_iv: Option<Decimal>,
+    /// Bid implied volatility (options)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub bid_iv: Option<Decimal>,
+    /// Ask implied volatility (options)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub ask_iv: Option<Decimal>,
+    /// Interest rate used in IV calculations (options)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub interest_rate: Option<Decimal>,
+    /// Open interest
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub open_interest: Option<Decimal>,
+    /// Open interest value when provided by the venue
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub open_interest_value: Option<Decimal>,
+    /// 24h volume in contracts / base units
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub volume: Option<Decimal>,
+    /// 24h volume in USD
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub volume_usd: Option<Decimal>,
+    /// 24h notional volume
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub volume_notional: Option<Decimal>,
+    /// 24h volume in BTC (when provided)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub volume_btc: Option<Decimal>,
+    /// 24h high price
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub high: Option<Decimal>,
+    /// 24h low price
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub low: Option<Decimal>,
+    /// 24h price change (`price_change` on the wire)
+    #[serde(
+        default,
+        rename = "price_change",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
+    pub price_change: Option<Decimal>,
+    /// Estimated delivery price
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub estimated_delivery_price: Option<Decimal>,
+    /// Settlement/delivery price when present
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub delivery_price: Option<Decimal>,
+    /// Base currency
+    #[serde(default)]
+    pub base_currency: Option<String>,
+    /// Quote currency
+    #[serde(default)]
+    pub quote_currency: Option<String>,
+    /// Instrument creation time (milliseconds since UNIX epoch)
+    #[serde(default)]
     pub creation_timestamp: i64,
+}
+
+#[cfg(test)]
+mod book_summary_tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[rstest]
+    fn test_book_summary_raw_deserializes_full_option_payload() {
+        let json = r#"{
+            "instrument_name": "BTC-28MAR25-90000-C",
+            "underlying_price": 95000.5,
+            "underlying_index": "SYN.BTC-28MAR25",
+            "mark_price": 0.042,
+            "mid_price": 0.041,
+            "bid_price": 0.040,
+            "ask_price": 0.042,
+            "last": 0.0415,
+            "mark_iv": 55.2,
+            "bid_iv": 54.0,
+            "ask_iv": 56.1,
+            "interest_rate": 0.0,
+            "open_interest": 123.5,
+            "volume": 10.0,
+            "volume_usd": 950000.0,
+            "volume_notional": 10.0,
+            "high": 0.05,
+            "low": 0.03,
+            "price_change": 0.01,
+            "estimated_delivery_price": 94900.0,
+            "base_currency": "BTC",
+            "quote_currency": "USD",
+            "creation_timestamp": 1710000000000
+        }"#;
+
+        let summary: DeribitBookSummaryRaw = serde_json::from_str(json).unwrap();
+        assert_eq!(summary.instrument_name, "BTC-28MAR25-90000-C");
+        assert_eq!(summary.underlying_price, Some(dec!(95000.5)));
+        assert_eq!(summary.underlying_index.as_deref(), Some("SYN.BTC-28MAR25"));
+        assert_eq!(summary.mark_price, Some(dec!(0.042)));
+        assert_eq!(summary.last_price, Some(dec!(0.0415)));
+        assert_eq!(summary.mark_iv, Some(dec!(55.2)));
+        assert_eq!(summary.bid_price, Some(dec!(0.040)));
+        assert_eq!(summary.ask_price, Some(dec!(0.042)));
+        assert_eq!(summary.open_interest, Some(dec!(123.5)));
+        assert_eq!(summary.volume_usd, Some(dec!(950000.0)));
+        assert_eq!(summary.price_change, Some(dec!(0.01)));
+        assert_eq!(summary.creation_timestamp, 1_710_000_000_000);
+    }
+
+    #[rstest]
+    fn test_book_summary_raw_deserializes_minimal_payload() {
+        let json = r#"{
+            "instrument_name": "BTC-28MAR25-90000-C",
+            "creation_timestamp": 1710000000000
+        }"#;
+
+        let summary: DeribitBookSummaryRaw = serde_json::from_str(json).unwrap();
+        assert_eq!(summary.instrument_name, "BTC-28MAR25-90000-C");
+        assert!(summary.mark_iv.is_none());
+        assert!(summary.open_interest.is_none());
+        assert_eq!(summary.creation_timestamp, 1_710_000_000_000);
+    }
 }
 
 /// Ticker data from `/public/ticker` endpoint.

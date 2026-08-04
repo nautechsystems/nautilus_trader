@@ -1,0 +1,46 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": [
+    {
+      "instrument_name": "BTC-28MAR25-90000-C",
+      "underlying_price": 95000.5,
+      "underlying_index": "SYN.BTC-28MAR25",
+      "mark_price": 0.042,
+      "mid_price": 0.041,
+      "bid_price": 0.040,
+      "ask_price": 0.042,
+      "last": 0.0415,
+      "mark_iv": 55.2,
+      "bid_iv": 54.0,
+      "ask_iv": 56.1,
+      "interest_rate": 0.0,
+      "open_interest": 123.5,
+      "volume": 10.0,
+      "volume_usd": 950000.0,
+      "volume_notional": 10.0,
+      "high": 0.05,
+      "low": 0.03,
+      "price_change": 0.01,
+      "estimated_delivery_price": 94900.0,
+      "base_currency": "BTC",
+      "quote_currency": "USD",
+      "creation_timestamp": 1710000000000
+    },
+    {
+      "instrument_name": "BTC-28MAR25-90000-P",
+      "underlying_price": 95000.5,
+      "underlying_index": "SYN.BTC-28MAR25",
+      "mark_price": 0.038,
+      "bid_price": 0.037,
+      "ask_price": 0.039,
+      "mark_iv": 54.8,
+      "open_interest": 88.0,
+      "volume": 5.0,
+      "base_currency": "BTC",
+      "quote_currency": "USD",
+      "creation_timestamp": 1710000000000
+    }
+  ],
+  "testnet": true
+}

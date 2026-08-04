@@ -54,7 +54,7 @@ use ustr::Ustr;
 use super::{
     error::DeribitHttpError,
     models::{
-        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCombo, DeribitCurrency,
+        DeribitAccountSummariesResponse, DeribitBookSummaryRaw, DeribitCombo, DeribitCurrency,
         DeribitExpirationsResponse, DeribitInstrument, DeribitJsonRpcRequest,
         DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitTicker,
         DeribitUserTradesResponse,
@@ -848,7 +848,7 @@ impl DeribitRawHttpClient {
     pub async fn get_book_summary_by_currency(
         &self,
         params: GetBookSummaryByCurrencyParams,
-    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitBookSummary>>, DeribitHttpError> {
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitBookSummaryRaw>>, DeribitHttpError> {
         self.send_request("public/get_book_summary_by_currency", params, false)
             .await
     }
@@ -1898,10 +1898,10 @@ impl DeribitHttpClient {
             .ok_or_else(|| anyhow::anyhow!("No result in ticker response"))
     }
 
-    /// Requests book summaries for options of a given currency.
+    /// Requests book summaries for a currency via `public/get_book_summary_by_currency`.
     ///
-    /// Returns raw `DeribitBookSummary` items which include `underlying_price`
-    /// (the forward price) for each option instrument.
+    /// Defaults to product kind `option`.
+    /// Entries include mark/IV, bid-ask, volumes, and `underlying_price` (forward) when present.
     ///
     /// # Errors
     ///
@@ -1909,8 +1909,27 @@ impl DeribitHttpClient {
     pub async fn request_book_summaries(
         &self,
         currency: &str,
-    ) -> anyhow::Result<Vec<DeribitBookSummary>> {
-        let params = GetBookSummaryByCurrencyParams::options(currency);
+    ) -> anyhow::Result<Vec<DeribitBookSummaryRaw>> {
+        self.request_book_summaries_kind(currency, Some("option"))
+            .await
+    }
+
+    /// Requests book summaries for a currency with an optional product `kind` filter.
+    ///
+    /// When `kind` is `None`, Deribit returns summaries for all product kinds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_book_summaries_kind(
+        &self,
+        currency: &str,
+        kind: Option<&str>,
+    ) -> anyhow::Result<Vec<DeribitBookSummaryRaw>> {
+        let params = GetBookSummaryByCurrencyParams {
+            currency: currency.to_string(),
+            kind: kind.map(str::to_string),
+        };
         let full_response = self
             .inner
             .get_book_summary_by_currency(params)
