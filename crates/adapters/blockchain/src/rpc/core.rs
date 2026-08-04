@@ -16,7 +16,7 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use alloy::primitives::Address;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::secret::REDACTED};
 #[cfg(feature = "hypersync")]
 use nautilus_model::defi::DexType;
 use nautilus_model::defi::{
@@ -77,7 +77,7 @@ impl Debug for CoreBlockchainRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(CoreBlockchainRpcClient))
             .field("chain", &self.chain)
-            .field("wss_rpc_url", &self.wss_rpc_url)
+            .field("wss_rpc_url", &REDACTED)
             .field("request_id", &self.request_id)
             .field(
                 "pending_subscription_request",
@@ -661,6 +661,31 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn debug_redacts_websocket_rpc_url() {
+        const USERINFO_SECRET: &str = "core-wss-userinfo-secret";
+        const PATH_SECRET: &str = "core-wss-path-secret";
+        const QUERY_SECRET: &str = "core-wss-query-secret";
+        let wss_rpc_url = format!(
+            "wss://rpc-user:{USERINFO_SECRET}@rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
+        let client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            wss_rpc_url.clone(),
+            None,
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("wss_rpc_url: \"<redacted>\""));
+        assert!(!debug.contains(USERINFO_SECRET));
+        assert!(!debug.contains(PATH_SECRET));
+        assert!(!debug.contains(QUERY_SECRET));
+        assert!(!debug.contains(&wss_rpc_url));
+    }
 
     #[rstest]
     fn pool_logs_subscription_params_use_logs_filter_with_sorted_addresses() {

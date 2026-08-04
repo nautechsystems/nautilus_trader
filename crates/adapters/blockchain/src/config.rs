@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::any::Any;
+use std::{any::Any, fmt::Debug};
 
 use nautilus_common::factories::ClientConfig;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
@@ -48,7 +49,7 @@ impl Default for DexPoolFilters {
 }
 
 /// Configuration for blockchain data clients.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -95,6 +96,34 @@ pub struct BlockchainDataClientConfig {
     pub transport_backend: TransportBackend,
 }
 
+impl Debug for BlockchainDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainDataClientConfig))
+            .field("chain", &self.chain)
+            .field("dex_ids", &self.dex_ids)
+            .field(
+                "use_hypersync_for_live_data",
+                &self.use_hypersync_for_live_data,
+            )
+            .field("http_rpc_url", &REDACTED)
+            .field("rpc_requests_per_second", &self.rpc_requests_per_second)
+            .field(
+                "multicall_calls_per_rpc_request",
+                &self.multicall_calls_per_rpc_request,
+            )
+            .field("wss_rpc_url", &self.wss_rpc_url.as_ref().map(|_| REDACTED))
+            .field("proxy_url", &self.proxy_url.as_ref().map(|_| REDACTED))
+            .field("from_block", &self.from_block)
+            .field("pool_filters", &self.pool_filters)
+            .field(
+                "postgres_cache_database_config",
+                &self.postgres_cache_database_config,
+            )
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
+}
+
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(BlockchainDataClientConfig {
     dex_ids: Vec<DexType>,
@@ -107,7 +136,7 @@ const fn default_multicall_calls_per_rpc_request() -> u32 {
     200
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -164,6 +193,33 @@ pub struct BlockchainExecutionClientConfig {
     pub transport_backend: TransportBackend,
 }
 
+impl Debug for BlockchainExecutionClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainExecutionClientConfig))
+            .field("trader_id", &self.trader_id)
+            .field("client_id", &self.client_id)
+            .field("chain", &self.chain)
+            .field("wallet_address", &self.wallet_address)
+            .field("tokens", &self.tokens)
+            .field("http_rpc_url", &REDACTED)
+            .field("rpc_requests_per_second", &self.rpc_requests_per_second)
+            .field("signer_private_key_env", &self.signer_private_key_env)
+            .field("router_addresses", &self.router_addresses)
+            .field("weth_address", &self.weth_address)
+            .field("unlimited_approval", &self.unlimited_approval)
+            .field("max_fee_per_gas_wei", &self.max_fee_per_gas_wei)
+            .field("base_fee_buffer_bps", &self.base_fee_buffer_bps)
+            .field("gas_limit", &self.gas_limit)
+            .field("gas_buffer_bps", &self.gas_buffer_bps)
+            .field(
+                "postgres_cache_database_config",
+                &self.postgres_cache_database_config,
+            )
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
+}
+
 impl ClientConfig for BlockchainExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
@@ -188,6 +244,9 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use nautilus_model::defi::chain::chains;
     use rstest::rstest;
 
     use super::*;
@@ -293,5 +352,59 @@ native_currency_decimals = 18
         );
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_data_config_debug_redacts_rpc_urls() {
+        const HTTP_USERINFO_SECRET: &str = "data-http-userinfo-secret";
+        const WSS_QUERY_SECRET: &str = "data-wss-query-secret";
+        let http_rpc_url = format!(
+            "https://rpc-user:{HTTP_USERINFO_SECRET}@rpc.example.com/data-http-path-secret"
+        );
+        let wss_rpc_url = format!("wss://rpc.example.com/ws?api_key={WSS_QUERY_SECRET}");
+        let config = BlockchainDataClientConfig::builder()
+            .chain(Arc::new(chains::ETHEREUM.clone()))
+            .http_rpc_url(http_rpc_url.clone())
+            .wss_rpc_url(wss_rpc_url.clone())
+            .build();
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
+        assert!(debug.contains("wss_rpc_url: Some(\"<redacted>\")"));
+        assert!(!debug.contains(HTTP_USERINFO_SECRET));
+        assert!(!debug.contains(WSS_QUERY_SECRET));
+        assert!(!debug.contains(&http_rpc_url));
+        assert!(!debug.contains(&wss_rpc_url));
+    }
+
+    #[rstest]
+    fn test_execution_config_debug_redacts_rpc_url() {
+        const PATH_SECRET: &str = "execution-http-path-secret";
+        const QUERY_SECRET: &str = "execution-http-query-secret";
+        let http_rpc_url = format!("https://rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}");
+        let config = BlockchainExecutionClientConfig::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .client_id(AccountId::from("BLOCKCHAIN-001"))
+            .chain(chains::ETHEREUM.clone())
+            .wallet_address("0x0000000000000000000000000000000000000000".to_string())
+            .http_rpc_url(http_rpc_url.clone())
+            .signer_private_key_env("BLOCKCHAIN_PRIVATE_KEY".to_string())
+            .router_addresses(vec![
+                "0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string(),
+            ])
+            .weth_address("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string())
+            .max_fee_per_gas_wei(1_000_000_000)
+            .base_fee_buffer_bps(2_000)
+            .gas_limit(1_000_000)
+            .gas_buffer_bps(2_000)
+            .build();
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
+        assert!(!debug.contains(PATH_SECRET));
+        assert!(!debug.contains(QUERY_SECRET));
+        assert!(!debug.contains(&http_rpc_url));
     }
 }

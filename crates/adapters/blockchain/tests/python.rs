@@ -71,6 +71,12 @@ fn test_blockchain_python_execution_config_constructs_from_python() {
     Python::initialize();
 
     Python::attach(|py| {
+        const USERINFO_SECRET: &str = "python-execution-userinfo-secret";
+        const PATH_SECRET: &str = "python-execution-path-secret";
+        const QUERY_SECRET: &str = "python-execution-query-secret";
+        let http_rpc_url = format!(
+            "https://rpc-user:{USERINFO_SECRET}@rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
         let blockchain_module = register_blockchain_python_module(py);
         let config_type = blockchain_module
             .getattr("BlockchainExecutionClientConfig")
@@ -82,7 +88,7 @@ fn test_blockchain_python_execution_config_constructs_from_python() {
                 AccountId::from("BLOCKCHAIN-001"),
                 chains::ARBITRUM.clone(),
                 "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-                "https://arb-mainnet.example.com",
+                http_rpc_url.clone(),
                 "BLOCKCHAIN_PRIVATE_KEY",
                 vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564"],
                 "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
@@ -92,6 +98,17 @@ fn test_blockchain_python_execution_config_constructs_from_python() {
                 2_000_u32,
             ))
             .expect("BlockchainExecutionClientConfig should construct from Python");
+
+        let repr: String = config
+            .repr()
+            .expect("execution config repr should succeed")
+            .extract()
+            .expect("execution config repr should be a string");
+        let getter_url: String = config
+            .getattr("http_rpc_url")
+            .expect("http_rpc_url getter should exist")
+            .extract()
+            .expect("http_rpc_url getter should return a string");
 
         let getter_value: String = config
             .getattr("signer_private_key_env")
@@ -104,6 +121,12 @@ fn test_blockchain_python_execution_config_constructs_from_python() {
             .extract::<BlockchainExecutionClientConfig>()
             .expect("execution config should extract");
 
+        assert!(repr.contains("http_rpc_url=<redacted>"));
+        assert!(!repr.contains(USERINFO_SECRET));
+        assert!(!repr.contains(PATH_SECRET));
+        assert!(!repr.contains(QUERY_SECRET));
+        assert!(!repr.contains(&http_rpc_url));
+        assert_eq!(getter_url, http_rpc_url);
         assert_eq!(extracted.chain.chain_id, 42161);
         assert_eq!(extracted.signer_private_key_env, "BLOCKCHAIN_PRIVATE_KEY");
         assert_eq!(
@@ -197,6 +220,10 @@ fn assert_data_config_extracts_transport_backend_from_python_constructor(
     blockchain_module: &Bound<'_, PyModule>,
     network_module: &Bound<'_, PyModule>,
 ) {
+    const HTTP_PATH_SECRET: &str = "python-data-http-path-secret";
+    const WSS_QUERY_SECRET: &str = "python-data-wss-query-secret";
+    let http_rpc_url = format!("https://rpc.example.com/{HTTP_PATH_SECRET}");
+    let wss_rpc_url = format!("wss://rpc.example.com/ws?api_key={WSS_QUERY_SECRET}");
     let config_type = blockchain_module
         .getattr("BlockchainDataClientConfig")
         .expect("BlockchainDataClientConfig should be available");
@@ -209,16 +236,24 @@ fn assert_data_config_extracts_transport_backend_from_python_constructor(
     kwargs
         .set_item("transport_backend", transport_backend)
         .expect("transport_backend kwarg should be set");
+    kwargs
+        .set_item("wss_rpc_url", wss_rpc_url.clone())
+        .expect("wss_rpc_url kwarg should be set");
     let config = config_type
         .call(
             (
                 chains::ETHEREUM.clone(),
                 vec![DexType::UniswapV3],
-                "https://eth-mainnet.example.com",
+                http_rpc_url.clone(),
             ),
             Some(&kwargs),
         )
         .expect("BlockchainDataClientConfig should construct from Python");
+    let repr: String = config
+        .repr()
+        .expect("data config repr should succeed")
+        .extract()
+        .expect("data config repr should be a string");
     let registry = get_global_pyo3_registry();
     let extracted_config = registry
         .extract_config(py, config.into())
@@ -228,6 +263,17 @@ fn assert_data_config_extracts_transport_backend_from_python_constructor(
         .downcast_ref::<BlockchainDataClientConfig>()
         .expect("data config should downcast");
 
+    assert!(repr.contains("http_rpc_url=<redacted>"));
+    assert!(repr.contains("wss_rpc_url=Some(\"<redacted>\")"));
+    assert!(!repr.contains(HTTP_PATH_SECRET));
+    assert!(!repr.contains(WSS_QUERY_SECRET));
+    assert!(!repr.contains(&http_rpc_url));
+    assert!(!repr.contains(&wss_rpc_url));
+    assert_eq!(blockchain_config.http_rpc_url, http_rpc_url);
+    assert_eq!(
+        blockchain_config.wss_rpc_url.as_deref(),
+        Some(wss_rpc_url.as_str())
+    );
     assert_eq!(
         blockchain_config.transport_backend,
         TransportBackend::Tungstenite,

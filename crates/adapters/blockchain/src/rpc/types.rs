@@ -107,7 +107,13 @@ where
     D: serde::Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    Ok(parse_hex_quantity(&s).map_err(serde::de::Error::custom)? == 1)
+    match s.as_str() {
+        "0x0" => Ok(false),
+        "0x1" => Ok(true),
+        _ => Err(serde::de::Error::custom(
+            "invalid transaction receipt status; expected 0x0 or 0x1",
+        )),
+    }
 }
 
 fn parse_hex_quantity(s: &str) -> anyhow::Result<u128> {

@@ -19,7 +19,10 @@ use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::{UnixNanos, hex, string::formatting::Separable};
+use nautilus_core::{
+    UnixNanos, hex,
+    string::{formatting::Separable, secret::REDACTED},
+};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
@@ -176,12 +179,12 @@ impl BlockchainDataClientCore {
         log::debug!(
             "Initializing blockchain data client for '{}' with HTTP RPC: {}",
             chain.name,
-            config.http_rpc_url
+            REDACTED
         );
 
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
-            log::debug!("WebSocket RPC URL: {wss_rpc_url}");
+            log::debug!("WebSocket RPC URL: {REDACTED}");
             Some(Self::initialize_rpc_client(
                 chain.name,
                 wss_rpc_url,

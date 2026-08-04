@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use nautilus_core::string::secret::REDACTED;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType},
@@ -153,8 +154,8 @@ impl BlockchainDataClientConfig {
         format!(
             "BlockchainDataClientConfig(chain={:?}, http_rpc_url={}, wss_rpc_url={:?}, use_hypersync_for_live_data={}, from_block={:?})",
             self.chain.name,
-            self.http_rpc_url,
-            self.wss_rpc_url,
+            REDACTED,
+            self.wss_rpc_url.as_ref().map(|_| REDACTED),
             self.use_hypersync_for_live_data,
             self.from_block
         )
@@ -259,7 +260,7 @@ impl BlockchainExecutionClientConfig {
     fn __repr__(&self) -> String {
         format!(
             "BlockchainExecutionClientConfig(chain={:?}, wallet_address={}, http_rpc_url={})",
-            self.chain.name, self.wallet_address, self.http_rpc_url
+            self.chain.name, self.wallet_address, REDACTED
         )
     }
 }

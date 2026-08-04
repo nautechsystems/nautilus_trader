@@ -945,8 +945,8 @@ struct SockudoTarget {
 #[cfg(feature = "transport-sockudo")]
 impl SockudoTarget {
     fn parse(url: &str) -> Result<Self, TransportError> {
-        let parsed =
-            url::Url::parse(url).map_err(|e| TransportError::InvalidUrl(format!("{url}: {e}")))?;
+        let parsed = url::Url::parse(url)
+            .map_err(|e| TransportError::InvalidUrl(format!("invalid WebSocket URL: {e}")))?;
 
         let scheme = parsed.scheme();
         let is_tls = match scheme {
@@ -7339,11 +7339,17 @@ mod rust_tests {
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
     #[rstest]
     fn sockudo_target_rejects_malformed_url() {
-        let err = super::SockudoTarget::parse("not a url").expect_err("malformed URL");
+        const SECRET: &str = "malformed-websocket-url-secret";
+        let url = format!("not a url {SECRET}");
+        let err = super::SockudoTarget::parse(&url).expect_err("malformed URL");
+        let message = err.to_string();
+
         assert!(
             matches!(err, super::TransportError::InvalidUrl(_)),
             "expected InvalidUrl, was: {err:?}"
         );
+        assert!(!message.contains(SECRET));
+        assert!(!message.contains(&url));
     }
 }
 

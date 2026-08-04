@@ -1152,6 +1152,7 @@ mod tests {
 
     fn execution_rpc_state() -> MockRpcState {
         MockRpcState::default()
+            .with_receipt_hash_from_request()
             .with_response("eth_chainId", CHAIN_ID_ARBITRUM)
             .with_response("eth_getCode", GET_CODE_DEPLOYED)
             .with_response("eth_getBalance", GET_BALANCE)

@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, str::FromStr};
 
 use alloy::primitives::{Address, B256, Bytes, U256};
 use bytes::Bytes as HttpBytes;
-use nautilus_core::hex;
+use nautilus_core::{hex, string::secret::REDACTED};
 use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
 use nautilus_network::{
     http::{HttpClient, HttpClientError, Method},
@@ -37,12 +37,20 @@ pub const EXECUTION_RPC_TIMEOUT_SECS: u64 = 10;
 ///
 /// This client is designed to interact with Ethereum-compatible blockchain networks, providing
 /// methods to execute RPC calls and handle responses in a type-safe manner.
-#[derive(Debug)]
 pub struct BlockchainHttpRpcClient {
     /// The HTTP URL for the blockchain node's RPC endpoint.
     http_rpc_url: String,
     /// The HTTP client for making RPC http-based requests.
     http_client: HttpClient,
+}
+
+impl Debug for BlockchainHttpRpcClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainHttpRpcClient))
+            .field("http_rpc_url", &REDACTED)
+            .field("http_client", &self.http_client)
+            .finish()
+    }
 }
 
 impl BlockchainHttpRpcClient {
@@ -91,7 +99,7 @@ impl BlockchainHttpRpcClient {
 
         match self
             .http_client
-            .request(
+            .request_with_url_redacted(
                 Method::POST,
                 self.http_rpc_url.clone(),
                 None,
@@ -473,8 +481,20 @@ impl BlockchainHttpRpcClient {
         &self,
         tx_hash: &B256,
     ) -> anyhow::Result<Option<RpcTransactionReceipt>> {
-        self.execute_execution_rpc_call("eth_getTransactionReceipt", serde_json::json!([tx_hash]))
-            .await
+        let receipt: Option<RpcTransactionReceipt> = self
+            .execute_execution_rpc_call("eth_getTransactionReceipt", serde_json::json!([tx_hash]))
+            .await?;
+
+        if receipt
+            .as_ref()
+            .is_some_and(|receipt| receipt.transaction_hash != *tx_hash)
+        {
+            anyhow::bail!(
+                "eth_getTransactionReceipt returned a receipt with a mismatched transaction hash"
+            );
+        }
+
+        Ok(receipt)
     }
 
     /// Broadcasts a signed raw transaction via `eth_sendRawTransaction`.
@@ -508,7 +528,7 @@ impl BlockchainHttpRpcClient {
 
         let response = self
             .http_client
-            .request(
+            .request_with_url_redacted(
                 Method::POST,
                 self.http_rpc_url.clone(),
                 None,
@@ -591,6 +611,7 @@ pub(crate) mod tests {
             call_responses: HashMap<String, String>,
             sleep_methods: HashMap<String, Duration>,
             requests: Arc<Mutex<Vec<Value>>>,
+            receipt_hash_from_request: bool,
         }
 
         impl MockRpcState {
@@ -610,6 +631,14 @@ pub(crate) mod tests {
                     method.to_string(),
                     responses.iter().map(ToString::to_string).collect(),
                 );
+                self
+            }
+
+            /// Rewrites receipt fixture hashes to the hash requested by each poll.
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_receipt_hash_from_request(mut self) -> Self {
+                self.receipt_hash_from_request = true;
                 self
             }
 
@@ -668,20 +697,41 @@ pub(crate) mod tests {
                 .get_mut(method)
                 .and_then(VecDeque::pop_front);
 
-            if let Some(response) = queued_response {
+            let response = if let Some(response) = queued_response {
+                response
+            } else if let Some(response) = state.responses.get(method) {
+                response.clone()
+            } else {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32601, "message": "method not found"}
+                })
+                .to_string()
+            };
+
+            if state.receipt_hash_from_request && method == "eth_getTransactionReceipt" {
+                receipt_response_with_requested_hash(response, &request)
+            } else {
+                response
+            }
+        }
+
+        fn receipt_response_with_requested_hash(response: String, request: &Value) -> String {
+            let Some(requested_hash) = request["params"][0].as_str() else {
                 return response;
-            }
-
-            if let Some(response) = state.responses.get(method) {
-                return response.clone();
-            }
-
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "error": {"code": -32601, "message": "method not found"}
-            })
-            .to_string()
+            };
+            let Ok(mut value) = serde_json::from_str::<Value>(&response) else {
+                return response;
+            };
+            let Some(receipt) = value["result"].as_object_mut() else {
+                return response;
+            };
+            receipt.insert(
+                "transactionHash".to_string(),
+                Value::String(requested_hash.to_string()),
+            );
+            value.to_string()
         }
 
         /// Starts a mock JSON-RPC server on a random localhost port and returns its address.
@@ -713,6 +763,19 @@ pub(crate) mod tests {
         include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_null.json");
     const RECEIPT_SUCCESS: &str =
         include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_success.json");
+    const RECEIPT_REVERTED: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_reverted.json");
+    const RECEIPT_STATUS_MISSING: &str = include_str!(
+        "../../test_data/execution/rpc_eth_get_transaction_receipt_status_missing.json"
+    );
+    const RECEIPT_STATUS_MALFORMED: &str = include_str!(
+        "../../test_data/execution/rpc_eth_get_transaction_receipt_status_malformed.json"
+    );
+    const RECEIPT_STATUS_OTHER: &str =
+        include_str!("../../test_data/execution/rpc_eth_get_transaction_receipt_status_other.json");
+    const RECEIPT_STATUS_NONCANONICAL: &str = include_str!(
+        "../../test_data/execution/rpc_eth_get_transaction_receipt_status_noncanonical.json"
+    );
     const SEND_RAW_TRANSACTION: &str =
         include_str!("../../test_data/execution/rpc_eth_send_raw_transaction.json");
     const SEND_RAW_TRANSACTION_ALREADY_KNOWN: &str =
@@ -726,6 +789,25 @@ pub(crate) mod tests {
             BlockchainHttpRpcClient::new(format!("http://{addr}"), None, None),
             state,
         )
+    }
+
+    #[rstest]
+    fn debug_redacts_http_rpc_url() {
+        const USERINFO_SECRET: &str = "http-client-userinfo-secret";
+        const PATH_SECRET: &str = "http-client-path-secret";
+        const QUERY_SECRET: &str = "http-client-query-secret";
+        let http_rpc_url = format!(
+            "https://rpc-user:{USERINFO_SECRET}@rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
+        let client = BlockchainHttpRpcClient::new(http_rpc_url.clone(), None, None);
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
+        assert!(!debug.contains(USERINFO_SECRET));
+        assert!(!debug.contains(PATH_SECRET));
+        assert!(!debug.contains(QUERY_SECRET));
+        assert!(!debug.contains(&http_rpc_url));
     }
 
     #[tokio::test]
@@ -889,6 +971,73 @@ pub(crate) mod tests {
         assert_eq!(receipt.block_number, 30_346_561);
         assert_eq!(receipt.gas_used, 50_112);
         assert!(receipt.status);
+    }
+
+    #[tokio::test]
+    async fn transaction_receipt_parses_reverted_fields() {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_getTransactionReceipt", RECEIPT_REVERTED),
+        )
+        .await;
+
+        let receipt = client
+            .get_transaction_receipt(&b256!(
+                "9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            receipt.transaction_hash,
+            b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a")
+        );
+        assert_eq!(receipt.block_number, 30_346_561);
+        assert_eq!(receipt.gas_used, 50_112);
+        assert!(!receipt.status);
+    }
+
+    #[tokio::test]
+    async fn transaction_receipt_rejects_mismatched_hash() {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS),
+        )
+        .await;
+
+        let error = client
+            .get_transaction_receipt(&B256::ZERO)
+            .await
+            .expect_err("a receipt for another transaction should fail closed");
+
+        assert_eq!(
+            error.to_string(),
+            "eth_getTransactionReceipt returned a receipt with a mismatched transaction hash"
+        );
+    }
+
+    #[rstest]
+    #[case::missing(RECEIPT_STATUS_MISSING)]
+    #[case::malformed(RECEIPT_STATUS_MALFORMED)]
+    #[case::other(RECEIPT_STATUS_OTHER)]
+    #[case::noncanonical(RECEIPT_STATUS_NONCANONICAL)]
+    #[tokio::test]
+    async fn transaction_receipt_rejects_invalid_status(#[case] response: &str) {
+        let (client, _) = client_for(
+            MockRpcState::default().with_response("eth_getTransactionReceipt", response),
+        )
+        .await;
+
+        let error = client
+            .get_transaction_receipt(&b256!(
+                "9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"
+            ))
+            .await
+            .expect_err("an invalid receipt status should fail closed");
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to parse eth_getTransactionReceipt response"
+        );
     }
 
     #[tokio::test]

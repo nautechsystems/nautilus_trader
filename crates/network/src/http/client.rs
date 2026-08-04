@@ -212,6 +212,32 @@ impl HttpClient {
             .await
     }
 
+    /// Sends an HTTP request while redacting the URL from logs and transport errors.
+    ///
+    /// Use this for endpoints whose path or other URL components can carry credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    #[expect(clippy::too_many_arguments)]
+    pub async fn request_with_url_redacted(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let keys = keys.map(into_ustr_vec);
+        self.await_rate_limits(keys.as_deref()).await;
+
+        self.client
+            .send_request_with_url_redacted(method, url, params, headers, body, timeout_secs)
+            .await
+    }
+
     /// Sends an HTTP request with serializable query parameters.
     ///
     /// This method accepts any type implementing `Serialize` for query parameters,
@@ -390,6 +416,29 @@ impl InnerHttpClient {
             headers,
             body,
             timeout_secs,
+            false,
+        )
+        .await
+    }
+
+    async fn send_request_with_url_redacted(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let full_url = encode_url_params(&url, params)?;
+        self.send_request_internal(
+            method,
+            full_url.as_ref(),
+            None::<&()>,
+            headers,
+            body,
+            timeout_secs,
+            true,
         )
         .await
     }
@@ -411,7 +460,7 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_internal(method, &url, query, headers, body, timeout_secs)
+        self.send_request_internal(method, &url, query, headers, body, timeout_secs, false)
             .await
     }
 
@@ -420,6 +469,7 @@ impl InnerHttpClient {
     /// # Errors
     ///
     /// Returns an error if unable to send request or times out.
+    #[expect(clippy::too_many_arguments)]
     async fn send_request_internal<Q: serde::Serialize>(
         &self,
         method: Method,
@@ -428,6 +478,7 @@ impl InnerHttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
+        redact_url: bool,
     ) -> Result<HttpResponse, HttpClientError> {
         let reqwest_url =
             Url::parse(url).map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
@@ -469,8 +520,10 @@ impl InnerHttpClient {
             Some(b) => request_builder
                 .body(b)
                 .build()
-                .map_err(HttpClientError::from)?,
-            None => request_builder.build().map_err(HttpClientError::from)?,
+                .map_err(|e| http_client_error(e, redact_url))?,
+            None => request_builder
+                .build()
+                .map_err(|e| http_client_error(e, redact_url))?,
         };
 
         let query_len = request.url().query().map_or(0, str::len);
@@ -484,9 +537,9 @@ impl InnerHttpClient {
             .client
             .execute(request)
             .await
-            .map_err(HttpClientError::from)?;
+            .map_err(|e| http_client_error(e, redact_url))?;
 
-        self.to_response(response).await
+        self.to_response_internal(response, redact_url).await
     }
 
     /// Converts a `reqwest::Response` into an `HttpResponse`.
@@ -497,6 +550,14 @@ impl InnerHttpClient {
     ///
     /// Returns an error if unable to send request or times out.
     pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
+        self.to_response_internal(response, false).await
+    }
+
+    async fn to_response_internal(
+        &self,
+        response: Response,
+        redact_url: bool,
+    ) -> Result<HttpResponse, HttpClientError> {
         let status_code = response.status();
         let resp_headers = response.headers();
         let header_count = resp_headers.len();
@@ -514,7 +575,7 @@ impl InnerHttpClient {
         }
 
         let status = HttpStatus::new(status_code);
-        let body = self.read_body_capped(response).await?;
+        let body = self.read_body_capped(response, redact_url).await?;
 
         log::trace!(
             "Received HTTP response: status={status_code} headers={header_count} body_bytes={}",
@@ -542,6 +603,7 @@ impl InnerHttpClient {
     async fn read_body_capped(
         &self,
         mut response: Response,
+        redact_url: bool,
     ) -> Result<bytes::Bytes, HttpClientError> {
         let max = self.max_response_bytes;
 
@@ -555,7 +617,12 @@ impl InnerHttpClient {
         }
 
         let mut buf = bytes::BytesMut::new();
-        while let Some(chunk) = response.chunk().await.map_err(HttpClientError::from)? {
+
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| http_client_error(e, redact_url))?
+        {
             if buf.len() + chunk.len() > max {
                 return Err(HttpClientError::Error(format!(
                     "HTTP response body exceeds maximum of {max} bytes",
@@ -565,6 +632,14 @@ impl InnerHttpClient {
         }
 
         Ok(buf.freeze())
+    }
+}
+
+fn http_client_error(error: reqwest::Error, redact_url: bool) -> HttpClientError {
+    if redact_url {
+        HttpClientError::from(error.without_url())
+    } else {
+        HttpClientError::from(error)
     }
 }
 
@@ -619,7 +694,7 @@ fn encode_url_params<'a>(
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use std::{net::SocketAddr, num::NonZeroU32};
+    use std::{net::SocketAddr, num::NonZeroU32, sync::Mutex};
 
     use axum::{
         Router,
@@ -631,6 +706,7 @@ mod tests {
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use http::status::StatusCode;
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use rstest::rstest;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -654,6 +730,42 @@ mod tests {
 
         ([("x-response-id", "response-42")], capture)
     }
+
+    #[derive(Default)]
+    struct CapturingTraceLogger {
+        messages: Mutex<Vec<(Level, String)>>,
+    }
+
+    impl CapturingTraceLogger {
+        fn clear(&self) {
+            self.messages.lock().unwrap().clear();
+        }
+
+        fn messages(&self) -> Vec<(Level, String)> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    impl Log for CapturingTraceLogger {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() <= Level::Trace
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push((record.level(), record.args().to_string()));
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    static CAPTURING_TRACE_LOGGER: CapturingTraceLogger = CapturingTraceLogger {
+        messages: Mutex::new(Vec::new()),
+    };
 
     fn create_router() -> Router {
         Router::new()
@@ -1087,6 +1199,90 @@ mod tests {
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
         assert_eq!(response.body.as_ref(), b"hello-world!");
+    }
+
+    #[tokio::test]
+    async fn test_http_client_redacted_url_request_preserves_response() {
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(2), None).unwrap();
+        let response = client
+            .request_with_url_redacted(
+                Method::GET,
+                format!("http://{addr}/get"),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("direct request with URL redaction");
+
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.body.as_ref(), b"hello-world!");
+    }
+
+    #[tokio::test]
+    async fn test_http_client_redacted_url_request_removes_endpoint_from_error() {
+        const USERINFO_SECRET: &str = "transport-userinfo-secret";
+        const PATH_SECRET: &str = "transport-path-secret";
+        const QUERY_SECRET: &str = "transport-query-secret";
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let url = format!(
+            "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(1), None).unwrap();
+
+        let error = client
+            .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
+            .await
+            .expect_err("an unreachable endpoint should fail");
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(USERINFO_SECRET));
+            assert!(!rendered.contains(PATH_SECRET));
+            assert!(!rendered.contains(QUERY_SECRET));
+            assert!(!rendered.contains(&url));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_client_redacted_url_request_removes_endpoint_from_trace_logs() {
+        const USERINFO_SECRET: &str = "trace-userinfo-secret";
+        const PATH_SECRET: &str = "trace-path-secret";
+        const QUERY_SECRET: &str = "trace-query-secret";
+        let _ = log::set_logger(&CAPTURING_TRACE_LOGGER);
+        log::set_max_level(LevelFilter::Trace);
+        CAPTURING_TRACE_LOGGER.clear();
+        let addr = start_test_server().await.unwrap();
+        let url = format!(
+            "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(2), None).unwrap();
+
+        let response = client
+            .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
+            .await
+            .expect("credentialized endpoint should return an HTTP response");
+        let messages = CAPTURING_TRACE_LOGGER.messages();
+
+        assert_eq!(response.status.as_u16(), StatusCode::NOT_FOUND.as_u16());
+        assert!(messages.iter().any(|(level, message)| {
+            *level == Level::Trace && message.starts_with("Sending HTTP request: method=GET")
+        }));
+        assert!(messages.iter().any(|(level, message)| {
+            *level == Level::Trace
+                && message.starts_with("Received HTTP response: status=404 Not Found")
+        }));
+
+        for (_, message) in messages {
+            assert!(!message.contains(USERINFO_SECRET));
+            assert!(!message.contains(PATH_SECRET));
+            assert!(!message.contains(QUERY_SECRET));
+            assert!(!message.contains(&url));
+        }
     }
 
     #[tokio::test]

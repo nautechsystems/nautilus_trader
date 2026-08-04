@@ -181,7 +181,7 @@ pub struct WebSocketConfig {
 impl Debug for WebSocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(WebSocketConfig))
-            .field("url", &self.url)
+            .field("url", &REDACTED)
             .field(
                 "headers",
                 &format_args!("<{} header(s)>", self.headers.len()),
@@ -403,14 +403,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_debug_redacts_proxy_credentials() {
-        const SECRET: &str = "unique-proxy-secret";
+    fn test_debug_redacts_endpoint_and_proxy_credentials() {
+        const ENDPOINT_PATH_SECRET: &str = "unique-endpoint-path-secret";
+        const ENDPOINT_QUERY_SECRET: &str = "unique-endpoint-query-secret";
+        const PROXY_SECRET: &str = "unique-proxy-secret";
         let mut config = valid_config();
-        config.proxy_url = Some(format!("http://proxytest:{SECRET}@proxy.example.com:8080"));
+        config.url =
+            format!("wss://rpc.example.com/{ENDPOINT_PATH_SECRET}?api_key={ENDPOINT_QUERY_SECRET}");
+        config.proxy_url = Some(format!(
+            "http://proxytest:{PROXY_SECRET}@proxy.example.com:8080"
+        ));
 
         let debug = format!("{config:?}");
 
+        assert!(debug.contains("url: \"<redacted>\""));
         assert!(debug.contains("proxy_url: Some(\"<redacted>\")"));
-        assert!(!debug.contains(SECRET));
+        assert!(!debug.contains(ENDPOINT_PATH_SECRET));
+        assert!(!debug.contains(ENDPOINT_QUERY_SECRET));
+        assert!(!debug.contains(PROXY_SECRET));
     }
 }

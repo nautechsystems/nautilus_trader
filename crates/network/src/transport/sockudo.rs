@@ -33,6 +33,7 @@ use std::{
 
 use bytes::{BufMut, Bytes, BytesMut};
 use futures_util::{Sink, Stream};
+use nautilus_core::string::secret::REDACTED;
 use sockudo_ws::{
     HandshakeResult,
     error::{CloseReason as SockudoCloseReason, Error as SockudoError},
@@ -102,7 +103,7 @@ where
         let parsed = match handshake::parse_response(&buf) {
             Ok(parsed) => parsed,
             Err(e) => {
-                log_handshake_response(host, path, &e, &buf);
+                log_handshake_response(&e, &buf);
                 return Err(e);
             }
         };
@@ -110,13 +111,13 @@ where
         if let Some((res, consumed)) = parsed {
             let accept = res.accept.ok_or_else(|| {
                 let e = SockudoError::HandshakeFailed("missing Sec-WebSocket-Accept");
-                log_handshake_response(host, path, &e, &buf);
+                log_handshake_response(&e, &buf);
                 e
             })?;
 
             if !handshake::validate_accept_key(&key, accept) {
                 let e = SockudoError::HandshakeFailed("invalid Sec-WebSocket-Accept");
-                log_handshake_response(host, path, &e, &buf);
+                log_handshake_response(&e, &buf);
                 return Err(e);
             }
 
@@ -138,14 +139,10 @@ where
     }
 }
 
-// Surface the upstream HTTP response on parse failure so non-101 statuses are visible.
-fn log_handshake_response(host: &str, path: &str, err: &SockudoError, buf: &BytesMut) {
-    const PREVIEW_BYTES: usize = 512;
-    let take = buf.len().min(PREVIEW_BYTES);
-    let preview = String::from_utf8_lossy(&buf[..take]);
-    let truncated = if buf.len() > take { " (truncated)" } else { "" };
+fn log_handshake_response(err: &SockudoError, buf: &BytesMut) {
     log::error!(
-        "Sockudo handshake failed for {host}{path}: {err}; response{truncated}:\n{preview}"
+        "Sockudo handshake failed for {REDACTED}: {err}; response bytes={}",
+        buf.len()
     );
 }
 
