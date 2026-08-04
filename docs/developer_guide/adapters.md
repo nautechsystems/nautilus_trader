@@ -7,6 +7,9 @@ bytes: it preserves venue semantics, produces valid Nautilus domain events, and 
 outcomes explicit. The work is exacting, but the repository already provides strong contracts and
 useful examples.
 
+Adapters are Rust‑native. They implement the platform data and execution client traits in Rust,
+then expose configs, factories, and selected low‑level APIs to Python through PyO3.
+
 Use reference adapters selectively. Their layouts reflect different venue protocols, product
 families, and implementation histories.
 
@@ -127,117 +130,144 @@ PyO3 module list as a public API allowlist. The
 Use these phases to organize the work. They describe dependencies, not release gates. A
 market‑data‑only adapter omits execution, and an adapter can complete one product before starting
 another. Keep the capability matrix current throughout the work rather than waiting for the final
-documentation phase.
+documentation phase. The step identifiers provide a shared vocabulary for progress and handoffs;
+omit steps that do not apply to the adapter.
 
-### Phase 1: Define scope
+### Before phase 1: Define scope
 
-- List the products, environments, account modes, data types, order types, and reports in scope.
-- Record venue restrictions, unsupported capabilities, and testnet differences.
-- Identify protocol boundaries such as separate product APIs, public and private endpoints, and
-  binary or JSON transports.
-- Choose the smallest initial slice that can prove an end‑to‑end path.
+| Step | Component           | Work                                                                                                      |
+| ---- | ------------------- | --------------------------------------------------------------------------------------------------------- |
+| 0.1  | Capability matrix   | List the products, environments, account modes, data types, order types, and reports in scope.            |
+| 0.2  | Venue constraints   | Record venue restrictions, unsupported capabilities, and testnet differences.                             |
+| 0.3  | Protocol boundaries | Identify separate product APIs, public and private endpoints, and binary or JSON transports.              |
+| 0.4  | Initial slice       | Choose the smallest slice that proves an end‑to‑end path.                                                 |
+| 0.5  | Repository wiring   | Add the crate to the Rust workspace and test inventory, then add only the projection surfaces it exposes. |
 
 **Exit:** The integration guide contains an initial capability matrix, known gaps, and a test plan.
 
-### Phase 2: Build the protocol core
+### Phase 1: Build the protocol core
 
-- Add the crate to the Rust workspace and test inventory.
-- Implement environment and URL resolution, credentials, signing when required, and shared protocol
-  types.
-- Model the applicable HTTP requests and responses, WebSocket frames, venue errors, and retry
-  classification.
-- Build deterministic parsers and serializers before connecting them to live client state.
-- Establish lifecycle, authentication, and heartbeat behavior for each transport in scope.
+| Step | Component             | Work                                                                                                                            |
+| ---- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1  | HTTP error types      | Model transport, HTTP status, venue, parsing, and validation failures; classify retryability when supported.                    |
+| 1.2  | HTTP client           | Implement endpoint resolution and typed requests, plus credentials, signing, rate limits, retries, and pagination as needed.    |
+| 1.3  | HTTP API models       | Define typed requests and responses, commonly under `http/` or its product‑specific modules.                                    |
+| 1.4  | HTTP parsing          | Convert venue responses to domain types at deterministic boundaries in `http/parse.rs` or `common/parse.rs`.                    |
+| 1.5  | WebSocket error types | Model connection, protocol, and parsing failures, plus authentication and command failures when applicable.                     |
+| 1.6  | WebSocket client      | Implement lifecycle and shutdown, plus authentication, heartbeat, subscription state, and reconnection when applicable.         |
+| 1.7  | WebSocket messages    | Define frames and messages under `websocket/` or product‑specific modules; include acknowledgements and venue errors as needed. |
+| 1.8  | WebSocket parsing     | Decode each frame once, convert domain events, and route data or execution messages by typed identity.                          |
+| 1.9  | Protocol tests        | Prove fixtures, canonical requests, applicable signing vectors, lifecycle, and raw exchanges with mock peers.                   |
 
 **Exit:** The crate compiles, protocol fixtures parse, applicable signing vectors pass, and mock or
-controlled requests can authenticate and exchange raw venue messages.
+controlled requests complete any required authentication and exchange raw venue messages.
 
-### Phase 3: Implement instruments
+### Phase 2: Implement instruments
 
-- Define bidirectional venue symbol and `InstrumentId` mapping.
-- Parse every supported instrument family with complete identity, precision, currency, and contract
-  fields.
-- Load definitions from the venue and cache them at each parsing boundary that needs context.
-- Implement fresh instrument requests and any supported definition updates.
+| Step | Component          | Work                                                                                                     |
+| ---- | ------------------ | -------------------------------------------------------------------------------------------------------- |
+| 2.1  | Instrument parsing | Parse every supported family with complete identity, precision, currency, and contract fields.           |
+| 2.2  | Instrument loading | Load, filter, cache, and emit definitions at each parsing boundary that needs context.                   |
+| 2.3  | Symbol mapping     | Define bidirectional venue symbol and `InstrumentId` conversion without collapsing distinct instruments. |
+| 2.4  | Instrument updates | Implement fresh instrument requests and any supported definition or status updates.                      |
 
 **Exit:** Distinct fixtures cover every supported instrument family, invalid definitions fail
 clearly, and the data client emits or returns complete Nautilus instruments.
 
-### Phase 4: Implement market data
+### Phase 3: Implement market data
 
-- Start with one public stream and one instrument before adding product or endpoint fan‑out.
-- Implement request and subscription paths for each advertised data type.
-- Preserve venue time, request correlation, order‑book event boundaries, and subscription intent.
-- Add snapshot, incremental update, unsubscribe, malformed input, and reconnect behavior.
+Start with one public stream and one instrument before adding product or endpoint fan‑out.
+
+| Step | Component                | Work                                                                                                        |
+| ---- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| 3.1  | Public WebSocket streams | Subscribe and unsubscribe each advertised live data type while preserving subscription intent.              |
+| 3.2  | Historical data requests | Request supported bars, trades, quotes, or order book snapshots with exact correlation and freshness rules. |
+| 3.3  | Data client              | Implement `DataClient` requests, subscriptions, lifecycle, and complete `DataEvent` emission.               |
+| 3.4  | Order book handling      | Preserve snapshot, incremental update, sequence, clear, and batch boundaries.                               |
+| 3.5  | Stream recovery          | Handle malformed input, gaps, unsubscribe, disconnect, reconnect, and subscription replay.                  |
 
 **Exit:** Unit and mock transport tests prove complete domain events for the supported request and
 subscription matrix.
 
-### Phase 5: Implement execution
+### Phase 4: Implement execution
 
-- Establish account identity, initial account state, private subscriptions, and reconciliation
-  reports before enabling order flow.
-- Add basic submit, cancel, and modify commands with deterministic local validation.
-- Preserve tracked versus external order routing, event ordering, fill deduplication, and unknown
-  outcomes.
-- Generate the order, fill, position, and mass‑status reports required at startup and on demand.
+Establish account state and reconciliation before enabling order flow.
+
+| Step | Component              | Work                                                                                                         |
+| ---- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 4.1  | Account bootstrap      | Establish account identity, initial account state, private subscriptions, and connected readiness.           |
+| 4.2  | Reconciliation reports | Generate applicable order, fill, position, and mass‑status reports at startup and on demand.                 |
+| 4.3  | Basic order submission | Implement supported market and limit order submission with deterministic local validation.                   |
+| 4.4  | Order modification     | Implement supported modify and cancel commands, including cancel‑replace venue semantics.                    |
+| 4.5  | Execution client       | Implement `ExecutionClient` commands, lifecycle, tracked and external routing, and ordered event emission.   |
+| 4.6  | Outcome recovery       | Preserve unknown outcomes, deduplicate fills, and resolve state through streams, queries, or reconciliation. |
 
 **Exit:** Mock transport tests cover every supported command, definitive rejection, uncertain
 transmission, duplicate or out‑of‑order updates, and startup reconciliation.
 
-### Phase 6: Add optional venue capabilities
+### Phase 5: Add optional venue capabilities
 
-- Add advanced order types, batch operations, conditional orders, and mass cancel only when the
-  base lifecycle is stable.
-- Add product‑specific data such as funding, greeks, liquidations, or venue extensions as separate
-  capability slices.
-- Split clients or modules only when protocol, authentication, quota, or recovery boundaries
-  require independent ownership.
-- Give each added capability its own fixtures, functional tests, acceptance cases, and documented
-  limitations.
+Add these only after the base lifecycle is stable.
+
+| Step | Component                  | Work                                                                                              |
+| ---- | -------------------------- | ------------------------------------------------------------------------------------------------- |
+| 5.1  | Advanced order types       | Add applicable conditional, stop, take‑profit, trailing‑stop, or other advanced orders.           |
+| 5.2  | Batch operations           | Add batch submission, batch cancellation, and mass cancel with per‑order result handling.         |
+| 5.3  | Venue‑specific data        | Add funding, greeks, liquidations, or venue extensions as separate capability slices.             |
+| 5.4  | Product or endpoint splits | Split ownership only when protocol, authentication, quota, or recovery boundaries require it.     |
+| 5.5  | Capability proof           | Add fixtures, functional tests, acceptance cases, and documented limitations for each capability. |
 
 **Exit:** Each optional capability is independently testable and does not weaken the established
 base paths.
 
-### Phase 7: Complete factories and projection
+### Phase 6: Complete factories and projection
 
-- Finalize typed data and execution configs, defaults, environment fallback, and secret redaction.
-- Implement Rust client factories with the required clock and `CacheView` inputs.
-- Register applicable factories and config extractors with the PyO3 registry.
-- Add the public Python package, generated stubs, and Python boundary tests when Python exposure is
-  supported.
+| Step | Component             | Work                                                                                             |
+| ---- | --------------------- | ------------------------------------------------------------------------------------------------ |
+| 6.1  | Configuration structs | Finalize typed data and execution configs, defaults, environment fallback, and secret redaction. |
+| 6.2  | Client factories      | Implement Rust factories with the required clock and `CacheView` inputs.                         |
+| 6.3  | PyO3 registration     | Register applicable factories and config extractors with the PyO3 registry.                      |
+| 6.4  | Python package        | Add the public package and Python boundary tests for the capabilities exposed to Python.         |
+| 6.5  | Generated stubs       | Add Rust stub metadata and regenerate the `.pyi` output with `make py-stubs`.                    |
 
 **Exit:** Rust factory tests and PyO3 boundary tests pass, package imports resolve, and generated
 output matches its Rust inputs.
 
-### Phase 8: Prove conformance
+### Phase 7: Prove conformance
 
-- Run the applicable functional and integration scenarios against deterministic mock transports.
-- Run data and execution acceptance tests on testnet or a controlled account.
-- Exercise connection failure, reconnect, shutdown, rate limits, and recovery rather than only
-  happy paths.
-- Record every skipped specification case with a venue or capability reason.
+| Step | Component              | Work                                                                                                   |
+| ---- | ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| 7.1  | Rust unit tests        | Prove parsers, serializers, symbols, signatures, state transitions, and malformed input.               |
+| 7.2  | Rust integration tests | Exercise public HTTP, WebSocket, data, and execution boundaries against deterministic mock transports. |
+| 7.3  | Python boundary tests  | Prove imports, config extraction, factories, type conversion, and representative async calls.          |
+| 7.4  | Acceptance tests       | Run every applicable `DataTester` and `ExecTester` case on testnet or a controlled account.            |
+| 7.5  | Recovery tests         | Exercise connection failure, reconnect, shutdown, rate limits, and state recovery.                     |
+| 7.6  | Specification gaps     | Record every skipped specification case with a venue or capability reason.                             |
 
 **Exit:** The applicable data and execution testing specifications pass, and every advertised
 capability has deterministic and venue evidence.
 
-### Phase 9: Measure performance and robustness
+### Phase 8: Measure performance and robustness
 
-- Benchmark confirmed end‑to‑end hot paths before adding diagnostic microbenchmarks.
-- Add venue‑specific signing, hashing, authentication, or codec benchmarks only when applicable.
-- Fuzz untrusted parsing, decoding, normalization, signing, and encoding boundaries.
-- Seed realistic corpora and assert invariants stronger than panic freedom.
+| Step | Component            | Work                                                                                                      |
+| ---- | -------------------- | --------------------------------------------------------------------------------------------------------- |
+| 8.1  | Canonical benchmarks | Measure confirmed end‑to‑end data and execution hot paths with representative fixtures.                   |
+| 8.2  | Microbenchmarks      | Isolate confirmed signing, hashing, authentication, codec, parsing, or serialization costs.               |
+| 8.3  | Fuzz targets         | Fuzz untrusted parsing, decoding, normalization, signing, and encoding boundaries with realistic corpora. |
+| 8.4  | Invariants           | Assert domain and protocol properties stronger than panic freedom.                                        |
 
 **Exit:** Canonical benchmark and fuzz suites run with representative fixtures, documented
 invariants, and no mandatory categories that the adapter does not use.
 
-### Phase 10: Finish documentation and operations
+### Phase 9: Finish documentation and operations
 
-- Reconcile the capability matrix with the tested implementation.
-- Document credentials, configuration, limits, reconciliation behavior, and environment
-  differences.
-- Provide applicable Rust and Python tester entry points with safe defaults.
-- Verify links, generated output, examples, known gaps, and troubleshooting guidance.
+| Step | Component           | Work                                                                                           |
+| ---- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| 9.1  | Capability matrix   | Reconcile every support claim and exception with the tested implementation.                    |
+| 9.2  | Integration guide   | Document credentials, config, limits, reconciliation, environment differences, and known gaps. |
+| 9.3  | Tester entry points | Provide applicable Rust and Python data and execution testers with safe defaults.              |
+| 9.4  | Operations          | Document recovery, troubleshooting, and any venue behavior an operator must understand.        |
+| 9.5  | Final verification  | Verify links, generated output, examples, and the focused documentation checks.                |
 
 **Exit:** A user can configure, test, operate, and diagnose the adapter without reading its source.
 
@@ -260,19 +290,35 @@ Adapter configs then add only venue semantics:
 - Implement a redacted `Debug` for any config that can hold secrets.
 - Keep Python config projection thin. It converts types and delegates to the Rust config.
 
-Resolve credentials at a credential, factory, or client construction boundary. Environment fallback
-may be part of that boundary, and a presence check may inspect the environment. Do not spread
-environment lookup through request methods or Python wrappers. Never include credentials, signed
-payloads, or secret material in `Debug`, errors, or logs.
-
-Use the repository's established environment names for a venue and environment. Document exact
-names in the adapter's integration guide, where users need them, instead of copying them into this
-guide.
-
 Centralize default HTTP and WebSocket endpoint resolution so one environment selection cannot mix
 live and test endpoints. Keep explicit URL overrides only where custom gateways, mock servers, or
 venue deployments require them. Test every supported environment and any precedence between an
 environment choice and an explicit override.
+
+### Credentials and secret handling
+
+When HTTP and WebSocket clients use the same key material, centralize credential handling in a type,
+commonly under `common/credential.rs`. Keep configs as data transfer objects: resolve credentials
+when constructing the credential, factory, or client, not in Python wrappers or individual request
+methods.
+
+- Define environment variable names once and select them from typed environment and product values.
+- Resolve all fields as one credential set. Public clients may remain unauthenticated, but an
+  authenticated client rejects an incomplete or invalid set before sending a request.
+- Store secret fields in owned memory and zeroize them on drop. Redact secrets and private keys from
+  `Debug`. If logs need credential identity, log only a masked API key.
+- Share credential storage across transports only when they use the same key material. Keep HTTP,
+  WebSocket, and transaction signing methods separate when their canonical payloads differ.
+- Test explicit values, environment fallback, missing fields, redacted output, and deterministic
+  signature vectors.
+
+Use the repository's established environment variable names for each venue and environment.
+Document the exact names in the adapter's integration guide, where users need them.
+
+Never include credentials, signatures, or secret material in errors, INFO logs, or DEBUG logs.
+Do not add adapter‑level logs of raw authenticated requests or WebSocket payloads. Shared transport
+TRACE logs can contain raw outbound payloads, so treat TRACE output as sensitive and redact it
+before sharing.
 
 ### Symbols and instrument identity
 
@@ -283,8 +329,25 @@ Separate venue symbols from Nautilus `InstrumentId` values. A symbol module comm
 - Validation of venue and product identity.
 - Round‑trip tests for supported forms and rejection tests for ambiguous forms.
 
+Choose the mapping from the venue's identity scheme:
+
+| Venue identity                                      | Nautilus representation                         | Example                                             |
+| --------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------- |
+| Native symbol distinguishes the product             | Preserve the symbol and add the venue.          | `BTC-USDT-SWAP` -> `BTC-USDT-SWAP.OKX`.             |
+| Raw symbol is reused across product families        | Add and validate a stable product suffix.       | Bybit linear `BTCUSDT` -> `BTCUSDT-LINEAR.BYBIT`.   |
+| Nautilus and the venue use different contract marks | Implement both directions at one boundary.      | Binance USD‑M `BTCUSDT` -> `BTCUSDT-PERP.BINANCE`.  |
+| Transport casing differs from canonical identity    | Convert only when building the transport value. | Binance stream `BTCUSDT-PERP.BINANCE` -> `btcusdt`. |
+
+The [`BybitSymbol`](../../crates/adapters/bybit/src/common/symbol.rs) wrapper and
+[Binance symbol conversions](../../crates/adapters/binance/src/common/symbol.rs) show the suffix
+and bidirectional conversion patterns. Treat them as examples, not a shared suffix scheme.
+
 Do not normalize distinct venue instruments to the same `InstrumentId`. Give test fixtures distinct
 symbols, precisions, currencies, and contract fields so swaps and omissions fail visibly.
+
+For every supported product family, test venue symbol -> `InstrumentId` -> venue symbol. Normalize
+case once at the identity boundary and preserve venue‑significant case elsewhere. When the mapping
+requires a product marker, reject a missing or ambiguous marker before caching the instrument.
 
 Construct instruments from current venue definitions. Validate required identity and precision
 before caching or emission. Keep parsing functions deterministic and independent of live client
@@ -300,6 +363,14 @@ Model the wire format, not an imagined stable subset:
 - Preserve or explicitly classify unknown values for open venue sets that may expand without a
   protocol version change.
 - Keep raw models separate from Nautilus domain objects. Convert at one auditable boundary.
+- Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct
+  domain values with `Price::from_decimal_dp`, `Quantity::from_decimal_dp`, `Money::from_decimal`,
+  or `Money::zero`; never route wire values through `f64`. See
+  [domain numeric types](rust.md#domain-numeric-types).
+- Pass required parsing context explicitly, including instrument precision, currencies, account
+  identity, and `ts_init`. Keep live client state outside parsers.
+- Treat missing, null, and empty values according to the venue schema. Do not collapse them into one
+  fallback when they carry different meanings.
 - Use the venue timestamp for `ts_event` when the payload supplies one. Assign `ts_init` from the
   adapter clock when it receives or constructs the event. Use receipt time as event time only when
   the venue has no authoritative timestamp, and cover that fallback with a test.
@@ -537,12 +608,31 @@ Keep this policy independent of the HTTP or WebSocket path used to send a comman
 
 A common design has two layers:
 
-- A raw client owns transport, authentication, rate limits, request serialization, and wire
-  responses.
-- A domain client exposes venue operations and converts responses into Nautilus types.
+| Layer         | Accepts                            | Returns                                       | Owns                                                               |
+| ------------- | ---------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| Raw client    | Venue request and query types.     | Venue response models.                        | Transport, authentication, rate limits, and exact wire encoding.   |
+| Domain client | Nautilus identifiers and commands. | Domain objects, reports, or acknowledgements. | Operation semantics, parsing context, caching, and domain mapping. |
 
 Use one layer when the protocol is small and the split would only add forwarding methods. Split by
 product when endpoints, signatures, or response models change for different product families.
+
+Name low‑level methods after the venue operation when practical, such as `get_instruments` or
+`place_order`. Name domain methods after Nautilus semantics, such as `request_instruments`,
+`submit_order`, or `cancel_order`.
+
+#### Request flow
+
+Whether one client or two own these responsibilities, keep their boundaries explicit:
+
+1. At a domain boundary, validate Nautilus inputs and build typed venue parameters.
+1. At the transport boundary, select the HTTP method and path, then serialize the exact query or
+   body.
+1. Allocate any required request identity, timestamp, or nonce. Sign the exact wire representation
+   when needed, then send it through the shared `nautilus_network::http::HttpClient` with the
+   applicable rate‑limit keys.
+1. Decode the response envelope and preserve transport, HTTP status, venue, and parse failures.
+1. At a domain boundary, convert successful payloads to domain types with explicit instrument,
+   account, and time context.
 
 Keep typed request construction separate from sending. This makes signatures and canonical query
 encoding testable without a server. Put response conversion in pure parser functions when it does
