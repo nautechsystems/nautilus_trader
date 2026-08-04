@@ -21,7 +21,7 @@ from typing import Any
 from typing import ClassVar
 
 
-_EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples"
+_EXAMPLES_DIR = Path(__file__).resolve().parents[4] / "examples/live"
 
 
 def load_example_module(adapter: str, module: str) -> ModuleType:

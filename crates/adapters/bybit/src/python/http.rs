@@ -17,7 +17,7 @@
 
 use std::collections::HashSet;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     UnixNanos,
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -984,8 +984,8 @@ impl BybitHttpClient {
         py: Python<'py>,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -1065,8 +1065,8 @@ impl BybitHttpClient {
         py: Python<'py>,
         product_type: BybitProductType,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
         timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -1183,8 +1183,8 @@ impl BybitHttpClient {
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

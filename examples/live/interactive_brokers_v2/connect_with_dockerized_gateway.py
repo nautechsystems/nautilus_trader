@@ -24,11 +24,11 @@ from _common import is_ib_endpoint_reachable
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
 
 
 def main() -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     gateway = None
 

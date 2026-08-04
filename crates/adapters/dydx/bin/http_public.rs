@@ -38,7 +38,7 @@
 
 use std::{collections::HashMap, env};
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nautilus_dydx::{
     common::{
         consts::{DYDX_TESTNET_HTTP_URL, DYDX_VENUE},
@@ -165,8 +165,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let resolution = DydxCandleResolution::OneMinute;
-    let end_time = Utc::now();
-    let start_time = end_time - Duration::hours(2); // 2 hours = ~120 bars
+    let end_time = Timestamp::now();
+    let start_time = end_time - SignedDuration::from_hours(2); // 2 hours = ~120 bars
 
     let start = std::time::Instant::now();
     let candles = client
@@ -204,8 +204,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("   Time range: {} to {}", first.started_at, last.started_at);
     }
 
-    let end_time = Utc::now();
-    let start_time = end_time - Duration::days(7); // 7 days
+    let end_time = Timestamp::now();
+    let start_time = end_time - SignedDuration::from_hours(7 * 24); // 7 days
 
     log::info!("   Requesting {resolution:?} bars from {start_time} to {end_time}");
 
@@ -215,7 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let elapsed = start.elapsed();
 
-    let expected_bars_large = ((end_time - start_time).num_minutes() as usize).min(10_080);
+    let expected_bars_large = usize::try_from(start_time.duration_until(end_time).as_mins())
+        .unwrap_or(0)
+        .min(10_080);
     let coverage_large = (candles_large.candles.len() as f64 / expected_bars_large as f64) * 100.0;
 
     log::info!(

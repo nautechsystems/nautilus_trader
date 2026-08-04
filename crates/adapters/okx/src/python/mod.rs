@@ -112,7 +112,7 @@ fn extract_okx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dy
     }
 }
 
-/// Loaded as `nautilus_pyo3.okx`.
+/// Exposed through `nautilus_trader.adapters.okx`.
 ///
 /// # Errors
 ///

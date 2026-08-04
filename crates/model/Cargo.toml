@@ -35,7 +35,6 @@ stubs = ["rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
 defi = ["alloy-primitives", "high-precision"]
-cython-compat = []
 
 [package.metadata.cargo-machete]
 ignored = [
@@ -44,7 +43,7 @@ ignored = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["arrow", "cython-compat", "defi", "ffi", "high-precision", "stubs"]
+features = ["arrow", "defi", "ffi", "high-precision", "stubs"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -53,11 +52,11 @@ nautilus-core = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true, optional = true }
-chrono = { workspace = true }
 derive_builder = { workspace = true }
 enum_dispatch = { workspace = true }
 implied-vol = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

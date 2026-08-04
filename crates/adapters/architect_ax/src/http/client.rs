@@ -27,7 +27,7 @@ use std::{
 
 use anyhow::Context;
 use arc_swap::ArcSwapOption;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -1148,10 +1148,7 @@ impl AxRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.architect_ax", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1649,17 +1646,19 @@ impl AxHttpClient {
     pub async fn request_bars(
         &self,
         symbol: Ustr,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         width: AxCandleWidth,
     ) -> anyhow::Result<Vec<Bar>> {
         let instrument = self
             .get_instrument(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
-        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let start_ns = start
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
+            .unwrap_or(0);
         let end_ns = end
-            .and_then(|dt| dt.timestamp_nanos_opt())
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
             .unwrap_or_else(|| self.generate_ts_init().as_i64());
         let resp = self
             .inner
@@ -1693,15 +1692,17 @@ impl AxHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> Result<Vec<FundingRateUpdate>, AxHttpError> {
         const PAGE_SIZE: i32 = 100;
 
         let symbol = instrument_id.symbol.inner();
-        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let start_ns = start
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
+            .unwrap_or(0);
         let end_ns = end
-            .and_then(|dt| dt.timestamp_nanos_opt())
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
             .unwrap_or_else(|| self.generate_ts_init().as_i64());
         let mut params = GetFundingRatesParams::new(symbol, start_ns, end_ns);
         params.limit = Some(PAGE_SIZE);
@@ -1847,13 +1848,13 @@ impl AxHttpClient {
     pub async fn request_funding_slots(
         &self,
         instrument_id: InstrumentId,
-        date: Option<NaiveDate>,
+        date: Option<Date>,
     ) -> Result<AxFundingSlotsResponse, AxHttpError> {
         let symbol = instrument_id.symbol.inner();
         let mut params = GetFundingSlotsParams::new(symbol);
 
         if let Some(date) = date {
-            params.date = Some(date.format("%Y-%m-%d").to_string());
+            params.date = Some(date.strftime("%Y-%m-%d").to_string());
         }
 
         self.inner.get_funding_slots(&params).await

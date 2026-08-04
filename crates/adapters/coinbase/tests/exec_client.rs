@@ -40,7 +40,7 @@ use axum::{
     response::{IntoResponse, Json},
     routing::{get, post},
 };
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_coinbase::{
     common::{
         consts::{COINBASE_CLIENT_ID, COINBASE_VENUE},
@@ -744,7 +744,7 @@ async fn test_exec_client_request_order_status_reports_encodes_rfc3339_start_dat
     let client = create_http_client(addr);
     bootstrap_btc_usd_instrument(&client).await;
 
-    let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+    let start = "2024-01-15T10:00:00Z".parse::<Timestamp>().unwrap();
     let _ = client
         .request_order_status_reports(account_id(), None, false, Some(start), None, None)
         .await

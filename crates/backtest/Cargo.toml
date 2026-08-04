@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_backtest"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -37,13 +37,6 @@ extension-module = [
   "pyo3/extension-module",
   "streaming",
 ]
-ffi = [
-  "cbindgen",
-  "nautilus-core/ffi",
-  "nautilus-common/ffi",
-  "nautilus-execution/ffi",
-  "nautilus-model/ffi",
-]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
@@ -60,14 +53,9 @@ python = [
   "streaming",
 ]
 
-[package.metadata.cargo-machete]
-ignored = [
-  "cbindgen", # Used by build.rs when the `ffi` feature is enabled
-]
-
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["defi", "examples", "ffi", "high-precision", "plugin", "streaming"]
+features = ["defi", "examples", "high-precision", "plugin", "streaming"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -88,9 +76,8 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -113,9 +100,6 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
-
 # Run with `cargo bench -p nautilus-backtest --bench engine`
 [[bench]]
 name = "engine"
@@ -136,14 +120,6 @@ path = "examples/node_ema_cross.rs"
 required-features = ["examples", "streaming"]
 doc = false
 
-# Run with `cargo run -p nautilus-backtest --features examples,streaming \
-#   --example backtest-node-workload -- <CATALOG_PATH> <RESULT_PATH>`
-[[example]]
-name = "backtest-node-workload"
-path = "examples/backtest_node_workload.rs"
-required-features = ["examples", "streaming"]
-doc = false
-
 # Run with `NAUTILUS_TARDIS_OPTION_CATALOG=/path/to/catalog cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
 [[example]]
 name = "tardis-option-chain"
@@ -154,5 +130,5 @@ doc = false
 # Run in the normal `--tests` lane; the dev-dependency enables `nautilus-trading/examples`
 [[test]]
 name = "backtest-node-workload"
-path = "examples/backtest_node_workload.rs"
+path = "tests/backtest_node_workload.rs"
 required-features = ["streaming"]

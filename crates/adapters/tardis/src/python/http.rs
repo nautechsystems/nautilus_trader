@@ -97,8 +97,8 @@ impl TardisHttpClient {
             .active(active)
             // NOTE: The Tardis instruments metadata API does not function correctly when using
             // the `availableSince` and `availableTo` params.
-            // .available_since(start.map(|x| DateTime::from_timestamp_nanos(x as i64)))
-            // .available_to(end.map(|x| DateTime::from_timestamp_nanos(x as i64)))
+            // .available_since(start.and_then(|x| Timestamp::from_nanosecond(x.into()).ok()))
+            // .available_to(end.and_then(|x| Timestamp::from_nanosecond(x.into()).ok()))
             .build()
             .unwrap(); // All fields are Option, so build cannot fail
 

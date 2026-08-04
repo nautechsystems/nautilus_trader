@@ -43,7 +43,7 @@ use crate::common::{
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -98,7 +98,7 @@ impl BybitOrderCursorList {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -248,7 +248,7 @@ pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -719,7 +719,7 @@ pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrument
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -869,7 +869,7 @@ pub type BybitAccountInfoResponse = BybitResponse<BybitAccountInfo>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1429,7 +1429,7 @@ pub type BybitRepayResponse = BybitResponse<BybitRepayResult>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1486,7 +1486,7 @@ pub struct BybitApiKeyPermissions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

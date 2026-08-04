@@ -2,6 +2,11 @@
 
 NautilusTrader uses modular *adapters* to connect to trading venues and data providers, translating raw APIs into a unified interface and normalized domain model.
 
+:::note[Python API version]
+All Python code in these integration guides assumes the v2 Rust‑backed package. Legacy v1 Python
+adapters and APIs are no longer documented here.
+:::
+
 The following integrations are currently supported:
 
 | Name                                                      | ID                    | Type                    | Status                                               | Docs                     |

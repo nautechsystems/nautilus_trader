@@ -38,7 +38,7 @@ from nautilus_trader.model import Venue
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
-TEST_DATA_DIR = PACKAGE_ROOT / "tests" / "test_data"
+TEST_DATA_DIR = PACKAGE_ROOT / "test_data"
 
 
 def _parse_iso_to_ns(value: str) -> int:
@@ -182,7 +182,7 @@ class TestDataProvider:
     Provide test data for acceptance tests.
 
     Includes synthetic generators (deterministic sine-wave price patterns that create
-    EMA crossovers) and CSV readers for the shared `tests/test_data` directory.
+    EMA crossovers) and CSV readers for the shared `test_data` directory.
 
     """
 

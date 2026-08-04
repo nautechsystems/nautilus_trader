@@ -286,7 +286,7 @@ The `TradingState` enum has three variants:
   exposure are accepted.
 
 See the
-[`RiskEngineConfig` API reference](/docs/python-api-latest/config.html#nautilus_trader.risk.config.RiskEngineConfig)
+[`RiskEngineConfig` API reference](/docs/python-api-latest/config.html#nautilus_trader.risk.RiskEngineConfig)
 for configuration details.
 
 ## Execution algorithms
@@ -302,7 +302,7 @@ the full quantity at once. To register the native algorithm with an initialized 
 
 ```python
 from nautilus_trader.model import ExecAlgorithmId
-from nautilus_trader.trading import ExecutionAlgorithmConfig
+from nautilus_trader.config import ExecutionAlgorithmConfig
 
 engine.add_native_exec_algorithm(
     "TwapAlgorithm",
@@ -330,7 +330,7 @@ To define a Python execution algorithm, subclass `ExecutionAlgorithm` and implem
 ```python
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.trading import ExecutionAlgorithm
-from nautilus_trader.trading import ExecutionAlgorithmConfig
+from nautilus_trader.config import ExecutionAlgorithmConfig
 
 
 class MyExecutionAlgorithm(ExecutionAlgorithm):
@@ -488,7 +488,7 @@ a restart therefore produces the same `trade_id` and is deduplicated.
 For live trading, enable overfill tolerance in the `LiveExecEngineConfig`:
 
 ```python
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
 
 config = LiveExecEngineConfig(
     allow_overfills=True,
@@ -551,7 +551,7 @@ Each venue publishes the conditions under which it acts:
 | Polymarket       | `FAILED` trade status after an on‑chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
 
 Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
-consumes: [Betfair](../integrations/betfair_v2.md#voided-fills) from the order change message `sv`
+consumes: [Betfair](../integrations/betfair.md#voided-fills) from the order change message `sv`
 field, and
 [Polymarket](../integrations/polymarket.md#trades) from the user channel trade status.
 

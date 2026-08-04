@@ -21,7 +21,7 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use log::LevelFilter;
 use nautilus_core::consts::NAUTILUS_PREFIX;
 use serde::{Deserialize, Serialize};
@@ -152,14 +152,18 @@ pub struct FileRotateConfig {
     cur_file_size: u64,
     /// Current file creation date.
     #[serde(skip, default = "today_date")]
-    cur_file_creation_date: NaiveDate,
+    cur_file_creation_date: Date,
     /// Queue of backup file paths (oldest first).
     #[serde(skip)]
     backup_files: VecDeque<PathBuf>,
 }
 
-fn today_date() -> NaiveDate {
-    Utc::now().date_naive()
+fn utc_date(timestamp: Timestamp) -> Date {
+    Offset::UTC.to_datetime(timestamp).date()
+}
+
+fn today_date() -> Date {
+    utc_date(Timestamp::now())
 }
 
 impl PartialEq for FileRotateConfig {
@@ -176,7 +180,7 @@ impl Default for FileRotateConfig {
             max_file_size: 100 * 1024 * 1024, // 100MB default
             max_backup_count: 5,
             cur_file_size: 0,
-            cur_file_creation_date: Utc::now().date_naive(),
+            cur_file_creation_date: today_date(),
             backup_files: VecDeque::new(),
         }
     }
@@ -189,7 +193,7 @@ impl From<(u64, u32)> for FileRotateConfig {
             max_file_size,
             max_backup_count,
             cur_file_size: 0,
-            cur_file_creation_date: Utc::now().date_naive(),
+            cur_file_creation_date: today_date(),
             backup_files: VecDeque::new(),
         }
     }
@@ -197,7 +201,7 @@ impl From<(u64, u32)> for FileRotateConfig {
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -272,7 +276,7 @@ pub struct FileWriter {
     trader_id: String,
     instance_id: String,
     level: LevelFilter,
-    cur_file_date: NaiveDate,
+    cur_file_date: Date,
     sync_on_flush: bool,
 }
 
@@ -306,7 +310,7 @@ impl FileWriter {
             &trader_id,
             &instance_id,
             json_format,
-            Utc::now(),
+            Timestamp::now(),
         ) {
             Ok(path) => path,
             Err(e) => {
@@ -344,7 +348,7 @@ impl FileWriter {
                     trader_id,
                     instance_id,
                     level: fileout_level,
-                    cur_file_date: Utc::now().date_naive(),
+                    cur_file_date: today_date(),
                     sync_on_flush,
                 })
             }
@@ -360,20 +364,20 @@ impl FileWriter {
         trader_id: &str,
         instance_id: &str,
         is_json_format: bool,
-        utc_now: DateTime<Utc>,
+        utc_now: Timestamp,
     ) -> Result<PathBuf, io::Error> {
         let basename = if let Some(file_name) = file_config.file_name.as_ref() {
             if file_config.file_rotate.is_some() {
-                let utc_datetime = utc_now.format(ROTATION_TIMESTAMP_FORMAT);
+                let utc_datetime = utc_now.strftime(ROTATION_TIMESTAMP_FORMAT);
                 format!("{file_name}_{utc_datetime}")
             } else {
                 file_name.clone()
             }
         } else {
             let utc_component = if file_config.file_rotate.is_some() {
-                utc_now.format(ROTATION_TIMESTAMP_FORMAT)
+                utc_now.strftime(ROTATION_TIMESTAMP_FORMAT)
             } else {
-                utc_now.format("%Y-%m-%d")
+                utc_now.strftime("%Y-%m-%d")
             };
 
             format!("{trader_id}_{utc_component}_{instance_id}")
@@ -399,7 +403,7 @@ impl FileWriter {
             rotate_config.cur_file_size + next_line_size > rotate_config.max_file_size
         // Otherwise, for default-named logs, rotate on UTC date change
         } else if self.file_config.file_name.is_none() {
-            let today = Utc::now().date_naive();
+            let today = today_date();
             self.cur_file_date != today
         // No rotation for custom-named logs without size-based rotation
         } else {
@@ -408,10 +412,10 @@ impl FileWriter {
     }
 
     fn rotate_file(&mut self) {
-        self.rotate_file_at(Utc::now());
+        self.rotate_file_at(Timestamp::now());
     }
 
-    fn rotate_file_at(&mut self, utc_now: DateTime<Utc>) {
+    fn rotate_file_at(&mut self, utc_now: Timestamp) {
         self.flush_and_sync_logged();
 
         let new_path = match Self::create_log_file_path(
@@ -442,11 +446,11 @@ impl FileWriter {
                     // Add current file to backup queue
                     rotate_config.backup_files.push_back(self.path.clone());
                     rotate_config.cur_file_size = 0;
-                    rotate_config.cur_file_creation_date = utc_now.date_naive();
+                    rotate_config.cur_file_creation_date = utc_date(utc_now);
                     cleanup_backups(rotate_config);
                 } else {
                     // Update creation date for date-based rotation
-                    self.cur_file_date = utc_now.date_naive();
+                    self.cur_file_date = utc_date(utc_now);
                 }
 
                 self.buf = BufWriter::new(new_file);
@@ -746,12 +750,15 @@ mod tests {
         assert!(writer.path.to_str().unwrap().contains("test_"));
     }
 
-    fn fixed_rotation_time(millis: u32) -> DateTime<Utc> {
-        NaiveDate::from_ymd_opt(2024, 1, 15)
+    fn fixed_rotation_time(millis: u32) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(Date::new(2024, 1, 15).unwrap().at(
+                10,
+                30,
+                45,
+                i32::try_from(millis).unwrap() * 1_000_000,
+            ))
             .unwrap()
-            .and_hms_milli_opt(10, 30, 45, millis)
-            .unwrap()
-            .and_utc()
     }
 
     #[rstest]
@@ -868,7 +875,7 @@ mod tests {
 
         writer.rotate_file_at(fixed_rotation_time(123));
 
-        assert_eq!(writer.cur_file_date, fixed_rotation_time(123).date_naive());
+        assert_eq!(writer.cur_file_date, utc_date(fixed_rotation_time(123)));
         let file_name = writer.path.file_name().unwrap().to_str().unwrap();
         assert_eq!(file_name, "TRADER-001_2024-01-15_instance-123.log");
     }

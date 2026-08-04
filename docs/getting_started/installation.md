@@ -48,10 +48,10 @@ To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader
 uv pip install nautilus_trader
 ```
 
-### Python v2 release-candidate wheels
+### Release-candidate wheels
 
-Python v2 is the Rust + PyO3 package under `python/`. Release-candidate wheels publish to PyPI
-using `2.0.0rcN` versions while final v2 validation is in progress.
+The Rust + PyO3 package under `python/` publishes release‑candidate wheels to PyPI using
+`2.0.0rcN` versions while final validation is in progress.
 
 ```bash
 uv pip install --pre nautilus_trader
@@ -61,11 +61,11 @@ The `--pre` flag is required because these wheels are pre-release builds. The in
 is still `nautilus_trader`.
 
 Run this command outside a NautilusTrader source checkout. The repository root uses an
-`exclude-newer` uv policy for reproducible development, which can filter out newly published v2
+`exclude-newer` uv policy for reproducible development, which can filter out newly published
 wheels. Inside a source checkout, use [Build Python from source](#8-build-python-from-source)
 instead.
 
-Current v2 wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
+Current wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
 a debug build, or a platform wheel that is not available.
 
 ## Extras
@@ -163,7 +163,7 @@ uv pip install --pre --index-url=https://packages.nautechsystems.io/simple/ naut
 
 The installed import name is still `nautilus_trader`. Run this command outside a NautilusTrader
 source checkout so the repository's `exclude-newer` uv policy does not filter out newly published
-v2 wheels. Build from source when you need local Rust changes, a debug build, or a platform wheel
+wheels. Build from source when you need local Rust changes, a debug build, or a platform wheel
 that is not available.
 
 ### Available versions
@@ -342,7 +342,7 @@ stubs. It uses `target/` for Cargo artifacts.
 Run a Python example with the project environment:
 
 ```bash
-.venv/bin/python python/examples/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
 ```
 
 For direct commands and test targets, see the [Python package README][python-readme].
@@ -409,8 +409,7 @@ which differ in their internal bit-width and maximum decimal precision.
 
 :::note
 By default, the official Python wheels ship in high-precision (128-bit) mode on Linux and macOS.
-On Windows, only standard-precision (64-bit) Python wheels are available because MSVC's C/C++ frontend
-does not support `__int128`, preventing the Cython/FFI layer from handling 128-bit integers.
+On Windows, only standard-precision (64-bit) Python wheels are currently available.
 
 For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
 `i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable

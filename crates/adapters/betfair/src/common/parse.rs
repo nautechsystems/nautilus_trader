@@ -16,7 +16,7 @@
 //! Parsing utilities that convert Betfair payloads into Nautilus domain models.
 
 use anyhow::Context;
-use chrono::DateTime;
+use jiff::Timestamp;
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     enums::AccountType,
@@ -72,17 +72,17 @@ pub fn make_instrument_id(market_id: &str, selection_id: u64, handicap: Decimal)
 ///
 /// Returns an error if the string is not a valid RFC 3339 datetime.
 ///
-/// # Panics
-///
-/// Panics if the parsed datetime cannot be represented as nanoseconds.
 pub fn parse_betfair_timestamp(s: &str) -> anyhow::Result<UnixNanos> {
-    let dt = DateTime::parse_from_rfc3339(s)
+    let dt = s
+        .parse::<Timestamp>()
         .or_else(|_| {
             // Betfair sometimes uses ".000Z" millis suffix
-            DateTime::parse_from_rfc3339(&s.replace(".000Z", "Z"))
+            s.replace(".000Z", "Z").parse::<Timestamp>()
         })
         .with_context(|| format!("invalid Betfair timestamp: {s}"))?;
-    Ok(UnixNanos::from(dt.timestamp_nanos_opt().unwrap() as u64))
+    let nanos = u64::try_from(dt.as_nanosecond())
+        .with_context(|| format!("Betfair timestamp is outside the UnixNanos range: {s}"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Converts a millisecond epoch timestamp (as used in stream `pt` field) into [`UnixNanos`].

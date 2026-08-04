@@ -195,9 +195,10 @@ strategy = OrderBookImbalance(
 ## Backtest setup
 
 ```python
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
@@ -207,7 +208,7 @@ from nautilus_trader.model.objects import Money
 engine = BacktestEngine(
     BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggerConfig(stdout_level=LogLevel.INFO),
     ),
 )
 
@@ -281,7 +282,7 @@ theme.
 
 ```bash
 uv sync --extra visualization
-GC_DBN=tests/test_data/local/Databento/gc_gold_quotes.dbn.zst \
+GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
     python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 ```
 
@@ -301,7 +302,7 @@ GC_DBN=tests/test_data/local/Databento/gc_gold_quotes.dbn.zst \
 ## Running live
 
 The same `OrderBookImbalance` strategy runs live against AX Exchange. The
-launch script swaps the `BacktestEngine` for a `TradingNode` with the AX
+launch script swaps the `BacktestEngine` for a `LiveNode` with the AX
 data and execution clients configured. See the live example:
 [`ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py).
 

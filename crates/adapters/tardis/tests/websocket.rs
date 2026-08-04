@@ -93,8 +93,8 @@ async fn test_replay_stream_receives_trade() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Bitmex,
         symbols: Some(vec!["XBTUSD".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec!["trade".to_string()],
         with_disconnect_messages: Some(false),
     }];
@@ -127,8 +127,8 @@ async fn test_disconnect_message_skipped() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Bitmex,
         symbols: Some(vec!["XBTUSD".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec!["trade".to_string()],
         with_disconnect_messages: Some(true),
     }];
@@ -182,8 +182,8 @@ async fn test_replay_stream_receives_book_deltas() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Bitmex,
         symbols: Some(vec!["XBTUSD".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec!["book_change".to_string()],
         with_disconnect_messages: Some(false),
     }];
@@ -224,8 +224,8 @@ async fn test_replay_stream_receives_bar() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Bitmex,
         symbols: Some(vec!["XBTUSD".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec!["trade_bar_1m".to_string()],
         with_disconnect_messages: Some(false),
     }];
@@ -275,8 +275,8 @@ async fn test_replay_stream_extracts_option_summary_bbo_as_quote() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Deribit,
         symbols: Some(vec!["BTC-28JUN24-70000-C".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec!["option_summary".to_string()],
         with_disconnect_messages: Some(false),
     }];
@@ -323,8 +323,8 @@ async fn test_replay_stream_multiple_message_types() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Bitmex,
         symbols: Some(vec!["XBTUSD".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec![
             "trade".to_string(),
             "book_change".to_string(),
@@ -368,8 +368,8 @@ async fn test_replay_stream_malformed_message_continues() {
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: TardisExchange::Bitmex,
         symbols: Some(vec!["XBTUSD".to_string()]),
-        from: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        to: chrono::NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+        from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+        to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
         data_types: vec!["trade".to_string()],
         with_disconnect_messages: Some(false),
     }];

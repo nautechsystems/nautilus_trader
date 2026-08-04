@@ -131,7 +131,7 @@ quantity. These are logged with `quantity_change = None` and can include PnL imp
 
 All adjustments are preserved in the position event history:
 
-- `position.adjustments` returns the list of all `PositionAdjusted` events.
+- `position.adjustments()` returns the list of all `PositionAdjusted` events.
 - Each adjustment includes type (`COMMISSION` or `FUNDING`), quantity change, and timestamps.
 - The adjustment history is cleared when positions close and reopen. When events are purged,
   commission adjustments tied to the removed fills are regenerated while non-commission adjustments
@@ -397,8 +397,8 @@ This historical data enables:
 - Audit trails.
 
 :::tip
-Use `position.events` to access the full history of fills for reconciliation.
-The `position.trade_ids` property helps match against broker statements.
+Use `position.events()` to access the full history of fills for reconciliation.
+The `position.trade_ids()` result helps match against broker statements.
 See the [Execution guide](execution.md) for reconciliation best practices.
 :::
 

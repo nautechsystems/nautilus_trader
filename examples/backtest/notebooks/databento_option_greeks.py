@@ -26,7 +26,6 @@ from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.analysis import TearsheetBarsWithFillsChart
-from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills
@@ -44,6 +43,7 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar

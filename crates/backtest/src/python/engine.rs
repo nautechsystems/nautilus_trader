@@ -82,7 +82,7 @@ use crate::{
 /// Exposes the backtest engine to Python as `BacktestEngine`.
 /// Uses `unsendable` because the inner engine holds `Rc<RefCell<...>>`.
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.backtest",
+    module = "nautilus_trader.backtest",
     name = "BacktestEngine",
     unsendable
 )]

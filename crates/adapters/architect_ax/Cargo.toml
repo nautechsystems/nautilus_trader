@@ -70,10 +70,10 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }

@@ -25,7 +25,7 @@ use nautilus_model::enums::{
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -127,7 +127,7 @@ impl Display for IbAction {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -231,7 +231,7 @@ impl Display for IbOrderStatus {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -436,7 +436,7 @@ impl Display for IbOrderType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -562,7 +562,7 @@ impl Display for IbTimeInForce {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -652,7 +652,7 @@ impl Display for IbBuilderTimeInForce {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -710,7 +710,7 @@ impl From<ibapi::contracts::ComboLegOpenClose> for IbComboLegOpenClose {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -778,7 +778,7 @@ impl Display for IbConditionKind {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -836,7 +836,7 @@ impl Display for IbConditionConjunction {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -931,7 +931,7 @@ impl Display for IbTriggerMethod {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -1011,7 +1011,7 @@ impl Display for IbOcaType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )

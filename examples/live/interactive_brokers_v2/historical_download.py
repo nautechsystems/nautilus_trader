@@ -20,7 +20,7 @@ from _common import instrument_ids
 from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
 
 
 def historical_end() -> dt.datetime:
@@ -31,7 +31,7 @@ def historical_end() -> dt.datetime:
 
 
 async def main() -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     trading_hours = ib.IbTradingHours.EXTENDED
     requested_ids = [

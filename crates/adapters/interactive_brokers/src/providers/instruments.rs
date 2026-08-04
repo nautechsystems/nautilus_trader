@@ -18,13 +18,13 @@
 use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc};
 
 use anyhow::Context;
-use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
 use ibapi::{
     contracts::{ComboLegOpenClose, Contract, Exchange, LegAction, SecurityType, Symbol},
     prelude::StreamExt,
     subscriptions::SubscriptionItem,
 };
+use jiff::{Span, Timestamp, tz::Offset};
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -50,7 +50,7 @@ use crate::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InstrumentCache {
     /// Timestamp when cache was created.
-    cache_timestamp: DateTime<Utc>,
+    cache_timestamp: Timestamp,
     /// Contract ID to Instrument ID mappings.
     contract_id_to_instrument_id: Vec<(i32, String)>,
     /// Instrument ID to Price Magnifier mappings.
@@ -72,7 +72,7 @@ struct InstrumentCache {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         unsendable,
         from_py_object
     )
@@ -1530,8 +1530,12 @@ fn parse_i32_json(value: &serde_json::Value) -> Option<i32> {
 
 fn expiry_bound_from_days(days: Option<u32>) -> Option<String> {
     days.map(|days| {
-        (Utc::now().date_naive() + Duration::days(i64::from(days)))
-            .format("%Y%m%d")
+        Offset::UTC
+            .to_datetime(Timestamp::now())
+            .date()
+            .checked_add(Span::new().days(i64::from(days)))
+            .expect("expiry bound date in range")
+            .strftime("%Y%m%d")
             .to_string()
     })
 }
@@ -2539,7 +2543,7 @@ impl InteractiveBrokersInstrumentProvider {
     /// Returns an error if serialization or file I/O fails.
     pub async fn save_cache(&self, cache_path: &str) -> anyhow::Result<()> {
         let cache = InstrumentCache {
-            cache_timestamp: Utc::now(),
+            cache_timestamp: Timestamp::now(),
             contract_id_to_instrument_id: self
                 .contract_id_to_instrument_id
                 .iter()
@@ -2614,12 +2618,12 @@ impl InteractiveBrokersInstrumentProvider {
 
         // Check cache validity
         if let Some(validity_days) = self.config.cache_validity_days {
-            let cache_age = Utc::now() - cache.cache_timestamp;
-            let max_age = chrono::Duration::days(validity_days as i64);
+            let cache_age = cache.cache_timestamp.duration_until(Timestamp::now());
+            let max_age = jiff::SignedDuration::from_hours(24 * (validity_days as i64));
             if cache_age > max_age {
                 tracing::debug!(
                     "Cache is expired (age: {} days, max: {} days). Ignoring cache",
-                    cache_age.num_days(),
+                    cache_age.as_secs() / (24 * 60 * 60),
                     validity_days
                 );
                 return Ok(false);
@@ -3049,6 +3053,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_load_cache_reads_chrono_timestamp() {
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::builder()
+                .cache_validity_days(7u32)
+                .build(),
+        );
+        let cache_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/instrument_cache_chrono.json"
+        );
+
+        let loaded = provider.load_cache(cache_path).await.unwrap();
+
+        assert!(loaded);
+        assert_eq!(provider.count(), 0);
+    }
+
+    #[tokio::test]
     async fn test_load_cache_restores_contract_details() {
         let (provider, _temp_dir) = create_test_provider_with_cache();
         let cache_path = provider.config.cache_path.as_ref().unwrap().clone();
@@ -3170,7 +3192,7 @@ mod tests {
         let cache_path = provider.config.cache_path.as_ref().unwrap().clone();
 
         // Create an expired cache manually
-        let old_timestamp = Utc::now() - chrono::Duration::days(10);
+        let old_timestamp = Timestamp::now() - jiff::SignedDuration::from_hours(24 * (10));
         let expired_cache = InstrumentCache {
             cache_timestamp: old_timestamp,
             contract_id_to_instrument_id: vec![],

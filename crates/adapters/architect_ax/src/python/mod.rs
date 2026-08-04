@@ -163,7 +163,7 @@ impl AxMarketDataLevel {
     }
 }
 
-/// Loaded as `nautilus_pyo3.architect_ax`.
+/// Exposed through `nautilus_trader.adapters.architect_ax`.
 ///
 /// # Errors
 ///

@@ -32,7 +32,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_lighter::{
     common::enums::{
@@ -890,8 +890,8 @@ async fn domain_client_request_bars_fills_market_id_and_parses_bars() {
         BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
         AggregationSource::External,
     );
-    let start = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let end = Utc.timestamp_millis_opt(1_700_000_120_000).unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_120_000).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -924,8 +924,8 @@ async fn domain_client_request_bars_skips_gap_candle_and_keeps_valid_rows() {
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
     let bar_type = one_minute_bar_type(instrument.id());
-    let start = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let end = Utc.timestamp_millis_opt(1_700_000_120_000).unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_120_000).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -951,14 +951,8 @@ async fn domain_client_request_funding_rates_parses_signed_rates() {
     let client =
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
-    let start = Utc
-        .timestamp_millis_opt(1_778_702_400_000)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(1_778_706_000_000)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(1_778_702_400_000).unwrap();
+    let end = Timestamp::from_millisecond(1_778_706_000_000).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1001,8 +995,8 @@ async fn domain_client_request_funding_rates_paginates_range() {
     let client =
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
-    let start = Utc.timestamp_millis_opt(state.start_ms).single().unwrap();
-    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+    let start = Timestamp::from_millisecond(state.start_ms).unwrap();
+    let end = Timestamp::from_millisecond(end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1047,8 +1041,8 @@ async fn domain_client_request_funding_rates_caps_to_limit_across_pages() {
     let client =
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
-    let start = Utc.timestamp_millis_opt(state.start_ms).single().unwrap();
-    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+    let start = Timestamp::from_millisecond(state.start_ms).unwrap();
+    let end = Timestamp::from_millisecond(end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1091,7 +1085,7 @@ async fn domain_client_request_funding_rates_without_start_returns_latest_limit(
     let client =
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
-    let end = Utc.timestamp_millis_opt(state.end_ms).single().unwrap();
+    let end = Timestamp::from_millisecond(state.end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1165,7 +1159,7 @@ async fn domain_client_request_funding_rates_accepts_limit_on_final_capped_page(
 
 #[tokio::test]
 async fn domain_client_request_bars_filters_incomplete_candle() {
-    let now_ms = Utc::now().timestamp_millis();
+    let now_ms = Timestamp::now().as_millisecond();
     let state = IncompleteCandlesState {
         completed_start_ms: now_ms - 2 * MINUTE_MS,
         incomplete_start_ms: now_ms - MINUTE_MS / 2,
@@ -1181,14 +1175,8 @@ async fn domain_client_request_bars_filters_incomplete_candle() {
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
     let bar_type = one_minute_bar_type(instrument.id());
-    let start = Utc
-        .timestamp_millis_opt(state.completed_start_ms)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(now_ms + MINUTE_MS)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(state.completed_start_ms).unwrap();
+    let end = Timestamp::from_millisecond(now_ms + MINUTE_MS).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1223,7 +1211,7 @@ async fn domain_client_request_bars_without_start_returns_latest_completed_limit
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
     let bar_type = one_minute_bar_type(instrument.id());
-    let end = Utc.timestamp_millis_opt(state.end_ms).single().unwrap();
+    let end = Timestamp::from_millisecond(state.end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1266,8 +1254,8 @@ async fn domain_client_request_bars_paginates_range() {
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
     let bar_type = one_minute_bar_type(instrument.id());
-    let start = Utc.timestamp_millis_opt(state.start_ms).single().unwrap();
-    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+    let start = Timestamp::from_millisecond(state.start_ms).unwrap();
+    let end = Timestamp::from_millisecond(end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1343,14 +1331,8 @@ async fn domain_client_request_bars_rejects_unsupported_bar_type() {
         LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
     let instrument = create_test_instrument();
     let bar_type = unsupported_three_minute_bar_type(instrument.id());
-    let start = Utc
-        .timestamp_millis_opt(1_700_000_000_000)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(1_700_000_060_000)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_060_000).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1435,11 +1417,11 @@ async fn request_funding_history_pages(
     .await;
     let client = history_http_client(base_url);
     let instrument = create_test_instrument();
-    let start = Utc.timestamp_millis_opt(0).single().unwrap();
+    let start = Timestamp::from_millisecond(0).unwrap();
     let interval_ms = LighterFundingResolution::OneHour.interval_millis();
     let page_span_ms = i64::from(LIGHTER_FUNDINGS_MAX_LIMIT - 1) * interval_ms;
     let end_ms = i64::try_from(page_count).unwrap() * page_span_ms;
-    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+    let end = Timestamp::from_millisecond(end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())
@@ -1472,10 +1454,10 @@ async fn request_bar_history_pages(
     let client = history_http_client(base_url);
     let instrument = create_test_instrument();
     let bar_type = one_minute_bar_type(instrument.id());
-    let start = Utc.timestamp_millis_opt(0).single().unwrap();
+    let start = Timestamp::from_millisecond(0).unwrap();
     let page_span_ms = i64::from(LIGHTER_CANDLES_MAX_LIMIT) * MINUTE_MS;
     let end_ms = i64::try_from(page_count).unwrap() * page_span_ms;
-    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+    let end = Timestamp::from_millisecond(end_ms).unwrap();
 
     client
         .get_order_book_details(&LighterOrderBookDetailsQuery::default())

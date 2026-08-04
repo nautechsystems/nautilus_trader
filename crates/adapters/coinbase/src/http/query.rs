@@ -19,7 +19,7 @@
 //! POST endpoints. The raw HTTP client takes one of these types per endpoint;
 //! the domain HTTP client builds them from Nautilus types.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -86,8 +86,8 @@ pub struct CancelOrdersRequest {
 pub struct OrderListQuery {
     pub product_id: Option<String>,
     pub open_only: bool,
-    pub start: Option<DateTime<Utc>>,
-    pub end: Option<DateTime<Utc>>,
+    pub start: Option<Timestamp>,
+    pub end: Option<Timestamp>,
     pub limit: Option<u32>,
     pub client_order_id_filter: Option<String>,
 }
@@ -102,8 +102,8 @@ pub struct OrderListQuery {
 pub struct FillListQuery {
     pub product_id: Option<String>,
     pub venue_order_id: Option<String>,
-    pub start: Option<DateTime<Utc>>,
-    pub end: Option<DateTime<Utc>>,
+    pub start: Option<Timestamp>,
+    pub end: Option<Timestamp>,
     pub limit: Option<u32>,
 }
 

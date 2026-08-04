@@ -56,10 +56,10 @@ anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
-chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true }

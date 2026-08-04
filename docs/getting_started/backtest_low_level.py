@@ -16,8 +16,8 @@
 # %%
 from decimal import Decimal
 
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig

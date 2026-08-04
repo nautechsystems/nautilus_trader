@@ -64,10 +64,7 @@ const CACHE_PROCESS: &str = "cache-process";
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.infrastructure", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -171,7 +168,7 @@ impl CacheDatabaseFactory for PostgresCacheConfig {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+    pyo3::pyclass(module = "nautilus_trader.infrastructure")
 )]
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,

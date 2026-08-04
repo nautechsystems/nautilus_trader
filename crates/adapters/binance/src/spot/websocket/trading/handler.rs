@@ -185,7 +185,7 @@ impl BinanceSpotWsTradingHandler {
                         BinanceSpotWsTradingCommand::SessionLogon => {
                             if let Err(e) = self.handle_session_logon().await {
                                 log::error!("Session logon failed: {e}");
-                                self.emit(BinanceSpotWsTradingMessage::Error(
+                                self.emit(BinanceSpotWsTradingMessage::AuthenticationRejected(
                                     format!("Session logon failed: {e}"),
                                 ));
                             }
@@ -193,9 +193,11 @@ impl BinanceSpotWsTradingHandler {
                         BinanceSpotWsTradingCommand::SubscribeUserData => {
                             if let Err(e) = self.handle_subscribe_user_data().await {
                                 log::error!("User data subscribe failed: {e}");
-                                self.emit(BinanceSpotWsTradingMessage::Error(
-                                    format!("User data subscribe failed: {e}"),
-                                ));
+                                self.emit(
+                                    BinanceSpotWsTradingMessage::UserDataSubscriptionRejected(
+                                        format!("User data subscribe failed: {e}"),
+                                    ),
+                                );
                             }
                         }
                     }
@@ -808,9 +810,13 @@ impl BinanceSpotWsTradingHandler {
                     msg,
                 }
             }
-            BinanceSpotWsTradingRequestMeta::SessionLogon
-            | BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
-                BinanceSpotWsTradingMessage::Error(format!("code={code}: {msg}"))
+            BinanceSpotWsTradingRequestMeta::SessionLogon => {
+                BinanceSpotWsTradingMessage::AuthenticationRejected(format!("code={code}: {msg}"))
+            }
+            BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
+                BinanceSpotWsTradingMessage::UserDataSubscriptionRejected(format!(
+                    "code={code}: {msg}"
+                ))
             }
         }
     }

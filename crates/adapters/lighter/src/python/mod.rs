@@ -178,7 +178,7 @@ fn py_revoke_lighter_integrator(
     })
 }
 
-/// Loaded as `nautilus_pyo3.lighter`.
+/// Exposed through `nautilus_trader.adapters.lighter`.
 #[pymodule]
 pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(LIGHTER), LIGHTER)?;

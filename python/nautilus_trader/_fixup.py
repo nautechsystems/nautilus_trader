@@ -51,16 +51,11 @@ def _should_fixup_module_name(
     if not module or name.startswith("_"):
         return False
 
-    if "nautilus_pyo3" not in module and (
-        module == target_module or module.startswith(f"{target_module}.")
-    ):
+    if module == target_module or module.startswith(f"{target_module}."):
         return False
 
     object_name = getattr(obj, "__name__", None)
     if object_name is not None and object_name != name:
         return False
-
-    if "nautilus_pyo3" in module:
-        return True
 
     return module.startswith("nautilus_trader._") or not module.startswith("nautilus_trader.")

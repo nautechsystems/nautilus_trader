@@ -20,11 +20,11 @@ from decimal import Decimal
 
 from strategy import DemoStrategy
 
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import TraderId

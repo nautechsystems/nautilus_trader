@@ -52,7 +52,7 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -60,8 +60,8 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 
-let activation = Utc.with_ymd_and_hms(2024, 1, 8, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2024, 3, 29, 0, 0, 0).unwrap();
+let activation: Timestamp = "2024-01-08T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2024-03-29T00:00:00Z".parse().unwrap();
 
 let btcusdt_future = CryptoFuture::builder()
     .instrument_id(InstrumentId::from("BTCUSDT-240329.BINANCE"))
@@ -70,8 +70,8 @@ let btcusdt_future = CryptoFuture::builder()
     .quote_currency(Currency::from("USDT"))
     .settlement_currency(Currency::from("USDT"))
     .is_inverse(false)
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
     .size_precision(6)
     .price_increment(Price::from("0.01"))

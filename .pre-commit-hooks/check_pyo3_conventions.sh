@@ -63,15 +63,14 @@ while IFS=: read -r file line_num match; do
   module_path="$(echo "$match" | sed -E 's/.*(module|stub_module)[[:space:]]*=[[:space:]]*"([^"]+)".*/\2/')"
 
   case "$module_path" in
-    nautilus_trader.adapters.* | nautilus_trader.core.nautilus_pyo3.*)
+    nautilus_trader.adapters.*)
       continue
       ;;
   esac
 
   echo -e "${RED}Error:${NC} Adapter module path is not canonical in $file:$line_num"
   echo "  Found: $(echo "$match" | xargs)"
-  echo "  Use: nautilus_trader.adapters.<adapter_name> for stub metadata"
-  echo "  Runtime PyO3 paths may use nautilus_trader.core.nautilus_pyo3.<adapter_name>"
+  echo "  Use: nautilus_trader.adapters.<adapter_name> for runtime and stub metadata"
   echo
   ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
 done < <(rg -n '(module|stub_module)\s*=\s*"nautilus_trader\.[^"]+"' crates/adapters --type rust 2> /dev/null || true)
@@ -80,8 +79,7 @@ if [ $ADAPTER_VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module path violation(s)${NC}"
   echo
   echo "Convention:"
-  echo "  - Public adapter stub paths use nautilus_trader.adapters.<adapter_name>"
-  echo "  - Runtime PyO3 paths use nautilus_trader.core.nautilus_pyo3.<adapter_name>"
+  echo "  - Adapter runtime and stub paths use nautilus_trader.adapters.<adapter_name>"
   exit 1
 fi
 

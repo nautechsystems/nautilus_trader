@@ -17,10 +17,18 @@
 //! [`PyMessageBus`] wrapper that routes Python events through the Rust
 //! thread-local [`MessageBus`] via the Any-based dispatch path.
 
-use std::{any::Any, fmt::Debug, rc::Rc};
+use std::{
+    any::Any,
+    fmt::Debug,
+    rc::Rc,
+    sync::{LazyLock, Mutex},
+};
 
 use ahash::AHashMap;
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_core::{
+    MUTEX_POISONED, UUID4,
+    python::{to_pynotimplemented_err, to_pyruntime_err},
+};
 use nautilus_model::identifiers::TraderId;
 use pyo3::{Py, Python, prelude::*, types::PyBytes};
 use ustr::Ustr;
@@ -28,7 +36,7 @@ use ustr::Ustr;
 use crate::{
     enums::SerializationEncoding,
     msgbus::{
-        self as msgbus_api, BusMessage, MessageBus, MessageBusConfig,
+        self as msgbus_api, BusMessage, MessageBus, MessageBusBackingFactory, MessageBusConfig,
         core::Subscription,
         get_message_bus,
         matching::is_matching,
@@ -37,6 +45,97 @@ use crate::{
     },
     python::config_error_to_pyvalue_err,
 };
+
+/// Function type for extracting a Python object to a boxed message bus backing factory.
+pub type MessageBusFactoryExtractor =
+    fn(Python<'_>, Py<PyAny>) -> PyResult<Box<dyn MessageBusBackingFactory>>;
+
+/// Registry for Python message bus backing factory extractors.
+#[derive(Debug)]
+pub struct MessageBusFactoryRegistry {
+    extractors_by_type: Mutex<AHashMap<String, MessageBusFactoryExtractor>>,
+}
+
+impl MessageBusFactoryRegistry {
+    /// Creates an empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            extractors_by_type: Mutex::new(AHashMap::new()),
+        }
+    }
+
+    /// Registers an extractor for a Python factory type name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a different extractor is already registered for the type name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn register(
+        &self,
+        type_name: String,
+        extractor: MessageBusFactoryExtractor,
+    ) -> anyhow::Result<()> {
+        let mut extractors = self.extractors_by_type.lock().expect(MUTEX_POISONED);
+
+        if let Some(registered) = extractors.get(&type_name) {
+            if std::ptr::fn_addr_eq(*registered, extractor) {
+                return Ok(());
+            }
+
+            anyhow::bail!("Message bus factory extractor '{type_name}' is already registered");
+        }
+
+        extractors.insert(type_name, extractor);
+        Ok(())
+    }
+
+    /// Extracts a Python object to a boxed message bus backing factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no extractor is registered for the Python type or extraction fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn extract(
+        &self,
+        py: Python<'_>,
+        factory: Py<PyAny>,
+    ) -> PyResult<Box<dyn MessageBusBackingFactory>> {
+        let type_name = factory
+            .getattr(py, "__class__")?
+            .getattr(py, "__name__")?
+            .extract::<String>(py)?;
+        let extractors = self.extractors_by_type.lock().expect(MUTEX_POISONED);
+
+        match extractors.get(&type_name) {
+            Some(extractor) => extractor(py, factory),
+            None => Err(to_pynotimplemented_err(format!(
+                "No message bus factory extractor registered for '{type_name}'"
+            ))),
+        }
+    }
+}
+
+impl Default for MessageBusFactoryRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+static GLOBAL_MSGBUS_FACTORY_REGISTRY: LazyLock<MessageBusFactoryRegistry> =
+    LazyLock::new(MessageBusFactoryRegistry::new);
+
+/// Returns the global Python message bus backing factory registry.
+#[must_use]
+pub fn get_global_msgbus_factory_registry() -> &'static MessageBusFactoryRegistry {
+    &GLOBAL_MSGBUS_FACTORY_REGISTRY
+}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -276,11 +375,7 @@ fn make_handler(py: Python<'_>, callable: Py<PyAny>) -> PyResult<ShareableMessag
 /// Provides the same API as the legacy Cython `MessageBus` while routing all
 /// messages through the single Rust bus. Python custom events travel through
 /// the Any-based dispatch path via [`PyMessage`] wrappers.
-#[pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "MessageBus",
-    unsendable
-)]
+#[pyclass(module = "nautilus_trader.common", name = "MessageBus", unsendable)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 pub struct PyMessageBus {
     trader_id: TraderId,

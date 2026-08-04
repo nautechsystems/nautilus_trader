@@ -4,21 +4,21 @@ Render the Binance order book imbalance tutorial panels from a backtest run.
 Usage:
 
     uv sync --extra visualization
-    NAUTILUS_DATA_DIR=tests/test_data/local \
+    NAUTILUS_DATA_DIR=test_data/local \
         python3 docs/tutorials/assets/backtest_orderbook_binance/render_panels.py
 
-Replays the same first one million Binance T_DEPTH BTCUSDT 2022-11-01 deltas as
-the tutorial, runs the shipped ``OrderBookImbalance`` strategy alongside a
-sampling actor that records top-of-book once per second, and writes four PNG
-panels to the same directory using the ``nautilus_dark`` tearsheet theme.
+Replays the three-million-row Binance T_DEPTH BTCUSDT 2022-11-01 panel window
+described by the tutorial, runs the shipped ``OrderBookImbalance`` strategy
+alongside a sampling actor that records top-of-book once per second, and writes
+four PNG panels to the same directory using the ``nautilus_dark`` tearsheet theme.
 
 """
 
 from __future__ import annotations
 
 import os
-from decimal import Decimal
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -28,24 +28,33 @@ from plotly.subplots import make_subplots
 from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.model.currencies import BTC
-from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyPair
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
+
+
+TUTORIAL_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(TUTORIAL_DIR))
+
+from orderbook_data import deltas_from_frame
+from orderbook_imbalance import OrderBookImbalance
+from orderbook_imbalance import OrderBookImbalanceConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -61,13 +70,28 @@ NEUTRAL = COLORS["neutral"]
 GRID = COLORS["grid"]
 
 
-class TopBookSamplerConfig(ActorConfig, frozen=True):
-    instrument_id: InstrumentId
-    book_type: str = "L2_MBP"
-    sample_every_secs: int = 1
+class TopBookSamplerConfig(DataActorConfig):
+    _CUSTOM_FIELDS = ("instrument_id", "book_type", "sample_every_secs")
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        book_type: str = "L2_MBP",
+        sample_every_secs: int = 1,
+        **_kwargs,
+    ) -> None:
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.book_type = book_type
+        self.sample_every_secs = sample_every_secs
 
 
-class TopBookSampler(Actor):
+class TopBookSampler(DataActor):
     """
     Capture top-of-book once every ``sample_every_secs`` seconds.
     """
@@ -79,9 +103,13 @@ class TopBookSampler(Actor):
         self._interval_ns = config.sample_every_secs * 1_000_000_000
 
     def on_start(self) -> None:
-        self.subscribe_order_book_deltas(self.config.instrument_id, BookType.L2_MBP)
+        self.subscribe_book_deltas(
+            self.config.instrument_id,
+            BookType.from_str(self.config.book_type),
+            managed=True,
+        )
 
-    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+    def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
         ts = deltas.ts_event
         if ts - self._last_sample_ns < self._interval_ns:
             return
@@ -130,16 +158,26 @@ def run_backtest(nrows: int = 3_000_000):
     df_snap = load_binance_order_book_deltas(snap_path)
     df_update = load_binance_order_book_deltas(update_path, nrows=nrows)
 
-    BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-    wrangler = OrderBookDeltaDataWrangler(BTCUSDT_BINANCE)
+    BTCUSDT_BINANCE = CurrencyPair(
+        instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=Currency.from_str("BTC"),
+        quote_currency=Currency.from_str("USDT"),
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price(0.01, precision=2),
+        size_increment=Quantity(0.000001, precision=6),
+        ts_event=0,
+        ts_init=0,
+    )
 
-    deltas = wrangler.process(df_snap)
-    deltas += wrangler.process(df_update)
+    deltas = deltas_from_frame(df_snap, BTCUSDT_BINANCE)
+    deltas += deltas_from_frame(df_update, BTCUSDT_BINANCE)
     deltas.sort(key=lambda x: x.ts_init)
 
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
-        logging=LoggingConfig(log_level="ERROR"),
+        trader_id=TraderId.from_str("BACKTESTER-001"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     )
     engine = BacktestEngine(config=config)
 
@@ -149,7 +187,7 @@ def run_backtest(nrows: int = 3_000_000):
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,
         base_currency=None,
-        starting_balances=[Money(20, BTC), Money(100_000, USDT)],
+        starting_balances=[Money.from_str("20 BTC"), Money.from_str("100000 USDT")],
         book_type=BookType.L2_MBP,
     )
     engine.add_instrument(BTCUSDT_BINANCE)
@@ -165,9 +203,9 @@ def run_backtest(nrows: int = 3_000_000):
 
     strategy = OrderBookImbalance(
         OrderBookImbalanceConfig(
-            instrument_id=BTCUSDT_BINANCE.id,
+            instrument_id=str(BTCUSDT_BINANCE.id),
             book_type="L2_MBP",
-            max_trade_size=Decimal("1.000"),
+            max_trade_size="1.000",
             min_seconds_between_triggers=1.0,
         ),
     )
@@ -175,7 +213,7 @@ def run_backtest(nrows: int = 3_000_000):
     engine.run()
 
     samples_df = pd.DataFrame(sampler.samples)
-    fills = engine.trader.generate_fills_report()
+    fills = engine.generate_fills_report()
 
     if not samples_df.empty:
         # Drop early warmup samples where bid is well below the median ask (the

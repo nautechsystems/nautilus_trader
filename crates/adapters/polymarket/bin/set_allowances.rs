@@ -38,8 +38,13 @@ const DEFAULT_POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
 const POLYGON_CHAIN_ID: u64 = 137;
 const PUSD_COLLATERAL: Address = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
 const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
-const NEG_RISK_ADAPTER: Address = address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
-const APPROVAL_TARGETS: [Address; 3] = [CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE, NEG_RISK_ADAPTER];
+const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
+    address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
+const APPROVAL_TARGETS: [Address; 3] = [
+    CTF_EXCHANGE,
+    NEG_RISK_CTF_EXCHANGE,
+    NEG_RISK_CTF_COLLATERAL_ADAPTER,
+];
 
 alloy::sol! {
     #[sol(rpc)]

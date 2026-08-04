@@ -36,7 +36,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 
-const LARGE_MBO_FIXTURE: &str = "tests/test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst";
+const LARGE_MBO_FIXTURE: &str = "test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst";
 
 fn bench_dbn_stream_decode(c: &mut Criterion) {
     let mut group = c.benchmark_group("dbn_stream_decode");

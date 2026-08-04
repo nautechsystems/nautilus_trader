@@ -219,7 +219,7 @@ pub enum HyperliquidOrderType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -258,7 +258,7 @@ pub enum HyperliquidTpSl {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -334,7 +334,7 @@ impl From<OrderType> for HyperliquidConditionalOrderType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1001,7 +1001,7 @@ pub enum HyperliquidLeverageType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1080,7 +1080,7 @@ fn is_outcome_wire_symbol(symbol: &str) -> bool {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )

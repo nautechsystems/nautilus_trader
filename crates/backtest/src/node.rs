@@ -45,7 +45,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.backtest", unsendable)
 )]
 #[cfg_attr(
     feature = "python",

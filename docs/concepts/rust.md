@@ -374,7 +374,7 @@ and tests. It is not a first-class extension path for adding native
 strategies. For custom native components, use pure Rust.
 
 ```python
-from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
+from nautilus_trader.trading import GridMarketMakerConfig
 
 config = GridMarketMakerConfig(
     instrument_id=InstrumentId.from_str("BTC-USDT-SWAP.OKX"),

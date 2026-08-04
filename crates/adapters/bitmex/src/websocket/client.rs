@@ -406,8 +406,9 @@ impl BitmexWebSocketClient {
                             log::debug!("Re-authenticating after reconnection");
                             waiting_for_reconnect_auth = true;
 
-                            let expires =
-                                (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+                            let expires = (jiff::Timestamp::now()
+                                + jiff::SignedDuration::from_secs(30))
+                            .as_second();
                             let signature = cred.sign("GET", "/realtime", expires, "");
 
                             let auth_message = BitmexAuthentication {
@@ -586,7 +587,7 @@ impl BitmexWebSocketClient {
 
         let receiver = self.auth_tracker.begin();
 
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+        let expires = (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(30)).as_second();
         let signature = credential.sign("GET", "/realtime", expires, "");
 
         let auth_message = BitmexAuthentication {
@@ -1353,7 +1354,8 @@ mod tests {
 
         // Test the actual auth message building logic from lines 220-228
         if let Some(cred) = &client_with_creds.credential {
-            let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+            let expires =
+                (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(30)).as_second();
             let signature = cred.sign("GET", "/realtime", expires, "");
 
             let auth_message = BitmexAuthentication {

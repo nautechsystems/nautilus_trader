@@ -232,7 +232,7 @@ impl Default for FeeModelAny {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        module = "nautilus_trader.execution",
         extends = PyFeeModel,
         skip_from_py_object
     )
@@ -286,7 +286,7 @@ impl FeeModel for FixedFeeModel {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        module = "nautilus_trader.execution",
         extends = PyFeeModel,
         skip_from_py_object
     )
@@ -376,7 +376,7 @@ fn spread_leg_ratio_parts(ratio: &str, symbol: &str) -> Option<i64> {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        module = "nautilus_trader.execution",
         extends = PyFeeModel,
         skip_from_py_object
     )
@@ -422,7 +422,7 @@ impl FeeModel for MakerTakerFeeModel {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        module = "nautilus_trader.execution",
         extends = PyFeeModel,
         skip_from_py_object
     )
@@ -470,7 +470,7 @@ impl FeeModel for ProbabilityPriceFeeModel {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        module = "nautilus_trader.execution",
         extends = PyFeeModel,
         skip_from_py_object
     )
@@ -566,7 +566,7 @@ impl FeeModel for CappedOptionFeeModel {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        module = "nautilus_trader.execution",
         extends = PyFeeModel,
         skip_from_py_object
     )

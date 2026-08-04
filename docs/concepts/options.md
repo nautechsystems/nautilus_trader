@@ -20,16 +20,16 @@ The platform defines several option instrument types:
 Greeks-relevant metadata varies by instrument type:
 
 - `OptionContract`, `CryptoOption`: full Greeks inputs including `strike_price`,
-  `option_kind` (CALL/PUT), `expiration_utc`, `underlying`, `multiplier`.
+  `option_kind` (CALL/PUT), `expiration_ns`, `underlying`, `multiplier`.
 - `OptionSpread`, `CryptoOptionSpread`: a combination of up to 4 option legs,
-  each weighted by a ratio. Has `underlying`, `expiration_utc`, and
+  each weighted by a ratio. Has `underlying`, `expiration_ns`, and
   `strategy_type` (vertical, calendar, straddle, etc.). Per-leg `strike_price`
   and `option_kind` live on each leg's `OptionContract`/`CryptoOption`, not on
   the spread itself. Greeks are computed per leg and aggregated. Spreads are
   commonly used for orders (the exchange executes as a single order), while
   the individual legs appear as positions. `CryptoOptionSpread` additionally
   carries `is_inverse` and `settlement_currency` for venues like Deribit.
-- `BinaryOption`: has `expiration_utc` and `outcome`/`description`, but no
+- `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
 ## Subscribing to Greeks
@@ -77,12 +77,13 @@ option series into `OptionChainSlice` snapshots. The `DataEngine` creates one Ru
 incoming data, running snapshot timers, and draining wire subscription changes.
 
 ```python
-from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model import OptionSeriesId
+from nautilus_trader.model import StrikeRange
 
-series_id = nautilus_pyo3.OptionSeriesId(...)  # identifies the series (venue, underlying, expiry)
+series_id = OptionSeriesId(...)  # identifies the series (venue, underlying, expiry)
 
 # Subscribe to 5 strikes above and below ATM, snapshot every 1000ms
-strike_range = nautilus_pyo3.StrikeRange.atm_relative(strikes_above=5, strikes_below=5)
+strike_range = StrikeRange.atm_relative(strikes_above=5, strikes_below=5)
 self.subscribe_option_chain(
     series_id,
     strike_range=strike_range,
@@ -105,12 +106,12 @@ def on_option_chain(self, chain) -> None:
 
 `StrikeRange` controls which strikes are active in a chain subscription:
 
-| Variant       | Description                                         | Example                                        |
-| ------------- | --------------------------------------------------- | ---------------------------------------------- |
-| `Fixed`       | Subscribe to an explicit set of strikes.            | `nautilus_pyo3.StrikeRange.fixed([...])`       |
-| `AtmRelative` | N strikes above and N below the current ATM strike. | `nautilus_pyo3.StrikeRange.atm_relative(5, 5)` |
-| `AtmPercent`  | All strikes within a percentage band around ATM.    | `nautilus_pyo3.StrikeRange.atm_percent(0.10)`  |
-| `Delta`       | Strikes whose call or put delta is near a target.   | `nautilus_pyo3.StrikeRange.delta(0.25, 0.05)`  |
+| Variant       | Description                                         | Example                          |
+| ------------- | --------------------------------------------------- | -------------------------------- |
+| `Fixed`       | Subscribe to an explicit set of strikes.            | `StrikeRange.fixed([...])`       |
+| `AtmRelative` | N strikes above and N below the current ATM strike. | `StrikeRange.atm_relative(5, 5)` |
+| `AtmPercent`  | All strikes within a percentage band around ATM.    | `StrikeRange.atm_percent(0.10)`  |
+| `Delta`       | Strikes whose call or put delta is near a target.   | `StrikeRange.delta(0.25, 0.05)`  |
 
 For ATM-based variants, subscriptions are deferred until the ATM price is determined.
 ATM is derived from the forward price embedded in venue-provided `OptionGreeks` updates
@@ -265,7 +266,7 @@ flowchart TD
     DE -- "publish_slice()" --> MGR
     MGR -- "OptionChainSlice" --> DE
     DE -- publish --> MB((MessageBus))
-    MB -- "on_option_chain" --> S[Actor / Strategy]
+    MB -- "on_option_chain" --> S[DataActor / Strategy]
     DE -- "sub/unsub" --> DC
 ```
 

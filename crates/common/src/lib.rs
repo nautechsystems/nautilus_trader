@@ -34,7 +34,6 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
 //! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
@@ -145,9 +144,6 @@ pub mod live;
 
 #[cfg(feature = "defi")]
 pub mod defi;
-
-#[cfg(feature = "ffi")]
-pub mod ffi;
 
 #[cfg(feature = "python")]
 pub mod python;

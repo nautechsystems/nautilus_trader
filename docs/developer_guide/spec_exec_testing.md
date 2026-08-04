@@ -1,9 +1,9 @@
 # Execution Testing Spec
 
 This section defines a rigorous test matrix for validating adapter execution
-functionality using the `ExecTester` strategy. Both Python
-(`nautilus_trader.test_kit.strategies.tester_exec`) and Rust
-(`nautilus_testkit::testers`) provide the `ExecTester`. Each test case is
+functionality using the Rust `ExecTester` strategy. Python exposes it as a
+built‑in strategy configured through `nautilus_trader.testkit.ExecTesterConfig`;
+Rust code imports it from `nautilus_testkit::testers`. Each test case is
 identified by a prefixed ID (e.g. TC-E01) and grouped by functionality.
 
 **Each adapter must pass the subset of tests matching its supported capabilities.**
@@ -34,14 +34,17 @@ Before running execution tests:
 
 **Python node setup**:
 
-Legacy examples still use `nautilus_trader.live.node.TradingNode`, but new Rust-backed
-PyO3 adapters should prefer `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
+Legacy examples still use `nautilus_trader.live.node.TradingNode`, but current Rust‑backed
+PyO3 adapters use `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
 when you need to register adapter client factories before the node is built.
 
 ```python
 from nautilus_trader.common import Environment
-from nautilus_trader.live import LiveExecEngineConfig, LiveNode, LiveRiskEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
+from nautilus_trader.testkit import ExecTesterConfig
 
 node = (
     LiveNode.builder("TESTER-001", TraderId("TESTER-001"), Environment.SANDBOX)
@@ -51,7 +54,12 @@ node = (
     .build()
 )
 
-node.add_strategy_from_config(importable_strategy_config)
+tester_config = ExecTesterConfig(
+    instrument_id=instrument_id,
+    client_id=client_id,
+    order_qty=order_qty,
+)
+node.add_builtin_strategy("ExecTester", tester_config)
 # Register remaining components, then start or run
 ```
 

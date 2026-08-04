@@ -30,7 +30,7 @@ from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
 
 
 ProviderConfigFactory = Callable[[], object]
@@ -86,7 +86,7 @@ def databento_provider_config() -> object:
 
 
 def set_databento_request_contracts_default() -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     os.environ.setdefault(
         "IB_V2_DATABENTO_REQUEST_CONTRACTS",
         json.dumps(
@@ -131,7 +131,7 @@ def print_market_details(_node: object) -> None:
 
 
 def print_oca_details(node: Any) -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     oca_group = os.getenv("IB_V2_OCA_GROUP", "<unique per run>")
     tag = ib_order_tags(ocaGroup=oca_group, ocaType=ib.IbOcaType.CANCEL_WITH_BLOCK.as_i32())
     print(f"Built v2 OCA node and registered OcaGroupStrategy: {node.trader_id}", flush=True)
@@ -139,7 +139,7 @@ def print_oca_details(node: Any) -> None:
 
 
 def print_conditions_details(node: Any) -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     time_condition: dict[str, Any] = {
         "type": ib.IbConditionKind.TIME.as_str(),
         "time": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S"),

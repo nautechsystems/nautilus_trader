@@ -24,7 +24,7 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nautilus_bybit::{
     common::{
         consts::BYBIT_VENUE,
@@ -2495,8 +2495,8 @@ async fn test_request_order_status_reports_with_time_filtering() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let start_time = Utc::now() - chrono::Duration::days(7);
-    let end_time = Utc::now();
+    let start_time = Timestamp::now() - jiff::SignedDuration::from_hours(24 * (7));
+    let end_time = Timestamp::now();
 
     let _reports = client
         .request_order_status_reports(

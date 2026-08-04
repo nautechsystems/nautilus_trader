@@ -286,10 +286,7 @@ def test_bar_type_composite():
 
 
 def test_bar_fully_qualified_name():
-    module_name, _, type_name = Bar.fully_qualified_name().partition(":")
-
-    assert module_name
-    assert type_name == "Bar"
+    assert Bar.fully_qualified_name() == "nautilus_trader.model:Bar"
     assert Bar.__module__ == "nautilus_trader.model"
 
 

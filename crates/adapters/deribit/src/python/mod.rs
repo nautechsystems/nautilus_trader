@@ -92,7 +92,7 @@ fn extract_deribit_exec_config(
     }
 }
 
-/// Loaded as `nautilus_pyo3.deribit`.
+/// Exposed through `nautilus_trader.adapters.deribit`.
 ///
 /// # Errors
 ///

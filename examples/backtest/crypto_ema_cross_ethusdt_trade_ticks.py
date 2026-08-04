@@ -20,8 +20,8 @@ from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
@@ -114,8 +114,8 @@ if __name__ == "__main__":
 
     # Generate interactive tearsheet (requires: pip install plotly>=6.3.1)
     try:
-        from nautilus_trader.analysis import TearsheetConfig
         from nautilus_trader.analysis.tearsheet import create_tearsheet
+        from nautilus_trader.config import TearsheetConfig
 
         print("\nGenerating tearsheet...")
 

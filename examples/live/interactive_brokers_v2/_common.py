@@ -19,7 +19,13 @@ import subprocess
 from collections.abc import Sequence
 from typing import Any
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import TraderId
+from nautilus_trader.trading import ImportableStrategyConfig
 
 
 IB = "IB"
@@ -78,10 +84,10 @@ def schedule_node_stop(node: object, delay_seconds: int) -> None:
     )
 
 
-def ib_account_id(raw_account_id: str) -> pyo3.AccountId:
+def ib_account_id(raw_account_id: str) -> AccountId:
     if "-" in raw_account_id:
-        return pyo3.AccountId.from_str(raw_account_id)
-    return pyo3.AccountId.from_str(f"{IB}-{raw_account_id}")
+        return AccountId.from_str(raw_account_id)
+    return AccountId.from_str(f"{IB}-{raw_account_id}")
 
 
 def contract_month_code(year: int, month: int) -> str:
@@ -197,7 +203,7 @@ def default_es_put_spread_instrument_id(
 
 
 def default_stock_contracts() -> list[dict[str, str]]:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     return [
         {
             "secType": ib.IbSecurityType.STOCK.as_str(),
@@ -230,7 +236,7 @@ def futures_contract(
     local_symbol: str | None = None,
     expiry: str | None = None,
 ) -> dict[str, object]:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     default_local_symbol, _, default_expiry = default_es_future()
     return {
         "secType": ib.IbSecurityType.FUTURE.as_str(),
@@ -251,7 +257,7 @@ def option_contract(
     right: Any | None = None,
     strike: float | None = None,
 ) -> dict[str, object]:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     right = right or ib.IbOptionRight.PUT
     right_value = right.as_str() if hasattr(right, "as_str") else str(right)
     default_local_symbol = default_es_put_option_local_symbol(strike or 6800.0)
@@ -278,7 +284,7 @@ def ib_order_tags(**values: object) -> str:
 
 def add_strategy_from_config(node: object, strategy_path: str) -> None:
     node.add_strategy_from_config(  # type: ignore[attr-defined]
-        pyo3.ImportableStrategyConfig(  # type: ignore[attr-defined]
+        ImportableStrategyConfig(
             strategy_path=strategy_path,
             config_path="",
             config={},
@@ -286,8 +292,8 @@ def add_strategy_from_config(node: object, strategy_path: str) -> None:
     )
 
 
-def instrument_ids(values: Sequence[str]) -> list[pyo3.InstrumentId]:
-    return [pyo3.InstrumentId.from_str(value) for value in values]
+def instrument_ids(values: Sequence[str]) -> list[InstrumentId]:
+    return [InstrumentId.from_str(value) for value in values]
 
 
 def instrument_provider_config(
@@ -295,7 +301,7 @@ def instrument_provider_config(
     load_contracts: Sequence[dict[str, object]] | None = None,
     symbol_to_mic_venue: dict[str, str] | None = None,
 ) -> object:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     return ib.InteractiveBrokersInstrumentProviderConfig(
         symbology_method=ib.SymbologyMethod.SIMPLIFIED,
         load_ids=set(instrument_ids(load_ids or ())),
@@ -317,11 +323,11 @@ def build_ib_live_node(
     account_id: str | None = None,
     provider_config: object | None = None,
 ) -> object:
-    ib = pyo3.interactive_brokers
-    trader = pyo3.TraderId.from_str(trader_id)
+    ib = interactive_brokers
+    trader = TraderId.from_str(trader_id)
     provider_config = provider_config or instrument_provider_config()
 
-    builder = pyo3.live.LiveNode.builder(name, trader, pyo3.Environment.LIVE)  # type: ignore[attr-defined]
+    builder = LiveNode.builder(name, trader, Environment.LIVE)
     builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
     builder = builder.with_timeout_reconciliation(5)
     builder = builder.with_timeout_portfolio(5)

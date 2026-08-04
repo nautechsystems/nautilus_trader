@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 /// Binance Futures current open interest snapshot.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -123,7 +123,7 @@ impl CustomDataTrait for BinanceFuturesOpenInterest {
 /// Binance Futures historical open interest point.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -163,7 +163,7 @@ impl BinanceFuturesOpenInterestHistPoint {
 /// parsing/symbology path in this adapter is still perpetual-only.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -257,7 +257,7 @@ impl CustomDataTrait for BinanceFuturesOpenInterestHist {
 /// Binance Futures liquidation update from the `forceOrder` stream.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -364,7 +364,7 @@ impl CustomDataTrait for BinanceFuturesLiquidation {
 /// Binance Spot 24-hour ticker statistics from the `ticker` stream.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -469,7 +469,7 @@ impl CustomDataTrait for BinanceSpotTicker {
 /// Binance Futures mark-price stream update with venue-specific fields.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -544,7 +544,7 @@ impl CustomDataTrait for BinanceFuturesMarkPriceUpdate {
 /// Binance Futures 24-hour ticker statistics from the `ticker` stream.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

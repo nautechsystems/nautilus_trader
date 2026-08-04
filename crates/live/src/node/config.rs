@@ -73,7 +73,7 @@ pub(crate) fn validate_live_environment(environment: Environment) -> anyhow::Res
 /// Configuration for live data engines.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -173,7 +173,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
 /// Configuration for live risk engines.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -376,7 +376,7 @@ pub(crate) fn duration_from_secs_f64(field: &str, value: f64) -> ConfigResult<Du
 /// Configuration for live execution engines.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -602,7 +602,7 @@ impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
 /// Configuration for live client message routing.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -621,7 +621,7 @@ pub struct RoutingConfig {
 /// Configuration for instrument providers.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -654,7 +654,7 @@ impl Default for InstrumentProviderConfig {
 /// Configuration for live data clients.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -677,7 +677,7 @@ pub struct LiveDataClientConfig {
 /// Configuration for live execution clients.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -697,7 +697,7 @@ pub struct LiveExecClientConfig {
 /// Configuration for one Rust-native plug-in instance loaded by a live node.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -729,7 +729,7 @@ impl Default for PluginConfig {
 /// Configuration for live Nautilus system nodes.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

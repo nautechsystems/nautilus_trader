@@ -24,8 +24,8 @@ use std::{
 
 use anyhow::Context;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
+use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::ExecutionClient,
@@ -1201,8 +1201,8 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
-        let start = cmd.start.map(DateTime::<Utc>::from);
-        let end = cmd.end.map(DateTime::<Utc>::from);
+        let start = cmd.start.map(Timestamp::from);
+        let end = cmd.end.map(Timestamp::from);
         self.http
             .request_order_status_reports(account_id, cmd.instrument_id, start, end, cmd.open_only)
             .await
@@ -1218,8 +1218,8 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
-        let start = cmd.start.map(DateTime::<Utc>::from);
-        let end = cmd.end.map(DateTime::<Utc>::from);
+        let start = cmd.start.map(Timestamp::from);
+        let end = cmd.end.map(Timestamp::from);
         self.http
             .request_fill_reports(account_id, cmd.instrument_id, start, end)
             .await
@@ -1259,7 +1259,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         log::debug!("Generating mass status: lookback_mins={lookback_mins:?}");
 
-        let start = lookback_mins.map(|mins| Utc::now() - Duration::from_secs(mins * 60));
+        let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
 
         let account_id = self.core.account_id;
         let order_reports = self

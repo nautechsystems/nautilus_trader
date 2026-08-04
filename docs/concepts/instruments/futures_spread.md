@@ -50,7 +50,7 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
@@ -60,8 +60,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2022, 6, 21, 13, 30, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2024, 6, 21, 13, 30, 0).unwrap();
+let activation: Timestamp = "2022-06-21T13:30:00Z".parse().unwrap();
+let expiration: Timestamp = "2024-06-21T13:30:00Z".parse().unwrap();
 
 let es_spread = FuturesSpread::builder()
     .instrument_id(InstrumentId::from("ESM4-ESU4.GLBX"))
@@ -70,8 +70,8 @@ let es_spread = FuturesSpread::builder()
     .exchange(Ustr::from("XCME"))
     .underlying(Ustr::from("ES"))
     .strategy_type(Ustr::from("EQ"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .currency(Currency::from("USD"))
     .price_precision(2)
     .price_increment(Price::from("0.01"))

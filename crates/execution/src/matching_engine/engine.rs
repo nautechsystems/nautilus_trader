@@ -21,8 +21,8 @@ use std::{
     rc::Rc,
 };
 
-use chrono::TimeDelta;
 use indexmap::{IndexMap, IndexSet};
+use jiff::SignedDuration;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -108,7 +108,7 @@ pub struct OrderMatchingEngine {
     last_bar_ask: Option<Bar>,
     fill_at_market: bool,
     execution_bar_types: IndexMap<InstrumentId, BarType>,
-    execution_bar_deltas: IndexMap<BarType, TimeDelta>,
+    execution_bar_deltas: IndexMap<BarType, SignedDuration>,
     account_ids: IndexMap<TraderId, AccountId>,
     cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
     post_match_order_ids: IndexSet<ClientOrderId>,
@@ -7783,7 +7783,7 @@ mod tests {
     }
 
     // Replays real GLBX MBO flow (records 9150..10650 of
-    // tests/test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst as JSON),
+    // test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst as JSON),
     // joining the touch periodically; the mid-stream start also exercises
     // unseen-id ignore paths
     #[rstest]

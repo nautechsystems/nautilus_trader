@@ -27,7 +27,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     AtomicTime, UUID4, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
@@ -47,9 +47,9 @@ use crate::timer::{
 ///
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock: Debug + Any {
-    /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
-    fn utc_now(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_nanos(self.timestamp_ns().as_i64())
+    /// Returns the current UTC timestamp.
+    fn utc_now(&self) -> Timestamp {
+        self.timestamp_ns().to_datetime_utc()
     }
 
     /// Returns the current UNIX timestamp in nanoseconds (ns).
@@ -113,7 +113,7 @@ pub trait Clock: Debug + Any {
     fn set_time_alert(
         &mut self,
         name: &str,
-        alert_time: DateTime<Utc>,
+        alert_time: Timestamp,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
@@ -176,8 +176,8 @@ pub trait Clock: Debug + Any {
         &mut self,
         name: &str,
         interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
+        start_time: Option<Timestamp>,
+        stop_time: Option<Timestamp>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
@@ -436,12 +436,10 @@ impl<'a> ClockApi<'a> {
     ///
     /// Panics if the clock is already mutably borrowed.
     #[must_use]
-    pub fn utc_now(&self) -> DateTime<Utc> {
+    pub fn utc_now(&self) -> Timestamp {
         match &self.backing {
             ClockApiBacking::Native(clock) => clock.borrow().utc_now(),
-            ClockApiBacking::Handlers(handlers) => {
-                DateTime::from_timestamp_nanos((handlers.timestamp_ns)().as_i64())
-            }
+            ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().to_datetime_utc(),
         }
     }
 
@@ -458,7 +456,7 @@ impl<'a> ClockApi<'a> {
     pub fn set_time_alert(
         &self,
         name: &str,
-        alert_time: DateTime<Utc>,
+        alert_time: Timestamp,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
@@ -519,8 +517,8 @@ impl<'a> ClockApi<'a> {
         &self,
         name: &str,
         interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
+        start_time: Option<Timestamp>,
+        stop_time: Option<Timestamp>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
@@ -2137,7 +2135,7 @@ mod tests {
     #[rstest]
     fn test_set_time_alert_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let alert_time = current_time + chrono::Duration::seconds(1);
+        let alert_time = current_time + jiff::SignedDuration::from_secs(1);
 
         // Test the default implementation that delegates to set_time_alert_ns
         test_clock
@@ -2166,7 +2164,7 @@ mod tests {
     #[rstest]
     fn test_set_timer_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let start_time = current_time + chrono::Duration::seconds(1);
+        let start_time = current_time + jiff::SignedDuration::from_secs(1);
         let interval = Duration::from_millis(500);
 
         // Test the default implementation that delegates to set_timer_ns
@@ -2201,8 +2199,8 @@ mod tests {
     #[rstest]
     fn test_set_timer_with_stop_time_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let start_time = current_time + chrono::Duration::seconds(1);
-        let stop_time = current_time + chrono::Duration::seconds(3);
+        let start_time = current_time + jiff::SignedDuration::from_secs(1);
+        let stop_time = current_time + jiff::SignedDuration::from_secs(3);
         let interval = Duration::from_secs(1);
 
         // Test with stop time
@@ -2236,7 +2234,7 @@ mod tests {
     #[rstest]
     fn test_set_timer_fire_immediately_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let start_time = current_time + chrono::Duration::seconds(1);
+        let start_time = current_time + jiff::SignedDuration::from_secs(1);
         let interval = Duration::from_millis(500);
 
         // Test with fire_immediately=true
@@ -2414,7 +2412,7 @@ mod tests {
 
     #[rstest]
     fn test_set_time_alert_rejects_unconvertible_datetime(mut test_clock: TestClock) {
-        let pre_epoch = DateTime::from_timestamp_nanos(-1);
+        let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
 
         let err = test_clock
             .set_time_alert("pre_epoch_alert", pre_epoch, None, None)
@@ -2425,7 +2423,7 @@ mod tests {
         );
 
         let err = test_clock
-            .set_time_alert("out_of_range_alert", DateTime::<Utc>::MAX_UTC, None, None)
+            .set_time_alert("out_of_range_alert", Timestamp::MAX, None, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("out of range"),
@@ -2437,8 +2435,8 @@ mod tests {
 
     #[rstest]
     fn test_set_timer_rejects_unconvertible_datetime(mut test_clock: TestClock) {
-        let pre_epoch = DateTime::from_timestamp_nanos(-1);
-        let valid_start = test_clock.utc_now() + chrono::Duration::seconds(1);
+        let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
+        let valid_start = test_clock.utc_now() + jiff::SignedDuration::from_secs(1);
 
         let err = test_clock
             .set_timer(
@@ -2505,7 +2503,7 @@ mod tests {
             || {},
         );
 
-        let pre_epoch = DateTime::from_timestamp_nanos(-1);
+        let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
         clock
             .set_time_alert("alert", pre_epoch, None, None)
             .unwrap_err();
@@ -2602,9 +2600,9 @@ mod tests {
             },
         );
 
-        let alert_time = DateTime::from_timestamp_nanos(1_700_000_000_333_000_000);
-        let start_time = DateTime::from_timestamp_nanos(1_700_000_000_444_000_000);
-        let stop_time = DateTime::from_timestamp_nanos(1_700_000_001_444_000_000);
+        let alert_time = Timestamp::from_nanosecond(1_700_000_000_333_000_000).unwrap();
+        let start_time = Timestamp::from_nanosecond(1_700_000_000_444_000_000).unwrap();
+        let stop_time = Timestamp::from_nanosecond(1_700_000_001_444_000_000).unwrap();
         clock
             .set_time_alert("alert", alert_time, None, Some(false))
             .unwrap();
@@ -2650,7 +2648,7 @@ mod tests {
         assert_eq!(clock.timestamp(), 1_700_000_000.123_456_7);
         assert_eq!(
             clock.utc_now(),
-            DateTime::from_timestamp_nanos(1_700_000_000_123_456_789)
+            Timestamp::from_nanosecond(1_700_000_000_123_456_789).unwrap()
         );
         assert_eq!(clock.timer_names(), vec!["alpha", "beta"]);
         assert_eq!(clock.timer_count(), 2);

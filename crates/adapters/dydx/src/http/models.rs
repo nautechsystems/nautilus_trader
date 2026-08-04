@@ -26,7 +26,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::serialization::deserialize_empty_string_as_none;
 use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
@@ -87,7 +87,7 @@ pub struct PerpetualMarket {
     pub next_funding_rate: Decimal,
     /// Next funding time (ISO8601, optional).
     #[serde(default)]
-    pub next_funding_at: Option<DateTime<Utc>>,
+    pub next_funding_at: Option<Timestamp>,
     /// Minimum order size in base currency (optional).
     #[serde(default)]
     #[serde(with = "display_fromstr_opt")]
@@ -175,7 +175,7 @@ pub struct Trade {
     #[serde(with = "display_fromstr")]
     pub price: Decimal,
     /// Trade timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Height of block containing this trade.
     #[serde(with = "display_fromstr")]
     pub created_at_height: u64,
@@ -196,7 +196,7 @@ pub struct CandlesResponse {
 #[serde(rename_all = "camelCase")]
 pub struct Candle {
     /// Candle start time.
-    pub started_at: DateTime<Utc>,
+    pub started_at: Timestamp,
     /// Market ticker.
     pub ticker: Ustr,
     /// Candle resolution.
@@ -298,7 +298,7 @@ pub struct PerpetualPosition {
     #[serde(with = "display_fromstr")]
     pub created_at_height: u64,
     /// Creation time.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Sum of all open order sizes.
     #[serde(with = "display_fromstr")]
     pub sum_open: Decimal,
@@ -313,7 +313,7 @@ pub struct PerpetualPosition {
     pub unrealized_pnl: Decimal,
     /// Closed time (if closed).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<Timestamp>,
 }
 
 /// Asset position (e.g., USDC balance).
@@ -384,7 +384,7 @@ pub struct Order {
     pub good_til_block: Option<u64>,
     /// Good-til-time (ISO8601).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub good_til_block_time: Option<DateTime<Utc>>,
+    pub good_til_block_time: Option<Timestamp>,
     /// Creation height (not present for BEST_EFFORT_OPENED orders).
     #[serde(
         default,
@@ -417,7 +417,7 @@ pub struct Order {
     pub execution: Option<DydxOrderExecution>,
     /// Updated timestamp (not present for BEST_EFFORT_OPENED orders).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<Timestamp>,
     /// Updated height (not present for BEST_EFFORT_OPENED orders).
     #[serde(
         default,
@@ -472,7 +472,7 @@ pub struct Fill {
     #[serde(with = "display_fromstr")]
     pub fee: Decimal,
     /// Fill timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Fill height.
     #[serde(with = "display_fromstr")]
     pub created_at_height: u64,
@@ -509,7 +509,7 @@ pub struct Transfer {
     #[serde(with = "display_fromstr")]
     pub amount: Decimal,
     /// Creation timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Creation height.
     #[serde(with = "display_fromstr")]
     pub created_at_height: u64,
@@ -551,14 +551,14 @@ pub struct HistoricalFunding {
     #[serde(with = "display_fromstr")]
     pub effective_at_height: u64,
     /// Timestamp when the funding rate became effective.
-    pub effective_at: DateTime<Utc>,
+    pub effective_at: Timestamp,
 }
 
 /// Response for time endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeResponse {
     /// Current ISO8601 timestamp.
-    pub iso: DateTime<Utc>,
+    pub iso: Timestamp,
     /// Current Unix timestamp in milliseconds.
     #[serde(rename = "epoch")]
     pub epoch_ms: i64,
@@ -571,7 +571,7 @@ pub struct HeightResponse {
     #[serde(with = "display_fromstr")]
     pub height: u64,
     /// Timestamp of the block.
-    pub time: DateTime<Utc>,
+    pub time: Timestamp,
 }
 
 /// Request to place an order via Node API.

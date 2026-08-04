@@ -190,9 +190,10 @@ Fee rates are explicit backtest assumptions. Check
 XBTUSD is BTC-margined, so the starting balance is in BTC:
 
 ```python
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
@@ -202,7 +203,7 @@ from nautilus_trader.model.objects import Money
 engine = BacktestEngine(
     BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggerConfig(stdout_level=LogLevel.INFO),
     ),
 )
 

@@ -23,13 +23,14 @@ from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.modules import FXRolloverInterestConfig
-from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import FXRolloverInterestModule
+from nautilus_trader.backtest import InterestRateRecord
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.execution import ProbabilisticFillModel
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model import BarType
@@ -81,16 +82,20 @@ def apply_layout(fig: go.Figure, title: str, height: int = 500) -> None:
 def run_backtest():
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
-        logging=LoggingConfig(log_level="ERROR"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
         risk_engine=RiskEngineConfig(bypass=True),
     )
     engine = BacktestEngine(config=config)
 
     provider = TestDataProvider()
-    rollover_config = FXRolloverInterestConfig(provider.read_csv("short-term-interest.csv"))
-    rollover = FXRolloverInterestModule(config=rollover_config)
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
+    interest_rate_records = [
+        InterestRateRecord(location=row.LOCATION, time=row.TIME, value=row.Value)
+        for row in interest_rate_data.itertuples(index=False)
+    ]
+    rollover = FXRolloverInterestModule(records=interest_rate_records)
 
-    fill_model = FillModel(
+    fill_model = ProbabilisticFillModel(
         prob_fill_on_limit=0.2,
         prob_slippage=0.5,
         random_seed=42,

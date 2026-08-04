@@ -25,13 +25,13 @@ from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import PortfolioConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.portfolio.config import PortfolioConfig
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 

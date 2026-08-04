@@ -21,7 +21,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.coinbase",
+        module = "nautilus_trader.adapters.coinbase",
         eq,
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
@@ -181,7 +181,7 @@ pub enum CoinbaseOrderPlacementSource {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.coinbase",
+        module = "nautilus_trader.adapters.coinbase",
         eq,
         eq_int,
         frozen,

@@ -115,12 +115,7 @@ pub enum DydxTimeInForce {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.dydx",
-        eq,
-        eq_int,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.dydx", eq, eq_int, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -184,12 +179,7 @@ impl From<DydxOrderSide> for OrderSide {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.dydx",
-        eq,
-        eq_int,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.dydx", eq, eq_int, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -623,12 +613,7 @@ pub enum DydxTradeType {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.dydx",
-        eq,
-        eq_int,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.dydx", eq, eq_int, from_py_object)
 )]
 pub enum DydxTransferType {
     /// Transfer into the account.
@@ -661,12 +646,7 @@ pub enum DydxTransferType {
 #[derive(Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.dydx",
-        eq,
-        eq_int,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.dydx", eq, eq_int, from_py_object)
 )]
 pub enum DydxCandleResolution {
     /// 1 minute candles.
@@ -751,7 +731,7 @@ impl DydxCandleResolution {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.dydx",
+        module = "nautilus_trader.adapters.dydx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )

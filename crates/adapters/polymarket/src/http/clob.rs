@@ -442,14 +442,14 @@ impl PolymarketClobHttpClient {
         Ok(all)
     }
 
-    /// Fetches a single open order by ID, returning `None` for empty/null responses.
+    /// Fetches a single order by ID, returning `None` for empty/null responses.
     pub async fn get_order_optional(&self, order_id: &str) -> Result<Option<PolymarketOpenOrder>> {
         let path = format!("/data/order/{order_id}");
         self.send_get_optional::<(), _>(&path, None::<&()>, true)
             .await
     }
 
-    /// Fetches a single open order by ID.
+    /// Fetches a single order by ID.
     ///
     /// Returns an error if the order is not found (empty/null response).
     pub async fn get_order(&self, order_id: &str) -> Result<PolymarketOpenOrder> {

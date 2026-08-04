@@ -27,8 +27,8 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_SECOND,
@@ -1119,7 +1119,7 @@ impl KrakenSpotRawHttpClient {
 /// into Nautilus domain objects.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.kraken", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1437,8 +1437,8 @@ impl KrakenSpotHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<TradeTick>, KrakenHttpError> {
         let instrument = self
@@ -1454,13 +1454,13 @@ impl KrakenSpotHttpClient {
         let ts_init = self.generate_ts_init();
 
         // Kraken trades API expects nanoseconds since epoch as string
-        let since = start.map(|dt| (dt.timestamp_nanos_opt().unwrap_or(0) as u64).to_string());
+        let since = start.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0).to_string());
         let response = self
             .inner
             .get_trades(&raw_symbol, since, asset_class)
             .await?;
 
-        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let end_ns = end.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
         let mut trades = Vec::new();
 
         for (_pair_name, trade_arrays) in &response.data {
@@ -1491,8 +1491,8 @@ impl KrakenSpotHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
         let instrument_id = bar_type.instrument_id();
@@ -1514,8 +1514,8 @@ impl KrakenSpotHttpClient {
         );
 
         // Kraken OHLC API expects Unix timestamp in seconds
-        let since = start.map(|dt| dt.timestamp());
-        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let since = start.map(|dt| dt.as_second());
+        let end_ns = end.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
         let response = self
             .inner
             .get_ohlc(&raw_symbol, interval, since, asset_class)
@@ -1834,8 +1834,8 @@ impl KrakenSpotHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         const PAGE_SIZE: i32 = 50;
@@ -1870,8 +1870,8 @@ impl KrakenSpotHttpClient {
         }
 
         // Kraken API expects Unix timestamps in seconds
-        let start_ts = start.map(|dt| dt.timestamp());
-        let end_ts = end.map(|dt| dt.timestamp());
+        let start_ts = start.map(|dt| dt.as_second());
+        let end_ts = end.map(|dt| dt.as_second());
 
         let mut offset = 0;
 
@@ -1924,8 +1924,8 @@ impl KrakenSpotHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> anyhow::Result<Vec<FillReport>> {
         const PAGE_SIZE: i32 = 50;
 
@@ -1933,8 +1933,8 @@ impl KrakenSpotHttpClient {
         let mut all_reports = Vec::new();
 
         // Kraken API expects Unix timestamps in seconds
-        let start_ts = start.map(|dt| dt.timestamp());
-        let end_ts = end.map(|dt| dt.timestamp());
+        let start_ts = start.map(|dt| dt.as_second());
+        let end_ts = end.map(|dt| dt.as_second());
 
         let mut offset = 0;
 

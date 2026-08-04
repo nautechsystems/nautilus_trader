@@ -27,17 +27,17 @@ import os
 import sys
 import uuid
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidHttpClient
-from nautilus_trader.core.nautilus_pyo3 import LimitOrder
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import TraderId
+from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
+from nautilus_trader.adapters.hyperliquid import HyperliquidHttpClient
+from nautilus_trader.core import UUID4
+from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import LimitOrder
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TraderId
 
 
 async def main():

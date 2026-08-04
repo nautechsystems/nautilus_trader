@@ -19,7 +19,7 @@ use nautilus_tardis::csv::stream_deltas;
 
 fn main() {
     let test_data_path = Path::new(
-        "tests/test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz",
+        "test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz",
     );
 
     if !test_data_path.exists() {

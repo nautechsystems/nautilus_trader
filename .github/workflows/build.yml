@@ -285,7 +285,12 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   rust-tests-linux-x86:
-    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-rust-tests == 'true'
+    if: >
+      github.ref != 'refs/heads/test-pre-commit' &&
+      needs.plan.outputs.run-tests == 'true' &&
+      (needs.plan.outputs.run-rust-tests == 'true' ||
+       needs.plan.outputs.publish_r2 == 'true' ||
+       github.ref == 'refs/heads/master')
     name: rust tests (ubuntu-22.04)
     runs-on: >-
       ${{ github.event_name == 'pull_request'
@@ -677,6 +682,7 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+      - rust-tests-linux-x86
       - security-gate-nightly
     runs-on: ubuntu-latest
     # Publish dev/nightly wheels to the R2 index. The platform jobs are skipped on develop
@@ -689,6 +695,7 @@ jobs:
       needs.build-linux-arm.result != 'failure' &&
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
+      needs.rust-tests-linux-x86.result == 'success' &&
       github.event_name == 'push' &&
       needs.plan.outputs.publish_r2 == 'true' &&
       (needs.plan.outputs.wheel_matrix != 'nightly' ||
@@ -842,6 +849,7 @@ jobs:
       - build-windows
       - cargo-deny
       - cargo-vet
+      - rust-tests-linux-x86
     runs-on: ubuntu-latest
     # The platform builds and supply-chain gates must all succeed before publishing on master,
     # and PyPI Trusted Publishing requires the `release` environment registered for build.yml.

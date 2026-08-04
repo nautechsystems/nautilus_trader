@@ -33,7 +33,7 @@ use ustr::Ustr;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        module = "nautilus_trader.adapters.polymarket",
         from_py_object,
     )
 )]

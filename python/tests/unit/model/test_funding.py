@@ -78,7 +78,7 @@ def test_funding_rate_update_to_dict_and_from_dict_roundtrip(audusd_id):
 
 
 def test_funding_rate_update_fully_qualified_name():
-    assert "FundingRateUpdate" in FundingRateUpdate.fully_qualified_name()
+    assert FundingRateUpdate.fully_qualified_name() == "nautilus_trader.model:FundingRateUpdate"
 
 
 def test_funding_rate_update_pickle_roundtrip(audusd_id):

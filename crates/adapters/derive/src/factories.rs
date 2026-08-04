@@ -52,7 +52,7 @@ impl ClientConfig for DeriveExecClientConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.derive", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -111,7 +111,7 @@ impl DataClientFactory for DeriveDataClientFactory {
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.derive", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -143,7 +143,7 @@ impl ClientConfig for DeriveExecFactoryConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.derive", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

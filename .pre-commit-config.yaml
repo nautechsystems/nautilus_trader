@@ -276,10 +276,10 @@ repos:
 
       - id: check-no-legacy-paths
         name: check no legacy paths
-        description: Fails on legacy nautilus_pyo3 references anywhere under python/
+        description: Fails on removed Python namespace paths and unexpected FFI surfaces
         entry: bash .pre-commit-hooks/check_no_legacy_paths.sh
         language: system
-        files: ^python/
+        files: ^(crates|docs|examples|python)/|[.]md$|^(Cargo[.]toml|Makefile)$
         pass_filenames: false
 
       - id: check-links-offline
@@ -388,6 +388,14 @@ repos:
         entry: bash .pre-commit-hooks/check_cargo_conventions.sh
         language: system
         files: "Cargo\\.toml$"
+        pass_filenames: false
+
+      - id: check-jiff-features
+        name: check Jiff features
+        description: Locks resolved Jiff feature policy across Rust and Python builds
+        entry: bash .pre-commit-hooks/check_jiff_features.sh
+        language: system
+        files: "(^|/)(Cargo\\.(toml|lock))$"
         pass_filenames: false
 
       - id: check-workspace-test-coverage

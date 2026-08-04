@@ -83,7 +83,7 @@ use crate::{
 /// at the Python boundary for parsing venue messages into Nautilus domain types.
 #[pyclass(
     name = "BitmexWebSocketClient",
-    module = "nautilus_trader.core.nautilus_pyo3.bitmex"
+    module = "nautilus_trader.adapters.bitmex"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")]
 pub struct PyBitmexWebSocketClient {

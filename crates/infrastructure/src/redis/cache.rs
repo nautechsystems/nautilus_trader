@@ -45,7 +45,6 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use nautilus_common::{
     cache::{
         CacheConfig,
@@ -126,10 +125,7 @@ const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.infrastructure", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -290,7 +286,7 @@ impl DatabaseCommand {
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+    pyo3::pyclass(module = "nautilus_trader.infrastructure")
 )]
 pub struct RedisCacheDatabase {
     pub con: ConnectionManager,
@@ -1165,8 +1161,7 @@ fn update_order_indexes(pipe: &mut Pipeline, trader_key: &str, order: &OrderAny)
 }
 
 fn format_timestamp(timestamp: UnixNanos) -> String {
-    let dt = DateTime::<Utc>::from_timestamp_nanos(timestamp.as_u64().cast_signed());
-    dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+    format!("{:.9}", timestamp.to_datetime_utc())
 }
 
 fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {

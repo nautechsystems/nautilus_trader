@@ -4,6 +4,12 @@
 # Mirrors deny.toml [advisories] ignore list, plus one advisory that
 # cargo-audit surfaces but cargo-deny does not match against the lockfile:
 #   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
+#
+# With the current Cargo.lock, chrono 0.4.45 and chrono-tz 0.10.4 (IANA 2025b)
+# remain transitive via Arrow/DataFusion; object_store is an additional chrono path.
+# Rust core time zones use jiff 0.2.35 with bundled IANA 2026c. Future unmaintained
+# advisories for chrono or chrono-tz require documented ignore entries here and in
+# deny.toml pending upstream migration.
 
 [advisories]
 ignore = [
@@ -29,4 +35,6 @@ ignore = [
   # quick-xml DoS, transitive via object_store 0.13.2; no object_store release with quick-xml >= 0.41.0
   "RUSTSEC-2026-0194",
   "RUSTSEC-2026-0195",
+  # rkyv validation bug, locked as an unused optional rust_decimal dependency; no 0.7 fix
+  "RUSTSEC-2026-0235",
 ]

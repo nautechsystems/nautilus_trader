@@ -67,7 +67,7 @@ pub trait FromU16 {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -112,7 +112,7 @@ pub enum AccountType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -154,7 +154,7 @@ pub enum AggregationSource {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -209,7 +209,7 @@ impl FromU8 for AggressorSide {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -276,7 +276,7 @@ impl FromU8 for AssetClass {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -350,7 +350,7 @@ pub enum BarAggregation {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -392,7 +392,7 @@ pub enum BarIntervalType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -459,7 +459,7 @@ impl From<OrderSide> for BetSide {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -516,7 +516,7 @@ impl FromU8 for BookAction {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -574,7 +574,7 @@ impl FromU8 for BookType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -633,7 +633,7 @@ pub enum ContingencyType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -693,7 +693,7 @@ impl ContinuousFutureAdjustmentType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -736,7 +736,7 @@ pub enum CurrencyType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -843,7 +843,7 @@ impl InstrumentClass {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -895,7 +895,7 @@ impl FromU8 for InstrumentCloseType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -938,7 +938,7 @@ pub enum LiquiditySide {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -987,7 +987,7 @@ pub enum MarketStatus {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1082,7 +1082,7 @@ impl FromU16 for MarketStatusAction {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1128,7 +1128,7 @@ pub enum OmsType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1180,7 +1180,7 @@ pub enum OptionKind {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1223,7 +1223,7 @@ pub enum GreeksConvention {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1266,7 +1266,7 @@ pub enum OtoTriggerMode {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1404,7 +1404,7 @@ impl OrderSideSpecified {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1510,7 +1510,7 @@ impl OrderStatus {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1565,7 +1565,7 @@ pub enum OrderType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1617,7 +1617,7 @@ impl FromU8 for PositionAdjustmentType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1682,7 +1682,7 @@ impl PositionSide {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1737,7 +1737,7 @@ impl PositionSideSpecified {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1790,7 +1790,7 @@ pub enum PriceType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1848,7 +1848,7 @@ impl RecordFlag {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1899,7 +1899,7 @@ pub enum TimeInForce {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1943,7 +1943,7 @@ pub enum TradingState {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1992,7 +1992,7 @@ pub enum TrailingOffsetType {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )

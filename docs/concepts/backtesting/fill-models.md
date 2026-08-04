@@ -63,7 +63,7 @@ and normal-liquidity mode.
 Pass a built-in model object directly to `BacktestVenueConfig`:
 
 ```python
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.execution import DefaultFillModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType

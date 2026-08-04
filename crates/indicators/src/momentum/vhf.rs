@@ -29,7 +29,7 @@ const MAX_PERIOD: usize = 1_024;
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.indicators", unsendable)
 )]
 #[cfg_attr(
     feature = "python",

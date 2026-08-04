@@ -596,7 +596,7 @@ impl DataClient for TardisDataClient {
 
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDate;
+    use jiff::civil::Date;
     use nautilus_common::live::runner::set_data_event_sender;
     use rstest::rstest;
 
@@ -630,8 +630,8 @@ mod tests {
             options: vec![ReplayNormalizedRequestOptions {
                 exchange: TardisExchange::BinanceFutures,
                 symbols: Some(vec!["BTCUSDT".to_string()]),
-                from: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-                to: NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                from: Date::new(2024, 1, 1).unwrap(),
+                to: Date::new(2024, 1, 2).unwrap(),
                 data_types: vec!["trade".to_string()],
                 with_disconnect_messages: Some(false),
             }],
@@ -656,8 +656,8 @@ mod tests {
             options: vec![ReplayNormalizedRequestOptions {
                 exchange: TardisExchange::BinanceFutures,
                 symbols: Some(vec!["BTCUSDT".to_string()]),
-                from: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-                to: NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                from: Date::new(2024, 1, 1).unwrap(),
+                to: Date::new(2024, 1, 2).unwrap(),
                 data_types: vec!["trade".to_string(), "derivative_ticker".to_string()],
                 with_disconnect_messages: Some(false),
             }],

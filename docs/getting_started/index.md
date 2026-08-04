@@ -46,7 +46,7 @@ The high‑level API requires a Parquet‑based data catalog. The low‑level AP
 in‑memory data but has no live‑trading path.
 
 :::warning[One node per process]
-Running multiple `BacktestNode` or `TradingNode` instances concurrently in the same
+Running multiple `BacktestNode` or `LiveNode` instances concurrently in the same
 process is not supported due to global singleton state. Sequential execution with
 proper disposal between runs is supported.
 
@@ -64,10 +64,9 @@ repository on GitHub:
 
 | Directory                                                                            | Contains                                                    |
 | :----------------------------------------------------------------------------------- | :---------------------------------------------------------- |
-| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Fully runnable, self‑contained Python examples              |
+| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Runnable Python examples organized by environment           |
 | [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                    |
 | [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features |
-| [python/examples/](../../python/examples/)                                           | Python examples using the Rust‑native package               |
 | [python/tests/unit/](../../python/tests/unit/)                                       | Unit tests covering core functionality and edge cases       |
 
 ## Running in Docker
@@ -86,6 +85,6 @@ docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly
 Then open <http://localhost:8888> in your browser.
 
 :::warning
-Examples use `log_level="ERROR"` because Nautilus logging exceeds Jupyter's stdout rate
-limit, causing notebooks to hang at lower log levels.
+Examples use `LoggerConfig(stdout_level=LogLevel.ERROR)` because Nautilus logging exceeds
+Jupyter's stdout rate limit, causing notebooks to hang at lower log levels.
 :::

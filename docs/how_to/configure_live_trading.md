@@ -1,16 +1,14 @@
 # Configure a Live Trading Node
 
-Set up a `TradingNode` for live market connectivity. For the node lifecycle, see
+Set up a `LiveNode` for live market connectivity. For the node lifecycle, see
 [Live trading](../concepts/live.md). For command outcomes, see
 [Execution](../concepts/execution.md#command-outcomes). For state recovery, see
 [Execution reconciliation](../concepts/reconciliation.md).
 
 :::danger[Jupyter notebooks not recommended for live trading]
-Do not run live trading nodes in Jupyter notebooks. Event loop conflicts and
-operational risks make them unsuitable:
+Do not run live trading nodes in Jupyter notebooks. The node owns a long-running loop on the
+calling thread, and notebook lifecycle controls make production operation unsafe:
 
-- Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop.
-- Workarounds like `nest_asyncio` are not production-grade.
 - Cells can run out of order, kernels can crash, and state can disappear.
 - Notebooks lack the logging, monitoring, and graceful shutdown needed for production trading.
 
@@ -18,15 +16,15 @@ Use Jupyter for backtesting, analysis, and experimentation. For live trading, ru
 as standalone Python scripts or services.
 :::
 
-:::warning[One TradingNode per process]
-Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
+:::warning[One LiveNode per process]
+Running multiple `LiveNode` instances concurrently in the same process is not supported due to global singleton state.
 Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
 
 See [Processes and threads](../concepts/architecture.md#processes-and-threads) for details.
 :::
 
 :::warning[Do not block the event loop]
-User code on the event loop thread (strategy callbacks, actor handlers, `on_event` methods)
+User code on the event loop thread (strategy callbacks, actor handlers, and time event callbacks)
 must return quickly. This applies to both Python and Rust. Blocking operations like model
 inference, heavy calculations, or synchronous I/O cause missed fills, stale data, and
 delayed order submissions. Offload long-running work to an executor or a separate thread/process.
@@ -38,45 +36,51 @@ the note on [Windows signal handling](#windows-signal-handling) for guidance on 
 behavior and Ctrl+C (SIGINT) support.
 :::
 
-## TradingNodeConfig
+## LiveNodeConfig
 
-`TradingNodeConfig` inherits from `NautilusKernelConfig` and adds live-specific options.
-For background on how config structs handle defaults and `Option<T>` semantics, see
+`LiveNodeConfig` owns the node's core component settings. Register data and execution clients with
+`LiveNode.builder(...)`, not through client dictionaries on this config. For background on config
+defaults and `Option<T>` semantics, see
 the [Configuration](../concepts/configuration.md) concept guide.
 
 ```python
-from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.common import Environment
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveNodeConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.config import MessageBusConfig
+from nautilus_trader.config import PortfolioConfig
+from nautilus_trader.model import TraderId
 
-config = TradingNodeConfig(
-    trader_id="MyTrader-001",
-    # Component configurations
+config = LiveNodeConfig(
+    environment=Environment.LIVE,
+    trader_id=TraderId.from_str("MY-TRADER-001"),
+    logging=LoggerConfig(stdout_level=LogLevel.INFO),
     cache=CacheConfig(),
-    message_bus=MessageBusConfig(),
+    msgbus=MessageBusConfig(),
     data_engine=LiveDataEngineConfig(),
     risk_engine=LiveRiskEngineConfig(),
     exec_engine=LiveExecEngineConfig(),
     portfolio=PortfolioConfig(),
-    # Client configurations
-    data_clients={
-        "BINANCE": BinanceDataClientConfig(),
-    },
-    exec_clients={
-        "BINANCE": BinanceExecClientConfig(),
-    },
 )
 ```
 
 ### Core configuration parameters
 
-| Setting                  | Default      | Description                                 |
-| ------------------------ | ------------ | ------------------------------------------- |
-| `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
-| `instance_id`            | `None`       | Optional unique instance identifier.        |
-| `timeout_connection`     | 60.0         | Connection timeout in seconds.              |
-| `timeout_reconciliation` | 30.0         | Reconciliation timeout in seconds.          |
-| `timeout_portfolio`      | 10.0         | Portfolio initialization timeout.           |
-| `timeout_disconnection`  | 10.0         | Disconnection timeout.                      |
-| `timeout_post_stop`      | 10.0         | Post‑stop cleanup timeout.                  |
+| Setting                       | Default      | Description                                 |
+| ----------------------------- | ------------ | ------------------------------------------- |
+| `trader_id`                   | "TRADER-001" | Unique trader identifier (name‑tag format). |
+| `instance_id`                 | `None`       | Optional unique instance identifier.        |
+| `timeout_connection_secs`     | 60.0         | Connection timeout in seconds.              |
+| `timeout_reconciliation_secs` | 30.0         | Reconciliation timeout in seconds.          |
+| `timeout_portfolio_secs`      | 10.0         | Portfolio initialization timeout.           |
+| `timeout_disconnection_secs`  | 10.0         | Disconnection timeout.                      |
+| `delay_post_stop_secs`        | 10.0         | Delay for residual events after stopping.   |
+| `timeout_shutdown_secs`       | 5.0          | Pending‑task shutdown timeout in seconds.   |
 
 ### Cache database configuration
 
@@ -127,17 +131,18 @@ node.run().await?;
 ```
 
 Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it.
-The Python v2 `LiveNode` does not yet expose direct cache-backing injection.
+The Python `LiveNode` does not yet expose direct cache‑backing injection.
 
 ### MessageBus configuration
 
 Message bus behavior stays in `MessageBusConfig`. Redis connection settings live in
-`RedisMessageBusConfig`, which constructs the backing through `MessageBusBackingFactory`.
+`RedisMessageBusConfig`. `RedisMessageBusFactory` uses those settings to construct the backing
+through `MessageBusBackingFactory`.
 
 ```rust
 use nautilus_common::{
     enums::SerializationEncoding,
-    msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
+    msgbus::{MessageBusBackingFactory, MessageBusConfig},
 };
 use nautilus_infrastructure::redis::msgbus::{RedisMessageBusConfig, RedisMessageBusFactory};
 
@@ -152,49 +157,91 @@ let config = MessageBusConfig {
     ..Default::default()
 };
 
-let backing = RedisMessageBusConfig {
+let redis_config = RedisMessageBusConfig {
     connection_timeout: 2,
     response_timeout: 2,
     ..Default::default()
 };
 
-let message_bus_backing = RedisMessageBusFactory::new(backing).create(
+let backing = RedisMessageBusFactory::new(redis_config).create(
     trader_id,
     instance_id,
     config.clone(),
 )?;
 ```
 
-## Multi-venue configuration
-
-A node can connect to multiple venues. This example configures both
-spot and futures markets for Binance:
+Python injects the same Redis factory through `LiveNodeBuilder`:
 
 ```python
-config = TradingNodeConfig(
-    trader_id="MultiVenue-001",
-    # Multiple data clients for different market types
-    data_clients={
-        "BINANCE_SPOT": BinanceDataClientConfig(
-            account_type=BinanceAccountType.SPOT,
+from nautilus_trader.common import Environment
+from nautilus_trader.common import MessageBusConfig
+from nautilus_trader.infrastructure import RedisMessageBusConfig
+from nautilus_trader.infrastructure import RedisMessageBusFactory
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import TraderId
+
+trader_id = TraderId("TRADER-001")
+message_bus = MessageBusConfig(
+    external_streams=["external-stream"],
+    stream_per_topic=False,
+)
+redis_config = RedisMessageBusConfig(
+    host="localhost",
+    port=6379,
+)
+node = (
+    LiveNode.builder("LiveNode", trader_id, Environment.LIVE)
+    .with_msgbus_config(message_bus)
+    .with_external_msgbus_factory(RedisMessageBusFactory(redis_config))
+    .build()
+)
+node.run()
+```
+
+`MessageBusConfig` alone does not install a backing. Pair it with a factory as shown above. The
+factory always installs external egress, and calling `run()` also consumes the configured external
+streams. Entries already in a stream before the node starts are not replayed. A host loop based on
+`start()` and `poll()` does not service external message‑bus ingress; use `run()` when
+`external_streams` is configured. See [message bus backing
+configuration](../concepts/message_bus.md#backing-config) for lifecycle and ingress details.
+
+## Multi-venue configuration
+
+A node can connect to multiple clients. This example registers Binance spot and USD‑M futures data
+clients before building the node:
+
+```python
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceDataClientFactory
+from nautilus_trader.adapters.binance import BinanceEnvironment
+from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import TraderId
+
+node = (
+    LiveNode.builder(
+        "BINANCE-MULTI-CLIENT-001",
+        TraderId.from_str("MULTI-VENUE-001"),
+        Environment.LIVE,
+    )
+    .add_data_client(
+        "BINANCE_SPOT",
+        BinanceDataClientFactory(),
+        BinanceDataClientConfig(
+            product_type=BinanceProductType.SPOT,
             environment=BinanceEnvironment.LIVE,
         ),
-        "BINANCE_FUTURES": BinanceDataClientConfig(
-            account_type=BinanceAccountType.USDT_FUTURES,
+    )
+    .add_data_client(
+        "BINANCE_FUTURES",
+        BinanceDataClientFactory(),
+        BinanceDataClientConfig(
+            product_type=BinanceProductType.USD_M,
             environment=BinanceEnvironment.LIVE,
         ),
-    },
-    # Corresponding execution clients
-    exec_clients={
-        "BINANCE_SPOT": BinanceExecClientConfig(
-            account_type=BinanceAccountType.SPOT,
-            environment=BinanceEnvironment.LIVE,
-        ),
-        "BINANCE_FUTURES": BinanceExecClientConfig(
-            account_type=BinanceAccountType.USDT_FUTURES,
-            environment=BinanceEnvironment.LIVE,
-        ),
-    },
+    )
+    .build()
 )
 ```
 
@@ -202,7 +249,7 @@ config = TradingNodeConfig(
 
 `LiveExecEngineConfig` controls order processing, execution events, and
 venue reconciliation. For full details see the
-[API Reference](/docs/python-api-latest/config.html#nautilus_trader.live.config.LiveExecEngineConfig).
+[API Reference](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecEngineConfig).
 
 ### Reconciliation
 
@@ -281,8 +328,6 @@ and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
 | ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                             |
 | `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
-| `snapshot_orders`                  | False   | Take order snapshots on order events.                                                                                    |
-| `snapshot_positions`               | False   | Take position snapshots on position events.                                                                              |
 | `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                           |
 | `debug`                            | False   | Enable debug logging for execution.                                                                                      |
 
@@ -299,24 +344,15 @@ in-memory cache, keeping memory bounded during long-running or HFT sessions.
 | `purge_closed_positions_buffer_mins`   | None    | How long (minutes) a position must be closed before purging. Recommended: 60 min.  |
 | `purge_account_events_interval_mins`   | None    | How often (minutes) to purge account events from memory. Recommended: 10-15 min.   |
 | `purge_account_events_lookback_mins`   | None    | How old (minutes) an account event must be before purging. Recommended: 60 min.    |
-| `purge_from_database`                  | False   | Also delete from the backing database (Redis/PostgreSQL). **Use with caution**.    |
 
-Setting an interval enables the purge loop; leaving it unset disables scheduling and
-deletion. Database records are unaffected unless `purge_from_database` is true. Each
-loop delegates to the cache APIs described in
+Setting an interval enables the purge loop; leaving it unset disables scheduling and deletion.
+Each loop delegates to the cache APIs described in
 [Cache](../concepts/cache.md).
-
-### Queue management
-
-| Setting                          | Default | Description                                                                     |
-| -------------------------------- | ------- | ------------------------------------------------------------------------------- |
-| `qsize`                          | 100,000 | Size of internal queue buffers.                                                 |
-| `graceful_shutdown_on_exception` | False   | Gracefully shut down on unexpected queue processing exceptions (not user code). |
 
 ## Strategy configuration
 
 For a complete parameter list see the `StrategyConfig`
-[API Reference](/docs/python-api-latest/config.html#nautilus_trader.trading.config.StrategyConfig).
+[API Reference](/docs/python-api-latest/trading.html#nautilus_trader.trading.StrategyConfig).
 
 ### Identification
 
@@ -335,43 +371,11 @@ For a complete parameter list see the `StrategyConfig`
 | `manage_contingent_orders`  | False   | Automatically manage OTO, OCO, and OUO contingent orders.                                 |
 | `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                        |
 
+Read these runtime settings through `strategy.config`; the strategy itself does not duplicate
+them as direct properties.
+
 ## Windows signal handling
 
-:::warning
-Windows: asyncio event loops do not implement `loop.add_signal_handler`. As a result,
-`TradingNode` does not receive OS signals via asyncio on Windows. Use Ctrl+C (SIGINT) handling or
-programmatic shutdown; SIGTERM parity is not expected on Windows.
-:::
-
-On Windows, asyncio event loops do not implement `loop.add_signal_handler`, so Unix-style
-signal integration is unavailable. `TradingNode` does not receive OS signals via asyncio
-on Windows and will not stop gracefully unless you intervene.
-
-Recommended approaches:
-
-- Wrap `run` with `try/except KeyboardInterrupt` and call `node.stop()` then `node.dispose()`.
-  Ctrl+C raises `KeyboardInterrupt` in the main thread, giving you a clean teardown path.
-- Publish a `ShutdownSystem` command programmatically (or call `shutdown_system(...)` from
-  an actor/component) to trigger the same shutdown path.
-
-The "inflight check loop task still pending" message appears because the normal graceful
-shutdown path is not triggered. This is tracked as
-[#2785](https://github.com/nautechsystems/nautilus_trader/issues/2785).
-
-The v2 `LiveNode` handles Ctrl+C (SIGINT) and, on Unix, SIGTERM in its Rust run loop.
-The Python v2 bridge also routes SIGINT into the same shutdown path, so runner and tasks shut down
+`LiveNode` handles Ctrl+C (SIGINT) and, on Unix, SIGTERM in its Rust run loop.
+The Python bridge also routes SIGINT into the same shutdown path, so runner and tasks shut down
 cleanly.
-
-Example pattern for Windows:
-
-```python
-try:
-    node.run()
-except KeyboardInterrupt:
-    pass
-finally:
-    try:
-        node.stop()
-    finally:
-        node.dispose()
-```

@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     python::{
@@ -352,8 +352,8 @@ impl PyPolymarketDataLoader {
     fn load_trades<'py>(
         &self,
         py: Python<'py>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         if let (Some(start), Some(end)) = (start, end)

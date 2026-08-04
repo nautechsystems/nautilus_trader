@@ -22,7 +22,7 @@ BTCUSDT_BINANCE = InstrumentId.from_str("BTCUSDT.BINANCE")
 
 
 def test_fully_qualified_name():
-    assert "MarkPriceUpdate" in MarkPriceUpdate.fully_qualified_name()
+    assert MarkPriceUpdate.fully_qualified_name() == "nautilus_trader.model:MarkPriceUpdate"
 
 
 def test_hash_str_and_repr():

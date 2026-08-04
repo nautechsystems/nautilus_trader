@@ -573,7 +573,7 @@ fn futures_agg_trades_response(
         .get("startTime")
         .or_else(|| query.get("endTime"))
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
     state
         .market_queries
         .lock()
@@ -621,7 +621,7 @@ fn futures_klines_response(
     let close_time = query
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() - 1_000);
+        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond() - 1_000);
     state
         .market_queries
         .lock()
@@ -1349,20 +1349,20 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
 
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from(instrument);
-    let start = chrono::Utc::now() - chrono::Duration::minutes(10);
-    let end = start + chrono::Duration::minutes(5);
+    let start = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(10);
+    let end = start + jiff::SignedDuration::from_mins(5);
     let (request_start, request_end) = match bounds {
         AggregateTradeBounds::Start => (Some(start), None),
         AggregateTradeBounds::End => (None, Some(end)),
         AggregateTradeBounds::Both => (Some(start), Some(end)),
     };
-    let expected_start = request_start.map(|value| value.timestamp_millis().to_string());
-    let expected_end = request_end.map(|value| value.timestamp_millis().to_string());
+    let expected_start = request_start.map(|value| value.as_millisecond().to_string());
+    let expected_end = request_end.map(|value| value.as_millisecond().to_string());
     let expected_event_time = request_start
         .as_ref()
         .or(request_end.as_ref())
         .unwrap()
-        .timestamp_millis();
+        .as_millisecond();
 
     client
         .request_trades(RequestTrades::new(
@@ -1444,8 +1444,8 @@ async fn test_request_historical_binance_bars_routes_futures_product(
     while rx.try_recv().is_ok() {}
     let bar_type = BarType::from(bar_type_raw);
     let data_type = binance_bar_data_type(bar_type);
-    let start = chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
-    let end = chrono::DateTime::from_timestamp_millis(1_700_000_059_999).unwrap();
+    let start = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = jiff::Timestamp::from_millisecond(1_700_000_059_999).unwrap();
 
     client
         .request_data(RequestCustomData::new(

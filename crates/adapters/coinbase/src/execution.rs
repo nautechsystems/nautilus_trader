@@ -432,13 +432,9 @@ impl CoinbaseExecutionClient {
     }
 }
 
-// Converts a UnixNanos to a UTC chrono::DateTime; returns an error when the
-// nanosecond value is out of range.
-fn unix_nanos_to_utc(ts: UnixNanos) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
-    let secs = (ts.as_u64() / 1_000_000_000) as i64;
-    let nanos = (ts.as_u64() % 1_000_000_000) as u32;
-    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos)
-        .ok_or_else(|| anyhow::anyhow!("UnixNanos {ts} is out of range for chrono::DateTime"))
+// Converts UnixNanos to a UTC Jiff timestamp.
+fn unix_nanos_to_utc(ts: UnixNanos) -> jiff::Timestamp {
+    ts.to_datetime_utc()
 }
 
 #[async_trait(?Send)]
@@ -794,8 +790,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc).transpose()?;
-        let end = cmd.end.map(unix_nanos_to_utc).transpose()?;
+        let start = cmd.start.map(unix_nanos_to_utc);
+        let end = cmd.end.map(unix_nanos_to_utc);
 
         let mut reports = self
             .http_client
@@ -826,8 +822,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc).transpose()?;
-        let end = cmd.end.map(unix_nanos_to_utc).transpose()?;
+        let start = cmd.start.map(unix_nanos_to_utc);
+        let end = cmd.end.map(unix_nanos_to_utc);
 
         let mut reports = self
             .http_client

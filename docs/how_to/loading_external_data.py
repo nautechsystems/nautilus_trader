@@ -15,16 +15,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.backtest.node import BacktestDataConfig
-from nautilus_trader.backtest.node import BacktestEngineConfig
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.node import BacktestRunConfig
-from nautilus_trader.backtest.node import BacktestVenueConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model import BarType
 from nautilus_trader.model import QuoteTick
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import CSVTickDataLoader
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -91,7 +91,7 @@ catalog.instruments()
 start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz="UTC"))
 end = dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz="UTC"))
 
-ticks = catalog.quote_ticks(instrument_ids=[EURUSD.id.value], start=start, end=end)
+ticks = catalog.quotes(instrument_ids=[EURUSD.id.value], start=start, end=end)
 ticks[:10]
 
 # %% [markdown]
@@ -99,7 +99,7 @@ ticks[:10]
 #
 # Set up venue, data, and strategy configs, then run through `BacktestNode`.
 # The strategies and actors you build here carry forward to live trading
-# with `TradingNode`.
+# with `LiveNode`.
 
 # %%
 instrument = catalog.instruments()[0]

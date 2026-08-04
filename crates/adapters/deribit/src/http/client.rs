@@ -25,7 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, Params, datetime::nanos_to_millis, nanos::UnixNanos,
@@ -889,7 +889,7 @@ impl DeribitRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1251,8 +1251,8 @@ impl DeribitHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         // Get instrument from cache to determine precisions
@@ -1265,16 +1265,16 @@ impl DeribitHttpClient {
             };
 
         // Convert timestamps to milliseconds
-        let now = Utc::now();
+        let now = Timestamp::now();
         let end_dt = end.unwrap_or(now);
-        let start_dt = start.unwrap_or(end_dt - chrono::Duration::hours(1));
+        let start_dt = start.unwrap_or(end_dt - jiff::SignedDuration::from_hours(1));
 
         if let (Some(s), Some(e)) = (start, end) {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let start_ms = start_dt.timestamp_millis();
-        let end_ms = end_dt.timestamp_millis();
+        let start_ms = start_dt.as_millisecond();
+        let end_ms = end_dt.as_millisecond();
         let ts_init = self.generate_ts_init();
         let mut all_trades = Vec::new();
         let mut paginator = TradePaginator::new(start_ms, end_ms);
@@ -1374,8 +1374,8 @@ impl DeribitHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
         anyhow::ensure!(
@@ -1383,11 +1383,11 @@ impl DeribitHttpClient {
             "Only EXTERNAL aggregation is supported"
         );
 
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Default to last hour if no start/end provided
         let end_dt = end.unwrap_or(now);
-        let start_dt = start.unwrap_or(end_dt - chrono::Duration::hours(1));
+        let start_dt = start.unwrap_or(end_dt - jiff::SignedDuration::from_hours(1));
 
         if let (Some(s), Some(e)) = (start, end) {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
@@ -1428,8 +1428,8 @@ impl DeribitHttpClient {
             };
 
         let instrument_name = instrument_id.symbol.to_string();
-        let start_timestamp = start_dt.timestamp_millis();
-        let end_timestamp = end_dt.timestamp_millis();
+        let start_timestamp = start_dt.as_millisecond();
+        let end_timestamp = end_dt.as_millisecond();
 
         let params = GetTradingViewChartDataParams::new(
             instrument_name,
@@ -1769,7 +1769,7 @@ impl DeribitHttpClient {
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<FillReport>> {
         let ts_init = self.generate_ts_init();
-        let now_ms = Utc::now().timestamp_millis();
+        let now_ms = Timestamp::now().as_millisecond();
 
         // Convert UnixNanos to milliseconds for Deribit API
         let start_ms = start.map_or(0, |ns| nanos_to_millis(ns.as_u64()) as i64);

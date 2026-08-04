@@ -272,11 +272,11 @@ sync:  #-- Sync Python dependencies without building the package
 	fi
 	@found="$$(uv --version 2>/dev/null | awk '{print $$2}' || true)"; \
 	if [ -z "$$found" ]; then \
-		printf "$(RED)ERROR: uv not found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update --version $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		printf "$(RED)ERROR: uv not found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
 		exit 1; \
 	fi; \
 	if [ "$$found" != "$(UV_REQUIRED_VERSION)" ]; then \
-		printf "$(RED)ERROR: uv $$found found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update --version $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		printf "$(RED)ERROR: uv $$found found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
 		exit 1; \
 	fi
 	$(info $(M) Syncing Python dependencies...)
@@ -366,7 +366,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 		exit 1; \
 	fi
 	@echo "WARNING: removing all untracked files (git clean -fxd)..."
-	git clean -fxd -e tests/test_data/large/ -e tests/test_data/local/ -e .venv/
+	git clean -fxd -e test_data/large/ -e test_data/local/ -e .venv/
 
 #== Code Quality
 
@@ -1172,7 +1172,8 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 .PHONY: mypy
 mypy: build-debug  #-- Type-check supported Python authoring workflows
 	$(info $(M) Type-checking supported Python authoring workflows...)
-	$Q cd python && VIRTUAL_ENV= uv run --no-sync mypy examples tests/type_checking/supported.py
+	$Q bash scripts/ci/test-python-types.bash \
+		python examples python/tests/type_checking/supported.py
 
 #== CLI Tools
 

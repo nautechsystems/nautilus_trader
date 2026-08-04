@@ -132,12 +132,12 @@ The margin path uses the same cached unrealized PnL pipeline that powers
 
 Valuation asks `Cache` for a price in this order, stopping at the first match:
 
-1. Mark price, if `use_mark_prices=true` (the v2 default) in `PortfolioConfig` and a mark price is cached.
+1. Mark price, if `use_mark_prices=true` (the default) in `PortfolioConfig` and a mark price is cached.
 2. Side-appropriate quote: `BID` for longs, `ASK` for shorts.
 3. Last trade price.
 4. Most recent cached bar close (populated when `bar_updates=true`).
 
-In v2, set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
+Set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
 
 If none of the four yield a current price, the Portfolio carries the last valid price
 for that instrument and position side. The next snapshot lists the instrument in
@@ -179,11 +179,11 @@ the cause:
 
 Call `build_snapshot(account_id)` for an on-demand sample. Call `snapshots(account_id)`
 to read the bounded recorded sequence. The methods are available from the Rust
-Portfolio and Strategy API and from the Python v2 Portfolio binding.
+Portfolio and Strategy API and from the Python Portfolio binding.
 
 ### Automatic equity curve
 
-In v2, `PortfolioConfig.equity_curve=true` (the default) records and publishes a
+`PortfolioConfig.equity_curve=true` (the default) records and publishes a
 mark-to-market snapshot when each account registers, at every UTC midnight even while
 the account is flat, and when the backtest or live node shuts down. Set
 `equity_curve=false` for workloads such as optimizer runs that do not consume an equity

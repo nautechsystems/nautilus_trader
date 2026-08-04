@@ -22,13 +22,13 @@ and subscribes to exchange-provided greeks (delta, gamma, vega, theta, IV) for e
 
 from nautilus_trader.adapters.deribit import DERIBIT
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit import DeribitEnvironment
 from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId

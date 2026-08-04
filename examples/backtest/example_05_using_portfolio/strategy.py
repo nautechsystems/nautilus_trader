@@ -15,13 +15,13 @@
 
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
 
 

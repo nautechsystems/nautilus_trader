@@ -1,7 +1,7 @@
 # Book Imbalance Backtest (Betfair)
 
 :::note
-This is a **Rust-only** v2 system tutorial. It drives the Rust `BacktestEngine`
+This is a **Rust-only** system tutorial. It drives the Rust `BacktestEngine`
 directly with raw Betfair streaming data, bypassing the Python and Parquet paths.
 :::
 
@@ -76,7 +76,7 @@ flowchart LR
 Place the file at:
 
 ```
-tests/test_data/local/betfair/1.253378068.gz
+test_data/local/betfair/1.253378068.gz
 ```
 
 This path is gitignored and not shipped with the repository. The bundled

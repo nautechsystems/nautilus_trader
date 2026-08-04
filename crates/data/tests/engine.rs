@@ -2752,16 +2752,8 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
 
     let first_child = recorded_trades_request(&recorder, 0);
     assert_eq!(first_child.instrument_id, pre_instrument_id);
-    assert_eq!(
-        first_child
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap()),
-        Some(0)
-    );
-    assert_eq!(
-        first_child.end.map(|dt| dt.timestamp_nanos_opt().unwrap()),
-        Some(9)
-    );
+    assert_eq!(first_child.start.map(|dt| dt.as_nanosecond()), Some(0));
+    assert_eq!(first_child.end.map(|dt| dt.as_nanosecond()), Some(9));
     let first_child_params_ref = first_child.params.as_ref().unwrap();
     let parent_id_str = parent_id.to_string();
     assert_eq!(
@@ -2789,16 +2781,8 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
 
     let second_child = recorded_trades_request(&recorder, 1);
     assert_eq!(second_child.instrument_id, post_instrument_id);
-    assert_eq!(
-        second_child
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap()),
-        Some(10)
-    );
-    assert_eq!(
-        second_child.end.map(|dt| dt.timestamp_nanos_opt().unwrap()),
-        Some(20)
-    );
+    assert_eq!(second_child.start.map(|dt| dt.as_nanosecond()), Some(10));
+    assert_eq!(second_child.end.map(|dt| dt.as_nanosecond()), Some(20));
     let mut second_response_params = second_child.params.clone().unwrap();
     second_response_params.insert("data_count".to_string(), json!(8));
     data_engine.response(DataResponse::Trades(TradesResponse::new(
@@ -16271,8 +16255,8 @@ fn recorded_time_range_request_funding_rates(
         .collect()
 }
 
-fn datetime_to_unix_nanos_for_test(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
-    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+fn datetime_to_unix_nanos_for_test(dt: jiff::Timestamp) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.as_nanosecond().max(0)).unwrap_or(0))
 }
 
 fn advance_test_clock_to(clock: &Rc<RefCell<dyn Clock>>, ns: u64) {
@@ -16385,15 +16369,11 @@ fn test_time_range_pipeline_issues_one_child_at_a_time(
     assert_eq!(recorded.len(), 1);
     assert_ne!(recorded[0].request_id, parent_id);
     assert_eq!(
-        recorded[0]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[0].start.map(|dt| dt.as_nanosecond()),
         Some(1_000_000_000)
     );
     assert_eq!(
-        recorded[0]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[0].end.map(|dt| dt.as_nanosecond()),
         Some(3_000_000_000)
     );
     assert_eq!(data_engine.time_range_pipeline_count(), 1);
@@ -16413,15 +16393,11 @@ fn test_time_range_pipeline_issues_one_child_at_a_time(
         "second child should be issued only after the first response"
     );
     assert_eq!(
-        recorded[1]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].start.map(|dt| dt.as_nanosecond()),
         Some(3_000_000_001)
     );
     assert_eq!(
-        recorded[1]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].end.map(|dt| dt.as_nanosecond()),
         Some(5_000_000_000)
     );
 }
@@ -16470,15 +16446,11 @@ fn test_time_range_pipeline_uses_data_count_feedback(
     let recorded = recorded_time_range_request_quotes(&recorder);
     assert_eq!(recorded.len(), 2);
     assert_eq!(
-        recorded[1]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].start.map(|dt| dt.as_nanosecond()),
         Some(2_000_000_001)
     );
     assert_eq!(
-        recorded[1]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].end.map(|dt| dt.as_nanosecond()),
         Some(5_000_000_000)
     );
 
@@ -16493,15 +16465,11 @@ fn test_time_range_pipeline_uses_data_count_feedback(
     let recorded = recorded_time_range_request_quotes(&recorder);
     assert_eq!(recorded.len(), 3);
     assert_eq!(
-        recorded[2]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[2].start.map(|dt| dt.as_nanosecond()),
         Some(5_000_000_001)
     );
     assert_eq!(
-        recorded[2]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[2].end.map(|dt| dt.as_nanosecond()),
         Some(6_000_000_000)
     );
 }
@@ -16546,13 +16514,10 @@ fn test_time_range_pipeline_point_data_uses_single_point_windows(
 
     let first = recorded_time_range_request_quotes(&recorder)[0].clone();
     assert_eq!(
-        first.start.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        first.start.map(|dt| dt.as_nanosecond()),
         Some(1_000_000_000)
     );
-    assert_eq!(
-        first.end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
-        Some(1_000_000_000)
-    );
+    assert_eq!(first.end.map(|dt| dt.as_nanosecond()), Some(1_000_000_000));
 
     data_engine.response(time_range_quote_response(
         &first,
@@ -16565,15 +16530,11 @@ fn test_time_range_pipeline_point_data_uses_single_point_windows(
     let recorded = recorded_time_range_request_quotes(&recorder);
     assert_eq!(recorded.len(), 2);
     assert_eq!(
-        recorded[1]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].start.map(|dt| dt.as_nanosecond()),
         Some(3_000_000_000)
     );
     assert_eq!(
-        recorded[1]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].end.map(|dt| dt.as_nanosecond()),
         Some(3_000_000_000)
     );
 
@@ -16588,15 +16549,11 @@ fn test_time_range_pipeline_point_data_uses_single_point_windows(
     let recorded = recorded_time_range_request_quotes(&recorder);
     assert_eq!(recorded.len(), 3);
     assert_eq!(
-        recorded[2]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[2].start.map(|dt| dt.as_nanosecond()),
         Some(5_000_000_000)
     );
     assert_eq!(
-        recorded[2]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[2].end.map(|dt| dt.as_nanosecond()),
         Some(5_000_000_000)
     );
 
@@ -16611,15 +16568,11 @@ fn test_time_range_pipeline_point_data_uses_single_point_windows(
     let recorded = recorded_time_range_request_quotes(&recorder);
     assert_eq!(recorded.len(), 4);
     assert_eq!(
-        recorded[3]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[3].start.map(|dt| dt.as_nanosecond()),
         Some(6_000_000_000)
     );
     assert_eq!(
-        recorded[3]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[3].end.map(|dt| dt.as_nanosecond()),
         Some(6_000_000_000)
     );
 
@@ -17085,15 +17038,11 @@ fn test_time_range_pipeline_child_uses_catalog_client_fanin(
         "next time-range child should be issued after catalog/client fan-in"
     );
     assert_eq!(
-        recorded[1]
-            .start
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].start.map(|dt| dt.as_nanosecond()),
         Some(3_000_000_001)
     );
     assert_eq!(
-        recorded[1]
-            .end
-            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[1].end.map(|dt| dt.as_nanosecond()),
         Some(5_000_000_000)
     );
 
@@ -19140,18 +19089,8 @@ fn test_request_quotes_client_only_when_catalog_has_no_data(
 
     let recorded = recorded_request_quotes(&recorder);
     assert_eq!(recorded.len(), 1);
-    assert_eq!(
-        recorded[0]
-            .start
-            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
-        Some(1_000)
-    );
-    assert_eq!(
-        recorded[0]
-            .end
-            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
-        Some(3_000)
-    );
+    assert_eq!(recorded[0].start.map(|d| d.as_nanosecond()), Some(1_000));
+    assert_eq!(recorded[0].end.map(|d| d.as_nanosecond()), Some(3_000));
     assert_eq!(data_engine.request_pipeline_count(), 1);
 }
 
@@ -19213,12 +19152,8 @@ fn test_request_quotes_catalog_plus_client_split(
         1,
         "expected one client leg for the missing interval"
     );
-    let client_start = recorded[0]
-        .start
-        .map_or(0, |d| d.timestamp_nanos_opt().unwrap_or(0));
-    let client_end = recorded[0]
-        .end
-        .map_or(0, |d| d.timestamp_nanos_opt().unwrap_or(0));
+    let client_start = recorded[0].start.map_or(0, |d| d.as_nanosecond());
+    let client_end = recorded[0].end.map_or(0, |d| d.as_nanosecond());
     assert!(
         client_start > 1_500,
         "client leg should start after the catalog coverage ends (was {client_start})"
@@ -19245,12 +19180,12 @@ fn test_request_quotes_catalog_plus_client_split(
         instrument_id,
         client_id,
         vec![split_quote(instrument_id, 2_500)],
-        recorded[0].start.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
-        recorded[0].end.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
+        recorded[0]
+            .start
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
+        recorded[0]
+            .end
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
     ));
 
     let received = saver.get_messages();
@@ -19314,18 +19249,11 @@ fn test_request_quotes_skip_catalog_data_param_honored(
     let recorded = recorded_request_quotes(&recorder);
     assert_eq!(recorded.len(), 1, "skip flag should bypass catalog leg");
     assert_eq!(
-        recorded[0]
-            .start
-            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[0].start.map(|d| d.as_nanosecond()),
         Some(1_000),
         "client leg should cover the full parent window when catalog is skipped"
     );
-    assert_eq!(
-        recorded[0]
-            .end
-            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
-        Some(3_000)
-    );
+    assert_eq!(recorded[0].end.map(|d| d.as_nanosecond()), Some(3_000));
 }
 
 #[cfg(feature = "streaming")]
@@ -19482,12 +19410,12 @@ fn test_request_trades_catalog_plus_client_split(
         client_id,
         instrument_id,
         vec![split_trade(instrument_id, 2_500, "T-2")],
-        recorded[0].start.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
-        recorded[0].end.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
+        recorded[0]
+            .start
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
+        recorded[0]
+            .end
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
         UnixNanos::default(),
         None,
     )));
@@ -19613,12 +19541,12 @@ fn test_request_pipeline_count_resets_after_catalog_split_fanin(
         instrument_id,
         client_id,
         vec![split_quote(instrument_id, 2_500)],
-        recorded[0].start.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
-        recorded[0].end.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
+        recorded[0]
+            .start
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
+        recorded[0]
+            .end
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
     ));
 
     assert_eq!(data_engine.request_pipeline_count(), 0);
@@ -19807,12 +19735,12 @@ fn test_request_bars_catalog_plus_client_split(
         client_id,
         bar_type,
         vec![split_bar(bar_type, 2_500)],
-        recorded[0].start.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
-        recorded[0].end.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
+        recorded[0]
+            .start
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
+        recorded[0]
+            .end
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
         UnixNanos::default(),
         None,
     )));
@@ -20704,16 +20632,12 @@ fn test_subscription_name_param_disables_now_clamping(
     let recorded = recorded_request_quotes(&recorder);
     assert_eq!(recorded.len(), 1);
     assert_eq!(
-        recorded[0]
-            .start
-            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[0].start.map(|d| d.as_nanosecond()),
         Some(2_000),
         "subscription_name must bypass start clamping"
     );
     assert_eq!(
-        recorded[0]
-            .end
-            .map(|d| d.timestamp_nanos_opt().unwrap_or(0)),
+        recorded[0].end.map(|d| d.as_nanosecond()),
         Some(5_000),
         "subscription_name must bypass end clamping"
     );
@@ -21117,12 +21041,12 @@ fn test_request_book_deltas_catalog_plus_client_split(
         client_id,
         instrument_id,
         vec![split_delta(instrument_id, 2_500)],
-        recorded[0].start.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
-        recorded[0].end.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
+        recorded[0]
+            .start
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
+        recorded[0]
+            .end
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
         UnixNanos::default(),
         None,
     )));
@@ -21373,12 +21297,12 @@ fn test_request_book_depth_catalog_plus_client_split(
         client_id,
         instrument_id,
         vec![book_depth_at(instrument_id, 2_500)],
-        recorded[0].start.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
-        recorded[0].end.map(|d| {
-            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
-        }),
+        recorded[0]
+            .start
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
+        recorded[0]
+            .end
+            .map(|d| UnixNanos::from(u64::try_from(d.as_nanosecond().max(0)).unwrap_or(0))),
         UnixNanos::default(),
         None,
     )));

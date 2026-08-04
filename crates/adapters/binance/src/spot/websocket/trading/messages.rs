@@ -89,6 +89,8 @@ pub enum BinanceSpotWsTradingMessage {
     Connected,
     /// Session authenticated successfully.
     Authenticated,
+    /// Session authentication was rejected or could not be sent.
+    AuthenticationRejected(String),
     /// Connection was re-established after disconnect.
     Reconnected,
     /// Order accepted by venue.
@@ -160,6 +162,8 @@ pub enum BinanceSpotWsTradingMessage {
         /// Subscription ID from Binance.
         subscription_id: String,
     },
+    /// User data subscription was rejected or could not be sent.
+    UserDataSubscriptionRejected(String),
     /// Order execution report from user data stream.
     ExecutionReport(Box<BinanceSpotExecutionReport>),
     /// Account position update from user data stream.

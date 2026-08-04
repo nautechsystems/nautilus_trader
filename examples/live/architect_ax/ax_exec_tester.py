@@ -24,9 +24,9 @@ from nautilus_trader.adapters.architect_ax import AxLiveDataClientFactory
 from nautilus_trader.adapters.architect_ax import AxLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId

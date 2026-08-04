@@ -618,7 +618,7 @@ fn params_to_topic_suffix(params: &Params) -> String {
 #[derive(Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

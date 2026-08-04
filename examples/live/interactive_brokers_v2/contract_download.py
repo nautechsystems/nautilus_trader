@@ -17,11 +17,11 @@ from _common import env_int
 from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
 
 
 async def main() -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     provider_config = instrument_provider_config()
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)

@@ -23,7 +23,7 @@ The event timestamp (`ts_event`) may represent the open or close, depending on t
 Where an adapter provides a setting such as `bars_timestamp_on_close=True`, prefer that setting so
 the stored data uses the expected convention. For custom data, populate `ts_event` and `ts_init`
 before constructing `Bar` objects, encoding Arrow record batches, writing a catalog, or calling
-`add_data()`. The V2 `BarDataWrangler` consumes explicit timestamp fields and does not expose a
+`add_data()`. The `BarDataWrangler` consumes explicit timestamp fields and does not expose a
 `ts_init_delta` argument. Verify the result on a small sample before running a backtest.
 
 ## Processing bar data
@@ -73,7 +73,7 @@ Configure adaptive ordering on the venue:
 
 ```python
 from nautilus_trader.backtest import BacktestEngine
-from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -126,8 +126,8 @@ boundary. Data with the exact same timestamp may otherwise be processed after th
 Set `time_bars_build_delay` in `DataEngineConfig` to delay the timer:
 
 ```python
-from nautilus_trader.backtest import BacktestEngineConfig
-from nautilus_trader.data import DataEngineConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import DataEngineConfig
 
 config = BacktestEngineConfig(
     data_engine=DataEngineConfig(

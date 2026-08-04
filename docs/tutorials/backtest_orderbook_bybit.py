@@ -12,9 +12,9 @@
 # ## Introduction
 #
 # Bybit publishes a single per-symbol L2 deltas archive at depth 500. The
-# `BybitOrderBookDeltaDataLoader` reads the daily ZIP directly into a
-# DataFrame. The strategy is the same `OrderBookImbalance` as in the Binance
-# tutorial: when the smaller side of the BBO drops below
+# tutorial reads the daily ZIP into a DataFrame. The strategy is the same
+# `OrderBookImbalance` as in the Binance tutorial: when the smaller side of
+# the BBO drops below
 # `trigger_imbalance_ratio` of the larger, fire a single FOK limit order on
 # the thicker side.
 #
@@ -27,8 +27,8 @@
 #     end
 #
 #     subgraph Engine ["BacktestEngine"]
-#         L["BybitOrderBookDeltaDataLoader"]
-#         W["OrderBookDeltaDataWrangler"]
+#         L["load_bybit_order_book_deltas"]
+#         W["deltas_from_frame"]
 #         B["Per-instrument OrderBook"]
 #         C["Cache.order_book"]
 #     end
@@ -53,6 +53,9 @@
 # - Python 3.12+
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
 #   (`pip install nautilus_trader`)
+# - The sibling [`orderbook_data.py`](./orderbook_data.py) and
+#   [`orderbook_imbalance.py`](./orderbook_imbalance.py) files. Keep them next
+#   to this tutorial when downloading or converting it with Jupytext.
 # - A daily Bybit `ob500` ZIP, e.g.
 #   `2024-12-01_XRPUSDT_ob500.data.zip` from
 #   [public.bybit.com](https://public.bybit.com).
@@ -60,25 +63,38 @@
 # %%
 import os
 import shutil
-from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
-
-from nautilus_trader.adapters.bybit.loaders import BybitOrderBookDeltaDataLoader
-from nautilus_trader.backtest.node import BacktestDataConfig
-from nautilus_trader.backtest.node import BacktestEngineConfig
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.node import BacktestRunConfig
-from nautilus_trader.backtest.node import BacktestVenueConfig
-from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import (
+    BacktestDataConfig,
+    BacktestEngineConfig,
+    BacktestRunConfig,
+    BacktestVenueConfig,
+    ImportableStrategyConfig,
+    LoggerConfig,
+)
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model import OrderBookDelta
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.model import (
+    AccountType,
+    BookType,
+    CryptoPerpetual,
+    Currency,
+    InstrumentId,
+    OmsType,
+    Price,
+    Quantity,
+    Symbol,
+    Venue,
+)
+from nautilus_trader.persistence import ParquetDataCatalog
 
+from orderbook_data import (
+    deltas_from_frame,
+    load_bybit_order_book_deltas,
+)
 
 # %% [markdown]
 # ## Loading data
@@ -96,17 +112,29 @@ raw_files
 # Read the first 1M deltas; the full file is larger.
 path_update = data_path / "2024-12-01_XRPUSDT_ob500.data.zip"
 nrows = 1_000_000
-df_raw = BybitOrderBookDeltaDataLoader.load(path_update, nrows=nrows)
+df_raw = load_bybit_order_book_deltas(path_update, nrows=nrows)
 df_raw.head()
 
 # %% [markdown]
-# ### Process deltas using a wrangler
+# ### Build current model objects
 
 # %%
-XRPUSDT_BYBIT = TestInstrumentProvider.xrpusdt_linear_bybit()
-wrangler = OrderBookDeltaDataWrangler(XRPUSDT_BYBIT)
+XRPUSDT_BYBIT = CryptoPerpetual(
+    instrument_id=InstrumentId(Symbol("XRPUSDT-LINEAR"), Venue("BYBIT")),
+    raw_symbol=Symbol("XRPUSDT"),
+    base_currency=Currency.from_str("XRP"),
+    quote_currency=Currency.from_str("USDT"),
+    settlement_currency=Currency.from_str("USDT"),
+    is_inverse=False,
+    price_precision=4,
+    size_precision=0,
+    price_increment=Price(0.0001, precision=4),
+    size_increment=Quantity(1, precision=0),
+    ts_event=0,
+    ts_init=0,
+)
 
-deltas = wrangler.process(df_raw)
+deltas = deltas_from_frame(df_raw, XRPUSDT_BYBIT)
 deltas.sort(key=lambda x: x.ts_init)
 deltas[:10]
 
@@ -119,20 +147,24 @@ if CATALOG_PATH.exists():
     shutil.rmtree(CATALOG_PATH)
 CATALOG_PATH.mkdir()
 
-catalog = ParquetDataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %%
-catalog.write_data([XRPUSDT_BYBIT])
-catalog.write_data(deltas)
+catalog.write_instruments([XRPUSDT_BYBIT])
+catalog.write_order_book_deltas(deltas)
 
 # %%
 catalog.instruments()
 
 # %%
-start = dt_to_unix_nanos(pd.Timestamp("2022-11-01", tz="UTC"))
+start = dt_to_unix_nanos(pd.Timestamp("2024-11-30", tz="UTC"))
 end = dt_to_unix_nanos(pd.Timestamp("2024-12-04", tz="UTC"))
 
-deltas = catalog.order_book_deltas(start=start, end=end)
+deltas = catalog.query_order_book_deltas(
+    identifiers=[str(XRPUSDT_BYBIT.id)],
+    start=start,
+    end=end,
+)
 print(len(deltas))
 deltas[:10]
 
@@ -141,12 +173,12 @@ deltas[:10]
 
 # %%
 instrument = catalog.instruments()[0]
-book_type = "L2_MBP"
+book_type = BookType.L2_MBP
 
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_cls=OrderBookDelta,
+        data_type="OrderBookDelta",
         instrument_id=instrument.id,
     ),
 ]
@@ -154,34 +186,32 @@ data_configs = [
 venues_configs = [
     BacktestVenueConfig(
         name="BYBIT",
-        oms_type="NETTING",
-        account_type="MARGIN",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
         base_currency=None,
         starting_balances=["200000 XRP", "100000 USDT"],
         book_type=book_type,
     ),
 ]
 
-strategies = [
-    ImportableStrategyConfig(
-        strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
-        config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-        config={
-            "instrument_id": instrument.id,
-            "book_type": book_type,
-            "max_trade_size": Decimal("1.000"),
-            "min_seconds_between_triggers": 1.0,
-        },
-    ),
-]
+strategy_config = ImportableStrategyConfig(
+    strategy_path="orderbook_imbalance:OrderBookImbalance",
+    config_path="orderbook_imbalance:OrderBookImbalanceConfig",
+    config={
+        "instrument_id": str(instrument.id),
+        "book_type": book_type.name,
+        "max_trade_size": "1",
+        "min_seconds_between_triggers": 1.0,
+    },
+)
 
 config = BacktestRunConfig(
     engine=BacktestEngineConfig(
-        strategies=strategies,
-        logging=LoggingConfig(log_level="ERROR"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     ),
     data=data_configs,
     venues=venues_configs,
+    dispose_on_completion=False,
 )
 
 config
@@ -191,6 +221,8 @@ config
 
 # %%
 node = BacktestNode(configs=[config])
+node.build()
+node.add_strategy_from_config(config.id, strategy_config)
 
 result = node.run()
 
@@ -198,19 +230,13 @@ result = node.run()
 result
 
 # %%
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model import Venue
-
-
-engine: BacktestEngine = node.get_engine(config.id)
-
-engine.trader.generate_order_fills_report()
+node.generate_order_fills_report(config.id)
 
 # %%
-engine.trader.generate_positions_report()
+node.generate_positions_report(config.id)
 
 # %%
-engine.trader.generate_account_report(Venue("BYBIT"))
+node.generate_account_report(config.id, venue=Venue("BYBIT"))
 
 # %% [markdown]
 # ## What the run produces
@@ -251,7 +277,7 @@ engine.trader.generate_account_report(Venue("BYBIT"))
 #
 # ```bash
 # uv sync --extra visualization
-# NAUTILUS_DATA_DIR=tests/test_data/local \
+# NAUTILUS_DATA_DIR=test_data/local \
 #     python3 docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
 # ```
 

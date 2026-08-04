@@ -27,7 +27,8 @@ and won't need to work directly with these lower-level components.
 
 ## Examples
 
-You can find live example scripts in the [examples/live/hyperliquid](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/) directory.
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/hyperliquid/examples/)
 
 ## Builder code attribution
 
@@ -302,7 +303,7 @@ allows qualified deployers to launch permissionless perp dexes on Hyperliquid. T
 include equities (TSLA, NVDA, AAPL), commodities (gold, crude oil), indices (S&P 500), and
 pre-IPO tokens (SpaceX, OpenAI).
 
-In a live `TradingNode`, HIP-3 perpetuals load automatically alongside standard perpetuals at
+In a `LiveNode`, HIP‑3 perpetuals load automatically alongside standard perpetuals at
 connect: the adapter fetches every perp dex (standard and builder-deployed) from `allPerpMetas`,
 so no additional client configuration is required.
 
@@ -396,7 +397,7 @@ return that payload.
 
 ### Loading outcome instruments
 
-In a live `TradingNode`, outcome instruments load automatically (best-effort) when the venue
+In a `LiveNode`, outcome instruments load automatically (best‑effort) when the venue
 exposes `outcomeMeta`; current Hyperliquid docs mark that metadata endpoint as testnet-only, and
 the adapter skips HIP-4 instruments when the payload is unavailable. No client configuration is
 required.
@@ -483,8 +484,8 @@ side-token inventory off-book:
 
 ```python
 from decimal import Decimal
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidHttpClient
+from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
+from nautilus_trader.adapters.hyperliquid import HyperliquidHttpClient
 
 client = HyperliquidHttpClient.from_env(HyperliquidEnvironment.MAINNET)
 
@@ -625,9 +626,9 @@ precision. `mantissa` is only valid when `nSigFigs=5` and accepts `1`, `2`, or
 `5`.
 
 ```python
-from nautilus_trader.model.data import BookType
+from nautilus_trader.model import BookType
 
-self.subscribe_order_book_deltas(
+self.subscribe_book_deltas(
     instrument_id=instrument_id,
     book_type=BookType.L2_MBP,
     params={"n_sig_figs": 5, "mantissa": 2},
@@ -664,16 +665,16 @@ The adapter emits Hyperliquid-specific custom data types:
 | `ts_event` | `int`            | UNIX timestamp in nanoseconds when the update occurred.  |
 | `ts_init`  | `int`            | UNIX timestamp in nanoseconds when the object was built. |
 
-Subscribe from an actor or strategy with `DataType(HyperliquidAllMids)`.
+Subscribe from an actor or strategy with `DataType(HyperliquidAllMids.__name__)`.
 For HIP-3 dex-specific streams, pass the venue dex in `metadata["dex"]`:
 
 ```python
-from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_CLIENT_ID
-from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
-from nautilus_trader.model.data import DataType
+from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
+from nautilus_trader.adapters.hyperliquid import HyperliquidAllMids
+from nautilus_trader.model import DataType
 
 self.subscribe_data(
-    data_type=DataType(HyperliquidAllMids, metadata={"dex": "hyperliquid"}),
+    data_type=DataType(HyperliquidAllMids.__name__, metadata={"dex": "hyperliquid"}),
     client_id=HYPERLIQUID_CLIENT_ID,
 )
 ```
@@ -692,11 +693,11 @@ in `metadata["instrument_id"]`:
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
 from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterest
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 self.subscribe_data(
     data_type=DataType(
-        HyperliquidOpenInterest,
+        HyperliquidOpenInterest.__name__,
         metadata={"instrument_id": str(self.instrument_id)},
     ),
     client_id=HYPERLIQUID_CLIENT_ID,
@@ -716,11 +717,11 @@ public order-flow research. It has `instrument_id`, `price`, `size`,
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
 from nautilus_trader.adapters.hyperliquid import HyperliquidPublicTrade
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 self.subscribe_data(
     data_type=DataType(
-        HyperliquidPublicTrade,
+        HyperliquidPublicTrade.__name__,
         metadata={"instrument_id": str(self.instrument_id)},
     ),
     client_id=HYPERLIQUID_CLIENT_ID,
@@ -733,7 +734,7 @@ independently Arrow-serializable and can be recorded to and queried from a
 Nautilus catalog without a join. `RequestCustomData` for this type uses the
 same recent-only `recentTrades` snapshot as historical trade requests.
 
-In a Python strategy running inside a `TradingNode`, the payload is delivered
+In a Python strategy running inside a `LiveNode`, the payload is delivered
 to `on_data` as the concrete custom data type itself:
 
 ```python
@@ -788,10 +789,10 @@ entries stay aligned positionally, which is correct for appended listings.
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
 from nautilus_trader.adapters.hyperliquid import HyperliquidAllDexsAssetCtxs
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 self.subscribe_data(
-    data_type=DataType(HyperliquidAllDexsAssetCtxs),
+    data_type=DataType(HyperliquidAllDexsAssetCtxs.__name__),
     client_id=HYPERLIQUID_CLIENT_ID,
 )
 
@@ -1283,59 +1284,15 @@ both the Rust and Python config but are not yet consumed by the execution client
 client is constructed with only the request timeout and proxy).
 :::
 
-### Configuration example
+### Live node configuration
 
-```python
-from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
-from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
-from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import TradingNodeConfig
+Use `HyperliquidDataClientConfig` with `HyperliquidDataClientFactory` and
+`HyperliquidExecClientConfig` with `HyperliquidExecutionClientFactory`. The current Python examples
+show the complete `LiveNode.builder(...)` configuration for data and execution clients.
 
-config = TradingNodeConfig(
-    data_clients={
-        HYPERLIQUID: HyperliquidDataClientConfig(
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            environment=HyperliquidEnvironment.TESTNET,
-        ),
-    },
-    exec_clients={
-        HYPERLIQUID: HyperliquidExecClientConfig(
-            private_key=None,  # Loads from HYPERLIQUID_TESTNET_PK env var
-            vault_address=None,  # Optional: loads from HYPERLIQUID_TESTNET_VAULT
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            environment=HyperliquidEnvironment.TESTNET,
-            normalize_prices=True,  # Rounds prices to 5 significant figures
-        ),
-    },
-)
-```
-
-:::note
-When `environment=HyperliquidEnvironment.TESTNET`, the adapter automatically uses testnet
-environment variables (`HYPERLIQUID_TESTNET_PK` and `HYPERLIQUID_TESTNET_VAULT`) instead of
-mainnet variables.
-:::
-
-Then, create a `TradingNode` and add the client factories:
-
-```python
-from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
-from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientFactory
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
-from nautilus_trader.live.node import TradingNode
-
-# Instantiate the live trading node with a configuration
-node = TradingNode(config=config)
-
-# Register the client factories with the node
-node.add_data_client_factory(HYPERLIQUID, HyperliquidDataClientFactory)
-node.add_exec_client_factory(HYPERLIQUID, HyperliquidExecutionClientFactory)
-
-# Finally build the node
-node.build()
-```
+When `environment=HyperliquidEnvironment.TESTNET`, the adapter uses
+`HYPERLIQUID_TESTNET_PK` and `HYPERLIQUID_TESTNET_VAULT` instead of the mainnet environment
+variables.
 
 ## Contributing
 

@@ -32,7 +32,7 @@ use crate::{identifiers::Venue, instruments::CryptoOption};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -167,7 +167,7 @@ impl Display for OptionSeriesId {
             self.venue,
             self.underlying,
             self.settlement_currency,
-            dt.format("%Y-%m-%dT%H:%M:%SZ"),
+            dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
     }
 }
@@ -181,7 +181,7 @@ impl Debug for OptionSeriesId {
             self.venue,
             self.underlying,
             self.settlement_currency,
-            dt.format("%Y-%m-%dT%H:%M:%SZ"),
+            dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
     }
 }

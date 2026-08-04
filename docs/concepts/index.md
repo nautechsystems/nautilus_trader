@@ -12,7 +12,7 @@ The principles, structures, and designs that underpin the platform.
 
 ## Actors
 
-The `Actor` is the base component for interacting with the trading system.
+The `DataActor` is the base component for interacting with the trading system.
 Covers capabilities and implementation details.
 
 ## Strategies

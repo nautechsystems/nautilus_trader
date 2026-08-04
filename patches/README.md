@@ -1,18 +1,16 @@
 # Cargo Patches
 
-This directory contains local Cargo patches for third-party crates when the workspace must keep a
+This directory contains local Cargo patches for third‑party crates when the workspace must keep a
 specific upstream version but needs a small compatibility fix.
 
-**These patches are temporary. Remove them when the upstream crate supports the required dependency
-version and the v2 Python package layout no longer needs the legacy compatibility path.**
+**These patches are temporary. Remove them when the upstream crate supports the required PyO3
+version and generated package module paths.**
 
 ## pyo3-stub-gen
 
 `pyo3-stub-gen` stays pinned to `0.20.0` because later versions reject module paths outside the
-`pymodule` root. The current stub workflow still supports two paths:
-
-- The legacy Cython-compatible package layout.
-- The v2 package layout without the `nautilus_pyo3` namespace.
+`pymodule` root. The stub workflow reads `gen_stub_*` module annotations that target
+`nautilus_trader` package paths outside the `nautilus_trader._libnautilus` root.
 
 The crate is licensed as `MIT OR Apache-2.0`. The local copy includes the upstream `LICENSE-MIT`
 and `LICENSE-APACHE` texts from `Jij-Inc/pyo3-stub-gen`.
@@ -34,4 +32,4 @@ signature normalization. Those behaviors stay controlled by `python/generate_stu
 pinned `pyo3-stub-gen 0.20.0` code.
 
 Do not update `pyo3-stub-gen` or remove this patch until stub generation no longer depends on the
-dual-path layout.
+package module paths outside the `pymodule` root.

@@ -40,6 +40,7 @@ use std::{
 
 use bytes::Bytes;
 use futures::stream::Stream;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_common::{
     enums::SerializationEncoding,
     live::get_runtime,
@@ -74,14 +75,18 @@ type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 /// Configuration for a Redis-backed message bus backing.
 ///
 /// Redis 6.2 or higher is required for correct operation.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.infrastructure", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -901,7 +906,12 @@ async fn run_heartbeat(
 }
 
 fn create_heartbeat_msg() -> BusMessage {
-    let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
+    let payload = Bytes::from(
+        Timestamp::now()
+            .display_with_offset(Offset::UTC)
+            .to_string()
+            .into_bytes(),
+    );
     BusMessage::with_str_topic(
         HEARTBEAT_TOPIC,
         BusPayloadType::Custom(Ustr::default()),
@@ -1016,6 +1026,30 @@ mod tests {
         assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
         assert_eq!(msg.encoding, SerializationEncoding::Json);
         assert_eq!(msg.payload, Bytes::from("data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_reads_chrono_heartbeat() {
+        let heartbeat =
+            include_str!("../../test_data/redis_msgbus_heartbeat_chrono.txt").trim_end();
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(HEARTBEAT_TOPIC.as_bytes().to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(heartbeat.as_bytes().to_vec()),
+        ]);
+
+        let msg = decode_bus_message(&stream_msg).unwrap();
+        let timestamp = std::str::from_utf8(&msg.payload)
+            .unwrap()
+            .parse::<Timestamp>()
+            .unwrap();
+
+        assert_eq!(msg.topic, HEARTBEAT_TOPIC);
+        assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
+        assert_eq!(msg.payload.as_ref(), heartbeat.as_bytes());
+        assert_eq!(timestamp.as_nanosecond(), 1_785_805_323_456_789_000);
     }
 
     #[rstest]
@@ -1282,6 +1316,8 @@ mod tests {
 mod serial_tests {
     use std::{sync::mpsc, thread};
 
+    #[cfg(feature = "python")]
+    use nautilus_common::python::msgbus::get_global_msgbus_factory_registry;
     use nautilus_common::{
         enums::Environment,
         msgbus::{self, TypedHandler},
@@ -1292,6 +1328,11 @@ mod serial_tests {
         config::{LiveExecEngineConfig, LiveNodeConfig},
     };
     use nautilus_model::data::{QuoteTick, TradeTick};
+    #[cfg(feature = "python")]
+    use pyo3::{
+        Py, Python,
+        types::{PyAnyMethods, PyModule},
+    };
     use redis::aio::ConnectionManager;
     use rstest::*;
 
@@ -1307,6 +1348,31 @@ mod serial_tests {
         create_redis_connection(MSGBUS_STREAM, &config)
             .await
             .expect("A running Redis service is required for this test")
+    }
+
+    fn redis_msgbus_factory(config: RedisMessageBusConfig) -> Box<dyn MessageBusBackingFactory> {
+        #[cfg(feature = "python")]
+        {
+            Python::initialize();
+            Python::attach(|py| {
+                let module = PyModule::new(py, "infrastructure").unwrap();
+                crate::python::infrastructure(py, &module).unwrap();
+                let config = Py::new(py, config).unwrap();
+                let factory = module
+                    .getattr("RedisMessageBusFactory")
+                    .unwrap()
+                    .call1((config,))
+                    .unwrap()
+                    .unbind();
+
+                get_global_msgbus_factory_registry()
+                    .extract(py, factory)
+                    .unwrap()
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        Box::new(RedisMessageBusFactory::new(config))
     }
 
     #[rstest]
@@ -1792,9 +1858,7 @@ mod serial_tests {
                         ..Default::default()
                     };
                     let mut node = LiveNodeBuilder::from_config(config)?
-                        .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(
-                            redis_config,
-                        )))
+                        .with_external_msgbus_factory(redis_msgbus_factory(redis_config))
                         .build()?;
                     let handle = node.handle();
                     let quote_handler = TypedHandler::from({

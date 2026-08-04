@@ -632,8 +632,10 @@ mod tests {
         assert_eq!(ticker.change, dec!(123456789.823456789));
         assert_eq!(ticker.change_pct, dec!(0.9234567890123456789012345678));
         assert_eq!(
-            ticker.timestamp.to_rfc3339(),
-            "2022-12-25T09:30:59.123456+00:00"
+            ticker.timestamp,
+            "2022-12-25T09:30:59.123456Z"
+                .parse::<jiff::Timestamp>()
+                .unwrap()
         );
     }
 

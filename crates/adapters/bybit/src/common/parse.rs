@@ -911,11 +911,7 @@ pub fn parse_kline_bar(
     let mut ts_event = parse_millis_timestamp(&kline.start, "kline.start")?;
 
     if timestamp_on_close {
-        let interval_ns = bar_type
-            .spec()
-            .timedelta()
-            .num_nanoseconds()
-            .context("bar specification produced non-integer interval")?;
+        let interval_ns = bar_type.spec().timedelta().as_nanos();
         let interval_ns = u64::try_from(interval_ns)
             .context("bar interval overflowed the u64 range for nanoseconds")?;
         let updated = ts_event

@@ -12,8 +12,8 @@ a static library and linked automatically during the build.
 
 ## Examples
 
-Live example scripts are available in
-[examples/live/okx](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/).
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/okx/examples/)
 
 ### Product support
 
@@ -74,8 +74,8 @@ The OKX adapter includes multiple components, which can be used separately or to
 - `OKXInstrumentProvider`: Instrument parsing and loading functionality.
 - `OKXDataClient`: Market data feed manager.
 - `OKXExecutionClient`: Account management and trade execution gateway.
-- `OKXLiveDataClientFactory`: Factory for OKX data clients (used by the trading node builder).
-- `OKXLiveExecClientFactory`: Factory for OKX execution clients (used by the trading node builder).
+- `OKXDataClientFactory`: Factory for OKX data clients.
+- `OKXExecutionClientFactory`: Factory for OKX execution clients.
 
 :::note
 Most users will define a configuration for a live trading node (as shown below),
@@ -195,14 +195,12 @@ A: Use `BTC-USDT.OKX` for USDT-margined spot or `BTC-USDC.OKX` for USDC-margined
 A: `BTC-USDT-SWAP` is a linear perpetual (USDT-margined), while `BTC-USD-SWAP` is an inverse perpetual (BTC-margined).
 
 **Q: How do I know which contract type to use?**
-A: Check the `contract_types` parameter in the configuration:
-
-- For linear contracts: `OKXContractType.LINEAR`.
-- For inverse contracts: `OKXContractType.INVERSE`.
+A: Linear and inverse instruments have distinct symbols. The public Python configs do not expose a
+contract‑type filter, so the adapter loads both for the selected derivative instrument types.
 
 **Q: How do I load event contracts?**
-A: Use `OKXInstrumentType.EVENTS`. To scope loading, pass OKX `seriesId` values such as
-`BTC-ABOVE-DAILY` through `instrument_families`.
+A: Use `OKXInstrumentType.EVENTS`. The public Python configs load all discoverable event contract
+series and do not expose a series filter.
 
 ## Retail price improvement (RPI)
 
@@ -213,8 +211,8 @@ orders remain unchanged.
 
 ### RPI market data
 
-Pass `params={"rpi": True}` to `subscribe_order_book_deltas` or
-`request_order_book_snapshot` to use the public `books-rpi` channel or
+Pass `params={"rpi": True}` to `subscribe_book_deltas` or
+`request_book_snapshot` to use the public `books-rpi` channel or
 `GET /api/v5/market/books-rpi`. The feed combines organic quantity with RPI quantity that is
 available for execution.
 
@@ -429,35 +427,6 @@ Relevant OKX docs:
 - [Spread order details](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-order-details).
 - [Spread order channel](https://www.okx.com/docs-v5/en/#spread-trading-websocket-private-channel-order-channel).
 
-### Quantity semantics for spot margin trading
-
-When using spot margin trading (`use_spot_margin=True`), OKX interprets order
-quantities differently depending on the order side:
-
-- **Limit** orders interpret `quantity` as the number of base currency units.
-- **Market SELL** orders also use base-unit quantities.
-- **Market BUY** orders interpret `quantity` as quote notional (e.g., USDT).
-
-:::warning
-**When submitting spot margin market BUY orders**, set `quote_quantity=True` on the order (or
-pre-compute the quote-denominated amount). The OKX execution client denies base-denominated
-market buy orders for spot margin to prevent unintended fills.
-
-**On the first fill**, the order quantity is automatically updated from the quote quantity to the
-actual base quantity received, reflecting the executed trade.
-:::
-
-```python
-# Spot margin market BUY with quote quantity (spend $100 USDT)
-order = strategy.order_factory.market(
-    instrument_id=instrument_id,
-    order_side=OrderSide.BUY,
-    quantity=instrument.make_qty(100.0),
-    quote_quantity=True,  # Interpret as USDT notional
-)
-strategy.submit_order(order)
-```
-
 ### Execution instructions
 
 | Instruction   | Linear perpetual swap | Notes                  |
@@ -516,112 +485,41 @@ reporting accordingly.
 
 ### Trade modes and margin configuration
 
-OKX's unified account system supports different trade modes for spot and derivatives
-trading. The adapter determines the correct trade mode from your configuration and
-instrument type.
+OKX's unified account system supports different trade modes for spot and derivatives. Configure
+the account mode first through the OKX web or app interface; the API cannot set it for the first
+time.
 
-:::note
-**Important**: Configure the account mode first through the OKX Web or app interface.
-The API cannot set the account mode for the first time.
-:::
-
-For more details on OKX account modes and margin, see the
+For account mode details, see the
 [OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
 
 #### Trade modes overview
 
-OKX supports multiple account modes. For orders, the adapter selects one of the `cash`,
-`isolated`, or `cross` trade modes from your configuration:
+The Python execution config selects trade modes as follows:
 
-| Mode           | Used for                       | Leverage | Borrowing | Configuration                         |
-| -------------- | ------------------------------ | -------- | --------- | ------------------------------------- |
-| **`cash`**     | Spot trading without leverage. | -        | -         | Default when `use_spot_margin=False`. |
-| **`isolated`** | Spot margin or derivatives.    | ✓        | ✓         | `margin_mode=ISOLATED`.               |
-| **`cross`**    | Spot margin or derivatives.    | ✓        | ✓         | `margin_mode=CROSS`.                  |
-
-#### Configuration-based trade mode selection
-
-The adapter selects the trade mode from:
-
-1. **Instrument type** (`SPOT` vs other OKX instrument types).
-2. **Configuration settings** (`use_spot_margin` for `SPOT`, `margin_mode` otherwise).
-
-##### For SPOT trading
+| Instrument | Trade mode | Configuration                                     |
+| ---------- | ---------- | ------------------------------------------------- |
+| Spot       | `cash`     | Automatic.                                        |
+| Derivative | `isolated` | Default, or `margin_mode=OKXMarginMode.ISOLATED`. |
+| Derivative | `cross`    | `margin_mode=OKXMarginMode.CROSS`.                |
 
 ```python
-# Simple SPOT trading without leverage (uses 'cash' mode)
-exec_clients = {
-    OKX: OKXExecClientConfig(
-        instrument_types=(OKXInstrumentType.SPOT,),
-        use_spot_margin=False,  # Default - simple SPOT
-        # ... other config
-    ),
-}
+from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXInstrumentType
+from nautilus_trader.adapters.okx import OKXMarginMode
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
 
-# SPOT trading WITH margin/leverage (uses 'isolated' or 'cross' mode)
-exec_clients = {
-    OKX: OKXExecClientConfig(
-        instrument_types=(OKXInstrumentType.SPOT,),
-        use_spot_margin=True,  # Enable margin trading for SPOT
-        margin_mode=OKXMarginMode.ISOLATED,  # Or CROSS for shared margin
-        # ... other config
-    ),
-}
+
+exec_config = OKXExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("OKX-001"),
+    instrument_types=[OKXInstrumentType.SWAP],
+    margin_mode=OKXMarginMode.CROSS,
+)
 ```
 
-##### For non-spot trading
-
-```python
-# Derivatives with isolated margin (default - uses 'isolated' mode)
-exec_clients = {
-    OKX: OKXExecClientConfig(
-        instrument_types=(OKXInstrumentType.SWAP,),
-        margin_mode=OKXMarginMode.ISOLATED,  # Or omit - ISOLATED is default
-        # ... other config
-    ),
-}
-
-# Derivatives with cross margin (uses 'cross' mode)
-exec_clients = {
-    OKX: OKXExecClientConfig(
-        instrument_types=(OKXInstrumentType.SWAP,),
-        margin_mode=OKXMarginMode.CROSS,  # Share margin across all positions
-        # ... other config
-    ),
-}
-```
-
-##### For mixed SPOT and derivatives trading
-
-When trading both SPOT and derivatives instruments, the adapter determines the trade
-mode per order based on the instrument being traded:
-
-```python
-# Mixed SPOT + SWAP configuration
-exec_clients = {
-    OKX: OKXExecClientConfig(
-        instrument_types=(OKXInstrumentType.SPOT, OKXInstrumentType.SWAP),
-        use_spot_margin=True,  # Applies to SPOT orders only
-        margin_mode=OKXMarginMode.CROSS,  # Applies to SWAP orders only
-        # ... other config
-    ),
-}
-```
-
-**How it works:**
-
-- **SPOT orders** use `cross` mode because `use_spot_margin=True` and
-  `margin_mode=CROSS`.
-- **SWAP orders** use `cross` mode because `margin_mode=CROSS`.
-- Each order gets the correct `tdMode` based on its instrument type.
-- No manual intervention is required.
-
-This supports strategies that trade across instrument types with different margin
-configuration, such as:
-
-- Spot-futures arbitrage strategies.
-- Delta-neutral strategies combining spot and perpetual swaps.
-- Market making across spot and derivatives markets.
+The public Python config does not currently expose spot margin selection, so spot orders use cash
+mode. In a mixed spot and derivatives client, `margin_mode` applies to derivatives only.
 
 :::warning
 **Manual trade mode override**: You can override the trade mode per order with
@@ -631,14 +529,6 @@ spot instruments.
 
 Only use manual override for requirements that cannot be met through configuration.
 :::
-
-#### Benefits of configuration-based approach
-
-- **Type-safe**: Configuration is validated at startup before placing any orders.
-- **Automatic**: The adapter chooses the mode based on instrument type and intent.
-- **Clear**: Field names explain intent, such as `use_spot_margin` vs `td_mode`.
-- **Safe**: Incompatible combinations are rejected before they reach OKX.
-- **Backwards compatible**: Default values preserve existing behavior.
 
 ### Order querying
 
@@ -874,26 +764,11 @@ pipeline.
 
 ### Configuration
 
-Options require the `instrument_families` config parameter to scope which underlyings to load:
-
-```python
-config = TradingNodeConfig(
-    data_clients={
-        OKX: OKXDataClientConfig(
-            instrument_types=(OKXInstrumentType.OPTION,),
-            instrument_families=("BTC-USD", "ETH-USD"),
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-    exec_clients={
-        OKX: OKXExecClientConfig(
-            instrument_types=(OKXInstrumentType.OPTION,),
-            instrument_families=("BTC-USD", "ETH-USD"),
-            margin_mode=OKXMarginMode.CROSS,
-        ),
-    },
-)
-```
+:::warning
+Option discovery requires at least one `instrument_families` value. The public Python data and
+execution config constructors do not currently expose this field, so selecting
+`OKXInstrumentType.OPTION` skips option loading and logs a warning.
+:::
 
 ## Event contracts
 
@@ -904,28 +779,15 @@ instrument `info` field.
 
 ### Loading event contract instruments
 
-Use `OKXInstrumentType.EVENTS` in the data or execution client config. The
-`instrument_families` setting maps to OKX `seriesId` values for event contracts. When
-`instrument_families` is omitted, the adapter requests the event contract series list
-first, then requests instruments for each series.
+Use `OKXInstrumentType.EVENTS` in the data or execution client config. The adapter requests the
+event contract series list, then requests instruments for each series.
 
 ```python
-config = TradingNodeConfig(
-    data_clients={
-        OKX: OKXDataClientConfig(
-            instrument_types=(OKXInstrumentType.EVENTS,),
-            instrument_families=("BTC-ABOVE-DAILY",),
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-    exec_clients={
-        OKX: OKXExecClientConfig(
-            instrument_types=(OKXInstrumentType.EVENTS,),
-            instrument_families=("BTC-ABOVE-DAILY",),
-            margin_mode=OKXMarginMode.CROSS,
-        ),
-    },
-)
+from nautilus_trader.adapters.okx import OKXDataClientConfig
+from nautilus_trader.adapters.okx import OKXInstrumentType
+
+
+data_config = OKXDataClientConfig(instrument_types=[OKXInstrumentType.EVENTS])
 ```
 
 ### Event contract market data
@@ -1018,22 +880,11 @@ export OKX_API_PASSPHRASE="your_demo_passphrase"
 Set `environment=OKXEnvironment.DEMO` in your client configuration:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
+from nautilus_trader.adapters.okx import OKXDataClientConfig
+from nautilus_trader.adapters.okx import OKXEnvironment
 
-config = TradingNodeConfig(
-    data_clients={
-        OKX: OKXDataClientConfig(
-            environment=OKXEnvironment.DEMO,
-            # ... other config
-        ),
-    },
-    exec_clients={
-        OKX: OKXExecClientConfig(
-            environment=OKXEnvironment.DEMO,
-            # ... other config
-        ),
-    },
-)
+
+data_config = OKXDataClientConfig(environment=OKXEnvironment.DEMO)
 ```
 
 When demo mode is enabled:
@@ -1061,22 +912,11 @@ where it was registered (using a key against another region's endpoints returns
 `region` defaults to `GLOBAL`. For example, an EEA account:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import OKXRegion
+from nautilus_trader.adapters.okx import OKXDataClientConfig
+from nautilus_trader.adapters.okx import OKXRegion
 
-config = TradingNodeConfig(
-    data_clients={
-        OKX: OKXDataClientConfig(
-            region=OKXRegion.EEA,
-            # ... other config
-        ),
-    },
-    exec_clients={
-        OKX: OKXExecClientConfig(
-            region=OKXRegion.EEA,
-            # ... other config
-        ),
-    },
-)
+
+data_config = OKXDataClientConfig(region=OKXRegion.EEA)
 ```
 
 `region` selects the regional defaults, and combines with `environment` to pick the demo
@@ -1194,26 +1034,22 @@ See the [OKX rate limit documentation](https://www.okx.com/docs-v5/en/#rest-api-
 
 ### Configuration options
 
-The OKX data client provides the following configuration options. This table describes the
-Rust/pyo3 v2 data client config; Python v1 live configs do not expose the book health
-monitor fields below.
+The OKX data client provides the following Python configuration options.
 
 #### Data client
 
 | Option                             | Default                     | Description                                 |
 | ---------------------------------- | --------------------------- | ------------------------------------------- |
 | `instrument_types`                 | `(OKXInstrumentType.SPOT,)` | OKX instrument types to load.               |
-| `contract_types`                   | `None`                      | Contract styles to load.                    |
 | `load_spreads`                     | `False`                     | Loads live spread instruments.              |
-| `instrument_families`              | `None`                      | Families or event `seriesId` values.        |
 | `base_url_http`                    | `None`                      | Override for the OKX REST endpoint.         |
 | `base_url_ws_public`               | `None`                      | Override for the public WebSocket URL.      |
 | `base_url_ws_business`             | `None`                      | Override for the business WebSocket URL.    |
 | `api_key`                          | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
 | `api_secret`                       | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
 | `api_passphrase`                   | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
-| `environment`                      | `None`                      | Environment enum (`LIVE` or `DEMO`).        |
-| `region`                           | `None`                      | Region enum (`GLOBAL`, `EEA`, or `US`).     |
+| `environment`                      | `LIVE`                      | Environment enum (`LIVE` or `DEMO`).        |
+| `region`                           | `GLOBAL`                    | Region enum (`GLOBAL`, `EEA`, or `US`).     |
 | `http_timeout_secs`                | `60`                        | REST market data request timeout.           |
 | `max_retries`                      | `3`                         | Retry attempts for recoverable REST errors. |
 | `retry_delay_initial_ms`           | `1,000`                     | Initial delay before retrying.              |
@@ -1231,50 +1067,45 @@ Set `book_stale_check_interval_secs`, `book_stale_threshold_secs`, or
 without book updates; increase `book_stale_threshold_secs` for sparse instruments.
 
 Supported data client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
-`FUTURES`, `OPTION`, and `EVENTS`.
+`FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
+`OPTION` from Python.
 
-`instrument_families` is required for `OPTION`, optional for `FUTURES`, `SWAP`, and
-`EVENTS`, and ignored for `SPOT` and `MARGIN`. For `EVENTS`, pass OKX `seriesId`
-values such as `BTC-ABOVE-DAILY`. Spread instruments use `load_spreads` instead of
-`instrument_types` because OKX serves them from `/api/v5/sprd/spreads`.
+Spread instruments use `load_spreads` instead of `instrument_types` because OKX serves them from
+`/api/v5/sprd/spreads`.
 
 The OKX execution client provides the following configuration options:
 
 #### Execution client
 
-| Option                           | Default                     | Description                                 |
-| -------------------------------- | --------------------------- | ------------------------------------------- |
-| `instrument_types`               | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
-| `contract_types`                 | `None`                      | Tradable contract styles to load.           |
-| `load_spreads`                   | `False`                     | Loads live spread instruments.              |
-| `instrument_families`            | `None`                      | Families or event `seriesId` values.        |
-| `base_url_http`                  | `None`                      | Override for the OKX trading REST endpoint. |
-| `base_url_ws_private`            | `None`                      | Override for the private WebSocket URL.     |
-| `base_url_ws_business`           | `None`                      | Override for the business WebSocket URL.    |
-| `api_key`                        | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
-| `api_secret`                     | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
-| `api_passphrase`                 | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
-| `environment`                    | `None`                      | Environment enum (`LIVE` or `DEMO`).        |
-| `region`                         | `None`                      | Region enum (`GLOBAL`, `EEA`, or `US`).     |
-| `margin_mode`                    | `None`                      | Margin mode (`ISOLATED` or `CROSS`).        |
-| `use_spot_margin`                | `False`                     | Enables spot‑style margin or leverage.      |
-| `http_timeout_secs`              | `60`                        | REST trading request timeout.               |
-| `use_fills_channel`              | `False`                     | Subscribes to fills channel (VIP5+).        |
-| `use_mm_mass_cancel`             | `False`                     | Uses the market‑maker bulk cancel endpoint. |
-| `max_retries`                    | `3`                         | Retry attempts for recoverable REST errors. |
-| `retry_delay_initial_ms`         | `1,000`                     | Initial delay before retrying.              |
-| `retry_delay_max_ms`             | `10,000`                    | Maximum exponential backoff delay.          |
-| `use_spot_cash_position_reports` | `False`                     | Generates SPOT cash positions from wallet.  |
-| `proxy_url`                      | `None`                      | Optional HTTP and WebSocket proxy URL.      |
-| `transport_backend`              | `Sockudo`                   | WebSocket transport backend.                |
+| Option                   | Default                     | Description                                 |
+| ------------------------ | --------------------------- | ------------------------------------------- |
+| `instrument_types`       | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
+| `load_spreads`           | `False`                     | Loads live spread instruments.              |
+| `trader_id`              | Required                    | Nautilus trader ID for the client.          |
+| `account_id`             | Required                    | Nautilus account ID for the client.         |
+| `base_url_http`          | `None`                      | Override for the OKX trading REST endpoint. |
+| `base_url_ws_private`    | `None`                      | Override for the private WebSocket URL.     |
+| `base_url_ws_business`   | `None`                      | Override for the business WebSocket URL.    |
+| `api_key`                | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
+| `api_secret`             | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
+| `api_passphrase`         | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
+| `environment`            | `LIVE`                      | Environment enum (`LIVE` or `DEMO`).        |
+| `region`                 | `GLOBAL`                    | Region enum (`GLOBAL`, `EEA`, or `US`).     |
+| `margin_mode`            | `None`                      | Margin mode (`ISOLATED` or `CROSS`).        |
+| `http_timeout_secs`      | `60`                        | REST trading request timeout.               |
+| `max_retries`            | `3`                         | Retry attempts for recoverable REST errors. |
+| `retry_delay_initial_ms` | `1,000`                     | Initial delay before retrying.              |
+| `retry_delay_max_ms`     | `10,000`                    | Maximum exponential backoff delay.          |
+| `auth_timeout_secs`      | `None`                      | Override WebSocket authentication timeout.  |
+| `proxy_url`              | `None`                      | Optional HTTP and WebSocket proxy URL.      |
+| `transport_backend`      | `Sockudo`                   | WebSocket transport backend.                |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
-`FUTURES`, `OPTION`, and `EVENTS`.
+`FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
+`OPTION` from Python.
 
-`instrument_families` has the same meaning for execution clients as it does for data
-clients. Spread instruments use OKX spread IDs instead of `instrument_types`; load them
-with `load_spreads=True` on the data client and, for Python v1 execution-only nodes, on
-the execution client before trading them.
+Spread instruments use OKX spread IDs instead of `instrument_types`; load them with
+`load_spreads=True` on the data and execution clients before trading them.
 
 ### Manual endpoint overrides
 
@@ -1292,69 +1123,16 @@ region; they take precedence over the `region` default. The EEA bases are shown 
 
 For WebSocket fields, join the base and path in the same row.
 
-Use `base_url_ws_public` with data client configs and `base_url_ws_private` with
-execution client configs. EEA accounts must also set `base_url_ws_business` on both v2
-configs because v2 does not derive the business WebSocket URL from the public or private
-override.
-
-Python v1 live configs expose `base_url_ws` instead of the split WebSocket fields. For
-those configs, set `base_url_ws` to the public EEA WebSocket URL on `OKXDataClientConfig`
-and to the private EEA WebSocket URL on `OKXExecClientConfig`; each client derives its
-business WebSocket URL from that value.
+Use `base_url_ws_public` with data client configs and `base_url_ws_private` with execution client
+configs. When overriding either WebSocket URL, also set `base_url_ws_business` because the adapter
+does not derive a custom business WebSocket URL from the other override.
 
 See the [OKX EEA API documentation](https://my.okx.com/docs-v5/en/) for the current
 official endpoint list.
 
-Below is an example configuration for a live trading node using OKX data and execution clients:
-
-```python
-from nautilus_trader.adapters.okx import OKX
-from nautilus_trader.adapters.okx import OKXDataClientConfig, OKXExecClientConfig
-from nautilus_trader.adapters.okx.factories import (
-    OKXLiveDataClientFactory,
-    OKXLiveExecClientFactory,
-)
-from nautilus_trader.config import InstrumentProviderConfig, TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import OKXContractType
-from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
-from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
-from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
-from nautilus_trader.live.node import TradingNode
-
-config = TradingNodeConfig(
-    ...,
-    data_clients={
-        OKX: OKXDataClientConfig(
-            api_key=None,  # Will use OKX_API_KEY env var
-            api_secret=None,  # Will use OKX_API_SECRET env var
-            api_passphrase=None,  # Will use OKX_API_PASSPHRASE env var
-            base_url_http=None,
-            base_url_ws=None,
-            environment=OKXEnvironment.LIVE,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=(OKXInstrumentType.SWAP,),
-            contract_types=(OKXContractType.LINEAR,),
-        ),
-    },
-    exec_clients={
-        OKX: OKXExecClientConfig(
-            api_key=None,
-            api_secret=None,
-            api_passphrase=None,
-            base_url_http=None,
-            base_url_ws=None,
-            environment=OKXEnvironment.LIVE,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=(OKXInstrumentType.SWAP,),
-            contract_types=(OKXContractType.LINEAR,),
-        ),
-    },
-)
-node = TradingNode(config=config)
-node.add_data_client_factory(OKX, OKXLiveDataClientFactory)
-node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
-node.build()
-```
+Use `OKXDataClientConfig` with `OKXDataClientFactory` and `OKXExecClientConfig` with
+`OKXExecutionClientFactory`. The current Python examples show the complete
+`LiveNode.builder(...)` configuration for data and execution clients.
 
 ## Contributing
 

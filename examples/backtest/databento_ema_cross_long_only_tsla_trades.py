@@ -16,13 +16,13 @@
 
 import time
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento import DatabentoDataLoader
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnly
 from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnlyConfig
@@ -34,6 +34,9 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+
+TEST_DATA_DIR = Path(__file__).resolve().parents[2] / "test_data"
 
 
 if __name__ == "__main__":

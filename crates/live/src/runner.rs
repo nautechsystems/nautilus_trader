@@ -158,6 +158,10 @@ pub struct AsyncRunnerChannels {
 }
 
 #[cfg(feature = "node")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "runner events are consumed immediately; boxing would add routing allocations"
+)]
 pub(crate) enum PendingRunnerEvent {
     Time(TimeEventMessage),
     ExecEvent(ExecutionEvent),

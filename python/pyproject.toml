@@ -72,7 +72,7 @@ exclude-newer-package = { plotly = "8 hours", ruff = "8 hours", tzdata = "8 hour
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
 # scripts/check-no-build-packages.sh (also a pre-commit hook). The local
-# nautilus-trader v2 package is intentionally absent because it must be built
+# nautilus-trader package is intentionally absent because it must be built
 # by maturin.
 no-build-package = [
   "choreographer",
@@ -256,20 +256,14 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "B018",
 ] # TODO: Remove Jupytext exemptions as these guides are updated
 "examples/**/*.py" = [
-  "B018",
-  "B904",
   "DTZ",
-  "FURB171",
   "S101",
   "S105",
   "S106",
 ] # TODO: Remove deferred example lint exemptions as examples are updated
-"python/examples/**/*.py" = [
-  "DTZ",
-  "S101",
-  "S105",
-  "S106",
-] # Root-relative form used by repository-wide checks
+"examples/backtest/notebooks/databento_option_greeks.py" = ["B018"]
+"examples/backtest/synthetic_data_pnl_test.py" = ["FURB171"]
+"examples/other/state_machine/run_example.py" = ["B904"]
 "tests/**/*.py" = [
   "S101",
   "S105",

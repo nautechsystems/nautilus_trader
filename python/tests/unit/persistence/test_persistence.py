@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
 import os
+from zoneinfo import ZoneInfo
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.common import Cache
@@ -95,10 +98,15 @@ def test_backend_session_add_file_and_query_quotes():
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
 
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
+    chunks = list(session.to_query_result())
+    quotes = chunks[0]
 
-    assert chunk_count > 0
+    assert len(chunks) == 1
+    assert isinstance(quotes, list)
+    assert len(quotes) == 9_500
+    assert all(isinstance(quote, QuoteTick) for quote in quotes)
+    assert quotes[0].ts_init == 1_577_898_000_000_000_065
+    assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
 def test_backend_session_to_list_queries_quotes():
@@ -560,6 +568,62 @@ def test_streaming_feather_writer_rotation_modes(tmp_path):
             **kwargs,
         )
         assert writer is not None
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (
+            dt.datetime(2026, 3, 8, 7, 30, tzinfo=dt.UTC),
+            dt.datetime(2026, 3, 9, 5, 30, tzinfo=dt.UTC),
+        ),
+        (
+            dt.datetime(2026, 11, 1, 6, 30, tzinfo=dt.UTC),
+            dt.datetime(2026, 11, 2, 4, 30, tzinfo=dt.UTC),
+        ),
+    ],
+    ids=["cross_gap", "cross_fold"],
+)
+def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
+    tmp_path,
+    now,
+    expected,
+):
+    path = str(tmp_path / "streaming")
+    os.makedirs(path, exist_ok=True)
+    clock = Clock.new_test()
+    clock.set_time(pd.Timestamp(now).value)
+    writer = StreamingFeatherWriter(
+        path=path,
+        cache=Cache(),
+        clock=clock,
+        rotation_mode=2,
+        rotation_interval_ns=86_400_000_000_000,
+        rotation_time_ns=1_800_000_000_000,
+        rotation_timezone="America/New_York",
+    )
+    quote = TestDataProviderPyo3.quote_tick()
+
+    writer.write(quote)
+
+    next_rotation_rust = writer.get_next_rotation_time("quotes", str(quote.instrument_id))
+    next_rotation_python = _next_rotation_python(now)
+    expected_ns = pd.Timestamp(expected).value
+
+    assert next_rotation_rust == next_rotation_python.value
+    assert next_rotation_rust == expected_ns
+
+
+def _next_rotation_python(now):
+    now = pd.Timestamp(now)
+    rotation_timezone = ZoneInfo("America/New_York")
+    rotation_time = pd.Timestamp.combine(now.date(), dt.time(0, 30))
+    next_rotation = pd.Timestamp(rotation_time, tz=rotation_timezone).tz_convert("UTC")
+
+    while next_rotation <= now:
+        next_rotation += pd.Timedelta(days=1)
+
+    return next_rotation
 
 
 def test_streaming_feather_writer_include_types(tmp_path):

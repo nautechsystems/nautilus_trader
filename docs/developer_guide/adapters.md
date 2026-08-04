@@ -75,7 +75,7 @@ Python and documentation surfaces sit outside the crate:
 
 ```text
 python/nautilus_trader/adapters/<adapter>/  # Public package and generated stubs
-python/examples/<adapter>/                  # Python data and execution testers
+examples/live/<adapter>/                    # Python data and execution testers
 python/tests/unit/adapters/<adapter>/       # Public Python package tests
 docs/integrations/<adapter>.md              # User-facing integration guide
 ```
@@ -118,7 +118,7 @@ PyO3 module list as a public API allowlist. The
 [PyO3 conventions hook](../../.pre-commit-hooks/check_pyo3_conventions.sh) also enforces:
 
 - Stub metadata uses `nautilus_trader.adapters.<adapter>`.
-- Runtime extension imports use `nautilus_trader.core.nautilus_pyo3.<adapter>`.
+- Runtime extension imports use `nautilus_trader._libnautilus.<adapter>`.
 - A Rust function renamed with `#[pyo3(name = ...)]` has a `py_` Rust name.
 - Python exceptions use the project error conversion functions.
 
@@ -788,7 +788,7 @@ recovery.
 Synchronous client trait methods must not block an active Tokio runtime. Clone owned inputs, spawn
 the asynchronous operation, and return the local validation result. Use
 `nautilus_common::live::get_runtime().spawn()` for adapter production tasks so native Rust and
-Python FFI use the configured runtime.
+Python bindings use the configured runtime.
 
 The [Tokio usage hook](../../.pre-commit-hooks/check_tokio_usage.sh) rejects `tokio::spawn` in
 adapter production code and requires fully qualified Tokio spawn, time, and sync paths.
@@ -951,15 +951,15 @@ Provide the applicable tester entry points:
 
 - Rust: `crates/adapters/<adapter>/examples/node_data_tester.rs` and
   `node_exec_tester.rs`, with product subdirectories when protocols split by product.
-- Python v2: `python/examples/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
+- Python: `examples/live/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
   the Rust config and factory classes.
 
-Python v2 tester scripts build without connecting by default and require `--run` to connect.
+Python tester scripts build without connecting by default and require `--run` to connect.
 Execution testers require the separate `--live-orders` opt‑in before order submission. Preserve
 that safety boundary. Rust tester controls currently vary; inspect them before running, and make
 any new or revised execution tester default to `ExecTester` dry‑run behavior.
 
-### Python v2 boundary testing
+### Python boundary testing
 
 For Python‑exposed adapters, test the Rust module before testing broad Python workflows. Verify:
 

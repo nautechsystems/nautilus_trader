@@ -16,6 +16,7 @@
 //! Parsing functions to convert Ax HTTP responses to Nautilus domain types.
 
 use anyhow::Context;
+use jiff::tz::Offset;
 use nautilus_core::{Params, UUID4, datetime::datetime_to_unix_nanos, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
@@ -302,7 +303,10 @@ pub fn parse_instrument(
         let expiration_ns = datetime_to_unix_nanos(Some(expiration))
             .context("Failed to convert AX contract expiration to Unix nanoseconds")?;
         let multiplier = decimal_to_quantity(definition.multiplier, "multiplier")?;
-        info.insert("expiration".to_string(), json!(expiration.to_rfc3339()));
+        info.insert(
+            "expiration".to_string(),
+            json!(expiration.display_with_offset(Offset::UTC).to_string()),
+        );
         info.insert(
             "activation_source".to_string(),
             json!("unavailable_from_ax"),
@@ -689,9 +693,9 @@ pub fn parse_fill_report(
         LiquiditySide::Maker
     };
 
-    let ts_event = match fill.timestamp.timestamp_nanos_opt() {
-        Some(nanos) => UnixNanos::from(nanos.unsigned_abs()),
-        None => {
+    let ts_event = match u64::try_from(fill.timestamp.as_nanosecond().unsigned_abs()) {
+        Ok(nanos) => UnixNanos::from(nanos),
+        Err(_) => {
             log::warn!(
                 "Timestamp overflow for fill {} (timestamp={}), defaulting to 0",
                 fill.trade_id,
@@ -764,9 +768,9 @@ pub fn parse_position_status_report(
         None
     };
 
-    let ts_last = match position.timestamp.timestamp_nanos_opt() {
-        Some(nanos) => UnixNanos::from(nanos.unsigned_abs()),
-        None => {
+    let ts_last = match u64::try_from(position.timestamp.as_nanosecond().unsigned_abs()) {
+        Ok(nanos) => UnixNanos::from(nanos),
+        Err(_) => {
             log::warn!(
                 "Timestamp overflow for position {} (timestamp={}), defaulting to 0",
                 position.symbol,
@@ -820,7 +824,7 @@ pub fn parse_trade_tick(
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use nautilus_core::nanos::UnixNanos;
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -933,9 +937,7 @@ mod tests {
             quantity: 100,
             side: AxOrderSide::Buy,
             symbol: Ustr::from("EURUSD-PERP"),
-            timestamp: DateTime::parse_from_rfc3339("2026-07-17T00:00:00Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: "2026-07-17T00:00:00Z".parse::<Timestamp>().unwrap(),
             account_id: Ustr::from("account-1"),
             realized_pnl: None,
         }
@@ -1321,10 +1323,13 @@ mod tests {
             let InstrumentAny::FuturesContract(future) = instrument else {
                 panic!("Expected FuturesContract instrument");
             };
-            let expected_expiration_ns = DateTime::parse_from_rfc3339(expected_expiration)
-                .unwrap()
-                .timestamp_nanos_opt()
-                .unwrap() as u64;
+            let expected_expiration_ns = u64::try_from(
+                expected_expiration
+                    .parse::<Timestamp>()
+                    .unwrap()
+                    .as_nanosecond(),
+            )
+            .unwrap();
             let info = future.info.as_ref().unwrap();
 
             assert_eq!(future.id.symbol.as_str(), expected_symbol);

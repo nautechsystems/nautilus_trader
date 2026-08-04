@@ -36,11 +36,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.trading",
-        subclass,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.trading", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -187,7 +183,7 @@ impl StrategyConfig {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.trading", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

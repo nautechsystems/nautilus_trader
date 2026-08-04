@@ -474,9 +474,9 @@ unset:
 The session key is the secp256k1 private key registered on the wallet for API signing. The
 `session_key` field is redacted in `Debug` output and Python `repr`.
 
-### Python v2 live node
+### Python live node
 
-Rust-backed Python v2 nodes use `LiveNode.builder(...)` and pass concrete factory
+Python nodes use `LiveNode.builder(...)` and pass concrete factory
 instances. The execution factory needs `DeriveExecFactoryConfig`, which wraps the trader
 and account identifiers with the underlying `DeriveExecClientConfig`.
 

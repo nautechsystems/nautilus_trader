@@ -85,7 +85,7 @@ impl InteractiveBrokersError {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -127,7 +127,7 @@ pub type InteractiveBrokersResult<T> = Result<T, InteractiveBrokersError>;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )

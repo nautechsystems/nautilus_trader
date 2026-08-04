@@ -100,7 +100,7 @@ impl Quota {
     }
 }
 
-/// Loaded as `nautilus_pyo3.network`.
+/// Exposed through `nautilus_trader.network`.
 ///
 /// # Errors
 ///

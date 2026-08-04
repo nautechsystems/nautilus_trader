@@ -61,7 +61,7 @@ fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<
     }
 }
 
-/// Loaded as `nautilus_pyo3.blockchain`.
+/// Exposed through `nautilus_trader.adapters.blockchain`.
 ///
 /// # Errors
 ///

@@ -308,7 +308,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 for i in 0..DEPTH10_LEN {
                     // Undefined levels (PRICE_UNDEF / QUANTITY_UNDEF sentinels) are
                     // decoded as NULL_ORDER so the matching engine skips them during
-                    // precision validation (see engine.pyx::process_order_book_depth10).
+                    // precision validation.
                     let bid_price_bytes = bid_prices[i].value(row);
                     let bid_size_bytes = bid_sizes[i].value(row);
                     if get_raw_price(bid_price_bytes) == PRICE_UNDEF

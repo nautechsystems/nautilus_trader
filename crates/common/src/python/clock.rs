@@ -17,7 +17,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nautilus_core::{UnixNanos, datetime::try_datetime_to_unix_nanos, python::to_pyvalue_err};
 use pyo3::prelude::*;
 
@@ -38,7 +38,7 @@ use crate::{
 /// clocks should be created from Rust and handed over to Python as needed.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "Clock",
     unsendable,
     from_py_object
@@ -80,9 +80,9 @@ impl PyClock {
         self.0.borrow().timestamp()
     }
 
-    /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
+    /// Returns the current UTC timestamp.
     #[pyo3(name = "utc_now")]
-    fn py_utc_now(&self) -> DateTime<Utc> {
+    fn py_utc_now(&self) -> Timestamp {
         self.0.borrow().utc_now()
     }
 
@@ -138,7 +138,7 @@ impl PyClock {
     fn py_set_time_alert(
         &mut self,
         name: &str,
-        alert_time: DateTime<Utc>,
+        alert_time: Timestamp,
         callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
     ) -> PyResult<()> {
@@ -183,21 +183,20 @@ impl PyClock {
     fn py_set_timer(
         &mut self,
         name: &str,
-        interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
+        interval: SignedDuration,
+        start_time: Option<Timestamp>,
+        stop_time: Option<Timestamp>,
         callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> PyResult<()> {
-        let interval_ns_i64 = interval
-            .num_nanoseconds()
-            .ok_or_else(|| to_pyvalue_err("Interval too large"))?;
+        let interval_ns = interval.as_nanos();
 
-        if interval_ns_i64 <= 0 {
+        if interval_ns <= 0 {
             return Err(to_pyvalue_err("Interval must be positive"));
         }
-        let interval_ns = interval_ns_i64 as u64;
+        let interval_ns =
+            u64::try_from(interval_ns).map_err(|_| to_pyvalue_err("Interval too large"))?;
 
         let start_time_ns = start_time
             .map(try_datetime_to_unix_nanos)
@@ -309,7 +308,7 @@ impl PyClock {
 mod tests {
     use std::sync::Arc;
 
-    use chrono::{DateTime, Duration, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use nautilus_core::{UnixNanos, python::IntoPyObjectNautilusExt};
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
@@ -370,7 +369,7 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let dt = Utc::now() + Duration::seconds(1);
+            let dt = Timestamp::now() + SignedDuration::from_secs(1);
             py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
                 .expect("set_time_alert failed");
@@ -396,7 +395,7 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let interval = Duration::seconds(2);
+            let interval = SignedDuration::from_secs(2);
             py_clock
                 .py_set_timer("TIMER1", interval, None, None, None, None, None)
                 .expect("set_timer failed");
@@ -410,8 +409,8 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let interval = Duration::seconds(2);
-            let pre_epoch = DateTime::from_timestamp_nanos(-1);
+            let interval = SignedDuration::from_secs(2);
+            let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
 
             let err = py_clock
                 .py_set_timer(
@@ -456,9 +455,8 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let ts_ns = (Utc::now() + Duration::seconds(1))
-                .timestamp_nanos_opt()
-                .unwrap() as u64;
+            let ts_ns = (Timestamp::now() + SignedDuration::from_secs(1)).as_nanosecond();
+            let ts_ns = u64::try_from(ts_ns).unwrap();
             py_clock
                 .py_set_time_alert_ns("ALERT_NS", ts_ns, None, None)
                 .expect("set_time_alert_ns failed");
@@ -622,7 +620,7 @@ mod tests {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let dt = Utc::now() + Duration::seconds(1);
+            let dt = Timestamp::now() + SignedDuration::from_secs(1);
 
             py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
@@ -654,7 +652,7 @@ mod tests {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let interval = Duration::seconds(3);
+            let interval = SignedDuration::from_secs(3);
 
             py_clock
                 .py_set_timer("TIMER1", interval, None, None, None, None, None)
@@ -671,9 +669,8 @@ mod tests {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let dt_ns = (Utc::now() + Duration::seconds(1))
-                .timestamp_nanos_opt()
-                .unwrap() as u64;
+            let dt_ns = (Timestamp::now() + SignedDuration::from_secs(1)).as_nanosecond();
+            let dt_ns = u64::try_from(dt_ns).unwrap();
 
             py_clock
                 .py_set_time_alert_ns("ALERT_NS", dt_ns, None, None)

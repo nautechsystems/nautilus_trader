@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_common"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -29,7 +29,6 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "cbindgen", "live"]
 indicators = ["nautilus-indicators"]
 python = [
   "nautilus-core/python",
@@ -54,17 +53,11 @@ capnp = [
 sbe = ["dep:nautilus-serialization", "nautilus-serialization/sbe"]
 tracing-bridge = ["tracing", "tracing-subscriber"]
 
-[package.metadata.cargo-machete]
-ignored = [
-  "cbindgen", # Used by build.rs when the `ffi` feature is enabled
-]
-
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
 features = [
   "capnp",
   "defi",
-  "ffi",
   "high-precision",
   "indicators",
   "live",
@@ -86,11 +79,11 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
-chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true }
@@ -125,9 +118,6 @@ rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
 
 [[bench]]
 name = "cache_orders"

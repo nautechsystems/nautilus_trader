@@ -55,9 +55,8 @@ execution, while Python serves as the control plane. The same architecture, exec
 semantics, and time model operate across both environments, allowing strategies to move
 from research to production without reimplementation.
 
-Python bindings for the Rust‑native v2 runtime are provided via [PyO3](https://pyo3.rs).
-The legacy Cython v1 core remains supported during the v2 release‑candidate phase. Installing
-an official prebuilt Python wheel does not require a Rust toolchain.
+Python bindings for the Rust‑native runtime are provided via [PyO3](https://pyo3.rs). Installing an
+official prebuilt Python wheel does not require a Rust toolchain.
 
 ## Use cases
 
@@ -102,12 +101,9 @@ Feed data to a `BacktestEngine` either directly or through a higher‑level `Bac
 ## Live trading
 
 A `LiveNode` ingests data and events from multiple data and execution clients, supporting
-demo, paper, and real accounts. The Rust‑native node, including its PyO3 interface, runs the kernel
+demo, paper, and real accounts. The Rust-native node, including its PyO3 interface, runs the kernel
 event loop on the calling thread, while asynchronous I/O and background tasks use a shared
-multi‑threaded Tokio runtime. The legacy Python `TradingNode` coordinates asynchronous clients
-through an [asyncio event loop](https://docs.python.org/3/library/asyncio-eventloop.html) and can use
-[uvloop](https://github.com/MagicStack/uvloop) on Linux and macOS. See [Live trading](live.md) for
-the node lifecycle and risk considerations, and
+multi-threaded Tokio runtime. See [Live trading](live.md) for the node lifecycle and risk considerations, and
 [Execution reconciliation](reconciliation.md) for state recovery.
 
 ## Domain model

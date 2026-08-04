@@ -58,7 +58,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use jiff::{Timestamp, tz::Offset};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     UnixNanos,
@@ -532,8 +532,8 @@ impl DydxRawHttpClient {
         ticker: &str,
         resolution: DydxCandleResolution,
         limit: Option<u32>,
-        from_iso: Option<DateTime<Utc>>,
-        to_iso: Option<DateTime<Utc>>,
+        from_iso: Option<Timestamp>,
+        to_iso: Option<Timestamp>,
     ) -> Result<super::models::CandlesResponse, DydxHttpError> {
         let endpoint = format!("/v4/candles/perpetualMarkets/{ticker}");
         let mut query_parts = vec![format!("resolution={resolution}")];
@@ -543,12 +543,12 @@ impl DydxRawHttpClient {
         }
 
         if let Some(from) = from_iso {
-            let from_str = from.to_rfc3339();
+            let from_str = from.display_with_offset(Offset::UTC).to_string();
             query_parts.push(format!("fromISO={}", urlencoding::encode(&from_str)));
         }
 
         if let Some(to) = to_iso {
-            let to_str = to.to_rfc3339();
+            let to_str = to.display_with_offset(Offset::UTC).to_string();
             query_parts.push(format!("toISO={}", urlencoding::encode(&to_str)));
         }
         let query = query_parts.join("&");
@@ -664,7 +664,7 @@ impl DydxRawHttpClient {
         ticker: &str,
         limit: Option<u32>,
         effective_before_or_at_height: Option<u64>,
-        effective_before_or_at: Option<DateTime<Utc>>,
+        effective_before_or_at: Option<Timestamp>,
     ) -> Result<super::models::HistoricalFundingResponse, DydxHttpError> {
         let endpoint = format!("/v4/historicalFunding/{ticker}");
         let mut query_parts = Vec::new();
@@ -678,7 +678,7 @@ impl DydxRawHttpClient {
         }
 
         if let Some(before) = effective_before_or_at {
-            let before_str = before.to_rfc3339();
+            let before_str = before.display_with_offset(Offset::UTC).to_string();
             query_parts.push(format!(
                 "effectiveBeforeOrAt={}",
                 urlencoding::encode(&before_str)
@@ -731,7 +731,7 @@ impl DydxRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.dydx", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1071,8 +1071,8 @@ impl DydxHttpClient {
         symbol: &str,
         resolution: DydxCandleResolution,
         limit: Option<u32>,
-        from_iso: Option<DateTime<Utc>>,
-        to_iso: Option<DateTime<Utc>>,
+        from_iso: Option<Timestamp>,
+        to_iso: Option<Timestamp>,
     ) -> anyhow::Result<super::models::CandlesResponse> {
         self.inner
             .get_candles(symbol, resolution, limit, from_iso, to_iso)
@@ -1100,8 +1100,8 @@ impl DydxHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
         timestamp_on_close: bool,
     ) -> anyhow::Result<Vec<Bar>> {
@@ -1134,7 +1134,8 @@ impl DydxHttpClient {
                 let overall_limit = limit.unwrap_or(u32::MAX);
                 let mut remaining = overall_limit;
                 let bars_per_call = DYDX_MAX_BARS_PER_REQUEST.min(remaining);
-                let chunk_duration = chrono::Duration::seconds(bar_secs * bars_per_call as i64);
+                let chunk_duration =
+                    jiff::SignedDuration::from_secs(bar_secs * bars_per_call as i64);
                 let mut chunk_start = range_start;
 
                 while chunk_start < range_end && remaining > 0 {
@@ -1229,8 +1230,8 @@ impl DydxHttpClient {
     pub async fn request_trade_ticks(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const DYDX_MAX_TRADES_PER_REQUEST: u32 = 1_000;
@@ -1367,8 +1368,8 @@ impl DydxHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
@@ -1388,9 +1389,9 @@ impl DydxHttpClient {
             }
 
             let ts_event =
-                UnixNanos::from(entry.effective_at.timestamp_nanos_opt().ok_or_else(|| {
-                    anyhow::anyhow!("Timestamp overflow for {}", entry.effective_at)
-                })? as u64);
+                UnixNanos::from(u64::try_from(entry.effective_at.as_nanosecond()).map_err(
+                    |_| anyhow::anyhow!("Timestamp overflow for {}", entry.effective_at),
+                )?);
 
             rates.push(FundingRateUpdate::new(
                 instrument_id,

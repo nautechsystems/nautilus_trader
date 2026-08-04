@@ -2123,7 +2123,7 @@ impl DataEngine {
 
         let now_ns = self.clock.borrow().timestamp_ns();
         let now_dt = now_ns.to_datetime_utc();
-        let zero = chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(0);
+        let zero = jiff::Timestamp::UNIX_EPOCH;
         let start = req.start.unwrap_or(zero).min(now_dt);
         let end = req.end.unwrap_or(now_dt).min(now_dt);
         let dated = req.with_dates(Some(start), Some(end), now_ns);
@@ -4216,7 +4216,7 @@ impl DataEngine {
             let time_bars_origin_offset = config
                 .time_bars_origin_offset
                 .get(&bar_type.spec().aggregation)
-                .map(|duration| chrono::TimeDelta::from_std(*duration).unwrap_or_default());
+                .map(|duration| jiff::SignedDuration::try_from(*duration).unwrap_or_default());
 
             Box::new(TimeBarAggregator::new(
                 bar_type,
@@ -5347,10 +5347,8 @@ fn build_continuous_future_unsubscribe_command(
     }
 }
 
-fn datetime_to_unix_nanos(datetime: chrono::DateTime<chrono::Utc>) -> anyhow::Result<UnixNanos> {
-    let timestamp = datetime
-        .timestamp_nanos_opt()
-        .ok_or_else(|| anyhow::anyhow!("datetime is outside the supported nanosecond range"))?;
+fn datetime_to_unix_nanos(datetime: jiff::Timestamp) -> anyhow::Result<UnixNanos> {
+    let timestamp = datetime.as_nanosecond();
     let timestamp = u64::try_from(timestamp)
         .context("datetime is before the UNIX epoch and cannot be represented as UnixNanos")?;
     Ok(UnixNanos::from(timestamp))
@@ -5687,8 +5685,8 @@ fn parent_request_window(
     )
 }
 
-fn datetime_to_unix_nanos_or_zero(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
-    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+fn datetime_to_unix_nanos_or_zero(dt: jiff::Timestamp) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.as_nanosecond().max(0)).unwrap_or(0))
 }
 
 fn empty_response_like(

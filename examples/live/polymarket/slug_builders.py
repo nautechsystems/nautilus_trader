@@ -20,7 +20,7 @@ These functions dynamically generate event slugs for niche markets with
 predictable naming patterns, allowing efficient loading without downloading
 all 151k+ markets.
 
-The Rust Python v2 adapter keeps provider logic in Rust and uses
+The current Rust Python adapter keeps provider logic in Rust and uses
 PolymarketUpDownEventSlugConfig for Up/Down event slug generation.
 
 Usage:

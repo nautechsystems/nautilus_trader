@@ -15,8 +15,8 @@
 
 //! Python bindings for the Interactive Brokers historical data client.
 
-use chrono::{DateTime, Utc};
 use ibapi::contracts::Contract;
+use jiff::Timestamp;
 use nautilus_common::live::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
@@ -70,8 +70,8 @@ impl HistoricalInteractiveBrokersClient {
         &self,
         py: Python<'py>,
         bar_specifications: Vec<String>,
-        end_date_time: DateTime<Utc>,
-        start_date_time: Option<DateTime<Utc>>,
+        end_date_time: Timestamp,
+        start_date_time: Option<Timestamp>,
         duration: Option<String>,
         contracts: Option<Py<PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
@@ -136,8 +136,8 @@ impl HistoricalInteractiveBrokersClient {
         &self,
         py: Python<'py>,
         tick_type: IbHistoricalTickType,
-        start_date_time: DateTime<Utc>,
-        end_date_time: DateTime<Utc>,
+        start_date_time: Timestamp,
+        end_date_time: Timestamp,
         contracts: Option<Py<PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,

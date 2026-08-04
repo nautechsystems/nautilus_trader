@@ -37,8 +37,8 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
-use chrono::{DateTime, TimeZone, Utc};
 use futures_util::{SinkExt, StreamExt};
+use jiff::Timestamp;
 use nautilus_common::{
     clients::DataClient,
     live::runner::replace_data_event_sender,
@@ -281,8 +281,8 @@ fn candle_json(bucket: i64) -> Value {
     })
 }
 
-fn datetime_from_secs(secs: i64) -> DateTime<Utc> {
-    Utc.timestamp_opt(secs, 0).unwrap()
+fn datetime_from_secs(secs: i64) -> Timestamp {
+    Timestamp::from_second(secs).unwrap()
 }
 
 async fn handle_get_tickers(State(state): State<RestState>, body: axum::body::Bytes) -> Response {
@@ -1222,8 +1222,8 @@ fn request_bars(bar_type: BarType, limit: Option<usize>) -> RequestBars {
 
 fn request_bars_window(
     bar_type: BarType,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
     limit: Option<usize>,
 ) -> RequestBars {
     RequestBars::new(
@@ -1696,7 +1696,7 @@ async fn test_request_bars_excludes_forming_bucket() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let period = 60;
-    let now_secs = Utc::now().timestamp();
+    let now_secs = Timestamp::now().as_second();
     *rest_state.candles_response.lock().await =
         Value::Array(vec![candle_json(now_secs - period), candle_json(now_secs)]);
     let rest_addr = start_rest_server(rest_state).await;
@@ -2598,8 +2598,8 @@ fn request_quotes(instrument_id: InstrumentId) -> RequestQuotes {
 
 fn request_quotes_window(
     instrument_id: InstrumentId,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
 ) -> RequestQuotes {
     RequestQuotes::new(
         instrument_id,

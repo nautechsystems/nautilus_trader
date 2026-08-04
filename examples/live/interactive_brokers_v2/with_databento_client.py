@@ -23,7 +23,12 @@ from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.adapters.databento import DatabentoDataClientFactory
+from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import TraderId
 
 
 def default_publishers_filepath() -> str:
@@ -38,7 +43,7 @@ def default_publishers_filepath() -> str:
 
 def main() -> None:
     host, port = resolve_ib_endpoint()
-    trader_id = pyo3.TraderId.from_str("IB-V2-DATABENTO-001")
+    trader_id = TraderId.from_str("IB-V2-DATABENTO-001")
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
     provider_config = instrument_provider_config(
         load_ids=[
@@ -50,17 +55,17 @@ def main() -> None:
         ],
     )
 
-    builder = pyo3.live.LiveNode.builder(  # type: ignore[attr-defined]
+    builder = LiveNode.builder(
         "IB-V2-DATABENTO-001",
         trader_id,
-        pyo3.Environment.LIVE,
+        Environment.LIVE,
     )
     builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
     builder = builder.with_reconciliation(False)
     builder = builder.add_data_client(
         "DATABENTO",
-        pyo3.DatabentoDataClientFactory(),  # type: ignore[attr-defined]
-        pyo3.DatabentoLiveClientConfig(  # type: ignore[attr-defined]
+        DatabentoDataClientFactory(),
+        DatabentoLiveClientConfig(
             api_key=os.getenv("DATABENTO_API_KEY", "0" * 32),
             publishers_filepath=os.getenv(
                 "DATABENTO_PUBLISHERS_FILE",
@@ -70,7 +75,7 @@ def main() -> None:
     )
 
     if account_id is not None:
-        ib = pyo3.interactive_brokers
+        ib = interactive_brokers
         builder = builder.add_exec_client(
             None,
             ib.InteractiveBrokersExecutionClientFactory(trader_id, ib_account_id(account_id)),

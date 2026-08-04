@@ -87,7 +87,7 @@ fn extract_bitmex_exec_config(
     }
 }
 
-/// Loaded as `nautilus_pyo3.bitmex`.
+/// Exposed through `nautilus_trader.adapters.bitmex`.
 ///
 /// # Errors
 ///

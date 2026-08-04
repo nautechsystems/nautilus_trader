@@ -1,7 +1,7 @@
 # Delta-Neutral Options Strategy (Derive)
 
 :::note
-This is a **Rust-only** v2 system tutorial. It runs the live delta-neutral
+This is a **Rust-only** system tutorial. It runs the live delta-neutral
 short-volatility strategy on Derive using the Rust `LiveNode`.
 :::
 

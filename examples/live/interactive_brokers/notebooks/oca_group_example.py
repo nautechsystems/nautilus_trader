@@ -43,12 +43,13 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.common.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 
 # from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.live.config import LiveDataEngineConfig
-from nautilus_trader.live.config import RoutingConfig
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import RoutingConfig
+from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model import BarType
 from nautilus_trader.model import TraderId
@@ -57,7 +58,6 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading import Strategy
-from nautilus_trader.trading.config import StrategyConfig
 
 
 # %%

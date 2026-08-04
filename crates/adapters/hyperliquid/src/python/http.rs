@@ -246,8 +246,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _ = (instrument_id, start, end, limit);
@@ -263,8 +263,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _ = (instrument_id, start, end, limit);
@@ -289,8 +289,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -333,8 +333,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

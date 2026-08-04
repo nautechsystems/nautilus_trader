@@ -70,8 +70,8 @@ async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 bzip2 = { workspace = true }
-chrono = { workspace = true }
 flate2 = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

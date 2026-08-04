@@ -117,7 +117,7 @@ impl PortfolioConfig {
 
 /// Wrapper providing shared access to [`Portfolio`] from Python.
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.portfolio",
+    module = "nautilus_trader.portfolio",
     name = "Portfolio",
     unsendable,
     from_py_object
@@ -453,7 +453,7 @@ impl PyPortfolio {
     }
 }
 
-/// Loaded as `nautilus_pyo3.portfolio`.
+/// Exposed through `nautilus_trader.portfolio`.
 ///
 /// # Errors
 ///

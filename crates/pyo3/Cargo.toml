@@ -29,7 +29,6 @@ arrow = [
   "nautilus-serialization/arrow",
 ]
 betfair = ["dep:nautilus-betfair", "nautilus-betfair/python"]
-cython-compat = []
 defi = [
   "dep:nautilus-blockchain",
   "nautilus-backtest/defi",
@@ -73,12 +72,6 @@ extension-module = [
   "nautilus-testkit/extension-module",
   "nautilus-trading/extension-module",
   "pyo3/extension-module",
-]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-  "nautilus-persistence/ffi",
 ]
 high-precision = [
   "nautilus-model/high-precision",

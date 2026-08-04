@@ -391,7 +391,7 @@ def test_depth10_to_dict_and_from_dict_roundtrip(depth10):
 
 
 def test_depth10_fully_qualified_name():
-    assert "OrderBookDepth10" in OrderBookDepth10.fully_qualified_name()
+    assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth10"
 
 
 def test_depth10_json_roundtrip(depth10):

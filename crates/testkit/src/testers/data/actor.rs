@@ -16,7 +16,7 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
-use chrono::Duration as ChronoDuration;
+use jiff::SignedDuration;
 use nautilus_common::{
     actor::{DataActor, DataActorCore},
     config::ConfigError,
@@ -174,7 +174,7 @@ impl DataActor for DataTester {
 
             // Request historical quotes (default to last 1 hour)
             if self.config.request_quotes {
-                let start = self.clock().utc_now() - ChronoDuration::hours(1);
+                let start = self.clock().utc_now() - SignedDuration::from_hours(1);
 
                 if let Err(e) = self.request_quotes(
                     instrument_id,
@@ -209,7 +209,7 @@ impl DataActor for DataTester {
 
             // Request historical trades (default to last 1 hour)
             if self.config.request_trades {
-                let start = self.clock().utc_now() - ChronoDuration::hours(1);
+                let start = self.clock().utc_now() - SignedDuration::from_hours(1);
 
                 if let Err(e) = self.request_trades(
                     instrument_id,
@@ -225,7 +225,7 @@ impl DataActor for DataTester {
 
             // Request historical funding rates (default to last 7 days)
             if self.config.request_funding_rates {
-                let start = self.clock().utc_now() - ChronoDuration::days(7);
+                let start = self.clock().utc_now() - SignedDuration::from_hours(7 * 24);
 
                 if let Err(e) = self.request_funding_rates(
                     instrument_id,
@@ -249,7 +249,7 @@ impl DataActor for DataTester {
 
                 // Request historical bars (default to last 1 hour)
                 if self.config.request_bars {
-                    let start = self.clock().utc_now() - ChronoDuration::hours(1);
+                    let start = self.clock().utc_now() - SignedDuration::from_hours(1);
 
                     if let Err(e) = self.request_bars(
                         bar_type,
