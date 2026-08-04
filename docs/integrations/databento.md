@@ -781,7 +781,6 @@ Use the schema-specific consolidated methods for consolidated files:
 - `load_cbbo_quotes` for CBBO quotes.
 - `load_tcbbo_trades` for TCBBO trades.
 
-The loader also provides `*_as_pycapsule` methods for zero‑copy transfer into native consumers.
 Optional `instrument_id` and `price_precision` arguments bypass symbology or precision lookup when
 those values are already known. The bar loader also accepts `timestamp_on_close`.
 

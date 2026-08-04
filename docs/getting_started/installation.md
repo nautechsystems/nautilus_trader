@@ -409,8 +409,7 @@ which differ in their internal bit-width and maximum decimal precision.
 
 :::note
 By default, the official Python wheels ship in high-precision (128-bit) mode on Linux and macOS.
-On Windows, only standard-precision (64-bit) Python wheels are available because MSVC's C/C++ frontend
-does not support `__int128`, preventing the Cython/FFI layer from handling 128-bit integers.
+On Windows, only standard-precision (64-bit) Python wheels are currently available.
 
 For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
 `i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable

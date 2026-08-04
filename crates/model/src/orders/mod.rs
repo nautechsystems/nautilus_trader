@@ -2978,8 +2978,6 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::PendingUpdate);
         assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
 
-        // The handler applied the delayed event's fields, matching `_submitted` in
-        // the Cython engine (`base.pyx`), which assigns both unconditionally.
         assert_eq!(order.account_id(), Some(AccountId::from("SIM-002")));
         assert_eq!(order.ts_submitted(), Some(UnixNanos::from(3_000)));
 

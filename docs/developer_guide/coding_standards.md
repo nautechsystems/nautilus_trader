@@ -7,7 +7,7 @@ Additional guidelines are provided below.
 
 ### Universal formatting rules
 
-The following applies to **all** source files (Rust, Python, Cython, shell, etc.):
+The following applies to **all** source files (Rust, Python, shell, etc.):
 
 - Use **spaces only**, never hard tab characters.
 - Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.

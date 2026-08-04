@@ -118,7 +118,7 @@ PyO3 module list as a public API allowlist. The
 [PyO3 conventions hook](../../.pre-commit-hooks/check_pyo3_conventions.sh) also enforces:
 
 - Stub metadata uses `nautilus_trader.adapters.<adapter>`.
-- Runtime extension imports use `nautilus_trader.core.nautilus_pyo3.<adapter>`.
+- Runtime extension imports use `nautilus_trader._libnautilus.<adapter>`.
 - A Rust function renamed with `#[pyo3(name = ...)]` has a `py_` Rust name.
 - Python exceptions use the project error conversion functions.
 
@@ -788,7 +788,7 @@ recovery.
 Synchronous client trait methods must not block an active Tokio runtime. Clone owned inputs, spawn
 the asynchronous operation, and return the local validation result. Use
 `nautilus_common::live::get_runtime().spawn()` for adapter production tasks so native Rust and
-Python FFI use the configured runtime.
+Python bindings use the configured runtime.
 
 The [Tokio usage hook](../../.pre-commit-hooks/check_tokio_usage.sh) rejects `tokio::spawn` in
 adapter production code and requires fully qualified Tokio spawn, time, and sync paths.

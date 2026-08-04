@@ -1,6 +1,6 @@
 # Environment Setup
 
-For development we recommend using the PyCharm *Professional* edition IDE, as it interprets Cython syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
+Use an editor with current Rust and Python language support, such as PyCharm or Visual Studio Code.
 
 [uv](https://docs.astral.sh/uv) is the preferred tool for handling all Python virtual environments and dependencies.
 
@@ -268,7 +268,7 @@ To update the pinned uv version, change `required-version` in both `pyproject.to
 
 ## Builds
 
-Following any changes to `.rs`, `.pyx`, or `.pxd` files, you can re-compile by running:
+After changing Rust bindings or Python package code, rebuild the extension with:
 
 ```bash tab="uv"
 uv run --no-sync python build.py

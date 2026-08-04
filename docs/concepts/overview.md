@@ -56,8 +56,7 @@ semantics, and time model operate across both environments, allowing strategies 
 from research to production without reimplementation.
 
 Python bindings for the Rust‑native v2 runtime are provided via [PyO3](https://pyo3.rs).
-The legacy Cython v1 core remains supported during the v2 release‑candidate phase. Installing
-an official prebuilt Python wheel does not require a Rust toolchain.
+Installing an official prebuilt Python wheel does not require a Rust toolchain.
 
 ## Use cases
 

@@ -193,12 +193,11 @@ impl DataEngine {
         !self.catalogs.is_empty()
     }
 
-    // Mirrors Cython `_handle_date_range_request` (engine.pyx:2071-2144): bound the
-    // request window, walk the catalogs to find one whose missing-intervals differ
-    // from the full requested range, then fan the parent out via the pipeline with
-    // one catalog leg plus one client leg per missing interval. With no catalog
-    // match and no resolvable client the engine emits an empty response keyed by
-    // the parent request id.
+    // Bounds the request window, walks the catalogs to find one whose missing
+    // intervals differ from the full requested range, then fans the parent out via
+    // the pipeline with one catalog leg plus one client leg per missing interval.
+    // With no catalog match and no resolvable client, the engine emits an empty
+    // response keyed by the parent request ID.
     pub(super) fn dispatch_date_range_request(
         &mut self,
         req: RequestCommand,

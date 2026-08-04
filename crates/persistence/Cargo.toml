@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_persistence"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -36,12 +36,9 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
   "nautilus-common/python",
-  "nautilus-core/ffi",
   "nautilus-core/python",
-  "nautilus-model/ffi",
   "nautilus-model/python",
   "nautilus-serialization/python",
   "pyo3",
@@ -56,12 +53,12 @@ high-precision = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["cloud", "defi", "ffi", "high-precision"]
+features = ["cloud", "defi", "high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
-nautilus-core = { workspace = true, features = ["ffi"] }
+nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }

@@ -114,10 +114,6 @@ When adding Python-aware live code:
 - Do not call `Python::attach` from Tokio worker tasks in Python v2 live trading.
 - Do not add adapter business logic in Python to fit callback routing.
 
-Legacy Cython `LiveClock` callbacks are a separate FFI path. They use capsule-style
-callback arguments for v1 compatibility and can be created without a live runner sender.
-Keep that ABI distinct until time event dispatch can be unified across v1 and v2.
-
 ### Test naming
 
 Descriptive names explaining the scenario:
@@ -131,13 +127,3 @@ def test_sma_with_single_input_returns_expected_value(self):
 ### Ruff
 
 [ruff](https://astral.sh/ruff) is used to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
-
-## Cython (legacy)
-
-:::note
-This section covers Cython conventions for `.pyx` and `.pxd` files.
-:::
-
-For `.pyx` and `.pxd` files, make sure all functions and methods returning `void` or a primitive C type (such as `bint`, `int`, `double`) include the `except *` keyword in the signature. Without it, Python exceptions are silently ignored.
-
-For more information, see the [Cython docs](https://cython.readthedocs.io/en/latest/index.html).

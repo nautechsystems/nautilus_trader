@@ -15,16 +15,13 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::{
-    data::{
-        Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick,
-    },
-    python::data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::data::{
+    Bar, Data, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
+    QuoteTick, TradeTick,
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
-use pyo3::{IntoPyObjectExt, prelude::*, types::PyCapsule};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
@@ -235,9 +232,6 @@ impl DataBackendSession {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataQueryResult {
     /// Collects the remaining query records as native Python objects.
-    ///
-    /// This provides a PyO3-native alternative to the capsule iterator for callers that need to
-    /// inspect the decoded records in Python.
     #[pyo3(name = "to_list")]
     fn py_to_list(mut slf: PyRefMut<'_, Self>) -> PyResult<Vec<Py<PyAny>>> {
         let py = slf.py();
@@ -274,10 +268,6 @@ impl DataQueryResult {
     }
 
     /// Each iteration returns a chunk of values read from the parquet file.
-    ///
-    /// For built-in types, returns a `PyCapsule` containing a `CVec` of `DataFFI` (C layout)
-    /// consumed by Cython `capsule_to_list`. For custom data types (which are not
-    /// FFI-safe), returns a Python list of PyO3 objects directly.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
         let py = slf.py();
         let ptr = SendPtr(&raw mut *slf);
@@ -300,41 +290,11 @@ impl DataQueryResult {
 
         match acc {
             Some(acc) if !acc.is_empty() => {
-                let has_non_ffi = acc.iter().any(|d| {
-                    matches!(
-                        d,
-                        Data::Custom(_)
-                            | Data::FundingRateUpdate(_)
-                            | Data::OptionGreeks(_)
-                            | Data::InstrumentStatus(_)
-                    )
-                });
-
-                if has_non_ffi {
-                    // Non-FFI data: convert directly to Python objects.
-                    let objects: Vec<Py<PyAny>> = acc
-                        .into_iter()
-                        .map(|item| data_to_pyobject(py, item))
-                        .collect::<PyResult<_>>()?;
-                    Ok(Some(objects.into_py_any(py)?))
-                } else {
-                    // Built-in types: FFI capsule path
-                    let ffi_data: Vec<DataFFI> = acc
-                        .into_iter()
-                        .map(DataFFI::try_from)
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(to_pyruntime_err)?;
-                    let cvec: DataFfiCVec = ffi_data.into();
-                    match PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(
-                        py,
-                        cvec,
-                        DATA_FFI_CVEC_CAPSULE_NAME,
-                        |_, _| {},
-                    ) {
-                        Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
-                        Err(e) => Err(to_pyruntime_err(e)),
-                    }
-                }
+                let objects: Vec<Py<PyAny>> = acc
+                    .into_iter()
+                    .map(|item| data_to_pyobject(py, item))
+                    .collect::<PyResult<_>>()?;
+                Ok(Some(objects.into_py_any(py)?))
             }
             _ => Ok(None),
         }

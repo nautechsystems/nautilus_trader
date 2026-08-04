@@ -57,11 +57,7 @@ impl From<TimeEventHandler> for TimeEventHandler_Py {
         Self {
             event: value.event,
             callback: match value.callback {
-                TimeEventCallback::Python(callback) => {
-                    // `TimeEventHandler_Py` is a PyO3 v2 wrapper; legacy capsule
-                    // callbacks use `TimeEventHandler_API` instead.
-                    clone_py_object(callback.callback())
-                }
+                TimeEventCallback::Python(callback) => clone_py_object(callback.callback()),
                 TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => {
                     panic!("Python time event handler is not supported for Rust callbacks")
                 }

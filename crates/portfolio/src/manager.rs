@@ -961,7 +961,7 @@ impl AccountsManager {
                 // existing-currency branch above lets the per-account
                 // `update_balances` enforce the borrowing policy, so the two
                 // branches are intentionally asymmetric until cross-currency
-                // equity tracking lands (see TODO in `manager.pyx`).
+                // equity tracking is implemented.
                 if pnl.as_decimal() < Decimal::ZERO {
                     log::error!(
                         "Cannot complete transaction: no {currency} to deduct a {pnl} realized PnL from"

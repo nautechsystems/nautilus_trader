@@ -95,10 +95,15 @@ def test_backend_session_add_file_and_query_quotes():
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
 
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
+    chunks = list(session.to_query_result())
+    quotes = chunks[0]
 
-    assert chunk_count > 0
+    assert len(chunks) == 1
+    assert isinstance(quotes, list)
+    assert len(quotes) == 9_500
+    assert all(isinstance(quote, QuoteTick) for quote in quotes)
+    assert quotes[0].ts_init == 1_577_898_000_000_000_065
+    assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
 def test_backend_session_to_list_queries_quotes():

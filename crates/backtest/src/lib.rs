@@ -44,7 +44,6 @@
 //! - `examples`: Enables example strategies and the EMA crossover backtest example.
 //! - `defi`: Enables DeFi replay APIs and data-engine routing.
 //! - `streaming`: Enables `persistence` dependency for streaming configuration.
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds the crate as a Python extension module.
 
@@ -79,6 +78,3 @@ pub mod node;
 
 #[cfg(feature = "python")]
 pub mod python;
-
-#[cfg(feature = "ffi")]
-pub mod ffi;

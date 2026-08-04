@@ -23,13 +23,6 @@ crate-type = ["rlib"]
 [features]
 default = []
 streaming = ["nautilus-persistence"]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-  "nautilus-persistence/ffi",
-  "streaming",
-]
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
@@ -55,7 +48,7 @@ defi = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["defi", "ffi", "high-precision", "streaming"]
+features = ["defi", "high-precision", "streaming"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]

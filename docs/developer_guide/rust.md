@@ -108,7 +108,7 @@ Copy the standard copyright and license header from a neighboring hand‑written
 files retain their generator header instead. The copyright hook checks the year.
 
 Change a generator input and rerun the generator instead of editing generated Rust, C headers,
-Cython declarations, Python stubs, or wrapper doc comments.
+Python stubs, or wrapper doc comments.
 
 ### Module declarations
 
@@ -466,7 +466,7 @@ cannot import the item they document.
 - When a binding needs a Rust‑only wrapper type, prefix it with `Py` and expose the Python name
   without that prefix.
 - Use `nautilus_trader.adapters.<adapter_name>` for public adapter stub metadata. Runtime module
-  paths use `nautilus_trader.core.nautilus_pyo3.<adapter_name>`.
+  paths use `nautilus_trader._libnautilus.<adapter_name>`.
 - Convert standard Python exceptions with `to_pyvalue_err`, `to_pytype_err`, `to_pyruntime_err`,
   `to_pykey_err`, `to_pyexception`, or `to_pynotimplemented_err` from
   `nautilus_core::python`.
@@ -649,22 +649,16 @@ component lifecycle operations re‑entrant.
 
 ### FFI bindings and precision
 
-Enabling `ffi` for `nautilus-model` regenerates `nautilus_trader/core/includes/model.h` and
-`nautilus_trader/core/rust/model.pxd`. The committed files use high precision. For a narrow check,
-keep the environment and Cargo feature aligned:
+Only `nautilus-core` and `nautilus-model` expose an `ffi` feature. Check both crates directly when
+changing their C ABI:
 
 ```bash
-env HIGH_PRECISION=true cargo check -q -p nautilus-model --features ffi,python,high-precision
+cargo check -q -p nautilus-core --features ffi
+cargo check -q -p nautilus-model --features ffi,python,high-precision
 ```
 
-Review both files after an FFI‑related command:
-
-```bash
-git diff -- nautilus_trader/core/includes/model.h nautilus_trader/core/rust/model.pxd
-```
-
-If only the precision mode drifted, rerun the generating command with high precision. Do not edit
-the files by hand.
+The crate‑local `cbindgen.toml` files define the header layout for native consumers. Do not add an
+`ffi` feature or `src/ffi` module to another workspace crate.
 
 ### Cap'n Proto schemas
 

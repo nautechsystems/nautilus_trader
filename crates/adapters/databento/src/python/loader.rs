@@ -21,20 +21,11 @@ use databento::dbn;
 use jiff::civil::Time;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
-    data::{
-        Bar, Data, DataFFI, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick,
-    },
+    data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Symbol, Venue},
-    python::{
-        data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
-        instruments::instrument_any_to_pyobject,
-    },
+    python::instruments::instrument_any_to_pyobject,
 };
-use pyo3::{
-    prelude::*,
-    types::{PyCapsule, PyList},
-};
+use pyo3::{prelude::*, types::PyList};
 use ustr::Ustr;
 
 use crate::{
@@ -207,29 +198,6 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "load_order_book_deltas_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, include_trades=None))]
-    fn py_load_order_book_deltas_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-        include_trades: Option<bool>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::MboMsg>(
-                &filepath,
-                instrument_id,
-                price_precision,
-                include_trades.unwrap_or(false),
-                None,
-            )
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
-    }
-
     /// Loads order book depth10 snapshots from a DBN MBP-10 schema file.
     ///
     /// # Errors
@@ -245,22 +213,6 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<OrderBookDepth10>> {
         self.load_order_book_depth10(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "load_order_book_depth10_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_order_book_depth10_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, price_precision, false, None)
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     /// Loads quote tick messages from a DBN MBP-1 or TBBO schema file.
@@ -280,29 +232,6 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "load_quotes_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, include_trades=None))]
-    fn py_load_quotes_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-        include_trades: Option<bool>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::Mbp1Msg>(
-                &filepath,
-                instrument_id,
-                price_precision,
-                include_trades.unwrap_or(false),
-                None,
-            )
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
-    }
-
     /// Loads best bid/offer quote messages from a DBN BBO schema file.
     ///
     /// # Errors
@@ -318,22 +247,6 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<QuoteTick>> {
         self.load_bbo_quotes(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "load_bbo_quotes_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_bbo_quotes_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::BboMsg>(&filepath, instrument_id, price_precision, false, None)
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     /// Loads consolidated MBP-1 quote messages from a DBN CMBP-1 schema file.
@@ -353,29 +266,6 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "load_cmbp_quotes_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, include_trades=None))]
-    fn py_load_cmbp_quotes_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-        include_trades: Option<bool>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::Cmbp1Msg>(
-                &filepath,
-                instrument_id,
-                price_precision,
-                include_trades.unwrap_or(false),
-                None,
-            )
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
-    }
-
     /// Loads consolidated best bid/offer quote messages from a DBN CBBO schema file.
     ///
     /// # Errors
@@ -391,22 +281,6 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<QuoteTick>> {
         self.load_cbbo_quotes(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "load_cbbo_quotes_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_cbbo_quotes_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     /// Loads trade messages from a DBN TBBO schema file.
@@ -426,22 +300,6 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "load_tbbo_trades_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_tbbo_trades_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::TbboMsg>(&filepath, instrument_id, price_precision, false, None)
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
-    }
-
     /// Loads trade messages from a DBN TCBBO schema file.
     ///
     /// # Errors
@@ -459,22 +317,6 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "load_tcbbo_trades_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_tcbbo_trades_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::TcbboMsg>(&filepath, instrument_id, price_precision, false, None)
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
-    }
-
     /// Loads trade messages from a DBN TRADES schema file.
     ///
     /// # Errors
@@ -490,22 +332,6 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<TradeTick>> {
         self.load_trades(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "load_trades_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_trades_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::TradeMsg>(&filepath, instrument_id, price_precision, false, None)
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     /// Loads OHLCV bar messages from a DBN OHLCV schema file.
@@ -529,29 +355,6 @@ impl DatabentoDataLoader {
             Some(timestamp_on_close),
         )
         .map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "load_bars_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, timestamp_on_close=true))]
-    fn py_load_bars_as_pycapsule(
-        &self,
-        py: Python,
-        filepath: PathBuf,
-        instrument_id: Option<InstrumentId>,
-        price_precision: Option<u8>,
-        timestamp_on_close: bool,
-    ) -> PyResult<Py<PyAny>> {
-        let iter = self
-            .read_records::<dbn::OhlcvMsg>(
-                &filepath,
-                instrument_id,
-                price_precision,
-                false,
-                Some(timestamp_on_close),
-            )
-            .map_err(to_pyvalue_err)?;
-
-        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_status")]
@@ -624,44 +427,6 @@ impl DatabentoDataLoader {
 
         Ok(data)
     }
-}
-
-fn exhaust_data_iter_to_pycapsule(
-    py: Python,
-    iter: impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>>,
-) -> anyhow::Result<Py<PyAny>> {
-    let mut data = Vec::new();
-
-    for result in iter {
-        match result {
-            Ok((Some(item1), None)) => data.push(item1),
-            Ok((None, Some(item2))) => data.push(item2),
-            Ok((Some(item1), Some(item2))) => {
-                data.push(item1);
-                data.push(item2);
-            }
-            Ok((None, None)) => {}
-            Err(e) => return Err(e),
-        }
-    }
-
-    let ffi_data: Vec<DataFFI> = data
-        .into_iter()
-        .map(DataFFI::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(to_pyvalue_err)?;
-    let cvec: DataFfiCVec = ffi_data.into();
-    // No destructor: Python must call drop_cvec_pycapsule to take ownership and free.
-    let capsule = PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(
-        py,
-        cvec,
-        DATA_FFI_CVEC_CAPSULE_NAME,
-        |_, _| {},
-    )?;
-
-    // TODO: Improve error domain. Replace anyhow errors with nautilus
-    // errors to unify pyo3 and anyhow errors.
-    Ok(capsule.into_py_any_unwrap(py))
 }
 
 // Returns `None` when no overrides are supplied, so the loader applies its built-in defaults

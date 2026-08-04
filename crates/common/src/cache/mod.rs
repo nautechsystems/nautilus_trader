@@ -4676,8 +4676,7 @@ impl Cache {
     // execution engine assigns `position_id` to each contingent child in a non-atomic loop
     // (`set_position_id` then `add_position_id`), so a crash mid-loop can leave the database
     // with the parent updated and some children un-updated. This pass re-applies any missing
-    // assignments after load. Mirrors the Cython behaviour at
-    // `nautilus_trader/cache/cache.pyx::_assign_position_id_to_contingencies`.
+    // assignments after load.
     fn assign_position_ids_to_contingencies(&mut self) {
         let mut assignments: Vec<(PositionId, ClientOrderId)> = Vec::new();
 

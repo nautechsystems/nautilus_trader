@@ -281,7 +281,7 @@ update_count = self.cache.book_update_count(instrument_id)  # Returns the number
 #### Price access
 
 ```python
-from nautilus_trader.core.rust.model import PriceType
+from nautilus_trader.model import PriceType
 
 # Get current price by type; Returns Price or None.
 price = self.cache.price(
@@ -293,7 +293,7 @@ price = self.cache.price(
 #### Bar types
 
 ```python
-from nautilus_trader.core.rust.model import PriceType, AggregationSource
+from nautilus_trader.model import AggregationSource, PriceType
 
 # Get all available bar types for an instrument; Returns list[BarType].
 bar_types = self.cache.bar_types(

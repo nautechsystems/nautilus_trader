@@ -98,9 +98,9 @@ df
 import shutil
 from pathlib import Path
 
-from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.adapters.databento import DatabentoDataLoader
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 
 
 # %%
@@ -121,25 +121,19 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 loader = DatabentoDataLoader()
 
 # %% [markdown]
-# Load Rust PyO3 objects by setting `as_legacy_cython=False`.
-#
 # Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ES.GLBX").
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
 
 # Option 1 (recommended): Let the loader infer the instrument ID from DBN metadata
-depth10 = loader.from_dbn_file(
-    path=path,
-    as_legacy_cython=False,
-)
+depth10 = loader.load_order_book_depth10(filepath=path)
 
 # Option 2: Explicitly specify a valid Nautilus instrument ID (symbol.venue format)
 # instrument_id = InstrumentId.from_str("ESZ3.GLBX")  # E-mini S&P December 2023 futures on Globex
-# depth10 = loader.from_dbn_file(
-#     path=path,
+# depth10 = loader.load_order_book_depth10(
+#     filepath=path,
 #     instrument_id=instrument_id,
-#     as_legacy_cython=False,
 # )
 
 # %%
@@ -194,15 +188,14 @@ df
 # %% [markdown]
 # We'll use an `InstrumentId` of `"AAPL.XNAS"`, where XNAS is the ISO 10383 MIC (Market Identifier Code) for the Nasdaq venue.
 #
-# Passing an `instrument_id` speeds up loading by skipping symbology mapping. Setting `as_legacy_cython=False` is more efficient when writing to the catalog.
+# Passing an `instrument_id` speeds up loading by skipping symbology mapping.
 
 # %%
 instrument_id = InstrumentId.from_str("AAPL.XNAS")
 
-trades = loader.from_dbn_file(
-    path=path,
+trades = loader.load_trades(
+    filepath=path,
     instrument_id=instrument_id,
-    as_legacy_cython=False,
 )
 
 # %% [markdown]

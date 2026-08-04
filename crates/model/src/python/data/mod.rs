@@ -15,9 +15,6 @@
 
 //! Data types for the trading domain model.
 
-#[cfg(feature = "ffi")]
-use std::{ffi::CStr, ptr};
-
 pub mod bar;
 pub mod bet;
 pub mod close;
@@ -37,8 +34,6 @@ pub mod trade;
 #[cfg(feature = "python")]
 pub mod custom;
 
-#[cfg(feature = "ffi")]
-use nautilus_core::ffi::cvec::CVec;
 #[cfg(feature = "python")]
 use nautilus_core::python::{
     params::{params_to_pydict, pydict_to_params},
@@ -48,8 +43,6 @@ use nautilus_core::python::{
 use pyo3::types::PyDict;
 use pyo3::{prelude::*, types::PyCapsule};
 
-#[cfg(any(feature = "cython-compat", feature = "ffi"))]
-use crate::data::DataFFI;
 use crate::data::{
     Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
     MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
@@ -57,28 +50,6 @@ use crate::data::{
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
-
-#[cfg(feature = "ffi")]
-pub const DATA_FFI_CVEC_CAPSULE_NAME: &CStr = c"nautilus.DataFFI.CVec";
-
-#[cfg(feature = "ffi")]
-#[repr(transparent)]
-#[derive(Debug)]
-pub struct DataFfiCVec(CVec);
-
-#[cfg(feature = "ffi")]
-impl From<Vec<DataFFI>> for DataFfiCVec {
-    fn from(data: Vec<DataFFI>) -> Self {
-        Self(data.into())
-    }
-}
-
-#[cfg(feature = "ffi")]
-#[allow(unsafe_code)]
-// SAFETY: DataFfiCVec only wraps CVec allocations produced from Vec<DataFFI>.
-// DataFFI is the type-specific payload for these Python capsules, and the
-// capsule transfers ownership metadata without sharing mutable access.
-unsafe impl Send for DataFfiCVec {}
 
 #[pymethods]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
@@ -154,14 +125,6 @@ impl DataType {
 /// This function takes ownership of the `Data` instance and encapsulates it within
 /// a `PyCapsule` object, allowing the Rust data to be passed into the Python runtime.
 ///
-/// # Capsule type contract
-///
-/// When conversion to `DataFFI` fails (e.g. for `Data::Custom`), this returns a
-/// capsule containing a single `Data` value (no destructor). That capsule must
-/// **never** be passed to [`drop_cvec_pycapsule`], which expects a `CVec` and
-/// would cause undefined behavior. Only capsules produced by code that creates
-/// `CVec` (e.g. for `capsule_to_list`) may be passed to `drop_cvec_pycapsule`.
-///
 /// # Panics
 ///
 /// This function panics if the `PyCapsule` creation fails, which may occur if
@@ -169,102 +132,13 @@ impl DataType {
 /// properly encapsulated.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
-    #[cfg(feature = "cython-compat")]
-    {
-        // For Cython compatibility, we convert to DataFFI if possible.
-        if let Ok(ffi_data) = DataFFI::try_from(data.clone()) {
-            #[allow(
-                deprecated,
-                reason = "unnamed capsules are required for legacy Cython capsule_to_data"
-            )]
-            let capsule = PyCapsule::new_with_destructor(py, ffi_data, None, |_, _| {})
-                .expect("Error creating `PyCapsule` for `DataFFI` ");
-            return capsule.into_any().unbind();
-        }
-    }
-
-    // Default case for PyO3 or when conversion fails (e.g. Custom data)
     #[allow(
         deprecated,
-        reason = "unnamed capsules are required for legacy Cython capsule_to_data"
+        reason = "adapter callbacks consume unnamed model data capsules"
     )]
     let capsule = PyCapsule::new_with_destructor(py, data, None, |_, _| {})
         .expect("Error creating `PyCapsule` for `Data` ");
     capsule.into_any().unbind()
-}
-
-/// Drops a `PyCapsule` containing a `CVec` structure.
-///
-/// This function safely extracts and drops the `CVec` instance encapsulated within
-/// a `PyCapsule` object. It is intended for cleaning up after the `Data` instances
-/// have been transferred into Python (e.g. via `capsule_to_list`) and are no longer needed.
-///
-/// # Capsule type contract
-///
-/// **Must only be called** on capsules that contain a `CVec` (pointer to `Vec<DataFFI>`).
-/// Never pass a capsule from [`data_to_pycapsule`] here: when that function returns a
-/// single-`Data` capsule (e.g. for `Data::Custom`), the pointer is not a `CVec`, and
-/// calling this would be undefined behavior.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if the object is not a `PyCapsule`, has the wrong capsule
-/// name, or contains invalid `CVec` metadata.
-///
-/// This function involves raw pointer dereferencing and manual memory
-/// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
-#[cfg(feature = "ffi")]
-#[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
-#[allow(unsafe_code)]
-pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) -> PyResult<()> {
-    let capsule: &Bound<'_, PyCapsule> = capsule
-        .cast::<PyCapsule>()
-        .map_err(|e| to_pyvalue_err(format!("Expected DataFFI CVec PyCapsule: {e}")))?;
-    let cvec_ptr = capsule
-        .pointer_checked(Some(DATA_FFI_CVEC_CAPSULE_NAME))
-        .map_err(|e| to_pyvalue_err(format!("Invalid DataFFI CVec PyCapsule: {e}")))?
-        .as_ptr()
-        .cast::<CVec>();
-    // SAFETY: The capsule name check above verifies this is a DataFfiCVec, whose transparent
-    // representation starts with the CVec metadata. Ownership is not transferred until after
-    // validation.
-    let cvec = unsafe { &*cvec_ptr };
-
-    if cvec.len > cvec.cap {
-        return Err(to_pyvalue_err(format!(
-            "Invalid DataFFI CVec metadata: len ({}) > cap ({})",
-            cvec.len, cvec.cap
-        )));
-    }
-
-    if cvec.cap > 0 && cvec.ptr.is_null() {
-        return Err(to_pyvalue_err(format!(
-            "Invalid DataFFI CVec metadata: null ptr with len ({}) and cap ({})",
-            cvec.len, cvec.cap
-        )));
-    }
-
-    // SAFETY: The pointer targets the CVec metadata inside the checked capsule. Replacing it
-    // transfers unique ownership and leaves an empty sentinel so repeated calls are harmless.
-    let cvec = unsafe { ptr::replace(cvec_ptr, CVec::empty()) };
-    // SAFETY: The metadata came from CVec::from(Vec<DataFFI>) and was validated above.
-    let data = unsafe { cvec.into_vec::<DataFFI>() };
-    drop(data);
-    Ok(())
-}
-
-#[cfg(not(feature = "ffi"))]
-#[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
-/// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
-///
-/// # Errors
-///
-/// Always returns a `PyErr` with the message "`ffi` feature is not enabled" to indicate that
-/// FFI functionality is unavailable.
-pub fn drop_cvec_pycapsule(_capsule: &Bound<'_, PyAny>) -> PyResult<()> {
-    Err(to_pyruntime_err("`ffi` feature is not enabled"))
 }
 
 /// Transforms the given Python objects into a vector of [`OrderBookDelta`] objects.
@@ -758,100 +632,4 @@ pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<F
     }
 
     Ok(funding_rates)
-}
-
-#[cfg(all(test, feature = "python", feature = "ffi"))]
-mod tests {
-    use std::{ffi::CStr, ptr::NonNull};
-
-    use nautilus_core::ffi::cvec::CVec;
-    use pyo3::{prelude::*, types::PyCapsule};
-    use rstest::rstest;
-
-    use super::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec, drop_cvec_pycapsule};
-    use crate::data::{DataFFI, stubs::stub_bar};
-
-    #[rstest]
-    fn test_drop_cvec_pycapsule_rejects_wrong_capsule_name() {
-        Python::initialize();
-        Python::attach(|py| {
-            let capsule = data_ffi_capsule(py, DataFfiCVec(CVec::empty()), c"wrong.DataFFI.CVec");
-
-            let err = drop_cvec_pycapsule(capsule.as_any()).unwrap_err();
-
-            assert!(err.to_string().contains("Invalid DataFFI CVec PyCapsule"));
-        });
-    }
-
-    #[rstest]
-    fn test_drop_cvec_pycapsule_rejects_len_greater_than_cap() {
-        Python::initialize();
-        Python::attach(|py| {
-            let cvec = CVec {
-                ptr: NonNull::<u8>::dangling().as_ptr().cast(),
-                len: 2,
-                cap: 1,
-            };
-            let capsule = data_ffi_capsule(py, DataFfiCVec(cvec), DATA_FFI_CVEC_CAPSULE_NAME);
-
-            let err = drop_cvec_pycapsule(capsule.as_any()).unwrap_err();
-
-            assert!(
-                err.to_string()
-                    .contains("Invalid DataFFI CVec metadata: len (2) > cap (1)")
-            );
-        });
-    }
-
-    #[rstest]
-    fn test_drop_cvec_pycapsule_rejects_null_non_empty_pointer() {
-        Python::initialize();
-        Python::attach(|py| {
-            let cvec = CVec {
-                ptr: std::ptr::null_mut(),
-                len: 1,
-                cap: 1,
-            };
-            let capsule = data_ffi_capsule(py, DataFfiCVec(cvec), DATA_FFI_CVEC_CAPSULE_NAME);
-
-            let err = drop_cvec_pycapsule(capsule.as_any()).unwrap_err();
-
-            assert!(
-                err.to_string()
-                    .contains("Invalid DataFFI CVec metadata: null ptr with len (1) and cap (1)")
-            );
-        });
-    }
-
-    #[rstest]
-    fn test_drop_cvec_pycapsule_accepts_empty_cvec() {
-        Python::initialize();
-        Python::attach(|py| {
-            let capsule =
-                data_ffi_capsule(py, DataFfiCVec(CVec::empty()), DATA_FFI_CVEC_CAPSULE_NAME);
-
-            drop_cvec_pycapsule(capsule.as_any()).unwrap();
-        });
-    }
-
-    #[rstest]
-    fn test_drop_cvec_pycapsule_allows_repeated_drop() {
-        Python::initialize();
-        Python::attach(|py| {
-            let cvec: DataFfiCVec = vec![DataFFI::Bar(stub_bar())].into();
-            let capsule = data_ffi_capsule(py, cvec, DATA_FFI_CVEC_CAPSULE_NAME);
-
-            drop_cvec_pycapsule(capsule.as_any()).unwrap();
-            drop_cvec_pycapsule(capsule.as_any()).unwrap();
-        });
-    }
-
-    fn data_ffi_capsule<'py>(
-        py: Python<'py>,
-        cvec: DataFfiCVec,
-        name: &'static CStr,
-    ) -> Bound<'py, PyCapsule> {
-        PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(py, cvec, name, |_, _| {})
-            .unwrap()
-    }
 }
