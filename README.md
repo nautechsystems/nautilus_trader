@@ -533,7 +533,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 Indicators and strategies can be developed in Python, Cython, or Rust. For performance and
 latency-sensitive applications, we recommend Rust. Below are some examples:
 
-- [indicator](/examples/backtest/example_07_using_indicators/strategy.py) example written in Python.
+- [indicator](/python/nautilus_trader/indicators/) example written in Python.
 - [indicator](/python/nautilus_trader/indicators/) implementations exposed through PyO3.
 - [strategy](/examples/backtest/example_01_load_bars_from_custom_csv/strategy.py) example written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
