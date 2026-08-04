@@ -416,6 +416,13 @@ fn has_auth_headers(headers: &HeaderMap) -> bool {
     headers.contains_key("x-mbx-apikey")
 }
 
+fn accepts_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.contains("application/json"))
+}
+
 fn sbe_response(body: Vec<u8>) -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -541,9 +548,13 @@ struct CapturedQuery {
 
 type CapturedQueries = Arc<std::sync::Mutex<Vec<CapturedQuery>>>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum WsSetupBehavior {
     CompleteSetup,
+    ReconnectAfterUserDataSubscribe,
+    ReconnectRejectSessionLogon,
+    ReconnectRejectUserDataSubscribe,
+    ReconnectThenIgnoreExplicitSessionLogon,
     RejectFirstSessionLogon,
     RejectSessionLogon,
     IgnoreSessionLogon,
@@ -555,7 +566,10 @@ enum WsSetupBehavior {
 struct WsSetupState {
     behavior: WsSetupBehavior,
     received_methods: Arc<tokio::sync::Mutex<Vec<String>>>,
-    session_logon_rejections: Arc<AtomicUsize>,
+    session_logon_requests: Arc<AtomicUsize>,
+    user_data_subscription_rejections: Arc<AtomicUsize>,
+    user_data_subscription_acks: Arc<AtomicUsize>,
+    user_data_subscription_release: Arc<tokio::sync::Notify>,
 }
 
 impl WsSetupState {
@@ -563,7 +577,10 @@ impl WsSetupState {
         Self {
             behavior,
             received_methods: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            session_logon_rejections: Arc::new(AtomicUsize::new(0)),
+            session_logon_requests: Arc::new(AtomicUsize::new(0)),
+            user_data_subscription_rejections: Arc::new(AtomicUsize::new(0)),
+            user_data_subscription_acks: Arc::new(AtomicUsize::new(0)),
+            user_data_subscription_release: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -588,6 +605,7 @@ fn create_exec_test_router_with_fill_fixture(
     };
 
     Router::new()
+        .route("/ws-api/v3", get(handle_ws_setup_complete))
         .route(
             "/api/v3/ping",
             get(|| async { sbe_response(build_ping_response()).into_response() }),
@@ -847,13 +865,39 @@ fn build_account_trade_response(trades: &[(i64, i64)]) -> Vec<u8> {
 
 fn create_exec_test_router_with_command_responses(state: CommandResponseState) -> Router {
     Router::new()
+        .route("/ws-api/v3", get(handle_ws_setup_complete))
         .route(
             "/api/v3/ping",
             get(|| async { sbe_response(build_ping_response()).into_response() }),
         )
         .route(
             "/api/v3/exchangeInfo",
-            get(|| async {
+            get(|headers: HeaderMap| async move {
+                if accepts_json(&headers) {
+                    let mut body = serde_json::from_str::<serde_json::Value>(include_str!(
+                        "../../test_data/spot/http_json/exchange_info_response.json"
+                    ))
+                    .expect("valid exchange info fixture");
+                    let symbol = &mut body["symbols"][0];
+                    symbol["symbol"] = json!("BTCUSDT");
+                    symbol["baseAsset"] = json!("BTC");
+                    symbol["quoteAsset"] = json!("USDT");
+                    symbol["filters"] = json!([
+                        {
+                            "filterType": "PRICE_FILTER",
+                            "minPrice": "0.01",
+                            "maxPrice": "1000000.00",
+                            "tickSize": "0.01"
+                        },
+                        {
+                            "filterType": "LOT_SIZE",
+                            "minQty": "0.00001",
+                            "maxQty": "9000.00000",
+                            "stepSize": "0.00001"
+                        }
+                    ]);
+                    return json_response(&body);
+                }
                 let symbols = vec![("BTCUSDT", "BTC", "USDT")];
                 sbe_response(build_exchange_info_response(&symbols)).into_response()
             }),
@@ -863,6 +907,15 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
             get(|headers: HeaderMap| async move {
                 if !has_auth_headers(&headers) {
                     return unauthorized_response().into_response();
+                }
+
+                if accepts_json(&headers) {
+                    return (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        include_str!("../../test_data/spot/http_json/account_response.json"),
+                    )
+                        .into_response();
                 }
                 let balances = vec![
                     ("BTC", 100_000_000i64, 0i64),
@@ -881,6 +934,22 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
                 sbe_response(build_orders_response(&orders)).into_response()
             }),
         )
+        .route(
+            "/api/v3/userDataStream",
+            post(|headers: HeaderMap| async move {
+                if !has_auth_headers(&headers) {
+                    return unauthorized_response().into_response();
+                }
+                json_response(&json!({"listenKey": "test-listen-key"})).into_response()
+            })
+            .delete(|headers: HeaderMap| async move {
+                if !has_auth_headers(&headers) {
+                    return unauthorized_response().into_response();
+                }
+                StatusCode::OK.into_response()
+            }),
+        )
+        .route("/ws/test-listen-key", get(handle_ws_setup_complete))
         .route("/api/v3/order/cancelReplace", post(handle_order_modify))
         .route(
             "/api/v3/order",
@@ -907,7 +976,6 @@ async fn handle_order_submit(
         return unauthorized_response().into_response();
     }
 
-    state.request_count.fetch_add(1, Ordering::Relaxed);
     let symbol = params
         .get("symbol")
         .cloned()
@@ -916,8 +984,27 @@ async fn handle_order_submit(
         .get("newClientOrderId")
         .cloned()
         .unwrap_or_else(|| "test-order".to_string());
-    command_response(
-        state.responses.submit,
+    let success = if accepts_json(&headers) {
+        json_response(&json!({
+            "symbol": symbol,
+            "orderId": 99999,
+            "orderListId": -1,
+            "clientOrderId": client_order_id,
+            "transactTime": 1710485608839_i64,
+            "price": "50000.00",
+            "origQty": "0.001",
+            "executedQty": "0.000",
+            "origQuoteOrderQty": "0.000",
+            "cummulativeQuoteQty": "0.000",
+            "status": "NEW",
+            "timeInForce": "GTC",
+            "type": "LIMIT",
+            "side": "BUY",
+            "workingTime": 1710485608839_i64,
+            "selfTradePreventionMode": "NONE",
+            "fills": [],
+        }))
+    } else {
         sbe_response(build_new_order_response(
             99999,
             &symbol,
@@ -926,8 +1013,12 @@ async fn handle_order_submit(
             10_000_000,
             0,
             1,
-        )),
-    )
+        ))
+        .into_response()
+    };
+    let response = command_response(state.responses.submit, success);
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+    response
 }
 
 async fn handle_order_cancel(
@@ -1017,8 +1108,6 @@ async fn handle_oco_order_list_submit(
     if !has_auth_headers(&headers) {
         return unauthorized_response().into_response();
     }
-    state.request_count.fetch_add(1, Ordering::Relaxed);
-
     let valid_oco = params.get("symbol").is_some_and(|value| value == "BTCUSDT")
         && params.get("side").is_some_and(|value| value == "SELL")
         && params.get("quantity").is_some_and(|value| value == "0.001")
@@ -1036,7 +1125,9 @@ async fn handle_oco_order_list_submit(
             .is_some_and(|value| value.contains("spot-oco-sl"));
 
     if !valid_oco {
-        return venue_reject_response(-1102, "invalid OCO test request");
+        let response = venue_reject_response(-1102, "invalid OCO test request");
+        state.request_count.fetch_add(1, Ordering::Relaxed);
+        return response;
     }
 
     let above_client_order_id = params
@@ -1052,7 +1143,7 @@ async fn handle_oco_order_list_submit(
         .cloned()
         .unwrap_or_else(|| "list".to_string());
 
-    command_response(
+    let response = command_response(
         state.responses.submit,
         json_response(&json!({
             "orderListId": 42,
@@ -1075,10 +1166,17 @@ async fn handle_oco_order_list_submit(
                 }
             ]
         })),
-    )
+    );
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+    response
 }
 
 async fn handle_ws_setup(ws: WebSocketUpgrade, State(state): State<WsSetupState>) -> Response {
+    ws.on_upgrade(|socket| handle_ws_setup_socket(socket, state))
+}
+
+async fn handle_ws_setup_complete(ws: WebSocketUpgrade) -> Response {
+    let state = WsSetupState::new(WsSetupBehavior::CompleteSetup);
     ws.on_upgrade(|socket| handle_ws_setup_socket(socket, state))
 }
 
@@ -1099,14 +1197,15 @@ async fn handle_ws_setup_socket(mut socket: WebSocket, state: WsSetupState) {
                     .unwrap_or_default();
 
                 state.received_methods.lock().await.push(method.to_string());
+                let session_logon_index = if method == "session.logon" {
+                    state.session_logon_requests.fetch_add(1, Ordering::Relaxed)
+                } else {
+                    0
+                };
 
                 match (method, state.behavior) {
                     ("session.logon", WsSetupBehavior::RejectFirstSessionLogon) => {
-                        if state
-                            .session_logon_rejections
-                            .fetch_add(1, Ordering::Relaxed)
-                            == 0
-                        {
+                        if session_logon_index == 0 {
                             if send_ws_setup_error(&mut socket, request_id, -2015, "auth rejected")
                                 .await
                                 .is_err()
@@ -1120,6 +1219,18 @@ async fn handle_ws_setup_socket(mut socket: WebSocket, state: WsSetupState) {
                             break;
                         }
                     }
+                    ("session.logon", WsSetupBehavior::ReconnectRejectSessionLogon)
+                        if session_logon_index == 1 =>
+                    {
+                        if send_ws_setup_error(&mut socket, request_id, -1021, "timestamp rejected")
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    ("session.logon", WsSetupBehavior::ReconnectThenIgnoreExplicitSessionLogon)
+                        if session_logon_index >= 2 => {}
                     ("session.logon", WsSetupBehavior::RejectSessionLogon) => {
                         if send_ws_setup_error(&mut socket, request_id, -2015, "auth rejected")
                             .await
@@ -1146,6 +1257,60 @@ async fn handle_ws_setup_socket(mut socket: WebSocket, state: WsSetupState) {
                         }
                     }
                     ("userDataStream.subscribe", WsSetupBehavior::IgnoreUserDataSubscribe) => {}
+                    ("userDataStream.subscribe", behavior)
+                        if matches!(
+                            behavior,
+                            WsSetupBehavior::ReconnectAfterUserDataSubscribe
+                                | WsSetupBehavior::ReconnectRejectSessionLogon
+                                | WsSetupBehavior::ReconnectRejectUserDataSubscribe
+                                | WsSetupBehavior::ReconnectThenIgnoreExplicitSessionLogon
+                        ) =>
+                    {
+                        let subscription_index =
+                            state.user_data_subscription_acks.load(Ordering::Relaxed);
+
+                        if behavior == WsSetupBehavior::ReconnectRejectUserDataSubscribe
+                            && subscription_index > 0
+                            && state
+                                .user_data_subscription_rejections
+                                .fetch_add(1, Ordering::Relaxed)
+                                == 0
+                        {
+                            if send_ws_setup_error(&mut socket, request_id, -1003, "rate limited")
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        if behavior == WsSetupBehavior::ReconnectAfterUserDataSubscribe
+                            && subscription_index > 0
+                        {
+                            state.user_data_subscription_release.notified().await;
+                        }
+
+                        if send_ws_setup_result(
+                            &mut socket,
+                            request_id,
+                            json!({"subscriptionId": 1}),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            break;
+                        }
+
+                        state
+                            .user_data_subscription_acks
+                            .fetch_add(1, Ordering::Relaxed);
+
+                        if subscription_index == 0 {
+                            let _ = socket.send(Message::Close(None)).await;
+                            break;
+                        }
+                    }
                     ("userDataStream.subscribe", _) => {
                         match send_ws_setup_result(
                             &mut socket,
@@ -1389,23 +1554,14 @@ fn create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    let base_url_ws_trading = Some(base_url_ws_trading.unwrap_or_else(|| {
+        format!(
+            "{}/ws-api/v3",
+            base_url_http.replacen("http://", "ws://", 1)
+        )
+    }));
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
-    let client_id = *BINANCE_CLIENT_ID;
-
-    let cache = Rc::new(RefCell::new(Cache::default()));
-
-    let core = ExecutionClientCore::new(
-        trader_id,
-        client_id,
-        *BINANCE_VENUE,
-        OmsType::Hedging,
-        account_id,
-        AccountType::Cash,
-        None,
-        cache.clone(),
-    );
-
     let config = BinanceExecClientConfig {
         trader_id,
         account_id,
@@ -1418,6 +1574,53 @@ fn create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
         api_secret: Some("test_api_secret".to_string()),
         ..Default::default()
     };
+
+    create_test_execution_client_from_config(config)
+}
+
+fn create_test_execution_client_us(
+    base_url_http: String,
+    base_url_ws: String,
+) -> (
+    BinanceSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BINANCE-001");
+    let config = BinanceExecClientConfig {
+        trader_id,
+        account_id,
+        base_url_http: Some(base_url_http),
+        base_url_ws: Some(base_url_ws),
+        use_ws_trading: true,
+        us: true,
+        api_key: Some("test_api_key".to_string()),
+        api_secret: Some("test_api_secret".to_string()),
+        ..Default::default()
+    };
+
+    create_test_execution_client_from_config(config)
+}
+
+fn create_test_execution_client_from_config(
+    config: BinanceExecClientConfig,
+) -> (
+    BinanceSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        *BINANCE_CLIENT_ID,
+        *BINANCE_VENUE,
+        OmsType::Hedging,
+        config.account_id,
+        AccountType::Cash,
+        None,
+        cache.clone(),
+    );
 
     // Set up event channel (must be set before creating client)
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1848,7 +2051,7 @@ async fn test_ws_trading_success_routes_orders_over_ws() {
 
 #[rstest]
 #[tokio::test]
-async fn test_ws_trading_reconnect_retries_ws_after_setup_failure() {
+async fn test_ws_trading_connect_retry_succeeds_after_setup_failure() {
     let (http_addr, request_count) =
         start_exec_test_server_with_command_responses(CommandResponses::default()).await;
     let (ws_addr, ws_state) =
@@ -1861,19 +2064,10 @@ async fn test_ws_trading_reconnect_retries_ws_after_setup_failure() {
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
     client.start().unwrap();
-    client.connect().await.unwrap();
-    assert!(client.is_connected());
+    let error = client.connect().await.unwrap_err();
+    assert!(!client.is_connected());
+    assert_eq!(error.to_string(), "code=-2015: auth rejected");
 
-    let fallback_order_id = ClientOrderId::new("ws-setup-retry-fallback-001");
-    let fallback_order = add_limit_order_to_cache(&cache, fallback_order_id);
-
-    client
-        .submit_order(submit_order_command(&fallback_order))
-        .unwrap();
-
-    wait_for_command_requests(&request_count, 1).await;
-
-    client.disconnect().await.unwrap();
     client.connect().await.unwrap();
 
     let retry_order_id = ClientOrderId::new("ws-setup-retry-success-001");
@@ -1885,7 +2079,7 @@ async fn test_ws_trading_reconnect_retries_ws_after_setup_failure() {
 
     wait_for_ws_method(&ws_state, "order.place").await;
 
-    assert_eq!(request_count.load(Ordering::Relaxed), 1);
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
     assert_eq!(
         ws_state.received_methods().await,
         [
@@ -1904,44 +2098,48 @@ async fn test_ws_trading_reconnect_retries_ws_after_setup_failure() {
 
 #[rstest]
 #[tokio::test]
-async fn test_ws_trading_session_logon_rejection_uses_http_only_mode() {
-    assert_ws_setup_failure_uses_http(
+async fn test_ws_trading_session_logon_rejection_fails_connect() {
+    assert_ws_setup_failure_disconnects_client(
         WsSetupBehavior::RejectSessionLogon,
         &["session.logon"],
         None,
+        "code=-2015: auth rejected",
     )
     .await;
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_ws_trading_auth_timeout_uses_http_only_mode() {
-    assert_ws_setup_failure_uses_http(
+async fn test_ws_trading_auth_timeout_fails_connect() {
+    assert_ws_setup_failure_disconnects_client(
         WsSetupBehavior::IgnoreSessionLogon,
         &["session.logon"],
         Some(TEST_WS_SETUP_TIMEOUT_MS),
+        "WS session authentication timed out",
     )
     .await;
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_ws_trading_user_data_subscribe_rejection_uses_http_only_mode() {
-    assert_ws_setup_failure_uses_http(
+async fn test_ws_trading_user_data_subscribe_rejection_fails_connect() {
+    assert_ws_setup_failure_disconnects_client(
         WsSetupBehavior::RejectUserDataSubscribe,
         &["session.logon", "userDataStream.subscribe"],
         None,
+        "code=-1000: subscribe rejected",
     )
     .await;
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_ws_trading_user_data_subscribe_timeout_uses_http_only_mode() {
-    assert_ws_setup_failure_uses_http(
+async fn test_ws_trading_user_data_subscribe_timeout_fails_connect() {
+    assert_ws_setup_failure_disconnects_client(
         WsSetupBehavior::IgnoreUserDataSubscribe,
         &["session.logon", "userDataStream.subscribe"],
         Some(TEST_WS_SETUP_TIMEOUT_MS),
+        "WS user data subscription timed out",
     )
     .await;
 }
@@ -1964,83 +2162,280 @@ async fn test_disconnect_sets_state() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_generates_submitted_and_accepted_events() {
-    let addr = start_exec_test_server().await;
-    let base_url = format!("http://{addr}");
-
-    let (mut client, mut rx, cache) = create_test_execution_client(base_url);
+async fn test_submit_order_http_success_waits_for_user_stream() {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) = start_ws_setup_test_server(WsSetupBehavior::CompleteSetup).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+    let (mut client, mut rx, cache) = create_test_execution_client_with_transport(
+        base_url_http,
+        false,
+        Some(base_url_ws_trading),
+    );
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
-
     client.start().unwrap();
     client.connect().await.unwrap();
 
-    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    wait_for_ws_method(&ws_state, "userDataStream.subscribe").await;
+    assert_eq!(
+        ws_state.received_methods().await,
+        ["session.logon", "userDataStream.subscribe"]
+    );
+
     let client_order_id = ClientOrderId::new("test-order-001");
-    let trader_id = TraderId::from("TESTER-001");
-    let strategy_id = StrategyId::from("TEST-STRATEGY");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
 
-    let order = LimitOrder::new(
-        trader_id,
-        strategy_id,
-        instrument_id,
-        client_order_id,
-        OrderSide::Buy,
-        Quantity::from("0.001"),
-        Price::from("50000.00"),
-        TimeInForce::Gtc,
-        None,  // expire_time
-        true,  // post_only
-        false, // reduce_only
-        false, // quote_quantity
-        None,  // display_qty
-        None,  // emulation_trigger
-        None,  // trigger_instrument_id
-        None,  // contingency_type
-        None,  // order_list_id
-        None,  // linked_order_ids
-        None,  // parent_order_id
-        None,  // exec_algorithm_id
-        None,  // exec_algorithm_params
-        None,  // exec_spawn_id
-        None,  // tags
-        nautilus_core::UUID4::new(),
-        UnixNanos::default(),
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        is_submit_result_event(event, &[client_order_id])
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_http_resubscribes_user_stream_after_reconnect() {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) =
+        start_ws_setup_test_server(WsSetupBehavior::ReconnectAfterUserDataSubscribe).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+    let (mut client, mut rx, cache) = create_test_execution_client_with_transport(
+        base_url_http,
+        false,
+        Some(base_url_ws_trading),
     );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
 
-    let order_any = OrderAny::Limit(order);
+    wait_for_ws_method_count(&ws_state, "userDataStream.subscribe", 2).await;
 
-    // SubmitOrder references by ID, so order must be in cache first
-    cache
-        .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
-        .unwrap();
-
-    let submit_cmd = SubmitOrder::new(
-        trader_id,
-        Some(*BINANCE_CLIENT_ID),
-        strategy_id,
-        instrument_id,
-        order_any.client_order_id(),
-        order_any.init_event().clone(),
-        None, // exec_algorithm_id
-        None, // position_id
-        None, // params
-        nautilus_core::UUID4::new(),
-        UnixNanos::default(),
-        None, // correlation_id
+    let blocked_order_id = ClientOrderId::new("test-order-reconnect-blocked-001");
+    let blocked_order = add_limit_order_to_cache(&cache, blocked_order_id);
+    let error = client
+        .submit_order(submit_order_command(&blocked_order))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Binance Spot user data stream is not active"
     );
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
 
-    client.submit_order(submit_cmd).unwrap();
+    ws_state.user_data_subscription_release.notify_one();
+
+    let client_order_id = ClientOrderId::new("test-order-reconnect-ready-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    submit_order_when_ready(&client, &order).await;
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_eq!(
+        ws_state.user_data_subscription_acks.load(Ordering::Relaxed),
+        2
+    );
+    assert_eq!(
+        ws_state.received_methods().await,
+        [
+            "session.logon",
+            "userDataStream.subscribe",
+            "session.logon",
+            "userDataStream.subscribe",
+        ]
+    );
+    assert_no_order_event_matching(&mut rx, |event| {
+        is_submit_result_event(event, &[client_order_id])
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::authentication(
+    WsSetupBehavior::ReconnectRejectSessionLogon,
+    "session.logon",
+    2,
+    [
+        "session.logon",
+        "userDataStream.subscribe",
+        "session.logon",
+        "session.logon",
+        "userDataStream.subscribe",
+    ],
+)]
+#[case::subscription(
+    WsSetupBehavior::ReconnectRejectUserDataSubscribe,
+    "userDataStream.subscribe",
+    2,
+    [
+        "session.logon",
+        "userDataStream.subscribe",
+        "session.logon",
+        "userDataStream.subscribe",
+        "userDataStream.subscribe",
+    ],
+)]
+#[tokio::test]
+async fn test_submit_order_http_retries_rejected_reconnect_setup(
+    #[case] behavior: WsSetupBehavior,
+    #[case] rejected_method: &str,
+    #[case] rejected_method_count: usize,
+    #[case] expected_methods: [&str; 5],
+) {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) = start_ws_setup_test_server(behavior).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+    let (mut client, _rx, cache) = create_test_execution_client_with_transport(
+        base_url_http,
+        false,
+        Some(base_url_ws_trading),
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    wait_for_ws_method_count(&ws_state, rejected_method, rejected_method_count).await;
+
+    let client_order_id = ClientOrderId::new("test-order-reconnect-retry-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    let error = client
+        .submit_order(submit_order_command(&order))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Binance Spot user data stream is not active"
+    );
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
 
     wait_until_async(
         || {
-            let found = rx
-                .try_recv()
-                .is_ok_and(|e| matches!(e, ExecutionEvent::Order(OrderEventAny::Accepted(_))));
-            async move { found }
+            let ready = ws_state.user_data_subscription_acks.load(Ordering::Relaxed) == 2;
+            async move { ready }
         },
         Duration::from_secs(5),
     )
+    .await;
+    submit_order_when_ready(&client, &order).await;
+
+    wait_for_command_requests(&request_count, 1).await;
+    assert_eq!(
+        ws_state.received_methods().await,
+        expected_methods.into_iter().collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_explicit_connect_ignores_prior_reconnect_setup_acknowledgments() {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let (ws_addr, ws_state) =
+        start_ws_setup_test_server(WsSetupBehavior::ReconnectThenIgnoreExplicitSessionLogon).await;
+    let base_url_http = format!("http://{http_addr}");
+    let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
+            base_url_http,
+            false,
+            Some(base_url_ws_trading),
+            true,
+            TEST_WS_SETUP_TIMEOUT_MS,
+        );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let ready = ws_state.user_data_subscription_acks.load(Ordering::Relaxed) == 2;
+            async move { ready }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let client_order_id = ClientOrderId::new("test-order-before-explicit-reconnect-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    submit_order_when_ready(&client, &order).await;
+    wait_for_command_requests(&request_count, 1).await;
+
+    client.disconnect().await.unwrap();
+    let error = client.connect().await.unwrap_err();
+
+    assert_eq!(error.to_string(), "WS session authentication timed out");
+    assert!(!client.is_connected());
+    assert_eq!(
+        ws_state.received_methods().await,
+        [
+            "session.logon",
+            "userDataStream.subscribe",
+            "session.logon",
+            "userDataStream.subscribe",
+            "session.logon",
+        ]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_binance_us_submit_order_uses_http_transport() {
+    let (addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client_us(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("test-order-us-http-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        is_submit_result_event(event, &[client_order_id])
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_rejects_inactive_user_stream() {
+    let (http_addr, request_count) =
+        start_exec_test_server_with_command_responses(CommandResponses::default()).await;
+    let base_url_http = format!("http://{http_addr}");
+    let (client, mut rx, cache) =
+        create_test_execution_client_with_transport(base_url_http, false, None);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    let client_order_id = ClientOrderId::new("test-order-inactive-stream-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    let error = client
+        .submit_order(submit_order_command(&order))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Binance Spot user data stream is not active"
+    );
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+    assert_no_order_event_matching(&mut rx, |event| {
+        is_submit_result_event(event, &[client_order_id])
+            || matches!(event, OrderEventAny::Submitted(event) if event.client_order_id == client_order_id)
+    })
     .await;
 }
 
@@ -2101,30 +2496,24 @@ async fn test_submit_spot_native_gtd_rejects_before_submission() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_oco_order_list_routes_to_order_list_oco_endpoint() {
+async fn test_submit_oco_order_list_http_success_waits_for_user_stream() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
     let orders = add_spot_oco_orders_to_cache(&cache);
+    let client_order_ids = orders
+        .iter()
+        .map(|order| order.client_order_id())
+        .collect::<Vec<_>>();
     let submit_cmd = submit_order_list_command(&orders);
 
     client.submit_order_list(submit_cmd).unwrap();
 
     wait_for_command_requests(&request_count, 1).await;
 
-    let mut accepted_count = 0;
-    wait_until_async(
-        || {
-            while let Ok(event) = rx.try_recv() {
-                if matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_))) {
-                    accepted_count += 1;
-                }
-            }
-            let done = accepted_count == 2;
-            async move { done }
-        },
-        Duration::from_secs(5),
-    )
+    assert_no_order_event_matching(&mut rx, |event| {
+        is_submit_result_event(event, &client_order_ids)
+    })
     .await;
 }
 
@@ -2533,12 +2922,15 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
 #[rstest]
 #[tokio::test]
 async fn test_local_submit_failure_emits_order_rejected() {
-    let (mut client, mut rx, cache) =
-        create_test_execution_client("http://127.0.0.1:1".to_string());
-    client.start().unwrap();
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
 
     let client_order_id = ClientOrderId::new("local-submit-reject-test-001");
-    let order_any = add_limit_order_to_cache(&cache, client_order_id);
+    let order_any = add_limit_order_for_instrument_to_cache(
+        &cache,
+        InstrumentId::from("ETHUSDT.BINANCE"),
+        client_order_id,
+    );
 
     client
         .submit_order(submit_order_command(&order_any))
@@ -2555,10 +2947,15 @@ async fn test_local_submit_failure_emits_order_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("not in cache"));
+            assert_eq!(
+                event.reason.as_str(),
+                "submit-order-error: Validation error: Instrument ETHUSDT not in cache",
+            );
         }
         other => panic!("Expected Rejected event, was {other:?}"),
     }
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]
@@ -3191,6 +3588,25 @@ fn submit_order_command(order: &OrderAny) -> SubmitOrder {
     )
 }
 
+async fn submit_order_when_ready(client: &BinanceSpotExecutionClient, order: &OrderAny) {
+    wait_until_async(
+        || {
+            let result = client.submit_order(submit_order_command(order));
+            async move {
+                match result {
+                    Ok(()) => true,
+                    Err(e) if e.to_string() == "Binance Spot user data stream is not active" => {
+                        false
+                    }
+                    Err(e) => panic!("Unexpected submit error after reconnect setup: {e}"),
+                }
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
 fn submit_order_list_command(orders: &[OrderAny]) -> SubmitOrderList {
     let order_list = OrderList::new(
         OrderListId::from("OL-SPOT-TEST"),
@@ -3296,10 +3712,30 @@ async fn wait_for_ws_method(state: &WsSetupState, expected_method: &str) {
     .await;
 }
 
-async fn assert_ws_setup_failure_uses_http(
+async fn wait_for_ws_method_count(state: &WsSetupState, expected_method: &str, expected: usize) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .received_methods()
+                    .await
+                    .iter()
+                    .filter(|method| method.as_str() == expected_method)
+                    .count()
+                    >= expected
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn assert_ws_setup_failure_disconnects_client(
     behavior: WsSetupBehavior,
     expected_methods: &[&str],
     ws_trading_setup_timeout_ms: Option<u64>,
+    expected_error: &str,
 ) {
     let (http_addr, request_count) =
         start_exec_test_server_with_command_responses(CommandResponses::default()).await;
@@ -3307,7 +3743,7 @@ async fn assert_ws_setup_failure_uses_http(
     let base_url_http = format!("http://{http_addr}");
     let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
 
-    let (mut client, mut rx, cache) = match ws_trading_setup_timeout_ms {
+    let (mut client, _rx, cache) = match ws_trading_setup_timeout_ms {
         Some(timeout_ms) => create_test_execution_client_with_ws_trading_timeout(
             base_url_http,
             base_url_ws_trading,
@@ -3319,7 +3755,12 @@ async fn assert_ws_setup_failure_uses_http(
 
     client.start().unwrap();
     let connect_timeout = match behavior {
-        WsSetupBehavior::CompleteSetup | WsSetupBehavior::RejectFirstSessionLogon => {
+        WsSetupBehavior::CompleteSetup
+        | WsSetupBehavior::ReconnectAfterUserDataSubscribe
+        | WsSetupBehavior::ReconnectRejectSessionLogon
+        | WsSetupBehavior::ReconnectRejectUserDataSubscribe
+        | WsSetupBehavior::ReconnectThenIgnoreExplicitSessionLogon
+        | WsSetupBehavior::RejectFirstSessionLogon => {
             unreachable!("complete setup is not a setup failure")
         }
         WsSetupBehavior::IgnoreSessionLogon | WsSetupBehavior::IgnoreUserDataSubscribe => {
@@ -3329,43 +3770,19 @@ async fn assert_ws_setup_failure_uses_http(
             Duration::from_secs(5)
         }
     };
-    tokio::time::timeout(connect_timeout, client.connect())
+    let error = tokio::time::timeout(connect_timeout, client.connect())
         .await
         .expect("Connect should finish before setup timeout")
-        .unwrap();
-    assert!(client.is_connected());
-
-    let client_order_id = ClientOrderId::new("ws-setup-fallback-test-001");
-    let order_any = add_limit_order_to_cache(&cache, client_order_id);
-
-    client
-        .submit_order(submit_order_command(&order_any))
-        .unwrap();
-
-    wait_for_command_requests(&request_count, 1).await;
-
-    match recv_until(&mut rx, |event| {
-        matches!(
-            event,
-            ExecutionEvent::Order(OrderEventAny::Accepted(event))
-                if event.client_order_id == client_order_id
-        )
-    })
-    .await
-    {
-        ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
-            assert_eq!(event.client_order_id, client_order_id);
-        }
-        other => panic!("Expected Accepted event, was {other:?}"),
-    }
+        .unwrap_err();
+    assert!(!client.is_connected());
+    assert_eq!(error.to_string(), expected_error);
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
 
     let expected_methods = expected_methods
         .iter()
         .map(|method| (*method).to_string())
         .collect::<Vec<_>>();
     assert_eq!(ws_state.received_methods().await, expected_methods);
-
-    client.disconnect().await.unwrap();
 }
 
 async fn assert_no_order_event_matching<F>(
@@ -3382,6 +3799,15 @@ async fn assert_no_order_event_matching<F>(
         }
     })
     .await;
+}
+
+fn is_submit_result_event(event: &OrderEventAny, client_order_ids: &[ClientOrderId]) -> bool {
+    match event {
+        OrderEventAny::Accepted(event) => client_order_ids.contains(&event.client_order_id),
+        OrderEventAny::Filled(event) => client_order_ids.contains(&event.client_order_id),
+        OrderEventAny::Rejected(event) => client_order_ids.contains(&event.client_order_id),
+        _ => false,
+    }
 }
 
 async fn assert_no_event_matching<F>(

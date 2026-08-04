@@ -13,6 +13,9 @@ Released on TBD (UTC).
 - Removed `cython-compat`, Cython cbindgen configs, and `drop_cvec_pycapsule`; use PyO3 APIs
 - Removed Databento `load_*_as_pycapsule` methods; use the corresponding `load_*` methods
 
+### Fixes
+- Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
+
 ### Internal Improvements
 - Hardened development wheel publishing to validate exact artifacts and fail closed
 - Improved native backtest workload coverage for canonical result checks
