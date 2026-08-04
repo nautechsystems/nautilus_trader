@@ -75,6 +75,13 @@ type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 /// Configuration for a Redis-backed message bus backing.
 ///
 /// Redis 6.2 or higher is required for correct operation.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
@@ -1288,6 +1295,8 @@ mod tests {
 mod serial_tests {
     use std::{sync::mpsc, thread};
 
+    #[cfg(feature = "python")]
+    use nautilus_common::python::msgbus::get_global_msgbus_factory_registry;
     use nautilus_common::{
         enums::Environment,
         msgbus::{self, TypedHandler},
@@ -1298,6 +1307,11 @@ mod serial_tests {
         config::{LiveExecEngineConfig, LiveNodeConfig},
     };
     use nautilus_model::data::{QuoteTick, TradeTick};
+    #[cfg(feature = "python")]
+    use pyo3::{
+        Py, Python,
+        types::{PyAnyMethods, PyModule},
+    };
     use redis::aio::ConnectionManager;
     use rstest::*;
 
@@ -1313,6 +1327,31 @@ mod serial_tests {
         create_redis_connection(MSGBUS_STREAM, &config)
             .await
             .expect("A running Redis service is required for this test")
+    }
+
+    fn redis_msgbus_factory(config: RedisMessageBusConfig) -> Box<dyn MessageBusBackingFactory> {
+        #[cfg(feature = "python")]
+        {
+            Python::initialize();
+            Python::attach(|py| {
+                let module = PyModule::new(py, "infrastructure").unwrap();
+                crate::python::infrastructure(py, &module).unwrap();
+                let config = Py::new(py, config).unwrap();
+                let factory = module
+                    .getattr("RedisMessageBusFactory")
+                    .unwrap()
+                    .call1((config,))
+                    .unwrap()
+                    .unbind();
+
+                get_global_msgbus_factory_registry()
+                    .extract(py, factory)
+                    .unwrap()
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        Box::new(RedisMessageBusFactory::new(config))
     }
 
     #[rstest]
@@ -1798,9 +1837,7 @@ mod serial_tests {
                         ..Default::default()
                     };
                     let mut node = LiveNodeBuilder::from_config(config)?
-                        .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(
-                            redis_config,
-                        )))
+                        .with_external_msgbus_factory(redis_msgbus_factory(redis_config))
                         .build()?;
                     let handle = node.handle();
                     let quote_handler = TypedHandler::from({

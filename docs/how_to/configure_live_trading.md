@@ -132,12 +132,13 @@ The Python v2 `LiveNode` does not yet expose direct cache-backing injection.
 ### MessageBus configuration
 
 Message bus behavior stays in `MessageBusConfig`. Redis connection settings live in
-`RedisMessageBusConfig`, which constructs the backing through `MessageBusBackingFactory`.
+`RedisMessageBusConfig`. `RedisMessageBusFactory` uses those settings to construct the backing
+through `MessageBusBackingFactory`.
 
 ```rust
 use nautilus_common::{
     enums::SerializationEncoding,
-    msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
+    msgbus::{MessageBusBackingFactory, MessageBusConfig},
 };
 use nautilus_infrastructure::redis::msgbus::{RedisMessageBusConfig, RedisMessageBusFactory};
 
@@ -152,18 +153,53 @@ let config = MessageBusConfig {
     ..Default::default()
 };
 
-let backing = RedisMessageBusConfig {
+let redis_config = RedisMessageBusConfig {
     connection_timeout: 2,
     response_timeout: 2,
     ..Default::default()
 };
 
-let message_bus_backing = RedisMessageBusFactory::new(backing).create(
+let backing = RedisMessageBusFactory::new(redis_config).create(
     trader_id,
     instance_id,
     config.clone(),
 )?;
 ```
+
+Python v2 injects the same Redis factory through `LiveNodeBuilder`:
+
+```python
+from nautilus_trader.common import Environment
+from nautilus_trader.common import MessageBusConfig
+from nautilus_trader.infrastructure import RedisMessageBusConfig
+from nautilus_trader.infrastructure import RedisMessageBusFactory
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import TraderId
+
+trader_id = TraderId("TRADER-001")
+message_bus = MessageBusConfig(
+    external_streams=["external-stream"],
+    stream_per_topic=False,
+)
+redis_config = RedisMessageBusConfig(
+    host="localhost",
+    port=6379,
+)
+node = (
+    LiveNode.builder("LiveNode", trader_id, Environment.LIVE)
+    .with_msgbus_config(message_bus)
+    .with_external_msgbus_factory(RedisMessageBusFactory(redis_config))
+    .build()
+)
+node.run()
+```
+
+`MessageBusConfig` alone does not install a backing. Pair it with a factory as shown above. The
+factory always installs external egress, and calling `run()` also consumes the configured external
+streams. Entries already in a stream before the node starts are not replayed. A host loop based on
+`start()` and `poll()` does not service external message‑bus ingress; use `run()` when
+`external_streams` is configured. See [message bus backing
+configuration](../concepts/message_bus.md#backing-config) for lifecycle and ingress details.
 
 ## Multi-venue configuration
 

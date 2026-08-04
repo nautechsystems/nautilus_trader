@@ -1707,6 +1707,14 @@ def test_live_stub_exposes_builder_engine_config_methods():
         in live_stub
     )
     assert (
+        "def with_msgbus_config(self, config: common.MessageBusConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_external_msgbus_factory(self, factory: typing.Any) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
         "def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ..."
         in live_stub
     )
@@ -1728,6 +1736,8 @@ def test_live_stub_exposes_builder_engine_config_methods():
     ("module_name", "class_name"),
     [
         ("nautilus_trader.adapters.dydx", "DydxClientOrderIdEncoder"),
+        ("nautilus_trader.infrastructure", "RedisMessageBusConfig"),
+        ("nautilus_trader.infrastructure", "RedisMessageBusFactory"),
         ("nautilus_trader.persistence", "DataBackendSession"),
         ("nautilus_trader.persistence", "ParquetDataCatalog"),
         ("nautilus_trader.persistence", "StreamingFeatherWriter"),

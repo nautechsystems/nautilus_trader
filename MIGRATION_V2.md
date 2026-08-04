@@ -512,11 +512,16 @@ These gaps can affect migration but do not block supported cutover workflows:
 
 - Python request callbacks do not provide v1 joined-response, pending-request cleanup, or late and
   duplicate delivery convenience behavior.
-- Python cannot inject Redis cache databases or external message-bus backing factories into
-  `LiveNode`; Rust builders still expose those backings.
-- SQL cache position and synthetic loads, actor and strategy state persistence, and heartbeat remain
-  incomplete. Redis backing is available through Rust builders, but Python `LiveNode` configuration
-  cannot select it.
+- Python v2 accepts built‑in external message‑bus factory classes such as
+  `RedisMessageBusFactory`, but arbitrary Python factory classes remain unsupported. V1
+  `MessageBusConfig(database=DatabaseConfig(...), external_streams=[...])` maps to the builder calls
+  `LiveNodeBuilder.with_msgbus_config(...)` and
+  `LiveNodeBuilder.with_external_msgbus_factory(RedisMessageBusFactory(...))`. See
+  [live message‑bus configuration][live-message-bus-config].
+- Python cannot inject Redis cache databases into `LiveNode`; Rust APIs still expose those
+  backings.
+- SQL cache position and synthetic loads, actor and strategy state persistence, and cache heartbeat
+  remain incomplete.
 - External message-bus publishing of serialized order and position snapshots remains deferred.
 - V2 `BacktestNode` does not yet support the v1 `StreamingConfig` and `DataCatalogConfig` iterator
   workflow.
@@ -531,6 +536,7 @@ These gaps can affect migration but do not block supported cutover workflows:
 The [v2 roadmap][v2-roadmap] tracks the wider post-cutover surface. Release-specific breaking
 changes remain in [RELEASES.md][release-notes].
 
+[live-message-bus-config]: docs/how_to/configure_live_trading.md#messagebus-configuration
 [python-v2-backtest-tests]: python/tests/acceptance/test_backtest.py
 [python-v2-examples]: examples/README.md#live-adapter-examples
 [python-v2-strategy-config]: python/tests/strategies/ema_cross.py
