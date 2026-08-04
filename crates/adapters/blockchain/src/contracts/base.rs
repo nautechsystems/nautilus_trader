@@ -145,6 +145,31 @@ impl BaseContract {
             self.client
                 .construct_eth_call(&contract_address.to_string(), call_data, block);
 
+        self.execute_call_request(rpc_request).await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn execute_call_from(
+        &self,
+        from: &Address,
+        contract_address: &Address,
+        call_data: &[u8],
+        block: Option<u64>,
+    ) -> Result<Vec<u8>, BlockchainRpcClientError> {
+        let rpc_request = self.client.construct_eth_call_from(
+            from,
+            &contract_address.to_string(),
+            call_data,
+            block,
+        );
+
+        self.execute_call_request(rpc_request).await
+    }
+
+    async fn execute_call_request(
+        &self,
+        rpc_request: serde_json::Value,
+    ) -> Result<Vec<u8>, BlockchainRpcClientError> {
         let encoded_response = self
             .client
             .execute_rpc_call_with_timeout::<String>(rpc_request, self.rpc_timeout_secs)

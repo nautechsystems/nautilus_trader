@@ -187,11 +187,37 @@ impl BlockchainHttpRpcClient {
         call_data: &[u8],
         block: Option<u64>,
     ) -> serde_json::Value {
+        self.construct_eth_call_request(None, to, call_data, block)
+    }
+
+    #[cfg(feature = "hypersync")]
+    #[must_use]
+    pub(crate) fn construct_eth_call_from(
+        &self,
+        from: &Address,
+        to: &str,
+        call_data: &[u8],
+        block: Option<u64>,
+    ) -> serde_json::Value {
+        self.construct_eth_call_request(Some(from), to, call_data, block)
+    }
+
+    fn construct_eth_call_request(
+        &self,
+        from: Option<&Address>,
+        to: &str,
+        call_data: &[u8],
+        block: Option<u64>,
+    ) -> serde_json::Value {
         let encoded_data = hex::encode_prefixed(call_data);
-        let call = serde_json::json!({
+        let mut call = serde_json::json!({
             "to": to,
             "data": encoded_data
         });
+
+        if let Some(from) = from {
+            call["from"] = serde_json::Value::String(from.to_string());
+        }
 
         let block_param = if let Some(block_number) = block {
             serde_json::json!(format!("0x{:x}", block_number))

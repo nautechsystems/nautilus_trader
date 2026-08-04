@@ -466,6 +466,14 @@ single order flow:
   share a priority is ambiguous and will be rejected, detected by comparing
   `Token::get_token_priority` for both pool tokens because the helpers resolve ties silently.
 
+Execution routing will follow Nautilus's multi‑venue broker pattern because the client represents a
+wallet and RPC connection for one chain while each instrument venue identifies both its chain and
+DEX. A strategy may select the client explicitly through `client_id`; node configuration may instead
+register the client for instrument venues through `RoutingConfig.venues` or use it as the default
+execution client. After client selection, `ExecutionClient::handles_order_venue` will accept only a
+venue whose parsed chain matches the client configuration and whose DEX is supported by the client.
+The instrument retains its `<Chain>:<DexType>` venue rather than being rewritten to `BLOCKCHAIN`.
+
 The order will map to a single `exactInputSingle` call on the original Uniswap SwapRouter (the
 deployment whose signature carries a deadline):
 
@@ -504,13 +512,22 @@ Preflight, WETH wrapping, and router approval are explicit operations on the cli
   wallet native and token balances, the exact router allowance of the pool's base (input) token,
   and current fee conditions, and returns a structured, sanitized report. It contains no RPC URLs,
   keys, or raw signed transactions, and it changes no state.
-- **Wrap** submits a WETH `deposit()` transaction carrying native value, only on explicit command.
-- **Approve** submits an ERC-20 `approve(router, amount)` transaction, only on explicit command,
-  with the approval amount policy set by `unlimited_approval`. The router must be in the
-  `router_addresses` allowlist.
+- **Wrap** requires deployed bytecode and a readable ERC‑20 balance at the configured WETH address,
+  submits a `deposit()` transaction carrying native value, only on explicit command, and requires
+  the wallet WETH balance to increase by the wrapped amount.
+- **Approve** requires deployed bytecode at the token address and a router in the
+  `router_addresses` allowlist. Before broadcast, it simulates `approve(router, amount)` from the
+  wallet, rejects a standard false return, and supports tokens that return no data. Only an explicit
+  command submits the transaction. With `unlimited_approval`, the client requests `U256::MAX`, but
+  accepts a token‑specific maximum allowance when it still covers the requested amount.
 
 Wrap and approve each build their transaction through the shared EIP-1559 path, persist a
-transaction record before broadcast, and return after the transaction is included on-chain.
+transaction record before broadcast, and return after the transaction is included on‑chain and its
+contract postcondition passes. Approval reads the allowance at the transaction's inclusion block.
+Wrap compares the WETH balance at the block immediately before inclusion with the balance at the
+inclusion block, avoiding a stale pre‑broadcast baseline.
+If a postcondition fails, the call returns an error after inclusion while the persisted transaction
+remains `included`; an error therefore does not imply that no on‑chain state changed.
 
 ### Transaction signing and broadcast
 
@@ -650,9 +667,10 @@ Automated execution tests never use a live network:
   not-ready states, receipt parsing including the null-pending and reverted cases, receipt RPC
   retry without rebroadcast, broadcast classification (`already known`, rejection, timeout after
   send), disconnect signer revocation, cancellation during persistence and after request dispatch,
-  and successful and failed initial and terminal-status persistence against a temporary Postgres
-  schema (skipped when Postgres is unavailable). JSON-RPC fixtures live as files under the crate's
-  `test_data/execution/` directory.
+  deployed‑bytecode rejection, approval simulation for false and empty returns, wrap balance and
+  approval allowance postconditions, and successful and failed initial and terminal-status
+  persistence against a temporary Postgres schema (skipped when Postgres is unavailable). JSON-RPC
+  fixtures live as files under the crate's `test_data/execution/` directory.
 - A pinned‑block Anvil integration forks Arbitrum at block 489000000 with
   `anvil --fork-url <RPC> --fork-block-number 489000000 --chain-id 42161` and runs wrap, approve,
   and preflight against localhost only, asserting receipt status 1, positive gas usage, the WETH

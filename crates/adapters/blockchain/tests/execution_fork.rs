@@ -324,6 +324,9 @@ async fn anvil_fork_wrap_approve_and_preflight() {
         report.issues
     );
 
+    let weth_address = WETH.parse().unwrap();
+    let weth_balance_before = erc20.balance_of(&weth_address, &wallet).await.unwrap();
+
     // Wrap native currency into WETH
     let wrap_hash = client.wrap(U256::from(WRAP_AMOUNT_WEI)).await.unwrap();
     let wrap_receipt = rpc_client
@@ -333,11 +336,13 @@ async fn anvil_fork_wrap_approve_and_preflight() {
         .unwrap();
     assert!(wrap_receipt.status);
     assert!(wrap_receipt.gas_used > 0);
-    let weth_balance = erc20
-        .balance_of(&WETH.parse().unwrap(), &wallet)
-        .await
-        .unwrap();
-    assert_eq!(weth_balance, U256::from(WRAP_AMOUNT_WEI));
+    let weth_balance_after = erc20.balance_of(&weth_address, &wallet).await.unwrap();
+    assert_eq!(
+        weth_balance_after,
+        weth_balance_before
+            .checked_add(U256::from(WRAP_AMOUNT_WEI))
+            .unwrap()
+    );
 
     // Approve the router; unlimited policy applies regardless of the requested amount
     let approve_hash = client

@@ -20,6 +20,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
     sol_types::SolCall,
 };
+use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
@@ -78,6 +79,12 @@ struct InFlightTransaction {
     nonce: u64,
     tx_hash: B256,
     purpose: TransactionPurpose,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IncludedTransaction {
+    tx_hash: B256,
+    block_number: u64,
 }
 
 /// Execution client for blockchain interactions including balance tracking and order execution.
@@ -359,37 +366,86 @@ impl BlockchainExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the amount is zero, the client is not connected, another
-    /// transaction is in flight, no durable store is configured, or any RPC, policy,
-    /// signing, persistence, or broadcast step fails. A persistence failure after signing
-    /// leaves the in-flight slot occupied because database commit acknowledgement is ambiguous.
+    /// Returns an error if the amount is zero, the WETH target is not a deployed ERC-20 contract,
+    /// the client is not connected, another transaction is in flight, no durable store is
+    /// configured, the WETH balance does not increase by `amount_wei`, or any RPC, policy, signing,
+    /// persistence, or broadcast step fails. A persistence failure after signing leaves the
+    /// in-flight slot occupied because database commit acknowledgement is ambiguous.
     pub async fn wrap(&mut self, amount_wei: U256) -> anyhow::Result<B256> {
         if amount_wei.is_zero() {
             anyhow::bail!("Wrap amount must be positive");
         }
 
+        self.ensure_transaction_ready(TransactionPurpose::Wrap)?;
+        self.ensure_contract_deployed(&self.weth_address, "WETH")
+            .await?;
+        let _balance_before_broadcast = self
+            .erc20_contract
+            .balance_of(&self.weth_address, &self.wallet_address)
+            .await?;
+
         let calldata = WETH9::depositCall {}.abi_encode();
-        self.execute_transaction(
-            self.weth_address,
-            amount_wei,
-            Bytes::from(calldata),
-            TransactionPurpose::Wrap,
-        )
-        .await
+        let IncludedTransaction {
+            tx_hash,
+            block_number,
+        } = self
+            .execute_transaction(
+                self.weth_address,
+                amount_wei,
+                Bytes::from(calldata),
+                TransactionPurpose::Wrap,
+            )
+            .await?;
+        let previous_block = block_number.checked_sub(1).ok_or_else(|| {
+            anyhow::anyhow!("Included wrap transaction {tx_hash} has invalid block number 0")
+        })?;
+        let balance_before = self
+            .erc20_contract
+            .balance_of_at(&self.weth_address, &self.wallet_address, previous_block)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to read WETH balance before included transaction {tx_hash} at block {previous_block}"
+                )
+            })?;
+        let balance_after = self
+            .erc20_contract
+            .balance_of_at(&self.weth_address, &self.wallet_address, block_number)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to read WETH balance after included transaction {tx_hash} at block {block_number}"
+                )
+            })?;
+        let expected_balance = balance_before.checked_add(amount_wei).ok_or_else(|| {
+            anyhow::anyhow!(
+                "WETH balance overflow for included transaction {tx_hash} at block {block_number}: wrap amount {amount_wei} from balance {balance_before}"
+            )
+        })?;
+
+        if balance_after != expected_balance {
+            anyhow::bail!(
+                "WETH balance after transaction {tx_hash} did not increase by {amount_wei}: expected {expected_balance}, was {balance_after}"
+            );
+        }
+
+        Ok(tx_hash)
     }
 
     /// Approves an allowlisted SwapRouter to spend `amount` of `token` via an ERC-20
-    /// `approve` transaction. When `unlimited_approval` is configured the allowance is
-    /// set to unlimited regardless of `amount`.
+    /// `approve` transaction. When `unlimited_approval` is configured the transaction requests
+    /// `U256::MAX`, while the resulting allowance must still cover `amount`.
     ///
     /// This is an explicit operator operation; it never runs inside `submit_order`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the router is not allowlisted, the client is not connected,
-    /// another transaction is in flight, no durable store is configured, or any RPC,
-    /// policy, signing, persistence, or broadcast step fails. A persistence failure after signing
-    /// leaves the in-flight slot occupied because database commit acknowledgement is ambiguous.
+    /// Returns an error if the router is not allowlisted, the token is not a deployed contract,
+    /// approval simulation returns false or malformed data, the client is not connected, another
+    /// transaction is in flight, no durable store is configured, the resulting allowance is below
+    /// the requested amount, or any RPC, policy, signing, persistence, or broadcast step fails. A
+    /// persistence failure after signing leaves the in-flight slot occupied because database
+    /// commit acknowledgement is ambiguous.
     pub async fn approve(
         &mut self,
         token: Address,
@@ -400,24 +456,69 @@ impl BlockchainExecutionClient {
             anyhow::bail!("Router {router} is not in the configured `router_addresses` allowlist");
         }
 
-        let amount = if self.config.unlimited_approval {
+        self.ensure_transaction_ready(TransactionPurpose::Approve)?;
+        self.ensure_contract_deployed(&token, "ERC-20 token")
+            .await?;
+
+        let approval_amount = if self.config.unlimited_approval {
             U256::MAX
         } else {
             amount
         };
+
+        if !self
+            .erc20_contract
+            .simulate_approve(&token, &self.wallet_address, &router, approval_amount)
+            .await?
+        {
+            anyhow::bail!("ERC-20 approve returned false for token {token}");
+        }
         let calldata = ERC20::approveCall {
             spender: router,
-            amount,
+            amount: approval_amount,
         }
         .abi_encode();
 
-        self.execute_transaction(
-            token,
-            U256::ZERO,
-            Bytes::from(calldata),
-            TransactionPurpose::Approve,
-        )
-        .await
+        let IncludedTransaction {
+            tx_hash,
+            block_number,
+        } = self
+            .execute_transaction(
+                token,
+                U256::ZERO,
+                Bytes::from(calldata),
+                TransactionPurpose::Approve,
+            )
+            .await?;
+        let allowance = self
+            .erc20_contract
+            .allowance_at(&token, &self.wallet_address, &router, block_number)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to read router allowance after included transaction {tx_hash} at block {block_number}"
+                )
+            })?;
+
+        if allowance < amount {
+            anyhow::bail!(
+                "Router allowance after transaction {tx_hash} is below the requested amount {amount}: was {allowance}"
+            );
+        }
+
+        Ok(tx_hash)
+    }
+
+    async fn ensure_contract_deployed(
+        &self,
+        address: &Address,
+        description: &str,
+    ) -> anyhow::Result<()> {
+        let code = self.http_rpc_client.get_code(address).await?;
+        if code.is_empty() {
+            anyhow::bail!("No deployed bytecode at configured {description} address {address}");
+        }
+        Ok(())
     }
 
     /// Resolves the pool selected by `instrument_id` from the shared engine cache.
@@ -472,26 +573,8 @@ impl BlockchainExecutionClient {
         value: U256,
         input: Bytes,
         purpose: TransactionPurpose,
-    ) -> anyhow::Result<B256> {
-        if !self.core.is_connected() {
-            anyhow::bail!("Blockchain execution client is not connected");
-        }
-
-        if let Some(in_flight) = &self.in_flight {
-            anyhow::bail!(
-                "Transaction {} ({}, nonce {}) is still awaiting inclusion; at most one transaction can be in flight",
-                in_flight.tx_hash,
-                in_flight.purpose.as_str(),
-                in_flight.nonce
-            );
-        }
-
-        if !self.cache.has_database() {
-            anyhow::bail!(
-                "No durable store configured; refusing to submit a {} transaction",
-                purpose.as_str()
-            );
-        }
+    ) -> anyhow::Result<IncludedTransaction> {
+        self.ensure_transaction_ready(purpose)?;
 
         let expected_chain_id = u64::from(self.chain.chain_id);
         let actual_chain_id = self.http_rpc_client.chain_id().await?;
@@ -638,7 +721,10 @@ impl BlockchainExecutionClient {
                 if !receipt.status {
                     anyhow::bail!("Transaction {tx_hash} reverted on-chain");
                 }
-                Ok(tx_hash)
+                Ok(IncludedTransaction {
+                    tx_hash,
+                    block_number: receipt.block_number,
+                })
             }
             None => {
                 anyhow::bail!(
@@ -646,6 +732,29 @@ impl BlockchainExecutionClient {
                 )
             }
         }
+    }
+
+    fn ensure_transaction_ready(&self, purpose: TransactionPurpose) -> anyhow::Result<()> {
+        if !self.core.is_connected() {
+            anyhow::bail!("Blockchain execution client is not connected");
+        }
+
+        if let Some(in_flight) = &self.in_flight {
+            anyhow::bail!(
+                "Transaction {} ({}, nonce {}) is still awaiting inclusion; at most one transaction can be in flight",
+                in_flight.tx_hash,
+                in_flight.purpose.as_str(),
+                in_flight.nonce
+            );
+        }
+
+        if !self.cache.has_database() {
+            anyhow::bail!(
+                "No durable store configured; refusing to submit a {} transaction",
+                purpose.as_str()
+            );
+        }
+        Ok(())
     }
 
     /// Polls for the receipt of a broadcast transaction until it exists or the poll bound
@@ -908,6 +1017,11 @@ mod tests {
     const GET_BALANCE_ZERO: &str =
         include_str!("../../test_data/execution/rpc_eth_get_balance_zero.json");
     const CALL_BALANCE: &str = include_str!("../../test_data/execution/rpc_eth_call_balance.json");
+    const CALL_BALANCE_AFTER_WRAP: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_balance_after_wrap.json");
+    const CALL_BOOL_TRUE: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_bool_true.json");
+    const CALL_EMPTY: &str = include_str!("../../test_data/execution/rpc_eth_call_empty.json");
     const CALL_ZERO: &str = include_str!("../../test_data/execution/rpc_eth_call_zero.json");
     const CALL_ALLOWANCE: &str =
         include_str!("../../test_data/execution/rpc_eth_call_allowance.json");
@@ -1036,13 +1150,17 @@ mod tests {
         (test_client(format!("http://{addr}")), state)
     }
 
-    fn ready_rpc_state() -> MockRpcState {
+    fn execution_rpc_state() -> MockRpcState {
         MockRpcState::default()
             .with_response("eth_chainId", CHAIN_ID_ARBITRUM)
             .with_response("eth_getCode", GET_CODE_DEPLOYED)
             .with_response("eth_getBalance", GET_BALANCE)
             .with_response("eth_getBlockByNumber", BLOCK_BY_NUMBER)
             .with_response("eth_maxPriorityFeePerGas", MAX_PRIORITY_FEE)
+    }
+
+    fn ready_rpc_state() -> MockRpcState {
+        execution_rpc_state()
             .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
             .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
     }
@@ -1367,6 +1485,261 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wrap_rejects_code_free_target_before_broadcast() {
+        let state = execution_rpc_state().with_response("eth_getCode", GET_CODE_EMPTY);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_wrap_code_free_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("No deployed bytecode"),
+            "was: {error}"
+        );
+        assert!(client.in_flight.is_none());
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["method"], "eth_getCode");
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn wrap_rejects_unrelated_target_before_broadcast() {
+        let state = execution_rpc_state().with_response("eth_call", CALL_EMPTY);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_wrap_unrelated_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Decoding error"), "was: {error}");
+        assert!(client.in_flight.is_none());
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["method"], "eth_getCode");
+        assert_eq!(requests[1]["method"], "eth_call");
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn wrap_rejects_included_transaction_without_balance_delta() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE])
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_wrap_no_delta_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("did not increase"),
+            "was: {error}"
+        );
+        assert!(client.in_flight.is_none());
+        let status: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT status FROM {schema}.execution_transaction"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "included");
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+        assert_eq!(broadcasts, 1);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn wrap_reports_inclusion_when_postcondition_read_fails() {
+        let state = execution_rpc_state()
+            .with_response_sequence(
+                "eth_call",
+                &[CALL_BALANCE, CALL_BALANCE, RPC_METHOD_NOT_FOUND],
+            )
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_wrap_postcondition_rpc_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(
+            message.contains("failed to read WETH balance after included transaction 0x"),
+            "was: {message}"
+        );
+        assert!(message.contains("at block 30346561"), "was: {message}");
+        assert!(client.in_flight.is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_false_return_before_broadcast() {
+        let state = execution_rpc_state().with_response("eth_call", CALL_ZERO);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_approve_false_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .approve(
+                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                U256::from(1_000u64),
+                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("returned false"), "was: {error}");
+        assert!(client.in_flight.is_none());
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["method"], "eth_getCode");
+        assert_eq!(requests[1]["method"], "eth_call");
+        assert_eq!(requests[1]["params"][0]["from"], WALLET);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_accepts_empty_return_with_sufficient_allowance() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ALLOWANCE])
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_approve_empty_test", state).await
+        else {
+            return;
+        };
+
+        let tx_hash = client
+            .approve(
+                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                U256::from(1_000u64),
+                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
+            )
+            .await
+            .unwrap();
+
+        let record = client
+            .cache
+            .get_execution_transaction(42161, &tx_hash.to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.purpose, "approve");
+        assert_eq!(record.status, "included");
+        assert!(client.in_flight.is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_empty_return_with_insufficient_allowance() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ZERO])
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_approve_insufficient_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .approve(
+                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                U256::from(1_000u64),
+                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("below the requested amount"),
+            "was: {error}"
+        );
+        assert!(client.in_flight.is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_reports_inclusion_when_postcondition_read_fails() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_BOOL_TRUE, RPC_METHOD_NOT_FOUND])
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_approve_postcondition_rpc_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .approve(
+                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                U256::from(1_000u64),
+                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
+            )
+            .await
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(
+            message.contains("failed to read router allowance after included transaction 0x"),
+            "was: {message}"
+        );
+        assert!(message.contains("at block 30346561"), "was: {message}");
+        assert!(client.in_flight.is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
     async fn connect_rejects_on_chain_mismatch() {
         let state = ready_rpc_state().with_response("eth_chainId", CHAIN_ID_ETHEREUM);
         let (mut client, _) = client_with_mock_rpc(state).await;
@@ -1548,7 +1921,7 @@ mod tests {
                 }
 
                 let waiting = sqlx::query_scalar::<_, bool>(
-                    r#"
+                    "
                     SELECT EXISTS (
                         SELECT 1
                         FROM pg_locks AS locks
@@ -1558,7 +1931,7 @@ mod tests {
                           AND relations.relname = 'execution_transaction'
                           AND NOT locks.granted
                     )
-                    "#,
+                    ",
                 )
                 .bind(&schema)
                 .fetch_one(&observer_pool)
@@ -1985,7 +2358,17 @@ mod tests {
             .await
             .unwrap();
 
-        let state = ready_rpc_state()
+        let state = execution_rpc_state()
+            .with_response_sequence(
+                "eth_call",
+                &[
+                    CALL_BALANCE,
+                    CALL_BALANCE,
+                    CALL_BALANCE_AFTER_WRAP,
+                    CALL_BOOL_TRUE,
+                    CALL_ALLOWANCE,
+                ],
+            )
             .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
             .with_response("eth_estimateGas", ESTIMATE_GAS)
             .with_response_sequence(
@@ -2051,6 +2434,16 @@ mod tests {
             .filter(|request| request["method"] == "eth_getTransactionReceipt")
             .count();
         assert_eq!(receipt_polls, 3);
+        let calls: Vec<_> = requests
+            .iter()
+            .filter(|request| request["method"] == "eth_call")
+            .collect();
+        assert_eq!(calls.len(), 5);
+        assert_eq!(calls[0]["params"][1], "latest");
+        assert_eq!(calls[1]["params"][1], "0x1cf0d40");
+        assert_eq!(calls[2]["params"][1], "0x1cf0d41");
+        assert_eq!(calls[3]["params"][1], "latest");
+        assert_eq!(calls[4]["params"][1], "0x1cf0d41");
 
         // Unlimited approval policy encoded U256::MAX in the approve calldata
         let estimates: Vec<_> = requests
@@ -2162,6 +2555,40 @@ mod tests {
         };
 
         Some((admin_pool, pg_config))
+    }
+
+    async fn execution_client_with_database(
+        test_name: &str,
+        state: MockRpcState,
+    ) -> Option<(
+        sqlx::PgPool,
+        String,
+        BlockchainExecutionClient,
+        MockRpcState,
+    )> {
+        let (admin_pool, pg_config) = connect_test_postgres(test_name).await?;
+        let schema = format!("{test_name}_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
+            .await
+            .unwrap();
+        let addr = start_mock_rpc_server(state.clone()).await;
+        let mut client = test_client(format!("http://{addr}"));
+        client.cache.database = Some(database);
+        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.core.set_connected();
+
+        Some((admin_pool, schema, client, state))
+    }
+
+    async fn drop_execution_schema(admin_pool: &sqlx::PgPool, schema: &str) {
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(admin_pool)
+            .await
+            .unwrap();
     }
 
     async fn setup_execution_schema(admin_pool: &sqlx::PgPool, schema: &str) {
