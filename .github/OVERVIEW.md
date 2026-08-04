@@ -10,30 +10,34 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 - **attest-build-provenance-retry**: wraps GitHub build provenance attestation with bounded retries.
 - **attest-sbom-retry**: wraps Docker SBOM attestation with bounded retries.
-- **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
+- **cargo-tool-install**: installs version‑pinned Cargo tools such as `cargo-audit`, `cargo-deny`,
+  and `cargo-vet` with caching.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, prek, swap space).
 - **common-test-data**: caches large test data under `test_data/large`.
 - **generate-sbom-retry**: wraps Docker SBOM generation with bounded retries.
-- **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
+- **install-capnp**: installs the Cap'n Proto compiler on Linux, macOS, and Windows, with a binary
+  cache on Linux.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.
 - **upload-artifact-wheel**: uploads the latest wheel artifact to GitHub Actions.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
-  wheel builds, artifact uploads, release asset uploads, Trusted Publishing to PyPI and crates.io,
-  release preflights, release attestations, registry verification, release checksum publication,
-  final release asset verification, and final GitHub release publication and attestation
-  verification. Pushes to `nightly` build and publish wheels for every supported platform.
-  A dedicated Linux x86 job runs the workspace Rust suite once, and the required Python wheel jobs
-  fail when that prerequisite fails. The plan step skips builds on docs-only changes and skips Rust
-  tests on Python-only changes.
+- **build.yml**: main wheel CI pipeline for planning, `pre-commit`, workspace Rust tests, Python
+  tests, wheel builds, provenance, and publication. `develop` publishes Linux x86 development
+  wheels to R2, `nightly` publishes every supported wheel platform to R2 after its security gate,
+  and `master` publishes every platform to PyPI after `cargo-deny` and `cargo-vet`. A dedicated
+  Linux x86 job runs the Rust suite once in parallel with the three required Python wheel jobs after
+  `pre-commit`; both R2 and PyPI publication require it to pass. The plan step skips builds on
+  docs‑only changes and skips Rust tests on Python‑only changes that cannot publish.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
-- **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
+- **cli-binaries.yml**: builds CLI archives for Linux x86, Linux ARM64, macOS ARM64, and Windows
+  x86_64 on nightly pushes and manual dispatch. Nightly pushes publish versioned and latest
+  artifacts to R2.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
   `nightly`, and manual dispatch.
-- **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`)
-  using Buildx and native ARM runners.
+- **docker.yml**: builds and pushes multi‑platform `nautilus_trader` and `jupyterlab` images with
+  Buildx and native ARM runners, then signs them with cosign and verifies their SPDX SBOM
+  attestations.
 - **dst.yml**: runs deterministic simulation smoke tests on `nightly` and manual dispatch.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: fast-forwards `nightly` to the latest successful `develop` build.
@@ -44,8 +48,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **performance.yml**: Rust tests and benchmarks on `nightly`.
 - **security-audit.yml**: runs change-aware and scheduled supply chain checks (cargo-audit,
   cargo-deny, cargo-vet, pip-audit, osv-scanner, and Zizmor).
-- **openssf-scorecard.yml**: OpenSSF Scorecard posture scan on weekly schedule and manual dispatch.
-  The scheduled run publishes badge/API results; all runs upload SARIF to code scanning.
+- **openssf-scorecard.yml**: runs the OpenSSF Scorecard posture scan on a weekly schedule and manual
+  dispatch. Each run publishes badge/API results and uploads SARIF to code scanning.
 
 ## Security
 
@@ -53,9 +57,10 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 - **CODEOWNERS**: Critical infrastructure files (workflows, dependencies, build configs, scripts)
   require Core team review before merge.
-- **Branch and tag rulesets**: Protected branches require signed commits and passing CI checks.
-  Release tags matching `v*` are immutable after creation. External PRs must receive Core team
-  approval before merge.
+- **Branch and tag rulesets**: `develop` and `master` require signed commits, an approving review,
+  code‑owner approval where applicable, resolved review threads, and named CI checks. `nightly`
+  requires signed commits and blocks deletion and non‑fast‑forward updates. Test branches require
+  signed commits, and release tags matching `v*` are immutable after creation.
 - **Least-privilege tokens**: Workflows default `GITHUB_TOKEN` to `contents: read, actions: read`
   and selectively elevate scopes only for jobs that need them.
 - **Secret management**: No secrets or credentials are stored in the repo. Credentials are provided
@@ -86,39 +91,18 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are
   pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
-- **Build attestations**: Python wheels and sdists receive GitHub artifact attestations and PyPI
-  publish attestations. Docker images receive cosign signatures and SPDX SBOM attestations. Verify
-  Python artifacts via `gh attestation verify` and container images via `cosign verify`.
-- **Release sequencing**: Stable releases create a draft GitHub release first, attach wheel and
-  sdist assets, publish to package indexes (`packages.nautechsystems.io`, PyPI, crates.io), verify
-  registries, attach final integrity assets, then publish the GitHub release. This keeps the GitHub
-  release as the anchor for downstream registry publishing while staying compatible with GitHub
-  release immutability.
-- **Release checksums**: GitHub releases attach `SHA256SUMS`, per-asset `.sha256` files,
-  `dist-manifest.json`, and per-artifact `.sigstore` / `.intoto.jsonl` provenance bundle siblings
-  for Python artifacts. The release body also includes a generated artifact checksum table and
-  provenance verification command.
-- **PyPI Trusted Publishing**: `publish-wheels-pypi` and `publish-sdist-pypi` upload to PyPI via
-  OIDC trusted publishing rather than a long-lived API token. The trusted publisher on PyPI is
-  bound to repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`;
-  `uv publish --trusted-publishing automatic` mints a short-lived token at publish time. No
-  `PYPI_*` secret is required.
-- **crates.io Trusted Publishing**: `publish-cargo-crates` publishes Cargo crates via crates.io
-  OIDC trusted publishing. The trusted publisher on crates.io must be configured per crate for
-  repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; the
-  job uses a short-lived token from `rust-lang/crates-io-auth-action` and no long-lived cargo token.
-- **Post-publish verification**: `publish-release-integrity` generates the release manifest, then
-  verifies PyPI files against `dist-manifest.json`, verifies PyPI provenance publisher metadata, and
-  verifies crates.io entries were trusted-published by this repository before attaching checksum
-  assets to the draft release. These verifier calls retry transient Sigstore/Rekor/TUF lag, while
-  provenance and identity mismatches fail fast. The job records whether each crate matches the
-  release commit, was already published, or matched an explicit
-  `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` `crate@version` entry for emergency token-publish recovery.
-  Manual entries are recorded in `crates-manifest.json` with
-  `release_status: "manual_token_publish"`. Malformed or unused exception entries fail the job. The
-  job uploads `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow
-  artifacts. `publish-github-release` verifies the final draft asset set, publishes the draft
-  release, and verifies GitHub's release attestation.
+- **Build attestations**: R2 and PyPI wheel jobs create and verify GitHub artifact attestations
+  before upload. The PyPI job also creates PyPI publish attestations. Docker images receive cosign
+  signatures and SPDX SBOM attestations, which the workflow verifies after pushing. Verify Python
+  artifacts with `gh attestation verify` and container images with `cosign verify`.
+- **Wheel publication**: `develop` publication requires the successful same‑commit security audit.
+  `nightly` publication requires its `cargo audit` and OSV gate. `master` PyPI publication requires
+  `cargo-deny`, `cargo-vet`, every platform wheel job, and the Rust suite. Development and nightly
+  wheels publish to `packages.nautechsystems.io`; master wheels publish to PyPI.
+- **PyPI Trusted Publishing**: `publish-pypi` uploads wheels through OIDC instead of a long‑lived
+  API token. The PyPI publisher is bound to repository `nautechsystems/nautilus_trader`, workflow
+  `build.yml`, and environment `release`. `uv publish --trusted-publishing automatic` mints a
+  short‑lived token at publish time, so no `PYPI_*` secret is required.
 - **Caching**: The dedicated Linux x86 Rust job restores its action cache for untrusted PRs and
   produces it from trusted `develop` and `test-ci` pushes. Its other self-hosted runs use a
   persistent target. Linux x86 wheel jobs disable action caching and use persistent targets for
@@ -126,11 +110,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   separate cache. The active large Parquet fixtures save after the Rust tests on a cache miss.
 - **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
   mainline branches are never cancelled.
-- **Runners**: Trusted Linux x86 build and test jobs, including `test-ci`, use the self-hosted build
-  pools. Untrusted PRs use GitHub-hosted runners under the policy below. Depot 8-core runners cover
-  platforms without self-hosted capacity, such as Linux ARM and Windows cross-platform builds.
-  macOS and lightweight jobs use GitHub runners. The scheduled `nightly-tests.yml` workflow uses no
-  Depot runners. Custom runner labels are declared in `.github/actionlint.yaml`.
+- **Runners**: Trusted Linux x86 jobs in `build.yml`, including `test-ci`, use the self‑hosted
+  `build` pool. Untrusted PRs use GitHub‑hosted runners under the policy below. Linux ARM and Windows
+  wheel matrices use Depot 8‑core runners, while macOS wheels and all CLI platforms use GitHub
+  runners. Scheduled Rust diagnostics use the self‑hosted `self-hosted-linux-x86` pool, and DST uses
+  the `build` pool. Custom runner labels are declared in `.github/actionlint.yaml`.
 
 ### Runtime hardening
 
@@ -156,16 +140,21 @@ before publishing. Occasionally, upstream events outside our control (transitive
 advisories, crate yanks for non-security reasons) can block the nightly pipeline with no
 actionable fix on our side.
 
-The repo-scoped variable `SECURITY_GATE_OVERRIDE` holds an ISO 8601 UTC timestamp
+The repo‑scoped variable `SECURITY_GATE_OVERRIDE` holds an ISO 8601 UTC timestamp
 (e.g. `2026-03-28T02:00:00Z`). When the current time is before the timestamp, the security
 gate is skipped. When the timestamp passes, the gate re-enables automatically with no manual
-reset. The variable will be left unset for normal operations.
+reset. Leave the variable unset for normal operations.
 
 A repo admin will thoroughly assess all flagged items before setting the timestamp, and will
 scope it to the minimum window needed for the blocked build to complete:
 
-```
-date -u -d '+2 hours' --iso-8601=seconds  # e.g. 2 hour window
+```bash
+python3 - <<'PY'
+from datetime import datetime, timedelta, timezone
+
+expires = datetime.now(timezone.utc) + timedelta(hours=2)
+print(expires.isoformat(timespec="seconds").replace("+00:00", "Z"))
+PY
 ```
 
 Modifying repo variables requires admin access. An attacker with that level of access can
@@ -186,22 +175,24 @@ Workflows use these GitHub variables by role:
 
 - `STEP_SECURITY_EGRESS_POLICY`: StepSecurity egress mode for the job. Workflows default to `block`. Set
   `audit` only as a temporary override while expanding an allow list.
-- `COMMON_ALLOWED_ENDPOINTS`: Endpoints needed by every job (GitHub API, Ubuntu packages, tooling).
-- `CI_ALLOWED_ENDPOINTS`: Extra endpoints shared by the main CI, nightly, docs, and release workflows.
-- `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: Extra endpoints needed by the security audit jobs.
+- `COMMON_ALLOWED_ENDPOINTS`: Baseline endpoints shared across workflows for GitHub, system
+  packages, and tooling.
+- `CI_ALLOWED_ENDPOINTS`: Extra endpoints shared by build, documentation, CLI, container, and
+  scheduled test workflows.
+- `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: Extra endpoints shared by the security audit jobs and the
+  nightly publication gate.
 
-Some workflows add job-specific endpoints inline (e.g., `upload.pypi.org:443` for publishing,
-`auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds, and Scorecard publishing
-plus lookup endpoints such as `api.scorecard.dev:443`, `fulcio.sigstore.dev:443`, and
-`tuf-repo-cdn.sigstore.dev:443`). The Windows CLI build also permits GlobalSign OCSP and CRL
+Some workflows add job‑specific endpoints inline, such as `upload.pypi.org:443` for PyPI,
+`ghcr.io:443` for container publication, the configured Cloudflare R2 host, and Scorecard lookup
+and publication endpoints such as `api.scorecard.dev:443`, `fulcio.sigstore.dev:443`, and
+`tuf-repo-cdn.sigstore.dev:443`. The Windows CLI build also permits GlobalSign OCSP and CRL
 endpoints so Schannel can verify GitHub release certificates.
 
-Security audit jobs do not use deployment environments. They do not need environment secrets, and
-environment branch policies block same-repo contributor PRs before the audit steps can start.
+Security audit jobs do not use deployment environments or environment secrets.
 
 #### `COMMON_ALLOWED_ENDPOINTS`
 
-```
+```text
 api.github.com:443                           # GitHub API
 github.com:443                               # GitHub main site
 artifacts.githubusercontent.com:443          # GitHub Actions artifacts
@@ -254,7 +245,7 @@ dl.google.com:443                            # Google tool downloads
 
 #### `CI_ALLOWED_ENDPOINTS`
 
-```
+```text
 artifactcache.actions.githubusercontent.com:443              # Actions cache
 github-releases.githubusercontent.com:443                    # GitHub release downloads
 launch.actions.githubusercontent.com:443                     # Actions launch
@@ -295,7 +286,7 @@ d5l0dvt14r5h8.cloudfront.net:443                             # CI download CDN
 
 #### `SECURITY_AUDIT_ALLOWED_ENDPOINTS`
 
-```
+```text
 static.rust-lang.org:443                     # Rust toolchain downloads
 crates.io:443                                # Rust crate registry
 index.crates.io:443                          # Rust crate index
@@ -311,8 +302,8 @@ release-assets.githubusercontent.com:443     # GitHub release assets
 GitHub-hosted runners contact Azure infrastructure at fixed IPs that are allowed by default
 at the VM level and do not need to be in the allow lists:
 
-- `168.63.129.16:80` -- Azure IMDS/wireserver (DHCP, DNS forwarding, health probes)
-- `168.63.129.16:53` -- Azure DNS resolver
+- `168.63.129.16:80`: Azure IMDS/wireserver (DHCP, DNS forwarding, health probes)
+- `168.63.129.16:53`: Azure DNS resolver
 
 **Action Update Policy**: When updating GitHub Actions, only use versions that have been released for at least 2 weeks.
 This allows time for the community to identify potential issues while maintaining security through timely updates.
