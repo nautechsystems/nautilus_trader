@@ -29,4 +29,6 @@ ignore = [
   # quick-xml DoS, transitive via object_store 0.13.2; no object_store release with quick-xml >= 0.41.0
   "RUSTSEC-2026-0194",
   "RUSTSEC-2026-0195",
+  # rkyv validation bug, locked as an unused optional rust_decimal dependency; no 0.7 fix
+  "RUSTSEC-2026-0235",
 ]

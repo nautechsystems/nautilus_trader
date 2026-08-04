@@ -54,6 +54,11 @@ ignore = [
   # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release" },
 
+  # rkyv shared-pointer validation bug, locked as an unused optional rust_decimal dependency.
+  # rust_decimal 1.42.1 is current and intentionally retains rkyv 0.7 compatibility.
+  # TODO: Remove when rust_decimal stops locking rkyv 0.7.
+  { id = "RUSTSEC-2026-0235", reason = "rkyv validation bug in unused optional rust_decimal dependency; no 0.7 fix" },
+
   # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface; it is listed only in .cargo/audit.toml.
 ]
