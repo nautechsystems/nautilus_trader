@@ -50,10 +50,10 @@ bash "$pkg_dir/../scripts/ci/test-python-doctests.bash" "$pkg_dir"
 
 mypy_dir="$neutral_dir/mypy"
 mkdir "$mypy_dir"
-cp -R "$pkg_dir/examples" "$mypy_dir/examples"
+cp -R "$pkg_dir/../examples" "$mypy_dir/examples"
 cp "$pkg_dir/tests/type_checking/supported.py" "$mypy_dir/supported.py"
 
-uv run --project "$pkg_dir" --no-sync mypy \
-  --config-file "$pkg_dir/pyproject.toml" \
+bash "$pkg_dir/../scripts/ci/test-python-types.bash" \
+  "$pkg_dir" \
   "$mypy_dir/examples" \
   "$mypy_dir/supported.py"

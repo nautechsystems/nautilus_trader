@@ -49,7 +49,7 @@ these components directly.
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/databento/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/)
 
 Rust examples live under
 [`crates/adapters/databento/examples/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/databento/examples/).
@@ -840,7 +840,7 @@ and point `publishers_filepath` at the local copy.
 | `venue_dataset_map`       | `None`   | Override venue‑to‑dataset mappings from publisher data. |
 
 Use `DatabentoLiveClientConfig` with `DatabentoDataClientFactory`. The current
-[Python example](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/databento/data_tester.py)
+[Python example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/databento/data_tester.py)
 shows the complete `LiveNode.builder(...)` configuration.
 
 ### Connection stability

@@ -16,7 +16,7 @@ compiled into the core `nautilus_trader` package automatically during the build.
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/dydx/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/dydx/examples/)
 
 ## Overview

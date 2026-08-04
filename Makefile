@@ -1172,7 +1172,8 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 .PHONY: mypy
 mypy: build-debug  #-- Type-check supported Python authoring workflows
 	$(info $(M) Type-checking supported Python authoring workflows...)
-	$Q cd python && VIRTUAL_ENV= uv run --no-sync mypy examples tests/type_checking/supported.py
+	$Q bash scripts/ci/test-python-types.bash \
+		python examples python/tests/type_checking/supported.py
 
 #== CLI Tools
 

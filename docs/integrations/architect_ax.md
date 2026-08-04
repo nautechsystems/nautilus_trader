@@ -9,7 +9,7 @@ This integration supports live market data ingest and order execution with AX Ex
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/architect_ax/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/architect_ax/examples/)
 
 ## Overview
@@ -130,7 +130,7 @@ export AX_API_SECRET="your-sandbox-api-secret"
 #### 4. Configure the live node
 
 Set `environment=AxEnvironment.SANDBOX` on the data and execution client configs. See the
-[Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/architect_ax/)
+[Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/)
 for complete `LiveNode` setup.
 
 ### Production

@@ -34,7 +34,7 @@ won't need to work directly with these lower-level components.
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/kraken/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/kraken/examples/)
 
 ## Kraken documentation
@@ -733,7 +733,7 @@ To test with Kraken Futures demo (paper trading):
 3. Configure the adapter with `environment=KrakenEnvironment.DEMO` and
    `product_type=KrakenProductType.FUTURES`.
 
-The [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/kraken/)
+The [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken/)
 show the complete demo and live `LiveNode` configurations.
 
 ### Production configuration

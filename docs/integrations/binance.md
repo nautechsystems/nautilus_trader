@@ -17,7 +17,7 @@ Supported products:
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/binance/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/)
 - [Rust spot examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/binance/examples/spot/)
 - [Rust futures examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/binance/examples/futures/)
 

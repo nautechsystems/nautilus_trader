@@ -11,7 +11,7 @@ Betfair adapter is included in the Python package; no adapter‑specific extra i
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/betfair/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/betfair/examples/)
 
 ## Betfair documentation

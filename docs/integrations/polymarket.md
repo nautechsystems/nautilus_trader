@@ -37,9 +37,9 @@ For development wheels and source‑build prerequisites, see the
 
 The maintained examples are available in
 [`crates/adapters/polymarket/examples`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/polymarket/examples)
-for Rust and
-[`python/examples/polymarket`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/polymarket)
-for Python.
+for Rust. For Python, use the Rust‑native [data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/polymarket/data_tester.py),
+[execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/polymarket/exec_tester.py),
+or [Up/Down smoke tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/polymarket/updown_smoke_tester.py).
 The exec tester configurations apply the
 [close precision](#exec-tester-close-residuals) needed for Polymarket market SELL orders.
 

@@ -64,10 +64,9 @@ repository on GitHub:
 
 | Directory                                                                            | Contains                                                    |
 | :----------------------------------------------------------------------------------- | :---------------------------------------------------------- |
-| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Fully runnable, self‑contained Python examples              |
+| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Runnable Python examples organized by environment           |
 | [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                    |
 | [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features |
-| [python/examples/](../../python/examples/)                                           | Python examples using the Rust‑native package               |
 | [python/tests/unit/](../../python/tests/unit/)                                       | Unit tests covering core functionality and edge cases       |
 
 ## Running in Docker

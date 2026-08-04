@@ -15,7 +15,7 @@ adapter‑specific extra is required.
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/interactive_brokers/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/interactive_brokers/examples/)
 
 ## Getting started
@@ -63,8 +63,8 @@ Use a distinct client ID for each process connected to the same TWS or IB Gatewa
 execution client ID cannot be a multiple of `1000` because the adapter partitions order IDs by
 `client_id % 1000`.
 
-The current [Python data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/interactive_brokers/data_tester.py)
-and [execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/interactive_brokers/exec_tester.py)
+The current [Python data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/data_tester.py)
+and [execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/exec_tester.py)
 show how to add these configs and their factories to a `LiveNode`.
 
 ### Use a Dockerized IB Gateway

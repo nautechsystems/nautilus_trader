@@ -18,7 +18,7 @@ credentials and then add a strategy that can submit orders.
 Start from these files:
 
 - Rust quickstart: `examples/quickstarts/lighter-rust-data-client/`.
-- Python v2 data tester: `python/examples/lighter/data_tester.py`.
+- Python v2 data tester: `examples/live/lighter/data_tester.py`.
 - RWA tutorial: [Composite market making tutorial][lighter-rwa-composite-mm].
 
 The Rust and Python v2 paths both use these pieces:
@@ -98,17 +98,16 @@ Python v2 uses the Rust engine through PyO3. Install a Python v2 development whe
 checkout, or build the v2 package from source before running these examples. See
 [Python v2 installation][python-v2-install].
 
-From a source checkout with Python v2 installed:
+From the repository root with Python v2 installed:
 
 ```bash
-cd python
-.venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
 ```
 
 That command builds the node and exits. Pass `--run` to connect:
 
 ```bash
-.venv/bin/python examples/lighter/data_tester.py \
+.venv/bin/python examples/live/lighter/data_tester.py \
     --lighter-environment testnet \
     --instrument BTC-PERP.LIGHTER \
     --run
@@ -131,7 +130,7 @@ builder = LiveNode.builder(
 Use the execution tester only after the data tester works:
 
 ```bash
-.venv/bin/python examples/lighter/exec_tester.py \
+.venv/bin/python examples/live/lighter/exec_tester.py \
     --lighter-environment testnet \
     --instrument DOGE-PERP.LIGHTER
 ```
@@ -145,7 +144,7 @@ The starter paths prove client wiring, subscriptions, and credential lookup. The
 replace the tester with a strategy:
 
 - Use [Write a Strategy (Rust)](write_rust_strategy.md) for a pure Rust strategy.
-- Use `python/examples/lighter/nvda_composite_mm.py` for Python v2 node wiring with the built-in
+- Use `examples/live/lighter/nvda_composite_mm.py` for Python v2 node wiring with the built-in
   Rust `CompositeMarketMaker` strategy.
 - Use [Composite market making on Lighter RWA][lighter-rwa-composite-mm] when you need the full
   Databento signal setup.

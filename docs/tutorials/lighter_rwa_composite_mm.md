@@ -180,7 +180,7 @@ There are two ways to run this: from a NautilusTrader checkout via the shipped
 [Lighter NVDA composite market maker example][example-script] binary, or by
 copying the node wiring below into a `main` in your own project that depends on
 the crates from [Project setup](#project-setup). A Python v2 counterpart also lives at
-[`python/examples/lighter/nvda_composite_mm.py`][python-example-script]; it uses the same Rust
+[`examples/live/lighter/nvda_composite_mm.py`][python-example-script]; it uses the same Rust
 strategy through PyO3.
 
 From a checkout, with the credential variables set, the shipped binary connects
@@ -372,4 +372,4 @@ the Lighter BBO only for post-only and basis limits.
 [market details endpoint]: https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails
 [Databento US Equities]: https://databento.com/blog/introducing-databento-us-equities
 [example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/tutorials/src/bin/lighter_nvda_composite_mm.rs
-[python-example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/lighter/nvda_composite_mm.py
+[python-example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/lighter/nvda_composite_mm.py

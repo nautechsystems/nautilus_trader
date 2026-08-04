@@ -267,7 +267,7 @@ them:
 - `KrakenFuturesHttpClient.submit_orders_batch`
 - `KrakenSpotHttpClient.submit_orders_batch`
 
-The [Python v2 examples][python-v2-examples] show current live-node builders, adapter factories,
+The [Rust‑native Python examples][python-v2-examples] show current live-node builders, adapter factories,
 strategies, actors, and data/execution testers.
 
 Python v2 strategies subclass `Strategy` and override lifecycle or data callbacks:
@@ -525,14 +525,14 @@ These gaps can affect migration but do not block supported cutover workflows:
   Check each adapter's Rust/PyO3 config rather than copying v1 provider examples.
 - The published quickstart and backtesting tutorials still use v1 imports and configuration. Use the
   generated v2 stubs, the [v2 backtest acceptance tests][python-v2-backtest-tests] for backtesting,
-  and [Python v2 examples][python-v2-examples] for live and adapter workflows while those tutorials
+  and [Rust‑native Python examples][python-v2-examples] for live and adapter workflows while those tutorials
   are ported.
 
 The [v2 roadmap][v2-roadmap] tracks the wider post-cutover surface. Release-specific breaking
 changes remain in [RELEASES.md][release-notes].
 
 [python-v2-backtest-tests]: python/tests/acceptance/test_backtest.py
-[python-v2-examples]: python/examples/
+[python-v2-examples]: examples/README.md#live-adapter-examples
 [python-v2-strategy-config]: python/tests/strategies/ema_cross.py
 [release-notes]: RELEASES.md
 [v2-roadmap]: https://github.com/nautechsystems/nautilus_trader/issues/4042

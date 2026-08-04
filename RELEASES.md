@@ -56,7 +56,8 @@ adapter set. The following limits remain deferred:
 - External message-bus publication of serialized order and position snapshots.
 - V1 `StreamingConfig` and `DataCatalogConfig` iterator wiring on the v2 `BacktestNode`.
 - V1 adapter instrument-provider filters; Hyperliquid v2 loads the configured universe.
-- Published tutorials still use v1; generated v2 stubs and `python/examples/` show the current API.
+- Published tutorials still use v1; generated v2 stubs and the
+  [Rust‑native adapter examples](examples/README.md#live-adapter-examples) show the current API.
 - Static typing does not cover three Kraken batch methods or adapter wire DTO runtime attributes.
 
 ### Enhancements

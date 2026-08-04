@@ -12,7 +12,6 @@ python/
 ├── generate_stubs.py           # Generates Python type stubs from Rust bindings
 ├── pyproject.toml              # Maturin build configuration
 ├── uv.lock                     # Dependency lock file
-├── examples/                   # Python examples
 ├── tests/
 │   ├── conftest.py             # Shared pytest fixtures
 │   ├── unit/

@@ -256,20 +256,14 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "B018",
 ] # TODO: Remove Jupytext exemptions as these guides are updated
 "examples/**/*.py" = [
-  "B018",
-  "B904",
   "DTZ",
-  "FURB171",
   "S101",
   "S105",
   "S106",
 ] # TODO: Remove deferred example lint exemptions as examples are updated
-"python/examples/**/*.py" = [
-  "DTZ",
-  "S101",
-  "S105",
-  "S106",
-] # Root-relative form used by repository-wide checks
+"examples/backtest/notebooks/databento_option_greeks.py" = ["B018"]
+"examples/backtest/synthetic_data_pnl_test.py" = ["FURB171"]
+"examples/other/state_machine/run_example.py" = ["B904"]
 "tests/**/*.py" = [
   "S101",
   "S105",

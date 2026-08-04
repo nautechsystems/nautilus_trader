@@ -12,7 +12,7 @@ a static library and linked automatically during the build.
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/okx/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/okx/examples/)
 
 ### Product support

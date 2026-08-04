@@ -7,7 +7,7 @@ execution with Bybit.
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/bybit/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/bybit/examples/)
 
 ## Overview
@@ -418,7 +418,7 @@ and do not borrow funds, even if you have auto-borrow enabled on your Bybit acco
 :::
 
 For a complete example of using order parameters including `is_leverage`, see the
-[Python execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/bybit/exec_tester.py).
+[Python execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/bybit/exec_tester.py).
 
 ## Spot margin borrowing and repayment
 

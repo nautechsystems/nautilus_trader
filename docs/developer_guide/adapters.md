@@ -75,7 +75,7 @@ Python and documentation surfaces sit outside the crate:
 
 ```text
 python/nautilus_trader/adapters/<adapter>/  # Public package and generated stubs
-python/examples/<adapter>/                  # Python data and execution testers
+examples/live/<adapter>/                    # Python data and execution testers
 python/tests/unit/adapters/<adapter>/       # Public Python package tests
 docs/integrations/<adapter>.md              # User-facing integration guide
 ```
@@ -951,7 +951,7 @@ Provide the applicable tester entry points:
 
 - Rust: `crates/adapters/<adapter>/examples/node_data_tester.rs` and
   `node_exec_tester.rs`, with product subdirectories when protocols split by product.
-- Python v2: `python/examples/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
+- Python v2: `examples/live/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
   the Rust config and factory classes.
 
 Python v2 tester scripts build without connecting by default and require `--run` to connect.

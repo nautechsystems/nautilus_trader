@@ -31,7 +31,7 @@ Python surface available from `nautilus_trader.adapters.coinbase`:
 
 ## Examples
 
-- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/coinbase/)
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinbase/examples/)
 
 ## Coinbase documentation

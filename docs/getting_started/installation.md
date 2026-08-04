@@ -342,7 +342,7 @@ stubs. It uses `target/` for Cargo artifacts.
 Run a Python example with the project environment:
 
 ```bash
-.venv/bin/python python/examples/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
 ```
 
 For direct commands and test targets, see the [Python package README][python-readme].
