@@ -120,14 +120,6 @@ path = "examples/node_ema_cross.rs"
 required-features = ["examples", "streaming"]
 doc = false
 
-# Run with `cargo run -p nautilus-backtest --features examples,streaming \
-#   --example backtest-node-workload -- <CATALOG_PATH> <RESULT_PATH>`
-[[example]]
-name = "backtest-node-workload"
-path = "examples/backtest_node_workload.rs"
-required-features = ["examples", "streaming"]
-doc = false
-
 # Run with `NAUTILUS_TARDIS_OPTION_CATALOG=/path/to/catalog cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
 [[example]]
 name = "tardis-option-chain"
@@ -138,5 +130,5 @@ doc = false
 # Run in the normal `--tests` lane; the dev-dependency enables `nautilus-trading/examples`
 [[test]]
 name = "backtest-node-workload"
-path = "examples/backtest_node_workload.rs"
+path = "tests/backtest_node_workload.rs"
 required-features = ["streaming"]

@@ -23,16 +23,14 @@
 //!
 //! Run with:
 //! ```bash
-//! cargo run -p nautilus-backtest --features examples,streaming \
-//!   --example backtest-node-workload -- <CATALOG_PATH> <RESULT_PATH>
+//! cargo test -p nautilus-backtest --features streaming \
+//!   --test backtest-node-workload
 //! ```
 
 use std::{
-    env,
-    ffi::OsString,
     fs::{self, OpenOptions},
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::Context;
@@ -62,25 +60,6 @@ const EXPECTED_ITERATIONS: usize = 145;
 const EXPECTED_EVENTS: usize = 4;
 const EXPECTED_ORDERS: usize = 2;
 const EXPECTED_POSITIONS: usize = 2;
-
-fn main() -> anyhow::Result<()> {
-    let (catalog_path, result_path) = parse_paths(env::args_os().skip(1))?;
-    run_workload(&catalog_path, &result_path)
-}
-
-fn parse_paths(mut args: impl Iterator<Item = OsString>) -> anyhow::Result<(PathBuf, PathBuf)> {
-    let catalog_path = args
-        .next()
-        .context("missing catalog path; expected <CATALOG_PATH> <RESULT_PATH>")?;
-    let result_path = args
-        .next()
-        .context("missing result path; expected <CATALOG_PATH> <RESULT_PATH>")?;
-    anyhow::ensure!(
-        args.next().is_none(),
-        "unexpected argument; expected <CATALOG_PATH> <RESULT_PATH>"
-    );
-    Ok((PathBuf::from(catalog_path), PathBuf::from(result_path)))
-}
 
 fn run_workload(catalog_path: &Path, result_path: &Path) -> anyhow::Result<()> {
     let catalog_metadata = fs::metadata(catalog_path).with_context(|| {
@@ -269,6 +248,8 @@ impl Write for CappedBuffer {
 
 #[cfg(test)]
 mod tests {
+    use std::{env, path::PathBuf};
+
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::QuoteTick,
@@ -280,45 +261,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-
-    #[rstest]
-    fn test_parse_paths_accepts_exact_catalog_and_result_paths() {
-        let args = vec![
-            OsString::from("/input/catalog"),
-            OsString::from("/output/result.json"),
-        ];
-
-        let paths = parse_paths(args.into_iter()).unwrap();
-
-        assert_eq!(paths.0, PathBuf::from("/input/catalog"));
-        assert_eq!(paths.1, PathBuf::from("/output/result.json"));
-    }
-
-    #[rstest]
-    #[case(
-        Vec::<OsString>::new(),
-        "missing catalog path; expected <CATALOG_PATH> <RESULT_PATH>"
-    )]
-    #[case(
-        vec![OsString::from("/input/catalog")],
-        "missing result path; expected <CATALOG_PATH> <RESULT_PATH>"
-    )]
-    #[case(
-        vec![
-            OsString::from("/input/catalog"),
-            OsString::from("/output/result.json"),
-            OsString::from("extra"),
-        ],
-        "unexpected argument; expected <CATALOG_PATH> <RESULT_PATH>"
-    )]
-    fn test_parse_paths_rejects_incomplete_or_extra_arguments(
-        #[case] args: Vec<OsString>,
-        #[case] expected: &str,
-    ) {
-        let error = parse_paths(args.into_iter()).unwrap_err();
-
-        assert_eq!(error.to_string(), expected);
-    }
 
     #[rstest]
     fn test_capped_buffer_rejects_write_past_limit() {
