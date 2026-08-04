@@ -13,6 +13,7 @@ documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
 publish = false # Never publish to crates.io
+build = "build.rs" # Hides the cdylib export table on macOS (see issue #4633)
 
 [lints]
 workspace = true
