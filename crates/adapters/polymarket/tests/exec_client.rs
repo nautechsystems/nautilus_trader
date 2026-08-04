@@ -1511,9 +1511,8 @@ async fn test_generate_active_order_report_recovers_confirmed_rest_fill() {
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_report_recovers_filled_from_trades() {
-    // Polymarket's `/data/order/{id}` only returns active orders; once a venue
-    // order fills it disappears from that endpoint. The adapter must fall back
-    // to trade history to resolve the local `ACCEPTED` state to `Filled`.
+    // A terminal order can be absent from an individual lookup after a fill,
+    // so trade history must resolve the local `ACCEPTED` state to `Filled`.
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     let addr = start_mock_server(state).await;

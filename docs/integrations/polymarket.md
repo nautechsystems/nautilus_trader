@@ -59,25 +59,30 @@ Polymarket offers resources for different audiences:
 
 - [Polymarket Learn](https://learn.polymarket.com/): Educational content and guides for users
   to understand the platform and how to engage with it.
-- [Polymarket CLOB API](https://docs.polymarket.com/trading/orders/overview): Technical
+- [Polymarket CLOB API](https://docs.polymarket.com/getting-started/api): Technical
   documentation for developers interacting with the Polymarket CLOB API.
 
 ## Overview
 
 This guide assumes a trader is setting up for both live market data feeds and trade execution.
-The Polymarket integration adapter includes multiple components, which can be used together or
-separately depending on the use case.
+The Rust implementation includes multiple components, which can be used together or separately
+depending on the use case.
 
-- `PolymarketWebSocketClient`: Low-level WebSocket API connectivity (built on top of the Nautilus `WebSocketClient` written in Rust).
-- `PolymarketInstrumentProvider`: Instrument parsing and loading functionality for `BinaryOption` instruments.
+- `PolymarketWebSocketClient`: Low‑level WebSocket API connectivity built on the Nautilus Rust
+  `WebSocketClient`.
+- `PolymarketInstrumentProvider`: Instrument parsing and loading functionality for `BinaryOption`
+  instruments.
 - `PolymarketDataClient`: A market data feed manager.
 - `PolymarketExecutionClient`: A trade execution gateway.
-- `PolymarketDataClientFactory`: Factory for Polymarket data clients (used by the live node builder).
-- `PolymarketExecutionClientFactory`: Factory for Polymarket execution clients (used by the live node builder).
+- `PolymarketDataClientFactory`: Factory for Polymarket data clients (used by the live node
+  builder).
+- `PolymarketExecutionClientFactory`: Factory for Polymarket execution clients (used by the live
+  node builder).
 
 :::note
-Most users will define a configuration for a live trading node (as below),
-and won't need to work with these lower-level components directly.
+Python users configure live nodes through the exported configuration and factory classes. The
+direct WebSocket, provider, data client, and execution client types are Rust‑only implementation
+components.
 :::
 
 ## pUSD
@@ -100,21 +105,24 @@ To interact with Polymarket via NautilusTrader, you'll need a **Polygon**-compat
 
 Polymarket supports multiple signature types for order signing and verification:
 
-| Signature Type | Wallet Type                    | Description                                                              | Use Case                                                                                              |
-| -------------- | ------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.).                            |
-| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link).             | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address.                     |
-| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets.              | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address. |
-| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | Requires deposit wallet `funder`; API credentials stay bound to the signer.                           |
+| Signature Type | Wallet Type                    | Description                                                              | Use Case                                                                                       |
+| -------------- | ------------------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Adapter default.** Allowlisted EOA trading where the funder and signer are the same address. |
+| `1`            | Proxy Wallet                   | Legacy smart contract wallet created through email or social login.      | Requires the Proxy Wallet `funder` address.                                                    |
+| `2`            | Safe Wallet                    | Legacy Gnosis Safe wallet created with an external browser wallet.       | Requires the Safe Wallet `funder` address.                                                     |
+| `3`            | Deposit Wallet                 | ERC-1271 smart wallet used for new Polymarket account wallets.           | Requires the Deposit Wallet `funder`; API credentials stay bound to the signer.                |
 
 :::note
-See also: [Proxy wallet](https://docs.polymarket.com/developers/proxy-wallet) in the Polymarket documentation for more details about signature types and proxy wallet infrastructure.
+Polymarket uses Deposit Wallets for account wallets deployed on or after May 4, 2026. Direct EOA
+trading requires an allowlisted EOA. See the Polymarket
+[wallet and authentication guide](https://docs.polymarket.com/trading/wallets-auth) for the account
+types and setup flows.
 :::
 
 NautilusTrader defaults to signature type 0 (EOA) but can be configured to use any of the supported signature types via the `signature_type` configuration parameter.
 
-A single wallet address is supported per trader instance when using environment variables,
-or multiple wallets could be configured with multiple `PolymarketExecutionClient` instances.
+A single wallet address is supported per trader instance when using environment variables, or
+multiple wallets can be configured through multiple execution client instances.
 
 :::note
 Ensure your wallet is funded with **pUSD**, otherwise you will encounter the "not enough balance
@@ -131,9 +139,10 @@ funding wallet is the signer (`SignatureType::Eoa`). Fund the EOA with POL for g
 cargo run -p nautilus-polymarket --bin polymarket-set-allowances
 ```
 
-The command grants maximum pUSD and CTF approvals to the CLOB Exchange, Neg Risk CTF Exchange, and
-current Neg Risk Adapter. It uses `https://polygon.drpc.org` by default; set `POLYGON_RPC_URL` to
-use another Polygon RPC endpoint. Run it again if Polymarket changes the required contracts.
+The command grants maximum pUSD and CTF approvals to the CTF Exchange, Neg Risk CTF Exchange, and
+`NegRiskCtfCollateralAdapter`. It uses `https://polygon.drpc.org` by default; set
+`POLYGON_RPC_URL` to use another Polygon RPC endpoint. Run it again if Polymarket changes the
+required contracts.
 
 ### Setting smart-wallet allowances
 
@@ -280,10 +289,11 @@ resting `LIMIT` orders only.
 :::
 
 :::note
-A marketable order (any `FOK`/`FAK` order, or a `BUY` that crosses the book)
-must be worth at least **1 pUSD** in notional value, otherwise the venue rejects
-it with `invalid amount for a marketable BUY order … min size: $1`. Resting
-`GTC`/`GTD` limit orders are bounded only by the 5‑share minimum.
+Read each market's `min_order_size` from its order book; active markets commonly report five
+shares. Marketable orders can also be rejected below **1 pUSD** in notional value with
+`invalid amount for a marketable BUY order … min size: $1`. The adapter leaves instrument
+`min_quantity` unset because market BUY quantities use pUSD while the other order quantities use
+shares.
 :::
 
 :::note
@@ -349,12 +359,12 @@ with `success`, `orderID`, `status`, and `errorMsg`, and documents
 It does not document statusless client exceptions or transport failures as venue rejections.
 
 The adapter rejects only when the response proves the order was not accepted, such as
-`success=false`, a documented order processing error, or another non-retryable client/API
-error. Transport failures, timeouts, ambiguous retry exhaustion, statusless `PolyApiException`,
-malformed responses, and server-side failures keep the order submitted. The batch endpoint reports
-a rejected leg as `success=true` with an empty `orderID` and the reason in `errorMsg` (for example a
-naked sell the venue cannot accept): the adapter rejects that leg with the venue reason. A leg with
-no `orderID` and no reason stays submitted for reconciliation.
+`success=false`, a documented order processing error, or another non‑retryable client/API error.
+Transport failures, timeouts, ambiguous retry exhaustion, response serialization or decode
+failures, local I/O failures, and server‑side failures keep the order submitted. The batch endpoint
+reports a rejected leg as `success=true` with an empty `orderID` and the reason in `errorMsg` (for
+example a naked sell the venue cannot accept): the adapter rejects that leg with the venue reason.
+A leg with no `orderID` and no reason stays submitted for reconciliation.
 
 Once any single-order submit attempt has an ambiguous outcome, a later retry error cannot prove
 that the first attempt failed. The adapter therefore keeps the order submitted even if a later
@@ -556,17 +566,20 @@ configuration.
 
 ## Reconciliation
 
-The Polymarket API returns either all **active** (open) orders or specific orders when queried by the
-Polymarket order ID (`venue_order_id`). The execution reconciliation procedure for Polymarket is as follows:
+The Polymarket API returns either all **active** (open) orders or specific orders when queried by
+the Polymarket order ID (`venue_order_id`). The execution reconciliation procedure for Polymarket
+is as follows:
 
 - Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
 - Generate position reports from current user positions reported by Polymarket's Data API.
 - Compare these reports with Nautilus execution state.
-- Generate missing orders to bring Nautilus execution state in line with positions reported by Polymarket.
+- Generate missing orders to bring Nautilus execution state in line with positions reported by
+  Polymarket.
 
-Polymarket does not directly return orders that are no longer active. The adapter recovers a
-cached individual order from trade history when its terminal WebSocket update is missed.
-Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement states do not.
+An individual order lookup can return a live or terminal status. When it instead returns no order,
+the adapter recovers a cached individual order from trade history if its terminal WebSocket update
+was missed. Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement
+states do not.
 
 Mass-status reconciliation pairs each order report with its venue fill reports. It applies the
 real fills first to preserve trade IDs and commissions, then infers only any residual quantity
@@ -578,14 +591,13 @@ retain the normal fill-only path.
 
 ### Single-order recovery from trades
 
-`/data/order/{id}` only returns active orders, so a `Filled` or `Canceled` order
-returns an empty response. To avoid the engine resolving a local `ACCEPTED`
-order as `REJECTED` (which discards fills that already happened at the venue),
-`generate_order_status_report` falls back to `/data/trades` filtered by the
-venue order ID. The cached order is resolved via `client_order_id`, falling
-back to the cache's `venue_order_id` index when only the venue ID is known.
-Recovery is keyed on the cached order; without one the recovery defers to the
-engine rather than synthesizing an external order from trade history alone:
+`/data/order/{id}` can return live or terminal orders. When it returns no order for a known ID,
+`generate_order_status_report` falls back to `/data/trades` filtered by the venue order ID. This
+avoids the engine resolving a local `ACCEPTED` order as `REJECTED`, which would discard fills that
+already happened at the venue. The cached order is resolved via `client_order_id`, falling back to
+the cache's `venue_order_id` index when only the venue ID is known. Recovery is keyed on the cached
+order; without one the recovery defers to the engine rather than synthesizing an external order
+from trade history alone:
 
 - Cached order + recovered fills covering the cached quantity (within
   `DUST_SNAP_THRESHOLD` for CLOB cent-tick truncation): returns `Filled`. The
@@ -920,7 +932,7 @@ earlier ambiguous attempt remain ambiguous outcomes.
 
 ### Selected IP-based REST limits
 
-Polymarket changes these quotas over time. As of 2026-07-10, the official limits are:
+Polymarket changes these quotas over time. As of 2026-08-04, the official limits are:
 
 | Endpoint                            | Burst (10s) | Sustained (10 min) | Notes                                       |
 | ----------------------------------- | ----------- | ------------------ | ------------------------------------------- |
@@ -970,9 +982,9 @@ The following limitations are currently known:
   limits each new chunk to the signer's current cancellation burst and recomputes that limit before
   the chunk.
 - Position reports omit balances below 0.01 shares. Do not treat an omitted report as proof that a
-  dust position is flat; a sub-minimum residual cannot be exited through the CLOB's five-share
-  minimum order size. Position reconciliation therefore tolerates differences through 0.009999
-  shares and reconciles differences of 0.01 shares or more.
+  dust position is flat; a sub‑minimum residual cannot be exited through the market's minimum order
+  size, which active markets commonly report as five shares. Position reconciliation therefore
+  tolerates differences through 0.009999 shares and reconciles differences of 0.01 shares or more.
 
 ## Client configuration
 
@@ -1158,7 +1170,7 @@ by index:
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
 
 loader = await PolymarketDataLoader.from_market_slug(
-    "gta-vi-released-before-june-2026",
+    "will-jd-vance-win-the-2028-us-presidential-election",
     token_index=0,
 )
 
@@ -1182,7 +1194,7 @@ An event factory returns one loader for each market in the event:
 
 ```python
 loaders = await PolymarketDataLoader.from_event_slug(
-    "highest-temperature-in-nyc-on-january-26",
+    "how-many-fed-rate-cuts-in-2026",
     token_index=1,
 )
 ```
