@@ -181,10 +181,7 @@ impl SocketTerminalFinalizer {
 /// The client uses a suffix to separate messages on the byte stream. It is
 /// appended to all sent messages and heartbeats. It is also used to split
 /// the received byte stream.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.network"))]
 struct SocketClientInner {
     config: SocketConfig,
     connector: Option<Connector>,
@@ -1023,10 +1020,7 @@ impl CleanDrop for SocketClientInner {
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.network"))]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")

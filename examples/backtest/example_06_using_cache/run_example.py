@@ -23,8 +23,8 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LoggingConfig
-from nautilus_trader.core.nautilus_pyo3 import BarType
 from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
 from nautilus_trader.model import TraderId
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType

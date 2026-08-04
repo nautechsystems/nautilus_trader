@@ -20,7 +20,7 @@ use std::{fmt::Display, str::FromStr};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -72,7 +72,7 @@ impl Display for IbHistoricalTickType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -122,7 +122,7 @@ impl From<bool> for IbTradingHours {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -198,7 +198,7 @@ impl Display for IbHistoricalBarSize {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -273,7 +273,7 @@ impl Display for IbHistoricalWhatToShow {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -311,7 +311,7 @@ impl Display for IbRealtimeBarSize {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -364,7 +364,7 @@ impl Display for IbRealtimeWhatToShow {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )

@@ -34,7 +34,7 @@ use crate::models::fill::{
 
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")]
 #[pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.execution",
+    module = "nautilus_trader.execution",
     name = "FillModel",
     subclass,
     unsendable

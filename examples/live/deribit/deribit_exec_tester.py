@@ -39,15 +39,15 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.deribit import DERIBIT
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit import DeribitEnvironment
 from nautilus_trader.adapters.deribit import DeribitExecClientConfig
 from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitLiveExecClientFactory
+from nautilus_trader.adapters.deribit import DeribitProductType
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
-from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId

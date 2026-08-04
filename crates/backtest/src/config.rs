@@ -97,11 +97,7 @@ impl FromStr for NautilusDataType {
 /// Configuration for ``BacktestEngine`` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        from_py_object,
-        unsendable
-    )
+    pyo3::pyclass(module = "nautilus_trader.backtest", from_py_object, unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -421,11 +417,7 @@ impl SimulatedVenueConfig {
 /// Represents a venue configuration for one specific backtest engine.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        from_py_object,
-        unsendable
-    )
+    pyo3::pyclass(module = "nautilus_trader.backtest", from_py_object, unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -791,11 +783,7 @@ impl BacktestVenueConfig {
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        from_py_object,
-        unsendable
-    )
+    pyo3::pyclass(module = "nautilus_trader.backtest", from_py_object, unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1047,11 +1035,7 @@ impl BacktestDataConfig {
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        from_py_object,
-        unsendable
-    )
+    pyo3::pyclass(module = "nautilus_trader.backtest", from_py_object, unsendable)
 )]
 #[cfg_attr(
     feature = "python",

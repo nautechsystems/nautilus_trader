@@ -17,6 +17,7 @@
 import asyncio
 from decimal import Decimal
 
+from nautilus_trader.adapters.dydx import DydxNetwork
 from nautilus_trader.adapters.dydx.config import DydxDataClientConfig
 from nautilus_trader.adapters.dydx.factories import DydxLiveDataClientFactory
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
@@ -24,7 +25,6 @@ from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode

@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `RiskEngineConfig` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.risk", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.risk", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

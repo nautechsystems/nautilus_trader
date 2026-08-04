@@ -224,10 +224,7 @@ impl Default for FeeModelAny {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -277,10 +274,7 @@ impl FeeModel for FixedFeeModel {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -361,10 +355,7 @@ fn spread_leg_ratio_parts(ratio: &str, symbol: &str) -> Option<i64> {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -409,10 +400,7 @@ impl FeeModel for MakerTakerFeeModel {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -454,10 +442,7 @@ impl FeeModel for ProbabilityPriceFeeModel {
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -549,10 +534,7 @@ impl FeeModel for CappedOptionFeeModel {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

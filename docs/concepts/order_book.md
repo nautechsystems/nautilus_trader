@@ -8,10 +8,9 @@ liquidity.
 
 :::note
 This guide documents the Rust API. These types are also available from Python via
-PyO3 bindings (`nautilus_pyo3.OrderBook`, `nautilus_pyo3.OwnOrderBook`). The v1 legacy
-Cython `OrderBook` (`nautilus_trader.model.book.OrderBook`) returned by
-`cache.order_book()` has a similar but not identical interface. Refer to the
-API reference for differences.
+the public model module (`nautilus_trader.model.OrderBook` and
+`nautilus_trader.model.OwnOrderBook`). Refer to the API reference for differences
+between the Rust and Python interfaces.
 :::
 
 ## Book types

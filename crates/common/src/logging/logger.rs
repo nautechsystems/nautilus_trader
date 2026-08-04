@@ -1410,10 +1410,7 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 /// # Limits
 ///
 /// The system supports a maximum of 255 concurrent `LogGuard` instances.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.common"))]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")

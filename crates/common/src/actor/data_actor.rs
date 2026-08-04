@@ -102,11 +102,7 @@ use crate::{
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.common",
-        subclass,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.common", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -136,7 +132,7 @@ impl Default for DataActorConfig {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

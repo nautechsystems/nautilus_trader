@@ -789,7 +789,7 @@ impl CoinbaseRawHttpClient {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.coinbase", from_py_object)
 )]
 pub struct CoinbaseHttpClient {
     pub(crate) inner: Arc<CoinbaseRawHttpClient>,

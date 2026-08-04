@@ -61,7 +61,7 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
 /// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.persistence", unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -341,7 +341,7 @@ pub fn build_query(
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.persistence", unsendable)
 )]
 #[cfg_attr(
     feature = "python",

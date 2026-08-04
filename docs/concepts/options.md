@@ -77,12 +77,13 @@ option series into `OptionChainSlice` snapshots. The `DataEngine` creates one Ru
 incoming data, running snapshot timers, and draining wire subscription changes.
 
 ```python
-from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model import OptionSeriesId
+from nautilus_trader.model import StrikeRange
 
-series_id = nautilus_pyo3.OptionSeriesId(...)  # identifies the series (venue, underlying, expiry)
+series_id = OptionSeriesId(...)  # identifies the series (venue, underlying, expiry)
 
 # Subscribe to 5 strikes above and below ATM, snapshot every 1000ms
-strike_range = nautilus_pyo3.StrikeRange.atm_relative(strikes_above=5, strikes_below=5)
+strike_range = StrikeRange.atm_relative(strikes_above=5, strikes_below=5)
 self.subscribe_option_chain(
     series_id,
     strike_range=strike_range,
@@ -105,12 +106,12 @@ def on_option_chain(self, chain) -> None:
 
 `StrikeRange` controls which strikes are active in a chain subscription:
 
-| Variant       | Description                                         | Example                                        |
-| ------------- | --------------------------------------------------- | ---------------------------------------------- |
-| `Fixed`       | Subscribe to an explicit set of strikes.            | `nautilus_pyo3.StrikeRange.fixed([...])`       |
-| `AtmRelative` | N strikes above and N below the current ATM strike. | `nautilus_pyo3.StrikeRange.atm_relative(5, 5)` |
-| `AtmPercent`  | All strikes within a percentage band around ATM.    | `nautilus_pyo3.StrikeRange.atm_percent(0.10)`  |
-| `Delta`       | Strikes whose call or put delta is near a target.   | `nautilus_pyo3.StrikeRange.delta(0.25, 0.05)`  |
+| Variant       | Description                                         | Example                          |
+| ------------- | --------------------------------------------------- | -------------------------------- |
+| `Fixed`       | Subscribe to an explicit set of strikes.            | `StrikeRange.fixed([...])`       |
+| `AtmRelative` | N strikes above and N below the current ATM strike. | `StrikeRange.atm_relative(5, 5)` |
+| `AtmPercent`  | All strikes within a percentage band around ATM.    | `StrikeRange.atm_percent(0.10)`  |
+| `Delta`       | Strikes whose call or put delta is near a target.   | `StrikeRange.delta(0.25, 0.05)`  |
 
 For ATM-based variants, subscriptions are deferred until the ATM price is determined.
 ATM is derived from the forward price embedded in venue-provided `OptionGreeks` updates

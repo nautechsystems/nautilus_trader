@@ -167,7 +167,7 @@ pub enum OKXOrderType {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -261,7 +261,7 @@ impl From<LiquiditySide> for OKXExecType {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -438,7 +438,7 @@ pub enum OKXSpreadState {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -524,7 +524,7 @@ impl TryFrom<OKXOptionType> for OptionKind {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -595,7 +595,7 @@ impl From<OKXGreeksType> for GreeksConvention {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -671,7 +671,7 @@ pub enum OKXAccountMode {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -713,7 +713,7 @@ pub enum OKXMarginMode {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1075,7 +1075,7 @@ pub enum OKXRpiPermission {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1320,7 +1320,7 @@ pub fn conditional_order_to_algo_type(order_type: OrderType) -> anyhow::Result<O
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1557,7 +1557,7 @@ pub enum OKXQuickMarginType {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1601,7 +1601,7 @@ pub enum OKXEnvironment {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.okx",
+        module = "nautilus_trader.adapters.okx",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )

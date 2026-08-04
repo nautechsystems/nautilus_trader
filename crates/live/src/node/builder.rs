@@ -83,7 +83,7 @@ impl Debug for ExternalMessageBusIngress {
 /// audit and replay (see [`Self::with_event_store`]).
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.live", unsendable)
 )]
 pub struct LiveNodeBuilder {
     name: String,

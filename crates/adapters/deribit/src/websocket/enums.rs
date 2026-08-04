@@ -45,7 +45,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        module = "nautilus_trader.adapters.deribit",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -114,7 +114,7 @@ impl Display for DeribitUpdateInterval {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        module = "nautilus_trader.adapters.deribit",
         from_py_object
     )
 )]

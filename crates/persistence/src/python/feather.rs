@@ -57,7 +57,7 @@ use crate::{
 /// capabilities, matching the interface of Python's `StreamingFeatherWriter`.
 #[pyclass(
     name = "StreamingFeatherWriter",
-    module = "nautilus_trader.core.nautilus_pyo3.persistence",
+    module = "nautilus_trader.persistence",
     unsendable
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]

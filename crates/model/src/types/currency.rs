@@ -59,13 +59,7 @@ pub enum CurrencyLookupError {
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        eq,
-        hash,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, eq, hash, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

@@ -254,11 +254,7 @@ fn add_order(book: &mut OrderBook, side: OrderSide, price: Price, size: Quantity
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -333,11 +329,7 @@ impl FillModel for DefaultFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -422,11 +414,7 @@ impl FillModel for BestPriceFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -509,11 +497,7 @@ impl FillModel for OneTickSlippageFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -613,11 +597,7 @@ impl FillModel for ProbabilisticFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -714,11 +694,7 @@ impl FillModel for TwoTierFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -830,11 +806,7 @@ impl FillModel for ThreeTierFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -932,11 +904,7 @@ impl FillModel for LimitOrderPartialFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1030,11 +998,7 @@ impl FillModel for SizeAwareFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1119,11 +1083,7 @@ impl FillModel for CompetitionAwareFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1223,11 +1183,7 @@ impl FillModel for VolumeSensitiveFillModel {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        unsendable,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

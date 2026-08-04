@@ -148,7 +148,7 @@ const BYBIT_NO_CONVERT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-rep
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1525,7 +1525,7 @@ impl BybitRawHttpClient {
 /// Provides a HTTP client for connecting to the [Bybit](https://bybit.com) REST API.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

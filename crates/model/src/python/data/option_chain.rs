@@ -30,11 +30,7 @@ use crate::{
 };
 
 /// Python wrapper for `StrikeRange` (complex enum).
-#[pyclass(
-    name = "StrikeRange",
-    module = "nautilus_trader.core.nautilus_pyo3.model",
-    from_py_object
-)]
+#[pyclass(name = "StrikeRange", module = "nautilus_trader.model", from_py_object)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 #[derive(Clone, Debug)]
 pub struct PyStrikeRange {

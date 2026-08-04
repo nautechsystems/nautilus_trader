@@ -38,7 +38,7 @@ use crate::{
 /// clocks should be created from Rust and handed over to Python as needed.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "Clock",
     unsendable,
     from_py_object

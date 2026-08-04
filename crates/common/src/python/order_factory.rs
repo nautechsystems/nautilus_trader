@@ -37,7 +37,7 @@ use crate::{factories::OrderFactory, python::clock::PyClock};
 /// Wrapper providing shared access to [`OrderFactory`] from Python.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "OrderFactory",
     unsendable,
     from_py_object

@@ -32,8 +32,8 @@ event‑driven architecture, providing research‑to‑live semantic parity.
   and symbology conversion.
 - `gateway`: `DockerizedIBGateway` for managing a Dockerized IB Gateway when the `gateway` feature
   is enabled.
-- `python`: PyO3 bindings exposed as `nautilus_pyo3.interactive_brokers` when the `python` feature
-  is enabled.
+- `python`: PyO3 bindings exposed through `nautilus_trader.adapters.interactive_brokers` when the
+  `python` feature is enabled.
 
 ## Feature flags
 

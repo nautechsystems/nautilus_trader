@@ -39,7 +39,7 @@ pub(crate) const UUID4_LEN: usize = 37;
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.core", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

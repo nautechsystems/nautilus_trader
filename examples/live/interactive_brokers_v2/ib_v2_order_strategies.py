@@ -17,8 +17,26 @@ from _common import default_es_put_option_instrument_id
 from _common import default_es_put_spread_instrument_id
 from _common import default_ym_future_instrument_id
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.core import UUID4
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.model import BarType
+from nautilus_trader.model import ClientId
+from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import ContingencyType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import LimitOrder
+from nautilus_trader.model import MarketOrder
+from nautilus_trader.model import OrderListId
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import StopMarketOrder
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TriggerType
+from nautilus_trader.trading import Strategy
+from nautilus_trader.trading import StrategyConfig
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -32,24 +50,24 @@ def env_int(name: str, default: int) -> int:
     return int(os.getenv(name, str(default)))
 
 
-def env_price(name: str, default: str) -> pyo3.Price:
-    return pyo3.Price.from_str(os.getenv(name, default))
+def env_price(name: str, default: str) -> Price:
+    return Price.from_str(os.getenv(name, default))
 
 
-def env_quantity(name: str, default: str = "1") -> pyo3.Quantity:
-    return pyo3.Quantity.from_str(os.getenv(name, default))
+def env_quantity(name: str, default: str = "1") -> Quantity:
+    return Quantity.from_str(os.getenv(name, default))
 
 
-def env_order_side(name: str, default: pyo3.OrderSide) -> pyo3.OrderSide:
+def env_order_side(name: str, default: OrderSide) -> OrderSide:
     value = os.getenv(name)
     if value is None:
         return default
 
     value = value.upper()
     if value == "BUY":
-        return pyo3.OrderSide.BUY
+        return OrderSide.BUY
     if value == "SELL":
-        return pyo3.OrderSide.SELL
+        return OrderSide.SELL
     raise ValueError(f"{name} must be BUY or SELL")
 
 
@@ -67,24 +85,24 @@ def env_ib_trigger_method(name: str, default: Any) -> int:
     return default.as_i32()
 
 
-def env_instrument_id(name: str, default: str) -> pyo3.InstrumentId:
-    return pyo3.InstrumentId.from_str(os.getenv(name, default))
+def env_instrument_id(name: str, default: str) -> InstrumentId:
+    return InstrumentId.from_str(os.getenv(name, default))
 
 
 def ib_order_tags(**values: object) -> str:
     return "IBOrderTags:" + json.dumps(values, separators=(",", ":"), sort_keys=True)
 
 
-def ib_client_id() -> pyo3.ClientId:
-    return pyo3.ClientId.from_str("IB")
+def ib_client_id() -> ClientId:
+    return ClientId.from_str("IB")
 
 
-def databento_client_id() -> pyo3.ClientId:
-    return pyo3.ClientId.from_str("DATABENTO")
+def databento_client_id() -> ClientId:
+    return ClientId.from_str("DATABENTO")
 
 
-def bar_type_from_env(name: str, instrument_id: pyo3.InstrumentId) -> pyo3.BarType:
-    return pyo3.BarType.from_str(
+def bar_type_from_env(name: str, instrument_id: InstrumentId) -> BarType:
+    return BarType.from_str(
         os.getenv(name, f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
     )
 
@@ -101,11 +119,11 @@ def contract_id_from_instrument(instrument: Any | None) -> int:
     return int(contract.get("conId") or 0)
 
 
-class IbV2SubscriptionStrategy(pyo3.Strategy):  # type: ignore[name-defined]
+class IbV2SubscriptionStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__(
-            pyo3.StrategyConfig(  # type: ignore[attr-defined]
-                strategy_id=pyo3.StrategyId.from_str("IB-V2-SUBSCRIPTION-STRATEGY"),
+            StrategyConfig(
+                strategy_id=StrategyId.from_str("IB-V2-SUBSCRIPTION-STRATEGY"),
             ),
         )
         self.instrument_id = env_instrument_id("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", "^SPX.CBOE")
@@ -175,11 +193,11 @@ class IbV2SubscriptionStrategy(pyo3.Strategy):  # type: ignore[name-defined]
             )
 
 
-class DatabentoSubscriptionStrategy(pyo3.Strategy):  # type: ignore[name-defined]
+class DatabentoSubscriptionStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__(
-            pyo3.StrategyConfig(  # type: ignore[attr-defined]
-                strategy_id=pyo3.StrategyId.from_str("IB-V2-DATABENTO-SUBSCRIPTION"),
+            StrategyConfig(
+                strategy_id=StrategyId.from_str("IB-V2-DATABENTO-SUBSCRIPTION"),
             ),
         )
         self.instrument_id = env_instrument_id("IB_V2_DATABENTO_DATA_INSTRUMENT_ID", "SPY.XNAS")
@@ -211,11 +229,11 @@ class DatabentoSubscriptionStrategy(pyo3.Strategy):  # type: ignore[name-defined
             print(f"{self.strategy_id}: Databento bar #{self._bar_count}: {bar}", flush=True)
 
 
-class OptionGreeksStrategy(pyo3.Strategy):  # type: ignore[name-defined]
+class OptionGreeksStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__(
-            pyo3.StrategyConfig(  # type: ignore[attr-defined]
-                strategy_id=pyo3.StrategyId.from_str("IB-V2-OPTION-GREEKS-STRATEGY"),
+            StrategyConfig(
+                strategy_id=StrategyId.from_str("IB-V2-OPTION-GREEKS-STRATEGY"),
             ),
         )
         self.instrument_id = env_instrument_id(
@@ -248,14 +266,14 @@ class OptionGreeksStrategy(pyo3.Strategy):  # type: ignore[name-defined]
             self.unsubscribe_option_greeks(self.instrument_id, client_id=ib_client_id())
 
 
-class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
+class IbV2OrderStrategy(Strategy):
     strategy_id_value = "IB-V2-ORDER-001"
     instrument_id_value = default_es_future_instrument_id()
 
     def __init__(self) -> None:
         super().__init__(
-            pyo3.StrategyConfig(  # type: ignore[attr-defined]
-                strategy_id=pyo3.StrategyId.from_str(self.strategy_id_value),
+            StrategyConfig(
+                strategy_id=StrategyId.from_str(self.strategy_id_value),
                 manage_contingent_orders=True,
             ),
         )
@@ -301,31 +319,31 @@ class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
     def submit_example_orders(self) -> None:
         raise NotImplementedError
 
-    def client_order_id(self, suffix: str) -> pyo3.ClientOrderId:
-        return pyo3.ClientOrderId.from_str(f"{self.strategy_id}-{suffix}")
+    def client_order_id(self, suffix: str) -> ClientOrderId:
+        return ClientOrderId.from_str(f"{self.strategy_id}-{suffix}")
 
-    def init_id(self) -> pyo3.UUID4:
-        return pyo3.UUID4.from_str(str(uuid4()))
+    def init_id(self) -> UUID4:
+        return UUID4.from_str(str(uuid4()))
 
     def timestamp_ns(self) -> int:
         return self.clock.timestamp_ns()
 
     def market_order(
         self,
-        client_order_id: pyo3.ClientOrderId,
-        order_side: pyo3.OrderSide,
-        quantity: pyo3.Quantity,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
         tags: list[str] | None = None,
-        contingency_type: pyo3.ContingencyType | None = None,
-        order_list_id: pyo3.OrderListId | None = None,
-        linked_order_ids: list[pyo3.ClientOrderId] | None = None,
-        parent_order_id: pyo3.ClientOrderId | None = None,
-    ) -> pyo3.MarketOrder:
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+    ) -> MarketOrder:
         trader_id = self.trader_id
         if trader_id is None:
             raise RuntimeError("Strategy is not registered")
 
-        return pyo3.MarketOrder(
+        return MarketOrder(
             trader_id,
             self.strategy_id,
             self.instrument_id,
@@ -334,7 +352,7 @@ class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
             quantity,
             self.init_id(),
             self.timestamp_ns(),
-            pyo3.TimeInForce.DAY,
+            TimeInForce.DAY,
             False,
             False,
             contingency_type=contingency_type,
@@ -346,22 +364,22 @@ class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
 
     def limit_order(
         self,
-        client_order_id: pyo3.ClientOrderId,
-        order_side: pyo3.OrderSide,
-        quantity: pyo3.Quantity,
-        price: pyo3.Price,
-        time_in_force: pyo3.TimeInForce = pyo3.TimeInForce.DAY,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        time_in_force: TimeInForce = TimeInForce.DAY,
         tags: list[str] | None = None,
-        contingency_type: pyo3.ContingencyType | None = None,
-        order_list_id: pyo3.OrderListId | None = None,
-        linked_order_ids: list[pyo3.ClientOrderId] | None = None,
-        parent_order_id: pyo3.ClientOrderId | None = None,
-    ) -> pyo3.LimitOrder:
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+    ) -> LimitOrder:
         trader_id = self.trader_id
         if trader_id is None:
             raise RuntimeError("Strategy is not registered")
 
-        return pyo3.LimitOrder(
+        return LimitOrder(
             trader_id,
             self.strategy_id,
             self.instrument_id,
@@ -384,21 +402,21 @@ class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
 
     def stop_market_order(
         self,
-        client_order_id: pyo3.ClientOrderId,
-        order_side: pyo3.OrderSide,
-        quantity: pyo3.Quantity,
-        trigger_price: pyo3.Price,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
         tags: list[str] | None = None,
-        contingency_type: pyo3.ContingencyType | None = None,
-        order_list_id: pyo3.OrderListId | None = None,
-        linked_order_ids: list[pyo3.ClientOrderId] | None = None,
-        parent_order_id: pyo3.ClientOrderId | None = None,
-    ) -> pyo3.StopMarketOrder:
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+    ) -> StopMarketOrder:
         trader_id = self.trader_id
         if trader_id is None:
             raise RuntimeError("Strategy is not registered")
 
-        return pyo3.StopMarketOrder(
+        return StopMarketOrder(
             trader_id,
             self.strategy_id,
             self.instrument_id,
@@ -406,8 +424,8 @@ class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
             order_side,
             quantity,
             trigger_price,
-            pyo3.TriggerType.DEFAULT,
-            pyo3.TimeInForce.DAY,
+            TriggerType.DEFAULT,
+            TimeInForce.DAY,
             False,
             False,
             self.init_id(),
@@ -446,32 +464,32 @@ class BracketOrderStrategy(IbV2OrderStrategy):
         entry_id = self.client_order_id("ENTRY")
         target_id = self.client_order_id("TARGET")
         stop_id = self.client_order_id("STOP")
-        order_list_id = pyo3.OrderListId.from_str(f"{self.strategy_id}-BRACKET")
+        order_list_id = OrderListId.from_str(f"{self.strategy_id}-BRACKET")
         linked_ids = [entry_id, target_id, stop_id]
 
         entry = self.market_order(
             entry_id,
-            pyo3.OrderSide.BUY,
+            OrderSide.BUY,
             quantity,
             order_list_id=order_list_id,
             linked_order_ids=linked_ids,
         )
         target = self.limit_order(
             target_id,
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             quantity,
             env_price("IB_V2_BRACKET_TARGET_PRICE", "6025.00"),
-            contingency_type=pyo3.ContingencyType.OTO,
+            contingency_type=ContingencyType.OTO,
             order_list_id=order_list_id,
             linked_order_ids=linked_ids,
             parent_order_id=entry_id,
         )
         stop = self.stop_market_order(
             stop_id,
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             quantity,
             env_price("IB_V2_BRACKET_STOP_PRICE", "5975.00"),
-            contingency_type=pyo3.ContingencyType.OTO,
+            contingency_type=ContingencyType.OTO,
             order_list_id=order_list_id,
             linked_order_ids=linked_ids,
             parent_order_id=entry_id,
@@ -488,7 +506,7 @@ class MarketOrderStrategy(IbV2OrderStrategy):
     def submit_example_orders(self) -> None:
         order = self.market_order(
             self.client_order_id("MARKET"),
-            env_order_side("IB_V2_MARKET_SIDE", pyo3.OrderSide.BUY),
+            env_order_side("IB_V2_MARKET_SIDE", OrderSide.BUY),
             env_quantity("IB_V2_MARKET_QUANTITY"),
         )
         self.submit_ib_order(order)
@@ -498,7 +516,7 @@ class OcaGroupStrategy(IbV2OrderStrategy):
     strategy_id_value = "IB-V2-OCA-STRATEGY"
 
     def submit_example_orders(self) -> None:
-        ib = pyo3.interactive_brokers
+        ib = interactive_brokers
         quantity = env_quantity("IB_V2_OCA_QUANTITY")
         oca_group = os.getenv("IB_V2_OCA_GROUP", f"TEST_OCA_V2_{uuid4().hex[:12]}")
         tag = ib_order_tags(
@@ -507,14 +525,14 @@ class OcaGroupStrategy(IbV2OrderStrategy):
         )
         buy = self.limit_order(
             self.client_order_id("BUY"),
-            pyo3.OrderSide.BUY,
+            OrderSide.BUY,
             quantity,
             env_price("IB_V2_OCA_BUY_PRICE", "5975.00"),
             tags=[tag],
         )
         sell = self.limit_order(
             self.client_order_id("SELL"),
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             quantity,
             env_price("IB_V2_OCA_SELL_PRICE", "8500.00"),
             tags=[tag],
@@ -528,7 +546,7 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
     strategy_id_value = "IB-V2-CONDITIONS-STRATEGY"
 
     def submit_example_orders(self) -> None:
-        ib = pyo3.interactive_brokers
+        ib = interactive_brokers
         time_str = (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S")
         time_condition = {
             "type": ib.IbConditionKind.TIME.as_str(),
@@ -538,10 +556,10 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
         }
         time_order = self.limit_order(
             self.client_order_id("TIME-CONDITION"),
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             env_quantity("IB_V2_CONDITION_QUANTITY"),
             env_price("IB_V2_CONDITION_TIME_LIMIT_PRICE", "6100.00"),
-            pyo3.TimeInForce.GTC,
+            TimeInForce.GTC,
             tags=[
                 ib_order_tags(
                     conditions=[time_condition],
@@ -579,10 +597,10 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
         }
         price_order = self.limit_order(
             self.client_order_id("PRICE-CONDITION"),
-            pyo3.OrderSide.BUY,
+            OrderSide.BUY,
             env_quantity("IB_V2_CONDITION_QUANTITY"),
             env_price("IB_V2_CONDITION_PRICE_LIMIT_PRICE", "5950.00"),
-            pyo3.TimeInForce.GTC,
+            TimeInForce.GTC,
             tags=[
                 ib_order_tags(
                     conditions=[price_condition],
@@ -595,7 +613,7 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
         if env_bool("IB_V2_SUBMIT_COMBINED_CONDITION_ORDER"):
             combined_order = self.market_order(
                 self.client_order_id("COMBINED-CONDITIONAL"),
-                pyo3.OrderSide.BUY,
+                OrderSide.BUY,
                 env_quantity("IB_V2_CONDITION_QUANTITY"),
                 tags=[
                     ib_order_tags(
@@ -622,7 +640,7 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
     def submit_example_orders(self) -> None:
         order = self.market_order(
             self.client_order_id("SPREAD"),
-            pyo3.OrderSide.BUY,
+            OrderSide.BUY,
             env_quantity("IB_V2_SPREAD_QUANTITY"),
         )
         self.submit_ib_order(order)
@@ -644,7 +662,7 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
         self._flatten_submitted = True
         flatten = self.market_order(
             self.client_order_id("SPREAD-FLATTEN"),
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             event.last_qty,
         )
         self.submit_ib_order(flatten)
@@ -719,32 +737,32 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
         entry_id = self.client_order_id("ENTRY")
         target_id = self.client_order_id("TARGET")
         stop_id = self.client_order_id("STOP")
-        order_list_id = pyo3.OrderListId.from_str(f"{self.strategy_id}-BRACKET")
+        order_list_id = OrderListId.from_str(f"{self.strategy_id}-BRACKET")
         linked_ids = [entry_id, target_id, stop_id]
         entry = self.market_order(
             entry_id,
-            pyo3.OrderSide.BUY,
+            OrderSide.BUY,
             quantity,
             order_list_id=order_list_id,
             linked_order_ids=linked_ids,
         )
         target = self.limit_order(
             target_id,
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             quantity,
             env_price("IB_V2_DATABENTO_BRACKET_TARGET_PRICE", "46755.00"),
-            pyo3.TimeInForce.GTC,
-            contingency_type=pyo3.ContingencyType.OTO,
+            TimeInForce.GTC,
+            contingency_type=ContingencyType.OTO,
             order_list_id=order_list_id,
             linked_order_ids=linked_ids,
             parent_order_id=entry_id,
         )
         stop = self.stop_market_order(
             stop_id,
-            pyo3.OrderSide.SELL,
+            OrderSide.SELL,
             quantity,
             env_price("IB_V2_DATABENTO_BRACKET_STOP_PRICE", "46735.00"),
-            contingency_type=pyo3.ContingencyType.OTO,
+            contingency_type=ContingencyType.OTO,
             order_list_id=order_list_id,
             linked_order_ids=linked_ids,
             parent_order_id=entry_id,

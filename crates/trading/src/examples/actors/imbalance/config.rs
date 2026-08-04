@@ -21,7 +21,7 @@ use nautilus_model::identifiers::{ActorId, InstrumentId};
 #[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.trading", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

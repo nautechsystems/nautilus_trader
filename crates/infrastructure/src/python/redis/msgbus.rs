@@ -130,7 +130,7 @@ impl RedisMessageBusConfig {
 #[derive(Debug, Clone)]
 #[pyclass(
     name = "RedisMessageBusFactory",
-    module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
+    module = "nautilus_trader.infrastructure",
     from_py_object
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")]
@@ -172,7 +172,7 @@ pub(in crate::python) fn register_redis_msgbus_factory() -> PyResult<()> {
 #[derive(Debug)]
 #[pyclass(
     name = "RedisMessageBusBacking",
-    module = "nautilus_trader.core.nautilus_pyo3.infrastructure"
+    module = "nautilus_trader.infrastructure"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")]
 pub struct PyRedisMessageBusBacking {

@@ -46,7 +46,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
         eq,
         eq_int,
         rename_all = "SCREAMING_SNAKE_CASE",
-        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        module = "nautilus_trader.adapters.databento",
         from_py_object
     )
 )]
@@ -130,7 +130,7 @@ impl FromU8 for DatabentoStatisticType {
         eq,
         eq_int,
         rename_all = "SCREAMING_SNAKE_CASE",
-        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        module = "nautilus_trader.adapters.databento",
         from_py_object
     )
 )]

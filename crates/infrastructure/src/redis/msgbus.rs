@@ -86,10 +86,7 @@ type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.infrastructure", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

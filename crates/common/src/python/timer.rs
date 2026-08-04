@@ -29,10 +29,7 @@ use ustr::Ustr;
 
 use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandler};
 
-#[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "TimeEventHandler"
-)]
+#[pyo3::pyclass(module = "nautilus_trader.common", name = "TimeEventHandler")]
 /// Temporary time event handler for Python inter-operatbility
 ///
 /// TODO: Remove once control flow moves into Rust

@@ -1536,9 +1536,9 @@ the class once after defining it:
 
 ```python
 from nautilus_trader.persistence import ParquetDataCatalog
-from nautilus_trader.core.nautilus_pyo3.model import CustomData
-from nautilus_trader.core.nautilus_pyo3.model import DataType
-from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.model.custom import customdataclass_pyo3
 
 

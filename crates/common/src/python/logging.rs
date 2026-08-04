@@ -428,7 +428,7 @@ pub fn py_init_tracing() -> PyResult<()> {
 /// all records through the Nautilus logging infrastructure so that log levels
 /// and formatting remain consistent across Rust and Python.
 #[pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "Logger",
     unsendable,
     from_py_object

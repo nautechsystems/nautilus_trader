@@ -24,11 +24,12 @@ from _common import is_ib_endpoint_reachable
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
-from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.model import InstrumentId
 
 
 async def main() -> None:
-    ib = pyo3.interactive_brokers
+    ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     if not is_ib_endpoint_reachable(host, port):
         print(f"IB Gateway/TWS is not reachable at {host}:{port}", flush=True)
@@ -59,7 +60,7 @@ async def main() -> None:
     print("Requesting option instruments...", flush=True)
     instruments = await client.request_instruments(
         instrument_ids=[
-            pyo3.InstrumentId.from_str(
+            InstrumentId.from_str(
                 os.getenv("IB_V2_OPTION_INSTRUMENT_ID", default_es_put_option_instrument_id()),
             ),
         ],

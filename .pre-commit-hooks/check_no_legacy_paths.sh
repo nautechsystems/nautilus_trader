@@ -9,12 +9,33 @@ fi
 
 echo "Checking for legacy paths and FFI surfaces..."
 
-if matches=$(rg -n "nautilus_pyo3" python --glob '!_fixup.py' 2> /dev/null); then
-  echo "Error: found legacy nautilus_pyo3 references under python/"
+if matches=$(
+  rg -n "nautilus_pyo3" . \
+    --glob '*.py' \
+    --glob '*.pyi' \
+    --glob '*.ipynb' \
+    --glob '*.md' \
+    --glob '!RELEASES.md' \
+    2> /dev/null
+); then
+  echo "Error: found legacy nautilus_pyo3 references in Python-facing files"
   echo
   echo "$matches"
   echo
   echo "Use the public Python surface or _libnautilus internals instead."
+  exit 1
+fi
+
+if matches=$(
+  rg -n 'nautilus_trader\.core\.nautilus_pyo3|nautilus_pyo3\.' crates \
+    --glob '*.rs' \
+    2> /dev/null
+); then
+  echo "Error: found legacy nautilus_pyo3 module paths in Rust sources"
+  echo
+  echo "$matches"
+  echo
+  echo "Use the canonical public Python module path."
   exit 1
 fi
 

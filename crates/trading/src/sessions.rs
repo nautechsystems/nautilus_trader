@@ -52,7 +52,7 @@ static NEW_YORK_TIMEZONE: LazyLock<TimeZone> =
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.trading",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )

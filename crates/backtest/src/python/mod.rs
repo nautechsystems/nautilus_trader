@@ -23,7 +23,7 @@ pub mod result;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.backtest`.
+/// Exposed through `nautilus_trader.backtest`.
 ///
 /// # Errors
 ///

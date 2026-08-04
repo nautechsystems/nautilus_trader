@@ -220,7 +220,7 @@ fn py_is_pycapsule(obj: Py<PyAny>) -> bool {
     }
 }
 
-/// Loaded as `nautilus_pyo3.core`.
+/// Exposed through `nautilus_trader.core`.
 ///
 /// # Errors
 ///

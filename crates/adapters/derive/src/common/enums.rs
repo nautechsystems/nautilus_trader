@@ -30,7 +30,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.derive",
+        module = "nautilus_trader.adapters.derive",
         eq,
         eq_int,
         frozen,

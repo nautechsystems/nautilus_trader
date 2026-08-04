@@ -68,7 +68,7 @@ fn eastern_timezone() -> &'static TimeZone {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.backtest", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -201,11 +201,7 @@ impl RolloverInterestCalculator {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        unsendable,
-        skip_from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.backtest", unsendable, skip_from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

@@ -1747,10 +1747,7 @@ impl Debug for WebSocketClientInner {
 ///
 /// Handles connection state, callbacks, and rate limiting.
 /// See module docs for architecture details.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.network"))]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")

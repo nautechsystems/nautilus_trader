@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `DataEngine` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.data", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.data", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

@@ -23,7 +23,7 @@ pub mod reconciliation;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.execution`.
+/// Exposed through `nautilus_trader.execution`.
 ///
 /// # Errors
 ///

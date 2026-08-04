@@ -174,10 +174,7 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 pub struct HyperliquidRawHttpClient {
     client: HttpClient,
@@ -873,10 +870,7 @@ impl HyperliquidRawHttpClient {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

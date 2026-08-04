@@ -89,7 +89,7 @@ use crate::{
 /// market data to NautilusTrader.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers")
+    pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers")
 )]
 pub struct InteractiveBrokersDataClient {
     /// Client identifier.

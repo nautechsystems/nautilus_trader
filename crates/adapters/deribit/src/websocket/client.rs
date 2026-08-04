@@ -81,7 +81,7 @@ const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

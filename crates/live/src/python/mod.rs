@@ -27,7 +27,7 @@ pyo3_stub_gen::reexport_module_members!(
     "PortfolioConfig"
 );
 
-/// Loaded as `nautilus_pyo3.live`.
+/// Exposed through `nautilus_trader.live`.
 ///
 /// # Errors
 ///

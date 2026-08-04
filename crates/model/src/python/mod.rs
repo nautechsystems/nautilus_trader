@@ -75,7 +75,7 @@ pub fn currency_lookup_error_to_pyvalue_err(e: CurrencyLookupError) -> PyErr {
     to_pyvalue_err(e)
 }
 
-/// Loaded as `nautilus_pyo3.model`.
+/// Exposed through `nautilus_trader.model`.
 ///
 /// # Errors
 ///

@@ -16,12 +16,12 @@
 
 from nautilus_trader.adapters.bitmex import BITMEX
 from nautilus_trader.adapters.bitmex import BitmexDataClientConfig
+from nautilus_trader.adapters.bitmex import BitmexEnvironment
 from nautilus_trader.adapters.bitmex import BitmexLiveDataClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId

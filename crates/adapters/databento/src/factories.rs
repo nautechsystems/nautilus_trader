@@ -40,10 +40,7 @@ use crate::{
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.databento",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.databento", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -124,10 +121,7 @@ impl ClientConfig for DatabentoLiveClientConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.databento",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.databento", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

@@ -375,11 +375,7 @@ fn make_handler(py: Python<'_>, callable: Py<PyAny>) -> PyResult<ShareableMessag
 /// Provides the same API as the legacy Cython `MessageBus` while routing all
 /// messages through the single Rust bus. Python custom events travel through
 /// the Any-based dispatch path via [`PyMessage`] wrappers.
-#[pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "MessageBus",
-    unsendable
-)]
+#[pyclass(module = "nautilus_trader.common", name = "MessageBus", unsendable)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 pub struct PyMessageBus {
     trader_id: TraderId,

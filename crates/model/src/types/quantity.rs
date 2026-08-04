@@ -126,11 +126,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

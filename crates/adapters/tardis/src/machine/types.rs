@@ -25,7 +25,7 @@ pub use crate::machine::client::TardisMachineClient;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -75,7 +75,7 @@ impl TardisInstrumentMiniInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 pub struct TardisInstrumentKey {
     /// The Tardis raw symbol.
@@ -100,7 +100,7 @@ impl TardisInstrumentKey {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -135,7 +135,7 @@ pub struct ReplayNormalizedRequestOptions {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

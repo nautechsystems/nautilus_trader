@@ -40,7 +40,7 @@ use crate::error::{NetworkConfigError, NetworkConfigResult};
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
