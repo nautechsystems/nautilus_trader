@@ -136,8 +136,10 @@ impl ChandeMomentumOscillator {
             if divisor == 0.0 {
                 self.value = 0.0;
             } else {
+                // Divide before scaling, so a zero gain average gives exactly -100
+                // rather than a value just outside the oscillator's range.
                 self.value =
-                    100.0 * (self.average_gain.value() - self.average_loss.value()) / divisor;
+                    100.0 * ((self.average_gain.value() - self.average_loss.value()) / divisor);
             }
         }
         self.previous_close = close;
@@ -160,6 +162,23 @@ mod tests {
         assert_eq!(display_str, "ChandeMomentumOscillator(10)");
         assert_eq!(cmo_10.period, 10);
         assert!(!cmo_10.initialized);
+    }
+
+    #[rstest]
+    fn test_value_stays_within_bounds_when_gain_average_is_zero() {
+        // A drop followed by flat prices decays the gain average to exactly zero, so
+        // the oscillator sits on its lower bound. Scaling before dividing put it just
+        // outside, which `VariableIndexDynamicAverage` then read as a weight above one.
+        let mut cmo = ChandeMomentumOscillator::new(14, None);
+        for price in std::iter::repeat_n(100.0, 21).chain(std::iter::repeat_n(50.0, 20)) {
+            cmo.update_raw(price);
+            assert!(
+                (-100.0..=100.0).contains(&cmo.value),
+                "value {} outside [-100, 100]",
+                cmo.value
+            );
+        }
+        assert_eq!(cmo.value, -100.0);
     }
 
     #[rstest]
