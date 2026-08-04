@@ -45,8 +45,10 @@ path = "src/lib.rs"
 [dependencies.anyhow]
 version = "1.0.102"
 
-[dependencies.chrono]
-version = "0.4.44"
+[dependencies.jiff]
+version = "0.2.35"
+features = ["std"]
+default-features = false
 
 [dependencies.either]
 version = "1.15.0"

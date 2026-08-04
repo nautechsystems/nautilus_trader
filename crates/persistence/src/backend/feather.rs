@@ -22,9 +22,13 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono_tz::Tz;
 use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
+};
+use jiff::{
+    SignedDuration,
+    civil::Time,
+    tz::{AmbiguousOffset, TimeZone},
 };
 use nautilus_common::{
     cache::fifo::FifoCache,
@@ -165,7 +169,7 @@ pub enum RotationConfig {
         /// Time of day for rotation (nanoseconds since midnight).
         rotation_time: UnixNanos,
         /// Timezone for rotation calculations.
-        rotation_timezone: Tz,
+        rotation_timezone: TimeZone,
     },
     /// No automatic rotation.
     NoRotation,
@@ -358,7 +362,7 @@ impl FeatherWriter {
     }
 
     fn check_scheduled_rotation(&mut self, path: &FileWriterPath) -> bool {
-        match self.rotation_config {
+        match &self.rotation_config {
             RotationConfig::Interval { interval_ns } => {
                 let now = self.clock.borrow().timestamp_ns();
                 let next_rotation = self.next_rotation_times.get(path).copied();
@@ -366,12 +370,12 @@ impl FeatherWriter {
                 match next_rotation {
                     None => {
                         self.next_rotation_times
-                            .insert(path.clone(), now + interval_ns);
+                            .insert(path.clone(), now + *interval_ns);
                         false
                     }
                     Some(next) if now >= next => {
                         self.next_rotation_times
-                            .insert(path.clone(), now + interval_ns);
+                            .insert(path.clone(), now + *interval_ns);
                         true
                     }
                     _ => false,
@@ -388,16 +392,16 @@ impl FeatherWriter {
                 match next_rotation {
                     None => {
                         let next = self.calculate_next_scheduled_rotation(
-                            rotation_time,
+                            *rotation_time,
                             rotation_timezone,
-                            interval_ns,
+                            *interval_ns,
                         );
                         self.next_rotation_times.insert(path.clone(), next);
                         false
                     }
                     Some(next) if now >= next => {
                         self.next_rotation_times
-                            .insert(path.clone(), now + interval_ns);
+                            .insert(path.clone(), now + *interval_ns);
                         true
                     }
                     _ => false,
@@ -410,47 +414,43 @@ impl FeatherWriter {
     fn calculate_next_scheduled_rotation(
         &self,
         rotation_time: UnixNanos,
-        rotation_timezone: Tz,
+        rotation_timezone: &TimeZone,
         interval_ns: u64,
     ) -> UnixNanos {
-        use chrono::TimeZone;
         let now_utc = self.clock.borrow().utc_now();
-        let now_tz = now_utc.with_timezone(&rotation_timezone);
+        let now_local = rotation_timezone.to_datetime(now_utc);
 
         let rotation_time_secs = u32::try_from(*rotation_time / NANOSECONDS_IN_SECOND).unwrap_or(0);
         let rotation_time_nanos =
-            u32::try_from(*rotation_time % NANOSECONDS_IN_SECOND).unwrap_or(0);
-        let rotation_time_naive = chrono::NaiveTime::from_num_seconds_from_midnight_opt(
-            rotation_time_secs,
-            rotation_time_nanos,
-        )
-        .unwrap_or_else(|| chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+            i32::try_from(*rotation_time % NANOSECONDS_IN_SECOND).unwrap_or(0);
+        let rotation_time = if rotation_time_secs < 86_400 {
+            Time::new(
+                i8::try_from(rotation_time_secs / 3_600).unwrap_or(0),
+                i8::try_from(rotation_time_secs % 3_600 / 60).unwrap_or(0),
+                i8::try_from(rotation_time_secs % 60).unwrap_or(0),
+                rotation_time_nanos,
+            )
+            .unwrap_or(Time::MIN)
+        } else {
+            Time::MIN
+        };
 
-        let mut next_rotation_tz = rotation_timezone
-            .from_local_datetime(&now_tz.date_naive().and_time(rotation_time_naive))
-            .earliest()
-            .unwrap_or(now_tz);
+        let local_rotation = now_local.date().to_datetime(rotation_time);
+        let ambiguous = rotation_timezone.to_ambiguous_timestamp(local_rotation);
+        let mut next_rotation = match ambiguous.offset() {
+            AmbiguousOffset::Gap { .. } => now_utc,
+            _ => ambiguous.earlier().unwrap_or(now_utc),
+        };
 
-        if next_rotation_tz <= now_tz {
+        if next_rotation <= now_utc {
             // If the time has already passed today, we would usually add the interval
             // But let's align exactly with how Python does it:
-            while next_rotation_tz <= now_tz {
-                // Add interval_ns to next_rotation_tz
-                // Since chrono::Duration doesn't take u64 nanos directly comfortably for large values,
-                // we'll convert to seconds and nanos.
-                let secs = i64::try_from(interval_ns / NANOSECONDS_IN_SECOND).unwrap_or(i64::MAX);
-                let nanos = u32::try_from(interval_ns % NANOSECONDS_IN_SECOND).unwrap_or(0);
-                next_rotation_tz = next_rotation_tz
-                    + chrono::Duration::seconds(secs)
-                    + chrono::Duration::nanoseconds(i64::from(nanos));
+            while next_rotation <= now_utc {
+                next_rotation += SignedDuration::from_nanos_i128(i128::from(interval_ns));
             }
         }
 
-        let timestamp_ns = next_rotation_tz
-            .with_timezone(&chrono::Utc)
-            .timestamp_nanos_opt()
-            .unwrap_or(0);
-        UnixNanos::from(u64::try_from(timestamp_ns.max(0)).unwrap_or(0))
+        UnixNanos::from(u64::try_from(next_rotation.as_nanosecond()).unwrap_or(0))
     }
 
     /// Flushes and rotates `FileWriter` associated with `key`.

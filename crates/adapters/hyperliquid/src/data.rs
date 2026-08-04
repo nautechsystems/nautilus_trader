@@ -24,7 +24,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
@@ -1328,15 +1328,15 @@ impl DataClient for HyperliquidDataClient {
         let start_nanos = datetime_to_unix_nanos(start_dt);
         let end_nanos = datetime_to_unix_nanos(end_dt);
 
-        let now_ms = Utc::now().timestamp_millis() as u64;
+        let now_ms = Timestamp::now().as_millisecond() as u64;
 
         // Hyperliquid requires a startTime; default to a 7-day lookback when none given
         let default_lookback_ms: u64 = 7 * 86_400_000;
         let start_ms = match start_dt {
-            Some(dt) => dt.timestamp_millis().max(0) as u64,
+            Some(dt) => dt.as_millisecond().max(0) as u64,
             None => now_ms.saturating_sub(default_lookback_ms),
         };
-        let end_ms = end_dt.map(|dt| dt.timestamp_millis().max(0) as u64);
+        let end_ms = end_dt.map(|dt| dt.as_millisecond().max(0) as u64);
 
         self.spawn_task("request_funding_rates", async move {
             let entries = http
@@ -1969,8 +1969,8 @@ pub(crate) fn candle_to_bar(
 async fn request_bars_from_http(
     http_client: HyperliquidHttpClient,
     bar_type: BarType,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
     limit: Option<u32>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
 ) -> anyhow::Result<Vec<Bar>> {
@@ -1990,10 +1990,10 @@ async fn request_bars_from_http(
     let interval = bar_type_to_interval(&bar_type)?;
 
     // Hyperliquid uses millisecond timestamps
-    let now = Utc::now();
-    let end_time = end.unwrap_or(now).timestamp_millis() as u64;
+    let now = Timestamp::now();
+    let end_time = end.unwrap_or(now).as_millisecond() as u64;
     let start_time = if let Some(start) = start {
-        start.timestamp_millis() as u64
+        start.as_millisecond() as u64
     } else {
         // Default to 1000 bars before end_time
         let spec = bar_type.spec();

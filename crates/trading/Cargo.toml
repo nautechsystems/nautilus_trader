@@ -59,9 +59,8 @@ nautilus-portfolio = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -24,9 +24,24 @@
 //! - London Session    0800-1600 (Europe / London)
 //! - New York Session  0800-1700 (America / New York)
 
-use chrono::{DateTime, Datelike, Days, NaiveTime, TimeZone, Utc, Weekday};
-use chrono_tz::{America::New_York, Asia::Tokyo, Australia::Sydney, Europe::London, Tz};
+use std::sync::LazyLock;
+
+use jiff::{
+    Span, Timestamp, Zoned,
+    civil::{Time, Weekday},
+    tz::TimeZone,
+};
+use nautilus_core::datetime::get_timezone;
 use strum::{Display, EnumIter, EnumString, FromRepr};
+
+static SYDNEY_TIMEZONE: LazyLock<TimeZone> =
+    LazyLock::new(|| get_timezone("Australia/Sydney").expect("bundled Australia/Sydney timezone"));
+static TOKYO_TIMEZONE: LazyLock<TimeZone> =
+    LazyLock::new(|| get_timezone("Asia/Tokyo").expect("bundled Asia/Tokyo timezone"));
+static LONDON_TIMEZONE: LazyLock<TimeZone> =
+    LazyLock::new(|| get_timezone("Europe/London").expect("bundled Europe/London timezone"));
+static NEW_YORK_TIMEZONE: LazyLock<TimeZone> =
+    LazyLock::new(|| get_timezone("America/New_York").expect("bundled America/New_York timezone"));
 
 /// Represents a major Forex market session based on trading hours.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, FromRepr, EnumIter, EnumString, Display)]
@@ -55,148 +70,154 @@ pub enum ForexSession {
 
 impl ForexSession {
     /// Returns the timezone associated with the session.
-    const fn timezone(self) -> Tz {
+    fn timezone(self) -> &'static TimeZone {
         match self {
-            Self::Sydney => Sydney,
-            Self::Tokyo => Tokyo,
-            Self::London => London,
-            Self::NewYork => New_York,
+            Self::Sydney => &SYDNEY_TIMEZONE,
+            Self::Tokyo => &TOKYO_TIMEZONE,
+            Self::London => &LONDON_TIMEZONE,
+            Self::NewYork => &NEW_YORK_TIMEZONE,
         }
     }
 
     /// Returns the start and end times for the session in local time.
-    const fn session_times(self) -> (NaiveTime, NaiveTime) {
+    const fn session_times(self) -> (Time, Time) {
         match self {
-            Self::Sydney => (
-                NaiveTime::from_hms_opt(7, 0, 0).unwrap(),
-                NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
-            ),
-            Self::Tokyo => (
-                NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-                NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
-            ),
-            Self::London => (
-                NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
-                NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
-            ),
-            Self::NewYork => (
-                NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
-                NaiveTime::from_hms_opt(17, 0, 0).unwrap(),
-            ),
+            Self::Sydney => (Time::constant(7, 0, 0, 0), Time::constant(16, 0, 0, 0)),
+            Self::Tokyo => (Time::constant(9, 0, 0, 0), Time::constant(18, 0, 0, 0)),
+            Self::London => (Time::constant(8, 0, 0, 0), Time::constant(16, 0, 0, 0)),
+            Self::NewYork => (Time::constant(8, 0, 0, 0), Time::constant(17, 0, 0, 0)),
         }
     }
 }
 
 /// Converts a UTC timestamp to the local time for the given Forex session.
 #[must_use]
-pub fn fx_local_from_utc(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Tz> {
-    session.timezone().from_utc_datetime(&time_now.naive_utc())
+pub fn fx_local_from_utc(session: ForexSession, time_now: Timestamp) -> Zoned {
+    time_now.to_zoned(session.timezone().clone())
 }
 
 /// Returns the next session start time in UTC.
 #[must_use]
-pub fn fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+pub fn fx_next_start(session: ForexSession, time_now: Timestamp) -> Timestamp {
     let local_now = fx_local_from_utc(session, time_now);
     let (start_time, _) = session.session_times();
 
-    fx_next_boundary(local_now, start_time)
+    fx_next_boundary(&local_now, start_time)
 }
 
 /// Returns the previous session start time in UTC.
 #[must_use]
-pub fn fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+pub fn fx_prev_start(session: ForexSession, time_now: Timestamp) -> Timestamp {
     let local_now = fx_local_from_utc(session, time_now);
     let (start_time, _) = session.session_times();
 
-    fx_prev_boundary(local_now, start_time)
+    fx_prev_boundary(&local_now, start_time)
 }
 
 /// Returns the next session end time in UTC.
 #[must_use]
-pub fn fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+pub fn fx_next_end(session: ForexSession, time_now: Timestamp) -> Timestamp {
     let local_now = fx_local_from_utc(session, time_now);
     let (_, end_time) = session.session_times();
 
-    fx_next_boundary(local_now, end_time)
+    fx_next_boundary(&local_now, end_time)
 }
 
 /// Returns the previous session end time in UTC.
 #[must_use]
-pub fn fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> DateTime<Utc> {
+pub fn fx_prev_end(session: ForexSession, time_now: Timestamp) -> Timestamp {
     let local_now = fx_local_from_utc(session, time_now);
     let (_, end_time) = session.session_times();
 
-    fx_prev_boundary(local_now, end_time)
+    fx_prev_boundary(&local_now, end_time)
 }
 
-fn fx_next_boundary(local_now: DateTime<Tz>, session_time: NaiveTime) -> DateTime<Utc> {
-    let timezone = local_now.timezone();
-    let mut date = local_now.date_naive();
+fn fx_next_boundary(local_now: &Zoned, session_time: Time) -> Timestamp {
+    let timezone = local_now.time_zone().clone();
+    let mut date = local_now.date();
 
     if local_now.time() > session_time {
         date = date
-            .checked_add_days(Days::new(1))
+            .checked_add(Span::new().days(1))
             .expect("FX session date must be representable");
     }
 
     let weekend_days = match date.weekday() {
-        Weekday::Sat => 2,
-        Weekday::Sun => 1,
+        Weekday::Saturday => 2,
+        Weekday::Sunday => 1,
         _ => 0,
     };
     date = date
-        .checked_add_days(Days::new(weekend_days))
+        .checked_add(Span::new().days(weekend_days))
         .expect("FX session date must be representable");
 
     timezone
-        .from_local_datetime(&date.and_time(session_time))
-        .single()
+        .to_ambiguous_timestamp(date.to_datetime(session_time))
+        .unambiguous()
         .expect("FX session boundary must be a unique local time")
-        .with_timezone(&Utc)
 }
 
-fn fx_prev_boundary(local_now: DateTime<Tz>, session_time: NaiveTime) -> DateTime<Utc> {
-    let timezone = local_now.timezone();
-    let mut date = local_now.date_naive();
+fn fx_prev_boundary(local_now: &Zoned, session_time: Time) -> Timestamp {
+    let timezone = local_now.time_zone().clone();
+    let mut date = local_now.date();
 
     if local_now.time() < session_time {
         date = date
-            .checked_sub_days(Days::new(1))
+            .checked_sub(Span::new().days(1))
             .expect("FX session date must be representable");
     }
 
     let weekend_days = match date.weekday() {
-        Weekday::Sat => 1,
-        Weekday::Sun => 2,
+        Weekday::Saturday => 1,
+        Weekday::Sunday => 2,
         _ => 0,
     };
     date = date
-        .checked_sub_days(Days::new(weekend_days))
+        .checked_sub(Span::new().days(weekend_days))
         .expect("FX session date must be representable");
 
     timezone
-        .from_local_datetime(&date.and_time(session_time))
-        .single()
+        .to_ambiguous_timestamp(date.to_datetime(session_time))
+        .unambiguous()
         .expect("FX session boundary must be a unique local time")
-        .with_timezone(&Utc)
 }
 
 #[cfg(test)]
 mod tests {
+    use jiff::{civil::Date, tz::Offset};
     use rstest::rstest;
 
     use super::*;
 
-    fn local_datetime(
+    fn local_timestamp(
         session: ForexSession,
         year: i32,
         month: u32,
         day: u32,
         hour: u32,
-    ) -> DateTime<Tz> {
+    ) -> Timestamp {
+        let date = Date::new(
+            i16::try_from(year).unwrap(),
+            i8::try_from(month).unwrap(),
+            i8::try_from(day).unwrap(),
+        )
+        .unwrap();
+        let datetime = date.at(i8::try_from(hour).unwrap(), 0, 0, 0);
+
         session
             .timezone()
-            .with_ymd_and_hms(year, month, day, hour, 0, 0)
+            .to_ambiguous_timestamp(datetime)
+            .unambiguous()
+            .unwrap()
+    }
+
+    fn utc_timestamp(year: i32, month: i8, day: i8, hour: i8, minute: i8) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(
+                Date::new(i16::try_from(year).unwrap(), month, day)
+                    .unwrap()
+                    .at(hour, minute, 0, 0),
+            )
             .unwrap()
     }
 
@@ -206,9 +227,12 @@ mod tests {
     #[case(ForexSession::London, "1970-01-01T01:00:00+01:00")]
     #[case(ForexSession::NewYork, "1969-12-31T19:00:00-05:00")]
     pub fn test_fx_local_from_utc(#[case] session: ForexSession, #[case] expected: &str) {
-        let unix_epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let unix_epoch = Timestamp::UNIX_EPOCH;
         let result = fx_local_from_utc(session, unix_epoch);
-        assert_eq!(result.to_rfc3339(), expected);
+        assert_eq!(
+            result.strftime("%Y-%m-%dT%H:%M:%S%:z").to_string(),
+            expected
+        );
     }
 
     #[rstest]
@@ -217,9 +241,9 @@ mod tests {
     #[case(ForexSession::London, "1970-01-01T07:00:00+00:00")]
     #[case(ForexSession::NewYork, "1970-01-01T13:00:00+00:00")]
     pub fn test_fx_next_start(#[case] session: ForexSession, #[case] expected: &str) {
-        let unix_epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let unix_epoch = Timestamp::UNIX_EPOCH;
         let result = fx_next_start(session, unix_epoch);
-        assert_eq!(result.to_rfc3339(), expected);
+        assert_eq!(result, expected.parse::<Timestamp>().unwrap());
     }
 
     #[rstest]
@@ -228,9 +252,9 @@ mod tests {
     #[case(ForexSession::London, "1969-12-31T07:00:00+00:00")]
     #[case(ForexSession::NewYork, "1969-12-31T13:00:00+00:00")]
     pub fn test_fx_prev_start(#[case] session: ForexSession, #[case] expected: &str) {
-        let unix_epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let unix_epoch = Timestamp::UNIX_EPOCH;
         let result = fx_prev_start(session, unix_epoch);
-        assert_eq!(result.to_rfc3339(), expected);
+        assert_eq!(result, expected.parse::<Timestamp>().unwrap());
     }
 
     #[rstest]
@@ -239,9 +263,9 @@ mod tests {
     #[case(ForexSession::London, "1970-01-01T15:00:00+00:00")]
     #[case(ForexSession::NewYork, "1970-01-01T22:00:00+00:00")]
     pub fn test_fx_next_end(#[case] session: ForexSession, #[case] expected: &str) {
-        let unix_epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let unix_epoch = Timestamp::UNIX_EPOCH;
         let result = fx_next_end(session, unix_epoch);
-        assert_eq!(result.to_rfc3339(), expected);
+        assert_eq!(result, expected.parse::<Timestamp>().unwrap());
     }
 
     #[rstest]
@@ -250,9 +274,9 @@ mod tests {
     #[case(ForexSession::London, "1969-12-31T15:00:00+00:00")]
     #[case(ForexSession::NewYork, "1969-12-31T22:00:00+00:00")]
     pub fn test_fx_prev_end(#[case] session: ForexSession, #[case] expected: &str) {
-        let unix_epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let unix_epoch = Timestamp::UNIX_EPOCH;
         let result = fx_prev_end(session, unix_epoch);
-        assert_eq!(result.to_rfc3339(), expected);
+        assert_eq!(result, expected.parse::<Timestamp>().unwrap());
     }
 
     #[rstest]
@@ -272,16 +296,14 @@ mod tests {
     ) {
         let (input_year, input_month, input_day) = input_date;
         let (expected_year, expected_month, expected_day) = expected_date;
-        let time_now =
-            local_datetime(session, input_year, input_month, input_day, 18).with_timezone(&Utc);
-        let expected = local_datetime(
+        let time_now = local_timestamp(session, input_year, input_month, input_day, 18);
+        let expected = local_timestamp(
             session,
             expected_year,
             expected_month,
             expected_day,
             expected_hour,
-        )
-        .with_timezone(&Utc);
+        );
 
         assert_eq!(fx_next_start(session, time_now), expected);
     }
@@ -303,16 +325,14 @@ mod tests {
     ) {
         let (input_year, input_month, input_day) = input_date;
         let (expected_year, expected_month, expected_day) = expected_date;
-        let time_now =
-            local_datetime(session, input_year, input_month, input_day, 6).with_timezone(&Utc);
-        let expected = local_datetime(
+        let time_now = local_timestamp(session, input_year, input_month, input_day, 6);
+        let expected = local_timestamp(
             session,
             expected_year,
             expected_month,
             expected_day,
             expected_hour,
-        )
-        .with_timezone(&Utc);
+        );
 
         assert_eq!(fx_prev_start(session, time_now), expected);
     }
@@ -332,16 +352,14 @@ mod tests {
     ) {
         let (input_year, input_month, input_day) = input_date;
         let (expected_year, expected_month, expected_day) = expected_date;
-        let time_now =
-            local_datetime(session, input_year, input_month, input_day, 18).with_timezone(&Utc);
-        let expected = local_datetime(
+        let time_now = local_timestamp(session, input_year, input_month, input_day, 18);
+        let expected = local_timestamp(
             session,
             expected_year,
             expected_month,
             expected_day,
             expected_hour,
-        )
-        .with_timezone(&Utc);
+        );
 
         assert_eq!(fx_next_end(session, time_now), expected);
     }
@@ -361,61 +379,59 @@ mod tests {
     ) {
         let (input_year, input_month, input_day) = input_date;
         let (expected_year, expected_month, expected_day) = expected_date;
-        let time_now =
-            local_datetime(session, input_year, input_month, input_day, 6).with_timezone(&Utc);
-        let expected = local_datetime(
+        let time_now = local_timestamp(session, input_year, input_month, input_day, 6);
+        let expected = local_timestamp(
             session,
             expected_year,
             expected_month,
             expected_day,
             expected_hour,
-        )
-        .with_timezone(&Utc);
+        );
 
         assert_eq!(fx_prev_end(session, time_now), expected);
     }
 
     #[rstest]
     pub fn test_fx_next_start_on_weekend() {
-        let sunday_utc = Utc.with_ymd_and_hms(2020, 7, 12, 9, 0, 0).unwrap(); // Sunday
+        let sunday_utc = utc_timestamp(2020, 7, 12, 9, 0); // Sunday
         let result = fx_next_start(ForexSession::Tokyo, sunday_utc);
-        let expected = Utc.with_ymd_and_hms(2020, 7, 13, 0, 0, 0).unwrap(); // Monday
+        let expected = utc_timestamp(2020, 7, 13, 0, 0); // Monday
 
         assert_eq!(result, expected);
     }
 
     #[rstest]
     pub fn test_fx_next_start_during_active_session() {
-        let during_session = Utc.with_ymd_and_hms(2020, 7, 13, 10, 0, 0).unwrap(); // Sydney session is active
+        let during_session = utc_timestamp(2020, 7, 13, 10, 0); // Sydney session is active
         let result = fx_next_start(ForexSession::Sydney, during_session);
-        let expected = Utc.with_ymd_and_hms(2020, 7, 13, 21, 0, 0).unwrap(); // Next Sydney session start
+        let expected = utc_timestamp(2020, 7, 13, 21, 0); // Next Sydney session start
 
         assert_eq!(result, expected);
     }
 
     #[rstest]
     pub fn test_fx_prev_start_before_session() {
-        let before_session = Utc.with_ymd_and_hms(2020, 7, 13, 6, 0, 0).unwrap(); // Before Tokyo session start
+        let before_session = utc_timestamp(2020, 7, 13, 6, 0); // Before Tokyo session start
         let result = fx_prev_start(ForexSession::Tokyo, before_session);
-        let expected = Utc.with_ymd_and_hms(2020, 7, 13, 0, 0, 0).unwrap(); // Current Tokyo session start
+        let expected = utc_timestamp(2020, 7, 13, 0, 0); // Current Tokyo session start
 
         assert_eq!(result, expected);
     }
 
     #[rstest]
     pub fn test_fx_next_end_crossing_midnight() {
-        let late_night = Utc.with_ymd_and_hms(2020, 7, 13, 23, 0, 0).unwrap(); // After NY session ended
+        let late_night = utc_timestamp(2020, 7, 13, 23, 0); // After NY session ended
         let result = fx_next_end(ForexSession::NewYork, late_night);
-        let expected = Utc.with_ymd_and_hms(2020, 7, 14, 21, 0, 0).unwrap(); // Next NY session end
+        let expected = utc_timestamp(2020, 7, 14, 21, 0); // Next NY session end
 
         assert_eq!(result, expected);
     }
 
     #[rstest]
     pub fn test_fx_prev_end_after_session() {
-        let after_session = Utc.with_ymd_and_hms(2020, 7, 13, 17, 30, 0).unwrap(); // Just after NY session ended
+        let after_session = utc_timestamp(2020, 7, 13, 17, 30); // Just after NY session ended
         let result = fx_prev_end(ForexSession::NewYork, after_session);
-        let expected = Utc.with_ymd_and_hms(2020, 7, 10, 21, 0, 0).unwrap(); // Previous NY session end
+        let expected = utc_timestamp(2020, 7, 10, 21, 0); // Previous NY session end
 
         assert_eq!(result, expected);
     }

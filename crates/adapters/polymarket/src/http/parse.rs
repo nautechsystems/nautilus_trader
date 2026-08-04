@@ -15,6 +15,7 @@
 
 //! Instrument parsing for Polymarket markets.
 
+use jiff::Timestamp;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     enums::{AssetClass, CurrencyType},
@@ -378,10 +379,10 @@ fn get_currency(code: &str) -> Currency {
 }
 
 fn parse_datetime_to_nanos(s: &str) -> Option<UnixNanos> {
-    chrono::DateTime::parse_from_rfc3339(s)
+    s.parse::<Timestamp>()
         .ok()
-        .and_then(|dt| dt.timestamp_nanos_opt())
-        .map(|ns| UnixNanos::from(ns as u64))
+        .and_then(|dt| u64::try_from(dt.as_nanosecond()).ok())
+        .map(UnixNanos::from)
 }
 
 #[cfg(test)]

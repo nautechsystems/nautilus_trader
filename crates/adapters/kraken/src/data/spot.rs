@@ -557,7 +557,7 @@ impl KrakenSpotDataClient {
                         Ok(new_bar) => {
                             let key: (Ustr, u32) = (ohlc.symbol, ohlc.interval);
                             let new_interval_begin = UnixNanos::from(
-                                ohlc.interval_begin.timestamp_nanos_opt().unwrap_or(0) as u64,
+                                u64::try_from(ohlc.interval_begin.as_nanosecond()).unwrap_or(0),
                             );
 
                             if let Some((buffered_bar, buffered_begin)) = buffer.get(&key)

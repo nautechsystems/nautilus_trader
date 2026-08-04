@@ -53,7 +53,7 @@ Examples include BTC and ETH options on crypto derivatives venues.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::OptionKind,
@@ -63,8 +63,8 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let activation = Utc.with_ymd_and_hms(2022, 12, 22, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2023, 1, 13, 8, 0, 0).unwrap();
+let activation: Timestamp = "2022-12-22T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2023-01-13T08:00:00Z".parse().unwrap();
 
 let btc_option = CryptoOption::builder()
     .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
@@ -75,8 +75,8 @@ let btc_option = CryptoOption::builder()
     .is_inverse(false)
     .option_kind(OptionKind::Put)
     .strike_price(Price::from("16000.00"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
     .size_precision(1)
     .price_increment(Price::from("0.01"))

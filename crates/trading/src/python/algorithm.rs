@@ -17,7 +17,7 @@
 
 use std::{cell::UnsafeCell, collections::HashMap, fmt::Debug, rc::Rc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::{
     actor::{DataActor, DataActorNative, data_actor::DataActorCore},
     component::Component,
@@ -923,7 +923,7 @@ impl PyExecutionAlgorithm {
         quantity: Quantity,
         price: Price,
         time_in_force: TimeInForce,
-        expire_time: Option<DateTime<Utc>>,
+        expire_time: Option<Timestamp>,
         post_only: bool,
         reduce_only: bool,
         display_qty: Option<Quantity>,
@@ -967,7 +967,7 @@ impl PyExecutionAlgorithm {
         primary: Py<PyAny>,
         quantity: Quantity,
         time_in_force: TimeInForce,
-        expire_time: Option<DateTime<Utc>>,
+        expire_time: Option<Timestamp>,
         reduce_only: bool,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,

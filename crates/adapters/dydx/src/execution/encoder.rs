@@ -41,6 +41,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use dashmap::{DashMap, DashSet, mapref::entry::Entry};
+use jiff::{Timestamp, tz::Offset};
 use nautilus_model::identifiers::ClientOrderId;
 use thiserror::Error;
 
@@ -298,11 +299,11 @@ impl ClientOrderIdEncoder {
         }
 
         // Convert to Unix timestamp
-        let dt = chrono::NaiveDate::from_ymd_opt(year, month, day)
-            .and_then(|d| d.and_hms_opt(hour, minute, second))
-            .ok_or_else(|| EncoderError::ParseError(format!("Invalid datetime in: {id_str}")))?;
+        let dt = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+            .parse::<Timestamp>()
+            .map_err(|_| EncoderError::ParseError(format!("Invalid datetime in: {id_str}")))?;
 
-        let timestamp = dt.and_utc().timestamp();
+        let timestamp = dt.as_second();
 
         // Validate timestamp is after base epoch
         let seconds_since_epoch = timestamp - DYDX_BASE_EPOCH;
@@ -435,7 +436,7 @@ impl ClientOrderIdEncoder {
         let timestamp = (client_metadata as i64) + DYDX_BASE_EPOCH;
 
         // Convert to datetime
-        let dt = chrono::DateTime::from_timestamp(timestamp, 0)?;
+        let dt = Offset::UTC.to_datetime(Timestamp::from_second(timestamp).ok()?);
 
         // Format: O-YYYYMMDD-HHMMSS-TTT-SSS-CCC
         let id_str = format!(
@@ -538,9 +539,6 @@ impl ClientOrderIdEncoder {
     }
 }
 
-// Add chrono traits for datetime handling
-use chrono::{Datelike, Timelike};
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -578,12 +576,10 @@ mod tests {
 
         // Verify timestamp in metadata (seconds since 2020-01-01)
         // 2026-01-31 17:48:27 UTC
-        let expected_timestamp = chrono::NaiveDate::from_ymd_opt(2026, 1, 31)
+        let expected_timestamp = "2026-01-31T17:48:27Z"
+            .parse::<Timestamp>()
             .unwrap()
-            .and_hms_opt(17, 48, 27)
-            .unwrap()
-            .and_utc()
-            .timestamp();
+            .as_second();
         let expected_metadata = (expected_timestamp - DYDX_BASE_EPOCH) as u32;
         assert_eq!(encoded.client_metadata, expected_metadata);
     }
@@ -876,12 +872,10 @@ mod tests {
 
         // The original O-format still round-trips via decode (deterministic)
         let decoded = encoder.decode_o_format(colliding_client_id, {
-            let dt = chrono::NaiveDate::from_ymd_opt(2026, 2, 20)
+            let dt = "2026-02-20T03:19:43Z"
+                .parse::<Timestamp>()
                 .unwrap()
-                .and_hms_opt(3, 19, 43)
-                .unwrap()
-                .and_utc()
-                .timestamp();
+                .as_second();
             (dt - DYDX_BASE_EPOCH) as u32
         });
         assert_eq!(decoded, Some(id));

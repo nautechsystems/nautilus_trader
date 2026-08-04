@@ -20,6 +20,7 @@ mod common;
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{Router, extract::Query, http::StatusCode, response::Json, routing::get};
+use jiff::civil::Date;
 use nautilus_architect_ax::{
     common::enums::AxCandleWidth,
     http::{
@@ -970,7 +971,7 @@ async fn test_domain_http_request_funding_slots_returns_schedule() {
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
     client.set_session_token("test_session_token".to_string());
 
-    let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 6).unwrap();
+    let date = Date::new(2026, 7, 6).unwrap();
     let response = client
         .request_funding_slots(InstrumentId::from("EURUSD-PERP.AX"), Some(date))
         .await

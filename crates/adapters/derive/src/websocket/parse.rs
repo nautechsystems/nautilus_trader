@@ -562,11 +562,7 @@ pub fn parse_candle_record(
     let timestamp =
         u64::try_from(record.timestamp_bucket).context("negative Derive candle timestamp")?;
     let bucket_start = timestamp_seconds_to_nanos(timestamp, "candle timestamp_bucket")?;
-    let interval_ns = bar_type
-        .spec()
-        .timedelta()
-        .num_nanoseconds()
-        .context("bar specification produced non-integer interval")?;
+    let interval_ns = bar_type.spec().timedelta().as_nanos();
     let interval_ns = u64::try_from(interval_ns)
         .context("bar interval overflowed the u64 range for nanoseconds")?;
     let ts_event = bucket_start

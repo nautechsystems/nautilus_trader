@@ -2668,8 +2668,8 @@ impl DataClient for BinanceFuturesDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
-        let start_ms = request.start.map(|dt| dt.timestamp_millis());
-        let end_ms = request.end.map(|dt| dt.timestamp_millis());
+        let start_ms = request.start.map(|dt| dt.as_millisecond());
+        let end_ms = request.end.map(|dt| dt.as_millisecond());
 
         get_runtime().spawn(async move {
             let response = if data_type_name == "BinanceFuturesOpenInterest" {

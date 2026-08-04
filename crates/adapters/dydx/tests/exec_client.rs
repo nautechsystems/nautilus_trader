@@ -24,6 +24,7 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
+use jiff::Timestamp;
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_dydx::{
@@ -260,7 +261,7 @@ fn create_test_fill() -> Fill {
         price: dec!(50000),
         size: dec!(0.05),
         fee: dec!(2.50),
-        created_at: chrono::Utc::now(),
+        created_at: jiff::Timestamp::now(),
         created_at_height: 12345,
         order_id: "order-123".to_string(),
         client_metadata: 0,
@@ -650,7 +651,6 @@ async fn test_empty_fills_response() {
 #[rstest]
 #[tokio::test]
 async fn test_parse_block_height_websocket_message() {
-    use chrono::Utc;
     use nautilus_dydx::websocket::messages::{
         DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData,
     };
@@ -663,7 +663,7 @@ async fn test_parse_block_height_websocket_message() {
         version: "4.0.0".to_string(),
         contents: DydxBlockHeightChannelContents {
             block_height: test_block_height.to_string(),
-            time: Utc::now(),
+            time: Timestamp::now(),
         },
     };
 

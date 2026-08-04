@@ -16,7 +16,7 @@
 //! Python bindings for the Ax HTTP client.
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{datetime::datetime_to_unix_nanos, python::to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -283,8 +283,8 @@ impl AxHttpClient {
         py: Python<'py>,
         instrument_id: InstrumentId,
         limit: Option<i32>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let symbol = instrument_id.symbol.inner();
@@ -324,8 +324,8 @@ impl AxHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let symbol = bar_type.instrument_id().symbol.inner();
@@ -390,8 +390,8 @@ impl AxHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 

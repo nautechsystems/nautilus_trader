@@ -701,7 +701,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         return rate_limit_response().into_response();
                     }
                     // Current time in microseconds
-                    let time_us = chrono::Utc::now().timestamp_micros();
+                    let time_us = jiff::Timestamp::now().as_microsecond();
                     sbe_response(build_server_time_response(time_us)).into_response()
                 }
             }),

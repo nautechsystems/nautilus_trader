@@ -43,8 +43,8 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 bytes = { workspace = true }
-chrono = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 rmp-serde = { workspace = true }

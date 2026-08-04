@@ -15,6 +15,7 @@
 
 //! Parsing functions for Polymarket execution reports.
 
+use jiff::Timestamp;
 use nautilus_core::{
     UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
@@ -588,8 +589,8 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
             Some(UnixNanos::from(n * NANOSECONDS_IN_SECOND))
         };
     }
-    let dt = chrono::DateTime::parse_from_rfc3339(ts_str).ok()?;
-    Some(UnixNanos::from(dt.timestamp_nanos_opt()? as u64))
+    let dt = ts_str.parse::<Timestamp>().ok()?;
+    Some(UnixNanos::from(u64::try_from(dt.as_nanosecond()).ok()?))
 }
 
 #[cfg(test)]

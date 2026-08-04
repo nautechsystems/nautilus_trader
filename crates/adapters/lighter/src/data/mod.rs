@@ -1699,7 +1699,7 @@ mod tests {
         response::{IntoResponse, Response},
         routing::get,
     };
-    use chrono::DateTime;
+    use jiff::Timestamp;
     use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -2406,8 +2406,8 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp(1_778_702_400, 0).unwrap();
-        let end = DateTime::from_timestamp(1_778_706_000, 0).unwrap();
+        let start = Timestamp::from_second(1_778_702_400).unwrap();
+        let end = Timestamp::from_second(1_778_706_000).unwrap();
         let request = RequestFundingRates::new(
             instrument_id,
             Some(start),
@@ -2452,7 +2452,7 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let start = Timestamp::from_second(1_700_000_000).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             Some(start),
@@ -2532,7 +2532,7 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let start = Timestamp::from_second(1_700_000_000).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             Some(start),
@@ -2569,7 +2569,7 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let end = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let end = Timestamp::from_second(1_700_000_000).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             None,
@@ -2606,8 +2606,8 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp_millis(1_777_945_103_092).unwrap();
-        let end = DateTime::from_timestamp_millis(1_777_945_103_094).unwrap();
+        let start = Timestamp::from_millisecond(1_777_945_103_092).unwrap();
+        let end = Timestamp::from_millisecond(1_777_945_103_094).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             Some(start),

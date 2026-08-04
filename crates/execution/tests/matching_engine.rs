@@ -15,7 +15,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_common::{
     cache::Cache,
     clock::TestClock,
@@ -68,6 +68,16 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{Currency, Money, Price, Quantity},
 };
+
+fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+    Offset::UTC
+        .to_timestamp(
+            Date::new(year, month, day)
+                .unwrap()
+                .at(hour, minute, second, 0),
+        )
+        .unwrap()
+}
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -210,18 +220,10 @@ pub fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
 // For valid ES futures contract currently active
 #[fixture]
 fn instrument_es() -> InstrumentAny {
-    let activation = UnixNanos::from(
-        Utc.with_ymd_and_hms(2022, 4, 8, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
-    );
-    let expiration = UnixNanos::from(
-        Utc.with_ymd_and_hms(2100, 7, 8, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
-    );
+    let activation =
+        UnixNanos::from(u64::try_from(utc_timestamp(2022, 4, 8, 0, 0, 0).as_nanosecond()).unwrap());
+    let expiration =
+        UnixNanos::from(u64::try_from(utc_timestamp(2100, 7, 8, 0, 0, 0).as_nanosecond()).unwrap());
     InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)))
 }
 
@@ -386,18 +388,10 @@ fn test_process_order_when_instrument_not_active(
     account_id: AccountId,
     mut market_order_buy: OrderAny,
 ) {
-    let activation = UnixNanos::from(
-        Utc.with_ymd_and_hms(2222, 4, 8, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
-    );
-    let expiration = UnixNanos::from(
-        Utc.with_ymd_and_hms(2223, 7, 8, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
-    );
+    let activation =
+        UnixNanos::from(u64::try_from(utc_timestamp(2222, 4, 8, 0, 0, 0).as_nanosecond()).unwrap());
+    let expiration =
+        UnixNanos::from(u64::try_from(utc_timestamp(2223, 7, 8, 0, 0, 0).as_nanosecond()).unwrap());
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)));
 
@@ -3102,16 +3096,14 @@ fn test_expire_order(
     // Create GTD LIMIT order which will expire after we process tick
     // that has higher timestamp than expire_time.
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
-    let expire_time = DateTime::parse_from_rfc3339("2019-10-23T10:32:49.669Z")
+    let expire_time = "2019-10-23T10:32:49.669Z"
+        .parse::<Timestamp>()
         .unwrap()
-        .with_timezone(&Utc)
-        .timestamp_nanos_opt()
-        .unwrap();
-    let tick_time = DateTime::parse_from_rfc3339("2025-10-23T10:32:50.000Z")
+        .as_nanosecond();
+    let tick_time = "2025-10-23T10:32:50.000Z"
+        .parse::<Timestamp>()
         .unwrap()
-        .with_timezone(&Utc)
-        .timestamp_nanos_opt()
-        .unwrap();
+        .as_nanosecond();
 
     let mut limit_order_expire = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
@@ -13214,16 +13206,10 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let activation = UnixNanos::from(
-        Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
+        u64::try_from(utc_timestamp(2021, 9, 10, 0, 0, 0).as_nanosecond()).unwrap(),
     );
     let expiration_ns = UnixNanos::from(
-        Utc.with_ymd_and_hms(2099, 12, 17, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
+        u64::try_from(utc_timestamp(2099, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
     );
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
@@ -13620,16 +13606,10 @@ fn test_check_instrument_expiration_fallback_uses_book(account_id: AccountId) {
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let activation = UnixNanos::from(
-        Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
+        u64::try_from(utc_timestamp(2021, 9, 10, 0, 0, 0).as_nanosecond()).unwrap(),
     );
     let expiration_ns = UnixNanos::from(
-        Utc.with_ymd_and_hms(2099, 12, 17, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
+        u64::try_from(utc_timestamp(2099, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
     );
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
@@ -14008,16 +13988,10 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let activation = UnixNanos::from(
-        Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
+        u64::try_from(utc_timestamp(2021, 9, 10, 0, 0, 0).as_nanosecond()).unwrap(),
     );
     let expiration_ns = UnixNanos::from(
-        Utc.with_ymd_and_hms(2099, 12, 17, 0, 0, 0)
-            .unwrap()
-            .timestamp_nanos_opt()
-            .unwrap() as u64,
+        u64::try_from(utc_timestamp(2099, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
     );
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));

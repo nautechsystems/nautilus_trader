@@ -38,8 +38,8 @@ use axum::{
     response::{Json, Response},
     routing::get,
 };
-use chrono::{Duration as ChronoDuration, Utc};
 use futures_util::StreamExt;
+use jiff::{SignedDuration, Timestamp, tz::Offset};
 use nautilus_common::{
     clients::DataClient,
     live::runner::replace_data_event_sender,
@@ -86,8 +86,10 @@ fn load_json(filename: &str) -> Value {
 }
 
 fn future_end_date_string() -> String {
-    let future_date = (Utc::now() + ChronoDuration::days(365)).date_naive();
-    format!("{}T00:00:00Z", future_date.format("%Y-%m-%d"))
+    let future_date = Offset::UTC
+        .to_datetime(Timestamp::now() + SignedDuration::from_hours(24 * 365))
+        .date();
+    format!("{}T00:00:00Z", future_date.strftime("%Y-%m-%d"))
 }
 
 fn set_future_end_date(value: &mut Value) {
@@ -822,7 +824,7 @@ async fn test_request_trades_returns_trades_response() {
 #[rstest]
 #[tokio::test]
 async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
-    let first_timestamp = (Utc::now() - ChronoDuration::days(100)).timestamp();
+    let first_timestamp = (Timestamp::now() - SignedDuration::from_hours(24 * (100))).as_second();
     let trades = (0..10_000)
         .map(|index| {
             serde_json::json!({
@@ -863,7 +865,7 @@ async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
     client
         .request_trades(RequestTrades::new(
             instrument_id,
-            Some(Utc::now() - ChronoDuration::days(365)),
+            Some(Timestamp::now() - SignedDuration::from_hours(24 * (365))),
             None,
             None,
             Some(*POLYMARKET_CLIENT_ID),

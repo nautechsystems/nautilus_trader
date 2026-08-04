@@ -17,7 +17,7 @@
 
 use std::{num::NonZeroU32, str::FromStr, sync::Arc};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nautilus_core::{
     UnixNanos,
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -143,11 +143,10 @@ impl PyDydxOrderSubmitter {
     #[pyo3(name = "record_block")]
     fn py_record_block(&self, height: u64, timestamp: Option<&str>) -> PyResult<()> {
         let time = if let Some(ts) = timestamp {
-            chrono::DateTime::parse_from_rfc3339(ts)
-                .map(|dt| dt.with_timezone(&Utc))
+            ts.parse::<Timestamp>()
                 .map_err(|e| to_pyvalue_err(format!("Invalid timestamp: {e}")))?
         } else {
-            Utc::now()
+            Timestamp::now()
         };
         self.block_time_monitor.record_block(height, time);
         Ok(())
@@ -159,7 +158,8 @@ impl PyDydxOrderSubmitter {
     /// block time estimation.
     #[pyo3(name = "set_block_height")]
     fn py_set_block_height(&self, height: u64) {
-        self.block_time_monitor.record_block(height, Utc::now());
+        self.block_time_monitor
+            .record_block(height, Timestamp::now());
     }
 
     /// Get the current block height.

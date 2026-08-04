@@ -780,7 +780,11 @@ impl DydxWebSocketClient {
                                     let dict = PyDict::new(py);
                                     let _ = dict.set_item("type", "block_height");
                                     let _ = dict.set_item("height", height);
-                                    let _ = dict.set_item("time", time.to_rfc3339());
+                                    let _ = dict.set_item(
+                                        "time",
+                                        time.display_with_offset(jiff::tz::Offset::UTC).to_string(),
+                                    );
+
                                     if let Ok(py_obj) = dict.into_py_any(py) {
                                         call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     }

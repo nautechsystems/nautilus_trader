@@ -33,7 +33,7 @@ use std::{
     },
 };
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 /// Default rolling window size for block time averaging.
 ///
@@ -65,7 +65,7 @@ pub const MIN_VALID_BLOCK_TIME_MS: f64 = 50.0;
 #[derive(Debug)]
 struct BlockTimeWindow {
     /// Circular buffer of (height, timestamp) samples.
-    samples: VecDeque<(u64, DateTime<Utc>)>,
+    samples: VecDeque<(u64, Timestamp)>,
     /// Maximum capacity of the window.
     capacity: usize,
     /// Last recorded block height for deduplication.
@@ -86,7 +86,7 @@ impl BlockTimeWindow {
     ///
     /// Skips duplicate block heights to prevent redundant entries during rapid
     /// block replays where the same height may be reported multiple times.
-    fn record(&mut self, height: u64, time: DateTime<Utc>) {
+    fn record(&mut self, height: u64, time: Timestamp) {
         // Skip duplicate heights (rapid replays often repeat same block)
         if self.last_height == Some(height) {
             return;
@@ -131,7 +131,10 @@ impl BlockTimeWindow {
                 continue;
             }
 
-            let time_diff_ms = (*t2 - *t1).num_milliseconds();
+            let Ok(time_diff_ms) = i64::try_from(t1.duration_until(*t2).as_millis()) else {
+                continue;
+            };
+
             if time_diff_ms <= 0 {
                 continue; // Invalid time difference (clock skew or reorg)
             }
@@ -168,7 +171,7 @@ pub struct BlockTimeMonitor {
     /// Current block height (atomic for fast reads on hot path).
     current_height: AtomicU64,
     /// Current block timestamp.
-    current_time: RwLock<Option<DateTime<Utc>>>,
+    current_time: RwLock<Option<Timestamp>>,
     /// Rolling window for block time averaging.
     window: RwLock<BlockTimeWindow>,
 }
@@ -204,7 +207,7 @@ impl BlockTimeMonitor {
     /// # Panics
     ///
     /// Panics if the RwLock is poisoned (should never happen in practice).
-    pub fn record_block(&self, height: u64, time: DateTime<Utc>) {
+    pub fn record_block(&self, height: u64, time: Timestamp) {
         // Update current height atomically (hot path)
         self.current_height.store(height, Ordering::Release);
 
@@ -232,7 +235,7 @@ impl BlockTimeMonitor {
     ///
     /// Panics if the RwLock is poisoned (should never happen in practice).
     #[must_use]
-    pub fn current_block_time(&self) -> Option<DateTime<Utc>> {
+    pub fn current_block_time(&self) -> Option<Timestamp> {
         *self.current_time.read().expect("RwLock poisoned")
     }
 
@@ -279,7 +282,7 @@ impl BlockTimeMonitor {
     /// - No current block time available
     /// - Target block is in the past
     #[must_use]
-    pub fn estimate_expiry_time(&self, expiry_block: u64) -> Option<DateTime<Utc>> {
+    pub fn estimate_expiry_time(&self, expiry_block: u64) -> Option<Timestamp> {
         let current_height = self.current_block_height();
         let current_time = self.current_block_time()?;
         let secs_per_block = self.estimated_seconds_per_block()?;
@@ -294,7 +297,7 @@ impl BlockTimeMonitor {
 
         Some(
             current_time
-                + chrono::Duration::milliseconds((seconds_remaining * 1000.0).round() as i64),
+                + jiff::SignedDuration::from_millis((seconds_remaining * 1000.0).round() as i64),
         )
     }
 
@@ -338,7 +341,7 @@ impl BlockTimeMonitor {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
+    use jiff::SignedDuration;
     use rstest::rstest;
 
     use super::*;
@@ -354,12 +357,12 @@ mod tests {
     #[rstest]
     fn test_record_updates_height() {
         let monitor = BlockTimeMonitor::new();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor.record_block(100, now);
         assert_eq!(monitor.current_block_height(), 100);
 
-        monitor.record_block(101, now + Duration::milliseconds(500));
+        monitor.record_block(101, now + SignedDuration::from_millis(500));
         assert_eq!(monitor.current_block_height(), 101);
     }
 
@@ -373,11 +376,11 @@ mod tests {
     #[rstest]
     fn test_becomes_ready_after_min_samples() {
         let monitor = BlockTimeMonitor::new();
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         for i in 0..MIN_SAMPLES_FOR_ESTIMATE {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(500);
+            time += SignedDuration::from_millis(500);
         }
 
         assert!(monitor.is_ready());
@@ -386,13 +389,13 @@ mod tests {
     #[rstest]
     fn test_average_block_time_calculation() {
         let monitor = BlockTimeMonitor::new();
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
         let block_time_ms = 500;
 
         // Record enough samples with consistent 500ms block time
         for i in 0..10 {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(block_time_ms);
+            time += SignedDuration::from_millis(block_time_ms);
         }
 
         let estimated = monitor.estimated_seconds_per_block().unwrap();
@@ -405,12 +408,12 @@ mod tests {
     #[rstest]
     fn test_estimate_blocks_for_duration() {
         let monitor = BlockTimeMonitor::new();
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         // Set up with 500ms block time
         for i in 0..10 {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(500);
+            time += SignedDuration::from_millis(500);
         }
 
         // 10 seconds should be ~20 blocks at 500ms/block
@@ -421,30 +424,30 @@ mod tests {
     #[rstest]
     fn test_estimate_expiry_time() {
         let monitor = BlockTimeMonitor::new();
-        let start_time = Utc::now();
+        let start_time = Timestamp::now();
         let mut time = start_time;
 
         // Set up with 500ms block time, ending at block 109
         for i in 0..10 {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(500);
+            time += SignedDuration::from_millis(500);
         }
 
         // After loop: current block is 109, current_block_time = time - 500ms
         // Expiry at block 129 = 20 blocks from 109
         let expiry_time = monitor.estimate_expiry_time(129).unwrap();
         // Expected: current_block_time + (20 blocks * 500ms)
-        let current_block_time = time - Duration::milliseconds(500);
-        let expected = current_block_time + Duration::milliseconds(20 * 500);
+        let current_block_time = time - SignedDuration::from_millis(500);
+        let expected = current_block_time + SignedDuration::from_millis(20 * 500);
 
-        let diff_ms = (expiry_time - expected).num_milliseconds().abs();
+        let diff_ms = expiry_time.duration_since(expected).as_millis().abs();
         assert!(diff_ms < 1000, "Expected ~{expected}, was {expiry_time}");
     }
 
     #[rstest]
     fn test_estimate_expiry_time_past_block() {
         let monitor = BlockTimeMonitor::new();
-        let time = Utc::now();
+        let time = Timestamp::now();
 
         monitor.record_block(100, time);
 
@@ -455,12 +458,12 @@ mod tests {
     #[rstest]
     fn test_estimate_remaining_lifetime() {
         let monitor = BlockTimeMonitor::new();
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         // Set up with 500ms block time
         for i in 0..10 {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(500);
+            time += SignedDuration::from_millis(500);
         }
 
         // Current height is 109, expiry at 129 (20 blocks)
@@ -474,12 +477,12 @@ mod tests {
     #[rstest]
     fn test_circular_buffer_wraps() {
         let monitor = BlockTimeMonitor::with_window_size(5);
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         // Record more samples than window size
         for i in 0..10 {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(500);
+            time += SignedDuration::from_millis(500);
         }
 
         // Should still have only 5 samples
@@ -490,17 +493,17 @@ mod tests {
     #[rstest]
     fn test_handles_non_consecutive_blocks() {
         let monitor = BlockTimeMonitor::new();
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         // Record blocks with a gap (100, 101, 102, 105, 106)
         monitor.record_block(100, time);
-        time += Duration::milliseconds(500);
+        time += SignedDuration::from_millis(500);
         monitor.record_block(101, time);
-        time += Duration::milliseconds(500);
+        time += SignedDuration::from_millis(500);
         monitor.record_block(102, time);
-        time += Duration::milliseconds(1500); // Skip 3 blocks
+        time += SignedDuration::from_millis(1500); // Skip 3 blocks
         monitor.record_block(105, time);
-        time += Duration::milliseconds(500);
+        time += SignedDuration::from_millis(500);
         monitor.record_block(106, time);
 
         // Should still calculate a reasonable estimate
@@ -516,13 +519,13 @@ mod tests {
     #[rstest]
     fn test_deduplicates_same_block_height() {
         let monitor = BlockTimeMonitor::with_window_size(10);
-        let time = Utc::now();
+        let time = Timestamp::now();
 
         // Record same block height multiple times (rapid replay scenario)
         monitor.record_block(100, time);
-        monitor.record_block(100, time + Duration::milliseconds(10));
-        monitor.record_block(100, time + Duration::milliseconds(20));
-        monitor.record_block(100, time + Duration::milliseconds(30));
+        monitor.record_block(100, time + SignedDuration::from_millis(10));
+        monitor.record_block(100, time + SignedDuration::from_millis(20));
+        monitor.record_block(100, time + SignedDuration::from_millis(30));
 
         // Should only have 1 sample due to deduplication
         assert_eq!(monitor.sample_count(), 1);
@@ -531,12 +534,12 @@ mod tests {
     #[rstest]
     fn test_rapid_replay_bounded_memory() {
         let monitor = BlockTimeMonitor::with_window_size(5);
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         // Simulate rapid replay: 1000 block updates
         for i in 0..1000 {
             monitor.record_block(100 + i as u64, time);
-            time += Duration::milliseconds(500);
+            time += SignedDuration::from_millis(500);
         }
 
         // Buffer should never exceed capacity
@@ -554,15 +557,15 @@ mod tests {
     #[rstest]
     fn test_rapid_replay_with_duplicate_heights() {
         let monitor = BlockTimeMonitor::with_window_size(10);
-        let mut time = Utc::now();
+        let mut time = Timestamp::now();
 
         // Simulate rapid replay with duplicates: each block reported 3 times
         for block in 100..110 {
             for _ in 0..3 {
                 monitor.record_block(block, time);
-                time += Duration::milliseconds(100);
+                time += SignedDuration::from_millis(100);
             }
-            time += Duration::milliseconds(200); // Actual block time ~500ms
+            time += SignedDuration::from_millis(200); // Actual block time ~500ms
         }
 
         // Should have exactly 10 samples (one per unique block)
@@ -572,12 +575,12 @@ mod tests {
     #[rstest]
     fn test_rejects_unrealistically_small_block_times() {
         let monitor = BlockTimeMonitor::with_window_size(10);
-        let time = Utc::now();
+        let time = Timestamp::now();
 
         // Record blocks with extremely small time differences (1ms per block)
         // This is unrealistic and should be rejected
         for i in 0..10 {
-            monitor.record_block(100 + i as u64, time + Duration::milliseconds(i));
+            monitor.record_block(100 + i as u64, time + SignedDuration::from_millis(i));
         }
 
         // Should have samples but estimated time should be None (below threshold)

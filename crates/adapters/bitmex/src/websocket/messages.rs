@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize,
@@ -121,7 +121,7 @@ pub(super) enum BitmexWsFrame {
         /// API version string.
         version: String,
         /// Server timestamp.
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
         /// Link to API documentation.
         docs: String,
         /// Whether heartbeat is enabled for this connection.
@@ -383,9 +383,9 @@ pub struct BitmexOrderBookMsg {
     /// Price level of the order.
     pub price: f64,
     /// Timestamp of the update.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Timestamp of the transaction.
-    pub transact_time: DateTime<Utc>,
+    pub transact_time: Timestamp,
     pub pool: Option<Ustr>,
 }
 
@@ -400,7 +400,7 @@ pub struct BitmexOrderBook10Msg {
     /// Array of ask levels, each containing [price, size].
     pub asks: Vec<[f64; 2]>,
     /// Timestamp of the orderbook snapshot.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub pool: Option<Ustr>,
 }
 
@@ -419,7 +419,7 @@ pub struct BitmexQuoteMsg {
     /// Size of best ask.
     pub ask_size: Option<u64>,
     /// Timestamp of the quote.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub pool: Option<Ustr>,
 }
 
@@ -428,7 +428,7 @@ pub struct BitmexQuoteMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BitmexTradeMsg {
     /// Timestamp of the trade.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The instrument symbol.
     pub symbol: Ustr,
     /// Side of the trade ("Buy" or "Sell").
@@ -458,7 +458,7 @@ pub struct BitmexTradeMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BitmexTradeBinMsg {
     /// Start time of the bin.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Trading instrument symbol.
     pub symbol: Ustr,
     /// Opening price for the period.
@@ -495,11 +495,11 @@ pub struct BitmexInstrumentMsg {
     pub state: Option<Ustr>,
     #[serde(rename = "typ")]
     pub instrument_type: Option<Ustr>,
-    pub listing: Option<DateTime<Utc>>,
-    pub front: Option<DateTime<Utc>>,
-    pub expiry: Option<DateTime<Utc>>,
-    pub settle: Option<DateTime<Utc>>,
-    pub listed_settle: Option<DateTime<Utc>>,
+    pub listing: Option<Timestamp>,
+    pub front: Option<Timestamp>,
+    pub expiry: Option<Timestamp>,
+    pub settle: Option<Timestamp>,
+    pub listed_settle: Option<Timestamp>,
     pub position_currency: Option<Ustr>,
     pub underlying: Option<Ustr>,
     pub quote_currency: Option<Ustr>,
@@ -528,8 +528,8 @@ pub struct BitmexInstrumentMsg {
     pub funding_base_symbol: Option<Ustr>,
     pub funding_quote_symbol: Option<Ustr>,
     pub funding_premium_symbol: Option<Ustr>,
-    pub funding_timestamp: Option<DateTime<Utc>>,
-    pub funding_interval: Option<DateTime<Utc>>,
+    pub funding_timestamp: Option<Timestamp>,
+    pub funding_interval: Option<Timestamp>,
     #[serde(default, with = "rust_decimal::serde::float_option")]
     pub funding_rate: Option<Decimal>,
     #[serde(default, with = "rust_decimal::serde::float_option")]
@@ -546,7 +546,7 @@ pub struct BitmexInstrumentMsg {
     pub fair_basis: Option<f64>,
     pub fair_basis_rate: Option<f64>,
     pub fair_price: Option<f64>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 impl TryFrom<BitmexInstrumentMsg> for crate::http::models::BitmexInstrument {
@@ -708,8 +708,8 @@ pub struct BitmexOrderUpdateMsg {
     pub currency: Option<Ustr>,
     #[serde(default)]
     pub text: FieldUpdate<Ustr>,
-    pub transact_time: Option<DateTime<Utc>>,
-    pub timestamp: Option<DateTime<Utc>>,
+    pub transact_time: Option<Timestamp>,
+    pub timestamp: Option<Timestamp>,
     pub leaves_qty: Option<i64>,
     pub cum_qty: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_decimal_update")]
@@ -790,8 +790,8 @@ pub struct BitmexOrderMsg {
     #[serde(default, with = "optional_decimal")]
     pub avg_px: Option<Decimal>,
     pub text: Option<Ustr>,
-    pub transact_time: DateTime<Utc>,
-    pub timestamp: DateTime<Utc>,
+    pub transact_time: Timestamp,
+    pub timestamp: Timestamp,
     pub strategy: Option<Ustr>,
     pub pool: Option<Ustr>,
 }
@@ -1013,8 +1013,8 @@ pub struct BitmexExecutionMsg {
     pub exec_comm: Option<i64>,
     pub home_notional: Option<f64>,
     pub foreign_notional: Option<f64>,
-    pub transact_time: Option<DateTime<Utc>>,
-    pub timestamp: Option<DateTime<Utc>>,
+    pub transact_time: Option<Timestamp>,
+    pub timestamp: Option<Timestamp>,
     pub strategy: Option<Ustr>,
     pub pool: Option<Ustr>,
     pub exec_comm_ccy: Option<Ustr>,
@@ -1040,7 +1040,7 @@ pub struct BitmexPositionMsg {
     pub prev_realised_pnl: Option<i64>,
     pub prev_unrealised_pnl: Option<i64>,
     pub prev_close_price: Option<f64>,
-    pub opening_timestamp: Option<DateTime<Utc>>,
+    pub opening_timestamp: Option<Timestamp>,
     pub opening_qty: Option<i64>,
     pub opening_cost: Option<i64>,
     pub opening_comm: Option<i64>,
@@ -1057,7 +1057,7 @@ pub struct BitmexPositionMsg {
     pub exec_qty: Option<i64>,
     pub exec_cost: Option<i64>,
     pub exec_comm: Option<i64>,
-    pub current_timestamp: Option<DateTime<Utc>>,
+    pub current_timestamp: Option<Timestamp>,
     pub current_qty: Option<i64>,
     pub current_cost: Option<i64>,
     pub current_comm: Option<i64>,
@@ -1107,7 +1107,7 @@ pub struct BitmexPositionMsg {
     pub margin_call_price: Option<f64>,
     pub liquidation_price: Option<f64>,
     pub bankrupt_price: Option<f64>,
-    pub timestamp: Option<DateTime<Utc>>,
+    pub timestamp: Option<Timestamp>,
     pub last_price: Option<f64>,
     pub last_value: Option<i64>,
     pub strategy: Option<Ustr>,
@@ -1123,7 +1123,7 @@ pub struct BitmexWalletMsg {
     pub prev_transfer_in: Option<i64>,
     pub prev_transfer_out: Option<i64>,
     pub prev_amount: Option<i64>,
-    pub prev_timestamp: Option<DateTime<Utc>>,
+    pub prev_timestamp: Option<Timestamp>,
     pub delta_deposited: Option<i64>,
     pub delta_withdrawn: Option<i64>,
     pub delta_transfer_in: Option<i64>,
@@ -1137,7 +1137,7 @@ pub struct BitmexWalletMsg {
     pub pending_credit: Option<i64>,
     pub pending_debit: Option<i64>,
     pub confirmed_debit: Option<i64>,
-    pub timestamp: Option<DateTime<Utc>>,
+    pub timestamp: Option<Timestamp>,
     pub addr: Option<Ustr>,
     pub script: Option<Ustr>,
     pub withdrawal_lock: Option<Vec<Ustr>>,
@@ -1198,7 +1198,7 @@ pub struct BitmexMarginMsg {
     /// Taker fee discount
     pub taker_fee_discount: Option<f64>,
     /// Timestamp of the margin update
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Foreign margin balance
     pub foreign_margin_balance: Option<i64>,
     /// Foreign margin requirement
@@ -1210,11 +1210,11 @@ pub struct BitmexMarginMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BitmexFundingMsg {
     /// Timestamp of the funding update.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The instrument symbol the funding applies to.
     pub symbol: Ustr,
     /// The interval for this funding.
-    pub funding_interval: DateTime<Utc>,
+    pub funding_interval: Timestamp,
     /// The funding rate for this interval.
     #[serde(with = "rust_decimal::serde::float")]
     pub funding_rate: Decimal,
@@ -1230,7 +1230,7 @@ pub struct BitmexInsuranceMsg {
     /// The currency of the insurance fund.
     pub currency: Ustr,
     /// Timestamp of the update.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Current balance of the insurance wallet.
     pub wallet_balance: i64,
 }

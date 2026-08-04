@@ -226,7 +226,7 @@ async fn test_authenticated_endpoints() -> anyhow::Result<()> {
         "qty": "0.001",
         "price": "20000",
         "timeInForce": "GTC",
-        "orderLinkId": format!("test-{}", chrono::Utc::now().timestamp())
+        "orderLinkId": format!("test-{}", jiff::Timestamp::now().as_second())
     });
 
     match client.place_order(&order_request).await {

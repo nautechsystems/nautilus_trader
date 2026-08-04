@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
+use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
     data::TradeTick,
@@ -585,11 +586,12 @@ fn parse_outcome_expiry_ns(s: &str) -> Option<UnixNanos> {
     let hour: u32 = time_part[0..2].parse().ok()?;
     let minute: u32 = time_part[2..4].parse().ok()?;
 
-    let datetime = chrono::NaiveDate::from_ymd_opt(year, month, day)?
-        .and_hms_opt(hour, minute, 0)?
-        .and_utc();
-    let nanos = datetime.timestamp_nanos_opt()?;
-    u64::try_from(nanos).ok().map(UnixNanos::from)
+    let datetime = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:00Z")
+        .parse::<Timestamp>()
+        .ok()?;
+    u64::try_from(datetime.as_nanosecond())
+        .ok()
+        .map(UnixNanos::from)
 }
 
 /// Settlement state for a single HIP-4 outcome side token.

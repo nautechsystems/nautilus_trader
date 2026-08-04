@@ -1185,7 +1185,7 @@ pub fn get_currency(code: &str) -> Currency {
 mod tests {
     use std::str::FromStr;
 
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, LiquiditySide, PositionSide, PriceType},
@@ -1223,8 +1223,8 @@ mod tests {
         assert!(instrument.is_inverse);
         assert_eq!(instrument.maker_fee, Some(0.0005));
         assert_eq!(
-            instrument.timestamp.to_rfc3339(),
-            "2024-11-24T23:33:19.034+00:00"
+            instrument.timestamp,
+            "2024-11-24T23:33:19.034Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -1493,9 +1493,7 @@ mod tests {
         let bar_type = BarType::new(instrument_any.id(), spec, AggregationSource::External);
 
         let bin = BitmexTradeBin {
-            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: "2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap(),
             symbol: Ustr::from("XBTUSD"),
             open: Some(50_000.0),
             high: Some(49_990.0),
@@ -1561,16 +1559,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -1626,16 +1616,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let mut instrument_def = create_test_perpetual_instrument();
@@ -1694,16 +1676,8 @@ mod tests {
             avg_px: Some(Decimal::from_str("45050.0").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -1750,16 +1724,8 @@ mod tests {
             avg_px: Some(Decimal::from_str("48100.0").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -1806,16 +1772,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -1865,16 +1823,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -1921,16 +1871,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -1978,16 +1920,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: Some(Ustr::from("Order would immediately execute")),
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -2035,16 +1969,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -2073,11 +1999,7 @@ mod tests {
             settl_currency: Some(Ustr::from("XBt")),
             last_liquidity_ind: Some(BitmexLiquidityIndicator::Taker),
             trd_match_id: Some(Uuid::parse_str("99999999-8888-7777-6666-555555555555").unwrap()),
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
             cl_ord_link_id: None,
             underlying_last_px: None,
             last_mkt: None,
@@ -2150,11 +2072,7 @@ mod tests {
             settl_currency: None,
             last_liquidity_ind: Some(BitmexLiquidityIndicator::Maker),
             trd_match_id: None, // Missing, should fall back to exec_id
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
             cl_ord_link_id: None,
             underlying_last_px: None,
             last_mkt: None,
@@ -2215,11 +2133,7 @@ mod tests {
             account: 789012,
             symbol: Ustr::from("XBTUSD"),
             current_qty: Some(1000),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            timestamp: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
             currency: None,
             underlying: None,
             quote_currency: None,
@@ -2322,11 +2236,7 @@ mod tests {
             account: 789012,
             symbol: Ustr::from("ETHUSD"),
             current_qty: Some(-500),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            timestamp: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
             currency: None,
             underlying: None,
             quote_currency: None,
@@ -2430,11 +2340,7 @@ mod tests {
             account: 789012,
             symbol: Ustr::from("SOLUSD"),
             current_qty: Some(0),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            timestamp: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
             currency: None,
             underlying: None,
             quote_currency: None,
@@ -2537,11 +2443,7 @@ mod tests {
             account: 789012,
             symbol: Ustr::from("SOLUSD"),
             current_qty: Some(1000),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            timestamp: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
             currency: None,
             underlying: None,
             quote_currency: None,
@@ -2644,16 +2546,8 @@ mod tests {
             root_symbol: Ustr::from("XBT"),
             state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Spot,
-            listing: Some(
-                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            front: Some(
-                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            listing: Some("2016-05-13T12:00:00.000Z".parse::<Timestamp>().unwrap()),
+            front: Some("2016-05-13T12:00:00.000Z".parse::<Timestamp>().unwrap()),
             expiry: None,
             settle: None,
             listed_settle: None,
@@ -2671,9 +2565,7 @@ mod tests {
             is_inverse: false,
             maker_fee: Some(-0.00025),
             taker_fee: Some(0.00075),
-            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: "2024-01-01T00:00:00.000Z".parse::<Timestamp>().unwrap(),
             // Set other fields to reasonable defaults
             max_order_qty: Some(10000000.0),
             max_price: Some(1000000.0),
@@ -2757,16 +2649,8 @@ mod tests {
             root_symbol: Ustr::from("XBT"),
             state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::PerpetualContract,
-            listing: Some(
-                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            front: Some(
-                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            listing: Some("2016-05-13T12:00:00.000Z".parse::<Timestamp>().unwrap()),
+            front: Some("2016-05-13T12:00:00.000Z".parse::<Timestamp>().unwrap()),
             expiry: None,
             settle: None,
             listed_settle: None,
@@ -2784,9 +2668,7 @@ mod tests {
             is_inverse: true,
             maker_fee: Some(-0.00025),
             taker_fee: Some(0.00075),
-            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: "2024-01-01T00:00:00.000Z".parse::<Timestamp>().unwrap(),
             // Set other fields
             max_order_qty: Some(10000000.0),
             max_price: Some(1000000.0),
@@ -2809,16 +2691,8 @@ mod tests {
             funding_base_symbol: Some(Ustr::from(".XBTBON8H")),
             funding_quote_symbol: Some(Ustr::from(".USDBON8H")),
             funding_premium_symbol: Some(Ustr::from(".XBTUSDPI8H")),
-            funding_timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T08:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            funding_interval: Some(
-                DateTime::parse_from_rfc3339("2000-01-01T08:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            funding_timestamp: Some("2024-01-01T08:00:00.000Z".parse::<Timestamp>().unwrap()),
+            funding_interval: Some("2000-01-01T08:00:00.000Z".parse::<Timestamp>().unwrap()),
             funding_rate: Some(Decimal::from_str("0.0001").unwrap()),
             indicative_funding_rate: Some(Decimal::from_str("0.0001").unwrap()),
             funding_base_rate: Some(0.01),
@@ -2879,26 +2753,10 @@ mod tests {
             root_symbol: Ustr::from("XBT"),
             state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Futures,
-            listing: Some(
-                DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            front: Some(
-                DateTime::parse_from_rfc3339("2024-12-27T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            expiry: Some(
-                DateTime::parse_from_rfc3339("2025-03-28T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            settle: Some(
-                DateTime::parse_from_rfc3339("2025-03-28T12:00:00.000Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            listing: Some("2024-09-27T12:00:00.000Z".parse::<Timestamp>().unwrap()),
+            front: Some("2024-12-27T12:00:00.000Z".parse::<Timestamp>().unwrap()),
+            expiry: Some("2025-03-28T12:00:00.000Z".parse::<Timestamp>().unwrap()),
+            settle: Some("2025-03-28T12:00:00.000Z".parse::<Timestamp>().unwrap()),
             listed_settle: None,
             position_currency: Some(Ustr::from("USD")),
             underlying: Ustr::from("XBT"),
@@ -2915,9 +2773,7 @@ mod tests {
             maker_fee: Some(-0.00025),
             taker_fee: Some(0.00075),
             settlement_fee: Some(0.0005),
-            timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: "2024-01-01T00:00:00.000Z".parse::<Timestamp>().unwrap(),
             // Set other fields
             max_order_qty: Some(10000000.0),
             max_price: Some(1000000.0),
@@ -3169,16 +3025,8 @@ mod tests {
             avg_px: Some(Decimal::from_str("30000.500000000004").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3228,16 +3076,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: Some(Ustr::from("Canceled: Already filled")),
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3288,16 +3128,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3343,16 +3175,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3399,16 +3223,8 @@ mod tests {
             avg_px: Some(Decimal::from_str("50000.0").unwrap()),
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3453,16 +3269,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3507,16 +3315,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3561,16 +3361,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =
@@ -3615,16 +3407,8 @@ mod tests {
             avg_px: None,
             multi_leg_reporting_type: None,
             text: None,
-            transact_time: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
-            timestamp: Some(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:01Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            transact_time: Some("2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap()),
+            timestamp: Some("2024-01-01T00:00:01Z".parse::<Timestamp>().unwrap()),
         };
 
         let instrument =

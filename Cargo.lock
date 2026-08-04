@@ -1434,7 +1434,7 @@ version = "58.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21ca356ad6425cecb6eb7b28e4f659f1ee7880fbb1a16127de7dd62901efee9e"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "serde_core",
  "serde_json",
 ]
@@ -1836,6 +1836,12 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
+name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
@@ -2204,10 +2210,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
  "serde",
- "wasm-bindgen",
  "windows-link",
 ]
 
@@ -3531,6 +3535,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "defmt"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1"
+dependencies = [
+ "bitflags 1.3.2",
+ "defmt-macros",
+]
+
+[[package]]
+name = "defmt-macros"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bad9c72e7ca2137e0dc3813245a0d282fd6daad32fd800af018306a9169b5fe8"
+dependencies = [
+ "defmt-parser",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "defmt-parser"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
+dependencies = [
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4051,7 +4086,7 @@ version = "25.12.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35f6839d7b3b98adde531effaf34f0c2badc6f4735d26fe74709d8e513a96ef3"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "rustc_version 0.4.1",
 ]
 
@@ -5021,6 +5056,60 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "jiff"
+version = "0.2.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "668b7183bd07af9a4885f5c35b0cc5c83c4607a913c16b7e17291832910d2dcc"
+dependencies = [
+ "defmt",
+ "jiff-core",
+ "jiff-static",
+ "jiff-tzdb",
+ "jiff-tzdb-platform",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
+ "windows-link",
+]
+
+[[package]]
+name = "jiff-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7feca88439efe53da3754500c1851dedf3cb36c524dd5cf8225cc0794de95d09"
+dependencies = [
+ "defmt",
+]
+
+[[package]]
+name = "jiff-static"
+version = "0.2.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a69dcb3a21cfb32ce1cd056169337ca284af0766dd766e7878819b251a49204"
+dependencies = [
+ "jiff-core",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "jiff-tzdb"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "142bd39932ad231f10513df9ab62661fead8719872150b7ad02a2df79f4e141e"
+
+[[package]]
+name = "jiff-tzdb-platform"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8"
+dependencies = [
+ "jiff-tzdb",
+]
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5506,11 +5595,11 @@ dependencies = [
  "axum",
  "blake3",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -5550,10 +5639,9 @@ dependencies = [
  "blake3",
  "bon",
  "cbindgen",
- "chrono",
- "chrono-tz",
  "criterion",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-analysis",
  "nautilus-common",
@@ -5590,9 +5678,9 @@ dependencies = [
  "bon",
  "bytes",
  "bzip2",
- "chrono",
  "dotenvy",
  "flate2",
+ "jiff",
  "log",
  "nautilus-backtest",
  "nautilus-common",
@@ -5638,7 +5726,6 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "criterion",
  "csv",
  "dashmap",
@@ -5646,6 +5733,7 @@ dependencies = [
  "dotenvy",
  "ed25519-dalek",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -5685,11 +5773,11 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "bon",
- "chrono",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -5770,12 +5858,12 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -5838,9 +5926,9 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -5882,13 +5970,13 @@ dependencies = [
  "bytes",
  "capnp 0.26.2",
  "cbindgen",
- "chrono",
  "criterion",
  "derive_builder",
  "futures",
  "iai",
  "indexmap 2.14.0",
  "itoa",
+ "jiff",
  "log",
  "madsim",
  "nautilus-core",
@@ -5928,11 +6016,11 @@ dependencies = [
  "arc-swap",
  "bytes",
  "cbindgen",
- "chrono",
  "criterion",
  "dashmap",
  "iai",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "madsim",
  "proptest",
@@ -5979,10 +6067,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bon",
- "chrono",
  "criterion",
  "futures",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6008,14 +6096,13 @@ dependencies = [
  "anyhow",
  "arrow 58.4.0",
  "async-trait",
- "chrono",
- "chrono-tz",
  "criterion",
  "databento",
  "dotenvy",
  "fallible-streaming-iterator",
  "indexmap 2.14.0",
  "itoa",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6053,12 +6140,12 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6101,11 +6188,11 @@ dependencies = [
  "axum",
  "bon",
  "bytes",
- "chrono",
  "criterion",
  "dashmap",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6143,13 +6230,13 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "cosmrs",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "dydx-proto",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6214,10 +6301,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bon",
- "chrono",
  "criterion",
  "futures",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "madsim",
  "nautilus-common",
@@ -6250,12 +6337,12 @@ dependencies = [
  "async-trait",
  "axum",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6313,10 +6400,10 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bytes",
- "chrono",
  "derive_builder",
  "futures",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6350,11 +6437,10 @@ dependencies = [
  "async-trait",
  "bollard",
  "bon",
- "chrono",
- "chrono-tz",
  "dashmap",
  "futures-util",
  "ibapi",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6395,13 +6481,13 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-backtest",
  "nautilus-common",
@@ -6444,13 +6530,13 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
  "iai",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6529,7 +6615,6 @@ dependencies = [
  "arrow 58.4.0",
  "bon",
  "cbindgen",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
@@ -6537,6 +6622,7 @@ dependencies = [
  "iai",
  "implied-vol",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-core",
  "proptest",
@@ -6613,12 +6699,12 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6655,12 +6741,11 @@ dependencies = [
  "anyhow",
  "arrow 58.4.0",
  "arrow-row 58.4.0",
- "chrono",
- "chrono-tz",
  "criterion",
  "datafusion",
  "futures",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6716,13 +6801,13 @@ dependencies = [
  "axum",
  "base64",
  "bon",
- "chrono",
  "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",
  "futures-util",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6947,12 +7032,12 @@ dependencies = [
  "async-trait",
  "axum",
  "bon",
- "chrono",
  "csv",
  "derive_builder",
  "dotenvy",
  "flate2",
  "futures-util",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6996,9 +7081,9 @@ dependencies = [
  "axum",
  "bon",
  "bytes",
- "chrono",
  "indexmap 2.14.0",
  "itchy",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -7038,9 +7123,8 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bon",
- "chrono",
- "chrono-tz",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-analysis",
  "nautilus-common",
@@ -7214,7 +7298,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
 ]
 
 [[package]]
@@ -7663,6 +7747,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d20d5497ef88037a52ff98267d066e7f11fcc5e99bbfbd58a42336193aacec3"
 
 [[package]]
+name = "portable-atomic-util"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7763,7 +7856,7 @@ version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b45fcc2344c680f5025fe57779faef368840d0bd1f42f216291f0dc4ace4744"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "num-traits",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
@@ -7873,10 +7966,10 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd274650b21d4bfc26a0a47587962c1edb425f69287324355cd040c3ea66071c"
 dependencies = [
- "chrono",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "indexmap 2.14.0",
  "inventory",
+ "jiff",
  "libc",
  "once_cell",
  "portable-atomic",
@@ -7961,9 +8054,9 @@ name = "pyo3-stub-gen"
 version = "0.20.0"
 dependencies = [
  "anyhow",
- "chrono",
  "indexmap 2.14.0",
  "inventory",
+ "jiff",
  "log",
  "num-complex",
  "pyo3",
@@ -8289,7 +8382,7 @@ version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
 ]
 
 [[package]]
@@ -8690,7 +8783,7 @@ version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "errno",
  "libc",
  "linux-raw-sys",
@@ -9024,7 +9117,7 @@ version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7f4bc775c73d9a02cde8bf7b2ec4c9d12743edf609006c7facc23998404cd1d"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "core-foundation",
  "core-foundation-sys",
  "libc",
@@ -9589,7 +9682,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90b8020fe17c5f2c245bfa2505d7ef59c5604839527c740266ad2214acebea27"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "byteorder",
  "bytes",
  "crc",
@@ -9618,7 +9711,7 @@ checksum = "87a2bdd6e83f6b3ea525ca9fee568030508b58355a43d0b2c1674d5f79dcd65e"
 dependencies = [
  "atoi",
  "base64",
- "bitflags",
+ "bitflags 2.13.1",
  "byteorder",
  "crc",
  "dotenvy",
@@ -10344,7 +10437,7 @@ version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "bytes",
  "futures-util",
  "http",

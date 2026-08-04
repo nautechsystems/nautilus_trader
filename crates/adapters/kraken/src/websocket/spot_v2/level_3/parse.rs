@@ -19,7 +19,7 @@ use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
@@ -35,13 +35,11 @@ use super::{
     messages::{KrakenL3EventType, KrakenL3OrderEvent, KrakenL3Snapshot, KrakenL3UpdateData},
 };
 
-fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
-    let nanos = value
-        .timestamp_nanos_opt()
-        .with_context(|| format!("Failed to convert {field}='{value}' to nanoseconds"))?;
-    Ok(UnixNanos::from(u64::try_from(nanos).with_context(
-        || format!("Timestamp predates Unix epoch: {field}='{value}'"),
-    )?))
+fn datetime_to_nanos(value: Timestamp, field: &str) -> anyhow::Result<UnixNanos> {
+    Ok(UnixNanos::from(
+        u64::try_from(value.as_nanosecond())
+            .with_context(|| format!("Timestamp predates Unix epoch: {field}='{value}'"))?,
+    ))
 }
 
 /// Cached state for an open L3 order, used to detect price changes on modify events.
@@ -848,7 +846,7 @@ mod tests {
             bids: vec![],
             asks: vec![],
             checksum: 0,
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
 
         let (deltas, _ts_event) = parse_l3_update(

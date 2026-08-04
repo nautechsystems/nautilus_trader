@@ -45,7 +45,6 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use nautilus_common::{
     cache::{
         CacheConfig,
@@ -1165,8 +1164,7 @@ fn update_order_indexes(pipe: &mut Pipeline, trader_key: &str, order: &OrderAny)
 }
 
 fn format_timestamp(timestamp: UnixNanos) -> String {
-    let dt = DateTime::<Utc>::from_timestamp_nanos(timestamp.as_u64().cast_signed());
-    dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+    format!("{:.9}", timestamp.to_datetime_utc())
 }
 
 fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {

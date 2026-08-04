@@ -27,8 +27,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures_util::StreamExt;
+use jiff::{SignedDuration, Timestamp};
 use nautilus_common::{
     clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
@@ -609,7 +609,7 @@ impl DataClient for AxDataClient {
         let poll_interval_mins = self.config.funding_rate_poll_interval_mins.max(1);
 
         // Use 7-day lookback to capture latest rate across weekends/holidays
-        let lookback = ChronoDuration::days(AX_FUNDING_RATE_LOOKBACK_DAYS);
+        let lookback = SignedDuration::from_hours(24 * (AX_FUNDING_RATE_LOOKBACK_DAYS));
 
         let instrument_id = cmd.instrument_id;
 
@@ -638,7 +638,7 @@ impl DataClient for AxDataClient {
                         break;
                     }
                     _ = interval.tick() => {
-                        let now: DateTime<Utc> = clock.get_time_ns().into();
+                        let now: Timestamp = clock.get_time_ns().into();
                         let start = now - lookback;
 
                         match http.request_funding_rates(instrument_id, Some(start), Some(now)).await {

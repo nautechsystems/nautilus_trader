@@ -761,8 +761,8 @@ mod tests {
         response::Json,
         routing::get,
     };
-    use chrono::{Duration as ChronoDuration, Utc};
     use futures_util::StreamExt;
+    use jiff::{SignedDuration, Timestamp, tz::Offset};
     use nautilus_common::{
         clients::DataClient,
         live::runner::replace_data_event_sender,
@@ -1174,8 +1174,10 @@ mod tests {
 
     fn gamma_market_recheck_fixture_value() -> Value {
         let mut value = gamma_market_expired_fixture_value();
-        let future_date = (Utc::now() + ChronoDuration::days(365)).date_naive();
-        let end_date = format!("{}T00:00:00Z", future_date.format("%Y-%m-%d"));
+        let future_date = Offset::UTC
+            .to_datetime(Timestamp::now() + SignedDuration::from_hours(24 * 365))
+            .date();
+        let end_date = format!("{}T00:00:00Z", future_date.strftime("%Y-%m-%d"));
 
         if let Some(root) = value.as_object_mut() {
             root.insert("endDate".to_string(), Value::String(end_date.clone()));

@@ -167,7 +167,7 @@ impl Display for OptionSeriesId {
             self.venue,
             self.underlying,
             self.settlement_currency,
-            dt.format("%Y-%m-%dT%H:%M:%SZ"),
+            dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
     }
 }
@@ -181,7 +181,7 @@ impl Debug for OptionSeriesId {
             self.venue,
             self.underlying,
             self.settlement_currency,
-            dt.format("%Y-%m-%dT%H:%M:%SZ"),
+            dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
     }
 }

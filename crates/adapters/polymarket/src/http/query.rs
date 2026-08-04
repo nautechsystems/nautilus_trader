@@ -17,6 +17,7 @@
 
 use ahash::{AHashMap, AHashSet};
 use derive_builder::Builder;
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -488,22 +489,28 @@ fn validate_date_value(value: Option<&str>, name: &str) -> Result<(), String> {
     parse_date_value(value, name).map(|_| ())
 }
 
-fn parse_date_value(
-    value: Option<&str>,
-    name: &str,
-) -> Result<Option<chrono::DateTime<chrono::FixedOffset>>, String> {
+fn parse_date_value(value: Option<&str>, name: &str) -> Result<Option<Timestamp>, String> {
     value
         .map(|value| {
-            chrono::DateTime::parse_from_rfc3339(value)
-                .or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map(|date| {
-                        date.and_hms_opt(0, 0, 0)
-                            .expect("midnight is a valid time")
-                            .and_utc()
-                            .fixed_offset()
-                    })
-                })
-                .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"))
+            if value.as_bytes().get(10) == Some(&b'T') {
+                return value
+                    .parse::<Timestamp>()
+                    .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"));
+            }
+
+            if value.len() == 10
+                && value.as_bytes().get(4) == Some(&b'-')
+                && value.as_bytes().get(7) == Some(&b'-')
+            {
+                return value
+                    .parse::<Date>()
+                    .and_then(|date| Offset::UTC.to_timestamp(date.at(0, 0, 0, 0)))
+                    .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"));
+            }
+
+            Err(format!(
+                "{name} must be an ISO 8601 date or RFC 3339 date-time"
+            ))
         })
         .transpose()
 }

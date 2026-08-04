@@ -20,7 +20,7 @@
 //! - [`spot`]: Kraken Spot REST API
 //! - [`futures`]: Kraken Futures REST API
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 pub mod error;
 pub mod futures;
@@ -36,7 +36,7 @@ pub mod spot;
 /// recent `limit` items", so the tail is kept rather than the head.
 pub(crate) fn apply_count_limit<T>(
     items: &mut Vec<T>,
-    start: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
     limit: Option<u64>,
 ) {
     if let Some(limit) = limit {
@@ -118,7 +118,7 @@ mod tests {
     #[rstest]
     fn test_apply_count_limit_with_start_keeps_oldest() {
         let mut bars = ascending_bars(10);
-        let start = DateTime::<Utc>::from_timestamp(0, 0);
+        let start = Some(Timestamp::UNIX_EPOCH);
         apply_count_limit(&mut bars, start, Some(3));
         let ts: Vec<u64> = bars.iter().map(|b| b.ts_event.as_u64()).collect();
         assert_eq!(ts, vec![1, 2, 3]);

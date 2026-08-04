@@ -53,7 +53,7 @@ Examples include listed crypto futures calendar spreads.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -63,8 +63,8 @@ use nautilus_model::{
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
+let activation: Timestamp = "2026-05-12T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2026-05-19T08:00:00Z".parse().unwrap();
 
 let btc_spread = CryptoFuturesSpread::builder()
     .instrument_id(InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"))
@@ -74,8 +74,8 @@ let btc_spread = CryptoFuturesSpread::builder()
     .settlement_currency(Currency::from("BTC"))
     .is_inverse(false)
     .strategy_type(Ustr::from("FS"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(1)
     .size_precision(0)
     .price_increment(Price::from("0.5"))

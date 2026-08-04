@@ -26,7 +26,7 @@ use nautilus_common::{
     msgbus::typed_handler::ShareableMessageHandler,
     python::{cache::PyCache, clock::PyClock},
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, datetime::get_timezone};
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -184,7 +184,7 @@ impl PyStreamingFeatherWriter {
             }
             2 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
-                let tz = rotation_timezone.parse::<chrono_tz::Tz>().map_err(|e| {
+                let tz = get_timezone(rotation_timezone).map_err(|e| {
                     PyIOError::new_err(format!("Failed to parse rotation_timezone: {e}"))
                 })?;
                 let time_ns = rotation_time_ns.unwrap_or(0);

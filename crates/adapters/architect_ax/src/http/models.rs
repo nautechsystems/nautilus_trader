@@ -16,7 +16,7 @@
 //! Data transfer objects for deserializing Ax HTTP API payloads.
 
 use ahash::AHashMap;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display};
@@ -84,7 +84,7 @@ pub struct AxWhoAmI {
     /// Username for the account.
     pub username: String,
     /// Account creation timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Whether two-factor authentication is required.
     pub require_2fa: bool,
     /// Whether the user has completed onboarding.
@@ -150,7 +150,7 @@ pub struct AxInstrument {
     pub description: Option<String>,
     /// Contract expiration; absent for perpetual contracts.
     #[serde(default)]
-    pub expiration: Option<DateTime<Utc>>,
+    pub expiration: Option<Timestamp>,
     /// Funding calendar schedule (optional).
     #[serde(default)]
     pub funding_calendar_schedule: Option<String>,
@@ -233,7 +233,7 @@ pub struct AxPosition {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub signed_notional: Decimal,
     /// Position timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Realized profit and loss.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub realized_pnl: Decimal,
@@ -719,7 +719,7 @@ pub struct AxFill {
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Execution timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Account identifier.
     pub account_id: Ustr,
     /// Realized PnL for this fill.
@@ -858,7 +858,7 @@ pub struct AxFundingSlot {
     /// 1-based position within the day's schedule.
     pub index: i32,
     /// Scheduled settlement time of the slot.
-    pub funding_time: DateTime<Utc>,
+    pub funding_time: Timestamp,
     /// Slot settlement state.
     pub status: AxFundingSlotStatus,
     /// True when the rate was clamped by the symbol's funding rate cap.
@@ -893,7 +893,7 @@ pub struct AxFundingSlotsResponse {
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Trading day the schedule covers.
-    pub date: NaiveDate,
+    pub date: Date,
     /// IANA name of the funding schedule's timezone.
     pub timezone: String,
     /// How the symbol's funding accrues over the day.
@@ -983,7 +983,7 @@ pub struct AxRiskSnapshot {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub unrealized_pnl: Decimal,
     /// Snapshot timestamp.
-    pub timestamp_ns: DateTime<Utc>,
+    pub timestamp_ns: Timestamp,
     /// Account identifier.
     pub account_id: Ustr,
     /// Per-symbol risk data.
@@ -1019,7 +1019,7 @@ pub struct AxTransaction {
     /// Asset symbol.
     pub symbol: Ustr,
     /// Transaction timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Type of transaction.
     pub transaction_type: Ustr,
     /// User who initiated the transaction, when available.
@@ -1349,9 +1349,7 @@ mod tests {
         assert_eq!(response.pseudonym.as_deref(), Some("quiet-amber-heron"));
         assert_eq!(
             response.created_at,
-            "2025-12-18T02:20:42.675817Z"
-                .parse::<DateTime<Utc>>()
-                .unwrap()
+            "2025-12-18T02:20:42.675817Z".parse::<Timestamp>().unwrap()
         );
         assert!(!response.require_2fa);
         assert!(response.is_onboarded);
@@ -1504,7 +1502,7 @@ mod tests {
         let json = include_str!("../../test_data/http_get_funding_slots.json");
         let response: AxFundingSlotsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.symbol, "EURUSD-PERP");
-        assert_eq!(response.date, NaiveDate::from_ymd_opt(2026, 7, 6).unwrap());
+        assert_eq!(response.date, Date::new(2026, 7, 6).unwrap());
         assert_eq!(response.timezone, "America/New_York");
         assert_eq!(response.variant, AxFundingVariant::IntradayTwap);
         assert_eq!(response.interval_count, 4);

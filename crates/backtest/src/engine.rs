@@ -2095,11 +2095,11 @@ fn event_count_as_usize(event_count: u64) -> usize {
 fn format_optional_duration(start: Option<UnixNanos>, end: Option<UnixNanos>) -> String {
     match (start, end) {
         (Some(s), Some(e)) => {
-            let delta = e.to_datetime_utc() - s.to_datetime_utc();
-            let days = delta.num_days().abs();
-            let hours = delta.num_hours().abs() % 24;
-            let minutes = delta.num_minutes().abs() % 60;
-            let seconds = delta.num_seconds().abs() % 60;
+            let delta = s.to_datetime_utc().duration_until(e.to_datetime_utc());
+            let days = delta.as_hours().abs() / 24;
+            let hours = delta.as_hours().abs() % 24;
+            let minutes = delta.as_mins().abs() % 60;
+            let seconds = delta.as_secs().abs() % 60;
             let micros = delta.subsec_nanos().unsigned_abs() / 1_000;
             format!("{days} days {hours:02}:{minutes:02}:{seconds:02}.{micros:06}")
         }

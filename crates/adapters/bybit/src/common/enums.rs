@@ -17,7 +17,7 @@
 
 use std::fmt::Display;
 
-use chrono::{DateTime, Datelike, TimeZone, Utc};
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_model::enums::{AggressorSide, OrderSide, TriggerType};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -486,16 +486,17 @@ impl BybitKlineInterval {
     pub fn bar_end_time_ms(&self, start_ms: i64) -> i64 {
         match self {
             Self::Month1 => {
-                let start_dt = DateTime::from_timestamp_millis(start_ms)
-                    .unwrap_or_else(|| Utc.timestamp_millis_opt(0).unwrap());
+                let start_dt = Offset::UTC.to_datetime(
+                    Timestamp::from_millisecond(start_ms).unwrap_or(Timestamp::UNIX_EPOCH),
+                );
                 let (year, month) = if start_dt.month() == 12 {
                     (start_dt.year() + 1, 1)
                 } else {
                     (start_dt.year(), start_dt.month() + 1)
                 };
-                Utc.with_ymd_and_hms(year, month, 1, 0, 0, 0)
-                    .single()
-                    .map_or(start_ms + 2_678_400_000, |dt| dt.timestamp_millis())
+                Date::new(year, month, 1)
+                    .and_then(|date| Offset::UTC.to_timestamp(date.at(0, 0, 0, 0)))
+                    .map_or(start_ms + 2_678_400_000, Timestamp::as_millisecond)
             }
             _ => start_ms + self.duration_ms(),
         }
