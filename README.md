@@ -137,14 +137,14 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) docu
 
 ## Roadmap
 
-The [Roadmap](/ROADMAP.md) outlines NautilusTrader's strategic direction.
+The [Roadmap](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md) outlines NautilusTrader's strategic direction.
 Current priorities include completing the Rust-native core, improving documentation, and enhancing code ergonomics.
 
 The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
 UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
 
 New integration proposals should start with an RFC issue to discuss suitability before submitting a PR.
-See [Community-contributed integrations](/ROADMAP.md#community-contributed-integrations) for guidelines.
+See [Community-contributed integrations](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#community-contributed-integrations) for guidelines.
 
 ## Security
 
@@ -533,10 +533,10 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 Indicators and strategies can be developed in Python, Cython, or Rust. For performance and
 latency-sensitive applications, we recommend Rust. Below are some examples:
 
-- [indicator](/examples/backtest/example_07_using_indicators/strategy.py) example written in Python.
-- [indicator](/python/nautilus_trader/indicators/) implementations exposed through PyO3.
-- [strategy](/examples/backtest/example_01_load_bars_from_custom_csv/strategy.py) example written in Python.
-- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
+- [indicator](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/backtest/example_07_using_indicators/strategy.py) example written in Python.
+- [indicator](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/nautilus_trader/indicators/) implementations exposed through PyO3.
+- [strategy](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/backtest/example_01_load_bars_from_custom_csv/strategy.py) example written in Python.
+- [backtest](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Docker
 
@@ -615,7 +615,7 @@ the project. If you have an idea for an enhancement or a bug fix, the first step
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be
 well-aligned with the goals of the project and avoids duplication of effort.
 
-Before getting started, be sure to review the [open-source scope](/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
+Before getting started, be sure to review the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
 
 Once you're ready to start working on your contribution, make sure to follow the guidelines
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)
