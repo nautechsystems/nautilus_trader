@@ -986,6 +986,16 @@ catalog.query(
 - `where=` passes a DataFusion SQL predicate to Rust‑backed queries.
 - `filter_expr=` passes a parsed PyArrow dataset expression to PyArrow‑backed queries.
 
+:::warning
+With the current `Cargo.lock`, DataFusion SQL temporal functions resolve named time zones with the
+transitive `chrono-tz` 0.10.4 database (IANA 2025b). Rust core time‑zone operations use Jiff 0.2.35
+with its bundled IANA 2026c database. Zone results can differ when zone rules change or historical
+data is corrected after 2025b until DataFusion migrates.
+
+If RustSec files unmaintained advisories for `chrono` or `chrono-tz`, maintain matching documented
+ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
+:::
+
 **Time format support:**
 
 - ISO 8601 strings: `"2024-01-01T00:00:00Z"`.

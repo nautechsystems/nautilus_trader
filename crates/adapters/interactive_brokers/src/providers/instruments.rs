@@ -3053,6 +3053,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_load_cache_reads_chrono_timestamp() {
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::builder()
+                .cache_validity_days(7u32)
+                .build(),
+        );
+        let cache_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/instrument_cache_chrono.json"
+        );
+
+        let loaded = provider.load_cache(cache_path).await.unwrap();
+
+        assert!(loaded);
+        assert_eq!(provider.count(), 0);
+    }
+
+    #[tokio::test]
     async fn test_load_cache_restores_contract_details() {
         let (provider, _temp_dir) = create_test_provider_with_cache();
         let cache_path = provider.config.cache_path.as_ref().unwrap().clone();

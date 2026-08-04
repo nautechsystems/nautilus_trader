@@ -1044,10 +1044,45 @@ fn convert_timestamp_strings(value: &mut Value) {
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_common::enums::SerializationEncoding;
+    use nautilus_core::UnixNanos;
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
+    use serde::Deserialize;
 
-    use super::parse_instrument_key;
+    use super::{DatabaseQueries, parse_instrument_key};
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct TimestampPayload {
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_deserialize_chrono_timestamp_payload(#[case] encoding: SerializationEncoding) {
+        let json = include_bytes!("../../test_data/redis_cache_timestamp_chrono.json");
+        let payload = match encoding {
+            SerializationEncoding::Json => json.to_vec(),
+            SerializationEncoding::MsgPack => {
+                let value = serde_json::from_slice::<serde_json::Value>(json).unwrap();
+                rmp_serde::to_vec(&value).unwrap()
+            }
+            _ => unreachable!(),
+        };
+
+        let result =
+            DatabaseQueries::deserialize_payload::<TimestampPayload>(encoding, &payload).unwrap();
+
+        assert_eq!(
+            result,
+            TimestampPayload {
+                ts_event: UnixNanos::from(1_123_456_789),
+                ts_init: UnixNanos::from(2_987_654_321),
+            }
+        );
+    }
 
     #[rstest]
     #[case("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3")]

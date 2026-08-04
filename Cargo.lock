@@ -7030,6 +7030,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bon",
+ "criterion",
  "csv",
  "derive_builder",
  "dotenvy",

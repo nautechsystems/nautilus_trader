@@ -1032,6 +1032,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_bus_message_reads_chrono_heartbeat() {
+        let heartbeat =
+            include_str!("../../test_data/redis_msgbus_heartbeat_chrono.txt").trim_end();
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(HEARTBEAT_TOPIC.as_bytes().to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(heartbeat.as_bytes().to_vec()),
+        ]);
+
+        let msg = decode_bus_message(&stream_msg).unwrap();
+        let timestamp = std::str::from_utf8(&msg.payload)
+            .unwrap()
+            .parse::<Timestamp>()
+            .unwrap();
+
+        assert_eq!(msg.topic, HEARTBEAT_TOPIC);
+        assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
+        assert_eq!(msg.payload.as_ref(), heartbeat.as_bytes());
+        assert_eq!(timestamp.as_nanosecond(), 1_785_805_323_456_789_000);
+    }
+
+    #[rstest]
     fn test_decode_bus_message_unknown_type_is_custom() {
         let stream_msg = Value::Array(vec![
             Value::BulkString(b"topic".to_vec()),
