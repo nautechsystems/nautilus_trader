@@ -34,9 +34,8 @@ won't need to work directly with these lower-level components.
 
 ## Examples
 
-You can find live example scripts in the [examples/live/kraken] directory.
-
-[examples/live/kraken]: https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken/
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/kraken/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/kraken/examples/)
 
 ## Kraken documentation
 
@@ -179,17 +178,17 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Subscriptions (real-time)
 
-| Data type           | Spot | Futures | Notes                                      |
-| ------------------- | ---- | ------- | ------------------------------------------ |
-| `QuoteTick`         | ✓    | ✓       | Derived from ticker channel.               |
-| `TradeTick`         | ✓    | ✓       |                                            |
-| `OrderBookDeltas`   | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.         |
-| `OrderBookDepth10`  | -    | -       | Use `OrderBookDeltas` with depth `10`.     |
-| `Bar`               | ✓    | -       | Spot WS OHLC channel. See bar section.     |
-| `MarkPriceUpdate`   | -    | ✓       | From futures ticker feed.                  |
-| `IndexPriceUpdate`  | -    | ✓       | From futures ticker feed.                  |
-| `FundingRateUpdate` | -    | ✓       | Perpetuals only.                           |
-| `InstrumentStatus`  | ✓    | ✓       | Python adapter polls instrument refreshes. |
+| Data type           | Spot | Futures | Notes                                   |
+| ------------------- | ---- | ------- | --------------------------------------- |
+| `QuoteTick`         | ✓    | ✓       | Derived from ticker channel.            |
+| `TradeTick`         | ✓    | ✓       |                                         |
+| `OrderBookDeltas`   | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.      |
+| `OrderBookDepth10`  | -    | -       | Use `OrderBookDeltas` with depth `10`.  |
+| `Bar`               | ✓    | -       | Spot WS OHLC channel. See bar section.  |
+| `MarkPriceUpdate`   | -    | ✓       | From futures ticker feed.               |
+| `IndexPriceUpdate`  | -    | ✓       | From futures ticker feed.               |
+| `FundingRateUpdate` | -    | ✓       | Perpetuals only.                        |
+| `InstrumentStatus`  | ✓    | ✓       | The adapter polls instrument refreshes. |
 
 ### Requests (historical)
 
@@ -214,7 +213,7 @@ is authenticated. Set them in `KrakenDataClientConfig` or via
 `KRAKEN_SPOT_API_KEY` and `KRAKEN_SPOT_API_SECRET`:
 
 ```python
-from nautilus_trader.adapters.kraken.config import KrakenDataClientConfig
+from nautilus_trader.adapters.kraken import KrakenDataClientConfig
 
 config = KrakenDataClientConfig(
     api_key="YOUR_KEY",
@@ -225,7 +224,7 @@ config = KrakenDataClientConfig(
 Then subscribe with `book_type=BookType.L3_MBO`:
 
 ```python
-from nautilus_trader.model.enums import BookType
+from nautilus_trader.model import BookType
 
 await client.subscribe_book_deltas(
     instrument_id=instrument_id,
@@ -504,12 +503,19 @@ trading).
 **Configuration:**
 
 ```python
-exec_clients = {
-    KRAKEN: {
-        "use_spot_position_reports": True,
-        "spot_positions_quote_currency": "USDT",  # Default
-    },
-}
+from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
+
+
+exec_config = KrakenExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("KRAKEN-001"),
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    use_spot_position_reports=True,
+    spot_positions_quote_currency="USDT",  # Default
+)
 ```
 
 :::warning
@@ -532,15 +538,20 @@ order submission. Margin trading is enabled per-execution-client via
 
 ```python
 from nautilus_trader.adapters.kraken import KrakenExecClientConfig
-from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import TraderId
 
-exec_clients = {
-    KRAKEN: KrakenExecClientConfig(
-        spot_account_type=AccountType.MARGIN,
-        default_leverage=3,  # optional config-level default
-        margin_balance_asset="ZGBP",  # optional summary-display asset
-    ),
-}
+
+exec_config = KrakenExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("KRAKEN-001"),
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    spot_account_type=AccountType.MARGIN,
+    default_leverage=3,  # Optional config-level default
+    margin_balance_asset="ZGBP",  # Optional summary-display asset
+)
 ```
 
 `margin_balance_asset` controls only the denomination of the account-summary
@@ -722,75 +733,14 @@ To test with Kraken Futures demo (paper trading):
 3. Configure the adapter with `environment=KrakenEnvironment.DEMO` and
    `product_type=KrakenProductType.FUTURES`.
 
-```python
-from nautilus_trader.adapters.kraken import KRAKEN
-from nautilus_trader.adapters.kraken import KrakenEnvironment
-from nautilus_trader.adapters.kraken import KrakenProductType
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        KRAKEN: {
-            "environment": KrakenEnvironment.DEMO,
-            "product_type": KrakenProductType.FUTURES,
-        },
-    },
-    exec_clients={
-        KRAKEN: {
-            "environment": KrakenEnvironment.DEMO,
-            "product_type": KrakenProductType.FUTURES,
-        },
-    },
-)
-```
+The [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/kraken/)
+show the complete demo and live `LiveNode` configurations.
 
 ### Production configuration
 
-The most common use case is to configure a live `TradingNode` to include Kraken
-data and execution clients. Add a `KRAKEN` section to your client
-configuration(s):
-
-```python
-from nautilus_trader.adapters.kraken import KRAKEN
-from nautilus_trader.adapters.kraken import KrakenEnvironment
-from nautilus_trader.adapters.kraken import KrakenProductType
-from nautilus_trader.live.node import TradingNode
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        KRAKEN: {
-            "environment": KrakenEnvironment.LIVE,
-            "product_type": KrakenProductType.SPOT,
-        },
-    },
-    exec_clients={
-        KRAKEN: {
-            "environment": KrakenEnvironment.LIVE,
-            "product_type": KrakenProductType.SPOT,
-        },
-    },
-)
-```
-
-Then, create a `TradingNode` and add the client factories:
-
-```python
-from nautilus_trader.adapters.kraken import KRAKEN
-from nautilus_trader.adapters.kraken import KrakenDataClientFactory
-from nautilus_trader.adapters.kraken import KrakenExecutionClientFactory
-from nautilus_trader.live.node import TradingNode
-
-# Instantiate the live trading node with a configuration
-node = TradingNode(config=config)
-
-# Register the client factories with the node
-node.add_data_client_factory(KRAKEN, KrakenDataClientFactory)
-node.add_exec_client_factory(KRAKEN, KrakenExecutionClientFactory)
-
-# Finally build the node
-node.build()
-```
+Use `KrakenDataClientConfig` with `KrakenDataClientFactory` and `KrakenExecClientConfig` with
+`KrakenExecutionClientFactory`. The current Python examples show the complete
+`LiveNode.builder(...)` configuration for data and execution clients.
 
 ### API credentials
 

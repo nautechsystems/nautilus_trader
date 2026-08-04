@@ -7,7 +7,8 @@ execution with Bybit.
 
 ## Examples
 
-You can find live example scripts in the [examples/live/bybit](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/) directory.
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/bybit/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/bybit/examples/)
 
 ## Overview
 
@@ -20,8 +21,8 @@ on the use case.
 - `BybitInstrumentProvider`: Instrument parsing and loading functionality.
 - `BybitDataClient`: A market data feed manager.
 - `BybitExecutionClient`: An account management and trade execution gateway.
-- `BybitLiveDataClientFactory`: Factory for Bybit data clients (used by the trading node builder).
-- `BybitLiveExecClientFactory`: Factory for Bybit execution clients (used by the trading node builder).
+- `BybitDataClientFactory`: Factory for Bybit data clients.
+- `BybitExecutionClientFactory`: Factory for Bybit execution clients.
 
 :::note
 Most users will define a configuration for a live trading node (as below),
@@ -77,38 +78,9 @@ whatever symbol the API returns.
 
 ## Instrument loading
 
-Bybit data and execution clients use the common `instrument_provider` config.
-Configure it to load instruments before strategies subscribe to market data or submit
-orders. Subscriptions do not request missing instrument definitions.
-
-```python
-from nautilus_trader.adapters.bybit import BybitProductType
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.config import InstrumentProviderConfig
-
-BybitDataClientConfig(
-    instrument_provider=InstrumentProviderConfig(load_all=True),
-    product_types=(BybitProductType.SPOT,),
-)
-```
-
-Use `load_ids` when you only need a known set of instruments:
-
-```python
-from nautilus_trader.adapters.bybit import BybitProductType
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.model.identifiers import InstrumentId
-
-BybitDataClientConfig(
-    instrument_provider=InstrumentProviderConfig(
-        load_ids=frozenset([InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")]),
-    ),
-    product_types=(BybitProductType.SPOT,),
-)
-```
-
-The configured `product_types` must include the product suffix in each instrument ID.
+The data and execution clients load all instruments for their configured `product_types` when they
+connect. The default is `LINEAR`. Include each product type required by your subscriptions or
+orders.
 
 ## Environments
 
@@ -127,6 +99,7 @@ The default environment for live trading with real funds.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
+from nautilus_trader.adapters.bybit import BybitExecClientConfig
 
 config = BybitExecClientConfig(
     api_key="YOUR_API_KEY",
@@ -145,6 +118,7 @@ Create demo API keys from the
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
+from nautilus_trader.adapters.bybit import BybitExecClientConfig
 
 config = BybitExecClientConfig(
     api_key="YOUR_DEMO_API_KEY",
@@ -171,6 +145,7 @@ A separate test network for development and integration testing.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
+from nautilus_trader.adapters.bybit import BybitExecClientConfig
 
 config = BybitExecClientConfig(
     api_key="YOUR_TESTNET_API_KEY",
@@ -285,25 +260,13 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 #### Hedge mode (BothSides)
 
-Bybit only accepts `BOTH_SIDES` on USDT linear perpetuals. For other product
-types configure `MERGED_SINGLE` or omit them from `position_mode`. Configure
-per symbol:
+Bybit only accepts Both Sides mode on USDT linear perpetuals. Configure the position mode at Bybit,
+then pass `position_idx` through the order `params`: `1` for the long side or `2` for the short side.
+Use `0` or omit the parameter for one‑way mode.
 
-```python
-from nautilus_trader.adapters.bybit import BybitPositionMode
-
-config = BybitExecClientConfig(
-    ...,
-    position_mode={"ETHUSDT-LINEAR": BybitPositionMode.BOTH_SIDES},
-)
-```
-
-On connect the adapter calls `/v5/position/switch-mode` for each entry, then
-derives `positionIdx` for every order: opening BUY -> `1` (long), opening
-SELL -> `2` (short), reduce-only SELL -> `1`, reduce-only BUY -> `2`.
-Bybit documents this in the V5 [switch position mode](https://bybit-exchange.github.io/docs/v5/position/position-mode)
+Bybit documents these values in the V5 [switch position mode](https://bybit-exchange.github.io/docs/v5/position/position-mode)
 and [place order](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters)
-APIs: `mode=3` enables Both Sides, and hedge-mode orders require `positionIdx`.
+APIs.
 
 Orders and reports with `positionIdx=0` (one-way / Merged Single mode) carry no
 venue position ID. For hedge-mode indexes `1` and `2`, the adapter maps reports
@@ -455,7 +418,7 @@ and do not borrow funds, even if you have auto-borrow enabled on your Bybit acco
 :::
 
 For a complete example of using order parameters including `is_leverage`, see the
-[bybit_exec_tester.py](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/bybit_exec_tester.py) example.
+[Python execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/bybit/exec_tester.py).
 
 ## Spot margin borrowing and repayment
 
@@ -467,9 +430,9 @@ When trading Spot with margin enabled (`is_leverage=True`), Bybit automatically 
 However, after you close the short position (BUY order fills), the borrowed coins are **NOT automatically repaid** - they continue accruing hourly interest charges until manually repaid.
 This can result in significant interest costs if left unattended.
 
-### Rust v2 automatic repayment (recommended)
+### Automatic repayment (recommended)
 
-The Rust v2 execution client can automatically repay spot margin borrows after BUY orders fully fill
+The execution client can automatically repay spot margin borrows after BUY orders fully fill
 on Spot instruments. This feature is disabled by default, so set
 `auto_repay_spot_borrows=True` to opt in.
 
@@ -558,14 +521,14 @@ from nautilus_trader.adapters.bybit import BybitMarginAction
 from nautilus_trader.adapters.bybit import BybitMarginBorrowResult
 from nautilus_trader.adapters.bybit import BybitMarginRepayResult
 from nautilus_trader.adapters.bybit import BybitMarginStatusResult
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 
 class MyStrategy(Strategy):
     def on_start(self):
-        self.subscribe_data(DataType(BybitMarginBorrowResult))
-        self.subscribe_data(DataType(BybitMarginRepayResult))
-        self.subscribe_data(DataType(BybitMarginStatusResult))
+        self.subscribe_data(DataType(BybitMarginBorrowResult.__name__))
+        self.subscribe_data(DataType(BybitMarginRepayResult.__name__))
+        self.subscribe_data(DataType(BybitMarginStatusResult.__name__))
 
     def on_data(self, data):
         if isinstance(data, BybitMarginBorrowResult):
@@ -582,19 +545,19 @@ class MyStrategy(Strategy):
             self.log.info(f"Borrow amount for {data.coin}: {data.borrow_amount}")
 ```
 
-### Rust v2 UTC blackout window
+### UTC blackout window
 
 Bybit blocks both repayment endpoints from **4 minutes through 5 minutes 30 seconds past every UTC
 hour** for interest calculation. Auto-repayment keeps the request queued and attempts it at 5
 minutes 31 seconds past the hour.
 
-### Rust v2 auto-repayment configuration
+### Auto-repayment configuration
 
 | Option                    | Type   | Default | Description                                                                                                                |
 | ------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `auto_repay_spot_borrows` | `bool` | `False` | If `True`, automatically repay Spot margin borrows after BUY orders fully fill. Repayment is deferred during the blackout. |
 
-### Rust v2 auto-repayment notes
+### Auto-repayment notes
 
 - Auto-repayment only triggers on **Spot BUY orders**, not derivatives.
 - Repayment uses converting repayment except for MNT, which uses no-convert repayment.
@@ -810,106 +773,57 @@ The product types for each client must be specified in the configurations.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                                                                                     |
-| ---------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
-| `api_key`                          | `None`    | API key; loaded from the matching environment variable when omitted.                                            |
-| `api_secret`                       | `None`    | API secret; loaded from the matching environment variable when omitted.                                         |
-| `product_types`                    | `None`    | Sequence of `BybitProductType` values to enable; loads all products when `None`.                                |
-| `instrument_provider`              | default   | Instrument loading config. Use `load_all=True` or `load_ids` before subscribing.                                |
-| `environment`                      | `None`    | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
-| `base_url_http`                    | `None`    | Override for the REST base URL.                                                                                 |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                           |
-| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes.                                                      |
-| `recv_window_ms`                   | `5,000`   | Receive window (milliseconds) for signed REST requests.                                                         |
-| `bars_timestamp_on_close`          | `True`    | Timestamp bars on the close (`True`) or open (`False`) of the interval.                                         |
-| `max_retries`                      | `None`    | Maximum retry attempts for REST/WebSocket recovery.                                                             |
-| `retry_delay_initial_ms`           | `None`    | Initial delay (milliseconds) between retries.                                                                   |
-| `retry_delay_max_ms`               | `None`    | Maximum delay (milliseconds) between retries.                                                                   |
-| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                                                    |
+| Option                             | Default    | Description                                                                                                     |
+| ---------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `product_types`                    | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                |
+| `environment`                      | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
+| `api_key`                          | `None`     | API key; loaded from the matching environment variable when omitted.                                            |
+| `api_secret`                       | `None`     | API secret; loaded from the matching environment variable when omitted.                                         |
+| `base_url_http`                    | `None`     | Override for the REST base URL.                                                                                 |
+| `base_url_ws_public`               | `None`     | Override for the public WebSocket URL.                                                                          |
+| `base_url_ws_private`              | `None`     | Override for the private WebSocket URL.                                                                         |
+| `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
+| `http_timeout_secs`                | `60`       | Timeout (seconds) for REST requests.                                                                            |
+| `max_retries`                      | `3`        | Maximum retry attempts for REST requests.                                                                       |
+| `retry_delay_initial_ms`           | `1,000`    | Initial retry delay (milliseconds).                                                                             |
+| `retry_delay_max_ms`               | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
+| `heartbeat_interval_secs`          | `20`       | Heartbeat interval (seconds) for WebSocket clients.                                                             |
+| `recv_window_ms`                   | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
+| `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument catalog refreshes.                                                        |
+| `instrument_status_poll_secs`      | `60`       | Interval (seconds) between instrument and status polls.                                                         |
+| `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                                                                    |
 
 ### Execution client configuration options
 
-| Option                                  | Default   | Description                                                                                                     |
-| --------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
-| `api_key`                               | `None`    | API key; loaded from the matching environment variable when omitted.                                            |
-| `api_secret`                            | `None`    | API secret; loaded from the matching environment variable when omitted.                                         |
-| `product_types`                         | `None`    | Sequence of `BybitProductType` values to enable (Spot cannot be mixed with derivatives for execution).          |
-| `instrument_provider`                   | default   | Instrument loading config. Use `load_all=True` or `load_ids` before submitting orders.                          |
-| `environment`                           | `None`    | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
-| `base_url_http`                         | `None`    | Override for the REST base URL.                                                                                 |
-| `base_url_ws_private`                   | `None`    | Override for the private WebSocket base URL.                                                                    |
-| `base_url_ws_trade`                     | `None`    | Override for the trade WebSocket base URL.                                                                      |
-| `proxy_url`                             | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                           |
-| `use_gtd`                               | `False`   | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support).                                           |
-| `use_ws_execution_fast`                 | `False`   | Subscribe to the low‑latency execution stream.                                                                  |
-| `use_http_batch_api`                    | `False`   | Use Bybit's HTTP batch trading API (deprecated).                                                                |
-| `use_spot_position_reports`             | `False`   | Report Spot wallet balances as positions when `True`.                                                           |
-| `auto_repay_spot_borrows`               | `True`    | Automatically repay Spot margin borrows after BUY orders fully fill (Spot only).                                |
-| `repay_queue_interval_secs`             | `1.0`     | Interval (seconds) between processing repayment queues for spot borrows.                                        |
-| `ignore_uncached_instrument_executions` | `False`   | Ignore execution messages for instruments not yet cached.                                                       |
-| `max_retries`                           | `None`    | Maximum retry attempts for order submission/cancel/modify calls.                                                |
-| `retry_delay_initial_ms`                | `None`    | Initial delay (milliseconds) between retries.                                                                   |
-| `retry_delay_max_ms`                    | `None`    | Maximum delay (milliseconds) between retries.                                                                   |
-| `recv_window_ms`                        | `5,000`   | Receive window (milliseconds) for signed REST requests.                                                         |
-| `ws_trade_timeout_secs`                 | `5.0`     | Timeout (seconds) waiting for trade WebSocket acknowledgements.                                                 |
-| `ws_auth_timeout_secs`                  | `5.0`     | Timeout (seconds) waiting for auth WebSocket acknowledgements.                                                  |
-| `futures_leverages`                     | `None`    | Mapping of `BybitSymbol` to leverage settings.                                                                  |
-| `position_mode`                         | `None`    | Mapping of `BybitSymbol` to position mode. See [Hedge mode](#hedge-mode-bothsides).                             |
-| `margin_mode`                           | `None`    | Margin mode setting for the account.                                                                            |
-| `transport_backend`                     | `Sockudo` | WebSocket transport backend.                                                                                    |
+| Option                      | Default    | Description                                                                                                     |
+| --------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `product_types`             | `[LINEAR]` | Sequence of `BybitProductType` values to enable. Spot cannot be mixed with derivatives for execution.           |
+| `environment`               | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
+| `api_key`                   | `None`     | API key; loaded from the matching environment variable when omitted.                                            |
+| `api_secret`                | `None`     | API secret; loaded from the matching environment variable when omitted.                                         |
+| `base_url_http`             | `None`     | Override for the REST base URL.                                                                                 |
+| `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                    |
+| `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                      |
+| `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
+| `http_timeout_secs`         | `60`       | Timeout (seconds) for REST requests.                                                                            |
+| `max_retries`               | `3`        | Maximum retry attempts for REST requests.                                                                       |
+| `retry_delay_initial_ms`    | `1,000`    | Initial retry delay (milliseconds).                                                                             |
+| `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
+| `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
+| `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
+| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
+| `account_id`                | `None`     | Optional account ID associated with this client.                                                                |
+| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions when `True`.                                                           |
+| `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
+| `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                    |
+| `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                    |
 
-The most common use case is to configure a live `TradingNode` to include Bybit
-data and execution clients. To achieve this, add a `BYBIT` section to your client
-configuration(s):
+The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
+Tungstenite otherwise.
 
-```python
-from nautilus_trader.adapters.bybit import BYBIT
-from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitProductType
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        BYBIT: {
-            "api_key": "YOUR_BYBIT_API_KEY",
-            "api_secret": "YOUR_BYBIT_API_SECRET",
-            "base_url_http": None,  # Override with custom endpoint
-            "environment": BybitEnvironment.MAINNET,
-            "product_types": [BybitProductType.LINEAR],
-        },
-    },
-    exec_clients={
-        BYBIT: {
-            "api_key": "YOUR_BYBIT_API_KEY",
-            "api_secret": "YOUR_BYBIT_API_SECRET",
-            "base_url_http": None,  # Override with custom endpoint
-            "environment": BybitEnvironment.MAINNET,
-            "product_types": [BybitProductType.LINEAR],
-        },
-    },
-)
-```
-
-Then, create a `TradingNode` and add the client factories:
-
-```python
-from nautilus_trader.adapters.bybit import BYBIT
-from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
-from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
-from nautilus_trader.live.node import TradingNode
-
-# Instantiate the live trading node with a configuration
-node = TradingNode(config=config)
-
-# Register the client factories with the node
-node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
-node.add_exec_client_factory(BYBIT, BybitLiveExecClientFactory)
-
-# Finally build the node
-node.build()
-```
+Use `BybitDataClientConfig` with `BybitDataClientFactory` and `BybitExecClientConfig` with
+`BybitExecutionClientFactory`. The current Python examples show the complete
+`LiveNode.builder(...)` configuration for data and execution clients.
 
 ### API credentials
 

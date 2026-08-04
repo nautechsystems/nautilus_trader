@@ -551,7 +551,7 @@ Each venue publishes the conditions under which it acts:
 | Polymarket       | `FAILED` trade status after an on‑chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
 
 Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
-consumes: [Betfair](../integrations/betfair_v2.md#voided-fills) from the order change message `sv`
+consumes: [Betfair](../integrations/betfair.md#voided-fills) from the order change message `sv`
 field, and
 [Polymarket](../integrations/polymarket.md#trades) from the user channel trade status.
 

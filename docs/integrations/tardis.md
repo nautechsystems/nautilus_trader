@@ -7,8 +7,8 @@ crypto exchanges.
 NautilusTrader integrates with the Tardis API, Tardis Machine WebSocket server, and Tardis CSV
 formats. The capabilities of this adapter include:
 
-- `TardisCSVDataLoader`: reads Tardis-format CSV files into Nautilus data, with bulk and
-  memory-efficient streaming paths.
+- CSV loading and streaming functions: read Tardis‑format files into Nautilus data in bulk or
+  bounded chunks.
 - `TardisMachineClient`: streams live or historical replay data from Tardis Machine and converts
   messages into Nautilus data.
 - `TardisHttpClient`: requests instrument metadata from the Tardis HTTP API and parses it into
@@ -351,12 +351,12 @@ To run a replay in Python, create a script similar to the following:
 import asyncio
 from pathlib import Path
 
-from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.adapters.tardis import run_tardis_machine_replay
 
 
 async def run():
     config_filepath = Path("YOUR_CONFIG_FILEPATH")
-    await nautilus_pyo3.run_tardis_machine_replay(str(config_filepath.resolve()))
+    await run_tardis_machine_replay(str(config_filepath.resolve()))
 
 
 if __name__ == "__main__":
@@ -424,7 +424,7 @@ Tardis exchange to fee model mapping.
 ### Option-chain CSV catalog conversion
 
 For historical option chains from downloadable Tardis CSV files, use
-`TardisCSVDataLoader.convert_options_chain_csv(...)` to convert `options_chain` rows into
+`convert_tardis_options_chain_csv(...)` to convert `options_chain` rows into
 Nautilus catalog data. This path does not call Tardis Machine or the instrument metadata API, so
 it is useful when you already have Tardis CSV files or want a no-API-key catalog bootstrap from
 downloaded data.
@@ -442,25 +442,23 @@ been written to the catalog. Pass daily `options_chain` CSV paths in chronologic
 keep the last row per instrument per interval within each input file, or use `None` to write
 every selected row. Rows must be ordered by `local_timestamp` within each file when thinning.
 
-Provide explicit `price_precision` and `size_precision` on the loader for deterministic quote
+Provide explicit `price_precision` and `size_precision` for deterministic quote
 metadata. Inferred precision can increase as later rows are read, so data written earlier in a
 file can keep lower precision metadata.
 
 ```python
 from pathlib import Path
 
-from nautilus_trader.adapters.tardis import TardisCSVDataLoader
+from nautilus_trader.adapters.tardis import convert_tardis_options_chain_csv
 
 
-loader = TardisCSVDataLoader(
-    price_precision=4,
-    size_precision=1,
-)
-loader.convert_options_chain_csv(
+convert_tardis_options_chain_csv(
     filepaths=[Path("deribit_options_chain_2020-06-08.csv")],
     catalog_path=Path("catalog"),
     underlyings=["BTC-"],
     snapshot_interval_ms=60_000,
+    price_precision=4,
+    size_precision=1,
 )
 ```
 
@@ -485,7 +483,7 @@ output.
 
 ### Loading CSV data in Python
 
-You can load Tardis-format CSV data in Python using the `TardisCSVDataLoader`.
+You can load Tardis‑format CSV data in Python using the module‑level `load_tardis_*` functions.
 When loading data, you can optionally specify the instrument ID, price precision, and size
 precision. Providing the instrument ID improves loading performance. Price and size precision are
 inferred from the CSV when omitted, but explicit values are recommended for deterministic output,
@@ -496,21 +494,17 @@ To load the data, create a script similar to the following:
 ```python
 from pathlib import Path
 
-from nautilus_trader.adapters.tardis import TardisCSVDataLoader
+from nautilus_trader.adapters.tardis import load_tardis_deltas
 from nautilus_trader.model import InstrumentId
 
 
 instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-loader = TardisCSVDataLoader(
+deltas = load_tardis_deltas(
+    filepath=Path("YOUR_CSV_DATA_PATH"),
     price_precision=1,
     size_precision=0,
     instrument_id=instrument_id,
 )
-
-filepath = Path("YOUR_CSV_DATA_PATH")
-limit = None
-
-deltas = loader.load_deltas(filepath, limit=limit)
 ```
 
 ### Loading CSV data in Rust
@@ -572,25 +566,28 @@ Rust also exposes streaming functions for these CSV types, plus batched deltas a
 
 ### Streaming CSV data in Python
 
-The `TardisCSVDataLoader` provides streaming methods that yield chunks of data as iterators. Each
-method accepts a `chunk_size` parameter that controls how many records are read per chunk:
+The module‑level `stream_tardis_*` functions return iterators of bounded chunks. Each function
+accepts a `chunk_size` parameter that controls how many records are read per chunk:
 
 ```python
-from nautilus_trader.adapters.tardis import TardisCSVDataLoader
+from pathlib import Path
+
+from nautilus_trader.adapters.tardis import stream_tardis_trades
 from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-loader = TardisCSVDataLoader(
+filepath = Path("large_trades_file.csv")
+
+trades = stream_tardis_trades(
+    filepath=filepath,
+    chunk_size=100_000,
     price_precision=1,
     size_precision=0,
     instrument_id=instrument_id,
 )
 
-filepath = Path("large_trades_file.csv")
-chunk_size = 100_000  # Process 100,000 records per chunk (default)
-
 # Stream trade ticks in chunks
-for chunk in loader.stream_trades(filepath, chunk_size):
+for chunk in trades:
     print(f"Processing chunk with {len(chunk)} trades")
     # Process each chunk - only this chunk is in memory
     for trade in chunk:
@@ -603,13 +600,17 @@ for chunk in loader.stream_trades(filepath, chunk_size):
 For order book data, streaming is available for both deltas and depth snapshots:
 
 ```python
+from nautilus_trader.adapters.tardis import stream_tardis_deltas
+from nautilus_trader.adapters.tardis import stream_tardis_depth10_from_snapshot5
+
+
 # Stream order book deltas
-for chunk in loader.stream_deltas(filepath):
+for chunk in stream_tardis_deltas(filepath):
     print(f"Processing {len(chunk)} deltas")
     # Process delta chunk
 
-# Stream depth10 snapshots (specify levels: 5 or 25)
-for chunk in loader.stream_depth10(filepath, levels=5):
+# Stream depth10 snapshots from snapshot_5 files
+for chunk in stream_tardis_depth10_from_snapshot5(filepath):
     print(f"Processing {len(chunk)} depth snapshots")
     # Process depth chunk
 ```
@@ -619,8 +620,11 @@ for chunk in loader.stream_depth10(filepath, levels=5):
 Quote data can be streamed similarly:
 
 ```python
+from nautilus_trader.adapters.tardis import stream_tardis_quotes
+
+
 # Stream quote ticks
-for chunk in loader.stream_quotes(filepath):
+for chunk in stream_tardis_quotes(filepath):
     print(f"Processing {len(chunk)} quotes")
     # Process quote chunk
 ```
@@ -707,13 +711,13 @@ To request instrument definitions in Python, create a script similar to the foll
 ```python
 import asyncio
 
-from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.adapters.tardis import TardisHttpClient
 
 
 async def run():
-    http_client = nautilus_pyo3.TardisHttpClient()
+    http_client = TardisHttpClient()
 
-    instrument = await http_client.instrument("bitmex", "xbtusd")
+    instrument = await http_client.instruments("bitmex", symbol="xbtusd")
     print(f"Received: {instrument}")
 
     instruments = await http_client.instruments("bitmex")

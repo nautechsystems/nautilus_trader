@@ -310,7 +310,7 @@ The data client chooses the order book interval as follows:
 3. Uses Deribit's public `100ms` grouped feed when the connection is not authenticated.
 
 ```python
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 
@@ -535,16 +535,16 @@ volatility index streams such as `btc_usd` and `eth_usd`.
 | `ts_event`   | `int`   | UNIX timestamp in nanoseconds when the update occurred.  |
 | `ts_init`    | `int`   | UNIX timestamp in nanoseconds when the object was built. |
 
-Subscribe from an actor or strategy with `DataType(DeribitVolatilityIndex)`.
+Subscribe from an actor or strategy with `DataType(DeribitVolatilityIndex.__name__)`.
 The `index_name` metadata key is required:
 
 ```python
 from nautilus_trader.adapters.deribit import DeribitVolatilityIndex
 from nautilus_trader.model import ClientId
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
 self.subscribe_data(
-    data_type=DataType(DeribitVolatilityIndex, metadata={"index_name": "btc_usd"}),
+    data_type=DataType(DeribitVolatilityIndex.__name__, metadata={"index_name": "btc_usd"}),
     client_id=ClientId.from_str("DERIBIT"),
 )
 ```

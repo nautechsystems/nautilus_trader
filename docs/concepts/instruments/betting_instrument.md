@@ -163,7 +163,6 @@ selection = BettingInstrument(
 Representative adapters that create or consume `BettingInstrument` instruments include:
 
 - [Betfair](../../integrations/betfair.md) for sports betting markets.
-- [Betfair v2](../../integrations/betfair_v2.md) for sports betting markets.
 
 ## Related guides
 

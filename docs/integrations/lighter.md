@@ -27,7 +27,7 @@ consumed through the Rust trait surface.
 
 ## Examples
 
-Python v2 examples live in
+Python examples live in
 [`python/examples/lighter/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/lighter/)
 and default to a dry build. Pass `--run` to connect; the execution tester also requires
 `--live-orders` to disable `dry_run`.

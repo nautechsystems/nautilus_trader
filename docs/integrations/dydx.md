@@ -7,8 +7,6 @@ book and matching engine run on-chain as part of the validator process. Orders a
 Cosmos transactions via gRPC and settled each block. An Indexer service exposes REST and WebSocket
 APIs for market data and account state.
 
-This is the Rust-backed adapter with Python bindings.
-
 ## Installation
 
 :::note
@@ -18,7 +16,8 @@ compiled into the core `nautilus_trader` package automatically during the build.
 
 ## Examples
 
-You can find live example scripts in the [examples/live/dydx](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/) directory.
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/dydx/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/dydx/examples/)
 
 ## Overview
 
@@ -101,7 +100,7 @@ and won't need to work with these lower level components directly.
 A dYdX v4 trading account (sub-account 0) is created only after the wallet's first deposit or trade.
 Until then, every gRPC/Indexer query returns `NOT_FOUND`, so `DydxExecutionClient.connect()` fails.
 
-Before starting a live `TradingNode`, send any positive amount of USDC or other supported collateral
+Before starting a `LiveNode`, send any positive amount of USDC or other supported collateral
 from the same wallet on the same network (mainnet/testnet). Once the transaction has finalised
 (a few blocks), restart the node and the client will connect cleanly.
 :::
@@ -116,7 +115,7 @@ from the same wallet on the same network (mainnet/testnet). Once the transaction
 
 1. Deposit any positive amount of USDC to sub-account 0 on the correct network.
 2. Wait for finality (roughly 30 seconds on mainnet, longer on testnet).
-3. Restart the `TradingNode`; the connection should now succeed.
+3. Restart the `LiveNode`; the connection should now succeed.
 
 :::tip
 In unattended deployments, wrap the `connect()` call in an exponential-backoff loop so the
@@ -159,7 +158,7 @@ product types.
 ## Orders capability
 
 dYdX supports perpetual futures trading with a full set of order types and execution
-features. The Rust adapter automatically classifies orders as short-term or long-term based on
+features. The adapter automatically classifies orders as short‑term or long‑term based on
 time-in-force and expiry, so no manual tagging is needed.
 
 ### Order types
@@ -293,7 +292,7 @@ Upstream references:
 
 ### Order classification
 
-dYdX classifies every order into one of three on-chain categories. The Rust adapter
+dYdX classifies every order into one of three on‑chain categories. The adapter
 automatically determines the category based on time-in-force and expiry, so no manual
 configuration is required.
 
@@ -575,12 +574,15 @@ and risk management within a single wallet.
 Specify the subaccount number in the execution client config:
 
 ```python
-config = TradingNodeConfig(
-    exec_clients={
-        "DYDX": DydxExecClientConfig(
-            subaccount_number=0,  # Default subaccount
-        ),
-    },
+from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
+
+
+exec_config = DydxExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("DYDX-001"),
+    subaccount_number=0,
 )
 ```
 
@@ -644,34 +646,29 @@ export DYDX_TESTNET_PRIVATE_KEY="0x..."  # hex-encoded, 0x prefix optional
 Set `network=DydxNetwork.TESTNET` on both data and execution clients:
 
 ```python
+from nautilus_trader.adapters.dydx import DydxDataClientConfig
+from nautilus_trader.adapters.dydx import DydxExecClientConfig
 from nautilus_trader.adapters.dydx import DydxNetwork
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
 
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        DYDX: DydxDataClientConfig(
-            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            network=DydxNetwork.TESTNET,
-        ),
-    },
-    exec_clients={
-        DYDX: DydxExecClientConfig(
-            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
-            private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
-            subaccount_number=0,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            network=DydxNetwork.TESTNET,
-        ),
-    },
+
+data_config = DydxDataClientConfig(network=DydxNetwork.TESTNET)
+
+exec_config = DydxExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("DYDX-001"),
+    network=DydxNetwork.TESTNET,
+    wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS
+    private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY
+    subaccount_number=0,
 )
 ```
 
 ### Testnet endpoints
 
-Default testnet endpoints are used automatically. Override via the `http_endpoint`,
-`ws_endpoint`, or `grpc_endpoint` config-struct fields on the execution config if needed
-(these are not Python constructor parameters).
+The Python constructors select the default testnet endpoints automatically and do not expose
+endpoint overrides.
 
 | Service   | Default URL                                          |
 | --------- | ---------------------------------------------------- |
@@ -683,9 +680,8 @@ Default testnet endpoints are used automatically. Override via the `http_endpoin
 
 ### Mainnet endpoints
 
-Default mainnet endpoints are used automatically. Override via the `http_endpoint`,
-`ws_endpoint`, or `grpc_endpoint` config-struct fields on the execution config if needed
-(these are not Python constructor parameters).
+The Python constructors select the default mainnet endpoints automatically and do not expose
+endpoint overrides.
 
 | Service   | Default URL                                         |
 | --------- | --------------------------------------------------- |
@@ -701,92 +697,28 @@ wallet credentials.
 
 ### Data client configuration options
 
-| Option                    | Default   | Description                                                                                |
-| ------------------------- | --------- | ------------------------------------------------------------------------------------------ |
-| `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.        |
-| `network`                 | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                            |
-| `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time. |
-| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.           |
-| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.          |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                      |
-| `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                      |
-| `retry_delay_initial_ms`  | `100`     | Initial delay (milliseconds) between retries.                                              |
-| `retry_delay_max_ms`      | `5,000`   | Maximum delay (milliseconds) between retries.                                              |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                               |
-
-`base_url_http` and `base_url_ws` are config-struct fields and are not parameters of the
-Python `DydxDataClientConfig` constructor.
+| Option      | Default   | Description                                     |
+| ----------- | --------- | ----------------------------------------------- |
+| `network`   | `MAINNET` | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. |
+| `proxy_url` | `None`    | Optional proxy URL for HTTP and WebSocket use.  |
 
 ### Execution client configuration options
 
-| Option                       | Default   | Description                                                                                         |
-| ---------------------------- | --------- | --------------------------------------------------------------------------------------------------- |
-| `wallet_address`             | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.   |
-| `subaccount_number`          | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                             |
-| `private_key`                | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`. |
-| `authenticator_ids`          | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                      |
-| `network`                    | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                     |
-| `http_endpoint`              | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.          |
-| `ws_endpoint`                | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.     |
-| `grpc_endpoint`              | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.          |
-| `proxy_url`                  | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                               |
-| `max_retries`                | `3`       | Maximum retry attempts for submit/cancel/modify order operations.                                   |
-| `retry_delay_initial_ms`     | `1,000`   | Initial delay (milliseconds) between retries.                                                       |
-| `retry_delay_max_ms`         | `10,000`  | Maximum delay (milliseconds) between retries.                                                       |
-| `grpc_rate_limit_per_second` | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                         |
-| `transport_backend`          | `Sockudo` | WebSocket transport backend.                                                                        |
-
-`http_endpoint`, `ws_endpoint`, and `grpc_endpoint` are config-struct fields and are not
-parameters of the Python `DydxExecClientConfig` constructor.
+| Option              | Default   | Description                                                                       |
+| ------------------- | --------- | --------------------------------------------------------------------------------- |
+| `trader_id`         | Required  | Nautilus trader ID for the client.                                                |
+| `account_id`        | Required  | Nautilus account ID for the client.                                               |
+| `network`           | `MAINNET` | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                   |
+| `private_key`       | `None`    | Hex‑encoded signing key; falls back to the network‑specific environment variable. |
+| `wallet_address`    | `None`    | dYdX wallet address; falls back to the network‑specific environment variable.     |
+| `subaccount_number` | `0`       | Subaccount number from `0` through `127`.                                         |
+| `proxy_url`         | `None`    | Optional proxy URL for HTTP and WebSocket use.                                    |
 
 ### Basic setup
 
-Configure a live `TradingNode` to include dYdX data and execution clients:
-
-```python
-from nautilus_trader.adapters.dydx import DydxDataClientConfig
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
-from nautilus_trader.adapters.dydx import DydxNetwork
-from nautilus_trader.adapters.dydx.constants import DYDX
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import TradingNodeConfig
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        DYDX: DydxDataClientConfig(
-            wallet_address=None,  # Falls back to env var
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            network=DydxNetwork.MAINNET,
-        ),
-    },
-    exec_clients={
-        DYDX: DydxExecClientConfig(
-            wallet_address=None,  # Falls back to env var
-            private_key=None,  # Falls back to env var
-            subaccount_number=0,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            network=DydxNetwork.MAINNET,
-        ),
-    },
-)
-```
-
-Then, create a `TradingNode` and register the client factories:
-
-```python
-from nautilus_trader.adapters.dydx import DydxDataClientFactory
-from nautilus_trader.adapters.dydx import DydxExecutionClientFactory
-from nautilus_trader.adapters.dydx.constants import DYDX
-from nautilus_trader.live.node import TradingNode
-
-node = TradingNode(config=config)
-
-node.add_data_client_factory(DYDX, DydxDataClientFactory)
-node.add_exec_client_factory(DYDX, DydxExecutionClientFactory)
-
-node.build()
-```
+Use `DydxDataClientConfig` with `DydxDataClientFactory` and `DydxExecClientConfig` with
+`DydxExecutionClientFactory`. The current Python examples show the complete
+`LiveNode.builder(...)` configuration for data and execution clients.
 
 ### API credentials
 
@@ -827,31 +759,25 @@ See the [dYdX API Trading Keys guide](https://docs.dydx.xyz/concepts/trading/api
 
 #### Adapter configuration
 
-There are two ways to configure the adapter for API Trading Key usage:
-
-**Auto-resolution (recommended):** Set the API key's private key as `DYDX_PRIVATE_KEY` and the
+Set the API key's private key as `DYDX_PRIVATE_KEY` and the
 owner's wallet address as `DYDX_WALLET_ADDRESS`. The adapter detects the mismatch during connect
-and automatically queries the chain for matching authenticator IDs. No manual ID configuration
-needed.
+and automatically queries the chain for matching authenticator IDs.
 
 ```python
+from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
+
+
 config = DydxExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("DYDX-001"),
     wallet_address="dydx1owner...",  # Owner account (holds margin)
     private_key="0xapikey...",  # API Trading Key private key
-    # authenticator_ids resolved automatically
 )
 ```
 
-**Manual override:** If you know the authenticator IDs (e.g., from the dYdX TypeScript client),
-pass them directly to skip auto-resolution:
-
-```python
-config = DydxExecClientConfig(
-    wallet_address="dydx1owner...",
-    private_key="0xapikey...",
-    authenticator_ids=[1, 2],  # Skip auto-resolution
-)
-```
+The public Python config does not accept manual authenticator IDs.
 
 :::note
 API Trading Keys only work with **cross-margin** accounts and cross markets. Isolated margin

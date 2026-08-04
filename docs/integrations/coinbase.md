@@ -7,19 +7,10 @@ order execution on both spot (Cash) and CFM derivatives (Margin) accounts
 through a shared execution client, with the account type selected by the
 factory (see [Execution scope](#execution-scope)).
 
-:::note
-This adapter is Rust-only and is consumed by the v2 system (and the Rust
-`LiveNode`). It does not ship a legacy Python `TradingNode` integration;
-only configuration and enum types are exported through PyO3 so v2 Python
-entry points can construct them.
-:::
-
 ## Overview
 
-The Coinbase adapter is implemented in Rust and consumed by the v2 system.
-The adapter does not ship a legacy Python `TradingNode` integration; only
-configuration and enum types are exported through PyO3 so v2 entry points can
-construct them from Python.
+The Coinbase adapter is implemented in Rust and exposed to Python through configurations,
+factories, enums, and constants.
 
 Components:
 
@@ -31,11 +22,17 @@ Components:
 - `CoinbaseExecutionClient`: Execution client (spot or CFM derivatives; REST orders + WS streams).
 - `CoinbaseExecutionClientFactory`: Execution client factory; spot vs CFM derivatives is selected by `account_type` on the config.
 
-PyO3 surface available from `nautilus_trader.core.nautilus_pyo3.coinbase`:
+Python surface available from `nautilus_trader.adapters.coinbase`:
 
 - `CoinbaseDataClientConfig`, `CoinbaseExecClientConfig`
+- `CoinbaseDataClientFactory`, `CoinbaseExecutionClientFactory`
 - `CoinbaseEnvironment`, `CoinbaseMarginType`
-- `COINBASE` venue constant
+- `COINBASE`, `COINBASE_CLIENT_ID`, and `COINBASE_VENUE`
+
+## Examples
+
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/coinbase/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinbase/examples/)
 
 ## Coinbase documentation
 
@@ -218,9 +215,9 @@ retrieve the private key afterward.
 :::
 
 :::info
-Do not use legacy API keys from coinbase.com/settings/api (UUID format with
-HMAC-SHA256 signing). Those use a different auth scheme (`CB-ACCESS-*`
-headers) that the adapter does not support.
+Do not use expired legacy Coinbase App API keys. Create a CDP API key and select the ECDSA
+algorithm; the adapter signs requests with ES256. See Coinbase's
+[legacy key migration guide](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/legacy-keys).
 :::
 
 For full details see the Coinbase
@@ -526,15 +523,6 @@ recover canonical state in that case.
 This section documents how `CoinbaseExecutionClient` translates Nautilus
 order commands and Coinbase venue events into Nautilus execution events.
 
-:::warning
-Coinbase live execution is not approved as v2 cutover evidence. The user
-channel reports cumulative order state without Coinbase's per-fill `trade_id`,
-so its synthesized live fill IDs do not match the venue IDs returned by REST
-reconciliation. Until both paths use the same stable fill identity, the
-adapter cannot prove fill idempotence across the startup reconciliation
-window.
-:::
-
 ### Order submission
 
 `submit_order` builds the Coinbase `order_configuration` shape directly from
@@ -723,12 +711,12 @@ fill deltas remain correct.
 | `retail_portfolio_id`    | `None`    | CDP retail portfolio UUID. Required when the API key is bound to a non‑default portfolio (the venue rejects orders with `account is not available` otherwise). See [Portfolios](#portfolios). |
 | `transport_backend`      | `Sockudo` | WebSocket transport backend.                                                                                                                                                                  |
 
-Configurations are constructed from Python via the PyO3-exported types:
+Configurations are constructed from the adapter's public Python module:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import CoinbaseDataClientConfig
-from nautilus_trader.core.nautilus_pyo3 import CoinbaseExecClientConfig
-from nautilus_trader.core.nautilus_pyo3 import CoinbaseEnvironment
+from nautilus_trader.adapters.coinbase import CoinbaseDataClientConfig
+from nautilus_trader.adapters.coinbase import CoinbaseEnvironment
+from nautilus_trader.adapters.coinbase import CoinbaseExecClientConfig
 
 data_config = CoinbaseDataClientConfig(
     api_key="YOUR_COINBASE_API_KEY",
@@ -743,8 +731,8 @@ exec_config = CoinbaseExecClientConfig(
 )
 ```
 
-The v2 system instantiates the Rust factories directly from these configs;
-no Python factory wiring is required.
+The current Python examples show how to pair these configs with
+`CoinbaseDataClientFactory` and `CoinbaseExecutionClientFactory` in `LiveNode.builder(...)`.
 
 ## Known limitations
 
@@ -768,8 +756,8 @@ no Python factory wiring is required.
 - **Stable fill identity differs across live and REST paths.** The user
   channel does not provide Coinbase's per-fill `trade_id`, so live
   `FillReport` values use IDs synthesized from the venue order ID and
-  cumulative quantity. REST reconciliation uses the venue `trade_id`.
-  Coinbase live execution is therefore not approved as v2 cutover evidence.
+  cumulative quantity. REST reconciliation uses the venue `trade_id`, so the identifiers can
+  differ across live processing and reconciliation.
 - **One product family per client.** Submission, modification, cancellation,
   and report generation are filtered to the configured product family (spot
   under `AccountType::Cash`; perp + dated futures under `AccountType::Margin`).

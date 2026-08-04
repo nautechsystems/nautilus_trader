@@ -6,8 +6,8 @@ traders to speculate on event outcomes by buying and selling outcome tokens.
 NautilusTrader provides a venue integration for data and execution via Polymarket's Central Limit
 Order Book (CLOB) API.
 
-This page documents the V2 integration. The adapter is implemented in Rust and exposed to Python
-through PyO3 at `nautilus_trader.adapters.polymarket`; data, execution, signing, and WebSocket
+The adapter is implemented in Rust and exposed to Python at
+`nautilus_trader.adapters.polymarket`; data, execution, signing, and WebSocket
 operations therefore have the same behavior from Rust and Python.
 
 NautilusTrader supports multiple Polymarket signature types for order signing, which gives
@@ -16,9 +16,9 @@ preparation.
 
 ## Installation
 
-The Python v2 package includes the Polymarket adapter; no adapter-specific extra is required.
+The Python package includes the Polymarket adapter; no adapter‑specific extra is required.
 
-To install the latest Python v2 release candidate:
+To install the latest pre‑release build:
 
 ```bash
 uv pip install --pre nautilus_trader
@@ -30,12 +30,12 @@ To build the Python package from source, run from the repository root:
 make build-debug
 ```
 
-For branch development wheels and source-build prerequisites, see
-[Python v2 installation](../getting_started/installation.md#python-v2-release-candidate-wheels).
+For development wheels and source‑build prerequisites, see the
+[installation guide](../getting_started/installation.md).
 
 ## Examples
 
-The maintained V2 examples are available in
+The maintained examples are available in
 [`crates/adapters/polymarket/examples`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/polymarket/examples)
 for Rust and
 [`python/examples/polymarket`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/polymarket)
@@ -123,7 +123,7 @@ or allowance" API error when submitting orders.
 
 ### Setting EOA allowances
 
-The v2 crate includes a direct on‑chain allowance command for EOA accounts. Use it only when the
+The adapter includes a direct on‑chain allowance command for EOA accounts. Use it only when the
 funding wallet is the signer (`SignatureType::Eoa`). Fund the EOA with POL for gas, set
 `POLYMARKET_PK`, and run:
 
@@ -153,9 +153,9 @@ also need the account's signature type. The authenticated request maps to
 
 ## API keys
 
-The v2 execution client requires CLOB L2 credentials. Create or derive them with Polymarket's
-[API authentication flow](https://docs.polymarket.com/getting-started/api#authentication). The v2
-crate provides a command that reads `POLYMARKET_PK` and prints the created or derived credentials:
+The execution client requires CLOB L2 credentials. Create or derive them with Polymarket's
+[API authentication flow](https://docs.polymarket.com/getting-started/api#authentication). The
+adapter provides a command that reads `POLYMARKET_PK` and prints the created or derived credentials:
 
 ```bash
 cargo run -p nautilus-polymarket --bin polymarket-create-api-key
@@ -168,7 +168,7 @@ Set the returned values as:
 - `POLYMARKET_PASSPHRASE`
 
 The credentials authenticate the private‑key signer, not a proxy or Deposit Wallet funder. The
-public v2 data client does not require these credentials.
+public data client does not require these credentials.
 
 ## Configuration
 
@@ -564,7 +564,7 @@ Polymarket order ID (`venue_order_id`). The execution reconciliation procedure f
 - Compare these reports with Nautilus execution state.
 - Generate missing orders to bring Nautilus execution state in line with positions reported by Polymarket.
 
-Polymarket does not directly return orders that are no longer active. The V2 adapter recovers a
+Polymarket does not directly return orders that are no longer active. The adapter recovers a
 cached individual order from trade history when its terminal WebSocket update is missed.
 Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement states do not.
 
@@ -647,13 +647,13 @@ in `nautilus_polymarket::common::consts`.
 
 ### Exec tester close residuals
 
-`close_positions_qty_precision` is a general v2 `ExecTesterConfig` option. It defaults to
-`None`, which submits the full position quantity. The Rust and Python v2 Polymarket examples set it
-to `2` because [market order maker amounts allow two decimals](#precision-limits). Legacy v1
-testers are unchanged. The examples also set `close_positions_time_in_force=IOC`; custom
+`close_positions_qty_precision` is an `ExecTesterConfig` option. It defaults to `None`, which
+submits the full position quantity. The Rust and Python Polymarket examples set it to `2` because
+[market order maker amounts allow two decimals](#precision-limits). The examples also set
+`close_positions_time_in_force=IOC`; custom
 configurations must use `IOC` or `FOK` because Polymarket rejects `GTC` market orders.
 
-On stop, the v2 tester truncates only the submitted market SELL quantity to the configured decimal
+On stop, the tester truncates only the submitted market SELL quantity to the configured decimal
 precision and logs the exact difference at WARN level. It does not round the position state or
 create a synthetic fill.
 
@@ -869,7 +869,7 @@ ones are full and closing a secondary connection once it owns no assets.
 ## Rate limiting
 
 Polymarket applies Cloudflare IP limits to its APIs and separate per-signer token buckets to CLOB
-order and cancellation requests. The V2 adapter enforces the signer limits in process. All clients
+order and cancellation requests. The adapter enforces the signer limits in process. All clients
 for one signer use the same limiter, which has independent order and cancellation buckets.
 
 ### Per-signer CLOB trading limits
@@ -944,7 +944,7 @@ Polymarket changes these quotas over time. As of 2026-07-10, the official limits
 
 ### WebSocket limits
 
-The WebSocket quotas are not part of the published REST rate-limits table. The V2 adapter enforces
+The WebSocket quotas are not part of the published REST rate‑limits table. The adapter enforces
 `ws_max_subscriptions` (default 200) by sharding subscriptions across a pool of market connections.
 
 :::warning
@@ -974,9 +974,9 @@ The following limitations are currently known:
   minimum order size. Position reconciliation therefore tolerates differences through 0.009999
   shares and reconciles differences of 0.01 shares or more.
 
-## V2 client configuration
+## Client configuration
 
-Rust structs and PyO3 classes expose the same V2 client configuration. The only Rust-only fields
+Rust structs and Python classes expose the same client configuration. The only Rust‑only fields
 are the programmatic `filters` and `new_market_filter` trait objects on
 `PolymarketDataClientConfig`.
 
@@ -1069,11 +1069,11 @@ Pass `PolymarketInstrumentProviderConfig` as `instrument_config` on the data cli
 | `market_slugs`       | `None`  | Load the listed Gamma market slugs at bootstrap.        |
 | `event_slug_builder` | `None`  | Rust‑backed Up/Down event‑slug generator.               |
 | `log_warnings`       | `true`  | Emit provider warnings.                                 |
-| `use_gamma_markets`  | `false` | Compatibility field with no additional V2 behavior.     |
+| `use_gamma_markets`  | `false` | Reserved compatibility field with no additional effect. |
 
 #### Gamma query filters
 
-The Rust v2 adapter uses the Gamma market and event keyset endpoints. It validates filters before
+The adapter uses the Gamma market and event keyset endpoints. It validates filters before
 the first HTTP request, follows `next_cursor`, and applies the endpoint page ceilings of 100 markets
 and 500 events.
 
@@ -1107,8 +1107,8 @@ producing two instruments. `max_events` caps events locally; each event can cont
 values.
 
 The provider `filters` dictionary accepts strings in the native Rust config and also accepts Python
-`bool`, `int`, finite `float`, string, or lists of those scalar values when converting a legacy
-Python-shaped config. The legacy-shaped conversion ignores `None` entries; native config entries
+`bool`, `int`, finite `float`, string, or lists of those scalar values when converting a
+mapping‑shaped Python config. The Python conversion ignores `None` entries; native config entries
 must be strings. `is_active=true` supplies `active=true`, `archived=false`, and `closed=false`;
 explicit values override those defaults. Unknown keys, malformed values, empty lists, invalid date
 or numeric bounds, and invalid combinations raise `ValueError` during Python config conversion.
@@ -1119,7 +1119,7 @@ references for the venue contract.
 
 #### Event slug builder
 
-The Rust Python v2 adapter treats Python as a configuration, factory, and user strategy boundary.
+The adapter treats Python as a configuration, factory, and user strategy boundary.
 Provider, data, and execution operations run in Rust. `event_slug_builder` therefore accepts a
 Rust-backed `PolymarketUpDownEventSlugConfig`; it does not accept Python callable paths.
 
@@ -1142,12 +1142,12 @@ instrument_config = PolymarketInstrumentProviderConfig(
 ```
 
 For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, or add a Rust
-filter or builder. The Rust v2 adapter rejects Python callable `event_slug_builder` values so adapter
+filter or builder. The adapter rejects Python callable `event_slug_builder` values so adapter
 operations do not cross into Python during live trading.
 
-## Python v2 discovery and historical data
+## Python discovery and historical data
 
-The Python v2 package exports a Rust-backed `PolymarketDataLoader` for public discovery,
+The Python package exports a Rust‑backed `PolymarketDataLoader` for public discovery,
 instrument construction, and historical trades. It uses the Rust Gamma, CLOB, and Data API clients,
 so it does not require trading credentials or run networking in Python.
 
@@ -1252,45 +1252,6 @@ offset-based pagination at 10,000; if that ceiling is reached, an unanchored req
 available partial result and logs a warning. A start-anchored request raises an error at the ceiling
 because Rust cannot guarantee complete results from the requested start; narrow the time window and
 retry.
-
-The legacy v1 loader also exposes lower-level raw fetch and parse methods, Python HTTP injection,
-and convenience scripts. Those v1-only APIs remain under the top-level legacy package and are not
-part of the Python v2 facade.
-
-## Developer test matrix
-
-### Generic subscription commands
-
-| Test ID | Command             | Disposition | Matrix |
-| ------- | ------------------- | ----------- | ------ |
-| TC-D02  | Singular instrument | Supported   | Run    |
-| TC-D12  | `OrderBookDepth10`  | Unsupported | Skip   |
-| TC-D60  | Instrument status   | Unsupported | Skip   |
-| TC-D61  | Instrument close    | Unsupported | Skip   |
-
-- TC-D02 receives live definition publications from the shared instrument sources. It does not
-  replay a cached definition. Unsubscribe removes the per-instrument data-engine handler without
-  stopping bootstrap, refresh, new-market, or tick-size-change publishers.
-- TC-D12 has no separate Polymarket feed. Use managed `L2_MBP` deltas; the adapter does not
-  synthesize a second book stream from its local book.
-- TC-D60 cannot own delivery: new-market status belongs to configured discovery, while resolution
-  status belongs to open-position tracking. A generic command cannot start or stop either source.
-- TC-D61 cannot own delivery: resolution close events belong to open-position tracking and must
-  remain active until exposure closes. A generic unsubscribe cannot stop that source.
-
-The unsupported commands return an explicit error when called directly. This does not remove the
-resolution behavior described in [Market resolution events](#market-resolution-events): the data
-client still emits `InstrumentStatus` and `InstrumentClose` for position-tracked legs.
-
-For `DataTesterConfig` and live capability matrices:
-
-- Enable `subscribe_instrument` for TC-D02 and set `update_instruments_interval_mins=1` so the
-  matrix observes a real Gamma refresh rather than a cached replay.
-- Record TC-D12 as skipped. Exercise the supported book contract with `subscribe_book_deltas=true`
-  and `manage_book=true`; set `book_levels_to_print=10` when only the top ten levels need display.
-- Record TC-D60 and TC-D61 as skipped. Leave `subscribe_instrument_status` and
-  `subscribe_instrument_close` disabled because their resolution events require position-owned
-  lifecycle state rather than generic subscription ownership.
 
 ## Contributing
 

@@ -9,7 +9,8 @@ This integration supports live market data ingest and order execution with AX Ex
 
 ## Examples
 
-You can find live example scripts in the [examples/live/architect_ax](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/) directory.
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/architect_ax/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/architect_ax/examples/)
 
 ## Overview
 
@@ -23,8 +24,8 @@ depending on the use case.
 - `AxInstrumentProvider`: Instrument parsing and loading functionality.
 - `AxDataClient`: A market data feed manager.
 - `AxExecutionClient`: An account management and trade execution gateway.
-- `AxLiveDataClientFactory`: Factory for AX data clients (used by the trading node builder).
-- `AxLiveExecClientFactory`: Factory for AX execution clients (used by the trading node builder).
+- `AxDataClientFactory`: Factory for AX data clients.
+- `AxExecutionClientFactory`: Factory for AX execution clients.
 
 :::note
 Most users will define a configuration for a live trading node (as below),
@@ -89,7 +90,7 @@ symbols use the `-PERP` suffix. Dated symbols include their year and contract mo
 The venue identifier is `AX`. To construct a Nautilus `InstrumentId`:
 
 ```python
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("EURUSD-PERP.AX")
 ```
@@ -126,25 +127,11 @@ export AX_API_KEY="your-sandbox-api-key"
 export AX_API_SECRET="your-sandbox-api-secret"
 ```
 
-#### 4. Configure the trading node
+#### 4. Configure the live node
 
-```python
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        AX: AxDataClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-    exec_clients={
-        AX: AxExecClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-)
-```
+Set `environment=AxEnvironment.SANDBOX` on the data and execution client configs. See the
+[Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/architect_ax/)
+for complete `LiveNode` setup.
 
 ### Production
 
@@ -380,86 +367,47 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
 | `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
 | `base_url_http`                    | `None`    | Override for the REST base URL.                                     |
-| `base_url_ws`                      | `None`    | Override for the market data WebSocket URL.                         |
+| `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                         |
+| `base_url_ws_private`              | `None`    | Override for the private orders WebSocket URL.                      |
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `transport_backend`                | `None`    | Override the compiled WebSocket transport default.                  |
 | `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                |
 | `max_retries`                      | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`           | `1000`    | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`               | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
 | `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.             |
+| `recv_window_ms`                   | `5,000`   | Receive window (milliseconds) for signed requests.                  |
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
 | `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                        |
 
 ### Execution client configuration options
 
-| Option                    | Default   | Description                                                         |
-| ------------------------- | --------- | ------------------------------------------------------------------- |
-| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`           | `None`    | Override for the market data REST base URL.                         |
-| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
-| `base_url_ws`             | `None`    | Override for the orders WebSocket URL.                              |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `transport_backend`       | `None`    | Override the compiled WebSocket transport default.                  |
-| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`  | `1000`    | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`      | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
-| `cancel_on_disconnect`    | `false`   | Cancel this WebSocket session's open orders on disconnect.          |
+| Option                    | Default      | Description                                                         |
+| ------------------------- | ------------ | ------------------------------------------------------------------- |
+| `trader_id`               | `TRADER-001` | Trader ID for the execution client.                                 |
+| `account_id`              | `AX-001`     | Account ID for the execution client.                                |
+| `api_key`                 | `None`       | API key; loaded from `AX_API_KEY` env var when omitted.             |
+| `api_secret`              | `None`       | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
+| `environment`             | `SANDBOX`    | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
+| `base_url_http`           | `None`       | Override for the market data REST base URL.                         |
+| `base_url_orders`         | `None`       | Override for the orders REST base URL.                              |
+| `base_url_ws_private`     | `None`       | Override for the orders WebSocket URL.                              |
+| `proxy_url`               | `None`       | Optional proxy URL for HTTP and WebSocket transports.               |
+| `http_timeout_secs`       | `60`         | Timeout (seconds) for REST requests.                                |
+| `max_retries`             | `3`          | Maximum retry attempts for REST requests.                           |
+| `retry_delay_initial_ms`  | `1,000`      | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`      | `10,000`     | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `heartbeat_interval_secs` | `30`         | Heartbeat interval (seconds) for WebSocket connections.             |
+| `recv_window_ms`          | `5,000`      | Receive window (milliseconds) for signed requests.                  |
+| `cancel_on_disconnect`    | `False`      | Cancel this WebSocket session's open orders on disconnect.          |
+| `transport_backend`       | `Sockudo`    | WebSocket transport backend.                                        |
 
 When `transport_backend=None`, the compiled Rust default selects Sockudo when the
 `transport-sockudo` Cargo feature is enabled and Tungstenite otherwise.
 
-The most common use case is to configure a live `TradingNode` to include AX Exchange
-data and execution clients. To achieve this, add an `AX` section to your client
-configuration(s):
-
-```python
-from nautilus_trader.adapters.architect_ax import AX
-from nautilus_trader.adapters.architect_ax import AxDataClientConfig
-from nautilus_trader.adapters.architect_ax import AxEnvironment
-from nautilus_trader.adapters.architect_ax import AxExecClientConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import TradingNodeConfig
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        AX: AxDataClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-    exec_clients={
-        AX: AxExecClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-)
-```
-
-Then, create a `TradingNode` and add the client factories:
-
-```python
-from nautilus_trader.adapters.architect_ax import AX
-from nautilus_trader.adapters.architect_ax import AxLiveDataClientFactory
-from nautilus_trader.adapters.architect_ax import AxLiveExecClientFactory
-from nautilus_trader.live.node import TradingNode
-
-# Instantiate the live trading node with a configuration
-node = TradingNode(config=config)
-
-# Register the client factories with the node
-node.add_data_client_factory(AX, AxLiveDataClientFactory)
-node.add_exec_client_factory(AX, AxLiveExecClientFactory)
-
-# Finally build the node
-node.build()
-```
+Use `AxDataClientConfig` with `AxDataClientFactory` and `AxExecClientConfig` with
+`AxExecutionClientFactory`. The current Python examples show the complete `LiveNode.builder(...)`
+configuration for data and execution clients.
 
 ### API credentials
 
