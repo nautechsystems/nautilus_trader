@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from decimal import Decimal
 import json
+from decimal import Decimal
 from typing import Any
 from unittest.mock import ANY
 from unittest.mock import AsyncMock
@@ -42,8 +42,8 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeOrderBook
+from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -357,11 +357,12 @@ async def test_tc_d14_reconnect_frame_restores_adapter_engine_and_cache(
     aiohttp_server,
 ) -> None:
     connection_count = 0
+    allow_delta = asyncio.Event()
     snapshot = {
         "event_type": "book",
         "market": "0xMARKET",
         "asset_id": "0xASSET",
-        "bids": [{"price": "0.49", "size": "10"}],
+        "bids": [{"price": "0.48", "size": "10"}],
         "asks": [{"price": "0.51", "size": "8"}],
         "timestamp": "1700000000000",
         "hash": "",
@@ -391,11 +392,11 @@ async def test_tc_d14_reconnect_frame_restores_adapter_engine_and_cache(
             if message.type is not WSMsgType.TEXT:
                 continue
             json.loads(message.data)
-            await ws.send_json([snapshot])
             if this_connection == 1:
                 await ws.close()
                 break
-            await asyncio.sleep(0.05)
+            await ws.send_json([snapshot])
+            await allow_delta.wait()
             await ws.send_json(delta)
         return ws
 
@@ -450,6 +451,15 @@ async def test_tc_d14_reconnect_frame_restores_adapter_engine_and_cache(
             instrument.id in client._local_books
             and cache.order_book(instrument.id) is not None
             and client._local_books[instrument.id].best_bid_price()
+            == Price.from_str("0.48")
+            and cache.order_book(instrument.id).best_bid_price()
+            == Price.from_str("0.48")
+        )
+    )
+    allow_delta.set()
+    await eventually(
+        lambda: (
+            client._local_books[instrument.id].best_bid_price()
             == Price.from_str("0.50")
             and cache.order_book(instrument.id).best_bid_price()
             == Price.from_str("0.50")
