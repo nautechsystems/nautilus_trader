@@ -17,14 +17,14 @@ use std::{cmp, fmt::Display, time::Duration};
 
 use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 
-/// Information about the rate-limiting state used to reach a decision.
+/// Rate‑limiting parameters captured for a rejected decision.
+///
+/// `t` is one cell's weight in time, `tau` is the burst capacity in time, and `tat` is the
+/// theoretical arrival time used to calculate the next admissible request.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct StateSnapshot {
-    /// The "weight" of a single packet in units of time.
     t: Nanos,
-    /// The "burst capacity" of the bucket.
     tau: Nanos,
-    /// The next time a cell is expected to arrive
     pub(crate) tat: Nanos,
 }
 
@@ -52,7 +52,7 @@ pub struct NotUntil<P: clock::Reference> {
 }
 
 impl<P: clock::Reference> NotUntil<P> {
-    /// Create a `NotUntil` as a negative rate-limiting result.
+    /// Creates a `NotUntil` as a negative rate‑limiting result.
     #[inline]
     pub(crate) const fn new(state: StateSnapshot, start: P) -> Self {
         Self { state, start }
@@ -92,12 +92,10 @@ impl<P: clock::Reference> Display for NotUntil<P> {
     }
 }
 
+// GCRA parameters: `t` is one cell's weight in time, and `tau` is burst capacity in time
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Gcra {
-    /// The "weight" of a single packet in units of time.
     t: Nanos,
-
-    /// The "burst capacity" of the bucket.
     tau: Nanos,
 }
 

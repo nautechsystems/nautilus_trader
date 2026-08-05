@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Connection mode enumeration for socket clients.
+//! Shared connection state for socket clients.
 
 use std::sync::{
     Arc,
@@ -49,9 +49,10 @@ impl ReadSessionFence {
     }
 }
 
-/// Connection mode for a socket client.
+/// The lifecycle state of a socket client.
 ///
-/// The client can be in one of four modes (managed via an atomic flag).
+/// Clients store the active, reconnecting, disconnecting, or closed state in an atomic flag so
+/// transport tasks can coordinate lifecycle transitions across threads.
 #[derive(Clone, Copy, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
 #[repr(u8)]
 #[strum(serialize_all = "UPPERCASE")]
@@ -72,7 +73,7 @@ pub enum ConnectionMode {
 }
 
 impl ConnectionMode {
-    /// Convert a u8 to [`ConnectionMode`], useful when loading from an `AtomicU8`.
+    /// Converts a `u8` loaded from an [`AtomicU8`] into a [`ConnectionMode`].
     ///
     /// # Panics
     ///
@@ -89,7 +90,7 @@ impl ConnectionMode {
         }
     }
 
-    /// Load a [`ConnectionMode`] from an [`AtomicU8`] using sequential consistency ordering.
+    /// Loads a [`ConnectionMode`] from an [`AtomicU8`] using sequential consistency.
     #[inline]
     #[must_use]
     pub fn from_atomic(value: &AtomicU8) -> Self {
@@ -126,7 +127,7 @@ impl ConnectionMode {
             .is_ok()
     }
 
-    /// Convert a [`ConnectionMode`] to a u8, useful when storing to an `AtomicU8`.
+    /// Converts a [`ConnectionMode`] to its `u8` representation.
     #[inline]
     #[must_use]
     pub const fn as_u8(self) -> u8 {

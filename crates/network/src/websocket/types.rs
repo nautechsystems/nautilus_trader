@@ -67,13 +67,8 @@ pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 
 /// Creates a channel-based message handler.
 ///
-/// Returns a tuple containing the message handler and a receiver for messages.
-///
-/// During the migration to the [`crate::transport`] abstraction the receiver still
-/// yields `tokio_tungstenite::tungstenite::Message` so the 18 adapter crates keep
-/// compiling unchanged. The neutral [`Message`] is converted at the channel
-/// boundary; phase 3 of the migration switches both ends to the neutral type and
-/// removes this shim.
+/// The handler accepts neutral [`Message`] values. The receiver yields
+/// `tokio_tungstenite::tungstenite::Message` values for adapter compatibility.
 #[must_use]
 pub fn channel_message_handler() -> (
     MessageHandler,
@@ -117,13 +112,13 @@ pub fn channel_epoch_message_handler() -> (
     (handler, rx)
 }
 
-/// Represents a command for the writer task.
+/// A command processed by the WebSocket writer task.
 pub(crate) enum WriterCommand {
-    /// Update the writer reference with a new one after reconnection.
+    /// Replaces the writer after reconnection.
     Update(MessageWriter, tokio::sync::oneshot::Sender<u64>),
-    /// Send message to the server.
+    /// Sends a message to the server.
     Send(Message),
-    /// Send once if the active connection still owns the message.
+    /// Sends once if the active connection still owns the message.
     SendOnConnection {
         message: Message,
         connection_epoch: u64,

@@ -76,28 +76,31 @@ impl AuthState {
     }
 }
 
-/// Generic authentication state tracker for WebSocket connections.
+/// Tracks authentication state for WebSocket connections.
 ///
-/// Coordinates authentication attempts by providing a channel-based signaling
-/// mechanism. Each authentication attempt receives a dedicated oneshot channel
-/// that will be resolved when the server responds.
+/// Each authentication attempt receives a dedicated oneshot channel that resolves when the server
+/// responds.
 ///
-/// # State Management
+/// # State management
 ///
-/// The tracker maintains a three-state machine:
-/// - `Unauthenticated`: after `begin()`, `invalidate()`, or initial construction.
-/// - `Authenticated`: after `succeed()`. Queryable via `is_authenticated()`.
-/// - `Failed`: after `fail()`. Causes `wait_for_authenticated()` to return early.
+/// The tracker maintains three states:
 ///
-/// # Superseding Behavior
+/// - [`AuthState::Unauthenticated`]: The initial state and the state after [`Self::begin`] or
+///   [`Self::invalidate`].
+/// - [`AuthState::Authenticated`]: The state after [`Self::succeed`].
+/// - [`AuthState::Failed`]: The state after [`Self::fail`]. Authentication waiters return early in
+///   this state.
 ///
-/// If a new authentication attempt begins while a previous one is pending,
-/// the old attempt is automatically cancelled with an error. This prevents
-/// auth response race conditions during rapid reconnections.
+/// # Superseding behavior
 ///
-/// # Thread Safety
+/// If a new authentication attempt begins while another remains pending, the old attempt is
+/// cancelled with an error. This prevents responses from an earlier attempt from racing with a
+/// later attempt during rapid reconnections.
 ///
-/// All operations are thread-safe and can be called concurrently from multiple tasks.
+/// # Thread safety
+///
+/// Clones share the pending attempt and session state. All operations are thread‑safe and can run
+/// concurrently from multiple tasks.
 #[derive(Clone, Debug)]
 pub struct AuthTracker {
     tx: Arc<Mutex<Option<AuthResultSender>>>,

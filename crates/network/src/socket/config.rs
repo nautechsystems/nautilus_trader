@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Socket configuration.
+//! Static transport, framing, heartbeat, and reconnect configuration for TCP sockets.
 //!
-//! # Reconnection Strategy
+//! # Reconnection strategy
 //!
 //! The default configuration uses unlimited reconnection attempts (`reconnect_max_attempts: None`).
-//! This is intentional for trading systems because:
-//! - Venues may be down for extended periods but eventually recover.
-//! - Exponential backoff already prevents resource waste.
-//! - Automatic recovery can be useful when manual intervention is not desirable.
+//! This suits long‑lived trading connections because:
 //!
-//! A reconnect active for at least 10 seconds resets its attempt count and backoff delay.
-//! Shorter-lived connections continue the current reconnect cycle.
+//! - Venues may remain unavailable for an extended period and later recover.
+//! - Exponential backoff bounds retry frequency during the outage.
+//! - Automatic recovery avoids requiring manual intervention for a transient failure.
 //!
-//! Use `Some(n)` primarily for testing, development, or non-critical connections.
+//! A connection active for at least 10 seconds resets the attempt count and backoff delay.
+//! Shorter‑lived connections remain part of the same reconnect cycle. Use `Some(n)` primarily for
+//! tests, development, or connections that should stop retrying without intervention.
 
 use std::fmt::Debug;
 
@@ -35,19 +35,19 @@ use tokio_tungstenite::tungstenite::stream::Mode;
 use super::types::TcpMessageHandler;
 use crate::error::{NetworkConfigError, NetworkConfigResult};
 
-/// Configuration for TCP socket connection.
+/// Configuration for a TCP socket connection.
 #[derive(bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 pub struct SocketConfig {
-    /// The URL to connect to.
+    /// The server address as `host:port` or a URL.
     pub url: String,
-    /// The connection mode {Plain, TLS}.
+    /// The plain or TLS connection mode.
     pub mode: Mode,
-    /// The sequence of bytes which separates lines.
+    /// The byte sequence that frames messages in both directions.
     pub suffix: Vec<u8>,
-    /// The optional function to handle incoming messages.
+    /// The function called for each complete incoming message.
     pub message_handler: Option<TcpMessageHandler>,
-    /// The optional heartbeat with period and beat message.
+    /// The optional heartbeat as `(interval_seconds, payload)`.
     pub heartbeat: Option<(u64, Vec<u8>)>,
     /// The timeout (milliseconds) for reconnection attempts.
     pub reconnect_timeout_ms: Option<u64>,
@@ -59,17 +59,19 @@ pub struct SocketConfig {
     pub reconnect_backoff_factor: Option<f64>,
     /// The maximum jitter (milliseconds) added to reconnection delays.
     pub reconnect_jitter_ms: Option<u64>,
-    /// The maximum number of initial connection attempts (default: 5).
+    /// The maximum number of initial connection attempts. Defaults to 5.
     pub connection_max_retries: Option<u32>,
-    /// The maximum number of reconnection attempts before giving up.
+    /// The maximum number of reconnection attempts before closing the client.
+    ///
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
     /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
     ///   failed or established connections active for less than 10 seconds.
     pub reconnect_max_attempts: Option<u32>,
     /// The idle timeout (milliseconds) for the read task.
-    /// When set, the read task will break and trigger reconnection if no data
-    /// is received within this duration. Useful for detecting silently dead
-    /// connections where the server stops sending without closing.
+    ///
+    /// When set, the read task stops and triggers reconnection if it receives no data within this
+    /// duration. This detects silently dead connections where the server stops sending without
+    /// closing the connection.
     pub idle_timeout_ms: Option<u64>,
     /// The path to the certificates directory.
     pub certs_dir: Option<String>,

@@ -13,20 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! High-performance raw TCP client implementation with TLS capability, automatic reconnection
-//! with exponential backoff and state management.
+//! Raw TCP client with optional TLS, suffix framing, heartbeats, and automatic reconnection.
 //!
-//! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
-//! - Synchronized reconnection with backoff.
-//! - Split read/write architecture.
+//! # State management
 //!
-//! **Design**:
-//! - Single reader, multiple writer model.
-//! - Read half runs in dedicated task.
-//! - Write half runs in dedicated task connected with channel.
-//! - Controller task manages lifecycle.
-//! - Event-driven state notification via `Notify` for immediate wakeup on transitions.
+//! The client tracks active, reconnecting, disconnecting, and closed states. State changes notify
+//! waiting tasks immediately instead of relying only on periodic checks.
+//!
+//! # Connection ownership
+//!
+//! A controller owns the connection lifecycle. A dedicated reader task passes complete messages to
+//! the configured callback, while a dedicated writer task serializes concurrent sends received over
+//! a channel.
+//!
+//! # Framing and heartbeats
+//!
+//! The configured suffix frames the byte stream in both directions. The writer appends it to sent
+//! messages and heartbeats, and the reader uses it to split incoming data into complete messages.
+//! Heartbeats are optional and run in a separate task.
+//!
+//! # Reconnection
+//!
+//! The writer buffers messages while reconnecting. A successful reconnect installs the replacement
+//! writer, drains that buffer, restarts the reader, and then invokes the configured
+//! post‑reconnection callback.
 
 use std::{
     collections::VecDeque,
@@ -66,21 +76,6 @@ const WRITE_TIMEOUT_SECS: u64 = 5;
 // Maximum buffer size for read operations (10 MB)
 const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
 
-/// Creates a `TcpStream` with the server.
-///
-/// The stream can be encrypted with TLS or Plain. The stream is split into
-/// read and write ends:
-/// - The read end is passed to the task that keeps receiving
-///   messages from the server and passing them to a handler.
-/// - The write end is passed to a task which receives messages over a channel
-///   to send to the server.
-///
-/// The heartbeat is optional and can be configured with an interval and data to
-/// send.
-///
-/// The client uses a suffix to separate messages on the byte stream. It is
-/// appended to all sent messages and heartbeats. It is also used to split
-/// the received byte stream.
 struct SocketClientInner {
     config: SocketConfig,
     connector: Option<Arc<rustls::ClientConfig>>,
@@ -98,7 +93,7 @@ struct SocketClientInner {
 }
 
 impl SocketClientInner {
-    /// Connect to a URL with the specified configuration.
+    /// Connects to a URL with the specified configuration.
     ///
     /// # Errors
     ///
@@ -257,7 +252,7 @@ impl SocketClientInner {
         })
     }
 
-    /// Parse URL and extract socket address and request URL.
+    /// Parses a URL into its socket address and request URL.
     ///
     /// Accepts either:
     /// - Raw socket address: "host:port" → returns ("host:port", "scheme://host:port")
@@ -344,7 +339,7 @@ impl SocketClientInner {
         }
     }
 
-    /// Reconnect with server.
+    /// Reconnects to the server.
     ///
     /// Makes a new connection with server, uses the new read and write halves
     /// to update the reader and writer.
@@ -465,7 +460,7 @@ impl SocketClientInner {
         Ok(())
     }
 
-    /// Check if the client is still alive.
+    /// Returns whether the read and write tasks are still running.
     ///
     /// Returns `true` if both the read and write tasks are still running.
     /// There may be some delay between the connection closing and the
@@ -874,6 +869,11 @@ impl CleanDrop for SocketClientInner {
     }
 }
 
+/// A suffix‑framed TCP client with optional TLS and automatic reconnection.
+///
+/// The internal writer task serializes concurrent calls to [`Self::send_bytes`]. The configured
+/// suffix frames all sent and received messages, and an optional heartbeat task sends its payload
+/// at the configured interval. See [`SocketConfig`] for framing and reconnect policy.
 pub struct SocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
@@ -889,7 +889,11 @@ impl Debug for SocketClient {
 }
 
 impl SocketClient {
-    /// Connect to the server.
+    /// Connects to the server.
+    ///
+    /// After a successful reconnect, `post_reconnection` runs after the replacement writer is
+    /// installed, buffered messages are drained, and the replacement reader is started. The
+    /// callback does not run after the initial connection.
     ///
     /// # Errors
     ///
@@ -925,7 +929,7 @@ impl SocketClient {
         ConnectionMode::from_atomic(&self.connection_mode)
     }
 
-    /// Check if the client connection is active.
+    /// Returns whether the client connection is active.
     ///
     /// Returns `true` if the client is connected and has not been signalled to disconnect.
     /// The client will automatically retry connection based on its configuration.
@@ -935,7 +939,7 @@ impl SocketClient {
         self.connection_mode().is_active()
     }
 
-    /// Check if the client is reconnecting.
+    /// Returns whether the client is reconnecting.
     ///
     /// Returns `true` if the client lost connection and is attempting to reestablish it.
     /// The client will automatically retry connection based on its configuration.
@@ -945,7 +949,7 @@ impl SocketClient {
         self.connection_mode().is_reconnect()
     }
 
-    /// Check if the client is disconnecting.
+    /// Returns whether the client is disconnecting.
     ///
     /// Returns `true` if the client is in disconnect mode.
     #[inline]
@@ -954,7 +958,7 @@ impl SocketClient {
         self.connection_mode().is_disconnect()
     }
 
-    /// Check if the client is closed.
+    /// Returns whether the client is closed.
     ///
     /// Returns `true` if the client has been explicitly disconnected or reached
     /// maximum reconnection attempts. In this state, the client cannot be reused
@@ -1060,7 +1064,7 @@ impl SocketClient {
 
     /// Sends a message of the given `data`.
     ///
-    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does not
     /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
     /// message. During reconnection, messages are buffered and replayed on the new connection.
     ///

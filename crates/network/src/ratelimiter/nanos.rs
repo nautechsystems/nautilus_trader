@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A time-keeping abstraction (nanoseconds) that works for storing in an atomic integer.
+//! Nanosecond values suitable for atomic storage.
 
 use std::{
     fmt::Debug,
@@ -25,8 +25,7 @@ use super::clock;
 
 /// A number of nanoseconds from a reference point.
 ///
-/// Nanos can not represent durations >584 years, but hopefully that
-/// should not be a problem in real-world applications.
+/// Values are limited to `u64::MAX` nanoseconds, or approximately 584 years.
 #[derive(PartialEq, Eq, Default, Clone, Copy, PartialOrd, Ord)]
 pub struct Nanos(u64);
 

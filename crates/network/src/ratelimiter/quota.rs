@@ -47,7 +47,7 @@ pub struct Quota {
 
 /// Constructors for Quotas
 impl Quota {
-    /// Construct a quota for a number of cells per second. The given number of cells is also
+    /// Constructs a quota for a number of cells per second. The given number of cells is also
     /// assumed to be the maximum burst size.
     ///
     /// Returns `None` if `max_burst` is so large that the replenish interval rounds to zero
@@ -64,8 +64,8 @@ impl Quota {
         })
     }
 
-    /// Construct a quota for a number of cells per 60-second period. The given number of cells is
-    /// also assumed to be the maximum burst size.
+    /// Constructs a quota for a number of cells per 60‑second period. The given number of cells
+    /// is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_minute(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_mins(1).as_nanos() / (max_burst.get() as u128);
@@ -75,8 +75,8 @@ impl Quota {
         }
     }
 
-    /// Construct a quota for a number of cells per 60-minute (3600-second) period. The given number
-    /// of cells is also assumed to be the maximum burst size.
+    /// Constructs a quota for a number of cells per 60‑minute period. The given number of cells
+    /// is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_hours(1).as_nanos() / (max_burst.get() as u128);
@@ -86,7 +86,7 @@ impl Quota {
         }
     }
 
-    /// Construct a quota that replenishes one cell in a given interval.
+    /// Constructs a quota that replenishes one cell in a given interval.
     ///
     /// If the time interval is zero, returns `None`.
     #[must_use]

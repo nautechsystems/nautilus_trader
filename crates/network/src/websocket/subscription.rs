@@ -45,33 +45,40 @@ use ustr::Ustr;
 /// that applies to all symbols for that channel.
 pub(crate) static CHANNEL_LEVEL_MARKER: LazyLock<Ustr> = LazyLock::new(|| Ustr::from(""));
 
-/// Generic subscription state tracker for WebSocket connections.
+/// Tracks subscription intent and acknowledgment state for WebSocket connections.
 ///
-/// Maintains three separate states for subscriptions:
-/// - **Confirmed**: Successfully subscribed and actively streaming data.
-/// - **Pending Subscribe**: Subscription requested but not yet confirmed by server.
-/// - **Pending Unsubscribe**: Unsubscription requested but not yet confirmed by server.
+/// # State management
 ///
-/// # Reference Counting
+/// The tracker maintains three separate states:
 ///
-/// The tracker maintains reference counts for each topic. When multiple components
-/// subscribe to the same topic, only the first subscription sends a message to the
-/// server. Similarly, only the last unsubscription sends an unsubscribe message.
+/// - **Confirmed**: Subscriptions acknowledged by the server and expected to stream data.
+/// - **Pending subscribe**: Subscribe requests awaiting server acknowledgment.
+/// - **Pending unsubscribe**: Unsubscribe requests awaiting server acknowledgment.
 ///
-/// # Thread Safety
+/// Late subscribe acknowledgments do not revive a pending unsubscribe, and stale unsubscribe
+/// acknowledgments do not remove a later resubscription.
 ///
-/// All operations are thread-safe and can be called concurrently from multiple tasks.
+/// # Reference counting
+///
+/// Reference counts remain independent of acknowledgment state. The first consumer tells the
+/// caller to send a subscribe request, while removing the last tells it to send an unsubscribe
+/// request. The tracker records these transitions but does not send protocol messages.
+///
+/// # Topic format
+///
+/// Topics use `channel{delimiter}symbol`, with delimiters such as `.` or `:`. A topic without the
+/// delimiter represents a channel‑level subscription.
+///
+/// # Thread safety
+///
+/// Clones share all state. Operations are thread‑safe and can run concurrently from multiple
+/// tasks.
 #[derive(Clone, Debug)]
 pub struct SubscriptionState {
-    /// Confirmed active subscriptions.
     confirmed: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Pending subscribe requests awaiting server confirmation.
     pending_subscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Pending unsubscribe requests awaiting server confirmation.
     pending_unsubscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Reference counts for topics to prevent duplicate messages.
     reference_counts: Arc<DashMap<Ustr, NonZeroUsize>>,
-    /// Topic delimiter character (e.g., '.' or ':').
     delimiter: char,
 }
 
@@ -147,9 +154,8 @@ impl SubscriptionState {
 
     /// Marks a topic as pending subscription.
     ///
-    /// This should be called after sending a subscribe request to the server.
-    /// Idempotent: if topic is already confirmed, this is a no-op.
-    /// If topic is pending unsubscription, removes it.
+    /// Call this after sending a subscribe request. This operation is idempotent for a confirmed
+    /// topic and cancels any pending unsubscription for the same topic.
     pub fn mark_subscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -169,7 +175,7 @@ impl SubscriptionState {
     /// Returns `true` if the topic was newly marked as pending (should send subscribe).
     /// Returns `false` if the topic was already confirmed or pending (skip sending).
     ///
-    /// This provides atomic check-and-set semantics for concurrent subscribe calls.
+    /// The check and state transition are atomic across concurrent subscribe calls.
     pub fn try_mark_subscribe(&self, topic: &str) -> bool {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -195,9 +201,8 @@ impl SubscriptionState {
 
     /// Marks a topic as pending unsubscription.
     ///
-    /// This removes the topic from both confirmed and `pending_subscribe`,
-    /// then adds it to `pending_unsubscribe`. This handles the case where
-    /// a user unsubscribes before the initial subscription is confirmed.
+    /// Removes the topic from confirmed and `pending_subscribe` state before adding it to
+    /// `pending_unsubscribe`. This also handles unsubscription before initial confirmation.
     pub fn mark_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
         track_topic(&self.pending_unsubscribe, channel, symbol);
@@ -207,9 +212,8 @@ impl SubscriptionState {
 
     /// Confirms a subscription by moving it from pending to confirmed.
     ///
-    /// This should be called when the server acknowledges a subscribe request.
-    /// Ignores the confirmation if the topic is pending unsubscription (handles
-    /// late confirmations after user has already unsubscribed).
+    /// Call this when the server acknowledges a subscribe request. A late confirmation cannot
+    /// restore a topic that is pending unsubscription.
     pub fn confirm_subscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -224,14 +228,9 @@ impl SubscriptionState {
 
     /// Confirms an unsubscription by removing it from pending and confirmed state.
     ///
-    /// This should be called when the server acknowledges an unsubscribe request.
-    /// Removes the topic from `pending_unsubscribe` and confirmed.
-    /// Does NOT clear `pending_subscribe` to support immediate re-subscribe patterns
-    /// (e.g., user calls `subscribe()` before unsubscribe ack arrives).
-    ///
-    /// **Stale ACK handling**: Ignores unsubscribe ACKs if the topic is no longer
-    /// in `pending_unsubscribe` (meaning user has already re-subscribed). This prevents
-    /// stale ACKs from removing topics that were re-confirmed after the re-subscribe.
+    /// Call this when the server acknowledges an unsubscribe request. A stale acknowledgment is
+    /// ignored if the topic is no longer pending unsubscription. `pending_subscribe` remains intact
+    /// so an immediate resubscription survives a late unsubscribe acknowledgment.
     pub fn confirm_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -248,8 +247,8 @@ impl SubscriptionState {
 
     /// Marks a subscription as failed, moving it from confirmed back to pending.
     ///
-    /// This is useful when a subscription fails but should be retried on reconnect.
-    /// Ignores the failure if the topic is pending unsubscription (user cancelled it).
+    /// This keeps failed subscriptions available for retry after reconnect. A topic pending
+    /// unsubscription is unchanged because its subscription was cancelled.
     pub fn mark_failure(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -274,12 +273,10 @@ impl SubscriptionState {
         self.topics_from_map(&self.pending_unsubscribe)
     }
 
-    /// Returns all topics that should be active (confirmed + `pending_subscribe`).
+    /// Returns all topics that should be active after reconnect recovery.
     ///
-    /// This is the key method for reconnection: it returns all topics that should
-    /// be resubscribed after a connection is re-established.
-    ///
-    /// Note: Does NOT include `pending_unsubscribe` topics, as those are being removed.
+    /// The result includes confirmed and pending subscribe topics, but excludes pending
+    /// unsubscribe topics.
     #[must_use]
     pub fn all_topics(&self) -> Vec<String> {
         let mut topics = Vec::new();
@@ -288,7 +285,7 @@ impl SubscriptionState {
         topics
     }
 
-    /// Helper to convert a map to topic strings.
+    // Converts a subscription map to sorted topic strings
     fn topics_from_map(&self, map: &DashMap<Ustr, AHashSet<Ustr>>) -> Vec<String> {
         let mut topics = Vec::new();
         let marker = *CHANNEL_LEVEL_MARKER;
@@ -398,7 +395,7 @@ impl SubscriptionState {
 
     /// Clears all subscription state.
     ///
-    /// This is useful when reconnecting or resetting the client.
+    /// This resets confirmed, pending, and reference‑count state.
     pub fn clear(&self) {
         self.confirmed.clear();
         self.pending_subscribe.clear();

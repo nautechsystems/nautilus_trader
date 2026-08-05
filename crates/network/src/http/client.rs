@@ -41,23 +41,16 @@ const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 ///
 /// Bounds peak memory per response so a hostile or malfunctioning endpoint
 /// cannot exhaust memory by streaming an arbitrarily large body. Mirrors the
-/// caps already enforced on the WebSocket and raw-socket paths.
+/// caps already enforced on the WebSocket and raw‑socket paths.
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 
-/// An HTTP client that supports rate limiting and timeouts.
+/// An asynchronous HTTP client with rate limiting, timeouts, and custom headers.
 ///
-/// Built on `reqwest` for async I/O. Allows per-endpoint and default quotas
-/// through a rate limiter.
-///
-/// This struct is designed to handle HTTP requests efficiently, providing
-/// support for rate limiting, timeouts, and custom headers. The client is
-/// built on top of `reqwest` and can be used for both synchronous and
-/// asynchronous HTTP requests.
+/// The client uses `reqwest` for I/O and supports default and per‑key quotas. Multiple clients
+/// can share the same rate limiter when their requests consume one quota budget.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
-    /// The underlying HTTP client used to make requests.
     pub(crate) client: InnerHttpClient,
-    /// The rate limiters that control the request rate.
     pub(crate) rate_limiters: Arc<[Arc<RateLimiter<Ustr, MonotonicClock>>]>,
 }
 
@@ -86,7 +79,7 @@ impl HttpClient {
         Self::new_with_rate_limiter(headers, header_keys, timeout_secs, proxy_url, rate_limiter)
     }
 
-    /// Creates a new [`HttpClient`] instance sharing an externally-owned rate limiter.
+    /// Creates a new [`HttpClient`] instance sharing an externally‑owned rate limiter.
     ///
     /// Use this constructor to share a single [`RateLimiter`] across multiple
     /// [`HttpClient`] instances (for example, the HTTP clients owned by an
@@ -114,7 +107,7 @@ impl HttpClient {
         )
     }
 
-    /// Creates a new [`HttpClient`] instance sharing multiple externally-owned rate limiters.
+    /// Creates a new [`HttpClient`] instance sharing multiple externally‑owned rate limiters.
     ///
     /// Each request awaits every limiter with the same keys. A limiter with no default quota
     /// ignores keys it does not own, allowing independent quota scopes such as per-IP and
@@ -365,17 +358,12 @@ impl HttpClient {
 
 /// Internal implementation backing [`HttpClient`].
 ///
-/// The client is backed by a [`reqwest::Client`] which keeps connections alive and
-/// can be cloned cheaply. The client also has a list of header fields to
-/// extract from the response.
-///
-/// The client returns an [`HttpResponse`]. The client filters only the key value
-/// for the given `header_keys`.
+/// The underlying [`reqwest::Client`] reuses pooled connections and is cheap to clone. Responses
+/// retain only configured header fields, and bodies larger than `max_response_bytes` are rejected.
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
     pub(crate) response_headers: Arc<[(String, HeaderName)]>,
-    /// Maximum response body size in bytes; bodies exceeding this are rejected.
     pub(crate) max_response_bytes: usize,
 }
 

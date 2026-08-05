@@ -27,7 +27,7 @@
 //! tests that drive time via `tokio::time::advance`.
 //!
 //! `nautilus-network` sits below `nautilus-common` in the dependency graph and
-//! cannot import from `nautilus_common::live::dst`, which is why this helper
+//! cannot import from `nautilus_common::live::dst`, which is why this module
 //! is crate-local.
 
 pub mod time {

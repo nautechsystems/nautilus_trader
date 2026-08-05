@@ -21,7 +21,7 @@ use bytes::Bytes;
 use http::{StatusCode, status::InvalidStatusCode};
 use reqwest::Method;
 
-/// Represents a HTTP status code.
+/// An HTTP status code.
 ///
 /// Wraps [`http::StatusCode`] to reuse its validation and convenience methods.
 #[derive(Clone, Debug)]
@@ -30,7 +30,7 @@ pub struct HttpStatus {
 }
 
 impl HttpStatus {
-    /// Create a new [`HttpStatus`] instance from a given [`StatusCode`].
+    /// Creates an [`HttpStatus`] from a [`StatusCode`].
     #[must_use]
     pub const fn new(code: StatusCode) -> Self {
         Self { inner: code }
@@ -101,7 +101,7 @@ impl TryFrom<u16> for HttpStatus {
     }
 }
 
-/// Represents the HTTP methods supported by the `HttpClient`.
+/// An HTTP method supported by [`super::HttpClient`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HttpMethod {
     GET,
@@ -123,10 +123,7 @@ impl From<HttpMethod> for Method {
     }
 }
 
-/// Represents the response from an HTTP request.
-///
-/// This struct encapsulates the status, headers, and body of an HTTP response,
-/// providing easy access to the key components of the response.
+/// The status, selected headers, and raw body returned by an HTTP request.
 #[derive(Clone, Debug)]
 pub struct HttpResponse {
     /// The HTTP status code.

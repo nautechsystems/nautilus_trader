@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Module for wrapping raw socket streams with TLS encryption.
+//! Wraps raw socket streams with TLS encryption and builds `rustls` client configurations from
+//! certificate directories.
 
 use std::{convert::TryFrom, fs::File, io::BufReader, path::Path, sync::Arc};
 

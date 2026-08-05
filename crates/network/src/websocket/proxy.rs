@@ -109,7 +109,7 @@ pub struct WsTarget {
 }
 
 impl WsTarget {
-    /// Parse a `ws://` or `wss://` URL into the host/port/TLS components.
+    /// Parses a `ws://` or `wss://` URL into the host, port, and TLS components.
     ///
     /// # Errors
     ///
@@ -165,7 +165,7 @@ pub enum ProxyKind {
 }
 
 impl ProxyKind {
-    /// Parse a proxy URL into a [`ProxyKind`]. Returns
+    /// Parses a proxy URL into a [`ProxyKind`]. Returns
     /// [`TransportError::InvalidUrl`] for malformed input or non-proxy
     /// schemes (`ftp://`, `ws://`, etc.).
     ///
@@ -226,7 +226,7 @@ impl Debug for ProxyTarget {
 }
 
 impl ProxyTarget {
-    /// Parse a proxy URL into the components needed to establish the tunnel.
+    /// Parses a proxy URL into the components needed to establish the tunnel.
     ///
     /// Only `http://` and `https://` schemes are accepted here. Use
     /// [`ProxyKind::parse`] when callers need to distinguish recognised but
@@ -345,7 +345,7 @@ pub async fn tunnel_via_proxy(
     }
 }
 
-/// Send a `CONNECT` request and return the underlying stream once a `2xx`
+/// Sends a `CONNECT` request and returns the underlying stream once a `2xx`
 /// status is received. The returned stream is positioned after the empty line
 /// terminating the proxy response headers.
 async fn send_connect<S>(
@@ -388,7 +388,7 @@ fn format_host_header(host: &str, port: u16) -> String {
     }
 }
 
-/// Read the proxy's response up to the empty line that terminates the
+/// Reads the proxy's response up to the empty line that terminates the
 /// headers, validating the status line.
 async fn read_connect_response<S>(stream: &mut S) -> Result<(), TransportError>
 where
@@ -454,7 +454,7 @@ where
     Ok(())
 }
 
-/// Wrap a stream in a `rustls`-backed TLS session using `webpki_roots`.
+/// Wraps a stream in a `rustls`‑backed TLS session using `webpki_roots`.
 async fn wrap_tls<S>(stream: S, server_name: &str) -> Result<TlsStream<S>, TransportError>
 where
     S: AsyncRead + AsyncWrite + Unpin,

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Generic retry mechanism for network operations.
+//! Retry policy for asynchronous network operations.
 
 use std::{future::Future, marker::PhantomData, time::Duration};
 
@@ -36,11 +36,12 @@ pub struct RetryConfig {
     pub backoff_factor: f64,
     /// Maximum jitter in milliseconds to add to delays.
     pub jitter_ms: u64,
-    /// Optional timeout for individual operations in milliseconds.
-    /// If None, no timeout is applied.
+    /// Optional timeout for individual operations in milliseconds. `None` disables the timeout.
     pub operation_timeout_ms: Option<u64>,
-    /// Whether the first retry should happen immediately without delay.
-    /// Should be false for HTTP/order operations, true for connection operations.
+    /// Whether the first retry occurs without delay.
+    ///
+    /// Connection operations typically enable this, while HTTP and order operations typically
+    /// retain a delay.
     pub immediate_first: bool,
     /// Optional maximum total elapsed time across all attempts and retry delays in milliseconds.
     /// When set, this deadline also bounds an in-flight operation.
@@ -62,9 +63,9 @@ impl Default for RetryConfig {
     }
 }
 
-/// Generic retry manager for network operations.
+/// A stateless, thread‑safe retry manager for network operations.
 ///
-/// Stateless and thread-safe - each operation maintains its own backoff state.
+/// Each execution maintains independent backoff and elapsed‑time state.
 #[derive(Clone, Debug)]
 pub struct RetryManager<E> {
     config: RetryConfig,
@@ -97,12 +98,13 @@ where
     /// Executes an operation with retry logic and optional cancellation.
     ///
     /// Cancellation is checked at three points:
-    /// (1) Before each operation attempt.
-    /// (2) During operation execution (via `tokio::select!`).
-    /// (3) During retry delays.
+    ///
+    /// - Before each operation attempt.
+    /// - During operation execution through `tokio::select!`.
+    /// - During retry delays.
     ///
     /// Cancellation mid-execution takes effect immediately by dropping the in-flight
-    /// operation future. For non-idempotent operations (e.g. an order already on the
+    /// operation future. For non‑idempotent operations (e.g. an order already on the
     /// wire) the outcome of the abandoned attempt is unknown to the caller.
     ///
     /// # Errors

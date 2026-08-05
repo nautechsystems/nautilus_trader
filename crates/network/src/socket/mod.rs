@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! High-performance raw TCP client implementation with TLS capability, automatic reconnection
-//! with exponential backoff and state management.
+//! Raw TCP clients with suffix framing, optional TLS, heartbeats, automatic reconnection,
+//! exponential backoff, and connection state management.
 
 pub mod client;
 pub mod config;

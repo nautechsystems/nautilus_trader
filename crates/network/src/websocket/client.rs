@@ -174,26 +174,32 @@ impl Debug for ReconnectHeaders {
     }
 }
 
-/// `WebSocketClient` connects to a websocket server to read and send messages.
+/// Owns the transport tasks and reconnect state used by [`WebSocketClient`].
 ///
-/// The client is opinionated about how messages are read and written. It
-/// assumes that data can only have one reader but multiple writers.
+/// # Connection ownership
 ///
-/// The client splits the connection into read and write halves. It moves
-/// the read half into a tokio task which keeps receiving messages from the
-/// server and calls a handler with the data. It stores the write half in the
-/// struct wrapped with an Arc Mutex. This way the client struct can be used
-/// to write data to the server from multiple scopes/tasks.
+/// The client uses one reader and supports concurrent senders. In handler mode, a reader task
+/// dispatches incoming messages while a writer task serializes sends received over a channel. The
+/// controller owns the connection lifecycle and replaces both transport halves during reconnects.
 ///
-/// The client also maintains a heartbeat if given a duration in seconds.
-/// It's preferable to set the duration slightly lower - heartbeat more
-/// frequently - than the required amount.
+/// Stream mode returns the reader to the caller. The client cannot replace that reader, so stream
+/// mode disables automatic reconnection.
+///
+/// # Heartbeats
+///
+/// When configured, a dedicated task sends heartbeat messages at the requested interval. Configure
+/// the interval below the server's heartbeat deadline.
+///
+/// # Reconnection
+///
+/// The writer task owns queued sends across reconnects. A successful reconnect installs the
+/// replacement writer and starts a reader for the new connection epoch. Depending on the
+/// configured authentication gate, buffered sends drain immediately or wait for the new session to
+/// authenticate. Failed authentication discards messages that remain buffered.
 pub struct WebSocketClientInner {
     config: WebSocketConfig,
     reconnect_headers: ReconnectHeaders,
-    /// The function to handle incoming messages (stored separately from config).
     handler: Option<IncomingHandler>,
-    /// The handler for incoming pings (stored separately from config).
     ping_handler: Option<PingHandler>,
     read_task: Option<tokio::task::JoinHandle<()>>,
     read_fence: Option<ReadSessionFence>,
@@ -205,13 +211,9 @@ pub struct WebSocketClientInner {
     state_notify: Arc<tokio::sync::Notify>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
-    /// Maximum number of reconnection attempts before giving up (None = unlimited).
     reconnect_max_attempts: Option<u32>,
-    /// Current count of consecutive reconnection attempts.
     reconnection_attempt_count: u32,
-    /// Shared auth tracker invalidated on connection drops.
     auth_tracker: Arc<OnceLock<AuthTracker>>,
-    /// Controls whether buffered replay waits for the next authenticated session.
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
 }
 
@@ -237,7 +239,7 @@ enum ReconnectBufferAction {
 }
 
 impl WebSocketClientInner {
-    /// Create an inner websocket client with an existing writer.
+    /// Creates an inner WebSocket client with an existing writer.
     ///
     /// This is used for stream mode where the reader is owned by the caller.
     ///
@@ -335,7 +337,7 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Create an inner websocket client.
+    /// Creates an inner WebSocket client.
     ///
     /// # Errors
     ///
@@ -496,9 +498,9 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Connect to the server and return the split halves of the active transport.
+    /// Connects to the server and returns the split halves of the active transport.
     ///
-    /// Dispatches on `backend` to the matching backend helper. The
+    /// Dispatches on `backend` to the matching transport implementation. The
     /// [`TransportBackend::Tungstenite`] backend is always available; the
     /// [`TransportBackend::Sockudo`] backend requires the `transport-sockudo`
     /// Cargo feature (enabled by default) and uses a custom HTTP/1.1 handshake
@@ -560,7 +562,7 @@ impl WebSocketClientInner {
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
-    /// Production version that uses `connect_async_with_config` convenience helper.
+    /// Production path using `connect_async_with_config`.
     #[inline]
     #[cfg(not(feature = "turmoil"))]
     async fn connect_tungstenite(
@@ -707,7 +709,7 @@ impl WebSocketClientInner {
 
     /// Connects with the server using the sockudo-ws backend.
     ///
-    /// Uses a local HTTP/1.1 handshake helper so error logging and stream
+    /// Uses a local HTTP/1.1 handshake path so error logging and stream
     /// construction stay in our hands regardless of header count.
     ///
     /// Under the turmoil simulator, only plaintext `ws://` is supported (the
@@ -766,7 +768,7 @@ impl WebSocketClientInner {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        // Use our helper for both paths: uniform error logging, and we own
+        // Use one path for uniform error logging and ownership of
         // stream construction since sockudo's high-level client drops the
         // handshake leftover.
         let handshake = client_handshake_with_headers(
@@ -895,8 +897,6 @@ where
 #[derive(Debug, PartialEq, Eq)]
 struct SockudoTarget {
     host: String,
-    /// Value to send as the HTTP `Host:` header. Includes `:port` only when
-    /// the URL specifies a non-default port explicitly.
     host_header: String,
     port: u16,
     path: String,
@@ -1116,7 +1116,7 @@ impl WebSocketClientInner {
         Ok(())
     }
 
-    /// Check if the client is still alive.
+    /// Returns whether the client's transport tasks are still running.
     ///
     /// Returns `true` if both the read and write tasks are still running.
     /// There may be some delay between the connection closing and the
@@ -1722,10 +1722,12 @@ impl Debug for WebSocketClientInner {
     }
 }
 
-/// WebSocket client with automatic reconnection.
+/// A WebSocket client with rate limiting, heartbeats, and automatic reconnection in handler mode.
 ///
-/// Handles connection state, callbacks, and rate limiting.
-/// See module docs for architecture details.
+/// Handler mode owns the reader and writer tasks, buffers sends during reconnection, and replays
+/// them against the replacement connection. Stream mode returns the reader to the caller and does
+/// not reconnect automatically. See [`crate::websocket`] for connection ownership, replay, and
+/// epoch guarantees.
 pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
@@ -2004,7 +2006,7 @@ impl WebSocketClient {
         Arc::clone(&self.connection_epoch)
     }
 
-    /// Check if the client connection is active.
+    /// Returns whether the client connection is active.
     ///
     /// Returns `true` if the client is connected and has not been signalled to disconnect.
     /// The client will automatically retry connection based on its configuration.
@@ -2014,13 +2016,13 @@ impl WebSocketClient {
         self.connection_mode().is_active()
     }
 
-    /// Check if the client is disconnected.
+    /// Returns whether the controller task has stopped.
     #[must_use]
     pub fn is_disconnected(&self) -> bool {
         self.controller_task.is_finished()
     }
 
-    /// Check if the client is reconnecting.
+    /// Returns whether the client is reconnecting.
     ///
     /// Returns `true` if the client lost connection and is attempting to reestablish it.
     /// The client will automatically retry connection based on its configuration.
@@ -2046,7 +2048,7 @@ impl WebSocketClient {
             .store(reconnect_buffer_waits_for_auth, Ordering::Release);
     }
 
-    /// Check if the client is disconnecting.
+    /// Returns whether the client is disconnecting.
     ///
     /// Returns `true` if the client is in disconnect mode.
     #[inline]
@@ -2055,7 +2057,7 @@ impl WebSocketClient {
         self.connection_mode().is_disconnect()
     }
 
-    /// Check if the client is closed.
+    /// Returns whether the client is closed.
     ///
     /// Returns `true` if the client has been explicitly disconnected or reached
     /// maximum reconnection attempts. In this state, the client cannot be reused
@@ -2177,10 +2179,7 @@ impl WebSocketClient {
         self.state_notify.notify_waiters();
     }
 
-    /// Set disconnect mode to true.
-    ///
-    /// Controller task will periodically check the disconnect mode
-    /// and shutdown the client if it is alive
+    /// Disconnects the client and waits for the controller task to stop.
     ///
     /// If an [`AuthTracker`] is registered, this fails pending auth waits.
     pub async fn disconnect(&self) {
@@ -2222,7 +2221,7 @@ impl WebSocketClient {
 
     /// Sends the given text `data` to the server.
     ///
-    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does not
     /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
     /// message. During reconnection, messages are buffered and replayed on the new connection.
     ///
@@ -2302,7 +2301,7 @@ impl WebSocketClient {
 
     /// Sends the given bytes `data` to the server.
     ///
-    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does not
     /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
     /// message. During reconnection, messages are buffered and replayed on the new connection.
     ///

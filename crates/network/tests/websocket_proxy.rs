@@ -54,10 +54,7 @@ use tokio_tungstenite::{accept_async, tungstenite};
 /// requests it served and the headers seen on the most recent one.
 #[derive(Default)]
 struct ProxyCapture {
-    /// Total number of CONNECT requests successfully tunnelled.
     connect_count: AtomicUsize,
-    /// Headers from the most recent CONNECT (one entry per non-empty line
-    /// after the request line).
     last_headers: Mutex<Vec<String>>,
 }
 

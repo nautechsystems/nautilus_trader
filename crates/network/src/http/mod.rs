@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance HTTP client implementation.
+//! Asynchronous HTTP requests with rate limiting, timeouts, and bounded response bodies.
 
 pub mod client;
 pub mod error;

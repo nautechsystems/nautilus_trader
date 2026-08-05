@@ -43,14 +43,14 @@ pub enum Message {
 }
 
 impl Message {
-    /// Construct a text message from any string-like value.
+    /// Constructs a text message from any string‑like value.
     #[inline]
     #[must_use]
     pub fn text(s: impl Into<String>) -> Self {
         Self::Text(Bytes::from(s.into()))
     }
 
-    /// Borrow a text message as `&str` if the payload is valid UTF-8.
+    /// Borrows a text message as `&str` if the payload is valid UTF‑8.
     ///
     /// Validates on each call; for hot paths where the producer is trusted,
     /// callers can read the bytes directly via [`Self::as_bytes`] and feed
@@ -64,21 +64,21 @@ impl Message {
         }
     }
 
-    /// Construct a binary message.
+    /// Constructs a binary message.
     #[inline]
     #[must_use]
     pub fn binary(data: impl Into<Bytes>) -> Self {
         Self::Binary(data.into())
     }
 
-    /// Construct a ping message.
+    /// Constructs a ping message.
     #[inline]
     #[must_use]
     pub fn ping(data: impl Into<Bytes>) -> Self {
         Self::Ping(data.into())
     }
 
-    /// Construct a pong message.
+    /// Constructs a pong message.
     #[inline]
     #[must_use]
     pub fn pong(data: impl Into<Bytes>) -> Self {
@@ -210,7 +210,7 @@ impl CloseFrame {
     /// Internal server error (1011).
     pub const INTERNAL_ERROR: u16 = 1011;
 
-    /// Construct a close frame.
+    /// Constructs a close frame.
     #[inline]
     #[must_use]
     pub fn new(code: u16, reason: impl Into<String>) -> Self {

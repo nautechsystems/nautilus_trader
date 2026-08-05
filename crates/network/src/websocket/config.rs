@@ -41,7 +41,7 @@ use crate::error::{NetworkConfigError, NetworkConfigResult};
 /// a `compile_error!` collision under `--all-features`.
 ///
 /// `Sockudo` is the default backend and is enabled by the `transport-sockudo`
-/// Cargo feature (on by default); it uses a local HTTP/1.1 handshake helper to
+/// Cargo feature (on by default); it uses a local HTTP/1.1 handshake path to
 /// pass custom upgrade headers through. When the feature is disabled the
 /// default falls back to `Tungstenite`, which is always compiled and supports
 /// custom HTTP upgrade headers on the WebSocket handshake (see
@@ -74,29 +74,28 @@ pub enum TransportBackend {
     Sockudo,
 }
 
-/// Configuration for WebSocket client connections.
+/// Static configuration for WebSocket client connections.
 ///
-/// This struct contains only static configuration settings. Runtime callbacks
-/// (message handler, ping handler) are passed separately to `connect()`.
+/// Runtime handlers and rate limiters are passed separately to the client constructors.
 ///
-/// # Connection Modes
+/// # Connection modes
 ///
-/// ## Handler Mode
+/// ## Handler mode
 ///
-/// - Use with [`crate::websocket::WebSocketClient::connect`].
-/// - Pass a message handler to `connect()` to receive messages via callback.
-/// - Client spawns internal task to read messages and call handler.
+/// - Uses [`WebSocketClient::connect`](crate::websocket::WebSocketClient::connect).
+/// - Delivers messages through the supplied callback.
+/// - Runs the reader in an internal task.
 /// - Supports automatic reconnection with exponential backoff.
-/// - Reconnection config fields (`reconnect_*`) are active.
-/// - Best for long-lived connections and callback-based APIs.
+/// - Applies `reconnect_*` and `idle_timeout_ms` settings.
+/// - Suits long‑lived connections and callback‑based APIs.
 ///
-/// ## Stream Mode
+/// ## Stream mode
 ///
-/// - Use with [`crate::websocket::WebSocketClient::connect_stream`].
-/// - Returns a [`MessageReader`](super::types::MessageReader) stream for the caller to read from.
-/// - **Does NOT support automatic reconnection** (reader owned by caller).
-/// - Reconnection config fields are ignored.
-/// - On disconnect, client transitions to CLOSED state and caller must manually reconnect.
+/// - Uses [`WebSocketClient::connect_stream`](crate::websocket::WebSocketClient::connect_stream).
+/// - Returns a [`MessageReader`](super::types::MessageReader) owned by the caller.
+/// - Does not support automatic reconnection because the client cannot replace the caller's reader.
+/// - Ignores `reconnect_*` and `idle_timeout_ms` settings.
+/// - Enters the closed state after disconnection, requiring the caller to create a new connection.
 #[allow(
     clippy::unsafe_derive_deserialize,
     reason = "network configuration requires strict serde decoding"
@@ -118,38 +117,45 @@ pub struct WebSocketConfig {
     #[serde(default)]
     pub heartbeat_msg: Option<String>,
     /// The timeout (milliseconds) for reconnection attempts.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
-    /// Must be non-zero when set.
+    ///
+    /// Only applies to handler mode and must be non‑zero when set. Stream mode ignores this
+    /// field.
     #[serde(default)]
     pub reconnect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    ///
+    /// Only applies to handler mode. Stream mode ignores this field.
     #[serde(default)]
     pub reconnect_delay_initial_ms: Option<u64>,
     /// The maximum reconnect delay (milliseconds) for exponential backoff.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    ///
+    /// Only applies to handler mode. Stream mode ignores this field.
     #[serde(default)]
     pub reconnect_delay_max_ms: Option<u64>,
     /// The exponential backoff factor for reconnection delays.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    ///
+    /// Only applies to handler mode. Stream mode ignores this field.
     #[serde(default)]
     pub reconnect_backoff_factor: Option<f64>,
     /// The maximum jitter (milliseconds) added to reconnection delays.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    ///
+    /// Only applies to handler mode. Stream mode ignores this field.
     #[serde(default)]
     pub reconnect_jitter_ms: Option<u64>,
     /// The maximum number of reconnection attempts before giving up.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    ///
+    /// Only applies to handler mode. Stream mode ignores this field.
+    ///
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
     /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
     ///   failed or established connections active for less than 10 seconds.
     #[serde(default)]
     pub reconnect_max_attempts: Option<u32>,
     /// The idle timeout (milliseconds) for the read task.
-    /// When set, the read task will break and trigger reconnection if no data
-    /// is received within this duration. Useful for detecting silently dead
-    /// connections where the server stops sending without closing.
-    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    ///
+    /// When set, the read task stops and triggers reconnection if it receives no data within this
+    /// duration. This detects silently dead connections where the server stops sending without
+    /// closing the connection. Only applies to handler mode; stream mode ignores this field.
     #[serde(default)]
     pub idle_timeout_ms: Option<u64>,
     /// The transport backend to use for the WebSocket connection.
