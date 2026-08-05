@@ -33,7 +33,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
-    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    python::{data::data_to_pyobject, instruments::pyobject_to_instrument_any},
     reports::{FillReport, OrderStatusReport},
     types::Quantity,
 };
@@ -932,15 +932,13 @@ fn handle_ticker(
 
     if let Some(mark_price) = parse_futures_ws_mark_price(ticker, instrument, ts_init) {
         Python::attach(|py| {
-            let py_obj = data_to_pycapsule(py, Data::MarkPriceUpdate(mark_price));
-            call_python_threadsafe(py, call_soon, callback, py_obj);
+            send_data_to_python(py, Data::MarkPriceUpdate(mark_price), call_soon, callback);
         });
     }
 
     if let Some(index_price) = parse_futures_ws_index_price(ticker, instrument, ts_init) {
         Python::attach(|py| {
-            let py_obj = data_to_pycapsule(py, Data::IndexPriceUpdate(index_price));
-            call_python_threadsafe(py, call_soon, callback, py_obj);
+            send_data_to_python(py, Data::IndexPriceUpdate(index_price), call_soon, callback);
         });
     }
 
@@ -968,8 +966,7 @@ fn handle_trade(
     match parse_futures_ws_trade_tick(trade, instrument, ts_init) {
         Ok(tick) => {
             Python::attach(|py| {
-                let py_obj = data_to_pycapsule(py, Data::Trade(tick));
-                call_python_threadsafe(py, call_soon, callback, py_obj);
+                send_data_to_python(py, Data::Trade(tick), call_soon, callback);
             });
         }
         Err(e) => log::error!("Failed to parse futures trade tick: {e}"),
@@ -1031,9 +1028,12 @@ fn handle_book_snapshot(
             let deltas_key = format!("deltas:{}", snapshot.product_id);
             if subscriptions.get_reference_count(&deltas_key) > 0 {
                 Python::attach(|py| {
-                    let py_obj =
-                        data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-                    call_python_threadsafe(py, call_soon, callback, py_obj);
+                    send_data_to_python(
+                        py,
+                        Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                        call_soon,
+                        callback,
+                    );
                 });
             }
         }
@@ -1087,9 +1087,12 @@ fn handle_book_delta(
             let deltas_key = format!("deltas:{}", delta.product_id);
             if subscriptions.get_reference_count(&deltas_key) > 0 {
                 Python::attach(|py| {
-                    let py_obj =
-                        data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-                    call_python_threadsafe(py, call_soon, callback, py_obj);
+                    send_data_to_python(
+                        py,
+                        Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                        call_soon,
+                        callback,
+                    );
                 });
             }
         }
@@ -1136,7 +1139,13 @@ fn maybe_emit_quote(
     last_quotes.insert(instrument_id, quote);
 
     Python::attach(|py| {
-        let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-        call_python_threadsafe(py, call_soon, callback, py_obj);
+        send_data_to_python(py, Data::Quote(quote), call_soon, callback);
     });
+}
+
+fn send_data_to_python(py: Python<'_>, data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
+    }
 }

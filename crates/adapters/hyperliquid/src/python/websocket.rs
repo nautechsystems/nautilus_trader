@@ -27,7 +27,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     orders::OrderAny,
     python::{
-        data::data_to_pycapsule, instruments::pyobject_to_instrument_any,
+        data::data_to_pyobject, instruments::pyobject_to_instrument_any,
         orders::pyobject_to_order_any,
     },
     types::{Price, Quantity},
@@ -43,14 +43,6 @@ use crate::{
         messages::{ExecutionReport, NautilusWsMessage},
     },
 };
-
-fn ws_data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
-    match data {
-        Data::Custom(custom) => Py::new(py, custom).map(|obj| obj.into_any()),
-        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|obj| obj.into_any()),
-        other => Ok(data_to_pycapsule(py, other)),
-    }
-}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -405,54 +397,73 @@ impl HyperliquidWebSocketClient {
                                 NautilusWsMessage::Trades(trade_ticks) => {
                                     Python::attach(|py| {
                                         for tick in trade_ticks {
-                                            let py_obj = data_to_pycapsule(py, Data::Trade(tick));
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                            send_data_to_python(
+                                                py,
+                                                Data::Trade(tick),
+                                                &call_soon,
+                                                &callback,
+                                            );
                                         }
                                     });
                                 }
                                 NautilusWsMessage::Quote(quote_tick) => {
                                     Python::attach(|py| {
-                                        let py_obj = data_to_pycapsule(py, Data::Quote(quote_tick));
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        send_data_to_python(
+                                            py,
+                                            Data::Quote(quote_tick),
+                                            &call_soon,
+                                            &callback,
+                                        );
                                     });
                                 }
                                 NautilusWsMessage::Deltas(deltas) => {
                                     Python::attach(|py| {
-                                        let py_obj = data_to_pycapsule(
+                                        send_data_to_python(
                                             py,
                                             Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                            &call_soon,
+                                            &callback,
                                         );
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::Depth10(depth) => {
                                     Python::attach(|py| {
-                                        let py_obj = data_to_pycapsule(py, Data::Depth10(depth));
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        send_data_to_python(
+                                            py,
+                                            Data::Depth10(depth),
+                                            &call_soon,
+                                            &callback,
+                                        );
                                     });
                                 }
                                 NautilusWsMessage::Candle(bar) => {
                                     Python::attach(|py| {
-                                        let py_obj = data_to_pycapsule(py, Data::Bar(bar));
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        send_data_to_python(
+                                            py,
+                                            Data::Bar(bar),
+                                            &call_soon,
+                                            &callback,
+                                        );
                                     });
                                 }
                                 NautilusWsMessage::MarkPrice(mark_price) => {
                                     Python::attach(|py| {
-                                        let py_obj = data_to_pycapsule(
+                                        send_data_to_python(
                                             py,
                                             Data::MarkPriceUpdate(mark_price),
+                                            &call_soon,
+                                            &callback,
                                         );
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::IndexPrice(index_price) => {
                                     Python::attach(|py| {
-                                        let py_obj = data_to_pycapsule(
+                                        send_data_to_python(
                                             py,
                                             Data::IndexPriceUpdate(index_price),
+                                            &call_soon,
+                                            &callback,
                                         );
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::FundingRate(funding_rate) => {
@@ -463,15 +474,8 @@ impl HyperliquidWebSocketClient {
                                     });
                                 }
                                 NautilusWsMessage::CustomData(data) => {
-                                    Python::attach(|py| match ws_data_to_pyobject(py, data) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                        }
-                                        Err(e) => {
-                                            log::error!(
-                                                "Error converting CustomData to Python object: {e}"
-                                            );
-                                        }
+                                    Python::attach(|py| {
+                                        send_data_to_python(py, data, &call_soon, &callback);
                                     });
                                 }
                                 NautilusWsMessage::ExecutionReports(reports) => {
@@ -1124,5 +1128,12 @@ impl HyperliquidWebSocketClient {
                 .map_err(to_pyruntime_err)?;
             Ok(())
         })
+    }
+}
+
+fn send_data_to_python(py: Python<'_>, data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     }
 }

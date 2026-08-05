@@ -58,7 +58,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     python::{
-        data::data_to_pycapsule,
+        data::data_to_pyobject,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
     types::{Money, Price, Quantity},
@@ -2272,8 +2272,7 @@ fn parse_rpi_book_data(
 fn emit_book_data(data: Vec<Data>, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
     Python::attach(|py| {
         for data in data {
-            let py_obj = data_to_pycapsule(py, data);
-            call_python_threadsafe(py, call_soon, callback, py_obj);
+            send_data_to_python(py, data, call_soon, callback);
         }
     });
 }
@@ -2366,8 +2365,7 @@ fn handle_channel_data(
             ) {
                 Python::attach(|py| {
                     for d in data_vec {
-                        let py_obj = data_to_pycapsule(py, d);
-                        call_python_threadsafe(py, call_soon, callback, py_obj);
+                        send_data_to_python(py, d, call_soon, callback);
                     }
                 });
             }
@@ -2458,8 +2456,7 @@ fn handle_bbo_tbt(
         ) {
             Ok(quote) => {
                 Python::attach(|py| {
-                    let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-                    call_python_threadsafe(py, call_soon, callback, py_obj);
+                    send_data_to_python(py, Data::Quote(quote), call_soon, callback);
                 });
             }
             Err(e) => {
@@ -2963,13 +2960,16 @@ fn dispatch_nautilus_ws_msg_to_python(
     match msg {
         NautilusWsMessage::Data(payloads) => Python::attach(|py| {
             for data in payloads {
-                let py_obj = data_to_pycapsule(py, data);
-                call_python_threadsafe(py, call_soon, callback, py_obj);
+                send_data_to_python(py, data, call_soon, callback);
             }
         }),
         NautilusWsMessage::Deltas(deltas) => Python::attach(|py| {
-            let py_obj = data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-            call_python_threadsafe(py, call_soon, callback, py_obj);
+            send_data_to_python(
+                py,
+                Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                call_soon,
+                callback,
+            );
         }),
         NautilusWsMessage::FundingRates(updates) => {
             for data in updates {
@@ -3010,6 +3010,13 @@ fn dispatch_execution_reports_to_python(
                 call_python_with_data(call_soon, callback, |py| report.into_py_any(py));
             }
         }
+    }
+}
+
+fn send_data_to_python(py: Python<'_>, data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     }
 }
 

@@ -16,20 +16,13 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    ops::Deref,
 };
 
 use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::to_dict_pyo3, to_pyvalue_err};
-use pyo3::{
-    IntoPyObjectExt,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyCapsule, PyList},
-};
+use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyList};
 
-use super::data_to_pycapsule;
 use crate::{
-    data::{Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
+    data::{OrderBookDelta, OrderBookDeltas},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
 };
@@ -108,44 +101,6 @@ impl OrderBookDeltas {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDeltas))
-    }
-
-    /// # Panics
-    ///
-    /// Panics if downcasting the Python object to `PyCapsule` fails.
-    #[staticmethod]
-    #[pyo3(name = "from_pycapsule")]
-    #[allow(unsafe_code)]
-    #[must_use]
-    pub fn py_from_pycapsule(capsule: &Bound<'_, PyAny>) -> Self {
-        let capsule: &Bound<'_, PyCapsule> = capsule
-            .cast::<PyCapsule>()
-            .expect("Error on downcast to `&PyCapsule`");
-        let data: &OrderBookDeltas_API = unsafe {
-            &*(capsule.pointer_checked(None).unwrap().as_ptr() as *const OrderBookDeltas_API)
-        };
-        data.deref().clone()
-    }
-
-    /// Creates a `PyCapsule` containing a raw pointer to a [`Data::Deltas`] object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Deltas`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Deltas` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// [`Data::Deltas`] object cannot be converted into a raw pointer.
-    #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
-        let deltas = OrderBookDeltas_API::new(self.clone());
-        data_to_pycapsule(py, Data::Deltas(deltas))
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {

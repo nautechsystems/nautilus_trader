@@ -38,9 +38,8 @@ use pyo3::{
     types::{PyDict, PyInt, PyString, PyTuple},
 };
 
-use super::data_to_pycapsule;
 use crate::{
-    data::{Data, TradeTick},
+    data::TradeTick,
     enums::{AggressorSide, FromU8},
     identifiers::{InstrumentId, TradeId},
     python::common::PY_MODULE_MODEL,
@@ -320,26 +319,6 @@ impl TradeTick {
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
         from_dict_pyo3(py, values)
-    }
-
-    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Trade` object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Trade`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Trade` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// `Data::Trade` object cannot be converted into a raw pointer.
-    #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
-        data_to_pycapsule(py, Data::Trade(*self))
     }
 
     /// Return a dictionary representation of the object.

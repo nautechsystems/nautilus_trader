@@ -23,7 +23,7 @@ use nautilus_core::python::{
 use nautilus_model::{
     data::{Bar, Data, funding::FundingRateUpdate},
     identifiers::InstrumentId,
-    python::data::data_to_pycapsule,
+    python::data::data_to_pyobject,
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
 
@@ -345,12 +345,13 @@ where
                     );
 
                     if !data.is_empty() {
-                        Python::attach(|py| {
+                        Python::attach(|py| -> PyResult<()> {
                             for data in data {
-                                let py_obj = data_to_pycapsule(py, data);
+                                let py_obj = data_to_pyobject(py, data)?;
                                 call_python(py, &callback, py_obj);
                             }
-                        });
+                            Ok(())
+                        })?;
                     } else if let Some(funding_rate) =
                         parse_tardis_ws_message_funding_rate(msg, &info)
                     {

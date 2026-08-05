@@ -11,18 +11,24 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
-- Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
 - Removed legacy v1 Cython package and root build path; use the Rust + PyO3 package
+- Removed `nautilus_trader.core.is_pycapsule`; use normal Python type checks on model objects
+- Removed model `as_pycapsule` methods and `OrderBookDeltas.from_pycapsule`; pass typed model objects directly
 - Removed FFI features and static libraries outside `nautilus-core` and `nautilus-model`; use Rust or PyO3 APIs
 - Removed `cython-compat`, Cython cbindgen configs, and `drop_cvec_pycapsule`; use PyO3 APIs
 - Removed Databento `load_*_as_pycapsule` methods; use the corresponding `load_*` methods
 - Removed generic Python clients and support APIs from `nautilus_trader.network`; use adapter APIs or `nautilus-network`
 - Removed unused Rust `SocketClient` connection/disconnection callbacks and `WebSocketClient` reconnection callback; use message or epoch handlers
+- Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
+- Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
+- Changed adapter callbacks to receive typed model objects instead of `PyCapsule` objects
+- Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
 
 ### Security
 
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
 - Fixed macOS ARM64 `pyarrow` import‑order SIGSEGV (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
+- Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
 
 ### Fixes
 

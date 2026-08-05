@@ -60,7 +60,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    python::{data::data_to_pyobject, instruments::pyobject_to_instrument_any},
     reports::{FillReport, OrderStatusReport},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
@@ -277,10 +277,11 @@ impl KrakenSpotWebSocketClient {
                                     match parse_quote_tick(ticker, inst, ts_init) {
                                         Ok(quote) => {
                                             Python::attach(|py| {
-                                                let py_obj =
-                                                    data_to_pycapsule(py, Data::Quote(quote));
-                                                call_python_threadsafe(
-                                                    py, &call_soon, &callback, py_obj,
+                                                send_data_to_python(
+                                                    py,
+                                                    Data::Quote(quote),
+                                                    &call_soon,
+                                                    &callback,
                                                 );
                                             });
                                         }
@@ -305,10 +306,11 @@ impl KrakenSpotWebSocketClient {
                                     match parse_trade_tick(trade, inst, ts_init) {
                                         Ok(tick) => {
                                             Python::attach(|py| {
-                                                let py_obj =
-                                                    data_to_pycapsule(py, Data::Trade(tick));
-                                                call_python_threadsafe(
-                                                    py, &call_soon, &callback, py_obj,
+                                                send_data_to_python(
+                                                    py,
+                                                    Data::Trade(tick),
+                                                    &call_soon,
+                                                    &callback,
                                                 );
                                             });
                                         }
@@ -346,12 +348,11 @@ impl KrakenSpotWebSocketClient {
                                         Ok(Some((deltas, next_sequence))) => {
                                             book_sequence.store(next_sequence, Ordering::Relaxed);
                                             Python::attach(|py| {
-                                                let py_obj = data_to_pycapsule(
+                                                send_data_to_python(
                                                     py,
                                                     Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                                                );
-                                                call_python_threadsafe(
-                                                    py, &call_soon, &callback, py_obj,
+                                                    &call_soon,
+                                                    &callback,
                                                 );
                                             });
                                         }
@@ -377,9 +378,11 @@ impl KrakenSpotWebSocketClient {
                                     match parse_ws_bar(ohlc, inst, ts_init) {
                                         Ok(bar) => {
                                             Python::attach(|py| {
-                                                let py_obj = data_to_pycapsule(py, Data::Bar(bar));
-                                                call_python_threadsafe(
-                                                    py, &call_soon, &callback, py_obj,
+                                                send_data_to_python(
+                                                    py,
+                                                    Data::Bar(bar),
+                                                    &call_soon,
+                                                    &callback,
                                                 );
                                             });
                                         }
@@ -922,8 +925,7 @@ struct PyDeltaSink<'a> {
 impl L3Sink for PyDeltaSink<'_> {
     fn emit_deltas(&mut self, deltas: OrderBookDeltas_API) {
         Python::attach(|py| {
-            let py_obj = data_to_pycapsule(py, Data::Deltas(deltas));
-            call_python_threadsafe(py, self.call_soon, self.callback, py_obj);
+            send_data_to_python(py, Data::Deltas(deltas), self.call_soon, self.callback);
         });
     }
 }
@@ -963,5 +965,12 @@ async fn run_l3_state(
         get_runtime().spawn(async move {
             retry_l3_resync(&client, symbol_ustr, request.depth).await;
         });
+    }
+}
+
+fn send_data_to_python(py: Python<'_>, data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     }
 }

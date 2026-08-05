@@ -16,9 +16,12 @@
 use std::collections::HashMap;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::data::{
-    Bar, Data, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
-    QuoteTick, TradeTick,
+use nautilus_model::{
+    data::{
+        Bar, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick,
+    },
+    python::data::data_to_pyobject,
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{IntoPyObjectExt, prelude::*};
@@ -30,33 +33,6 @@ struct SendPtr<T>(*mut T);
 
 // SAFETY: Access is serialized by the calling `PyRefMut`
 unsafe impl<T> Send for SendPtr<T> {}
-
-/// Converts a `Data` variant into a Python object via PyO3.
-#[allow(
-    clippy::match_wildcard_for_single_variants,
-    reason = "Data::Defi appears through nautilus-model feature unification"
-)]
-fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
-    match item {
-        Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),
-        Data::Trade(trade) => Py::new(py, trade).map(pyo3::Py::into_any),
-        Data::Bar(bar) => Py::new(py, bar).map(pyo3::Py::into_any),
-        Data::Delta(delta) => Py::new(py, delta).map(pyo3::Py::into_any),
-        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(pyo3::Py::into_any),
-        Data::Depth10(depth) => Py::new(py, *depth).map(pyo3::Py::into_any),
-        Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
-        Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
-        Data::FundingRateUpdate(funding_rate) => Py::new(py, funding_rate).map(pyo3::Py::into_any),
-        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
-        Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
-        Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
-        #[cfg(feature = "defi")]
-        Data::Defi(_) => Err(to_pyruntime_err("Unsupported Data::Defi variant")),
-        #[allow(unreachable_patterns)]
-        _ => Err(to_pyruntime_err("Unsupported Data variant")),
-    }
-}
 
 #[repr(C)]
 #[pyclass(frozen, eq, eq_int, from_py_object)]

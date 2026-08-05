@@ -18,7 +18,6 @@ import pytest
 from nautilus_trader.core import NAUTILUS_USER_AGENT
 from nautilus_trader.core import NAUTILUS_VERSION
 from nautilus_trader.core import convert_to_snake_case
-from nautilus_trader.core import is_pycapsule
 from nautilus_trader.core import mask_api_key
 
 
@@ -61,9 +60,3 @@ def test_mask_api_key_masks_middle():
 def test_mask_api_key_short_key():
     result = mask_api_key("abc")
     assert isinstance(result, str)
-
-
-def test_is_pycapsule_rejects_non_capsule():
-    assert is_pycapsule("not a capsule") is False
-    assert is_pycapsule(42) is False
-    assert is_pycapsule(None) is False

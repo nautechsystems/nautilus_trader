@@ -42,7 +42,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     python::{
-        data::data_to_pycapsule,
+        data::data_to_pyobject,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
     types::Price,
@@ -1504,9 +1504,9 @@ fn ensure_accepted_to_python(
 }
 
 fn send_data_to_python(data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
-    Python::attach(|py| {
-        let py_obj = data_to_pycapsule(py, data);
-        call_python_threadsafe(py, call_soon, callback, py_obj);
+    Python::attach(|py| match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }
 

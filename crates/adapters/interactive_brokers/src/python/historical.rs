@@ -23,7 +23,7 @@ use nautilus_model::{
     data::{Bar, Data},
     identifiers::InstrumentId,
     instruments::any::InstrumentAny,
-    python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
+    python::{data::data_to_pyobject, instruments::instrument_any_to_pyobject},
 };
 use pyo3::{prelude::*, types::PyList};
 
@@ -173,12 +173,10 @@ impl HistoricalInteractiveBrokersClient {
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
-            // Convert Data enum to Python objects using pycapsules
             Python::attach(|py| -> PyResult<Py<PyList>> {
                 let py_list = PyList::empty(py);
                 for data in data_vec {
-                    let py_capsule = data_to_pycapsule(py, data);
-                    py_list.append(py_capsule)?;
+                    py_list.append(data_to_pyobject(py, data)?)?;
                 }
                 Ok(py_list.into())
             })

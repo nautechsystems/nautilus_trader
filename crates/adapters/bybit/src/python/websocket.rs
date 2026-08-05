@@ -37,7 +37,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    python::{data::data_to_pyobject, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -1421,9 +1421,9 @@ fn resolve_instrument_from_snapshot<'a>(
 }
 
 fn send_data_to_python(data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
-    Python::attach(|py| {
-        let py_obj = data_to_pycapsule(py, data);
-        call_python_threadsafe(py, call_soon, callback, py_obj);
+    Python::attach(|py| match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }
 
