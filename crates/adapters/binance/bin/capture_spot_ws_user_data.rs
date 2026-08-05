@@ -194,7 +194,6 @@ async fn main() -> anyhow::Result<()> {
         ws_config,
         Some(raw_handler),
         Some(ping_handler),
-        None,
         vec![],
         None,
     )

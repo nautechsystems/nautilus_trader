@@ -22,17 +22,8 @@ crate-type = ["rlib"]
 
 [features]
 default = ["transport-sockudo"]
-extension-module = [
-  "nautilus-core/extension-module",
-  "python",
-  "pyo3/extension-module",
-]
-python = [
-  "nautilus-core/python",
-  "pyo3",
-  "pyo3-async-runtimes",
-  "pyo3-stub-gen",
-]
+extension-module = ["python", "pyo3/extension-module"]
+python = ["pyo3", "pyo3-stub-gen"]
 simulation = ["dep:madsim", "nautilus-core/simulation"]
 turmoil = ["dep:turmoil"]
 # Backend selection for the WebSocket transport abstraction.
@@ -79,7 +70,6 @@ webpki-roots = { workspace = true }
 
 madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 sockudo-ws = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }

@@ -346,7 +346,7 @@ impl DeriveWebSocketClient {
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
         // and never sleeps inside the single feed-handler task.
-        let client = WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(cfg, Some(message_handler), None, vec![], None)
             .await
             .map_err(|e| DeriveWsError::transport(e.to_string()))?;
 

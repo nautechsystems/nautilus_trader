@@ -242,7 +242,6 @@ impl CoinbaseWebSocketClient {
             cfg,
             Some(message_handler),
             None,
-            None,
             keyed_quotas,
             Some(*COINBASE_WS_CONNECTION_QUOTA),
         )

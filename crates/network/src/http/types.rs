@@ -23,13 +23,8 @@ use reqwest::Method;
 
 /// Represents a HTTP status code.
 ///
-/// Wraps [`http::StatusCode`] to expose a Python-compatible type and reuse
-/// its validation and convenience methods.
+/// Wraps [`http::StatusCode`] to reuse its validation and convenience methods.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
-)]
 pub struct HttpStatus {
     inner: StatusCode,
 }
@@ -108,14 +103,6 @@ impl TryFrom<u16> for HttpStatus {
 
 /// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
-)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -141,14 +128,6 @@ impl From<HttpMethod> for Method {
 /// This struct encapsulates the status, headers, and body of an HTTP response,
 /// providing easy access to the key components of the response.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct HttpResponse {
     /// The HTTP status code.
     pub status: HttpStatus,

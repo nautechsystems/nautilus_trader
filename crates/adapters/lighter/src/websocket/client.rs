@@ -312,7 +312,6 @@ impl LighterWebSocketClient {
             cfg,
             message_handler,
             None,
-            None,
             ws_message_rate_limiter(&self.url),
         )
         .await?;

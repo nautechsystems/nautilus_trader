@@ -255,7 +255,7 @@ impl HyperliquidWebSocketClient {
             proxy_url: self.proxy_url.clone(),
         };
         let client =
-            WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
+            WebSocketClient::connect(cfg, Some(message_handler), None, vec![], None).await?;
 
         // Create channels for handler communication
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();

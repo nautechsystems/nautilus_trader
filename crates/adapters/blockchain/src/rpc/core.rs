@@ -195,8 +195,7 @@ impl CoreBlockchainRpcClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        let client =
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await?;
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None).await?;
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);

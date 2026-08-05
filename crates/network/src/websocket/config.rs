@@ -63,7 +63,7 @@ use crate::error::{NetworkConfigError, NetworkConfigResult};
 )]
 #[allow(
     clippy::unsafe_derive_deserialize,
-    reason = "PyO3-backed enum still needs serde deserialization for strict config decoding"
+    reason = "network configuration requires strict serde decoding"
 )]
 pub enum TransportBackend {
     /// `tokio-tungstenite` backed transport (default when `transport-sockudo` is disabled).
@@ -88,7 +88,7 @@ pub enum TransportBackend {
 /// - Client spawns internal task to read messages and call handler.
 /// - Supports automatic reconnection with exponential backoff.
 /// - Reconnection config fields (`reconnect_*`) are active.
-/// - Best for long-lived connections, Python bindings, callback-based APIs.
+/// - Best for long-lived connections and callback-based APIs.
 ///
 /// ## Stream Mode
 ///
@@ -97,17 +97,9 @@ pub enum TransportBackend {
 /// - **Does NOT support automatic reconnection** (reader owned by caller).
 /// - Reconnection config fields are ignored.
 /// - On disconnect, client transitions to CLOSED state and caller must manually reconnect.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 #[allow(
     clippy::unsafe_derive_deserialize,
-    reason = "PyO3-backed config still needs serde deserialization for strict config decoding"
+    reason = "network configuration requires strict serde decoding"
 )]
 #[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]

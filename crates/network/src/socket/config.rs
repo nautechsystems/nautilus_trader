@@ -38,14 +38,6 @@ use crate::error::{NetworkConfigError, NetworkConfigResult};
 /// Configuration for TCP socket connection.
 #[derive(bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct SocketConfig {
     /// The URL to connect to.
     pub url: String,

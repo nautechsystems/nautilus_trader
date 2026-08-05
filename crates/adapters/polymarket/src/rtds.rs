@@ -561,7 +561,7 @@ impl PolymarketRtdsFeed {
         let config = self.websocket_config();
 
         let ws = Arc::new(
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            WebSocketClient::connect(config, Some(handler), None, vec![], None)
                 .await
                 .context("failed to connect Polymarket RTDS WebSocket")?,
         );
@@ -1403,7 +1403,6 @@ mod tests {
                     proxy_url: None,
                 },
                 Some(handler),
-                None,
                 None,
                 vec![],
                 None,

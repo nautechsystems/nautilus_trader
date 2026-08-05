@@ -40,14 +40,6 @@ use super::nanos::Nanos;
 /// In other words, the burst size is the maximum number of cells that the rate limiter will ever
 /// allow through without replenishing them.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct Quota {
     pub(crate) max_burst: NonZeroU32,
     pub(crate) replenish_1_per: Duration,

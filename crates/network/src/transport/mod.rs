@@ -16,8 +16,8 @@
 //! Transport abstraction layer for WebSocket backends.
 //!
 //! Defines the backend-agnostic surface that higher layers in `nautilus-network`
-//! consume (the reconnecting client, auth tracker, subscription manager, Python
-//! bindings, and adapter crates):
+//! consume (the reconnecting client, auth tracker, subscription manager, and adapter
+//! crates):
 //!
 //! - [`Message`]: neutral WebSocket message enum.
 //! - [`TransportError`]: neutral error type.

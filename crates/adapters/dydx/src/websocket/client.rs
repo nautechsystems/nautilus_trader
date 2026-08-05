@@ -657,7 +657,6 @@ impl DydxWebSocketClient {
             cfg,
             Some(message_handler),
             None,
-            None,
             vec![],
             Some(*DYDX_WS_SUBSCRIPTION_QUOTA),
         )

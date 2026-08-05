@@ -563,7 +563,6 @@ impl DeribitWebSocketClient {
             config,
             Some(message_handler),
             Some(ping_handler),
-            None, // post_reconnection
             keyed_quotas,
             Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota for non-order operations
         )

@@ -6665,7 +6665,6 @@ dependencies = [
  "nautilus-cryptography",
  "proptest",
  "pyo3",
- "pyo3-async-runtimes",
  "pyo3-stub-gen",
  "rand 0.10.2",
  "rcgen",

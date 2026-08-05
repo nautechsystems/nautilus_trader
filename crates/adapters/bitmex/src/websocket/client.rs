@@ -559,7 +559,6 @@ impl BitmexWebSocketClient {
             config,
             Some(message_handler),
             Some(ping_handler),
-            None, // post_reconnection
             keyed_quotas,
             None, // default_quota
         )

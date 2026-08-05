@@ -179,10 +179,9 @@ impl Debug for ReconnectHeaders {
 ///
 /// The client splits the connection into read and write halves. It moves
 /// the read half into a tokio task which keeps receiving messages from the
-/// server and calls a handler - a Python function that takes the data
-/// as its parameter. It stores the write half in the struct wrapped
-/// with an Arc Mutex. This way the client struct can be used to write
-/// data to the server from multiple scopes/tasks.
+/// server and calls a handler with the data. It stores the write half in the
+/// struct wrapped with an Arc Mutex. This way the client struct can be used
+/// to write data to the server from multiple scopes/tasks.
 ///
 /// The client also maintains a heartbeat if given a duration in seconds.
 /// It's preferable to set the duration slightly lower - heartbeat more
@@ -500,8 +499,8 @@ impl WebSocketClientInner {
     /// `CONNECT` tunnel through the proxy before performing the WebSocket
     /// handshake. The Sockudo backend does not yet support proxying; when it
     /// is selected together with a proxy URL, this method logs a warning and
-    /// transparently falls back to Tungstenite so omitted-backend Python
-    /// configurations keep working.
+    /// transparently falls back to Tungstenite so configurations that use the
+    /// default backend keep working.
     ///
     /// # Errors
     ///
@@ -519,8 +518,7 @@ impl WebSocketClientInner {
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
         // Sockudo does not yet support proxy tunnels. When a proxy URL is supplied,
         // route through Tungstenite so configurations that rely on the runtime
-        // default keep working (notably the Python `WebSocketConfig` binding,
-        // which exposes `proxy_url` but no `backend` selector).
+        // default keep working.
         if matches!(backend, TransportBackend::Sockudo)
             && let Some(proxy) = proxy_url
         {
@@ -1747,11 +1745,6 @@ impl Debug for WebSocketClientInner {
 ///
 /// Handles connection state, callbacks, and rate limiting.
 /// See module docs for architecture details.
-#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.network"))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
@@ -1791,7 +1784,6 @@ impl WebSocketClient {
         config: WebSocketConfig,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
-        post_reconnect: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<(MessageReader, Self), TransportError> {
         install_cryptographic_provider();
 
@@ -1839,7 +1831,6 @@ impl WebSocketClient {
             inner,
             connection_mode.clone(),
             state_notify.clone(),
-            post_reconnect,
             Arc::clone(&auth_tracker),
         );
 
@@ -1867,8 +1858,8 @@ impl WebSocketClient {
     /// the client automatically attempts to reconnect and replaces the internal reader
     /// (the handler continues working seamlessly).
     ///
-    /// Use handler mode for simplified connection management, automatic reconnection, Python
-    /// bindings, or callback-based message handling.
+    /// Use handler mode for simplified connection management, automatic reconnection, or
+    /// callback-based message handling.
     ///
     /// See [`WebSocketConfig`] documentation for comparison with stream mode.
     ///
@@ -1881,7 +1872,6 @@ impl WebSocketClient {
         config: WebSocketConfig,
         message_handler: Option<MessageHandler>,
         ping_handler: Option<PingHandler>,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<Self, TransportError> {
@@ -1890,14 +1880,7 @@ impl WebSocketClient {
             .map(|(key, quota)| (Ustr::from(&key), quota))
             .collect();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
-        Self::connect_with_rate_limiter(
-            config,
-            message_handler,
-            ping_handler,
-            post_reconnection,
-            rate_limiter,
-        )
-        .await
+        Self::connect_with_rate_limiter(config, message_handler, ping_handler, rate_limiter).await
     }
 
     /// Creates a websocket client in **handler mode** sharing an externally-owned rate limiter.
@@ -1920,18 +1903,9 @@ impl WebSocketClient {
         config: WebSocketConfig,
         message_handler: Option<MessageHandler>,
         ping_handler: Option<PingHandler>,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
-        Self::connect_with_handlers(
-            config,
-            message_handler,
-            None,
-            ping_handler,
-            post_reconnection,
-            rate_limiter,
-        )
-        .await
+        Self::connect_with_handlers(config, message_handler, None, ping_handler, rate_limiter).await
     }
 
     /// Creates a handler-mode client whose incoming messages carry connection ownership.
@@ -1947,7 +1921,6 @@ impl WebSocketClient {
         config: WebSocketConfig,
         epoch_handler: EpochMessageHandler,
         ping_handler: Option<PingHandler>,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
         Self::connect_with_handlers(
@@ -1955,7 +1928,6 @@ impl WebSocketClient {
             None,
             Some(epoch_handler),
             ping_handler,
-            post_reconnection,
             rate_limiter,
         )
         .await
@@ -1966,7 +1938,6 @@ impl WebSocketClient {
         message_handler: Option<MessageHandler>,
         epoch_handler: Option<EpochMessageHandler>,
         ping_handler: Option<PingHandler>,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
         if message_handler.is_none() && epoch_handler.is_none() {
@@ -1997,7 +1968,6 @@ impl WebSocketClient {
             inner,
             connection_mode.clone(),
             state_notify.clone(),
-            post_reconnection,
             Arc::clone(&auth_tracker),
         );
 
@@ -2392,7 +2362,6 @@ impl WebSocketClient {
         mut inner: WebSocketClientInner,
         connection_mode: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         auth_tracker: Arc<OnceLock<AuthTracker>>,
     ) -> tokio::task::JoinHandle<()> {
         const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
@@ -2495,7 +2464,6 @@ impl WebSocketClient {
                         );
                     }
 
-                    // Check if max reconnection attempts exceeded
                     if let Some(max_attempts) = inner.reconnect_max_attempts
                         && inner.reconnection_attempt_count >= max_attempts
                     {
@@ -2585,17 +2553,9 @@ impl WebSocketClient {
                                     );
                                 }
 
-                                // TODO: Retain this legacy callback for use from Python
-                                if let Some(ref callback) = post_reconnection {
-                                    callback();
-                                    log::debug!("Called `post_reconnection` handler");
-                                }
-
                                 log::debug!("Reconnected successfully");
                             } else {
-                                log::debug!(
-                                    "Skipping post_reconnection handlers due to disconnect state"
-                                );
+                                log::debug!("Skipping reconnect handlers due to disconnect state");
                             }
                         }
                         Some(Err(e)) => {
@@ -2781,7 +2741,7 @@ mod tests {
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
         };
-        WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
+        WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, vec![], None)
             .await
             .expect("Failed to connect")
     }
@@ -2843,8 +2803,7 @@ mod tests {
             proxy_url: None,
         };
         let res =
-            WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
-                .await;
+            WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, vec![], None).await;
         assert!(res.is_err(), "Should fail quickly with no server");
     }
 
@@ -2923,10 +2882,9 @@ mod tests {
             backend: TransportBackend::Tungstenite,
             proxy_url: None,
         };
-        let client =
-            WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
-                .await
-                .unwrap();
+        let client = WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, vec![], None)
+            .await
+            .unwrap();
 
         let initial = header_rx.recv().await.unwrap();
         let reconnect_headers = client.reconnect_headers();
@@ -2976,7 +2934,6 @@ mod tests {
         let client = WebSocketClient::connect(
             config,
             Some(Arc::new(|_| {})),
-            None,
             None,
             vec![("default".into(), quota)],
             None,
@@ -3275,7 +3232,7 @@ mod rust_tests {
         };
 
         // Connect the client
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3321,7 +3278,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3373,7 +3330,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let (_reader, _client) = WebSocketClient::connect_stream(config, vec![], None, None)
+        let (_reader, _client) = WebSocketClient::connect_stream(config, vec![], None)
             .await
             .unwrap();
 
@@ -3422,7 +3379,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3497,7 +3454,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3559,7 +3516,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let (mut reader, client) = WebSocketClient::connect_stream(config, vec![], None, None)
+        let (mut reader, client) = WebSocketClient::connect_stream(config, vec![], None)
             .await
             .unwrap();
 
@@ -3644,7 +3601,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3730,7 +3687,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3827,7 +3784,6 @@ mod rust_tests {
                 config,
                 Some(handler),
                 None,
-                None,
                 vec![("test_key".to_string(), quota)],
                 None,
             )
@@ -3910,7 +3866,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -3988,7 +3944,6 @@ mod rust_tests {
                 config,
                 Some(handler),
                 None,
-                None,
                 vec![("test_key".to_string(), quota)],
                 None,
             )
@@ -4057,7 +4012,7 @@ mod rust_tests {
         };
 
         // Pass None for message_handler - should be rejected
-        let result = WebSocketClient::connect(config, None, None, None, vec![], None).await;
+        let result = WebSocketClient::connect(config, None, None, vec![], None).await;
 
         assert!(
             result.is_err(),
@@ -4245,7 +4200,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -4305,7 +4260,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -4365,7 +4320,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -4434,7 +4389,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -4494,7 +4449,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -4574,7 +4529,6 @@ mod rust_tests {
             WebSocketClient::connect(
                 config,
                 Some(handler),
-                None,
                 None,
                 vec![("rate_key".to_string(), quota)],
                 None,
@@ -4661,7 +4615,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let (_reader, client) = WebSocketClient::connect_stream(config, vec![], None, None)
+        let (_reader, client) = WebSocketClient::connect_stream(config, vec![], None)
             .await
             .unwrap();
 
@@ -5273,7 +5227,7 @@ mod rust_tests {
 
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None),
+            WebSocketClient::connect(config, Some(handler), None, vec![], None),
         )
         .await
         .expect("connect should not hang on a silent server");
@@ -5336,7 +5290,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -5401,7 +5355,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
 
@@ -5866,8 +5820,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let result =
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await;
+        let result = WebSocketClient::connect(config, Some(handler), None, vec![], None).await;
 
         assert!(result.is_err(), "Zero idle timeout should be rejected");
         let err_msg = result.unwrap_err().to_string();
@@ -5899,7 +5852,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let err = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let err = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .expect_err("reserved header should fail before TCP connect");
 
@@ -5957,7 +5910,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .expect("sockudo connect without custom headers");
 
@@ -6035,7 +5988,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .expect("sockudo connect with custom headers");
 
@@ -6110,7 +6063,7 @@ mod rust_tests {
             proxy_url: None,
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .expect("sockudo connect");
 
@@ -6798,7 +6751,6 @@ mod turmoil_tests {
                 turmoil_websocket_config(),
                 Some(handler),
                 None,
-                None,
                 vec![],
                 None,
             )
@@ -6868,7 +6820,6 @@ mod turmoil_tests {
             let client = WebSocketClient::connect(
                 turmoil_websocket_config(),
                 Some(handler),
-                None,
                 None,
                 vec![],
                 None,

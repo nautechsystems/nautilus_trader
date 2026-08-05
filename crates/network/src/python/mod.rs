@@ -13,92 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from [PyO3](https://pyo3.rs).
+//! Python bindings for network configuration.
 
 // We need to allow `unexpected_cfgs` because the PyO3 macros internally check for
 // the `gil-refs` feature. We don't define or enable `gil-refs` ourselves (due to a
 // memory leak), so the compiler raises an error about an unknown cfg feature.
 // This attribute prevents those errors without actually enabling `gil-refs`.
 #![allow(unexpected_cfgs)]
-#![expect(
-    clippy::missing_errors_doc,
-    reason = "errors documented on underlying Rust methods"
-)]
-#![allow(
-    clippy::implicit_hasher,
-    reason = "PyO3 bindings receive concrete HashMap from Python and cannot be generic over hasher"
-)]
-#![allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "PyO3 methods require &self for Python binding even when Rust impl does not need it"
-)]
-
-pub mod http;
-pub mod socket;
-pub mod websocket;
-
-use std::num::NonZeroU32;
-
-use nautilus_core::python::to_pyexception;
 use pyo3::prelude::*;
-
-use crate::{
-    python::{
-        http::{HttpClientBuildError, HttpError, HttpInvalidProxyError, HttpTimeoutError},
-        websocket::WebSocketClientError,
-    },
-    ratelimiter::quota::Quota,
-};
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl Quota {
-    /// Construct a quota for a number of requests per second.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if the max burst capacity is 0
-    #[staticmethod]
-    pub fn rate_per_second(max_burst: u32) -> PyResult<Self> {
-        let max_burst = NonZeroU32::new(max_burst)
-            .ok_or_else(|| to_pyexception("Max burst capacity should be a non-zero integer"))?;
-        Self::per_second(max_burst).ok_or_else(|| {
-            to_pyexception(
-                "Max burst too large: replenish interval rounds to zero (max 1_000_000_000)",
-            )
-        })
-    }
-
-    /// Construct a quota for a number of requests per minute.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if the max burst capacity is 0
-    #[staticmethod]
-    pub fn rate_per_minute(max_burst: u32) -> PyResult<Self> {
-        match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Self::per_minute(max_burst)),
-            None => Err(to_pyexception(
-                "Max burst capacity should be a non-zero integer",
-            )),
-        }
-    }
-
-    /// Construct a quota for a number of requests per hour.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if the max burst capacity is 0
-    #[staticmethod]
-    pub fn rate_per_hour(max_burst: u32) -> PyResult<Self> {
-        match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Self::per_hour(max_burst)),
-            None => Err(to_pyexception(
-                "Max burst capacity should be a non-zero integer",
-            )),
-        }
-    }
-}
 
 /// Exposed through `nautilus_trader.network`.
 ///
@@ -107,36 +29,7 @@ impl Quota {
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn network(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::http::HttpClient>()?;
-    m.add_class::<crate::http::HttpMethod>()?;
-    m.add_class::<crate::http::HttpResponse>()?;
-    m.add_class::<crate::ratelimiter::quota::Quota>()?;
-    m.add_class::<crate::websocket::WebSocketClient>()?;
-    m.add_class::<crate::websocket::WebSocketConfig>()?;
     m.add_class::<crate::websocket::TransportBackend>()?;
-    m.add_class::<crate::socket::SocketClient>()?;
-    m.add_class::<crate::socket::SocketConfig>()?;
-
-    m.add(
-        "WebSocketClientError",
-        m.py().get_type::<WebSocketClientError>(),
-    )?;
-    m.add("HttpError", m.py().get_type::<HttpError>())?;
-    m.add("HttpTimeoutError", m.py().get_type::<HttpTimeoutError>())?;
-    m.add(
-        "HttpInvalidProxyError",
-        m.py().get_type::<HttpInvalidProxyError>(),
-    )?;
-    m.add(
-        "HttpClientBuildError",
-        m.py().get_type::<HttpClientBuildError>(),
-    )?;
-
-    m.add_function(wrap_pyfunction!(http::http_get, m)?)?;
-    m.add_function(wrap_pyfunction!(http::http_post, m)?)?;
-    m.add_function(wrap_pyfunction!(http::http_patch, m)?)?;
-    m.add_function(wrap_pyfunction!(http::http_delete, m)?)?;
-    m.add_function(wrap_pyfunction!(http::http_download, m)?)?;
 
     Ok(())
 }

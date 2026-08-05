@@ -503,7 +503,6 @@ impl BinanceFuturesWebSocketClient {
             config,
             Some(raw_handler),
             Some(ping_handler),
-            None,
             keyed_quotas,
             Some(*BINANCE_WS_CONNECTION_QUOTA),
         )

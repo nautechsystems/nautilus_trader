@@ -304,7 +304,7 @@ impl KrakenFuturesWebSocketClient {
         )];
 
         let ws_client =
-            WebSocketClient::connect(ws_config, Some(raw_handler), None, None, keyed_quotas, None)
+            WebSocketClient::connect(ws_config, Some(raw_handler), None, keyed_quotas, None)
                 .await
                 .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 

@@ -1560,9 +1560,6 @@ CONFIG_READBACK_REPLACEMENTS = {
         "BacktestDataConfig",
         "catalog_fs_rust_storage_options",
     ): "catalog_fs_rust_storage_option_keys",
-    ("nautilus_trader.network", "SocketConfig", "handler"): "has_handler",
-    ("nautilus_trader.network", "WebSocketConfig", "headers"): "header_names",
-    ("nautilus_trader.network", "WebSocketConfig", "proxy_url"): "has_proxy_url",
 }
 
 WRITABLE_CONFIG_PROPERTIES = {

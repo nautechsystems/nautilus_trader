@@ -630,7 +630,6 @@ impl OKXWebSocketClient {
             config,
             Some(message_handler),
             Some(ping_handler),
-            None, // post_reconnection
             keyed_quotas,
             Some(*OKX_WS_CONNECTION_QUOTA), // Default quota for connection operations
         )

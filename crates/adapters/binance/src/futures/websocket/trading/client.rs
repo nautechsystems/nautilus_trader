@@ -222,7 +222,6 @@ impl BinanceFuturesWsTradingClient {
             config,
             Some(raw_handler),
             Some(ping_handler),
-            None,
             keyed_quotas,
             Some(binance_futures_ws_order_quota()),
         )

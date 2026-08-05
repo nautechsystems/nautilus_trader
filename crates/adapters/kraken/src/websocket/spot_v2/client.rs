@@ -282,7 +282,6 @@ impl KrakenSpotWebSocketClient {
             ws_config,
             Some(raw_handler),
             None, // ping_handler
-            None, // post_reconnection
             keyed_quotas,
             None,
         )

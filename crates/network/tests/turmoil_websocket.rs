@@ -30,11 +30,11 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
-    RECONNECTED,
+    Message as NetworkMessage, RECONNECTED,
     error::SendError,
     ratelimiter::RateLimiter,
     websocket::{
-        AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig,
+        AuthTracker, MessageHandler, TransportBackend, WebSocketClient, WebSocketConfig,
         channel_epoch_message_handler, channel_message_handler,
     },
 };
@@ -60,7 +60,7 @@ const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
 const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
 const CONNECTION_EPOCH_RECONNECTION_SEED: u64 = 0x57EB_0007;
 const QUEUED_WRITE_DROP_SEED: u64 = 0x57EB_2001;
-const POST_RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
+const RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
 const ALTERNATING_TEXT_BINARY_SEED: u64 = 0x57EB_2003;
 const HANDSHAKE_DROP_SEED: u64 = 0x57EB_3001;
 const FIRST_READ_TASK_DROP_SEED: u64 = 0x57EB_3002;
@@ -124,6 +124,22 @@ async fn recv_connection_message(
         tokio::time::sleep(POLL_STEP).await;
     }
     None
+}
+
+fn tracked_channel_message_handler(
+    reconnected: Arc<AtomicBool>,
+) -> (
+    MessageHandler,
+    tokio::sync::mpsc::UnboundedReceiver<Message>,
+) {
+    let (handler, receiver) = channel_message_handler();
+    let tracked_handler = Arc::new(move |message: NetworkMessage| {
+        if matches!(&message, NetworkMessage::Text(text) if text == RECONNECTED) {
+            reconnected.store(true, Ordering::SeqCst);
+        }
+        handler(message);
+    });
+    (tracked_handler, receiver)
 }
 
 async fn wait_for<F>(mut condition: F) -> bool
@@ -278,10 +294,9 @@ fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(client.is_active(), "Client should be active after connect");
 
@@ -346,10 +361,9 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(
             recv_text(&mut rx, "first").await,
@@ -437,7 +451,6 @@ fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: W
         let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler(
             websocket_config,
             handler,
-            None,
             None,
             rate_limiter,
         )
@@ -531,10 +544,9 @@ fn test_turmoil_websocket_unstable_reconnects_exhaust_attempts(
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Initial WebSocket connection should succeed");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Initial WebSocket connection should succeed");
         let started_at = tokio::time::Instant::now();
 
         assert!(
@@ -576,10 +588,9 @@ fn test_turmoil_websocket_stable_reconnect_resets_attempts(mut websocket_config:
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Initial WebSocket connection should succeed");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Initial WebSocket connection should succeed");
 
         tokio::time::sleep(Duration::from_secs(13)).await;
 
@@ -610,10 +621,9 @@ fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocket
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         client
             .send_text("before_partition".to_string(), None)
@@ -666,10 +676,9 @@ fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config:
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(client.is_active(), "Client should be active after connect");
 
@@ -710,10 +719,9 @@ fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: W
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(client.is_active());
 
@@ -752,10 +760,9 @@ fn test_turmoil_websocket_rejects_proxy_url(mut websocket_config: WebSocketConfi
     sim.host("server", ws_echo_server);
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let err =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect_err("turmoil should reject proxy_url");
+        let err = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect_err("turmoil should reject proxy_url");
         let msg = err.to_string();
         assert!(
             msg.contains("turmoil"),
@@ -798,20 +805,20 @@ fn test_turmoil_websocket_sockudo_queued_write_drop_preserves_later_message_orde
 }
 
 #[rstest]
-fn test_turmoil_websocket_post_reconnect_active_drop_preserves_later_message_order() {
-    run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+fn test_turmoil_websocket_reconnect_active_drop_preserves_later_message_order() {
+    run_websocket_reconnect_active_drop_preserves_later_message_order(
         websocket_config_for_backend(TransportBackend::Tungstenite),
-        POST_RECONNECT_ACTIVE_DROP_SEED,
+        RECONNECT_ACTIVE_DROP_SEED,
         "websocket/tungstenite",
     );
 }
 
 #[cfg(feature = "transport-sockudo")]
 #[rstest]
-fn test_turmoil_websocket_sockudo_post_reconnect_active_drop_preserves_later_message_order() {
-    run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+fn test_turmoil_websocket_sockudo_reconnect_active_drop_preserves_later_message_order() {
+    run_websocket_reconnect_active_drop_preserves_later_message_order(
         websocket_config_for_backend(TransportBackend::Sockudo),
-        POST_RECONNECT_ACTIVE_DROP_SEED,
+        RECONNECT_ACTIVE_DROP_SEED,
         "websocket/sockudo",
     );
 }
@@ -1161,10 +1168,9 @@ fn run_websocket_heartbeat_pings_reach_server(
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // Heartbeat cadence is 1s; allow up to 10s of simulated time for 3 pings
         let mut received_enough = false;
@@ -1208,10 +1214,9 @@ fn run_websocket_server_ping_gets_pong(
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // A quiet client must auto-reply to server pings at the transport layer;
         // for sockudo this pins the pending_flush nudge that flushes pongs
@@ -1247,10 +1252,9 @@ fn run_websocket_server_close_frame_triggers_reconnect(
 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // First connection receives a protocol Close frame; the client must
         // tear it down and reconnect; the second connection announces itself
@@ -1290,10 +1294,9 @@ fn run_websocket_repeated_drops_preserve_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         let expected = (0..6)
             .map(|i| format!("drop-reconnect-{i}"))
@@ -1345,7 +1348,7 @@ fn run_websocket_repeated_drops_preserve_message_order(
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }
 
-fn run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+fn run_websocket_reconnect_active_drop_preserves_later_message_order(
     mut websocket_config: WebSocketConfig,
     seed: u64,
     label: &'static str,
@@ -1371,24 +1374,14 @@ fn run_websocket_post_reconnect_active_drop_preserves_later_message_order(
     });
 
     sim.client("client", async move {
-        let (handler, mut rx) = channel_message_handler();
-        let trigger_reconnected_drop = Arc::clone(&drop_reconnected_connection);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            trigger_reconnected_drop.store(true, Ordering::SeqCst);
-        });
+        let (handler, mut rx) =
+            tracked_channel_message_handler(Arc::clone(&drop_reconnected_connection));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
-        let first_msg = "before-post-reconnect-active-drop".to_string();
+        let first_msg = "before-reconnect-active-drop".to_string();
         client
             .send_text(first_msg.clone(), None)
             .await
@@ -1474,10 +1467,9 @@ fn run_websocket_handshake_drop_reaches_active_state(
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| handshake_dropped.load(Ordering::SeqCst)).await,
@@ -1525,23 +1517,12 @@ fn run_websocket_first_read_task_drop_reaches_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
@@ -1599,23 +1580,12 @@ fn run_websocket_partition_while_reconnecting_reaches_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
@@ -1684,23 +1654,12 @@ fn run_websocket_partition_during_backoff_sleep_reaches_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_handshake_dropped.load(Ordering::SeqCst)).await,
@@ -1771,23 +1730,12 @@ fn run_websocket_silent_until_idle_timeout_reconnects_to_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_silent.load(Ordering::SeqCst)).await,
@@ -1844,23 +1792,12 @@ fn run_websocket_no_read_backpressure_reconnects_to_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
@@ -1952,7 +1889,7 @@ fn run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
         let (handler, _rx) = channel_message_handler();
 
         let client = Arc::new(
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+            WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
                 .await
                 .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}")),
         );
@@ -2047,23 +1984,12 @@ fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2168,10 +2094,9 @@ fn run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
         let tracker = AuthTracker::new();
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2245,10 +2170,9 @@ fn run_websocket_stream_notify_closed_while_waiting_for_auth_closes_client(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (_reader, client) =
-            WebSocketClient::connect_stream(websocket_config, vec![], None, None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let (_reader, client) = WebSocketClient::connect_stream(websocket_config, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2321,10 +2245,9 @@ fn run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (_reader, client) =
-            WebSocketClient::connect_stream(websocket_config, vec![], None, None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let (_reader, client) = WebSocketClient::connect_stream(websocket_config, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2416,23 +2339,12 @@ fn run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2523,10 +2435,9 @@ fn run_websocket_alternating_text_binary_preserves_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         let expected = alternating_text_binary_messages();
         let mut received = Vec::with_capacity(expected.len());
@@ -2658,10 +2569,9 @@ fn run_websocket_queued_write_drop_preserves_later_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         let in_flight_msg = "queued-before-drop".to_string();
         client

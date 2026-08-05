@@ -54,14 +54,6 @@ const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 /// built on top of `reqwest` and can be used for both synchronous and
 /// asynchronous HTTP requests.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct HttpClient {
     /// The underlying HTTP client used to make requests.
     pub(crate) client: InnerHttpClient,

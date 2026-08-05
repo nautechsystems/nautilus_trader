@@ -441,7 +441,6 @@ impl AxOrdersWebSocketClient {
                     config.clone(),
                     Some(raw_handler.clone()),
                     Some(ping_handler.clone()),
-                    None,
                     vec![],
                     None,
                 ),

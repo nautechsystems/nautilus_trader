@@ -230,7 +230,7 @@ impl PolymarketWebSocketClient {
         let cfg = self.websocket_config();
 
         let client =
-            WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
+            WebSocketClient::connect(cfg, Some(message_handler), None, vec![], None).await?;
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();

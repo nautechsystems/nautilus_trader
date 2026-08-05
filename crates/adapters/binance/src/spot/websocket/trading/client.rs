@@ -285,7 +285,6 @@ impl BinanceSpotWsTradingClient {
             config,
             Some(raw_handler),
             Some(ping_handler),
-            None,
             keyed_quotas,
             Some(binance_ws_order_quota()), // Default quota for all operations
         )

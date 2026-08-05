@@ -203,20 +203,16 @@ engine, backtest venue and run, live reconciliation, and data/execution tester s
 `LiveRiskEngineConfig.max_notional_per_order` returns v2's validated strings even when constructed
 from Python integers or decimal values.
 
-Potential credentials and consumed callbacks use bounded inspection properties instead of raw
-readback:
+Potential credentials use bounded inspection properties instead of raw readback:
 
 | Constructor field                                    | Inspection property                   |
 | ---------------------------------------------------- | ------------------------------------- |
 | `BacktestDataConfig.catalog_fs_storage_options`      | `catalog_fs_storage_option_keys`      |
 | `BacktestDataConfig.catalog_fs_rust_storage_options` | `catalog_fs_rust_storage_option_keys` |
-| `SocketConfig.handler`                               | `has_handler`                         |
-| `WebSocketConfig.headers`                            | `header_names`                        |
-| `WebSocketConfig.proxy_url`                          | `has_proxy_url`                       |
 
 These raw fields and adapter credentials remain private. Some configs provide `has_*` checks for
 credential-bearing proxy, database, or gateway settings without returning their values. Keep
-secrets and callbacks in application-owned state if they must be reused.
+secrets in application-owned state if they must be reused.
 
 Betfair configuration moves and flattens in v2:
 
@@ -283,6 +279,13 @@ Three v1 application config exports represent workflows with no current public P
 `DataCatalogConfig`, `DatabaseConfig`, and `StreamingConfig`. Do not substitute a same‑named Rust
 config. In particular, `BacktestNode` does not yet expose the v1 catalog streaming workflow, and
 Python live‑node config cannot select a Redis or SQL backing.
+
+The generic Python APIs under `nautilus_trader.network` have no v2 public Python equivalent:
+`HttpClient`, `HttpMethod`, `HttpResponse`, `SocketClient`, `WebSocketClient`, `SocketConfig`,
+`WebSocketConfig`, `Quota`, network exceptions, and the `http_*` functions. Use adapter‑specific
+APIs for supported venue workflows or the Rust `nautilus-network` crate for custom networking.
+`TransportBackend` remains available from `nautilus_trader.network` only for adapter config
+transport selection.
 
 The v1 `NautilusConfig`, `NautilusKernelConfig`, `ImportableConfig`, config factory classes, and
 encoding and path utilities are not application config objects in the current package. Use the
