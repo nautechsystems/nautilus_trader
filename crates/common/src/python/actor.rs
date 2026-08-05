@@ -2655,7 +2655,7 @@ mod tests {
         clock::TestClock,
         component::Component,
         enums::ComponentState,
-        messages::data::{BarsResponse, QuotesResponse, TradesResponse},
+        messages::data::{BarsResponse, CustomDataResponse, QuotesResponse, TradesResponse},
         runner::{SyncDataCommandSender, set_data_cmd_sender},
         signal::Signal,
         timer::TimeEvent,
@@ -4731,6 +4731,52 @@ class IndicatorEventActor:
             rust_actor.inner_mut().on_quote(&quote).unwrap();
 
             assert_eq!(python_method_call_count(&py_actor, py, "on_quote"), 3);
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_historical_custom_data_response_items(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        client_id: ClientId,
+    ) {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let data = vec![
+                stub_custom_data(1, 42, None, None),
+                stub_custom_data(2, 84, None, None),
+            ];
+            let response = CustomDataResponse::new(
+                UUID4::new(),
+                client_id,
+                None,
+                data[0].data_type.clone(),
+                data.clone(),
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            );
+
+            DataActor::handle_data_response(rust_actor.inner_mut(), &response);
+
+            let calls = py_actor
+                .getattr(py, "calls")
+                .unwrap()
+                .extract::<Vec<(String, (CustomData,))>>(py)
+                .unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0].0, "on_historical_data");
+            assert_eq!(calls[0].1.0, data[0]);
+            assert_eq!(calls[1].0, "on_historical_data");
+            assert_eq!(calls[1].1.0, data[1]);
         });
     }
 

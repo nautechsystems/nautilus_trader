@@ -16,6 +16,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
+- Fixed `on_historical_data` to receive each `CustomData` response item
 
 ### Internal Improvements
 - Hardened development wheel publishing to validate exact artifacts and fail closed

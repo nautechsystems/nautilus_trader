@@ -1153,6 +1153,18 @@ pub trait DataActor: Component {
 
     /// Handles a data response.
     fn handle_data_response(&mut self, resp: &CustomDataResponse) {
+        if let Some(data) = resp.data.as_ref().downcast_ref::<Vec<CustomData>>() {
+            log_received_bulk("CustomDataResponse", &resp.correlation_id, data.len());
+            log::trace!("{RECV} {resp:?}");
+
+            for item in data {
+                if let Err(e) = self.on_historical_data(item) {
+                    log_error(&e);
+                }
+            }
+            return;
+        }
+
         log_received(&resp);
 
         if let Err(e) = self.on_historical_data(resp.data.as_ref()) {

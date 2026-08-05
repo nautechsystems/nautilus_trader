@@ -527,6 +527,47 @@ Deribit because this continuous model does not map to a discrete period.
 
 ## Deribit specific data
 
+### Book summaries
+
+Request `DeribitBookSummary` custom data to fetch one bulk snapshot filtered by currency and product
+kind. Each response item includes the Nautilus instrument ID, implied volatility, open interest,
+prices, volume, and other fields returned by `public/get_book_summary_by_currency`.
+
+The actor or strategy receives one `CustomData` callback for each instrument summary. Access the
+`DeribitBookSummary` through the wrapper's `data` field:
+
+```python
+from nautilus_trader.adapters.deribit import DERIBIT_CLIENT_ID
+from nautilus_trader.adapters.deribit import DeribitBookSummary
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+
+
+def on_start(self) -> None:
+    self.request_data(
+        DataType(
+            DeribitBookSummary.__name__,
+            metadata={"currency": "BTC", "kind": "option"},
+        ),
+        DERIBIT_CLIENT_ID,
+    )
+
+
+def on_historical_data(self, data: CustomData) -> None:
+    summary = data.data
+    if isinstance(summary, DeribitBookSummary):
+        self.log.info(
+            f"{summary.instrument_id}: mark_iv={summary.mark_iv}, "
+            f"open_interest={summary.open_interest}",
+        )
+```
+
+The `currency` metadata field is required. The optional `kind` field defaults to `option`.
+Decimal‑backed venue fields, such as `mark_iv` and `open_interest`, are exposed to Python as strings
+or `None`. An empty response invokes no `on_historical_data` callbacks.
+
+### Volatility index
+
 The adapter emits `DeribitVolatilityIndex` custom data from Deribit's
 `deribit_volatility_index.{index_name}` WebSocket channel. Deribit provides
 volatility index streams such as `btc_usd` and `eth_usd`.

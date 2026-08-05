@@ -27,7 +27,7 @@ use ahash::AHashSet;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
@@ -315,6 +315,10 @@ impl DataActor for TestDataActor {
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        if let Some(custom_data) = data.downcast_ref::<CustomData>() {
+            self.received_custom_data.push(custom_data.clone());
+        }
+
         self.received_data.push(format!("{data:?}"));
         Ok(())
     }
@@ -3281,6 +3285,58 @@ fn test_request_data(
     // Actor should receive the custom data
     assert_eq!(actor.received_data.len(), 1);
     assert_eq!(actor.received_data[0], "Any { .. }");
+}
+
+#[rstest]
+fn test_handle_data_response_fans_out_custom_data_items(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    test_logging();
+
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+
+    let data = vec![
+        make_test_custom_data("CustomData-01"),
+        make_test_custom_data("CustomData-02"),
+    ];
+    let data_type = data[0].data_type.clone();
+    let empty_response = CustomDataResponse::new(
+        UUID4::new(),
+        ClientId::new("TestClient"),
+        None,
+        data_type.clone(),
+        Vec::<CustomData>::new(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    actor.handle_data_response(&empty_response);
+
+    assert!(actor.received_data.is_empty());
+    assert!(actor.received_custom_data.is_empty());
+
+    let client_id = ClientId::new("TestClient");
+    let response = CustomDataResponse::new(
+        UUID4::new(),
+        client_id,
+        None,
+        data_type,
+        data.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    actor.handle_data_response(&response);
+
+    assert_eq!(actor.received_data.len(), 2);
+    assert_eq!(actor.received_custom_data, data);
 }
 
 #[cfg(feature = "defi")]
