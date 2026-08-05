@@ -105,9 +105,9 @@ pub(super) struct WsMessageContext {
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     pub(super) rtds_feed: PolymarketRtdsFeed,
     pub(super) subscribe_new_markets: bool,
+    pub(super) new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     pub(super) drop_quotes_missing_side: bool,
     pub(super) compute_effective_deltas: bool,
-    pub(super) new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     pub(super) cancellation_token: CancellationToken,
 }
 
@@ -1024,9 +1024,9 @@ mod tests {
                 data_tx,
             ),
             subscribe_new_markets: false,
+            new_market_filter: None,
             drop_quotes_missing_side: default_config.drop_quotes_missing_side,
             compute_effective_deltas: default_config.compute_effective_deltas,
-            new_market_filter: None,
             cancellation_token: CancellationToken::new(),
         };
 
@@ -1155,9 +1155,9 @@ mod tests {
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
             rtds_feed: client.rtds_feed.clone(),
             subscribe_new_markets: client.config.subscribe_new_markets,
+            new_market_filter: client.config.new_market_filter.clone(),
             drop_quotes_missing_side: client.config.drop_quotes_missing_side,
             compute_effective_deltas: client.config.compute_effective_deltas,
-            new_market_filter: client.config.new_market_filter.clone(),
             cancellation_token: client.cancellation_token.clone(),
         }
     }

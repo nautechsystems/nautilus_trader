@@ -93,9 +93,9 @@ impl PolymarketDataClient {
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             rtds_feed: self.rtds_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
+            new_market_filter: self.config.new_market_filter.clone(),
             drop_quotes_missing_side: self.config.drop_quotes_missing_side,
             compute_effective_deltas: self.config.compute_effective_deltas,
-            new_market_filter: self.config.new_market_filter.clone(),
             cancellation_token: cancellation.clone(),
         };
 
@@ -168,9 +168,9 @@ impl PolymarketDataClient {
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             rtds_feed: self.rtds_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
+            new_market_filter: self.config.new_market_filter.clone(),
             drop_quotes_missing_side: self.config.drop_quotes_missing_side,
             compute_effective_deltas: self.config.compute_effective_deltas,
-            new_market_filter: self.config.new_market_filter.clone(),
             cancellation_token: cancellation.clone(),
         };
 

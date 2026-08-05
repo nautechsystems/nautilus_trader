@@ -161,6 +161,7 @@ impl PolymarketDataClientConfig {
 
         let config = Self {
             instrument_config,
+            filters: Vec::new(),
             base_url_http,
             base_url_ws,
             base_url_rtds,
@@ -175,10 +176,11 @@ impl PolymarketDataClientConfig {
                 default.update_instruments_interval_mins,
             ),
             subscribe_new_markets: subscribe_new_markets.unwrap_or(default.subscribe_new_markets),
-            drop_quotes_missing_side: drop_quotes_missing_side
-                .unwrap_or(default.drop_quotes_missing_side),
+            new_market_filter: None,
             new_market_fetch_max_concurrency: new_market_fetch_max_concurrency
                 .unwrap_or(default.new_market_fetch_max_concurrency),
+            drop_quotes_missing_side: drop_quotes_missing_side
+                .unwrap_or(default.drop_quotes_missing_side),
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(default.auto_load_missing_instruments),
             auto_load_debounce_ms: auto_load_debounce_ms.unwrap_or(default.auto_load_debounce_ms),
@@ -194,8 +196,6 @@ impl PolymarketDataClientConfig {
                 .unwrap_or(default.resolve_poll_grace_secs),
             resolve_poll_max_wait_secs: resolve_poll_max_wait_secs
                 .unwrap_or(default.resolve_poll_max_wait_secs),
-            filters: Vec::new(),
-            new_market_filter: None,
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
             compute_effective_deltas: compute_effective_deltas
                 .unwrap_or(default.compute_effective_deltas),

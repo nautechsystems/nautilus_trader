@@ -1012,6 +1012,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | Option                                 | Default    | Description                                                                               |
 | -------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
 | `instrument_config`                    | `None`     | Bootstrap scope, passed as `PolymarketInstrumentProviderConfig`.                          |
+| `filters`                              | `[]`       | Rust‑only instrument filters applied during loading and discovery.                        |
 | `base_url_http`, `base_url_ws`         | `None`     | Override the CLOB HTTP or WebSocket endpoint.                                             |
 | `base_url_gamma`, `base_url_data_api`  | `None`     | Override the Gamma or Data API endpoint.                                                  |
 | `base_url_rtds`                        | `None`     | Override the RTDS endpoint.                                                               |
@@ -1020,9 +1021,10 @@ Class/struct: `PolymarketDataClientConfig`.
 | `ws_max_subscriptions`                 | `200`      | Per‑connection subscription cap; the market pool shards across connections at this bound. |
 | `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
 | `subscribe_new_markets`                | `false`    | Subscribe to new‑market discovery events.                                                 |
+| `new_market_filter`                    | `None`     | Rust‑only filter applied to newly discovered markets before instrument emission.          |
+| `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
 | `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                    |
 | `compute_effective_deltas`             | `false`    | Emit net snapshot changes when prior book state exists.                                   |
-| `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
 | `auto_load_missing_instruments`        | `true`     | Load unknown instruments for supported requests and subscriptions.                        |
 | `auto_load_debounce_ms`                | `100`      | Coalesce concurrent auto‑load requests.                                                   |
 | `auto_load_max_retries`                | `12`       | Retry transient CLOB hydration misses; `0` disables retry.                                |
