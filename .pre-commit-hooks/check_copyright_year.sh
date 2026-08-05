@@ -3,18 +3,6 @@
 
 set -euo pipefail
 
-# Exit cleanly if ripgrep is not installed
-if ! command -v rg &> /dev/null; then
-  echo "WARNING: ripgrep not found, skipping copyright year checks"
-  exit 0
-fi
-
-# Exit cleanly if bash version doesn't support mapfile (requires bash 4+)
-if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-  echo "WARNING: bash 4+ required for copyright checks (current: $BASH_VERSION), skipping"
-  exit 0
-fi
-
 CURRENT_YEAR=$(date -u +%Y)
 FAILED=0
 
@@ -43,10 +31,10 @@ while IFS=: read -r file _ line_content; do
       FAILED=1
     fi
   fi
-done < <(rg --line-number --no-heading "Copyright \(C\) 2015-[0-9]{4}" -g '*.rs' -g '*.py')
+done < <(git grep -n -I -E "Copyright [(]C[)] 2015-[0-9]{4}" -- '*.rs' '*.py')
 
 # Get list of files with copyright headers (sorted for comm)
-rg --files-with-matches "Copyright \(C\)" -g '*.rs' -g '*.py' 2> /dev/null | sort > /tmp/files_with_headers.$$ || true
+git grep -l -I -F "Copyright (C)" -- '*.rs' '*.py' 2> /dev/null | sort > /tmp/files_with_headers.$$ || true
 
 # Get all tracked files (sorted for comm)
 git ls-files '*.rs' '*.py' | sort > /tmp/all_files.$$

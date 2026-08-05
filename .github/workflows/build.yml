@@ -167,6 +167,17 @@ jobs:
           # Ubuntu 22.04 glibc is older than Lychee's GNU binary requires
           CARGO_BUILD_TARGET: x86_64-unknown-linux-musl
 
+      - name: Get cargo-machete version
+        run: |
+          version="$(bash scripts/cargo-tool-version.sh cargo-machete)"
+          echo "CARGO_MACHETE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install cargo-machete
+        # https://github.com/taiki-e/install-action
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
+
       - name: Run pre-commit
         run: prek run --all-files
 

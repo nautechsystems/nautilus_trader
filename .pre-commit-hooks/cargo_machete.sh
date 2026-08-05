@@ -12,9 +12,9 @@ set -euo pipefail
 PINNED_VERSION="0.9.2"
 
 if ! command -v cargo-machete &> /dev/null; then
-  echo "INFO: cargo-machete not installed, skipping unused-dependency check"
-  echo "      install with: cargo install --locked cargo-machete@${PINNED_VERSION}"
-  exit 0
+  echo "ERROR: cargo-machete ${PINNED_VERSION} is required for the unused-dependency check" >&2
+  echo "       install with: cargo install --locked cargo-machete@${PINNED_VERSION}" >&2
+  exit 1
 fi
 
 installed_version=$(cargo machete --version 2> /dev/null | tr -d '[:space:]')
@@ -24,8 +24,14 @@ if [ "$installed_version" != "$PINNED_VERSION" ]; then
   echo "         cargo install --locked cargo-machete@${PINNED_VERSION}"
 fi
 
-echo "Running cargo machete --with-metadata..."
-if ! cargo machete --with-metadata; then
+# The standalone Lighter quickstart has branch-based git dependencies and no committed lockfile.
+# Scan it without metadata so this hook stays offline.
+echo "Running cargo machete on maintained workspace paths..."
+if ! cargo machete --with-metadata \
+  Cargo.toml \
+  crates \
+  examples/tutorials ||
+  ! cargo machete examples/quickstarts/lighter-rust-data-client; then
   echo ""
   echo "If a flagged dependency is a false positive (feature-gate plumbing,"
   echo "macro expansion, etc.), add it to the crate's Cargo.toml with a"

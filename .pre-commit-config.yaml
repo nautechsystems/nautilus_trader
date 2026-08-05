@@ -106,6 +106,7 @@ repos:
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
         args: ["--no-online-audits", "--min-severity", "medium", "--config", ".zizmor.yml", ".github/"]
+        files: ^(\.github/.*\.ya?ml|\.pre-commit-config\.yaml|\.zizmor\.yml)$
         pass_filenames: false
 
   ##############################################################################
@@ -173,13 +174,41 @@ repos:
           )$
         pass_filenames: false
 
+      - id: test-release-verification-retry
+        name: test release verification retry
+        description: Verifies transient release verification retries and fail-fast mismatches
+        entry: bash scripts/ci/test-release-verification-retry.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            scripts/ci/(release-verification-retry|test-release-verification-retry)\.bash
+          )$
+        pass_filenames: false
+
+      - id: test-published-registries
+        name: test published registry verification
+        description: Verifies registry propagation, provenance, checksums, and publisher policy
+        entry: bash scripts/ci/test-verify-published-registries-crates.bash
+        language: system
+        files: >-
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            scripts/ci/(
+              release-verification-retry|
+              test-verify-published-registries-crates|
+              verify-published-registries
+            )\.bash
+          )$
+        pass_filenames: false
+
       - id: check-hidden-chars
         name: check hidden unicode/control chars
         description: Fail on hidden control or zero-width unicode characters in source
         entry: bash .pre-commit-hooks/check_hidden_chars.sh
         language: system
         types_or: [rust, python, toml, markdown, yaml, json, text]
-        files: "\\.(rs|py|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*"
+        files: "\\.(rs|py|toml|md|yml|yaml|json|sh|bash|dockerfile)$|Dockerfile.*"
 
       - id: check-unicode-typography
         name: check Unicode typography
@@ -264,6 +293,7 @@ repos:
         entry: bash .pre-commit-hooks/check_copyright_year.sh
         language: system
         types_or: [rust, python]
+        always_run: true
         pass_filenames: false
 
       - id: check-error-conventions
@@ -309,6 +339,14 @@ repos:
         entry: bash .pre-commit-hooks/check_logging_conventions.sh
         language: system
         files: "\\.rs$"
+        pass_filenames: false
+
+      - id: test-logging-conventions
+        name: test logging conventions hook
+        description: Verifies direct output and process termination rules
+        entry: bash .pre-commit-hooks/test_check_logging_conventions.sh
+        language: system
+        files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_logging_conventions\.sh)$
         pass_filenames: false
 
       - id: check-tokio-usage
@@ -471,7 +509,7 @@ repos:
         description: Detect declared-but-unused workspace dependencies
         entry: bash .pre-commit-hooks/cargo_machete.sh
         language: system
-        files: "(Cargo\\.toml|\\.rs)$"
+        files: "(Cargo\\.toml|\\.rs)$|^\\.pre-commit-hooks/cargo_machete\\.sh$"
         pass_filenames: false
 
   ##############################################################################

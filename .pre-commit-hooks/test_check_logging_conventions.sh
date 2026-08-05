@@ -3,8 +3,9 @@
 set -euo pipefail
 
 if ! command -v rg &> /dev/null; then
-  echo "WARNING: ripgrep not found, skipping logging convention hook tests"
-  exit 0
+  echo "ERROR: ripgrep is required for logging convention hook tests" >&2
+  echo "       install from: https://github.com/BurntSushi/ripgrep#installation" >&2
+  exit 1
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
