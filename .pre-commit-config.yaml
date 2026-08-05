@@ -284,10 +284,11 @@ repos:
 
       - id: check-links-offline
         name: check links (offline)
-        description: Verifies internal markdown links resolve on disk via lychee
+        description: Verifies all tracked internal markdown links resolve on disk via lychee
         entry: bash .pre-commit-hooks/check_links_offline.sh
         language: system
-        files: "(\\.md$|^docs/.*\\.py$)"
+        always_run: true
+        pass_filenames: false
 
   ##############################################################################
   #  Rust formatting and linting
