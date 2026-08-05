@@ -26,11 +26,6 @@ repos:
       - id: check-xml
       - id: check-yaml
 
-  - repo: https://github.com/jorisroovers/gitlint
-    rev: v0.19.1
-    hooks:
-      - id: gitlint
-
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.13.1-1
     hooks:

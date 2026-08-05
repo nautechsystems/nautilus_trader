@@ -47,7 +47,6 @@
 /clippy.toml                     @nautechsystems/core
 /.taplo.toml                     @nautechsystems/core
 /.markdownlint.jsonc             @nautechsystems/core
-/.gitlint                        @nautechsystems/core
 /.yamllint.yaml                  @nautechsystems/core
 
 # =============================================================================

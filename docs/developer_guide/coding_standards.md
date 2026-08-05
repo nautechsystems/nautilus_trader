@@ -139,16 +139,15 @@ long_method_with_many_params(
 
 ## Commit messages
 
-Commit messages use a capitalized, imperative subject naming the affected surface, optionally followed by
-a body explaining the change. [Gitlint](#gitlint-optional) encodes the length limits and some formatting
-rules. It is opt-in today but may be enforced in CI later, so write messages that pass it now.
+Commit messages use a capitalized, imperative subject naming the affected surface, optionally followed by a body
+explaining the change.
 
 ### Subject line
 
 - Open with a capitalized imperative verb, so the subject describes what the commit does when applied.
   `Add`, `Fix`, `Improve`, `Refine`, `Update`, `Remove`, `Refactor`, and `Standardize` cover most of the history.
 - Name the affected surface (crate, adapter, subsystem, or type) so the log stays scannable.
-- Keep the subject between 10 and 60 characters (gitlint `title-min-length` and `title-max-length`).
+- Keep the subject between 10 and 60 characters for clear GitHub rendering and concise but descriptive text.
 - Do not end the subject with a period.
 
 ```text
@@ -176,11 +175,11 @@ Pull request titles matter here too, because a squash merge turns the PR title i
 
 ### Body
 
-The body is optional and gitlint does not require one, but anything beyond a trivial change should say
-why the change was made rather than restate the diff.
+The body is optional, but anything beyond a trivial change should say why the change was made rather than
+restate the diff.
 
 - Separate the body from the subject with a blank line.
-- Keep body lines to 79 characters or fewer (gitlint `body-max-line-length`).
+- Keep body lines to 79 characters or fewer to align with PEP 8 and traditional Git tooling.
 - Use prose paragraphs or bullet points, whichever suits the change. Bullets may keep the same imperative
   voice as the subject, and do not need terminating periods.
 - Include informative hyperlinks where they help a future reader.
@@ -191,41 +190,4 @@ why the change was made rather than restate the diff.
   issue, or `Related to #4547` when it is partial work.
 - GitHub appends the pull request number to the subject on squash merge, producing subjects such as
   `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand.
-- Gitlint skips all rules for subjects ending in `(#1234)` (`ignore-by-title`), which is why squash-merged
-  subjects in the log can exceed 60 characters.
-
-### Gitlint (optional)
-
-Gitlint is available to help enforce commit message standards automatically. It checks length limits and
-formatting such as trailing punctuation, not the choice of verb, capitalization, or surface. This is
-**opt-in** and not enforced in CI.
-
-**Benefits**: Encourages concise yet expressive commit messages, helps develop clear explanations of changes.
-
-**Installation**: First install gitlint to run it locally:
-
-```bash
-uv pip install gitlint
-```
-
-To enable gitlint as an automatic commit-msg hook:
-
-```bash
-prek install --hook-type commit-msg
-```
-
-**Manual usage**: Check your last commit message:
-
-```bash
-gitlint
-```
-
-Configuration is in `.gitlint` at the repository root:
-
-- **60-character title limit**: Ensures clear rendering on GitHub and encourages brevity while remaining descriptive.
-- **79-character body width**: Aligns with Python's PEP 8 conventions and the traditional limit for git tooling.
-- **Optional body**: `body-is-missing` and `body-min-length` are ignored, so short commits need no body.
-
-:::note
-Gitlint may be enforced in CI in the future, so adopting these practices early eases the transition.
-:::
+- The appended suffix can make the resulting squash‑merged subject exceed the 60‑character limit.
