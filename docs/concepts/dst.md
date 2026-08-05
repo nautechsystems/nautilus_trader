@@ -1,4 +1,6 @@
-# Deterministic Simulation Testing (DST)
+# DST
+
+<!-- Keep this title as "DST"; longer titles do not render well in the left navigation. -->
 
 Deterministic simulation testing (DST) runs NautilusTrader under a seed-controlled runtime so that
 timing-sensitive execution behavior is bitwise reproducible from a single integer. This page is the
@@ -372,13 +374,14 @@ runs under simulation and pins the gated behavior.
 
 The contract is deliberately narrow. The following weakenings are explicit, not oversights.
 
-### Python is not in DST scope
+### Python and FFI are not in DST scope
 
 DST runs under a native Rust test harness. No Python interpreter starts during a DST run. The
-PyO3 bindings under `crates/*/src/python/`, the `ffi/` directories, and the Python packages
-under `nautilus_trader/` are excluded from the contract as a policy, not as a weakness. Any
-code reachable only from Python call paths is out of scope; any Rust path reachable from the
-native DST harness must satisfy the contract even if the same type is also exported to Python.
+PyO3 bindings under `crates/*/src/python/`, the Rust FFI modules under `crates/core/src/ffi/` and
+`crates/model/src/ffi/`, and the Python package under `python/nautilus_trader/` are excluded from
+the contract. Code reachable only through these bindings is out of scope; any Rust path reachable
+from the native DST harness must satisfy the contract, even if the same type is also exported
+through a binding.
 
 The `check-dst-conventions` hook encodes this policy by skipping `/python/` and `/ffi/` paths
 in the in-scope crates. Clock, RNG, and threading call sites behind those paths do not apply
