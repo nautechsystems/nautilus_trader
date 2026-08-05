@@ -19,10 +19,17 @@ use nautilus_core::python::{to_pynotimplemented_err, to_pyruntime_err, to_pytype
 use nautilus_model::{
     instruments::InstrumentAny,
     orders::OrderAny,
-    python::{instruments::instrument_any_to_pyobject, orders::order_any_to_pyobject},
+    python::{
+        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+        orders::{order_any_to_pyobject, pyobject_to_order_any},
+    },
     types::{Money, Price, Quantity},
 };
-use pyo3::{IntoPyObject, IntoPyObjectExt, prelude::*};
+use pyo3::{
+    IntoPyObject, PyClass,
+    prelude::*,
+    types::{PyDict, PyTuple},
+};
 use rust_decimal::Decimal;
 
 use crate::models::fee::{
@@ -40,11 +47,13 @@ use crate::models::fee::{
 #[derive(Debug)]
 pub struct PyFeeModel;
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl PyFeeModel {
     #[new]
-    fn py_new() -> Self {
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    #[pyo3(signature = (*_args, **_kwargs))]
+    fn py_new(_args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>) -> Self {
         Self
     }
 
@@ -60,6 +69,7 @@ impl PyFeeModel {
         ))
     }
 
+    #[pyo3(signature = (order, fill_quantity, fill_px, instrument, _underlying_px = None))]
     fn get_commission_with_context(
         slf: PyRef<'_, Self>,
         order: &Bound<'_, PyAny>,
@@ -81,6 +91,66 @@ impl PyFeeModel {
             .extract()
             .map_err(to_pyruntime_err)
     }
+}
+
+fn fee_args_to_any(
+    py: Python<'_>,
+    order: &Bound<'_, PyAny>,
+    instrument: &Bound<'_, PyAny>,
+) -> PyResult<(OrderAny, InstrumentAny)> {
+    let instrument_any =
+        pyobject_to_instrument_any(py, instrument.clone().unbind()).map_err(|_| {
+            let type_name = instrument
+                .get_type()
+                .name()
+                .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+            to_pytype_err(format!(
+                "`instrument` must be an `Instrument`, was `{type_name}`"
+            ))
+        })?;
+    let order_any = pyobject_to_order_any(py, order.clone().unbind()).map_err(|_| {
+        let type_name = order
+            .get_type()
+            .name()
+            .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+        to_pytype_err(format!("`order` must be an `Order`, was `{type_name}`"))
+    })?;
+    Ok((order_any, instrument_any))
+}
+
+fn call_fee_get_commission<M: FeeModel>(
+    model: &M,
+    py: Python<'_>,
+    order: &Bound<'_, PyAny>,
+    fill_quantity: Quantity,
+    fill_px: Price,
+    instrument: &Bound<'_, PyAny>,
+) -> PyResult<Money> {
+    let (order_any, instrument_any) = fee_args_to_any(py, order, instrument)?;
+    model
+        .get_commission(&order_any, fill_quantity, fill_px, &instrument_any)
+        .map_err(to_pyruntime_err)
+}
+
+fn call_fee_get_commission_with_context<M: FeeModel>(
+    model: &M,
+    py: Python<'_>,
+    order: &Bound<'_, PyAny>,
+    fill_quantity: Quantity,
+    fill_px: Price,
+    instrument: &Bound<'_, PyAny>,
+    underlying_px: Option<Price>,
+) -> PyResult<Money> {
+    let (order_any, instrument_any) = fee_args_to_any(py, order, instrument)?;
+    model
+        .get_commission_with_context(
+            &order_any,
+            fill_quantity,
+            fill_px,
+            &instrument_any,
+            underlying_px,
+        )
+        .map_err(to_pyruntime_err)
 }
 
 #[derive(Debug)]
@@ -172,8 +242,12 @@ fn has_method_override_before_base(
     Ok(false)
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+#[expect(
+    clippy::use_self,
+    reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
+)]
 impl FixedFeeModel {
     /// Creates a new `FixedFeeModel` instance.
     ///
@@ -181,21 +255,33 @@ impl FixedFeeModel {
     ///
     /// Returns an error if `commission` is negative.
     #[new]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
     #[pyo3(signature = (commission, charge_commission_once=None, change_commission_once=None))]
     fn py_new(
         commission: Money,
         charge_commission_once: Option<bool>,
         change_commission_once: Option<bool>,
-    ) -> PyResult<Self> {
+    ) -> PyResult<PyClassInitializer<FixedFeeModel>> {
         let charge_commission_once = resolve_fixed_fee_charge_commission_once(
             charge_commission_once,
             change_commission_once,
         )?;
-        Self::new(commission, charge_commission_once).map_err(to_pyruntime_err)
+        let model = Self::new(commission, charge_commission_once).map_err(to_pyruntime_err)?;
+        Ok(PyClassInitializer::from(PyFeeModel).add_subclass(model))
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission(self, order.py(), order, fill_quantity, fill_px, instrument)
     }
 }
 
@@ -212,21 +298,40 @@ fn resolve_fixed_fee_charge_commission_once(
     Ok(charge_commission_once.or(change_commission_once))
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+#[expect(
+    clippy::use_self,
+    reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
+)]
 impl MakerTakerFeeModel {
     #[new]
-    fn py_new() -> Self {
-        Self
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    fn py_new() -> PyClassInitializer<MakerTakerFeeModel> {
+        PyClassInitializer::from(PyFeeModel).add_subclass(MakerTakerFeeModel)
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission(self, order.py(), order, fill_quantity, fill_px, instrument)
+    }
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+#[expect(
+    clippy::use_self,
+    reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
+)]
 impl PerContractFeeModel {
     /// Creates a new `PerContractFeeModel` instance.
     ///
@@ -234,17 +339,33 @@ impl PerContractFeeModel {
     ///
     /// Returns an error if `commission` is negative.
     #[new]
-    fn py_new(commission: Money) -> PyResult<Self> {
-        Self::new(commission).map_err(to_pyruntime_err)
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    fn py_new(commission: Money) -> PyResult<PyClassInitializer<PerContractFeeModel>> {
+        let model = Self::new(commission).map_err(to_pyruntime_err)?;
+        Ok(PyClassInitializer::from(PyFeeModel).add_subclass(model))
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission(self, order.py(), order, fill_quantity, fill_px, instrument)
+    }
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+#[expect(
+    clippy::use_self,
+    reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
+)]
 impl ProbabilityPriceFeeModel {
     /// Fee model for probability-priced outcome shares.
     ///
@@ -257,17 +378,32 @@ impl ProbabilityPriceFeeModel {
     /// Venue-specific rebate programs or non-quote fee assets remain outside the
     /// core execution layer.
     #[new]
-    fn py_new() -> Self {
-        Self
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    fn py_new() -> PyClassInitializer<ProbabilityPriceFeeModel> {
+        PyClassInitializer::from(PyFeeModel).add_subclass(ProbabilityPriceFeeModel)
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission(self, order.py(), order, fill_quantity, fill_px, instrument)
+    }
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+#[expect(
+    clippy::use_self,
+    reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
+)]
 impl CappedOptionFeeModel {
     /// Creates a new `CappedOptionFeeModel` instance.
     ///
@@ -275,22 +411,58 @@ impl CappedOptionFeeModel {
     ///
     /// Returns an error if any supplied rate is negative.
     #[new]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
     #[pyo3(signature = (maker_rate=None, taker_rate=None, cap_rate=None))]
     fn py_new(
         maker_rate: Option<Decimal>,
         taker_rate: Option<Decimal>,
         cap_rate: Option<Decimal>,
-    ) -> PyResult<Self> {
-        Self::new(maker_rate, taker_rate, cap_rate).map_err(to_pyruntime_err)
+    ) -> PyResult<PyClassInitializer<CappedOptionFeeModel>> {
+        let model = Self::new(maker_rate, taker_rate, cap_rate).map_err(to_pyruntime_err)?;
+        Ok(PyClassInitializer::from(PyFeeModel).add_subclass(model))
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission(self, order.py(), order, fill_quantity, fill_px, instrument)
+    }
+
+    #[pyo3(signature = (order, fill_quantity, fill_px, instrument, underlying_px = None))]
+    fn get_commission_with_context(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+        underlying_px: Option<Price>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission_with_context(
+            self,
+            order.py(),
+            order,
+            fill_quantity,
+            fill_px,
+            instrument,
+            underlying_px,
+        )
+    }
 }
 
-#[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+#[expect(
+    clippy::use_self,
+    reason = "`Self` breaks pyo3-stub-gen derive for subclass pyclasses"
+)]
 impl TieredNotionalOptionFeeModel {
     /// Creates a new `TieredNotionalOptionFeeModel` instance.
     ///
@@ -298,13 +470,28 @@ impl TieredNotionalOptionFeeModel {
     ///
     /// Returns an error if any supplied rate is negative.
     #[new]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
     #[pyo3(signature = (maker_rate=None, taker_rate=None))]
-    fn py_new(maker_rate: Option<Decimal>, taker_rate: Option<Decimal>) -> PyResult<Self> {
-        Self::new(maker_rate, taker_rate).map_err(to_pyruntime_err)
+    fn py_new(
+        maker_rate: Option<Decimal>,
+        taker_rate: Option<Decimal>,
+    ) -> PyResult<PyClassInitializer<TieredNotionalOptionFeeModel>> {
+        let model = Self::new(maker_rate, taker_rate).map_err(to_pyruntime_err)?;
+        Ok(PyClassInitializer::from(PyFeeModel).add_subclass(model))
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        call_fee_get_commission(self, order.py(), order, fill_quantity, fill_px, instrument)
     }
 }
 
@@ -314,28 +501,28 @@ impl TieredNotionalOptionFeeModel {
 ///
 /// Returns an error if `obj` is not a supported fee model binding.
 pub fn pyobject_to_fee_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FeeModelAny> {
-    if let Ok(m) = obj.extract::<FixedFeeModel>() {
-        return Ok(FeeModelAny::Fixed(m));
+    if let Ok(m) = obj.extract::<PyRef<'_, FixedFeeModel>>() {
+        return Ok(FeeModelAny::Fixed((*m).clone()));
     }
 
-    if let Ok(m) = obj.extract::<MakerTakerFeeModel>() {
-        return Ok(FeeModelAny::MakerTaker(m));
+    if let Ok(m) = obj.extract::<PyRef<'_, MakerTakerFeeModel>>() {
+        return Ok(FeeModelAny::MakerTaker((*m).clone()));
     }
 
-    if let Ok(m) = obj.extract::<PerContractFeeModel>() {
-        return Ok(FeeModelAny::PerContract(m));
+    if let Ok(m) = obj.extract::<PyRef<'_, PerContractFeeModel>>() {
+        return Ok(FeeModelAny::PerContract((*m).clone()));
     }
 
-    if let Ok(m) = obj.extract::<ProbabilityPriceFeeModel>() {
-        return Ok(FeeModelAny::ProbabilityPrice(m));
+    if let Ok(m) = obj.extract::<PyRef<'_, ProbabilityPriceFeeModel>>() {
+        return Ok(FeeModelAny::ProbabilityPrice((*m).clone()));
     }
 
-    if let Ok(m) = obj.extract::<CappedOptionFeeModel>() {
-        return Ok(FeeModelAny::CappedOption(m));
+    if let Ok(m) = obj.extract::<PyRef<'_, CappedOptionFeeModel>>() {
+        return Ok(FeeModelAny::CappedOption((*m).clone()));
     }
 
-    if let Ok(m) = obj.extract::<TieredNotionalOptionFeeModel>() {
-        return Ok(FeeModelAny::TieredNotionalOption(m));
+    if let Ok(m) = obj.extract::<PyRef<'_, TieredNotionalOptionFeeModel>>() {
+        return Ok(FeeModelAny::TieredNotionalOption((*m).clone()));
     }
 
     let type_name = obj.get_type().name()?;
@@ -367,6 +554,13 @@ pub fn pyobject_to_fee_model_handle(obj: &Bound<'_, PyAny>) -> PyResult<FeeModel
     )))
 }
 
+fn fee_model_into_py<T>(py: Python<'_>, model: T) -> PyResult<Py<PyAny>>
+where
+    T: PyClass<BaseType = PyFeeModel>,
+{
+    Ok(Py::new(py, PyClassInitializer::from(PyFeeModel).add_subclass(model))?.into_any())
+}
+
 /// Converts a Rust [`FeeModelAny`] into its Python binding object.
 ///
 /// # Errors
@@ -374,12 +568,12 @@ pub fn pyobject_to_fee_model_handle(obj: &Bound<'_, PyAny>) -> PyResult<FeeModel
 /// Returns an error if conversion to a Python object fails.
 pub fn fee_model_any_to_pyobject(py: Python<'_>, model: &FeeModelAny) -> PyResult<Py<PyAny>> {
     match model {
-        FeeModelAny::Fixed(model) => model.clone().into_py_any(py),
-        FeeModelAny::MakerTaker(model) => model.clone().into_py_any(py),
-        FeeModelAny::PerContract(model) => model.clone().into_py_any(py),
-        FeeModelAny::ProbabilityPrice(model) => model.clone().into_py_any(py),
-        FeeModelAny::CappedOption(model) => model.clone().into_py_any(py),
-        FeeModelAny::TieredNotionalOption(model) => model.clone().into_py_any(py),
+        FeeModelAny::Fixed(model) => fee_model_into_py(py, model.clone()),
+        FeeModelAny::MakerTaker(model) => fee_model_into_py(py, model.clone()),
+        FeeModelAny::PerContract(model) => fee_model_into_py(py, model.clone()),
+        FeeModelAny::ProbabilityPrice(model) => fee_model_into_py(py, model.clone()),
+        FeeModelAny::CappedOption(model) => fee_model_into_py(py, model.clone()),
+        FeeModelAny::TieredNotionalOption(model) => fee_model_into_py(py, model.clone()),
     }
 }
 
