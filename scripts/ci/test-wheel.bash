@@ -17,11 +17,21 @@ fi
 uv pip install --reinstall "$1[visualization]"
 
 # Pin pandas test dependencies until runtime dependencies are settled
+platform="$(uname -s)"
+pandas_version="3.0.3"
+if [ "$platform" = "Darwin" ]; then
+  pandas_version="2.3.3"
+fi
+
 uv pip install --only-binary :all: \
   "numpy==2.4.6" \
-  "pandas==3.0.3" \
+  "pandas==$pandas_version" \
   "python-dateutil==2.9.0.post0" \
   "six==1.17.0"
+
+if [ "$platform" = "Darwin" ]; then
+  uv pip install --only-binary :all: "pyarrow==24.0.0"
+fi
 
 unset PYTHONPATH
 unset VIRTUAL_ENV
