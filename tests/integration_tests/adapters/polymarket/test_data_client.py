@@ -15,15 +15,19 @@
 
 import asyncio
 from decimal import Decimal
+import json
 from typing import Any
 from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from aiohttp import WSMsgType
+from aiohttp import web
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
+from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.data import PolymarketDataClient
@@ -271,7 +275,7 @@ def test_pending_drops_price_change_until_snapshot(event_loop) -> None:
     assert quote_emitted.ask_price.precision == 2
 
 
-def test_tc_d14_snapshot_and_delta_restore_local_and_managed_books() -> None:
+def test_snapshot_and_delta_restore_local_and_managed_books() -> None:
     event_loop = asyncio.new_event_loop()
     instrument = _make_binary_option("0.01")
     clock = LiveClock()
@@ -346,6 +350,114 @@ def test_tc_d14_snapshot_and_delta_restore_local_and_managed_books() -> None:
     assert managed_book.best_bid_price() == Price.from_str("0.50")
     engine.dispose()
     event_loop.close()
+
+
+@pytest.mark.asyncio
+async def test_tc_d14_reconnect_frame_restores_adapter_engine_and_cache(
+    aiohttp_server,
+) -> None:
+    connection_count = 0
+    snapshot = {
+        "event_type": "book",
+        "market": "0xMARKET",
+        "asset_id": "0xASSET",
+        "bids": [{"price": "0.49", "size": "10"}],
+        "asks": [{"price": "0.51", "size": "8"}],
+        "timestamp": "1700000000000",
+        "hash": "",
+    }
+    delta = {
+        "event_type": "price_change",
+        "market": "0xMARKET",
+        "price_changes": [
+            {
+                "asset_id": "0xASSET",
+                "price": "0.50",
+                "size": "20",
+                "side": "BUY",
+                "hash": "",
+            }
+        ],
+        "timestamp": "1700000002000",
+    }
+
+    async def market_ws(request: web.Request) -> web.WebSocketResponse:
+        nonlocal connection_count
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        connection_count += 1
+        this_connection = connection_count
+        async for message in ws:
+            if message.type is not WSMsgType.TEXT:
+                continue
+            json.loads(message.data)
+            await ws.send_json([snapshot])
+            if this_connection == 1:
+                await ws.close()
+                break
+            await asyncio.sleep(0.05)
+            await ws.send_json(delta)
+        return ws
+
+    app = web.Application()
+    app.router.add_get("/ws/market", market_ws)
+    server = await aiohttp_server(app)
+    base_url = str(server.make_url("/ws/")).replace("http://", "ws://")
+    loop = asyncio.get_running_loop()
+    instrument_id = get_polymarket_instrument_id("0xMARKET", "0xASSET")
+    instrument = _make_binary_option("0.01", instrument_id)
+    clock = LiveClock()
+    msgbus = MessageBus(trader_id=TraderId("TEST-001"), clock=clock)
+    cache = Cache()
+    cache.add_instrument(instrument)
+    engine = DataEngine(msgbus=msgbus, cache=cache, clock=clock)
+    provider = MagicMock(spec=PolymarketInstrumentProvider)
+    provider.initialize = AsyncMock()
+    client = PolymarketDataClient(
+        loop=loop,
+        http_client=MagicMock(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        instrument_provider=provider,
+        config=PolymarketDataClientConfig(
+            base_url_ws=base_url,
+            ws_connection_initial_delay_secs=0.01,
+            update_instruments_interval_mins=None,
+        ),
+        name="TEST-POLYMARKET",
+    )
+    engine.register_client(client)
+    engine.start()
+    engine.execute(
+        SubscribeOrderBook(
+            instrument_id=instrument.id,
+            book_data_type=OrderBookDelta,
+            book_type=BookType.L2_MBP,
+            depth=0,
+            interval_ms=0,
+            managed=True,
+            client_id=client.id,
+            venue=instrument.id.venue,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+    )
+
+    await eventually(lambda: connection_count >= 2)
+    await eventually(
+        lambda: (
+            instrument.id in client._local_books
+            and cache.order_book(instrument.id) is not None
+            and client._local_books[instrument.id].best_bid_price()
+            == Price.from_str("0.50")
+            and cache.order_book(instrument.id).best_bid_price()
+            == Price.from_str("0.50")
+        )
+    )
+    await client._ws_client.disconnect()
+    engine.stop()
+    engine.dispose()
 
 
 def test_tick_size_change_finer_then_snapshot_clean_transition(event_loop) -> None:

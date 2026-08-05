@@ -61,8 +61,13 @@ struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     subscribed_assets: Arc<tokio::sync::Mutex<Vec<String>>>,
     received_market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    market_payloads_by_connection: Arc<tokio::sync::Mutex<Vec<(usize, Value)>>>,
     received_user_auth: Arc<tokio::sync::Mutex<Option<Value>>>,
     drop_next_connection: Arc<AtomicBool>,
+    drop_connection_id: Arc<AtomicUsize>,
+    next_connection_id: Arc<AtomicUsize>,
+    total_connections: Arc<AtomicUsize>,
+    suppress_market_replies: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
 }
 
@@ -72,8 +77,13 @@ impl Default for TestServerState {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             subscribed_assets: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             received_market_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            market_payloads_by_connection: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             received_user_auth: Arc::new(tokio::sync::Mutex::new(None)),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
+            drop_connection_id: Arc::new(AtomicUsize::new(usize::MAX)),
+            next_connection_id: Arc::new(AtomicUsize::new(0)),
+            total_connections: Arc::new(AtomicUsize::new(0)),
+            suppress_market_replies: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -108,6 +118,8 @@ async fn handle_user_upgrade(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_user: bool) {
+    let connection_id = state.next_connection_id.fetch_add(1, Ordering::Relaxed);
+    state.total_connections.fetch_add(1, Ordering::Relaxed);
     {
         let mut count = state.connection_count.lock().await;
         *count += 1;
@@ -145,6 +157,11 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
                         .lock()
                         .await
                         .push(payload.clone());
+                    state
+                        .market_payloads_by_connection
+                        .lock()
+                        .await
+                        .push((connection_id, payload.clone()));
 
                     if let Some(ids) = payload.get("assets_ids").and_then(Value::as_array) {
                         let mut assets = state.subscribed_assets.lock().await;
@@ -167,9 +184,22 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
                         }
                     }
 
-                    if state.drop_next_connection.swap(false, Ordering::Relaxed) {
+                    let drop_selected = state
+                        .drop_connection_id
+                        .compare_exchange(
+                            connection_id,
+                            usize::MAX,
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                        )
+                        .is_ok();
+                    if state.drop_next_connection.swap(false, Ordering::Relaxed) || drop_selected {
                         let _ = socket.send(Message::Close(None)).await;
                         break;
+                    }
+
+                    if state.suppress_market_replies.load(Ordering::Relaxed) {
+                        continue;
                     }
 
                     if socket
@@ -183,6 +213,10 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
             }
             Message::Ping(data) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
+                if state.suppress_market_replies.load(Ordering::Relaxed) {
+                    continue;
+                }
 
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;
@@ -903,6 +937,45 @@ async fn test_reconnect_asset_replay_delivers_book_from_new_connection() {
 
 #[rstest]
 #[tokio::test]
+async fn test_market_read_idle_forces_reconnect_and_asset_replay() {
+    let state = Arc::new(TestServerState::default());
+    state.suppress_market_replies.store(true, Ordering::Relaxed);
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), false, TransportBackend::default());
+    client.connect().await.expect("connect failed");
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.total_connections.load(Ordering::Relaxed) >= 2 }
+        },
+        Duration::from_secs(75),
+    )
+    .await;
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                subscribed_assets_for_connection(&state, 1)
+                    .await
+                    .contains(&TEST_ASSET_ID.to_string())
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_is_authenticated_false_before_connect() {
     let client = PolymarketWebSocketClient::new_user(
         Some("ws://127.0.0.1:9999/ws/user".to_string()),
@@ -1081,6 +1154,44 @@ async fn count_discovery_payloads(state: &TestServerState) -> usize {
                 .is_some_and(|ids| ids.is_empty())
         })
         .count()
+}
+
+async fn subscribed_assets_for_connection(
+    state: &TestServerState,
+    connection_id: usize,
+) -> Vec<String> {
+    state
+        .market_payloads_by_connection
+        .lock()
+        .await
+        .iter()
+        .filter(|(id, payload)| {
+            *id == connection_id
+                && payload.get("operation").and_then(Value::as_str) != Some("unsubscribe")
+        })
+        .flat_map(|(_, payload)| {
+            payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+async fn assert_subscribe_payloads_have_unique_topics(state: &TestServerState) {
+    for (_, payload) in state.market_payloads_by_connection.lock().await.iter() {
+        if payload.get("operation").and_then(Value::as_str) == Some("unsubscribe") {
+            continue;
+        }
+        let Some(ids) = payload.get("assets_ids").and_then(Value::as_array) else {
+            continue;
+        };
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "subscribe payload repeated a topic");
+    }
 }
 
 // With a cap of 200, 250 unique assets must spread across exactly two connections.
@@ -1303,5 +1414,84 @@ async fn pool_primary_reconnect_replays_assets() {
     assert_eq!(pool.connection_count(), 1);
     assert_eq!(pool.subscription_count(), 3);
 
+    pool.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn pool_secondary_reconnect_is_isolated_and_deduplicated() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let pool = connect_market_pool(addr, false, 2).await;
+    let handle = pool.handle();
+    handle
+        .subscribe_market(vec!["a".into(), "b".into(), "c".into()])
+        .await
+        .expect("initial shard subscriptions");
+    wait_for_connection_count(&state, 2, Duration::from_secs(5)).await;
+    state.market_payloads_by_connection.lock().await.clear();
+
+    state.drop_connection_id.store(1, Ordering::Relaxed);
+    handle
+        .subscribe_market(vec!["d".into()])
+        .await
+        .expect("secondary reconnect trigger");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.total_connections.load(Ordering::Relaxed) >= 3 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let assets = subscribed_assets_for_connection(&state, 2).await;
+                assets.contains(&"c".to_string()) && assets.contains(&"d".to_string())
+            }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    assert!(subscribed_assets_for_connection(&state, 0).await.is_empty());
+    assert_subscribe_payloads_have_unique_topics(&state).await;
+    assert_eq!(pool.subscription_count(), 4);
+    pool.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn reconnect_serializes_subscribe_unsubscribe_against_replay() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let pool = connect_market_pool(addr, false, 10).await;
+    let handle = pool.handle();
+    handle
+        .subscribe_market(vec!["a".into(), "b".into()])
+        .await
+        .expect("initial subscriptions");
+    wait_for_unique_subscribed_count(&state, 2, Duration::from_secs(5)).await;
+
+    state.drop_connection_id.store(0, Ordering::Relaxed);
+    let subscribe = handle.subscribe_market(vec!["c".into(), "c".into()]);
+    let unsubscribe = handle.unsubscribe_market(vec!["b".into()]);
+    let (subscribe_result, unsubscribe_result) = tokio::join!(subscribe, unsubscribe);
+    subscribe_result.expect("subscribe during reconnect");
+    unsubscribe_result.expect("unsubscribe during reconnect");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.total_connections.load(Ordering::Relaxed) >= 2 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+    wait_for_unique_subscribed_count(&state, 2, Duration::from_secs(10)).await;
+
+    assert_eq!(pool.subscription_count(), 2);
+    assert_subscribe_payloads_have_unique_topics(&state).await;
     pool.disconnect().await.expect("disconnect failed");
 }
