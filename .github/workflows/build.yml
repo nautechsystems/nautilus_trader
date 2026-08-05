@@ -49,6 +49,7 @@ jobs:
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
+      security-audit-needed: ${{ steps.security-audit.outputs.audit_needed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
       publish_r2: ${{ steps.wheel-publication.outputs.publish_r2 }}
       publish_development: ${{ steps.wheel-publication.outputs.publish_development }}
@@ -85,6 +86,17 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/plan.sh
+
+      - name: Plan security audit
+        id: security-audit
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.event.after }}
+        run: bash scripts/ci/security-audit-gate.sh
 
       - name: Plan wheel publication
         id: wheel-publication
@@ -744,7 +756,9 @@ jobs:
           persist-credentials: false
 
       - name: Require successful same-commit security audit
-        if: needs.plan.outputs.publish_development == 'true'
+        if: >-
+          needs.plan.outputs.publish_development == 'true' &&
+          needs.plan.outputs.security-audit-needed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/ci/check-security-audit-result.sh

@@ -96,10 +96,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   before upload. The PyPI job also creates PyPI publish attestations. Docker images receive cosign
   signatures and SPDX SBOM attestations, which the workflow verifies after pushing. Verify Python
   artifacts with `gh attestation verify` and container images with `cosign verify`.
-- **Wheel publication**: `develop` publication requires the successful same‑commit security audit.
-  `nightly` publication requires its `cargo audit` and OSV gate. `master` PyPI publication requires
-  `cargo-deny`, `cargo-vet`, every platform wheel job, and the Rust suite. Development and nightly
-  wheels publish to `packages.nautechsystems.io`; master wheels publish to PyPI.
+- **Wheel publication**: `develop` publication requires a successful same‑commit security audit when
+  audit‑relevant paths change. `nightly` publication requires its `cargo audit` and OSV gate.
+  `master` PyPI publication requires `cargo-deny`, `cargo-vet`, every platform wheel job, and the
+  Rust suite. Development and nightly wheels publish to `packages.nautechsystems.io`; master wheels
+  publish to PyPI.
 - **PyPI Trusted Publishing**: `publish-pypi` uploads wheels through OIDC instead of a long‑lived
   API token. The PyPI publisher is bound to repository `nautechsystems/nautilus_trader`, workflow
   `build.yml`, and environment `release`. `uv publish --trusted-publishing automatic` mints a

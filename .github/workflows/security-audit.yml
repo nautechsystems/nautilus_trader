@@ -7,9 +7,9 @@ name: security-audit
 #   - Pull requests: GitHub path filters create a workflow run only when
 #     audit-relevant paths change. The gate job remains as a second check
 #     before the audit jobs run.
-#   - Pushes to develop / master / test-ci / test-security: every commit creates
-#     a workflow run. Development-wheel publication commits force all audit jobs.
-#     Other pushes retain the path gate. An active, expiring
+#   - Pushes to develop / master / test-ci / test-security: GitHub path filters
+#     create a workflow run only when audit-relevant paths change. Development-
+#     wheel publication commits force all audit jobs. An active, expiring
 #     SECURITY_GATE_OVERRIDE skips forced audit jobs for push runs only.
 
 permissions:
@@ -25,7 +25,7 @@ env:
 
 on:
   pull_request:
-    paths:
+    paths: &security_audit_paths
       - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
       - crates/**/Cargo.toml
@@ -57,6 +57,7 @@ on:
       - .github/workflows/**
   push:
     branches: [develop, master, test-ci, test-security]
+    paths: *security_audit_paths
   schedule:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
