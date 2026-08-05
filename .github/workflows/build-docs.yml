@@ -11,6 +11,11 @@ on:
 jobs:
   build-docs:
     runs-on: ubuntu-latest
+    env:
+      BUILD_MODE: debug
+      CARGO_BUILD_JOBS: 2
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-docs
+      RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -19,6 +24,26 @@ jobs:
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          rust-cache-key: build-docs
+          rust-cache-workspaces: . -> target/build-docs
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Build Python package in debug mode
+        run: make build-debug TARGET_DIR="$CARGO_TARGET_DIR"
+
+      - name: Build Python API documentation
+        run: make docs-python
 
       - name: Fire event to nautilus_docs
         run: |-

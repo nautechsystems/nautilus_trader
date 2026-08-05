@@ -29,7 +29,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   Linux x86 job runs the Rust suite once in parallel with the three required Python wheel jobs after
   `pre-commit`; both R2 and PyPI publication require it to pass. The plan step skips builds on
   docs‑only changes and skips Rust tests on Python‑only changes that cannot publish.
-- **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
+- **build-docs.yml**: builds the Python API documentation on `master` and `nightly`, then dispatches
+  the downstream documentation build after the local gate succeeds.
 - **cli-binaries.yml**: builds CLI archives for Linux x86, Linux ARM64, macOS ARM64, and Windows
   x86_64 on nightly pushes and manual dispatch. Nightly pushes publish versioned and latest
   artifacts to R2.
@@ -185,7 +186,7 @@ Workflows use these GitHub variables by role:
 Some workflows add job‑specific endpoints inline, such as `upload.pypi.org:443` for PyPI,
 `ghcr.io:443` for container publication, the configured Cloudflare R2 host, and Scorecard lookup
 and publication endpoints such as `api.scorecard.dev:443`, `fulcio.sigstore.dev:443`, and
-`tuf-repo-cdn.sigstore.dev:443`. The Windows CLI build also permits GlobalSign OCSP and CRL
+`tuf-repo-cdn.sigstore.dev:443`. The Windows CLI build also permits Sectigo OCSP and CRL
 endpoints so Schannel can verify GitHub release certificates.
 
 Security audit jobs do not use deployment environments or environment secrets.
