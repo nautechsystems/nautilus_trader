@@ -192,6 +192,9 @@ jobs:
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            crl.globalsign.com:80
+            ocsp.globalsign.com:80
+            ocsp2.globalsign.com:80
             crl.sectigo.com:80
             ocsp.sectigo.com:80
 

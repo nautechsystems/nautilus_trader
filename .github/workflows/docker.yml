@@ -15,6 +15,7 @@ env:
   # `--predicate-type` since cosign's `spdx` alias maps to the unversioned
   # `https://spdx.dev/Document` and would skip these attestations.
   SPDX_PREDICATE_TYPE: https://spdx.dev/Document/v2.3
+  SWAP_SIZE_ARM: 16G
 
 jobs:
   # Test builds only - no publishing
@@ -72,7 +73,7 @@ jobs:
       # so ARM builds need explicit swap headroom.
       - name: Add swap space (Linux ARM)
         if: matrix.platform == 'linux/arm64'
-        run: bash scripts/ci/configure-linux-swap.bash
+        run: bash scripts/ci/configure-linux-swap.bash "$SWAP_SIZE_ARM"
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
@@ -205,7 +206,7 @@ jobs:
       # so ARM builds need explicit swap headroom.
       - name: Add swap space (Linux ARM)
         if: matrix.platform == 'linux/arm64'
-        run: bash scripts/ci/configure-linux-swap.bash
+        run: bash scripts/ci/configure-linux-swap.bash "$SWAP_SIZE_ARM"
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash

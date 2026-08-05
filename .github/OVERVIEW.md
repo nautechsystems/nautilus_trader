@@ -187,8 +187,9 @@ Workflows use these GitHub variables by role:
 Some workflows add job‑specific endpoints inline, such as `upload.pypi.org:443` for PyPI,
 `ghcr.io:443` for container publication, the configured Cloudflare R2 host, and Scorecard lookup
 and publication endpoints such as `api.scorecard.dev:443`, `fulcio.sigstore.dev:443`, and
-`tuf-repo-cdn.sigstore.dev:443`. The Windows CLI build also permits Sectigo OCSP and CRL
-endpoints so Schannel can verify GitHub release certificates.
+`tuf-repo-cdn.sigstore.dev:443`. The Windows CLI build also permits Sectigo and GlobalSign OCSP
+and CRL endpoints, plus Let's Encrypt CRL endpoints, so Schannel can verify GitHub and `crates.io`
+download certificates.
 
 Security audit jobs do not use deployment environments or environment secrets.
 
