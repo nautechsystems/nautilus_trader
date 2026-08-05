@@ -1633,6 +1633,20 @@ impl PyDataActor {
         Ok(())
     }
 
+    #[pyo3(name = "refresh_book_subscription")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_refresh_book_subscription(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::refresh_book_subscription(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
     #[pyo3(name = "subscribe_book_depth10")]
     #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
     fn py_subscribe_book_depth10(

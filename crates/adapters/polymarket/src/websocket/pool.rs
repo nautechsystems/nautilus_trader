@@ -364,6 +364,42 @@ impl PolymarketMarketPoolHandle {
         }
         Ok(())
     }
+
+    /// Refreshes assigned assets without releasing their shard ownership.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an asset is not currently assigned or a command cannot be sent.
+    pub async fn refresh_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        let _wire = self.inner.wire_mutex.lock().await;
+        let mut by_shard: AHashMap<usize, Vec<String>> = AHashMap::new();
+        {
+            let state = self.inner.state.lock().expect("pool state mutex poisoned");
+            for asset_id in asset_ids {
+                let token = Ustr::from(asset_id.as_str());
+                let shard_id = state
+                    .assignments
+                    .get(&token)
+                    .copied()
+                    .ok_or_else(|| anyhow::anyhow!("Cannot refresh unassigned market asset"))?;
+                by_shard.entry(shard_id).or_default().push(asset_id);
+            }
+        }
+
+        for (shard_id, ids) in by_shard {
+            let handle = self
+                .inner
+                .state
+                .lock()
+                .expect("pool state mutex poisoned")
+                .shards
+                .get(&shard_id)
+                .map(|shard| shard.handle.clone())
+                .ok_or_else(|| anyhow::anyhow!("Cannot refresh asset on missing market shard"))?;
+            handle.refresh_market(ids).await?;
+        }
+        Ok(())
+    }
 }
 
 impl PoolInner {
@@ -738,6 +774,41 @@ mod tests {
             other => panic!("unexpected command: {other:?}"),
         }
         assert_eq!(handle.inner.subscription_count_for_test(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn refresh_routes_atomic_command_without_releasing_assignment() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+
+        handle
+            .refresh_market(vec!["token-a".to_string()])
+            .await
+            .expect("refresh");
+
+        assert_eq!(handle.inner.subscription_count_for_test(), 1);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(HandlerCommand::RefreshMarket(ids)) if ids == vec!["token-a".to_string()]
+        ));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn refresh_rejects_unassigned_asset() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+
+        let error = handle
+            .refresh_market(vec!["token-b".to_string()])
+            .await
+            .expect_err("unassigned refresh must fail");
+
+        assert!(error.to_string().contains("unassigned"));
+        assert_eq!(handle.inner.subscription_count_for_test(), 1);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

@@ -90,6 +90,15 @@ impl WsSubscriptionHandle {
             .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
     }
 
+    /// Requests fresh snapshots without changing reconnect subscription intent.
+    pub async fn refresh_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::RefreshMarket(asset_ids))
+            .map_err(|e| anyhow::anyhow!("Failed to send RefreshMarket: {e}"))
+    }
+
     // Constructs a handle around a raw command sender. Test-only: lets unit
     // tests observe the commands the handle emits without spinning up the real
     // feed handler.
@@ -647,7 +656,10 @@ mod tests {
 
         let result = client.subscribe_market(vec![]).await;
 
-        assert!(result.is_err(), "disconnected command sender must stay closed");
+        assert!(
+            result.is_err(),
+            "disconnected command sender must stay closed"
+        );
         assert!(client.new_market_discovery_enabled.load(Ordering::SeqCst));
         assert_eq!(client.subscription_count(), 0);
     }

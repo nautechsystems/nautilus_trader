@@ -20,12 +20,12 @@ use nautilus_model::identifiers::{ClientId, Venue};
 
 use super::log_not_implemented;
 use crate::messages::data::{
-    RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
-    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    RefreshBookSubscription, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+    RequestCustomData, RequestForwardPrices, RequestFundingRates, RequestInstrument,
+    RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+    SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
     UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
     UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
@@ -149,6 +149,15 @@ pub trait DataClient {
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
+    }
+
+    /// Atomically refreshes an existing order book subscription without changing membership.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the adapter does not support subscription refresh.
+    fn refresh_book_subscription(&mut self, cmd: RefreshBookSubscription) -> anyhow::Result<()> {
+        anyhow::bail!("Book subscription refresh is not supported: {cmd:?}")
     }
 
     /// Subscribes to top 10 order book depth updates for the specified instrument.

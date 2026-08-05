@@ -29,6 +29,7 @@ use nautilus_common::{
         SubscribeCommand, UnsubscribeCommand,
         data::{
             DataCommand,
+            RefreshBookSubscription,
             // Request commands
             RequestBars,
             RequestBookDepth,
@@ -977,6 +978,44 @@ fn test_book_deltas_unsubscribe_idempotent(
     adapter.execute_unsubscribe(&unsub);
     adapter.execute_unsubscribe(&unsub);
     assert!(adapter.subscriptions_book_deltas.is_empty());
+}
+
+#[rstest]
+fn test_book_refresh_does_not_change_adapter_membership(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let inst_id = audusd_sim().id;
+    adapter.subscriptions_book_deltas.insert(inst_id);
+    let refresh = SubscribeCommand::BookRefresh(RefreshBookSubscription::new(
+        inst_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+
+    adapter.execute_subscribe(refresh.clone());
+
+    assert_eq!(adapter.subscriptions_book_deltas.len(), 1);
+    assert!(adapter.subscriptions_book_deltas.contains(&inst_id));
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        &[DataCommand::Subscribe(refresh)]
+    );
 }
 
 #[rstest]

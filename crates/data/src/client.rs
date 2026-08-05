@@ -30,17 +30,17 @@ use nautilus_common::{
     enums::LogColor,
     log_info,
     messages::data::{
-        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
-        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        RefreshBookSubscription, RequestBars, RequestBookDepth, RequestBookSnapshot,
+        RequestCustomData, RequestForwardPrices, RequestFundingRates, RequestInstrument,
+        RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{self, switchboard::get_custom_topic},
 };
@@ -205,6 +205,7 @@ impl DataClientAdapter {
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd),
+            SubscribeCommand::BookRefresh(cmd) => self.refresh_book_subscription(cmd),
             SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd),
             SubscribeCommand::BookSnapshots(_) => Ok(()), // Handled internally by engine
             SubscribeCommand::Quotes(cmd) => self.subscribe_quotes(cmd),
@@ -361,6 +362,11 @@ impl DataClientAdapter {
         }
 
         Ok(())
+    }
+
+    /// Forwards an atomic refresh without changing adapter subscription membership.
+    fn refresh_book_subscription(&mut self, cmd: RefreshBookSubscription) -> anyhow::Result<()> {
+        self.client.refresh_book_subscription(cmd)
     }
 
     /// Unsubscribes from book deltas for an instrument, updating internal state and forwarding to the client.

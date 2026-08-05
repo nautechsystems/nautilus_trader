@@ -49,6 +49,8 @@ pub enum HandlerCommand {
     SubscribeMarket(Vec<String>),
     /// Remove asset IDs from the subscription set (no wire message needed).
     UnsubscribeMarket(Vec<String>),
+    /// Refresh asset snapshots without changing retained reconnect intent.
+    RefreshMarket(Vec<String>),
     /// Send the authenticated subscribe message on the user channel.
     SubscribeUser,
 }
@@ -384,6 +386,30 @@ impl FeedHandler {
                                 self.subscriptions.confirm_unsubscribe(id);
                             }
                         }
+                        HandlerCommand::RefreshMarket(ids) => {
+                            let retained_count = self.subscriptions.all_topics().len();
+                            self.send_unsubscribe_market(&ids).await;
+                            let sent = self.send_subscribe_market(&ids, None).await;
+                            if sent {
+                                log::info!(
+                                    "refresh_sent shard_id={} channel={:?} connection_epoch={} asset_count={} retained_desired_count={}",
+                                    self.shard_id,
+                                    self.channel,
+                                    self.connection_epoch,
+                                    ids.len(),
+                                    retained_count,
+                                );
+                            } else {
+                                log::error!(
+                                    "refresh_failed shard_id={} channel={:?} connection_epoch={} asset_count={} retained_desired_count={}",
+                                    self.shard_id,
+                                    self.channel,
+                                    self.connection_epoch,
+                                    ids.len(),
+                                    retained_count,
+                                );
+                            }
+                        }
                         HandlerCommand::SubscribeUser => {
                             self.user_subscribed = true;
                             self.send_subscribe_user().await;
@@ -488,9 +514,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn rejects_replay_when_shared_connection_epoch_has_advanced(
-        market_handler: FeedHandler,
-    ) {
+    async fn rejects_replay_when_shared_connection_epoch_has_advanced(market_handler: FeedHandler) {
         market_handler
             .connection_epoch_state
             .store(2, Ordering::SeqCst);

@@ -66,19 +66,20 @@ use crate::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
             DataCommand, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-            QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
-            RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+            QuotesResponse, RefreshBookSubscription, RequestBars, RequestBookDeltas,
+            RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+            RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
         },
         system::ShutdownSystem,
     },
@@ -1468,6 +1469,19 @@ pub trait DataActor: Component {
             managed,
             params,
         );
+    }
+
+    /// Atomically refresh an existing streaming order book subscription.
+    fn refresh_book_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::refresh_book_subscription(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Subscribe to streaming [`OrderBookDepth10`] data for the `instrument_id`.
@@ -3817,6 +3831,28 @@ impl DataActorCore {
             correlation_id: None,
             params,
         });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Sends an atomic book refresh command without changing actor subscriptions.
+    pub fn refresh_book_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        let command = SubscribeCommand::BookRefresh(RefreshBookSubscription::new(
+            instrument_id,
+            client_id,
+            Some(instrument_id.venue),
+            UUID4::new(),
+            self.timestamp_ns(),
+            None,
+            params,
+        ));
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }

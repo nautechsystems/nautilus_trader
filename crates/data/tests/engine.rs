@@ -41,16 +41,17 @@ use nautilus_common::{
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
         DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
-        InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDeltas,
-        RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
-        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RefreshBookSubscription,
+        RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCommand,
+        RequestCustomData, RequestForwardPrices, RequestFundingRates, RequestInstrument,
+        RequestInstruments, RequestJoin, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
         UnsubscribeTrades,
@@ -775,6 +776,60 @@ fn test_execute_subscribe_book_deltas(
             .contains(&audusd_sim.id)
     );
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_execute_book_refresh_preserves_engine_membership(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        audusd_sim.id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+    let refresh_cmd =
+        DataCommand::Subscribe(SubscribeCommand::BookRefresh(RefreshBookSubscription::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+
+    data_engine.execute(refresh_cmd.clone());
+
+    assert!(
+        data_engine
+            .subscribed_book_deltas()
+            .contains(&audusd_sim.id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, refresh_cmd]);
 }
 
 #[rstest]

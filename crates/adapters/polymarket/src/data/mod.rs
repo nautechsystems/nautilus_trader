@@ -40,11 +40,12 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
-            SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeCustomData, UnsubscribeInstrument, UnsubscribeQuotes, UnsubscribeTrades,
+            RefreshBookSubscription, RequestBookSnapshot, RequestCustomData, RequestInstrument,
+            RequestInstruments, RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10,
+            SubscribeCustomData, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeInstrument, UnsubscribeQuotes,
+            UnsubscribeTrades,
         },
     },
     msgbus::TypedHandler,
@@ -499,6 +500,37 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
+        Ok(())
+    }
+
+    fn refresh_book_subscription(&mut self, cmd: RefreshBookSubscription) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.ensure_live_subscription_allowed(instrument_id)?;
+        if !self.active_delta_subs.contains(&instrument_id) {
+            anyhow::bail!(
+                "Cannot refresh order book subscription for {instrument_id}: no active delta subscription"
+            );
+        }
+
+        let token_id_str = self.resolve_token_id(instrument_id)?;
+        let token_id = Ustr::from(token_id_str.as_str());
+        if !self.ws_open_tokens.contains(&token_id) {
+            anyhow::bail!(
+                "Cannot refresh order book subscription for {instrument_id}: market asset is not assigned"
+            );
+        }
+
+        self.pending_snapshot_after_tick_change
+            .insert(instrument_id);
+        let pending_snapshot = self.pending_snapshot_after_tick_change.clone();
+        let ws = self.ws_client.handle();
+        log::info!("refresh_requested asset_count=1");
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.refresh_market(vec![token_id_str]).await {
+                pending_snapshot.remove(&instrument_id);
+                log::error!("refresh_failed stage=pool asset_count=1 error={e}");
+            }
+        });
         Ok(())
     }
 

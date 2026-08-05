@@ -246,7 +246,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             {
                 ctx.pending_snapshot_after_tick_change
                     .remove(&instrument_id);
-                log::debug!("Resumed book for {instrument_id} after tick size change");
+                log::info!("snapshot_barrier_released asset_count=1");
             }
         }
 
@@ -298,7 +298,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         .contains(&instrument_id)
                     {
                         log::debug!(
-                            "Dropping book deltas for {instrument_id}: awaiting snapshot after tick size change",
+                            "Dropping book deltas for {instrument_id}: awaiting replacement snapshot",
                         );
                     } else {
                         let mut parsed = Vec::with_capacity(changes.len());

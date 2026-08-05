@@ -1018,6 +1018,14 @@ impl DataEngine {
 
         // Update internal engine state
         match &cmd {
+            SubscribeCommand::BookRefresh(cmd)
+                if !self.has_book_delta_subscriptions(&cmd.instrument_id) =>
+            {
+                anyhow::bail!(
+                    "Cannot refresh order book subscription for {}: not subscribed",
+                    cmd.instrument_id
+                );
+            }
             SubscribeCommand::BookDeltas(cmd) if !self.subscribe_book_deltas(cmd)? => {
                 return Ok(());
             }
@@ -5113,7 +5121,8 @@ fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
         SubscribeCommand::OptionGreeks(_) => Some(BusPayloadType::OptionGreeks),
         SubscribeCommand::InstrumentStatus(_)
         | SubscribeCommand::InstrumentClose(_)
-        | SubscribeCommand::OptionChain(_) => None,
+        | SubscribeCommand::OptionChain(_)
+        | SubscribeCommand::BookRefresh(_) => None,
     }
 }
 
