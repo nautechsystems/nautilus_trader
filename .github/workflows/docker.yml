@@ -68,6 +68,12 @@ jobs:
           bash scripts/ci/free-disk-space.sh
           --large-packages --docker-images --tool-cache
 
+      # Fat LTO runs the final cdylib link in one rustc process, beyond Cargo's job cap,
+      # so ARM builds need explicit swap headroom.
+      - name: Add swap space (Linux ARM)
+        if: matrix.platform == 'linux/arm64'
+        run: bash scripts/ci/configure-linux-swap.bash
+
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
 
@@ -194,6 +200,12 @@ jobs:
         run: >-
           bash scripts/ci/free-disk-space.sh
           --large-packages --docker-images --tool-cache
+
+      # Fat LTO runs the final cdylib link in one rustc process, beyond Cargo's job cap,
+      # so ARM builds need explicit swap headroom.
+      - name: Add swap space (Linux ARM)
+        if: matrix.platform == 'linux/arm64'
+        run: bash scripts/ci/configure-linux-swap.bash
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash

@@ -127,13 +127,7 @@ runs:
         runner.os == 'Linux' &&
         (runner.arch == 'ARM64' || runner.arch == 'aarch64')
       shell: bash
-      run: |
-        sudo swapoff -a || true
-        sudo rm -f /swapfile || true
-        sudo fallocate -l 8G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
+      run: bash scripts/ci/configure-linux-swap.bash
 
     - name: Install runner dependencies
       if: runner.os == 'Linux'
