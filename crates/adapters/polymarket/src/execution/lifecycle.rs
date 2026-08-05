@@ -320,7 +320,10 @@ impl PolymarketExecutionClient {
                             });
                         }
                     }
-                    Some(PolymarketWsMessage::Market(_)) => {}
+                    Some(
+                        PolymarketWsMessage::Market(_)
+                        | PolymarketWsMessage::RefreshStarted(_),
+                    ) => {}
                     Some(PolymarketWsMessage::Reconnected) => {
                         log::info!("User WebSocket reconnected");
                         if stopping.load(Ordering::Acquire) {

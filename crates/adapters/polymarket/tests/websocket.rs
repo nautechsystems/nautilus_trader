@@ -484,6 +484,41 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
 
 #[rstest]
 #[tokio::test]
+async fn test_refresh_sends_ordered_wire_pair_and_preserves_retained_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("initial subscribe failed");
+    client
+        .refresh_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("refresh failed");
+
+    wait_for_market_payload_count(&state, 3, Duration::from_secs(2)).await;
+    let payloads = state.received_market_payloads.lock().await.clone();
+    assert_eq!(
+        payloads[1].get("operation").and_then(Value::as_str),
+        Some("unsubscribe")
+    );
+    assert_eq!(
+        payloads[2].get("operation").and_then(Value::as_str),
+        Some("subscribe")
+    );
+    assert_eq!(client.subscription_count(), 1);
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_user_sends_auth_payload() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
@@ -888,7 +923,10 @@ async fn test_reconnect_replays_empty_market_discovery_subscription() {
     let payloads = state.received_market_payloads.lock().await.clone();
     assert!(payloads.iter().any(|payload| {
         payload.get("type").and_then(Value::as_str) == Some("market")
-            && payload.get("assets_ids").and_then(Value::as_array).is_some_and(Vec::is_empty)
+            && payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
     }));
 
     client.disconnect().await.expect("disconnect failed");
@@ -928,10 +966,7 @@ async fn test_reconnect_asset_replay_delivers_book_from_new_connection() {
     .await
     .expect("post-reconnect book timed out");
 
-    assert!(matches!(
-        resumed,
-        Some(PolymarketWsMessage::Market(_))
-    ));
+    assert!(matches!(resumed, Some(PolymarketWsMessage::Market(_))));
     client.disconnect().await.expect("disconnect failed");
 }
 
@@ -1190,7 +1225,11 @@ async fn assert_subscribe_payloads_have_unique_topics(state: &TestServerState) {
             continue;
         };
         let unique: std::collections::HashSet<_> = ids.iter().collect();
-        assert_eq!(unique.len(), ids.len(), "subscribe payload repeated a topic");
+        assert_eq!(
+            unique.len(),
+            ids.len(),
+            "subscribe payload repeated a topic"
+        );
     }
 }
 

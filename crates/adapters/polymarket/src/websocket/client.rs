@@ -509,6 +509,24 @@ impl PolymarketWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
     }
 
+    /// Refresh assigned market assets without changing retained subscriptions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if called on a user-channel client or command delivery fails.
+    pub async fn refresh_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        if self.channel != WsChannel::Market {
+            anyhow::bail!(
+                "refresh_market() requires a market-channel client (created with new_market())"
+            );
+        }
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::RefreshMarket(asset_ids))
+            .map_err(|e| anyhow::anyhow!("Failed to send RefreshMarket: {e}"))
+    }
+
     /// Authenticate and subscribe to the user channel.
     ///
     /// # Errors

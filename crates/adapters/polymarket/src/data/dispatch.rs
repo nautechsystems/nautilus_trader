@@ -149,6 +149,18 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
         PolymarketWsMessage::User(_) => {
             log::debug!("Ignoring user message on data client");
         }
+        PolymarketWsMessage::RefreshStarted(asset_ids) => {
+            let mut barrier_count = 0;
+            for asset_id in asset_ids {
+                let token_id = Ustr::from(asset_id.as_str());
+                if let Some(meta) = ctx.token_meta.get(&token_id) {
+                    ctx.pending_snapshot_after_tick_change
+                        .insert(meta.instrument_id);
+                    barrier_count += 1;
+                }
+            }
+            log::info!("refresh_barrier_started asset_count={barrier_count}");
+        }
         PolymarketWsMessage::Reconnected => {
             log::info!("Polymarket WS reconnected");
             if ctx.cancellation_token.is_cancelled() {
@@ -3357,6 +3369,42 @@ mod tests {
             !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
             "tick size change must not emit Data events: {events:?}",
         );
+    }
+
+    #[rstest]
+    fn refresh_boundary_starts_barrier_before_replacement_snapshot() {
+        let asset_id = "0xREFRESH";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("0.01"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        handle_ws_message(
+            PolymarketWsMessage::RefreshStarted(vec![asset_id.to_string()]),
+            &ctx,
+        );
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+
+        handle_market_message(make_price_change(market, asset_id, "0.50", "20"), &ctx);
+        assert!(data_rx.try_recv().is_err());
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[("0.45", "5"), ("0.49", "10"), ("0.51", "8")],
+            ),
+            &ctx,
+        );
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(ctx.order_books.contains_key(&instrument_id));
     }
 
     #[rstest]

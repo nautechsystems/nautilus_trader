@@ -520,14 +520,10 @@ impl DataClient for PolymarketDataClient {
             );
         }
 
-        self.pending_snapshot_after_tick_change
-            .insert(instrument_id);
-        let pending_snapshot = self.pending_snapshot_after_tick_change.clone();
         let ws = self.ws_client.handle();
         log::info!("refresh_requested asset_count=1");
         get_runtime().spawn(async move {
             if let Err(e) = ws.refresh_market(vec![token_id_str]).await {
-                pending_snapshot.remove(&instrument_id);
                 log::error!("refresh_failed stage=pool asset_count=1 error={e}");
             }
         });

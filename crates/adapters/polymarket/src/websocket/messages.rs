@@ -250,6 +250,8 @@ pub enum UserWsMessage {
 pub enum PolymarketWsMessage {
     Market(MarketWsMessage),
     User(UserWsMessage),
+    /// Marks the ordered stream boundary for an atomic market refresh.
+    RefreshStarted(Vec<String>),
     /// Emitted when the underlying WebSocket reconnects.
     Reconnected,
 }

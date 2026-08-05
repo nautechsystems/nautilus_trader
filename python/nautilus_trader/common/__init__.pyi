@@ -759,6 +759,12 @@ class DataActor:
         managed: bool = False,
         params: dict | None = None,
     ) -> None: ...
+    def refresh_book_subscription(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
     def subscribe_book_depth10(
         self,
         instrument_id: model.InstrumentId,

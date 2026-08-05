@@ -388,6 +388,20 @@ impl FeedHandler {
                         }
                         HandlerCommand::RefreshMarket(ids) => {
                             let retained_count = self.subscriptions.all_topics().len();
+                            if self
+                                .send(PolymarketWsMessage::RefreshStarted(ids.clone()))
+                                .is_err()
+                            {
+                                log::error!(
+                                    "refresh_failed shard_id={} channel={:?} connection_epoch={} asset_count={} retained_desired_count={} stage=barrier",
+                                    self.shard_id,
+                                    self.channel,
+                                    self.connection_epoch,
+                                    ids.len(),
+                                    retained_count,
+                                );
+                                continue;
+                            }
                             self.send_unsubscribe_market(&ids).await;
                             let sent = self.send_subscribe_market(&ids, None).await;
                             if sent {

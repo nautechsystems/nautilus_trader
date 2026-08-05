@@ -157,7 +157,10 @@ pub trait DataClient {
     ///
     /// Returns an error if the adapter does not support subscription refresh.
     fn refresh_book_subscription(&mut self, cmd: RefreshBookSubscription) -> anyhow::Result<()> {
-        anyhow::bail!("Book subscription refresh is not supported: {cmd:?}")
+        anyhow::bail!(
+            "Book subscription refresh is not supported for {}",
+            cmd.instrument_id
+        )
     }
 
     /// Subscribes to top 10 order book depth updates for the specified instrument.
