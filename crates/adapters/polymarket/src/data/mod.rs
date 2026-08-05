@@ -17,6 +17,7 @@
 
 mod auto_load;
 mod dispatch;
+mod effective_deltas;
 mod instruments;
 mod lifecycle;
 mod requests;

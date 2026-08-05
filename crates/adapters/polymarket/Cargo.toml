@@ -115,6 +115,10 @@ name = "data"
 harness = false
 
 [[bench]]
+name = "effective_deltas"
+harness = false
+
+[[bench]]
 name = "exec"
 harness = false
 

@@ -693,6 +693,19 @@ A single `price_change` payload can contain interleaved updates for several asse
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
 quote processing remains in the venue payload order.
 
+#### Effective deltas
+
+`compute_effective_deltas` defaults to `false`. Enable it to trade extra processing for smaller
+snapshot batches (see [Data client options](#data-client-options)):
+
+- A full book snapshot with prior local state emits only net level changes: `ADD` for new levels,
+  `UPDATE` for resized levels, and `DELETE` with the last known size for removed levels. No‑op
+  snapshots emit nothing, and the final record carries `F_LAST`.
+- Without prior state, such as after a [tick size change](#tick-size-change-handling), the snapshot
+  passes through unchanged to seed the new book epoch.
+- Incremental `price_change` batches remain unchanged and update the local comparison state.
+- The option changes only the order book delta stream; quotes and trades are unchanged.
+
 #### RTDS custom data
 
 The data client also supports Polymarket's real‑time data (RTDS) crypto and equity topics.
@@ -1008,6 +1021,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
 | `subscribe_new_markets`                | `false`    | Subscribe to new‑market discovery events.                                                 |
 | `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                    |
+| `compute_effective_deltas`             | `false`    | Emit net snapshot changes when prior book state exists.                                   |
 | `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
 | `auto_load_missing_instruments`        | `true`     | Load unknown instruments for supported requests and subscriptions.                        |
 | `auto_load_debounce_ms`                | `100`      | Coalesce concurrent auto‑load requests.                                                   |

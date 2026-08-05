@@ -93,6 +93,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
         rtds_feed: client.rtds_feed.clone(),
         subscribe_new_markets: client.config.subscribe_new_markets,
         drop_quotes_missing_side: client.config.drop_quotes_missing_side,
+        compute_effective_deltas: client.config.compute_effective_deltas,
         new_market_filter: client.config.new_market_filter.clone(),
         cancellation_token: client.cancellation_token.clone(),
     };

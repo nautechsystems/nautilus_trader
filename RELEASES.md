@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
+- Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
 
 ### Breaking Changes
 

@@ -298,6 +298,10 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<bool>())
         .transpose()?
         .unwrap_or(default.drop_quotes_missing_side);
+    let compute_effective_deltas = getattr_optional(obj, "compute_effective_deltas")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(default.compute_effective_deltas);
     let new_market_fetch_max_concurrency =
         getattr_optional(obj, "new_market_fetch_max_concurrency")?
             .map(|value| value.extract::<usize>())
@@ -358,6 +362,7 @@ fn extract_data_config_from_pyobject(
         update_instruments_interval_mins,
         subscribe_new_markets,
         drop_quotes_missing_side,
+        compute_effective_deltas,
         new_market_fetch_max_concurrency,
         auto_load_missing_instruments,
         auto_load_debounce_ms,
@@ -563,6 +568,9 @@ mod tests {
                 .set_item("drop_quotes_missing_side", false)
                 .unwrap();
             config_kwargs
+                .set_item("compute_effective_deltas", true)
+                .unwrap();
+            config_kwargs
                 .set_item("new_market_fetch_max_concurrency", 13)
                 .unwrap();
             config_kwargs
@@ -640,6 +648,7 @@ mod tests {
             assert_eq!(rust_config.update_instruments_interval_mins, Some(1));
             assert!(!rust_config.subscribe_new_markets);
             assert!(!rust_config.drop_quotes_missing_side);
+            assert!(rust_config.compute_effective_deltas);
             assert_eq!(rust_config.new_market_fetch_max_concurrency, 13);
             assert_eq!(
                 rust_config.base_url_gamma.as_deref(),

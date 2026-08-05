@@ -75,6 +75,8 @@ class PolymarketDataClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     @property
     def drop_quotes_missing_side(self) -> bool: ...
+    @property
+    def compute_effective_deltas(self) -> bool: ...
     def __init__(
         self,
         instrument_config: PolymarketInstrumentProviderConfig | None = ...,
@@ -101,6 +103,7 @@ class PolymarketDataClientConfig:
         transport_backend: network.TransportBackend | None = None,
         drop_quotes_missing_side: bool | None = None,
         proxy_url: str | None = None,
+        compute_effective_deltas: bool | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

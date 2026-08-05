@@ -15,7 +15,7 @@ Absolute numbers vary by machine; only same‑machine deltas are meaningful.
 ```bash
 sudo cpupower frequency-set -g performance
 setarch -R cargo bench -p nautilus-polymarket --profile bench-lto \
-    --bench data --bench exec --bench micros --bench signing
+    --bench data --bench effective_deltas --bench exec --bench micros --bench signing
 sudo cpupower frequency-set -g powersave  # restore default
 ```
 
@@ -45,6 +45,24 @@ the dispatch loop; both paths share the string‑decimal + status logic.
 | `inbound_pipeline/order_event`             | 615 ns  | 1.63 M/s   |
 | `inbound_pipeline/order_fill`              | 1.29 µs | 777 k/s    |
 | `inbound_pipeline/order_fill_maker`        | 1.15 µs | 873 k/s    |
+
+## Effective delta processing (`effective_deltas.rs`)
+
+Parsed `OrderBookDeltas` plus a populated L2 MBP book -> updated book and effective domain batch.
+Criterion clones the seeded book outside the timed region. Snapshot depth is per side, so depth 100
+contains 200 price levels.
+
+Numbers measured 2026-08-05 on the hardware and toolchain listed above with the same uncontrolled
+host settings. The table records Criterion's point estimates.
+
+| Bench                                                | Estimate |
+| ---------------------------------------------------- | -------: |
+| `effective_deltas/snapshot/unchanged/10`             |  2.52 µs |
+| `effective_deltas/snapshot/ten_percent_resized/10`   |  2.56 µs |
+| `effective_deltas/snapshot/ten_percent_replaced/10`  |  3.26 µs |
+| `effective_deltas/snapshot/unchanged/100`            |  29.6 µs |
+| `effective_deltas/snapshot/ten_percent_resized/100`  |  32.8 µs |
+| `effective_deltas/snapshot/ten_percent_replaced/100` |  31.3 µs |
 
 ## Execution pipeline (`exec.rs`)
 

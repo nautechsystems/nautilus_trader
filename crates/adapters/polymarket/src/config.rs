@@ -278,6 +278,10 @@ pub struct PolymarketDataClientConfig {
     /// Whether to drop quote ticks when bid or ask prices are missing.
     #[builder(default = true)]
     pub drop_quotes_missing_side: bool,
+    /// Whether to emit only the net changes from book snapshots when prior book
+    /// state exists, at a per-snapshot CPU cost.
+    #[builder(default)]
+    pub compute_effective_deltas: bool,
     /// Maximum concurrent instrument fetches spawned from `new_market` events.
     ///
     /// This bounds adapter-side fan-out during event bursts and prevents
@@ -353,6 +357,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketDataClientConfig {
     base_url_rtds: Option<String>,
     transport_backend: TransportBackend,
     drop_quotes_missing_side: bool,
+    compute_effective_deltas: bool,
 });
 
 impl Default for PolymarketDataClientConfig {
@@ -383,6 +388,7 @@ impl Debug for PolymarketDataClientConfig {
             )
             .field("subscribe_new_markets", &self.subscribe_new_markets)
             .field("drop_quotes_missing_side", &self.drop_quotes_missing_side)
+            .field("compute_effective_deltas", &self.compute_effective_deltas)
             .field(
                 "new_market_fetch_max_concurrency",
                 &self.new_market_fetch_max_concurrency,
@@ -708,8 +714,17 @@ resolve_poll_max_wait_secs = 1800
         assert_eq!(config.resolve_poll_grace_secs, 10);
         assert_eq!(config.resolve_poll_max_wait_secs, 1800);
         assert!(config.drop_quotes_missing_side);
+        assert!(!config.compute_effective_deltas);
         assert!(config.filters.is_empty());
         assert!(config.new_market_filter.is_none());
+    }
+
+    #[rstest]
+    fn test_data_config_toml_sets_compute_effective_deltas() {
+        let config: PolymarketDataClientConfig =
+            toml::from_str("compute_effective_deltas = true").unwrap();
+
+        assert!(config.compute_effective_deltas);
     }
 
     #[rstest]
