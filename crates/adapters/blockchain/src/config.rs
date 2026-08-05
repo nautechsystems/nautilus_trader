@@ -140,10 +140,7 @@ const fn default_multicall_calls_per_rpc_request() -> u32 {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
