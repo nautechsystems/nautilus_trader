@@ -50,7 +50,10 @@ pub enum HandlerCommand {
     /// Remove asset IDs from the subscription set (no wire message needed).
     UnsubscribeMarket(Vec<String>),
     /// Refresh asset snapshots without changing retained reconnect intent.
-    RefreshMarket(Vec<String>),
+    RefreshMarket {
+        asset_ids: Vec<String>,
+        completion: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
+    },
     /// Send the authenticated subscribe message on the user channel.
     SubscribeUser,
 }
@@ -207,10 +210,10 @@ impl FeedHandler {
         false
     }
 
-    async fn send_unsubscribe_market(&self, asset_ids: &[String]) {
+    async fn send_unsubscribe_market(&self, asset_ids: &[String]) -> bool {
         let Some(ref client) = self.client else {
             log::warn!("No client available for market unsubscribe");
-            return;
+            return false;
         };
 
         let req = MarketUnsubscribeRequest {
@@ -222,10 +225,15 @@ impl FeedHandler {
             Ok(payload) => {
                 if let Err(e) = client.send_text(payload, None).await {
                     log::error!("Failed to send market unsubscribe: {e}");
+                    return false;
                 }
             }
-            Err(e) => log::error!("Failed to serialize market unsubscribe request: {e}"),
+            Err(e) => {
+                log::error!("Failed to serialize market unsubscribe request: {e}");
+                return false;
+            }
         }
+        true
     }
 
     async fn send_subscribe_user(&self) {
@@ -381,12 +389,15 @@ impl FeedHandler {
                             for id in &ids {
                                 self.subscriptions.mark_unsubscribe(id);
                             }
-                            self.send_unsubscribe_market(&ids).await;
+                            let _ = self.send_unsubscribe_market(&ids).await;
                             for id in &ids {
                                 self.subscriptions.confirm_unsubscribe(id);
                             }
                         }
-                        HandlerCommand::RefreshMarket(ids) => {
+                        HandlerCommand::RefreshMarket {
+                            asset_ids: ids,
+                            completion,
+                        } => {
                             let retained_count = self.subscriptions.all_topics().len();
                             if self
                                 .send(PolymarketWsMessage::RefreshStarted(ids.clone()))
@@ -400,9 +411,25 @@ impl FeedHandler {
                                     ids.len(),
                                     retained_count,
                                 );
+                                let _ = completion.send(Err(anyhow::anyhow!(
+                                    "Failed to publish refresh barrier"
+                                )));
                                 continue;
                             }
-                            self.send_unsubscribe_market(&ids).await;
+                            if !self.send_unsubscribe_market(&ids).await {
+                                log::error!(
+                                    "refresh_failed shard_id={} channel={:?} connection_epoch={} asset_count={} retained_desired_count={} stage=unsubscribe",
+                                    self.shard_id,
+                                    self.channel,
+                                    self.connection_epoch,
+                                    ids.len(),
+                                    retained_count,
+                                );
+                                let _ = completion.send(Err(anyhow::anyhow!(
+                                    "Failed to send market refresh unsubscribe"
+                                )));
+                                continue;
+                            }
                             let sent = self.send_subscribe_market(&ids, None).await;
                             if sent {
                                 log::info!(
@@ -413,6 +440,7 @@ impl FeedHandler {
                                     ids.len(),
                                     retained_count,
                                 );
+                                let _ = completion.send(Ok(()));
                             } else {
                                 log::error!(
                                     "refresh_failed shard_id={} channel={:?} connection_epoch={} asset_count={} retained_desired_count={}",
@@ -422,6 +450,9 @@ impl FeedHandler {
                                     ids.len(),
                                     retained_count,
                                 );
+                                let _ = completion.send(Err(anyhow::anyhow!(
+                                    "Failed to send refreshed market subscription"
+                                )));
                             }
                         }
                         HandlerCommand::SubscribeUser => {

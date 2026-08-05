@@ -32,7 +32,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::live::get_runtime;
 use nautilus_network::websocket::{TransportBackend, proxy::ProxyUrl};
 use ustr::Ustr;
@@ -69,6 +69,8 @@ struct PoolInner {
     max_subscriptions: usize,
     // Serializes routing and shard growth; held across the async wire sends.
     wire_mutex: tokio::sync::Mutex<()>,
+    // Coalesces concurrent refresh intent before taking the wire lock.
+    refresh_state: tokio::sync::Mutex<RefreshBatchState>,
     // Never locked across an await, so routing futures stay `Send`.
     state: StdMutex<PoolState>,
     out_tx: StdMutex<Option<tokio::sync::mpsc::UnboundedSender<PolymarketWsMessage>>>,
@@ -81,6 +83,29 @@ struct PoolState {
     shards: AHashMap<usize, ShardEntry>,
     assignments: AHashMap<Ustr, usize>,
     next_shard_id: usize,
+}
+
+#[derive(Debug, Default)]
+struct RefreshBatchState {
+    pending: AHashSet<String>,
+    in_flight: AHashSet<String>,
+    waiters: Vec<tokio::sync::oneshot::Sender<Result<(), SharedRefreshError>>>,
+    draining: bool,
+}
+
+#[derive(Clone, Debug)]
+struct SharedRefreshError(Arc<anyhow::Error>);
+
+impl std::fmt::Display for SharedRefreshError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for SharedRefreshError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref().as_ref())
+    }
 }
 
 impl PoolState {
@@ -371,38 +396,86 @@ impl PolymarketMarketPoolHandle {
     ///
     /// Returns an error when an asset is not currently assigned or a command cannot be sent.
     pub async fn refresh_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
-        let _wire = self.inner.wire_mutex.lock().await;
-        let mut by_shard: AHashMap<usize, Vec<String>> = AHashMap::new();
         {
             let state = self.inner.state.lock().expect("pool state mutex poisoned");
-            for asset_id in asset_ids {
+            for asset_id in &asset_ids {
                 let token = Ustr::from(asset_id.as_str());
-                let shard_id = state
+                state
                     .assignments
                     .get(&token)
-                    .copied()
                     .ok_or_else(|| anyhow::anyhow!("Cannot refresh unassigned market asset"))?;
-                by_shard.entry(shard_id).or_default().push(asset_id);
             }
         }
 
-        for (shard_id, ids) in by_shard {
-            let handle = self
-                .inner
-                .state
-                .lock()
-                .expect("pool state mutex poisoned")
-                .shards
-                .get(&shard_id)
-                .map(|shard| shard.handle.clone())
-                .ok_or_else(|| anyhow::anyhow!("Cannot refresh asset on missing market shard"))?;
-            handle.refresh_market(ids).await?;
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+        let should_drain = {
+            let mut refresh = self.inner.refresh_state.lock().await;
+            for asset_id in asset_ids {
+                if !refresh.in_flight.contains(&asset_id) {
+                    refresh.pending.insert(asset_id);
+                }
+            }
+            refresh.waiters.push(completion_tx);
+            if refresh.draining {
+                false
+            } else {
+                refresh.draining = true;
+                true
+            }
+        };
+        if should_drain {
+            let inner = self.inner.clone();
+            nautilus_common::live::dst::task::spawn(async move {
+                inner.drain_refresh_batches().await;
+            });
         }
-        Ok(())
+
+        completion_rx
+            .await
+            .map_err(|error| anyhow::anyhow!("Refresh batch closed: {error}"))?
+            .map_err(anyhow::Error::new)
     }
 }
 
 impl PoolInner {
+    async fn drain_refresh_batches(&self) {
+        // Let commands from the same runner drain join this batch.
+        nautilus_common::live::dst::task::yield_now().await;
+        loop {
+            let mut ids = {
+                let mut refresh = self.refresh_state.lock().await;
+                if refresh.pending.is_empty() {
+                    refresh.draining = false;
+                    let waiters = std::mem::take(&mut refresh.waiters);
+                    drop(refresh);
+                    for waiter in waiters {
+                        let _ = waiter.send(Ok(()));
+                    }
+                    return;
+                }
+                let ids = refresh.pending.drain().collect::<Vec<_>>();
+                refresh.in_flight.extend(ids.iter().cloned());
+                ids
+            };
+            ids.sort_unstable();
+
+            let result = self.send_refresh_batch(ids).await;
+            let mut refresh = self.refresh_state.lock().await;
+            refresh.in_flight.clear();
+            if let Err(error) = result {
+                refresh.pending.clear();
+                refresh.draining = false;
+                let waiters = std::mem::take(&mut refresh.waiters);
+                drop(refresh);
+                let shared_error = SharedRefreshError(Arc::new(error));
+                for waiter in waiters {
+                    let _ = waiter.send(Err(shared_error.clone()));
+                }
+                return;
+            }
+        }
+    }
+
     #[cfg(test)]
     fn new(
         base_url: Option<String>,
@@ -442,11 +515,42 @@ impl PoolInner {
             subscribe_new_markets,
             max_subscriptions,
             wire_mutex: tokio::sync::Mutex::new(()),
+            refresh_state: tokio::sync::Mutex::new(RefreshBatchState::default()),
             state: StdMutex::new(PoolState::new()),
             out_tx: StdMutex::new(None),
             out_rx: StdMutex::new(None),
             closed: AtomicBool::new(false),
         }
+    }
+
+    async fn send_refresh_batch(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        let _wire = self.wire_mutex.lock().await;
+        let mut by_shard: AHashMap<usize, Vec<String>> = AHashMap::new();
+        {
+            let state = self.state.lock().expect("pool state mutex poisoned");
+            for asset_id in asset_ids {
+                let token = Ustr::from(asset_id.as_str());
+                let shard_id = state
+                    .assignments
+                    .get(&token)
+                    .copied()
+                    .ok_or_else(|| anyhow::anyhow!("Cannot refresh unassigned market asset"))?;
+                by_shard.entry(shard_id).or_default().push(asset_id);
+            }
+        }
+
+        for (shard_id, ids) in by_shard {
+            let handle = self
+                .state
+                .lock()
+                .expect("pool state mutex poisoned")
+                .shards
+                .get(&shard_id)
+                .map(|shard| shard.handle.clone())
+                .ok_or_else(|| anyhow::anyhow!("Cannot refresh asset on missing market shard"))?;
+            handle.refresh_market(ids).await?;
+        }
+        Ok(())
     }
 
     // Callers hold `wire_mutex`.
@@ -782,17 +886,224 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let handle = Handle::test_single_shard(tx, &["token-a"]);
 
-        handle
-            .refresh_market(vec!["token-a".to_string()])
-            .await
-            .expect("refresh");
+        let refresh = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket {
+            asset_ids,
+            completion,
+        } = rx.recv().await.expect("expected RefreshMarket")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        completion.send(Ok(())).expect("complete refresh");
+        refresh.await.unwrap().expect("refresh");
 
         assert_eq!(handle.inner.subscription_count_for_test(), 1);
-        assert!(matches!(
-            rx.try_recv(),
-            Ok(HandlerCommand::RefreshMarket(ids)) if ids == vec!["token-a".to_string()]
-        ));
+        assert_eq!(asset_ids, ["token-a"]);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn concurrent_strategy_refreshes_coalesce_unique_assets_per_shard() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a", "token-b"]);
+        let mut tasks = Vec::new();
+
+        for strategy_name in ["vwap-momentum", "late-consensus", "ptb-diff"] {
+            for token in ["token-a", "token-b"] {
+                let handle = handle.clone();
+                tasks.push(tokio::spawn(async move {
+                    handle
+                        .refresh_market(vec![token.to_string()])
+                        .await
+                        .unwrap_or_else(|error| panic!("{strategy_name} refresh failed: {error}"));
+                }));
+            }
+        }
+        let HandlerCommand::RefreshMarket {
+            asset_ids: mut ids,
+            completion,
+        } = rx.recv().await.expect("expected coalesced refresh")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        completion.send(Ok(())).expect("complete refresh");
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        ids.sort();
+        assert_eq!(ids, ["token-a", "token-b"]);
+        assert!(rx.try_recv().is_err(), "duplicates must not resend");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn refresh_completion_failure_rearms_batch_drain() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+
+        let first = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket {
+            completion: first_completion,
+            ..
+        } = rx.recv().await.expect("first refresh command")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        first_completion
+            .send(Err(anyhow::anyhow!("wire send failed")))
+            .expect("fail first refresh");
+        let first_error = first.await.unwrap().expect_err("first refresh must fail");
+
+        let second = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket {
+            completion: second_completion,
+            ..
+        } = rx.recv().await.expect("second refresh command")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        second_completion
+            .send(Err(anyhow::anyhow!("wire send failed again")))
+            .expect("fail second refresh");
+        let second_error = second.await.unwrap().expect_err("second refresh must fail");
+
+        assert!(first_error.to_string().contains("wire send failed"));
+        assert!(second_error.to_string().contains("wire send failed again"));
+        assert!(first_error.chain().count() >= 2);
+        assert!(second_error.chain().count() >= 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn duplicate_refresh_during_wire_send_does_not_enqueue_another_command() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+
+        let first = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket { completion, .. } =
+            rx.recv().await.expect("first refresh command")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        let duplicate = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        nautilus_common::live::dst::task::yield_now().await;
+
+        assert!(
+            rx.try_recv().is_err(),
+            "in-flight refresh must be deduplicated"
+        );
+        completion.send(Ok(())).expect("complete refresh");
+        first.await.unwrap().expect("first refresh");
+        duplicate.await.unwrap().expect("duplicate refresh intent");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn failed_in_flight_batch_notifies_waiters_and_clears_later_pending_assets() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a", "token-b"]);
+
+        let first = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket { completion, .. } =
+            rx.recv().await.expect("first refresh command")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        let pending = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-b".to_string()]).await }
+        });
+        nautilus_common::live::dst::task::yield_now().await;
+        completion
+            .send(Err(anyhow::anyhow!("first wire batch failed")))
+            .expect("fail first refresh");
+
+        let first_error = first.await.unwrap().expect_err("first caller must fail");
+        let pending_error = pending
+            .await
+            .unwrap()
+            .expect_err("pending caller must share batch failure");
+        assert!(
+            rx.try_recv().is_err(),
+            "failed drain must not send pending work"
+        );
+
+        let retry = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-b".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket {
+            asset_ids,
+            completion,
+        } = rx.recv().await.expect("retry command")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        completion.send(Ok(())).expect("complete retry");
+        retry.await.unwrap().expect("retry succeeds");
+
+        assert!(first_error.to_string().contains("first wire batch failed"));
+        assert!(
+            pending_error
+                .to_string()
+                .contains("first wire batch failed")
+        );
+        assert_eq!(asset_ids, ["token-b"]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn unsubscribe_waits_for_in_flight_refresh_completion() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+
+        let refresh = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.refresh_market(vec!["token-a".to_string()]).await }
+        });
+        let HandlerCommand::RefreshMarket { completion, .. } =
+            rx.recv().await.expect("refresh command")
+        else {
+            panic!("expected RefreshMarket command");
+        };
+        let unsubscribe = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.unsubscribe_market(vec!["token-a".to_string()]).await }
+        });
+        nautilus_common::live::dst::task::yield_now().await;
+
+        assert!(
+            rx.try_recv().is_err(),
+            "rotation must wait for refresh wire pair"
+        );
+        completion.send(Ok(())).expect("complete refresh");
+        refresh.await.unwrap().expect("refresh");
+        unsubscribe.await.unwrap().expect("unsubscribe");
+        assert!(matches!(
+            rx.recv().await,
+            Some(HandlerCommand::UnsubscribeMarket(ids)) if ids == ["token-a"]
+        ));
+        assert_eq!(handle.inner.subscription_count_for_test(), 0);
     }
 
     #[rstest]

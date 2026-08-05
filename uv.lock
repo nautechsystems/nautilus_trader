@@ -1590,7 +1590,7 @@ wheels = [
 
 [[package]]
 name = "nautilus-trader"
-version = "1.231.0a20260730+polysignal.6"
+version = "1.231.0a20260730+polysignal.7"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

@@ -92,11 +92,18 @@ impl WsSubscriptionHandle {
 
     /// Requests fresh snapshots without changing reconnect subscription intent.
     pub async fn refresh_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::RefreshMarket(asset_ids))
-            .map_err(|e| anyhow::anyhow!("Failed to send RefreshMarket: {e}"))
+            .send(HandlerCommand::RefreshMarket {
+                asset_ids,
+                completion: completion_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send RefreshMarket: {e}"))?;
+        completion_rx
+            .await
+            .map_err(|e| anyhow::anyhow!("RefreshMarket handler closed: {e}"))?
     }
 
     // Constructs a handle around a raw command sender. Test-only: lets unit
@@ -520,11 +527,18 @@ impl PolymarketWebSocketClient {
                 "refresh_market() requires a market-channel client (created with new_market())"
             );
         }
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::RefreshMarket(asset_ids))
-            .map_err(|e| anyhow::anyhow!("Failed to send RefreshMarket: {e}"))
+            .send(HandlerCommand::RefreshMarket {
+                asset_ids,
+                completion: completion_tx,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send RefreshMarket: {e}"))?;
+        completion_rx
+            .await
+            .map_err(|e| anyhow::anyhow!("RefreshMarket handler closed: {e}"))?
     }
 
     /// Authenticate and subscribe to the user channel.

@@ -519,6 +519,68 @@ async fn test_refresh_sends_ordered_wire_pair_and_preserves_retained_subscriptio
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnect_during_refresh_replays_retained_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("initial subscribe failed");
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    let _refresh_result = client.refresh_market(vec![TEST_ASSET_ID.to_string()]).await;
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.total_connections.load(Ordering::Relaxed) >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.market_payloads_by_connection.lock().await.iter().any(
+                    |(connection_id, payload)| {
+                        *connection_id > 0
+                            && payload
+                                .get("assets_ids")
+                                .and_then(Value::as_array)
+                                .is_some_and(|ids| {
+                                    ids.iter().any(|id| id.as_str() == Some(TEST_ASSET_ID))
+                                })
+                    },
+                )
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(client.subscription_count(), 1);
+    assert!(
+        state
+            .subscribed_assets
+            .lock()
+            .await
+            .contains(&TEST_ASSET_ID.to_string()),
+        "reconnect replay must restore the retained refresh asset"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_user_sends_auth_payload() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;

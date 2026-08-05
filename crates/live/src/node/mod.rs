@@ -124,7 +124,9 @@ use crate::{
             TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
         },
     },
-    runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
+    runner::{
+        AsyncRunner, AsyncRunnerChannels, PendingDataMessage, PendingRunnerEvent, recv_data_message,
+    },
 };
 
 pub mod builder;
@@ -1241,12 +1243,12 @@ impl LiveNode {
         let metrics = self.handle.metrics.clone();
         let metrics_start = dst::time::Instant::now();
         metrics.reset();
+        let mut consecutive_data_commands = 0usize;
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
-
             tokio::select! {
                 biased;
 
@@ -1529,35 +1531,40 @@ impl LiveNode {
                         metrics_start,
                     );
                 }
-                Some(evt) = data_evt_rx.recv() => {
+                Some(message) = recv_data_message(
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                    &mut consecutive_data_commands,
+                ) => {
                     let dispatch_start = dst::time::Instant::now();
-
-                    if is_shutting_down {
-                        log::debug!("Residual data event: {evt:?}");
-                        residual_events += 1;
+                    match message {
+                        PendingDataMessage::Command(command) => {
+                            if is_shutting_down {
+                                log::debug!("Residual data command: {command:?}");
+                                residual_events += 1;
+                            }
+                            AsyncRunner::handle_data_command(command);
+                            record_runner_dispatch(
+                                &metrics,
+                                RunnerMetricChannel::DataCommands,
+                                dispatch_start,
+                                metrics_start,
+                            );
+                        }
+                        PendingDataMessage::Event(event) => {
+                            if is_shutting_down {
+                                log::debug!("Residual data event: {event:?}");
+                                residual_events += 1;
+                            }
+                            AsyncRunner::handle_data_event(event);
+                            record_runner_dispatch(
+                                &metrics,
+                                RunnerMetricChannel::DataEvents,
+                                dispatch_start,
+                                metrics_start,
+                            );
+                        }
                     }
-                    AsyncRunner::handle_data_event(evt);
-                    record_runner_dispatch(
-                        &metrics,
-                        RunnerMetricChannel::DataEvents,
-                        dispatch_start,
-                        metrics_start,
-                    );
-                }
-                Some(cmd) = data_cmd_rx.recv() => {
-                    let dispatch_start = dst::time::Instant::now();
-
-                    if is_shutting_down {
-                        log::debug!("Residual data command: {cmd:?}");
-                        residual_events += 1;
-                    }
-                    AsyncRunner::handle_data_command(cmd);
-                    record_runner_dispatch(
-                        &metrics,
-                        RunnerMetricChannel::DataCommands,
-                        dispatch_start,
-                        metrics_start,
-                    );
                 }
             }
         }

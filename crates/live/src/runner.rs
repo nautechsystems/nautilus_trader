@@ -31,13 +31,12 @@
 //! - **Data events**: market data from adapters to the data engine.
 //! - **Data commands**: subscribe/unsubscribe requests to data clients.
 //!
-//! Both `AsyncRunner::run` and `LiveNode::run` use a `biased;` select with
-//! exec branches polled ahead of data branches, so a strategy action
-//! (cancel, submit) is not delayed behind a market-data backlog when the
-//! select polls receivers each iteration. The two loops use slightly
-//! different cmd/evt sub-orders because `LiveNode::run` also folds in the
-//! maintenance timer and signal handling that `AsyncRunner::run` does not
-//! see; check each `select!` block for the exact order at that site.
+//! Both `AsyncRunner::run` and `LiveNode::run` use a `biased;` select. Data
+//! commands receive bounded priority over data events so subscription control
+//! is not delayed behind a market-data backlog, while ready data events run
+//! after at most [`DATA_COMMAND_BURST_LIMIT`] consecutive commands. Execution
+//! channel ordering differs by loop; check each `select!` block for the exact
+//! order at that site.
 //!
 //! The runner can drive the event loop in two ways:
 //!
@@ -143,6 +142,46 @@ pub trait Runner {
     fn run(&mut self);
 }
 
+pub(crate) const DATA_COMMAND_BURST_LIMIT: usize = 32;
+
+#[inline]
+pub(crate) fn data_command_can_run(
+    consecutive_data_commands: usize,
+    data_event_queue_empty: bool,
+) -> bool {
+    consecutive_data_commands < DATA_COMMAND_BURST_LIMIT || data_event_queue_empty
+}
+
+#[expect(
+    clippy::large_enum_variant,
+    reason = "boxing would allocate every market-data event on the live hot path"
+)]
+pub(crate) enum PendingDataMessage {
+    Event(DataEvent),
+    Command(DataCommand),
+}
+
+pub(crate) async fn recv_data_message(
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    consecutive_data_commands: &mut usize,
+) -> Option<PendingDataMessage> {
+    let command_can_run = data_command_can_run(*consecutive_data_commands, data_evt_rx.is_empty());
+    tokio::select! {
+        biased;
+
+        Some(command) = data_cmd_rx.recv(), if command_can_run => {
+            *consecutive_data_commands = consecutive_data_commands.saturating_add(1);
+            Some(PendingDataMessage::Command(command))
+        }
+        Some(event) = data_evt_rx.recv() => {
+            *consecutive_data_commands = 0;
+            Some(PendingDataMessage::Event(event))
+        }
+        else => None,
+    }
+}
+
 /// Channel receivers for the async event loop.
 ///
 /// These can be extracted from `AsyncRunner` via `take_channels()` to drive
@@ -174,6 +213,7 @@ pub struct AsyncRunner {
     exec_evt_tx: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     data_cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>,
     data_evt_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    consecutive_data_commands: usize,
 }
 
 /// Handle for stopping the `AsyncRunner` from another context.
@@ -235,6 +275,7 @@ impl AsyncRunner {
             exec_evt_tx,
             data_cmd_tx,
             data_evt_tx,
+            consecutive_data_commands: 0,
         }
     }
 
@@ -346,11 +387,15 @@ impl AsyncRunner {
                 Some(evt) = self.channels.exec_evt_rx.recv() => {
                     Self::handle_exec_event(evt);
                 },
-                Some(cmd) = self.channels.data_cmd_rx.recv() => {
-                    Self::handle_data_command(cmd);
-                },
-                Some(evt) = self.channels.data_evt_rx.recv() => {
-                    Self::handle_data_event(evt);
+                Some(message) = recv_data_message(
+                    &mut self.channels.data_evt_rx,
+                    &mut self.channels.data_cmd_rx,
+                    &mut self.consecutive_data_commands,
+                ) => {
+                    match message {
+                        PendingDataMessage::Command(command) => Self::handle_data_command(command),
+                        PendingDataMessage::Event(event) => Self::handle_data_event(event),
+                    }
                 },
                 else => {
                     log::debug!("AsyncRunner all channels closed, exiting");
@@ -489,18 +534,37 @@ impl AsyncRunner {
             PendingRunnerEvent::ExecCommand,
             &mut process,
         );
-        processed += poll_channel(
-            &mut self.channels.data_evt_rx,
-            pending.3,
-            PendingRunnerEvent::DataEvent,
-            &mut process,
-        );
-        processed += poll_channel(
-            &mut self.channels.data_cmd_rx,
-            pending.4,
-            PendingRunnerEvent::DataCommand,
-            &mut process,
-        );
+        let mut data_commands = pending.4;
+        let mut data_events = pending.3;
+        while data_commands > 0 || data_events > 0 {
+            if data_commands > 0
+                && (data_events == 0 || self.consecutive_data_commands < DATA_COMMAND_BURST_LIMIT)
+            {
+                match self.channels.data_cmd_rx.try_recv() {
+                    Ok(command) => {
+                        process(PendingRunnerEvent::DataCommand(command));
+                        self.consecutive_data_commands =
+                            self.consecutive_data_commands.saturating_add(1);
+                        processed += 1;
+                        data_commands -= 1;
+                    }
+                    Err(_) => data_commands = 0,
+                }
+                continue;
+            }
+
+            if data_events > 0 {
+                match self.channels.data_evt_rx.try_recv() {
+                    Ok(event) => {
+                        process(PendingRunnerEvent::DataEvent(event));
+                        self.consecutive_data_commands = 0;
+                        processed += 1;
+                        data_events -= 1;
+                    }
+                    Err(_) => data_events = 0,
+                }
+            }
+        }
         processed
     }
 
@@ -517,11 +581,15 @@ impl AsyncRunner {
             Some(command) = self.channels.exec_cmd_rx.recv() => {
                 Some(PendingRunnerEvent::ExecCommand(command))
             }
-            Some(event) = self.channels.data_evt_rx.recv() => {
-                Some(PendingRunnerEvent::DataEvent(event))
-            }
-            Some(command) = self.channels.data_cmd_rx.recv() => {
-                Some(PendingRunnerEvent::DataCommand(command))
+            Some(message) = recv_data_message(
+                &mut self.channels.data_evt_rx,
+                &mut self.channels.data_cmd_rx,
+                &mut self.consecutive_data_commands,
+            ) => {
+                Some(match message {
+                    PendingDataMessage::Command(command) => PendingRunnerEvent::DataCommand(command),
+                    PendingDataMessage::Event(event) => PendingRunnerEvent::DataEvent(event),
+                })
             }
             else => None,
         }
@@ -603,6 +671,18 @@ mod tests {
         }
     }
 
+    fn test_data_command(client_id: &str) -> DataCommand {
+        DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
+            client_id: Some(ClientId::from(client_id)),
+            venue: None,
+            data_type: DataType::new("test", None, None),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            correlation_id: None,
+            params: None,
+        }))
+    }
+
     // Test fixture to create AsyncRunner with manual channels.
     // Sender halves are dummies (not connected to the test receivers) since
     // these tests exercise the event loop, not TLS binding.
@@ -636,6 +716,7 @@ mod tests {
             data_evt_tx,
             signal_rx,
             signal_tx,
+            consecutive_data_commands: 0,
         }
     }
 
@@ -708,27 +789,84 @@ mod tests {
             signal_tx,
         );
         let mut processed_by_channel = [0; 5];
+        let mut processed_order = Vec::new();
 
         let first = runner.poll_pending(|event| match event {
-            PendingRunnerEvent::Time(_) => processed_by_channel[0] += 1,
-            PendingRunnerEvent::ExecEvent(_) => processed_by_channel[1] += 1,
-            PendingRunnerEvent::ExecCommand(_) => processed_by_channel[2] += 1,
+            PendingRunnerEvent::Time(_) => {
+                processed_by_channel[0] += 1;
+                processed_order.push("time");
+            }
+            PendingRunnerEvent::ExecEvent(_) => {
+                processed_by_channel[1] += 1;
+                processed_order.push("exec_event");
+            }
+            PendingRunnerEvent::ExecCommand(_) => {
+                processed_by_channel[2] += 1;
+                processed_order.push("exec_command");
+            }
             PendingRunnerEvent::DataEvent(_) => {
                 processed_by_channel[3] += 1;
+                processed_order.push("data_event");
                 data_evt_tx
                     .send(DataEvent::Data(Data::Quote(test_quote())))
                     .unwrap();
             }
-            PendingRunnerEvent::DataCommand(_) => processed_by_channel[4] += 1,
+            PendingRunnerEvent::DataCommand(_) => {
+                processed_by_channel[4] += 1;
+                processed_order.push("data_command");
+            }
         });
         let second = runner.poll_pending(|event| match event {
-            PendingRunnerEvent::DataEvent(_) => processed_by_channel[3] += 1,
+            PendingRunnerEvent::DataEvent(_) => {
+                processed_by_channel[3] += 1;
+                processed_order.push("data_event");
+            }
             _ => panic!("Unexpected runner event"),
         });
 
         assert_eq!(first, 5);
         assert_eq!(second, 1);
         assert_eq!(processed_by_channel, [1, 1, 1, 2, 1]);
+        assert_eq!(
+            processed_order,
+            [
+                "time",
+                "exec_event",
+                "exec_command",
+                "data_command",
+                "data_event",
+                "data_event",
+            ]
+        );
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    fn test_poll_pending_bounds_data_command_priority() {
+        let mut runner = AsyncRunner::new();
+        runner
+            .data_evt_tx
+            .send(DataEvent::Data(Data::Quote(test_quote())))
+            .unwrap();
+        for _ in 0..=DATA_COMMAND_BURST_LIMIT {
+            runner.data_cmd_tx.send(test_data_command("POLL")).unwrap();
+        }
+        let mut order = Vec::new();
+
+        let processed = runner.poll_pending(|event| match event {
+            PendingRunnerEvent::DataCommand(_) => order.push("command"),
+            PendingRunnerEvent::DataEvent(_) => order.push("event"),
+            _ => panic!("unexpected runner event"),
+        });
+
+        assert_eq!(processed, DATA_COMMAND_BURST_LIMIT + 2);
+        assert!(
+            order[..DATA_COMMAND_BURST_LIMIT]
+                .iter()
+                .all(|kind| *kind == "command")
+        );
+        assert_eq!(order[DATA_COMMAND_BURST_LIMIT], "event");
+        assert_eq!(order[DATA_COMMAND_BURST_LIMIT + 1], "command");
     }
 
     #[rstest]
@@ -1483,6 +1621,59 @@ mod tests {
 
         let result = tokio::time::timeout(Duration::from_millis(200), runner_handle).await;
         assert!(result.is_ok(), "Runner should process events and stop");
+    }
+
+    #[tokio::test]
+    async fn test_recv_prioritizes_data_commands_over_market_data_backlog() {
+        let mut runner = AsyncRunner::new();
+        runner
+            .data_evt_tx
+            .send(DataEvent::Data(Data::Quote(test_quote())))
+            .unwrap();
+        runner
+            .data_cmd_tx
+            .send(DataCommand::Subscribe(SubscribeCommand::Data(
+                SubscribeCustomData {
+                    client_id: Some(ClientId::from("TEST")),
+                    venue: None,
+                    data_type: DataType::new("test", None, None),
+                    command_id: UUID4::new(),
+                    ts_init: UnixNanos::default(),
+                    correlation_id: None,
+                    params: None,
+                },
+            )))
+            .unwrap();
+
+        assert!(matches!(
+            runner.recv().await,
+            Some(PendingRunnerEvent::DataCommand(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_recv_bounds_data_command_priority_when_market_data_is_ready() {
+        let mut runner = AsyncRunner::new();
+        runner
+            .data_evt_tx
+            .send(DataEvent::Data(Data::Quote(test_quote())))
+            .unwrap();
+        for _ in 0..=DATA_COMMAND_BURST_LIMIT {
+            runner.data_cmd_tx.send(test_data_command("TEST")).unwrap();
+        }
+
+        let mut first_batch = Vec::new();
+        for _ in 0..DATA_COMMAND_BURST_LIMIT {
+            first_batch.push(runner.recv().await);
+        }
+        let next = runner.recv().await;
+
+        assert!(
+            first_batch
+                .iter()
+                .all(|event| matches!(event, Some(PendingRunnerEvent::DataCommand(_))))
+        );
+        assert!(matches!(next, Some(PendingRunnerEvent::DataEvent(_))));
     }
 
     #[rstest]
