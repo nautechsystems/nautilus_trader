@@ -883,9 +883,16 @@ async fn test_reconnect_asset_replay_delivers_book_from_new_connection() {
         .subscribe_market(vec![TEST_ASSET_ID.to_string()])
         .await
         .expect("reconnect trigger failed");
-    let resumed = tokio::time::timeout(Duration::from_secs(5), client.next_message())
-        .await
-        .expect("post-reconnect book timed out");
+    let resumed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let message = client.next_message().await;
+            if !matches!(message, Some(PolymarketWsMessage::Reconnected)) {
+                break message;
+            }
+        }
+    })
+    .await
+    .expect("post-reconnect book timed out");
 
     assert!(matches!(
         resumed,

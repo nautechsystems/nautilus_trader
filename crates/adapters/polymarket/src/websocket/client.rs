@@ -213,7 +213,7 @@ impl PolymarketWebSocketClient {
             subscriptions: SubscriptionState::new(':'),
             auth_tracker: AuthTracker::new(),
             user_subscribed: Arc::new(AtomicBool::new(false)),
-            new_market_discovery_enabled: Arc::new(AtomicBool::new(subscribe_new_markets)),
+            new_market_discovery_enabled: Arc::new(AtomicBool::new(false)),
             connection_epoch: Arc::new(AtomicU64::new(0)),
             shard_id: NEXT_SHARD_ID.fetch_add(1, Ordering::Relaxed),
             task_handle: None,
