@@ -34,6 +34,7 @@ mod tests;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
+    cmp::Reverse,
     fmt::{Debug, Display},
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
@@ -7628,11 +7629,21 @@ impl Cache {
     ) -> (AHashMap<Ustr, Decimal>, AHashMap<Ustr, Decimal>) {
         let mut bid_quotes = AHashMap::new();
         let mut ask_quotes = AHashMap::new();
+        let mut quote_sources = AHashMap::new();
 
-        for instrument_id in self.instruments.keys() {
+        for (instrument_id, instrument) in &self.instruments {
             if instrument_id.venue != *venue {
                 continue;
             }
+
+            let Some(base_currency) = instrument.base_currency() else {
+                continue;
+            };
+            let pair = Ustr::from(&format!(
+                "{}/{}",
+                base_currency.code,
+                instrument.quote_currency().code
+            ));
 
             let (bid_price, ask_price) = if let Some(ticks) = self.quotes.get(instrument_id) {
                 if let Some(tick) = ticks.front() {
@@ -7675,8 +7686,22 @@ impl Cache {
                 }
             };
 
-            bid_quotes.insert(instrument_id.symbol.inner(), bid_price.as_decimal());
-            ask_quotes.insert(instrument_id.symbol.inner(), ask_price.as_decimal());
+            let preference = (
+                bid_price.is_positive() && ask_price.is_positive(),
+                instrument.instrument_class() == InstrumentClass::Spot,
+                Reverse(*instrument_id),
+            );
+
+            if quote_sources
+                .get(&pair)
+                .is_some_and(|current| current >= &preference)
+            {
+                continue;
+            }
+
+            bid_quotes.insert(pair, bid_price.as_decimal());
+            ask_quotes.insert(pair, ask_price.as_decimal());
+            quote_sources.insert(pair, preference);
         }
 
         (bid_quotes, ask_quotes)

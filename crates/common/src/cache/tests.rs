@@ -19,7 +19,7 @@
 use std::sync::Arc;
 use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::{AHashMap, AHashSet, RandomState};
 use bytes::Bytes;
 use nautilus_core::{UUID4, UnixNanos};
 #[cfg(feature = "defi")]
@@ -667,6 +667,164 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
     );
 
     assert_eq!(rate, Some(dec!(0.80005)));
+}
+
+#[rstest]
+#[case((0, 0, 0, 0))]
+#[case((1, 2, 3, 4))]
+#[case((5, 6, 7, 8))]
+#[case((10, 20, 30, 40))]
+fn test_get_xrate_builds_quote_keys_from_instrument_currencies(
+    #[case] seeds: (u64, u64, u64, u64),
+) {
+    let mut cache = Cache {
+        instruments: AHashMap::with_hasher(RandomState::with_seeds(
+            seeds.0, seeds.1, seeds.2, seeds.3,
+        )),
+        ..Default::default()
+    };
+
+    let btcusdt = currency_pair_btcusdt();
+    let mut btcusdt_perpetual = crypto_perpetual_ethusdt();
+    btcusdt_perpetual.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    btcusdt_perpetual.base_currency = Currency::BTC();
+    let mut btcusdt_no_quote = btcusdt.clone();
+    btcusdt_no_quote.id = InstrumentId::from("BTCUSDT.BYBIT");
+    let mut btcusdt_zero_quote = btcusdt.clone();
+    btcusdt_zero_quote.id = InstrumentId::from("BTCUSDT.OKX");
+    let mut btcusdt_zero_quote_unique = btcusdt.clone();
+    btcusdt_zero_quote_unique.id = InstrumentId::from("BTCUSDT.KRAKEN");
+    let mut btcusdt_perpetual_a = btcusdt_perpetual.clone();
+    btcusdt_perpetual_a.id = InstrumentId::from("BTCUSDT-A.BYBIT");
+    let mut btcusdt_perpetual_z = btcusdt_perpetual.clone();
+    btcusdt_perpetual_z.id = InstrumentId::from("BTCUSDT-Z.BYBIT");
+    let mut btcusdt_perpetual_okx = btcusdt_perpetual.clone();
+    btcusdt_perpetual_okx.id = InstrumentId::from("BTCUSDT-PERP.OKX");
+    let mut audusd = audusd_sim();
+    audusd.id = InstrumentId::from("AUD/USD.BINANCE");
+    let mut aapl = equity_aapl();
+    aapl.id = InstrumentId::from("AAPL.BINANCE");
+
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(btcusdt.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CryptoPerpetual(btcusdt_perpetual.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(btcusdt_no_quote))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(btcusdt_zero_quote.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(
+            btcusdt_zero_quote_unique.clone(),
+        ))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CryptoPerpetual(btcusdt_perpetual_a.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CryptoPerpetual(btcusdt_perpetual_z.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CryptoPerpetual(
+            btcusdt_perpetual_okx.clone(),
+        ))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::Equity(aapl.clone()))
+        .unwrap();
+
+    let add_quote = |cache: &mut Cache, instrument_id, bid: &str, ask: &str| {
+        cache
+            .add_quote(QuoteTick {
+                instrument_id,
+                bid_price: Price::from(bid),
+                ask_price: Price::from(ask),
+                bid_size: Quantity::from(1),
+                ask_size: Quantity::from(1),
+                ..Default::default()
+            })
+            .unwrap();
+    };
+
+    add_quote(&mut cache, btcusdt.id, "4.00", "4.00");
+    add_quote(&mut cache, btcusdt_perpetual.id, "5.00", "5.00");
+    add_quote(&mut cache, btcusdt_perpetual_a.id, "6.00", "6.00");
+    add_quote(&mut cache, btcusdt_perpetual_z.id, "7.00", "7.00");
+    add_quote(&mut cache, btcusdt_zero_quote.id, "0.00", "0.00");
+    add_quote(&mut cache, btcusdt_zero_quote_unique.id, "0.00", "9.00");
+    add_quote(&mut cache, btcusdt_perpetual_okx.id, "8.00", "8.00");
+    add_quote(&mut cache, audusd.id, "0.80000", "1.00000");
+    add_quote(&mut cache, aapl.id, "200.00", "201.00");
+
+    let venue = Venue::from("BINANCE");
+    let (bid_quotes, ask_quotes) = cache.build_quote_table(&venue);
+
+    assert_eq!(
+        bid_quotes,
+        AHashMap::from([
+            (Ustr::from("BTC/USDT"), dec!(4.00)),
+            (Ustr::from("AUD/USD"), dec!(0.80000)),
+        ])
+    );
+    assert_eq!(
+        ask_quotes,
+        AHashMap::from([
+            (Ustr::from("BTC/USDT"), dec!(4.00)),
+            (Ustr::from("AUD/USD"), dec!(1.00000)),
+        ])
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::BTC(), Currency::USDT(), PriceType::Mid),
+        Some(dec!(4.00))
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::USDT(), Currency::BTC(), PriceType::Mid),
+        Some(dec!(0.25))
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::AUD(), Currency::USD(), PriceType::Mid),
+        Some(dec!(0.90000))
+    );
+
+    let fallback_venue = Venue::from("BYBIT");
+    assert_eq!(
+        cache.get_xrate(
+            fallback_venue,
+            Currency::BTC(),
+            Currency::USDT(),
+            PriceType::Mid
+        ),
+        Some(dec!(6.00))
+    );
+
+    assert_eq!(
+        cache.get_xrate(
+            Venue::from("OKX"),
+            Currency::BTC(),
+            Currency::USDT(),
+            PriceType::Mid
+        ),
+        Some(dec!(8.00))
+    );
+
+    assert_eq!(
+        cache
+            .try_get_xrate(
+                Venue::from("KRAKEN"),
+                Currency::BTC(),
+                Currency::USDT(),
+                PriceType::Mid
+            )
+            .unwrap(),
+        None
+    );
 }
 
 #[rstest]

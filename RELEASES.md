@@ -33,6 +33,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed `on_historical_data` to receive each `CustomData` response item
+- Fixed `Cache::get_xrate` for instrument symbols that do not use the `BASE/QUOTE` format
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
