@@ -1,3 +1,10 @@
+# %% [markdown]
+# # Order Book Imbalance
+#
+# Define the reusable order book imbalance strategy used by the Binance and Bybit
+# order book backtest tutorials.
+
+# %%
 from __future__ import annotations
 
 from decimal import Decimal

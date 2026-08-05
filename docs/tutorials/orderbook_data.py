@@ -1,3 +1,10 @@
+# %% [markdown]
+# # Order Book Data
+#
+# Load Bybit order book archives and convert normalized venue rows into
+# NautilusTrader order book deltas for the Binance and Bybit backtest tutorials.
+
+# %%
 from __future__ import annotations
 
 import json
