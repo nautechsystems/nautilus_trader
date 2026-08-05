@@ -137,7 +137,7 @@ impl ChandeMomentumOscillator {
                 self.value = 0.0;
             } else {
                 self.value =
-                    100.0 * (self.average_gain.value() - self.average_loss.value()) / divisor;
+                    100.0 * ((self.average_gain.value() - self.average_loss.value()) / divisor);
             }
         }
         self.previous_close = close;
@@ -298,5 +298,19 @@ mod tests {
         }
         assert!(cmo.initialized);
         assert!(cmo.value <= 100.0 && cmo.value >= -100.0);
+    }
+
+    #[test]
+    fn test_cmo_value_stays_within_bounds() {
+        use crate::average::vidya::VariableIndexDynamicAverage;
+
+        let mut cmo = ChandeMomentumOscillator::new(14, None);
+        let mut vidya = VariableIndexDynamicAverage::new(14, None, None);
+        for price in std::iter::repeat(100.0).take(21).chain(std::iter::repeat(50.0).take(20)) {
+            cmo.update_raw(price);
+            vidya.update_raw(price);
+        }
+        assert!((-100.0..=100.0).contains(&cmo.value));
+        assert!((0.0..=1.0).contains(&vidya.cmo_pct));
     }
 }
