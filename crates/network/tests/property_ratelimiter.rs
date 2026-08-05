@@ -250,50 +250,32 @@ proptest! {
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();
-        let rate_limiter = RateLimiter::new_with_quota(
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::new_with_clock(
             None,
-            vec![(key.clone(), quota)]
+            vec![(key.clone(), quota)],
+            clock,
         );
 
         let mut successful_requests = 0;
         let burst_capacity = rate as usize;
-        let start = std::time::Instant::now();
 
-        // Make rapid requests without any delay
         for i in 0..request_count {
             let allowed = rate_limiter.check_key(&key).is_ok();
             if allowed {
                 successful_requests += 1;
             }
 
-            // Within burst capacity, all requests should be allowed initially
-            if i < burst_capacity {
-                prop_assert!(allowed, "Request {} should be allowed within burst capacity", i);
-            }
+            prop_assert_eq!(
+                allowed,
+                i < burst_capacity,
+                "Unexpected decision for request {} with burst {}",
+                i,
+                burst_capacity
+            );
         }
 
-        // Account for real time passing during the tight loop.
-        // With a real clock, additional tokens may replenish while we iterate.
-        let elapsed = start.elapsed();
-        let replenish_interval = quota.replenish_interval();
-        // Integer division floors the replenished count, which is conservative
-        // (we may underestimate tokens replenished during the loop). This still
-        // preserves the invariant we care about: we must not exceed what could
-        // have been allowed by burst plus replenishment in the elapsed time.
-        let replenished = (elapsed.as_nanos() / replenish_interval.as_nanos()) as usize;
-        let max_allowed = burst_capacity.saturating_add(replenished);
-        let bound = std::cmp::min(request_count, max_allowed);
-
-        // Should not exceed burst + replenished capacity during the loop
-        prop_assert!(
-            successful_requests <= bound,
-            "Successful requests {} exceeded allowed bound {} (burst {} + replenished {} in {:?})",
-            successful_requests,
-            bound,
-            burst_capacity,
-            replenished,
-            elapsed
-        );
+        prop_assert_eq!(successful_requests, request_count.min(burst_capacity));
     }
 
     /// Property: Rate limiter behavior should be consistent across multiple keys.
@@ -356,28 +338,13 @@ proptest! {
         let quota_minute = Quota::per_minute(rate_nonzero);
         let quota_hour = Quota::per_hour(rate_nonzero);
 
-        // Verify internal calculations don't overflow
-        let replenish_second = quota_second.replenish_interval().as_nanos() as u64;
-        let replenish_minute = quota_minute.replenish_interval().as_nanos() as u64;
-        let replenish_hour = quota_hour.replenish_interval().as_nanos() as u64;
+        let replenish_second = quota_second.replenish_interval().as_nanos();
+        let replenish_minute = quota_minute.replenish_interval().as_nanos();
+        let replenish_hour = quota_hour.replenish_interval().as_nanos();
 
-        prop_assert!(
-            replenish_second > 0,
-            "Per-second replenish interval should be positive: {}",
-            replenish_second
-        );
-
-        prop_assert!(
-            replenish_minute > 0,
-            "Per-minute replenish interval should be positive: {}",
-            replenish_minute
-        );
-
-        prop_assert!(
-            replenish_hour > 0,
-            "Per-hour replenish interval should be positive: {}",
-            replenish_hour
-        );
+        prop_assert_eq!(replenish_second, 1_000_000_000u128 / u128::from(rate));
+        prop_assert_eq!(replenish_minute, 60_000_000_000u128 / u128::from(rate));
+        prop_assert_eq!(replenish_hour, 3_600_000_000_000u128 / u128::from(rate));
 
         // Verify burst capacity equals rate
         prop_assert_eq!(
@@ -422,45 +389,30 @@ proptest! {
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();
-        let rate_limiter = RateLimiter::<String, _>::new_with_quota(
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::<String, _>::new_with_clock(
             Some(quota),
-            vec![]
+            vec![],
+            clock,
         );
 
         let key = "rapid_test".to_string();
         let mut allowed_count = 0;
         let mut denied_count = 0;
 
-        // Make rapid sequential requests
-        let start = std::time::Instant::now();
-
-        for _ in 0..request_count {
-            if rate_limiter.check_key(&key).is_ok() {
+        for i in 0..request_count {
+            let allowed = rate_limiter.check_key(&key).is_ok();
+            if allowed {
                 allowed_count += 1;
             } else {
                 denied_count += 1;
             }
+            prop_assert_eq!(allowed, i < rate as usize);
         }
 
-        // Account for real time passing during the tight loop: tokens may replenish
-        let burst_capacity = rate as usize;
-        let elapsed = start.elapsed();
-        let replenish_interval = quota.replenish_interval();
-        // Floors replenished count, which is conservative and safe
-        let replenished = (elapsed.as_nanos() / replenish_interval.as_nanos()) as usize;
-        let max_allowed = std::cmp::min(request_count, burst_capacity.saturating_add(replenished));
-
-        prop_assert!(
-            allowed_count <= max_allowed,
-            "Allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
-            allowed_count, max_allowed, burst_capacity, replenished, elapsed
-        );
-
-        prop_assert_eq!(
-            allowed_count + denied_count,
-            request_count,
-            "Total requests should equal allowed + denied"
-        );
+        let expected_allowed = request_count.min(rate as usize);
+        prop_assert_eq!(allowed_count, expected_allowed);
+        prop_assert_eq!(denied_count, request_count - expected_allowed);
     }
 
     /// Property: Default quota should work when no specific key quota is set.
@@ -473,53 +425,28 @@ proptest! {
         let default_quota = Quota::per_second(NonZeroU32::new(default_rate).unwrap()).unwrap();
         let key_quota = Quota::per_second(NonZeroU32::new(key_rate).unwrap()).unwrap();
 
-        let rate_limiter = RateLimiter::new_with_quota(
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::new_with_clock(
             Some(default_quota),
-            vec![(key.clone(), key_quota)]
+            vec![(key.clone(), key_quota)],
+            clock,
         );
 
-        // Test specific key uses its quota (time-aware bound)
-        let mut specific_allowed = 0usize;
-        let specific_attempts = key_rate as usize + 1; // inclusive in original test
-        let start_specific = std::time::Instant::now();
+        let specific_decisions = (0..=key_rate)
+            .map(|_| rate_limiter.check_key(&key).is_ok())
+            .collect::<Vec<_>>();
 
-        for _ in 0..specific_attempts {
-            if rate_limiter.check_key(&key).is_ok() {
-                specific_allowed += 1;
-            }
-        }
-        let elapsed_specific = start_specific.elapsed();
-        let burst_specific = key_rate as usize;
-        let repl_specific = key_quota.replenish_interval();
-        let replenished_specific = (elapsed_specific.as_nanos() / repl_specific.as_nanos()) as usize;
-        let max_allowed_specific = std::cmp::min(specific_attempts, burst_specific.saturating_add(replenished_specific));
-        prop_assert!(
-            specific_allowed <= max_allowed_specific,
-            "Specific key allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
-            specific_allowed, max_allowed_specific, burst_specific, replenished_specific, elapsed_specific
-        );
-
-        // Test unknown key uses default quota (time-aware bound)
         let unknown_key = format!("{key}_unknown");
-        let mut default_allowed = 0usize;
-        let default_attempts = default_rate as usize + 1; // inclusive in original test
-        let start_default = std::time::Instant::now();
+        let default_decisions = (0..=default_rate)
+            .map(|_| rate_limiter.check_key(&unknown_key).is_ok())
+            .collect::<Vec<_>>();
 
-        for _ in 0..default_attempts {
-            if rate_limiter.check_key(&unknown_key).is_ok() {
-                default_allowed += 1;
-            }
-        }
-        let elapsed_default = start_default.elapsed();
-        let burst_default = default_rate as usize;
-        let repl_default = default_quota.replenish_interval();
-        let replenished_default = (elapsed_default.as_nanos() / repl_default.as_nanos()) as usize;
-        let max_allowed_default = std::cmp::min(default_attempts, burst_default.saturating_add(replenished_default));
-        prop_assert!(
-            default_allowed <= max_allowed_default,
-            "Unknown key allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
-            default_allowed, max_allowed_default, burst_default, replenished_default, elapsed_default
-        );
+        let mut expected_specific = vec![true; key_rate as usize];
+        expected_specific.push(false);
+        let mut expected_default = vec![true; default_rate as usize];
+        expected_default.push(false);
+        prop_assert_eq!(specific_decisions, expected_specific);
+        prop_assert_eq!(default_decisions, expected_default);
     }
 
     /// Property: Quota with custom period should work correctly.
@@ -531,52 +458,22 @@ proptest! {
         let period = Duration::from_millis(period_ms);
         let burst_nonzero = NonZeroU32::new(burst_size).unwrap();
 
-        // Test with_period constructor
-        if let Some(base_quota) = Quota::with_period(period) {
-            let quota = base_quota.allow_burst(burst_nonzero);
+        let quota = Quota::with_period(period).unwrap().allow_burst(burst_nonzero);
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::<String, _>::new_with_clock(Some(quota), vec![], clock);
+        let key = "custom_period_test".to_string();
+        let decisions = (0..=burst_size)
+            .map(|_| rate_limiter.check_key(&key).is_ok())
+            .collect::<Vec<_>>();
+        let mut expected = vec![true; burst_size as usize];
+        expected.push(false);
 
-            let rate_limiter = RateLimiter::<String, _>::new_with_quota(
-                Some(quota),
-                vec![]
-            );
-
-            let key = "custom_period_test".to_string();
-
-            // Should allow up to burst size immediately (time-aware upper bound)
-            let mut allowed = 0usize;
-            let attempts = (burst_size * 2) as usize;
-            let start = std::time::Instant::now();
-
-            for _ in 0..attempts {
-                if rate_limiter.check_key(&key).is_ok() {
-                    allowed += 1;
-                }
-            }
-            let elapsed = start.elapsed();
-            let burst = burst_size as usize;
-            let repl = quota.replenish_interval();
-            // Floors replenishment count; conservative and safe
-            let replenished = (elapsed.as_nanos() / repl.as_nanos()) as usize;
-            let max_allowed = std::cmp::min(attempts, burst.saturating_add(replenished));
-            prop_assert!(
-                allowed <= max_allowed,
-                "Allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
-                allowed, max_allowed, burst, replenished, elapsed
-            );
-
-            // Verify quota properties
-            prop_assert_eq!(
-                quota.burst_size().get(),
-                burst_size,
-                "Max burst should match configured value"
-            );
-
-            prop_assert_eq!(
-                quota.replenish_interval().as_nanos() as u64,
-                period.as_nanos() as u64,
-                "Replenish interval should match configured period"
-            );
-        }
+        prop_assert_eq!(decisions, expected);
+        rate_limiter.advance_clock(period);
+        prop_assert!(rate_limiter.check_key(&key).is_ok());
+        prop_assert!(rate_limiter.check_key(&key).is_err());
+        prop_assert_eq!(quota.burst_size().get(), burst_size);
+        prop_assert_eq!(quota.replenish_interval(), period);
     }
 
     /// Property: per_second succeeds for all max_burst <= 1_000_000_000
@@ -587,10 +484,9 @@ proptest! {
     ) {
         let quota = Quota::per_second(NonZeroU32::new(max_burst).unwrap())
             .expect("max_burst <= 1_000_000_000 should always succeed");
-        prop_assert!(
-            quota.replenish_interval().as_nanos() > 0,
-            "replenish_interval must be positive for max_burst={}",
-            max_burst
+        prop_assert_eq!(
+            quota.replenish_interval().as_nanos(),
+            1_000_000_000u128 / u128::from(max_burst)
         );
     }
 
@@ -600,10 +496,9 @@ proptest! {
         max_burst in 1u32..=u32::MAX,
     ) {
         let quota = Quota::per_minute(NonZeroU32::new(max_burst).unwrap());
-        prop_assert!(
-            quota.replenish_interval().as_nanos() > 0,
-            "per_minute replenish_interval must be positive for max_burst={}",
-            max_burst
+        prop_assert_eq!(
+            quota.replenish_interval().as_nanos(),
+            60_000_000_000u128 / u128::from(max_burst)
         );
     }
 
@@ -613,10 +508,9 @@ proptest! {
         max_burst in 1u32..=u32::MAX,
     ) {
         let quota = Quota::per_hour(NonZeroU32::new(max_burst).unwrap());
-        prop_assert!(
-            quota.replenish_interval().as_nanos() > 0,
-            "per_hour replenish_interval must be positive for max_burst={}",
-            max_burst
+        prop_assert_eq!(
+            quota.replenish_interval().as_nanos(),
+            3_600_000_000_000u128 / u128::from(max_burst)
         );
     }
 
@@ -627,17 +521,19 @@ proptest! {
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();
-        let rate_limiter = RateLimiter::<String, _>::new_with_quota(Some(quota), vec![]);
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::<String, _>::new_with_clock(Some(quota), vec![], clock);
 
         let key = "boundary_test".to_string();
 
         // Consume burst capacity completely
         for _ in 0..rate {
-            let _ = rate_limiter.check_key(&key);
+            prop_assert!(rate_limiter.check_key(&key).is_ok());
         }
 
-        // Next request should be denied (rate limited)
-        let denied = rate_limiter.check_key(&key).is_err();
-        prop_assert!(denied, "Should be rate limited after consuming burst");
+        prop_assert!(rate_limiter.check_key(&key).is_err());
+        rate_limiter.advance_clock(quota.replenish_interval());
+        prop_assert!(rate_limiter.check_key(&key).is_ok());
+        prop_assert!(rate_limiter.check_key(&key).is_err());
     }
 }

@@ -58,6 +58,23 @@ fn backoff_params_strategy() -> impl Strategy<Value = (Duration, Duration, f64, 
         })
 }
 
+fn exact_progression_strategy() -> impl Strategy<Value = (u64, u64, u64, bool)> {
+    (
+        1u64..=1_000_000_000,
+        0u64..=1_000_000_000,
+        prop::sample::select(vec![1u64, 2, 3, 10, 100]),
+        any::<bool>(),
+    )
+        .prop_map(|(initial_nanos, headroom_nanos, factor, immediate_first)| {
+            (
+                initial_nanos,
+                initial_nanos + headroom_nanos,
+                factor,
+                immediate_first,
+            )
+        })
+}
+
 proptest! {
     // Pin regression files to the crate directory: the default source-parallel
     // resolution has no `src` component for integration tests and lands at the
@@ -309,32 +326,30 @@ proptest! {
         }
     }
 
-    /// Property: Backoff delays should be deterministic for same parameters (ignoring jitter).
+    /// Property: zero-jitter backoff matches an independent integer recurrence.
     #[rstest]
-    fn deterministic_base_progression(
-        (initial, max, factor, _jitter_ms, immediate_first) in backoff_params_strategy(),
+    fn base_progression_matches_integer_oracle(
+        (initial_nanos, max_nanos, factor, immediate_first) in exact_progression_strategy(),
         iterations in 1usize..=10
     ) {
-        // Test without jitter for deterministic behavior
-        let mut backoff1 = ExponentialBackoff::new(initial, max, factor, 0, immediate_first)
+        let initial = Duration::from_nanos(initial_nanos);
+        let max = Duration::from_nanos(max_nanos);
+        let mut backoff = ExponentialBackoff::new(initial, max, factor as f64, 0, immediate_first)
             .expect("Valid backoff parameters");
-        let mut backoff2 = ExponentialBackoff::new(initial, max, factor, 0, immediate_first)
-            .expect("Valid backoff parameters");
+        let mut expected_current = initial_nanos;
 
-        for _ in 0..iterations {
-            let delay1 = backoff1.next_duration();
-            let delay2 = backoff2.next_duration();
+        for iteration in 0..iterations {
+            let actual_delay = backoff.next_duration();
 
-            prop_assert_eq!(
-                delay1, delay2,
-                "Backoff delays should be identical for same parameters without jitter"
-            );
+            if immediate_first && iteration == 0 {
+                prop_assert_eq!(actual_delay, Duration::ZERO);
+                prop_assert_eq!(backoff.current_delay(), initial);
+                continue;
+            }
 
-            prop_assert_eq!(
-                backoff1.current_delay(),
-                backoff2.current_delay(),
-                "Current delays should be identical for same parameters"
-            );
+            prop_assert_eq!(actual_delay, Duration::from_nanos(expected_current));
+            expected_current = expected_current.saturating_mul(factor).min(max_nanos);
+            prop_assert_eq!(backoff.current_delay(), Duration::from_nanos(expected_current));
         }
     }
 

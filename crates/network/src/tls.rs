@@ -285,7 +285,14 @@ fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
 
 #[cfg(test)]
 mod tests {
+    use std::{io::Cursor, sync::Arc};
+
     use rstest::rstest;
+    use rustls::{
+        ClientConnection, Connection, ServerConnection,
+        pki_types::{PrivatePkcs8KeyDer, ServerName},
+        server::WebPkiClientVerifier,
+    };
 
     use super::*;
 
@@ -332,47 +339,62 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 3BSW8BRUdXasnBkWIg==
 -----END CERTIFICATE-----";
 
-    fn generate_client_key_and_cert() -> (String, String) {
+    struct TestIdentity {
+        key_pem: String,
+        cert_pem: String,
+        key_der: PrivateKeyDer<'static>,
+        cert_der: CertificateDer<'static>,
+    }
+
+    fn generate_identity() -> TestIdentity {
         let key_pair = rcgen::KeyPair::generate().unwrap();
         let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
             .unwrap()
             .self_signed(&key_pair)
             .unwrap();
-        (key_pair.serialize_pem(), cert.pem())
+        TestIdentity {
+            key_pem: key_pair.serialize_pem(),
+            cert_pem: cert.pem(),
+            key_der: PrivatePkcs8KeyDer::from(key_pair.serialize_der()).into(),
+            cert_der: cert.der().clone(),
+        }
     }
 
     #[rstest]
-    fn test_combined_key_and_cert_pem_enables_client_auth() {
-        // Regression: a combined PEM (key + certificate in one file) used to
-        // have its certificate skipped, silently dropping client auth
-        let (key_pem, cert_pem) = generate_client_key_and_cert();
+    #[case::combined(true)]
+    #[case::separate(false)]
+    fn test_client_auth_files_complete_mutual_tls_handshake(#[case] combined: bool) {
+        let client_identity = generate_identity();
+        let server_identity = generate_identity();
         let temp_dir = tempfile::tempdir().unwrap();
-        let combined_path = temp_dir.path().join("client.pem");
-        std::fs::write(&combined_path, format!("{key_pem}{cert_pem}")).unwrap();
 
-        let result = create_tls_config_from_certs_dir(temp_dir.path(), true);
+        if combined {
+            std::fs::write(
+                temp_dir.path().join("client.pem"),
+                format!("{}{}", client_identity.key_pem, client_identity.cert_pem),
+            )
+            .unwrap();
+        } else {
+            std::fs::write(
+                temp_dir.path().join("client-key.pem"),
+                &client_identity.key_pem,
+            )
+            .unwrap();
+            std::fs::write(
+                temp_dir.path().join("client-cert.pem"),
+                &client_identity.cert_pem,
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            temp_dir.path().join("server.pem"),
+            &server_identity.cert_pem,
+        )
+        .unwrap();
 
-        assert!(
-            result.is_ok(),
-            "Combined key+cert PEM should satisfy client auth: {:?}",
-            result.err()
-        );
-    }
+        let client_config = create_tls_config_from_certs_dir(temp_dir.path(), true).unwrap();
 
-    #[rstest]
-    fn test_separate_key_and_cert_files_enable_client_auth() {
-        let (key_pem, cert_pem) = generate_client_key_and_cert();
-        let temp_dir = tempfile::tempdir().unwrap();
-        std::fs::write(temp_dir.path().join("key.pem"), key_pem).unwrap();
-        std::fs::write(temp_dir.path().join("cert.pem"), cert_pem).unwrap();
-
-        let result = create_tls_config_from_certs_dir(temp_dir.path(), true);
-
-        assert!(
-            result.is_ok(),
-            "Separate key and cert files should satisfy client auth: {:?}",
-            result.err()
-        );
+        assert_mutual_tls_handshake(client_config, &client_identity, server_identity);
     }
 
     #[rstest]
@@ -385,11 +407,8 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 
         let result = create_tls_config_from_certs_dir(temp_dir.path(), false);
 
-        assert!(
-            result.is_ok(),
-            "CA-only directory should succeed: {:?}",
-            result.err()
-        );
+        let config = result.unwrap();
+        assert!(!config.client_auth_cert_resolver.has_certs());
     }
 
     #[rstest]
@@ -454,5 +473,56 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             "Should succeed ignoring invalid cert file: {:?}",
             result.err()
         );
+    }
+
+    fn assert_mutual_tls_handshake(
+        client_config: rustls::ClientConfig,
+        client_identity: &TestIdentity,
+        server_identity: TestIdentity,
+    ) {
+        let mut client_roots = rustls::RootCertStore::empty();
+        client_roots.add(client_identity.cert_der.clone()).unwrap();
+        let verifier = WebPkiClientVerifier::builder(Arc::new(client_roots))
+            .build()
+            .unwrap();
+        let server_config = rustls::ServerConfig::builder()
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(
+                vec![server_identity.cert_der],
+                server_identity.key_der.clone_key(),
+            )
+            .unwrap();
+        let server_name = ServerName::try_from("localhost").unwrap();
+        let mut client = Connection::Client(
+            ClientConnection::new(Arc::new(client_config), server_name).unwrap(),
+        );
+        let mut server =
+            Connection::Server(ServerConnection::new(Arc::new(server_config)).unwrap());
+
+        for _ in 0..10 {
+            transfer_tls(&mut client, &mut server);
+            transfer_tls(&mut server, &mut client);
+            if !client.is_handshaking() && !server.is_handshaking() {
+                break;
+            }
+        }
+
+        assert!(!client.is_handshaking());
+        assert!(!server.is_handshaking());
+        assert_eq!(
+            server.peer_certificates().unwrap(),
+            std::slice::from_ref(&client_identity.cert_der)
+        );
+    }
+
+    fn transfer_tls(from: &mut Connection, to: &mut Connection) {
+        let mut bytes = Vec::new();
+        from.write_tls(&mut bytes).unwrap();
+        if bytes.is_empty() {
+            return;
+        }
+
+        to.read_tls(&mut Cursor::new(bytes)).unwrap();
+        to.process_new_packets().unwrap();
     }
 }

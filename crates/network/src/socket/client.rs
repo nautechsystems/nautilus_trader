@@ -1881,6 +1881,21 @@ mod rust_tests {
     }
 
     #[rstest]
+    #[case(ConnectionMode::Disconnect)]
+    #[case(ConnectionMode::Closed)]
+    #[tokio::test]
+    async fn test_send_bytes_rejects_terminal_state(#[case] mode: ConnectionMode) {
+        let connection_state = Arc::new(AtomicU8::new(mode.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let client = test_socket_client(connection_state, state_notify, controller_task);
+
+        let result = client.send_bytes(b"terminal".to_vec()).await;
+
+        assert!(matches!(result, Err(SendError::Closed)));
+    }
+
+    #[rstest]
     #[tokio::test(start_paused = true)]
     async fn test_close_sets_closed_after_controller_was_aborted() {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));

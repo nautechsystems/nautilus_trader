@@ -232,6 +232,11 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
     socket_config.reconnect_delay_initial_ms = Some(100);
     let received = Arc::new(Mutex::new(Vec::new()));
     attach_message_capture(&mut socket_config, &received);
+    let reconnections = Arc::new(AtomicUsize::new(0));
+    let reconnections_for_handler = Arc::clone(&reconnections);
+    let post_reconnection = Arc::new(move || {
+        reconnections_for_handler.fetch_add(1, Ordering::SeqCst);
+    });
 
     let mut sim = seeded_builder(RECONNECTION_SEED).build();
 
@@ -270,9 +275,11 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::connect(socket_config, Some(post_reconnection))
             .await
             .expect("Should connect");
+
+        assert_eq!(reconnections.load(Ordering::SeqCst), 0);
 
         client
             .send_bytes(b"first_msg".to_vec())
@@ -293,6 +300,7 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
             wait_for(|| client.is_active()).await,
             "Client should reconnect after server close"
         );
+        assert_eq!(reconnections.load(Ordering::SeqCst), 1);
 
         client
             .send_bytes(b"second_msg".to_vec())
@@ -305,6 +313,8 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
 
         client.send_bytes(b"close".to_vec()).await.ok();
         client.close().await;
+
+        assert_eq!(reconnections.load(Ordering::SeqCst), 1);
 
         Ok(())
     });

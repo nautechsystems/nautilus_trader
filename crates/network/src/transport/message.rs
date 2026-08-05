@@ -129,7 +129,7 @@ impl Message {
 
     /// Returns the message payload as a byte slice.
     ///
-    /// For close frames, returns the reason payload as bytes.
+    /// For close frames, returns an empty slice.
     #[inline]
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
@@ -268,6 +268,12 @@ mod tests {
     fn into_bytes_close_returns_empty() {
         let msg = Message::Close(Some(CloseFrame::new(1000, "bye")));
         assert!(msg.into_bytes().is_empty());
+    }
+
+    #[rstest]
+    fn as_bytes_close_returns_empty() {
+        let msg = Message::Close(Some(CloseFrame::new(1000, "bye")));
+        assert_eq!(msg.as_bytes(), b"");
     }
 
     #[rstest]

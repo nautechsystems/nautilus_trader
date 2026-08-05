@@ -622,7 +622,10 @@ mod tests {
 
     use axum::{
         Router,
-        routing::{delete, get, patch, post},
+        body::to_bytes,
+        extract::Request,
+        response::IntoResponse,
+        routing::{any, delete, get, patch, post},
         serve,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -635,12 +638,29 @@ mod tests {
 
     use super::*;
 
+    async fn capture_request(request: Request) -> impl IntoResponse {
+        let (parts, body) = request.into_parts();
+        let body = to_bytes(body, usize::MAX).await.unwrap();
+        let default_header = parts.headers.get("x-default").unwrap().to_str().unwrap();
+        let request_header = parts.headers.get("x-request").unwrap().to_str().unwrap();
+        let query = parts.uri.query().unwrap_or_default();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        let capture = format!(
+            "{}\n{}\n{query}\n{default_header}\n{request_header}\n{body}",
+            parts.method,
+            parts.uri.path(),
+        );
+
+        ([("x-response-id", "response-42")], capture)
+    }
+
     fn create_router() -> Router {
         Router::new()
             .route("/get", get(|| async { "hello-world!" }))
             .route("/post", post(|| async { StatusCode::OK }))
             .route("/patch", patch(|| async { StatusCode::OK }))
             .route("/delete", delete(|| async { StatusCode::OK }))
+            .route("/capture", any(capture_request))
             .route("/notfound", get(|| async { StatusCode::NOT_FOUND }))
             .route(
                 "/slow",
@@ -745,8 +765,105 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
         assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
+    }
+
+    #[tokio::test]
+    async fn test_request_preserves_wire_semantics_and_extracts_response_headers() {
+        let addr = start_test_server().await.unwrap();
+        let mut default_headers = HashMap::new();
+        default_headers.insert("x-default".to_string(), "default-a".to_string());
+        let client = HttpClient::new(
+            default_headers,
+            vec!["x-response-id".to_string()],
+            vec![],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "tag".to_string(),
+            vec!["A B".to_string(), "C/D".to_string()],
+        );
+        let mut request_headers = HashMap::new();
+        request_headers.insert("x-request".to_string(), "request-b".to_string());
+
+        let response = client
+            .request(
+                Method::PUT,
+                format!("http://{addr}/capture?existing=seed"),
+                Some(&params),
+                Some(request_headers),
+                Some(b"payload-c".to_vec()),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(
+            response.headers,
+            HashMap::from([("x-response-id".to_string(), "response-42".to_string())])
+        );
+        assert_eq!(
+            response.body.as_ref(),
+            b"PUT\n/capture\nexisting=seed&tag=A+B&tag=C%2FD\ndefault-a\nrequest-b\npayload-c"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_request_with_params_serializes_query_fields() {
+        #[derive(serde::Serialize)]
+        struct Query<'a> {
+            symbol: &'a str,
+            limit: u32,
+        }
+
+        let addr = start_test_server().await.unwrap();
+        let mut default_headers = HashMap::new();
+        default_headers.insert("x-default".to_string(), "default-d".to_string());
+        let client = HttpClient::new(
+            default_headers,
+            vec!["x-response-id".to_string()],
+            vec![],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut request_headers = HashMap::new();
+        request_headers.insert("x-request".to_string(), "request-e".to_string());
+        let params = Query {
+            symbol: "BTC/USDT",
+            limit: 37,
+        };
+
+        let response = client
+            .request_with_params(
+                Method::GET,
+                format!("http://{addr}/capture"),
+                Some(&params),
+                Some(request_headers),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(
+            response.headers,
+            HashMap::from([("x-response-id".to_string(), "response-42".to_string())])
+        );
+        assert_eq!(
+            response.body.as_ref(),
+            b"GET\n/capture\nsymbol=BTC%2FUSDT&limit=37\ndefault-d\nrequest-e\n"
+        );
     }
 
     #[tokio::test]
@@ -772,7 +889,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
         assert_eq!(response.body.len(), 1024 * 1024);
     }
 
@@ -823,7 +940,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 
     #[tokio::test]
@@ -858,7 +975,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 
     #[tokio::test]
@@ -879,7 +996,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 
     #[tokio::test]
@@ -900,7 +1017,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 
     #[tokio::test]
@@ -929,13 +1046,10 @@ mod tests {
             .send_request(reqwest::Method::GET, url, None, None, None, Some(1))
             .await;
 
-        match result {
-            Err(HttpClientError::TimeoutError(msg)) => {
-                println!("Got expected timeout error: {msg}");
-            }
-            Err(e) => panic!("Expected a timeout error, was: {e:?}"),
-            Ok(resp) => panic!("Expected a timeout error, but was a successful response: {resp:?}"),
-        }
+        assert!(
+            matches!(&result, Err(HttpClientError::TimeoutError(_))),
+            "Expected a timeout error, was: {result:?}"
+        );
     }
 
     #[rstest]
@@ -1149,7 +1263,7 @@ mod tests {
         let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
         let response = client.get(url, None, None, None, None).await.unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
         assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
     }
 
@@ -1164,7 +1278,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 
     #[tokio::test]
@@ -1178,7 +1292,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 
     #[tokio::test]
@@ -1189,6 +1303,6 @@ mod tests {
         let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
         let response = client.delete(url, None, None, None, None).await.unwrap();
 
-        assert!(response.status.is_success());
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
     }
 }

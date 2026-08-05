@@ -2301,7 +2301,7 @@ mod proptest_tests {
         #[rstest]
         fn test_budget_clamp_prevents_overshoot(
             max_elapsed_ms in 10u64..30,
-            delay_per_retry in 20u64..50,
+            delay_per_retry in 30u64..50,
         ) {
             let rt = build_paused_runtime();
 
@@ -2318,25 +2318,39 @@ mod proptest_tests {
             };
 
             let manager = RetryManager::new(config);
+            let attempts = Arc::new(AtomicU32::new(0));
+            let attempts_for_operation = Arc::clone(&attempts);
 
-            let _result = rt.block_on(async {
-                let operation_future = manager.execute_with_retry(
+            let (result, elapsed) = rt.block_on(async {
+                let started_at = time::Instant::now();
+                let result = manager.execute_with_retry(
                     "budget_clamp_test",
-                    || async {
-                        // Fast operation to focus on delay timing
-                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    move || {
+                        let attempts = Arc::clone(&attempts_for_operation);
+                        async move {
+                            attempts.fetch_add(1, Ordering::SeqCst);
+                            Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                        }
                     },
                     |e: &TestError| matches!(e, TestError::Retryable(_)),
                     create_test_error,
-                );
-
-                // Advance time past max_elapsed_ms
-                advance_clock(Duration::from_millis(max_elapsed_ms + delay_per_retry)).await;
-                operation_future.await
+                ).await;
+                (result, started_at.elapsed())
             });
 
-            // With deterministic time, operation completes without wall-clock delay
-            // The budget constraint is still enforced by the retry manager
+            assert!(matches!(
+                result,
+                Err(TestError::Timeout(ref message))
+                    if message == "Retry budget exceeded (2/6)"
+            ));
+            assert_eq!(attempts.load(Ordering::SeqCst), 1);
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            assert_eq!(elapsed, Duration::from_millis(max_elapsed_ms));
+            #[cfg(all(feature = "simulation", madsim))]
+            assert!(
+                elapsed >= Duration::from_millis(max_elapsed_ms)
+                    && elapsed < Duration::from_millis(max_elapsed_ms + 1)
+            );
         }
 
         #[rstest]

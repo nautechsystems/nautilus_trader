@@ -1354,18 +1354,22 @@ mod tests {
             handle.await.unwrap();
         }
 
-        // Verify state is consistent (no panics, all maps accessible)
-        let all = state.all_topics();
-        let confirmed_count = state.len();
+        let actual = state.all_topics().into_iter().collect::<AHashSet<_>>();
+        let expected = (0..50)
+            .flat_map(|i| {
+                let topic2 = format!("channel.SYMBOL{}", i + 100);
+                (i % 3 != 0)
+                    .then(|| format!("channel.SYMBOL{i}"))
+                    .into_iter()
+                    .chain(std::iter::once(topic2))
+            })
+            .collect::<AHashSet<_>>();
 
-        // We have 50 topic2s (always confirmed) + topic1s (50 - number unsubscribed)
-        // About 17 topic1s get unsubscribed (i % 3 == 0), leaving ~33 topic1s + 50 topic2s = ~83
-        assert!(confirmed_count > 50); // At least all topic2s
-        assert!(confirmed_count <= 100); // At most all topic1s + topic2s
-        assert_eq!(
-            all.len(),
-            confirmed_count + state.pending_subscribe_topics().len()
-        );
+        assert_eq!(actual, expected);
+        assert_eq!(state.len(), 83);
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert_eq!(state.reference_counts.len(), 100);
     }
 
     #[rstest]
@@ -1615,6 +1619,13 @@ mod tests {
             Clear,
         }
 
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum ModelState {
+            Confirmed,
+            PendingSubscribe,
+            PendingUnsubscribe,
+        }
+
         // Strategy for generating valid topics
         fn topic_strategy() -> impl Strategy<Value = String> {
             prop_oneof![
@@ -1660,6 +1671,76 @@ mod tests {
             }
         }
 
+        fn apply_model_operation(model: &mut AHashMap<String, ModelState>, op: &Operation) {
+            match op {
+                Operation::MarkSubscribe(topic) => {
+                    if model.get(topic) != Some(&ModelState::Confirmed) {
+                        model.insert(topic.clone(), ModelState::PendingSubscribe);
+                    }
+                }
+                Operation::ConfirmSubscribe(topic) => {
+                    if model.get(topic) != Some(&ModelState::PendingUnsubscribe) {
+                        model.insert(topic.clone(), ModelState::Confirmed);
+                    }
+                }
+                Operation::MarkUnsubscribe(topic) => {
+                    model.insert(topic.clone(), ModelState::PendingUnsubscribe);
+                }
+                Operation::ConfirmUnsubscribe(topic) => {
+                    if model.get(topic) == Some(&ModelState::PendingUnsubscribe) {
+                        model.remove(topic);
+                    }
+                }
+                Operation::MarkFailure(topic) => {
+                    if model.get(topic) != Some(&ModelState::PendingUnsubscribe) {
+                        model.insert(topic.clone(), ModelState::PendingSubscribe);
+                    }
+                }
+                Operation::AddReference(_) | Operation::RemoveReference(_) => {}
+                Operation::Clear => model.clear(),
+            }
+        }
+
+        fn assert_state_matches_model(
+            state: &SubscriptionState,
+            model: &AHashMap<String, ModelState>,
+        ) {
+            let topics_for = |expected_state| {
+                model
+                    .iter()
+                    .filter(|&(_topic, state)| *state == expected_state)
+                    .map(|(topic, _state)| topic.clone())
+                    .collect::<AHashSet<_>>()
+            };
+            let confirmed = state
+                .topics_from_map(&state.confirmed)
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let pending_subscribe = state
+                .pending_subscribe_topics()
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let pending_unsubscribe = state
+                .pending_unsubscribe_topics()
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let expected_confirmed = topics_for(ModelState::Confirmed);
+            let expected_pending_subscribe = topics_for(ModelState::PendingSubscribe);
+            let expected_pending_unsubscribe = topics_for(ModelState::PendingUnsubscribe);
+            let expected_all = expected_confirmed
+                .union(&expected_pending_subscribe)
+                .cloned()
+                .collect::<AHashSet<_>>();
+            let all = state.all_topics().into_iter().collect::<AHashSet<_>>();
+
+            assert_eq!(confirmed, expected_confirmed);
+            assert_eq!(pending_subscribe, expected_pending_subscribe);
+            assert_eq!(pending_unsubscribe, expected_pending_unsubscribe);
+            assert_eq!(all, expected_all);
+            assert_eq!(state.len(), confirmed.len());
+            assert_eq!(state.is_empty(), model.is_empty());
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(500))]
 
@@ -1669,17 +1750,18 @@ mod tests {
                 operations in prop::collection::vec(operation_strategy(), 1..50)
             ) {
                 let state = SubscriptionState::new('.');
+                let mut model = AHashMap::new();
 
-                // Apply all operations
                 for (i, op) in operations.iter().enumerate() {
                     apply_operation(&state, op);
+                    apply_model_operation(&mut model, op);
 
-                    // Check invariants after each operation
                     check_invariants(&state, &format!("After op {i}: {op:?}"));
+                    assert_state_matches_model(&state, &model);
                 }
 
-                // Final invariant check
                 check_invariants(&state, "Final state");
+                assert_state_matches_model(&state, &model);
             }
 
             /// Reference-count operations match an independent count model.

@@ -3,11 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
+
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 
 ### Breaking Changes
+
 - Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
 - Removed legacy v1 Cython package and root build path; use the Rust + PyO3 package
 - Removed FFI features and static libraries outside `nautilus-core` and `nautilus-model`; use Rust or PyO3 APIs
@@ -16,27 +18,34 @@ Released on TBD (UTC).
 - Removed generic Python clients and support APIs from `nautilus_trader.network`; use adapter APIs or `nautilus-network`
 - Removed unused Rust `SocketClient` connection/disconnection callbacks and `WebSocketClient` reconnection callback; use message or epoch handlers
 
+### Security
+
+- Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
+
 ### Fixes
+
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed `on_historical_data` to receive each `CustomData` response item
 
 ### Internal Improvements
+
 - Hardened development wheel publishing to validate exact artifacts and fail closed
 - Improved native backtest workload coverage for canonical result checks
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
-- Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
+- Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Refined CI, build, and dependency configuration after the v1 removal
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei
-- Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
-- Upgraded `clap` to v4.6.5, `http` to v1.5.0, `time` to v0.3.55, and `toml` to v1.1.4
-- Upgraded `pyo3` crate to v0.29.1 for object‑lifetime, free‑threading, and compatibility fixes
-- Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
-- Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
-- Upgraded `redis` crate to v1.5.0
 - Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-01`
 - Upgraded Python and workflow tools: `uv` v0.12.1, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
+- Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
+- Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
+- Upgraded `clap` to v4.6.5, `http` to v1.5.0, `time` to v0.3.55, and `toml` to v1.1.4
+- Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
+- Upgraded `pyo3` crate to v0.29.1 for object‑lifetime, free‑threading, and compatibility fixes
+- Upgraded `redis` crate to v1.5.0
 
 ### Documentation Updates
+
 - Consolidated Python v2 integration guides and examples on canonical paths
 
 ---
