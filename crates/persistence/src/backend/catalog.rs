@@ -641,10 +641,8 @@ impl ParquetDataCatalog {
         if !skip_disjoint_check.unwrap_or(false) {
             let current_intervals = self.get_directory_intervals(&directory)?;
             let new_interval = (start_ts.as_u64(), end_ts.as_u64());
-            let mut new_intervals = current_intervals.clone();
-            new_intervals.push(new_interval);
 
-            if !are_intervals_disjoint(&new_intervals) {
+            if interval_overlaps(new_interval, &current_intervals) {
                 anyhow::bail!(
                     "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
                     non-disjoint intervals. Existing intervals: {current_intervals:?}"
@@ -730,10 +728,8 @@ impl ParquetDataCatalog {
         if !skip_disjoint_check.unwrap_or(false) {
             let current_intervals = self.get_directory_intervals(&directory)?;
             let new_interval = (start_ts.as_u64(), end_ts.as_u64());
-            let mut new_intervals = current_intervals.clone();
-            new_intervals.push(new_interval);
 
-            if !are_intervals_disjoint(&new_intervals) {
+            if interval_overlaps(new_interval, &current_intervals) {
                 anyhow::bail!(
                     "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
                     non-disjoint intervals. Existing intervals: {current_intervals:?}"
@@ -850,10 +846,8 @@ impl ParquetDataCatalog {
 
             let current_intervals = self.get_directory_intervals(&directory)?;
             let new_interval = (start_ts.as_u64(), end_ts.as_u64());
-            let mut new_intervals = current_intervals.clone();
-            new_intervals.push(new_interval);
 
-            if !are_intervals_disjoint(&new_intervals) {
+            if interval_overlaps(new_interval, &current_intervals) {
                 anyhow::bail!(
                     "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
                     non-disjoint intervals. Existing intervals: {current_intervals:?}"
@@ -1272,22 +1266,29 @@ impl ParquetDataCatalog {
         let start = start.as_u64();
         let end = end.as_u64();
 
-        for interval in intervals {
+        let mut target_old = None;
+        let mut target_new = None;
+
+        for interval in &intervals {
             if interval.0 == end + 1 {
                 // Extend backwards: new file covers [start, interval.1]
-                self.rename_parquet_file(&directory, interval.0, interval.1, start, interval.1)?;
+                target_old = Some(*interval);
+                target_new = Some((start, interval.1));
                 break;
             } else if interval.1 == start - 1 {
                 // Extend forwards: new file covers [interval.0, end]
-                self.rename_parquet_file(&directory, interval.0, interval.1, interval.0, end)?;
+                target_old = Some(*interval);
+                target_new = Some((interval.0, end));
                 break;
             }
         }
 
-        let intervals = self.get_directory_intervals(&directory)?;
-
-        if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!("Intervals are not disjoint after extending a file");
+        if let (Some(old), Some(new)) = (target_old, target_new) {
+            let existing: Vec<_> = intervals.into_iter().filter(|i| *i != old).collect();
+            if interval_overlaps(new, &existing) {
+                anyhow::bail!("Intervals are not disjoint after extending a file");
+            }
+            self.rename_parquet_file(&directory, old.0, old.1, new.0, new.1)?;
         }
 
         Ok(())
@@ -4856,6 +4857,17 @@ pub fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
 /// // Overlapping intervals
 /// assert!(!are_intervals_disjoint(&[(1, 10), (5, 15)]));
 /// ```
+#[must_use]
+#[must_use]
+pub fn interval_overlaps(new_interval: (u64, u64), intervals: &[(u64, u64)]) -> bool {
+    for interval in intervals {
+        if new_interval.0 <= interval.1 && new_interval.1 >= interval.0 {
+            return true;
+        }
+    }
+    false
+}
+
 #[must_use]
 pub fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
     let n = intervals.len();
