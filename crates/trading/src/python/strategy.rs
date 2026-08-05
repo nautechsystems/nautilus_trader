@@ -2344,6 +2344,29 @@ impl PyStrategy {
         Ok(())
     }
 
+    #[pyo3(name = "refresh_book_subscription")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_refresh_book_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
+            match params {
+                Some(dict) => from_pydict(py, &dict),
+                None => Ok(None),
+            }
+        })?;
+        DataActor::refresh_book_subscription(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params_map,
+        );
+        Ok(())
+    }
+
     #[pyo3(name = "subscribe_book_depth10")]
     #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
     fn py_subscribe_book_depth10(
