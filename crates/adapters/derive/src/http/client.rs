@@ -57,8 +57,8 @@ use crate::{
             DeriveCancelByLabelResult, DeriveEmptyResult, DeriveInstrument, DeriveOpenOrdersResult,
             DeriveOrder, DeriveOrderResult, DeriveOrdersResult, DerivePositionsResult,
             DerivePublicCandle, DerivePublicFundingRateHistoryResult, DerivePublicTradesResult,
-            DeriveReplaceResult, DeriveSubaccount, DeriveTickerSnapshot, DeriveTickersResult,
-            DeriveTradesResult, JsonRpcResponse,
+            DeriveReplaceOutcome, DeriveReplaceResult, DeriveSubaccount, DeriveTickerSnapshot,
+            DeriveTickersResult, DeriveTradesResult, JsonRpcResponse,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -509,8 +509,8 @@ impl DeriveHttpClient {
             .await
     }
 
-    /// Submits a signed `private/replace` request that atomically cancels one
-    /// order and creates a new one.
+    /// Submits a signed `private/replace` request that cancels one order before
+    /// creating its replacement.
     ///
     /// `params` must be the fully-built typed request body.
     ///
@@ -518,9 +518,14 @@ impl DeriveHttpClient {
     ///
     /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
     /// were installed; otherwise propagates transport and venue errors.
-    pub async fn replace_order(&self, params: &DeriveReplaceParams) -> Result<DeriveOrder> {
+    pub async fn replace_order(
+        &self,
+        params: &DeriveReplaceParams,
+    ) -> Result<DeriveReplaceOutcome> {
         let result: DeriveReplaceResult = self.send_private_once("private/replace", params).await?;
-        Ok(result.order)
+        result
+            .into_outcome(&params.order_id_to_cancel, &params.order.label)
+            .map_err(DeriveHttpError::decode)
     }
 
     /// Returns the subaccount snapshot including margin, balances, and

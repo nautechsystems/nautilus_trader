@@ -74,7 +74,7 @@ use crate::{
     http::{
         models::{
             DeriveCancelByLabelResult, DeriveEmptyResult, DeriveOpenOrdersResult, DeriveOrder,
-            DeriveOrderResult, DeriveReplaceResult,
+            DeriveOrderResult, DeriveReplaceOutcome, DeriveReplaceResult,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -970,16 +970,15 @@ impl DeriveWsExecutionHandle {
         Ok(result.order)
     }
 
-    /// Modifies a working order by atomically cancelling it and submitting a
-    /// replacement (the venue's `private/replace`). Returns the new order
-    /// echoed by the venue.
+    /// Modifies a working order by cancelling it and submitting a replacement
+    /// through the venue's `private/replace`.
     ///
     /// # Errors
     ///
     /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
     /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
     /// outcome is ambiguous.
-    pub async fn modify_order(&self, params: &DeriveReplaceParams) -> Result<DeriveOrder> {
+    pub async fn modify_order(&self, params: &DeriveReplaceParams) -> Result<DeriveReplaceOutcome> {
         let reservation = self
             .reserve_matching_request(methods::PRIVATE_REPLACE)
             .await?;
@@ -991,7 +990,7 @@ impl DeriveWsExecutionHandle {
         &self,
         params: &DeriveReplaceParams,
         reservation: MatchingRateLimitReservation,
-    ) -> Result<DeriveOrder> {
+    ) -> Result<DeriveReplaceOutcome> {
         self.ensure_authenticated(methods::PRIVATE_REPLACE)?;
         debug_assert_eq!(reservation.method, methods::PRIVATE_REPLACE);
         let cmd_tx = self.cmd_tx.read().await.clone();
@@ -1003,7 +1002,11 @@ impl DeriveWsExecutionHandle {
             self.request_timeout,
         )
         .await?;
-        Ok(result.order)
+        result
+            .into_outcome(&params.order_id_to_cancel, &params.order.label)
+            .map_err(|message| {
+                DeriveWsError::Serde(<serde_json::Error as serde::de::Error>::custom(message))
+            })
     }
 
     /// Cancels a single order via `private/cancel`.
