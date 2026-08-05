@@ -260,7 +260,17 @@ DataTesterConfig(
 )
 ```
 
-**Rust config:** Not yet supported. Book depth subscription is TODO in the Rust `DataTester`.
+**Rust config:**
+
+```rust
+DataTesterConfig::builder()
+    .client_id(client_id)
+    .instrument_ids(vec![instrument_id])
+    .subscribe_book_depth(true)
+    .book_type(BookType::L2_MBP)
+    .book_depth(10)
+    .build()?
+```
 
 ### TC-D13: Request book snapshot
 

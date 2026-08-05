@@ -49,6 +49,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Consolidated Python v2 integration guides and examples on canonical paths
+- Corrected the Rust `DataTester` book depth support note in the data testing spec
 
 ---
 
