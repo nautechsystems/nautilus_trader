@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
+- Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 

@@ -128,9 +128,16 @@ class ExecTesterConfig:
         instrument_id: model.InstrumentId | None = None,
         client_id: model.ClientId | None = None,
         order_qty: model.Quantity | None = None,
+        order_display_qty: model.Quantity | None = None,
+        order_expire_time_delta_mins: int | None = None,
+        order_params: dict | None = None,
         subscribe_book: bool | None = None,
         subscribe_quotes: bool | None = None,
         subscribe_trades: bool | None = None,
+        book_type: model.BookType | None = None,
+        book_depth: int | None = None,
+        book_interval_ms: int | None = None,
+        book_levels_to_print: int | None = None,
         open_position_on_start_qty: decimal.Decimal | None = None,
         open_position_on_first_quote: bool | None = None,
         open_position_time_in_force: model.TimeInForce | None = None,
@@ -140,17 +147,37 @@ class ExecTesterConfig:
         enable_stop_sells: bool | None = None,
         tob_offset_ticks: int | None = None,
         limit_time_in_force: model.TimeInForce | None = None,
+        stop_order_type: model.OrderType | None = None,
+        stop_offset_ticks: int | None = None,
+        stop_limit_offset_ticks: int | None = None,
+        stop_trigger_type: model.TriggerType | None = None,
+        stop_time_in_force: model.TimeInForce | None = None,
+        trailing_offset: decimal.Decimal | None = None,
+        trailing_offset_type: model.TrailingOffsetType | None = None,
+        enable_brackets: bool | None = None,
+        batch_submit_limit_pair: bool | None = None,
+        bracket_entry_order_type: model.OrderType | None = None,
+        bracket_offset_ticks: int | None = None,
+        modify_orders_to_maintain_tob_offset: bool | None = None,
+        modify_stop_orders_to_maintain_offset: bool | None = None,
+        cancel_replace_orders_to_maintain_tob_offset: bool | None = None,
+        cancel_replace_stop_orders_to_maintain_offset: bool | None = None,
         use_post_only: bool | None = None,
         limit_aggressive: bool | None = None,
         use_quote_quantity: bool | None = None,
+        emulation_trigger: model.TriggerType | None = None,
         use_individual_cancels_on_stop: bool | None = None,
         cancel_orders_on_stop: bool | None = None,
         close_positions_on_stop: bool | None = None,
         close_positions_qty_precision: int | None = None,
         close_positions_time_in_force: model.TimeInForce | None = None,
         reduce_only_on_stop: bool | None = None,
+        use_batch_cancel_on_stop: bool | None = None,
         dry_run: bool | None = None,
         log_data: bool | None = None,
+        test_reject_post_only: bool | None = None,
+        test_reject_reduce_only: bool | None = None,
+        test_modify_rejected: bool | None = None,
         can_unsubscribe: bool | None = None,
         clamp_to_instrument_price_range: bool | None = None,
         log_events: bool | None = None,
@@ -173,11 +200,25 @@ class ExecTesterConfig:
     @property
     def order_qty(self) -> model.Quantity: ...
     @property
+    def order_display_qty(self) -> model.Quantity | None: ...
+    @property
+    def order_expire_time_delta_mins(self) -> int | None: ...
+    @property
+    def order_params(self) -> dict | None: ...
+    @property
     def subscribe_book(self) -> bool: ...
     @property
     def subscribe_quotes(self) -> bool: ...
     @property
     def subscribe_trades(self) -> bool: ...
+    @property
+    def book_type(self) -> model.BookType: ...
+    @property
+    def book_depth(self) -> int | None: ...
+    @property
+    def book_interval_ms(self) -> int: ...
+    @property
+    def book_levels_to_print(self) -> int: ...
     @property
     def open_position_on_start_qty(self) -> decimal.Decimal | None: ...
     @property
@@ -197,11 +238,43 @@ class ExecTesterConfig:
     @property
     def limit_time_in_force(self) -> model.TimeInForce | None: ...
     @property
+    def stop_order_type(self) -> model.OrderType: ...
+    @property
+    def stop_offset_ticks(self) -> int: ...
+    @property
+    def stop_limit_offset_ticks(self) -> int | None: ...
+    @property
+    def stop_trigger_type(self) -> model.TriggerType: ...
+    @property
+    def stop_time_in_force(self) -> model.TimeInForce | None: ...
+    @property
+    def trailing_offset(self) -> decimal.Decimal | None: ...
+    @property
+    def trailing_offset_type(self) -> model.TrailingOffsetType: ...
+    @property
+    def enable_brackets(self) -> bool: ...
+    @property
+    def batch_submit_limit_pair(self) -> bool: ...
+    @property
+    def bracket_entry_order_type(self) -> model.OrderType: ...
+    @property
+    def bracket_offset_ticks(self) -> int: ...
+    @property
+    def modify_orders_to_maintain_tob_offset(self) -> bool: ...
+    @property
+    def modify_stop_orders_to_maintain_offset(self) -> bool: ...
+    @property
+    def cancel_replace_orders_to_maintain_tob_offset(self) -> bool: ...
+    @property
+    def cancel_replace_stop_orders_to_maintain_offset(self) -> bool: ...
+    @property
     def use_post_only(self) -> bool: ...
     @property
     def limit_aggressive(self) -> bool: ...
     @property
     def use_quote_quantity(self) -> bool: ...
+    @property
+    def emulation_trigger(self) -> model.TriggerType | None: ...
     @property
     def use_individual_cancels_on_stop(self) -> bool: ...
     @property
@@ -215,9 +288,17 @@ class ExecTesterConfig:
     @property
     def reduce_only_on_stop(self) -> bool: ...
     @property
+    def use_batch_cancel_on_stop(self) -> bool: ...
+    @property
     def dry_run(self) -> bool: ...
     @property
     def log_data(self) -> bool: ...
+    @property
+    def test_reject_post_only(self) -> bool: ...
+    @property
+    def test_reject_reduce_only(self) -> bool: ...
+    @property
+    def test_modify_rejected(self) -> bool: ...
     @property
     def can_unsubscribe(self) -> bool: ...
     @property
