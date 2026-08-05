@@ -70,9 +70,10 @@ use self::streams::{
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
-        apply_bar_price_magnifier, apply_price_magnifier, bar_type_to_ib_bar_size,
-        calculate_duration, calculate_duration_segments, ib_bar_to_nautilus_bar,
-        jiff_to_ib_datetime, price_type_to_ib_realtime_what_to_show_for_security,
+        apply_bar_price_magnifier, apply_price_magnifier, bar_request_segments,
+        bar_type_to_ib_bar_size, calculate_duration, calculate_duration_segments,
+        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
+        price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security,
     },
 };
@@ -2217,7 +2218,9 @@ impl DataClient for InteractiveBrokersDataClient {
         let ib_what_to_show =
             price_type_to_ib_what_to_show_for_security(cmd.bar_type.spec().price_type, is_crypto);
 
-        // Calculate segments to break down the request if needed
+        // Calculate segments to break down the request if needed.
+        // Omit the end date for continuous futures (IB error 10339).
+        let is_continuous_future = contract.security_type == SecurityType::ContinuousFuture;
         let segments = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
             calculate_duration_segments(start, end)
         } else {
@@ -2225,6 +2228,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let duration = calculate_duration(cmd.start, cmd.end).unwrap_or_else(|_| 1i32.days());
             vec![(end_date, duration)]
         };
+        let segments = bar_request_segments(segments, is_continuous_future);
 
         let bar_type = cmd.bar_type;
         let data_sender = self.data_sender.clone();
@@ -2245,17 +2249,17 @@ impl DataClient for InteractiveBrokersDataClient {
             let mut all_bars = Vec::new();
 
             for (seg_end, seg_duration) in segments {
-                let end_ib = jiff_to_ib_datetime(&seg_end);
-
-                match client_clone
+                let mut request = client_clone
                     .historical_data(&contract, ib_bar_size)
-                    .ending(end_ib)
                     .duration(seg_duration)
                     .what_to_show(ib_what_to_show)
-                    .trading_hours(trading_hours)
-                    .fetch()
-                    .await
-                {
+                    .trading_hours(trading_hours);
+
+                if let Some(end) = seg_end {
+                    request = request.ending(jiff_to_ib_datetime(&end));
+                }
+
+                match request.fetch().await {
                     Ok(historical_data) => {
                         // Convert IB bars to Nautilus bars
                         for ib_bar in &historical_data.bars {

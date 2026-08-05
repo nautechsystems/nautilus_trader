@@ -20,7 +20,7 @@ use std::{fmt::Debug, str::FromStr, sync::Arc};
 use anyhow::Context;
 use ibapi::{
     client::Client,
-    contracts::Contract,
+    contracts::{Contract, SecurityType},
     market_data::{IgnoreSize, TradingHours, historical},
     prelude::{StreamExt, SubscriptionItemStreamExt},
 };
@@ -41,9 +41,9 @@ use crate::{
     },
     config::InteractiveBrokersDataClientConfig,
     data::convert::{
-        apply_bar_price_magnifier, apply_price_magnifier, bar_type_to_ib_bar_size,
-        ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos, jiff_to_ib_datetime,
-        price_type_to_ib_what_to_show_for_security,
+        apply_bar_price_magnifier, apply_price_magnifier, bar_request_segments,
+        bar_type_to_ib_bar_size, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos,
+        jiff_to_ib_datetime, price_type_to_ib_what_to_show_for_security,
     },
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
@@ -196,6 +196,15 @@ impl HistoricalInteractiveBrokersClient {
     }
 
     /// Request historical bars.
+    ///
+    /// # Continuous futures
+    ///
+    /// Continuous futures (`CONTFUT`) reject an explicit end date/time with IB
+    /// error 10339. For these contracts the end date is dropped and only the
+    /// first duration segment is requested, anchored to the current time, so
+    /// the returned bars may fall outside `[start_date_time, end_date_time]`.
+    /// A warning is logged when the requested end date/time is in the past or
+    /// the range spans more than one duration segment.
     ///
     /// # Arguments
     ///
@@ -366,26 +375,34 @@ impl HistoricalInteractiveBrokersClient {
                 let ib_what_to_show =
                     price_type_to_ib_what_to_show_for_security(bar_spec.price_type, is_crypto);
 
-                // Calculate duration segments
-                let segments =
-                    self.calculate_duration_segments(start_date_time, end_date_time, duration);
+                // Omit the end date for continuous futures (IB error 10339).
+                let is_continuous_future = contract.security_type == SecurityType::ContinuousFuture;
+                let segments = bar_request_segments(
+                    self.calculate_duration_segments(start_date_time, end_date_time, duration),
+                    is_continuous_future,
+                );
 
                 for (segment_end, segment_duration) in segments {
                     tracing::debug!(
-                        "Requesting historical bars ending on {} with duration {}",
+                        "Requesting historical bars ending on {:?} with duration {}",
                         segment_end,
                         segment_duration
                     );
 
+                    let mut request = self
+                        .ib_client
+                        .historical_data(&contract, ib_bar_size)
+                        .duration(segment_duration)
+                        .what_to_show(ib_what_to_show)
+                        .trading_hours(trading_hours);
+
+                    if let Some(end) = segment_end {
+                        request = request.ending(jiff_to_ib_datetime(&end));
+                    }
+
                     let historical_data = tokio::time::timeout(
                         std::time::Duration::from_secs(timeout),
-                        self.ib_client
-                            .historical_data(&contract, ib_bar_size)
-                            .ending(jiff_to_ib_datetime(&segment_end))
-                            .duration(segment_duration)
-                            .what_to_show(ib_what_to_show)
-                            .trading_hours(trading_hours)
-                            .fetch(),
+                        request.fetch(),
                     )
                     .await
                     .context(format!(

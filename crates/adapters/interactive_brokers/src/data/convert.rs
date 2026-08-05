@@ -363,6 +363,44 @@ pub fn calculate_duration_segments(
     results
 }
 
+/// Adapt duration segments for an IB historical bars request.
+///
+/// For continuous futures the end date is dropped and only the first segment is
+/// kept (IB rejects an explicit end date with error 10339), logging a warning
+/// when the requested range cannot be honored.
+pub fn bar_request_segments(
+    segments: Vec<(Timestamp, IBDuration)>,
+    is_continuous_future: bool,
+) -> Vec<(Option<Timestamp>, IBDuration)> {
+    if is_continuous_future {
+        // Treat end dates within the last second as "now" so requests whose
+        // end defaults to the current time do not trigger a spurious warning.
+        let now = Timestamp::now();
+        let end_in_past = segments
+            .first()
+            .is_some_and(|(end, _)| *end < now - jiff::SignedDuration::from_secs(1));
+
+        if end_in_past || segments.len() > 1 {
+            tracing::warn!(
+                "Continuous futures cannot use an explicit end_date_time (IB error 10339); \
+                 the request is anchored to the current time using only the first duration \
+                 segment, so the returned bars may not cover the full requested range"
+            );
+        }
+
+        segments
+            .into_iter()
+            .take(1)
+            .map(|(_, d)| (None, d))
+            .collect()
+    } else {
+        segments
+            .into_iter()
+            .map(|(end, d)| (Some(end), d))
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -746,5 +784,37 @@ mod tests {
         // Check first segment is ~1Y
         let dur1 = &segments[0].1;
         assert!(dur1.to_string().contains("1 Y") || dur1.to_string().contains("1Y"));
+    }
+
+    #[rstest]
+    fn test_bar_request_segments_attaches_end_dates_when_not_continuous() {
+        let end = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let earlier = "2024-06-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let segments = vec![(end, IBDuration::years(1)), (earlier, IBDuration::days(30))];
+
+        let result = bar_request_segments(segments, false);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, Some(end));
+        assert_eq!(result[1].0, Some(earlier));
+    }
+
+    #[rstest]
+    fn test_bar_request_segments_drops_end_date_and_keeps_only_first_for_continuous() {
+        let end = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let earlier = "2024-06-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let segments = vec![(end, IBDuration::years(1)), (earlier, IBDuration::days(30))];
+
+        let result = bar_request_segments(segments, true);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, None);
+        assert_eq!(result[0].1, IBDuration::years(1));
+    }
+
+    #[rstest]
+    fn test_bar_request_segments_empty_input_yields_nothing_for_continuous() {
+        let result = bar_request_segments(vec![], true);
+        assert!(result.is_empty());
     }
 }
