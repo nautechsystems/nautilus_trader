@@ -245,16 +245,12 @@ impl Indicator for FuzzyCandlesticks {
     }
 
     fn reset(&mut self) {
-        self.lengths.clear();
-        self.body_percents.clear();
-        self.upper_wick_percents.clear();
-        self.lower_wick_percents.clear();
-        self.last_open = 0.0;
-        self.last_high = 0.0;
-        self.last_close = 0.0;
-        self.last_low = 0.0;
-        self.has_inputs = false;
-        self.initialized = false;
+        // Delegate rather than repeat the field list: the copy that used to
+        // live here had already fallen behind and left `value` and `vector`
+        // holding the last candle's classification. This resolves to the
+        // inherent `reset`; deleting that one would turn this into infinite
+        // recursion, which `trait_reset_clears_value_and_vector` would catch.
+        Self::reset(self);
     }
 }
 
@@ -839,5 +835,33 @@ mod tests {
             fuzzy_candlesticks_3.value.upper_wick_size,
             CandleWickSize::Large
         );
+    }
+
+    #[rstest]
+    fn trait_reset_clears_value_and_vector() {
+        // Same drift as `ama`: the trait copy of `reset` was missing `value`
+        // and `vector`, so a reset through `dyn Indicator` left the previous
+        // candle's classification readable.
+        let mut fc = FuzzyCandlesticks::new(10, 0.5, 1.0, 2.0, 3.0);
+        for i in 0..12 {
+            let base = 100.0 + f64::from(i);
+            fc.update_raw(base, base + 10.0, base - 10.0, base + 5.0);
+        }
+        assert!(fc.initialized());
+        assert!(!fc.vector.is_empty());
+        assert_ne!(fc.value.direction, CandleDirection::None);
+
+        Indicator::reset(&mut fc);
+
+        assert!(fc.vector.is_empty());
+        // All five fields, not a sample of them: a partial check would pass
+        // while one stayed dirty.
+        assert_eq!(fc.value.direction, CandleDirection::None);
+        assert_eq!(fc.value.size, CandleSize::None);
+        assert_eq!(fc.value.body_size, CandleBodySize::None);
+        assert_eq!(fc.value.upper_wick_size, CandleWickSize::None);
+        assert_eq!(fc.value.lower_wick_size, CandleWickSize::None);
+        assert!(!fc.has_inputs);
+        assert!(!fc.initialized);
     }
 }

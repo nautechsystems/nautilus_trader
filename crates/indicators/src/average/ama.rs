@@ -101,10 +101,12 @@ impl Indicator for AdaptiveMovingAverage {
     }
 
     fn reset(&mut self) {
-        self.value = 0.0;
-        self.count = 0;
-        self.has_inputs = false;
-        self.initialized = false;
+        // Delegate rather than repeat the field list: the copy that used to
+        // live here had already fallen behind and left `prior_value` set.
+        // This resolves to the inherent `reset` because Rust prefers inherent
+        // methods; deleting that one would turn this into infinite recursion,
+        // which `trait_reset_clears_prior_value` below would catch.
+        Self::reset(self);
     }
 }
 
@@ -362,5 +364,26 @@ mod tests {
             let _ = AdaptiveMovingAverage::new(10, 20, 5, None);
         });
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn trait_reset_clears_prior_value() {
+        // `Indicator::reset` and the inherent `reset` are written out separately,
+        // so they can drift. Anything reached through `dyn Indicator` or a
+        // generic bound gets the trait one, and a `prior_value` left behind
+        // there feeds pre-reset data into the next update.
+        let mut ama = AdaptiveMovingAverage::new(10, 2, 30, None);
+        for i in 1..=12 {
+            ama.update_raw(f64::from(i));
+        }
+        assert!(ama.prior_value.is_some());
+
+        Indicator::reset(&mut ama);
+
+        assert_eq!(ama.prior_value, None);
+        assert_eq!(ama.value, 0.0);
+        assert_eq!(ama.count, 0);
+        assert!(!ama.has_inputs);
+        assert!(!ama.initialized);
     }
 }
