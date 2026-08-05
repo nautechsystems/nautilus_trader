@@ -828,6 +828,40 @@ async fn test_reconnect_resubscribes_all_market_assets() {
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnect_replays_empty_market_discovery_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+
+    client
+        .subscribe_market(vec![])
+        .await
+        .expect("discovery subscribe failed");
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
+    state.received_market_payloads.lock().await.clear();
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    client
+        .subscribe_market(vec![])
+        .await
+        .expect("discovery reconnect trigger failed");
+    wait_for_market_payload_count(&state, 2, Duration::from_secs(5)).await;
+
+    let payloads = state.received_market_payloads.lock().await.clone();
+    assert!(payloads.iter().any(|payload| {
+        payload.get("type").and_then(Value::as_str) == Some("market")
+            && payload.get("assets_ids").and_then(Value::as_array).is_some_and(Vec::is_empty)
+    }));
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_is_authenticated_false_before_connect() {
     let client = PolymarketWebSocketClient::new_user(
         Some("ws://127.0.0.1:9999/ws/user".to_string()),

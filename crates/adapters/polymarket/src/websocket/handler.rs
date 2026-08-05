@@ -128,18 +128,25 @@ impl FeedHandler {
         self.signal.load(Ordering::Relaxed)
     }
 
+    fn replay_epoch_is_current(&self, expected_epoch: u64) -> bool {
+        expected_epoch == self.connection_epoch
+            && expected_epoch == self.connection_epoch_state.load(Ordering::SeqCst)
+    }
+
     async fn send_subscribe_market(
         &mut self,
         asset_ids: &[String],
         expected_epoch: Option<u64>,
     ) -> bool {
-        if expected_epoch.is_some_and(|epoch| epoch != self.connection_epoch) {
+        if expected_epoch.is_some_and(|epoch| !self.replay_epoch_is_current(epoch)) {
+            let active_epoch = self.connection_epoch_state.load(Ordering::SeqCst);
             log::warn!(
-                "replay_rejected shard_id={} channel={:?} expected_connection_epoch={:?} connection_epoch={}",
+                "replay_rejected shard_id={} channel={:?} expected_connection_epoch={:?} handler_connection_epoch={} active_connection_epoch={}",
                 self.shard_id,
                 self.channel,
                 expected_epoch,
                 self.connection_epoch,
+                active_epoch,
             );
             return false;
         }
@@ -476,6 +483,19 @@ mod tests {
                 .send_subscribe_market(&["asset-1".to_string()], Some(0))
                 .await
         );
+        assert!(market_handler.subscriptions.all_topics().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn rejects_replay_when_shared_connection_epoch_has_advanced(
+        market_handler: FeedHandler,
+    ) {
+        market_handler
+            .connection_epoch_state
+            .store(2, Ordering::SeqCst);
+
+        assert!(!market_handler.replay_epoch_is_current(1));
         assert!(market_handler.subscriptions.all_topics().is_empty());
     }
 
