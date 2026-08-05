@@ -1,6 +1,12 @@
 
 # cargo-vet audits file
 
+[[audits.aho-corasick]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.4 -> 1.1.5"
+notes = "Adds checked offset arithmetic and panic documentation; other changes are CI metadata. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
 [[audits.alloy]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -29,6 +35,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-consensus]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-consensus-any]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -40,6 +52,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-consensus-any]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-contract]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -50,6 +68,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-contract]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -80,11 +104,23 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-eips]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-ens]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-ens]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-json-abi]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -103,6 +139,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-json-rpc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-network]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -114,6 +156,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-network]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-network-primitives]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -124,6 +172,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-network-primitives]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-primitives]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -142,6 +196,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-provider]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-rpc-client]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -152,6 +212,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-rpc-client]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-types-any]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -164,6 +230,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-rpc-types-any]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-rpc-types-eth]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -174,6 +246,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-rpc-types-eth]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-serde]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -186,6 +264,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-serde]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-signer]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -197,6 +281,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-signer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-signer-local]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -207,6 +297,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-signer-local]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-sol-macro]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -249,6 +345,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-transport]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-transport-http]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -260,6 +362,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
+[[audits.alloy-transport-http]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
+
 [[audits.alloy-tx-macros]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -270,6 +378,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
+
+[[audits.alloy-tx-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.arc-swap]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -367,6 +481,12 @@ criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
+[[audits.async-compression]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.42 -> 0.4.43"
+notes = "Fixes a hang when a corrupt later zstd frame leaves unread input by polling again only after the input is consumed. No new unsafe or ambient capabilities."
+
 [[audits.aws-lc-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -396,6 +516,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 version = "0.5.1"
 notes = "Pure base32 encode/decode library. No unsafe code, no_std, no file/network access."
+
+[[audits.base64]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.22.1 -> 0.23.1"
+notes = "Adds custom padding and SIMD engines. Reviewed AVX2 and NEON CPU gating plus length-guarded unaligned loads and stores; Miri covers the unsafe kernels. This workspace disables simd-unsafe, so its active Base64 graph forbids unsafe code. No build script or ambient capabilities."
 
 [[audits.bitflags]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -467,6 +593,12 @@ criteria = "safe-to-deploy"
 delta = "0.25.4 -> 0.25.5"
 notes = "Adds FromTypelessPipeline for FromClientHook and refactors pointer arithmetic to add/sub and offset_in_words helpers. Reviewed unsafe pointer changes as equivalent bounds-checked address calculations; no new dependencies, build script, filesystem, or network behavior."
 
+[[audits.capnp]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.26.2 -> 0.27.0"
+notes = "Adds precise TypeId-based schema equality and bool-list bounds checks, replaces nullable capability-table pointers with NonNull, and narrows internal API visibility. Reviewed changed unsafe pointer access as equivalent or safer. No new build script or ambient capabilities."
+
 [[audits.capnpc]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -483,6 +615,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.25.2 -> 0.25.3"
 notes = "pub -> pub(crate) visibility narrowing in generated code and codegen internals. No logic changes, no new unsafe."
+
+[[audits.capnpc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.26.0 -> 0.27.0"
+notes = "Updates generated code for capnp 0.27 APIs, including schema TypeId and NonNull capability-table constructors. Reviewed regenerated workspace output; no new unsafe, build-time network, filesystem destination, or process behavior."
 
 [[audits.cc]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -508,6 +646,18 @@ criteria = "safe-to-deploy"
 delta = "4.6.1 -> 4.6.2"
 notes = "Reviewed completion, help rendering, and alias handling fixes plus tests. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
+[[audits.clap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.4 -> 4.6.5"
+notes = "Help rendering, completion, and parser fixes with tests. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
+[[audits.clap_builder]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.2 -> 4.6.5"
+notes = "Fixes display formatting for partially optional argument values and documents empty exclusive-range debug assertions. No unsafe, build script, filesystem, network, process, or credential behavior changed."
+
 [[audits.cmake]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -530,6 +680,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.1.3 -> 5.0.0"
 notes = "Reviewed the v5 cryptographic implementation and dependency delta with ed25519-dalek v3, including scalar, point, backend, feature, and build-script changes. No new network fetch, external binary, credential, or data-exfiltration behavior."
+
+[[audits.data-encoding]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.11.0 -> 2.11.1"
+notes = "Package metadata-only release removing the author field. No runtime or build behavior changed."
 
 [[audits.databento]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -699,11 +855,23 @@ criteria = "safe-to-deploy"
 delta = "4.3.2 -> 4.4.1"
 notes = "MSRV/edition metadata and documentation updates, plus explicit unsafe block in the trait example. No new runtime logic, build script, filesystem, network, or ambient capability changes."
 
+[[audits.enum-ordinalize]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.4.1 -> 4.4.2"
+notes = "Documentation-only addition showing checked serde conversion. No runtime, unsafe, build script, or ambient capability changes."
+
 [[audits.enum-ordinalize-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.3.2 -> 4.4.1"
 notes = "Proc-macro delta improves repr parsing, span diagnostics, explicit unsafe blocks in generated unsafe fns, and fully qualified trait paths. The transmute-based unsafe path remains caller-gated by valid enum discriminants; no build script, filesystem, network, or process behavior."
+
+[[audits.enum-ordinalize-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.4.1 -> 4.4.2"
+notes = "Updates proc-macro dependencies to syn 3 without changing macro source. No generated behavior or ambient capabilities changed."
 
 [[audits.event-listener]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -729,11 +897,23 @@ criteria = "safe-to-deploy"
 delta = "0.11.0 -> 0.11.1"
 notes = "Fixes retain removal to match nodes by pointer identity and makes unsafe value-node dropping panic-safe. Reviewed unsafe linked-list delta; no new dependencies, build script, filesystem, or network behavior."
 
+[[audits.http]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.2 -> 1.5.0"
+notes = "Adds the QUERY method and fixes empty-path URI building, length validation, and parsing performance. This types crate performs no network I/O and adds no unsafe or build script."
+
 [[audits.hybrid-array]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.12 -> 0.4.13"
 notes = "Adds ArraySize impls for U521 and U522 plus CI workflow updates. No new unsafe, dependencies, build script, filesystem, network, or process behavior."
+
+[[audits.hybrid-array]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.13 -> 0.4.14"
+notes = "Adds type-level sizes for Streamlined NTRU Prime. No new unsafe, dependencies, build script, or ambient capabilities."
 
 [[audits.hyper]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -763,6 +943,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.13.0 -> 2.13.1"
 notes = "12 methods made const fn via pattern-match rewrites. No logic changes, no new unsafe."
+
+[[audits.ipnet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.12.0 -> 2.12.1"
+notes = "Fixes full-range subnet decomposition near the IPv4 and IPv6 maximum values and updates diagnostics. No unsafe or ambient capabilities."
 
 [[audits.itoa]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -818,6 +1004,12 @@ criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed AES-256-GCM parquet encryption support, key-length validation, and tests. The new cipher path uses the existing aes-gcm API; no new unsafe, build script, network, process, credential, or data-exfiltration behavior."
 
+[[audits.pem]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.0.6 -> 4.0.0"
+notes = "Updates Base64 to 0.23 and MSRV to 1.71 with no PEM runtime source changes. Base64 is used without default features, so SIMD unsafe code is not enabled."
+
 [[audits.pest]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -853,6 +1045,36 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.28.2 -> 0.28.3"
 notes = "5 bug fixes: enum into_pyobject deadlock, PyBytesWriter soundness (3.15 only), attach race (auto-initialize), Probe name collision, Py_NegativeRefcount FFI cfg. No new deps."
+
+[[audits.pyo3]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.29.1"
+notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
+
+[[audits.pyo3-build-config]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.29.1"
+notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
+
+[[audits.pyo3-ffi]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.29.1"
+notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
+
+[[audits.pyo3-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.29.1"
+notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
+
+[[audits.pyo3-macros-backend]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.29.1"
+notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
 
 [[audits.rapidhash]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -890,6 +1112,12 @@ criteria = "safe-to-deploy"
 delta = "1.4.0 -> 1.4.1"
 notes = "Removes an unnecessary cluster READONLY retry sleep and adds parser regression tests. No new unsafe, build script, filesystem, process, external endpoint, credential, or data-exfiltration behavior."
 
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.1 -> 1.5.0"
+notes = "Adds cluster TLS hostname mapping, reconnect handling, cluster logging, and RedisJSON commands. Network access remains caller-directed; no new external endpoints, unsafe, build script, process, credential, or data-exfiltration behavior."
+
 [[audits.regex]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -901,6 +1129,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.15 -> 0.4.16"
 notes = "Fixes reverse suffix and inner-literal search optimizations with regression tests. No new unsafe, build script, filesystem, network, or process behavior."
+
+[[audits.regex-automata]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.16 -> 0.4.18"
+notes = "Adds configurable cache-pool capacity, defaulting to available parallelism, and preserves bounds with a minimum capacity of one. No new unsafe, network, filesystem, process, or credential behavior."
 
 [[audits.ruint]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1039,6 +1273,12 @@ who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "3.26.0 -> 3.27.0"
 
+[[audits.time]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.3.54 -> 0.3.55"
+notes = "Fixes timestamp, serde, and bounds overflow handling. No new unsafe, build script, or ambient capabilities."
+
 [[audits.tinyvec]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1074,6 +1314,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.7.0 -> 2.7.1"
 notes = "Documentation-only clarification of tokio::main expansion plus dependency metadata updates. No runtime, unsafe, build script, filesystem, network, or process behavior."
+
+[[audits.tokio-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.7.1 -> 2.7.2"
+notes = "Updates the proc macro to syn 3 with the required parenthesized-argument API adjustment. Generated runtime behavior is unchanged; no ambient capabilities."
 
 [[audits.tokio-stream]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1176,6 +1422,12 @@ criteria = "safe-to-deploy"
 delta = "1.23.5 -> 1.24.0"
 notes = "Adds MaybeUninit formatting support with tests and updates metadata. No new dependencies, build script, filesystem, network, process, or unsafe-code behavior."
 
+[[audits.value-bag]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.13.1 -> 1.13.2"
+notes = "Removes redundant boxing from owned serde buffering. No new unsafe, build script, or ambient capabilities."
+
 [[audits.winnow]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1205,6 +1457,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.6.2 -> 0.6.3"
 notes = "Off-by-one fix in longest_match, integer overflow fixes. Improves correctness and safety."
+
+[[audits.zlib-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.6.6 -> 0.6.7"
+notes = "Adds a runtime-gated LoongArch LSX comparison path with length-guarded SIMD loads, clears retained stream pointers after use, and centralizes feature-gated tracing. No new build script or ambient capabilities."
 
 [[trusted.anstream]]
 criteria = "safe-to-deploy"

@@ -54,13 +54,10 @@ ignore = [
   # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release" },
 
-  # rkyv shared-pointer validation bug, locked as an unused optional rust_decimal dependency.
-  # rust_decimal 1.42.1 is current and intentionally retains rkyv 0.7 compatibility.
-  # TODO: Remove when rust_decimal stops locking rkyv 0.7.
-  { id = "RUSTSEC-2026-0235", reason = "rkyv validation bug in unused optional rust_decimal dependency; no 0.7 fix" },
-
-  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
-  # does not surface; it is listed only in .cargo/audit.toml.
+  # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative) and
+  # RUSTSEC-2026-0235 (inactive rust_decimal optional dependency), which cargo-deny
+  # does not surface. Their scanner-specific ignores are in .cargo/audit.toml and
+  # osv-scanner.toml.
 ]
 
 # =============================================================================
@@ -199,6 +196,8 @@ skip = [
   { crate = "parquet" },
 
   # Common utility crates with version fragmentation across ecosystem
+  # base64 0.23 is used directly; upstream dependencies still require 0.22
+  { crate = "base64" },
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
@@ -228,7 +227,7 @@ skip = [
   { crate = "prost" },
   { crate = "prost-derive" },
 
-  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
+  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.27.x
   { crate = "capnp" },
 
   # TOML parser - cbindgen requires 0.9.x, pyo3-stub-gen requires 1.0.x

@@ -2,7 +2,7 @@
 // DO NOT EDIT.
 // source: common/enums.capnp
 // capnp binary version: 1.5.0
-// capnpc crate version: 0.26.0
+// capnpc crate version: 0.27.0
 
 
 #[repr(u16)]
