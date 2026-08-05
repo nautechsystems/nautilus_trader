@@ -71,6 +71,7 @@ from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
+from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import BookImbalanceActorConfig
 from nautilus_trader.trading import CompositeMarketMakerConfig
 from nautilus_trader.trading import Controller
@@ -817,7 +818,13 @@ def test_importable_strategy_reruns_after_reset_and_report_generation():
 
 
 def test_importable_strategy_runs_from_l2_book_deltas():
-    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            risk_engine=RiskEngineConfig(bypass=True),
+        ),
+    )
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
         venue=Venue("BINANCE"),

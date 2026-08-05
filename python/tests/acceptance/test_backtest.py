@@ -728,7 +728,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup_method(self):
-        self.engine = _engine()
+        self.engine = _engine(risk_bypass=True)
         self.venue = Venue("BETFAIR")
         self.gbp = Currency.from_str("GBP")
         self.instrument = _betfair_betting_instrument(selection_id=19248890)

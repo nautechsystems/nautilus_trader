@@ -33,6 +33,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed `on_historical_data` to receive each `CustomData` response item
+- Fixed market order risk checks to use cached bars and deny orders without a usable price
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
 

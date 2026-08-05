@@ -40,10 +40,10 @@ use nautilus_execution::trailing::{
     trailing_stop_calculate_with_bid_ask, trailing_stop_calculate_with_last,
 };
 use nautilus_model::{
-    accounts::{Account, AccountAny},
+    accounts::{Account, AccountAny, CashAccount},
     enums::{
-        OrderSide, OrderStatus, PositionSide, TimeInForce, TradingState, TrailingOffsetType,
-        TriggerType,
+        AggregationSource, OrderSide, OrderStatus, PositionSide, PriceType, TimeInForce,
+        TradingState, TrailingOffsetType, TriggerType,
     },
     events::{OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, PositionEvent},
     identifiers::{AccountId, InstrumentId},
@@ -1001,7 +1001,6 @@ impl RiskEngine {
         orders: &[&OrderAny],
         account_id: Option<AccountId>,
     ) -> bool {
-        let mut last_px: Option<Price> = None;
         let mut max_notional: Option<Money> = None;
 
         // Determine max notional
@@ -1025,6 +1024,25 @@ impl RiskEngine {
             max_notional = Some(max_notional_value);
         }
 
+        let mut market_prices = Vec::with_capacity(orders.len());
+
+        for order in orders {
+            let price = match order {
+                OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
+                    match self.market_order_price(instrument.id(), order.order_side()) {
+                        Ok(price) => price,
+                        Err(reason) => {
+                            self.deny_order(order, &reason.to_string());
+                            return false;
+                        }
+                    }
+                }
+                _ => None,
+            };
+
+            market_prices.push(price);
+        }
+
         // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
         let resolved_account = {
             let cache = self.cache.borrow();
@@ -1041,6 +1059,16 @@ impl RiskEngine {
                 "Cannot find account for venue {} (account_id={account_id:?})",
                 instrument.id().venue
             );
+
+            for (&order, price) in orders.iter().zip(&market_prices) {
+                if matches!(order, OrderAny::Market(_) | OrderAny::MarketToLimit(_))
+                    && price.is_none()
+                {
+                    self.deny_no_market_price(instrument.id(), order);
+                    return false;
+                }
+            }
+
             return true;
         };
 
@@ -1145,52 +1173,38 @@ impl RiskEngine {
         let mut cum_margin_required: Option<Money> = None;
         let mut base_currency: Option<Currency> = None;
 
-        for order in orders {
+        for (&order, market_price) in orders.iter().zip(market_prices) {
             // Determine last price based on order type
-            last_px = match order {
+            let last_px = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
-                    if last_px.is_none() {
-                        let quote_price = {
-                            let cache = self.cache.borrow();
-                            cache.quote(&instrument.id()).map(|last_quote| {
-                                match order.order_side() {
-                                    OrderSide::Buy => Ok(last_quote.ask_price),
-                                    OrderSide::Sell => Ok(last_quote.bid_price),
-                                    OrderSide::NoOrderSide => {
-                                        Err(OrderDeniedReason::InvalidOrderSide {
-                                            order_side: order.order_side(),
-                                        }
-                                        .to_string())
-                                    }
-                                }
-                            })
-                        };
+                    let Some(price) = market_price else {
+                        let is_reducing = order.is_reduce_only()
+                            || (order.is_sell()
+                                && (cum_sell_qty_raw + order.quantity().raw)
+                                    <= available_long_qty_raw);
 
-                        if let Some(quote_price) = quote_price {
-                            match quote_price {
-                                Ok(price) => Some(price),
-                                Err(reason) => {
-                                    self.deny_order(order, &reason);
-                                    return false; // Denied
-                                }
-                            }
-                        } else {
-                            let cache = self.cache.borrow();
-                            let last_trade = cache.trade(&instrument.id());
-
-                            if let Some(last_trade) = last_trade {
-                                Some(last_trade.price)
-                            } else {
-                                log::warn!(
-                                    "Cannot check MARKET order risk: no prices for {}",
-                                    instrument.id()
-                                );
-                                continue;
-                            }
+                        if !order.is_quote_quantity()
+                            && order.is_sell()
+                            && !is_reducing
+                            && let AccountAny::Cash(cash) = &account
+                            && cash.base_currency.is_none()
+                            && let Some(base_currency) = instrument.base_currency()
+                            && !self.check_cash_sell_balance(
+                                cash,
+                                order,
+                                order.quantity(),
+                                base_currency,
+                                &mut cum_notional_sell,
+                            )
+                        {
+                            return false;
                         }
-                    } else {
-                        last_px
-                    }
+
+                        self.deny_no_market_price(instrument.id(), order);
+                        return false;
+                    };
+
+                    Some(price)
                 }
                 OrderAny::StopMarket(_) | OrderAny::MarketIfTouched(_) => order.trigger_price(),
                 OrderAny::TrailingStopMarket(_) | OrderAny::TrailingStopLimit(_) => {
@@ -1763,80 +1777,18 @@ impl RiskEngine {
                             return false; // Denied
                         }
                     } else if let Some(base_currency) = base_currency {
-                        let cash_value_raw: MoneyRaw = match effective_quantity.raw.try_into() {
-                            Ok(value) => value,
-                            Err(e) => {
-                                self.deny_order(
-                                    order,
-                                    &OrderDeniedReason::QuantityConversionFailed {
-                                        detail: e.to_string(),
-                                    }
-                                    .to_string(),
-                                );
-                                return false; // Denied
-                            }
-                        };
-                        let cash_value = Money::from_raw(cash_value_raw, base_currency);
-
-                        // Use base-currency free balance for sell checks
-                        let base_free = match &account {
-                            AccountAny::Margin(_) => None,
-                            AccountAny::Cash(cash) => Some(
-                                cash.balance_free(Some(base_currency))
-                                    .unwrap_or_else(|| Money::zero(base_currency)),
-                            ),
-                            AccountAny::Betting(betting) => {
-                                betting.balance_free(Some(base_currency))
-                            }
+                        let AccountAny::Cash(cash) = &account else {
+                            unreachable!()
                         };
 
-                        if self.config.debug
-                            && let AccountAny::Cash(cash) = &account
-                        {
-                            log::debug!("Cash value: {cash_value:?}");
-                            log::debug!("Total: {:?}", cash.balance_total(Some(base_currency)));
-                            log::debug!("Locked: {:?}", cash.balance_locked(Some(base_currency)));
-                            log::debug!("Free: {base_free:?}");
-                        }
-
-                        if self.config.debug
-                            && let AccountAny::Betting(betting) = &account
-                        {
-                            log::debug!("Cash value: {cash_value:?}");
-                            log::debug!("Total: {:?}", betting.balance_total(Some(base_currency)));
-                            log::debug!(
-                                "Locked: {:?}",
-                                betting.balance_locked(Some(base_currency))
-                            );
-                            log::debug!("Free: {base_free:?}");
-                        }
-
-                        match cum_notional_sell {
-                            Some(mut value) => {
-                                value.raw += cash_value.raw;
-                                cum_notional_sell = Some(value);
-                            }
-                            None => cum_notional_sell = Some(cash_value),
-                        }
-
-                        if self.config.debug {
-                            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
-                        }
-
-                        if !allow_borrowing
-                            && let (Some(base_free), Some(cum_notional_sell)) =
-                                (base_free, cum_notional_sell)
-                            && cum_notional_sell.raw > base_free.raw
-                        {
-                            self.deny_order(
-                                order,
-                                &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                                    free: base_free,
-                                    cum_notional: cum_notional_sell,
-                                }
-                                .to_string(),
-                            );
-                            return false; // Denied
+                        if !self.check_cash_sell_balance(
+                            cash,
+                            order,
+                            effective_quantity,
+                            base_currency,
+                            &mut cum_notional_sell,
+                        ) {
+                            return false;
                         }
                     }
                 }
@@ -1845,6 +1797,120 @@ impl RiskEngine {
 
         // Finally
         true // Passed
+    }
+
+    fn market_order_price(
+        &self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+    ) -> Result<Option<Price>, OrderDeniedReason> {
+        let price_type = match order_side {
+            OrderSide::Buy => PriceType::Ask,
+            OrderSide::Sell => PriceType::Bid,
+            OrderSide::NoOrderSide => {
+                return Err(OrderDeniedReason::InvalidOrderSide { order_side });
+            }
+        };
+
+        let cache = self.cache.borrow();
+
+        if let Some(price) = cache.price(&instrument_id, price_type) {
+            return Ok(Some(price));
+        }
+
+        if let Some(price) = cache.price(&instrument_id, PriceType::Last) {
+            return Ok(Some(price));
+        }
+
+        let bar_price = |price_type| {
+            cache
+                .bar_types(
+                    Some(&instrument_id),
+                    Some(&price_type),
+                    AggregationSource::External,
+                )
+                .into_iter()
+                .filter_map(|bar_type| {
+                    cache
+                        .bar(bar_type)
+                        .map(|bar| (bar.ts_init, *bar_type, bar.close))
+                })
+                .max_by_key(|(ts_init, bar_type, _)| (*ts_init, *bar_type))
+                .map(|(_, _, price)| price)
+        };
+
+        Ok(bar_price(price_type).or_else(|| bar_price(PriceType::Last)))
+    }
+
+    fn check_cash_sell_balance(
+        &self,
+        cash: &CashAccount,
+        order: &OrderAny,
+        quantity: Quantity,
+        base_currency: Currency,
+        cum_notional_sell: &mut Option<Money>,
+    ) -> bool {
+        let cash_value_raw: MoneyRaw = match quantity.raw.try_into() {
+            Ok(value) => value,
+            Err(e) => {
+                self.deny_order(
+                    order,
+                    &OrderDeniedReason::QuantityConversionFailed {
+                        detail: e.to_string(),
+                    }
+                    .to_string(),
+                );
+                return false;
+            }
+        };
+
+        let cash_value = Money::from_raw(cash_value_raw, base_currency);
+        let base_free = cash
+            .balance_free(Some(base_currency))
+            .unwrap_or_else(|| Money::zero(base_currency));
+
+        if self.config.debug {
+            log::debug!("Cash value: {cash_value:?}");
+            log::debug!("Total: {:?}", cash.balance_total(Some(base_currency)));
+            log::debug!("Locked: {:?}", cash.balance_locked(Some(base_currency)));
+            log::debug!("Free: {base_free:?}");
+        }
+
+        match cum_notional_sell {
+            Some(value) => value.raw += cash_value.raw,
+            None => *cum_notional_sell = Some(cash_value),
+        }
+
+        if self.config.debug {
+            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+        }
+
+        if !cash.allow_borrowing
+            && let Some(cum_notional_sell) = *cum_notional_sell
+            && cum_notional_sell.raw > base_free.raw
+        {
+            self.deny_order(
+                order,
+                &OrderDeniedReason::CumNotionalExceedsFreeBalance {
+                    free: base_free,
+                    cum_notional: cum_notional_sell,
+                }
+                .to_string(),
+            );
+            return false;
+        }
+
+        true
+    }
+
+    fn deny_no_market_price(&self, instrument_id: InstrumentId, order: &OrderAny) {
+        self.deny_order(
+            order,
+            &format!(
+                "Cannot check {} order risk: no prices for {instrument_id}",
+                order.order_type()
+            ),
+        );
     }
 
     fn check_price(instrument: &InstrumentAny, price: Option<Price>) -> Option<String> {
