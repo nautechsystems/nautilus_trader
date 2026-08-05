@@ -862,6 +862,40 @@ async fn test_reconnect_replays_empty_market_discovery_subscription() {
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnect_asset_replay_delivers_book_from_new_connection() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("subscribe failed");
+    let _initial = tokio::time::timeout(Duration::from_secs(3), client.next_message())
+        .await
+        .expect("initial book timed out");
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("reconnect trigger failed");
+    let resumed = tokio::time::timeout(Duration::from_secs(5), client.next_message())
+        .await
+        .expect("post-reconnect book timed out");
+
+    assert!(matches!(
+        resumed,
+        Some(PolymarketWsMessage::Market(_))
+    ));
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_is_authenticated_false_before_connect() {
     let client = PolymarketWebSocketClient::new_user(
         Some("ws://127.0.0.1:9999/ws/user".to_string()),

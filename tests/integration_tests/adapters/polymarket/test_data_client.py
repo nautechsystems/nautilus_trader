@@ -37,7 +37,9 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -267,6 +269,83 @@ def test_pending_drops_price_change_until_snapshot(event_loop) -> None:
     assert quote_emitted is not None
     assert quote_emitted.bid_price.precision == 2
     assert quote_emitted.ask_price.precision == 2
+
+
+def test_tc_d14_snapshot_and_delta_restore_local_and_managed_books() -> None:
+    event_loop = asyncio.new_event_loop()
+    instrument = _make_binary_option("0.01")
+    clock = LiveClock()
+    msgbus = MessageBus(trader_id=TraderId("TEST-001"), clock=clock)
+    cache = Cache()
+    cache.add_instrument(instrument)
+    engine = DataEngine(msgbus=msgbus, cache=cache, clock=clock)
+    client = PolymarketDataClient(
+        loop=event_loop,
+        http_client=MagicMock(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        instrument_provider=MagicMock(spec=PolymarketInstrumentProvider),
+        config=PolymarketDataClientConfig(),
+        name="TEST-POLYMARKET",
+    )
+    client._ws_client = MagicMock()
+    client._ws_client.is_connected.return_value = True
+    client._ws_client.subscribe = AsyncMock()
+    engine.register_client(client)
+    engine.start()
+    subscribe = SubscribeOrderBook(
+        instrument_id=instrument.id,
+        book_data_type=OrderBookDelta,
+        book_type=BookType.L2_MBP,
+        depth=0,
+        interval_ms=0,
+        managed=True,
+        client_id=client.id,
+        venue=instrument.id.venue,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    async def execute_subscribe() -> None:
+        engine.execute(subscribe)
+        await asyncio.sleep(0)
+
+    event_loop.run_until_complete(execute_subscribe())
+    assert engine.subscribed_order_book_deltas() == [instrument.id]
+    client._add_subscription_order_book_deltas(instrument.id)
+
+    snapshot = _build_snapshot(("0.45", "0.49", "0.51", "0.55"))
+    client._handle_book_snapshot(instrument=instrument, ws_message=snapshot)
+    local_book = client._local_books[instrument.id]
+    managed_book = cache.order_book(instrument.id)
+    assert managed_book is not None
+    assert local_book.best_bid_price() == Price.from_str("0.49")
+    assert managed_book.best_bid_price() == Price.from_str("0.49")
+
+    delta_msg = PolymarketQuotes(
+        market="0xMARKET",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="0xASSET",
+                price="0.50",
+                side=PolymarketOrderSide.BUY,
+                size="20",
+                hash="",
+            )
+        ],
+        timestamp="1700000002000",
+    )
+    client._handle_quote(
+        instrument=instrument,
+        ws_message=delta_msg,
+        price_change=delta_msg.price_changes[0],
+    )
+
+    assert local_book.best_bid_price() == Price.from_str("0.50")
+    assert managed_book.best_bid_price() == Price.from_str("0.50")
+    engine.dispose()
+    event_loop.close()
 
 
 def test_tick_size_change_finer_then_snapshot_clean_transition(event_loop) -> None:
