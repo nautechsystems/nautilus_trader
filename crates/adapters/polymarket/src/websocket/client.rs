@@ -17,7 +17,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
 };
 
 use nautilus_common::live::get_runtime;
@@ -39,6 +39,7 @@ use crate::common::{
 };
 
 const POLYMARKET_HEARTBEAT_SECS: u64 = 30;
+static NEXT_SHARD_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Polymarket WebSocket channel: market data or authenticated user data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,11 +64,16 @@ fn idle_timeout_ms_for(channel: WsChannel) -> u64 {
 #[derive(Clone, Debug)]
 pub struct WsSubscriptionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    new_market_discovery_enabled: Arc<AtomicBool>,
 }
 
 impl WsSubscriptionHandle {
     /// Sends a market subscribe command to the handler.
     pub async fn subscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        if asset_ids.is_empty() {
+            self.new_market_discovery_enabled
+                .store(true, Ordering::SeqCst);
+        }
         self.cmd_tx
             .read()
             .await
@@ -91,6 +97,7 @@ impl WsSubscriptionHandle {
     pub(crate) fn from_sender(sender: tokio::sync::mpsc::UnboundedSender<HandlerCommand>) -> Self {
         Self {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(sender)),
+            new_market_discovery_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -114,6 +121,9 @@ pub struct PolymarketWebSocketClient {
     // Survives disconnect() so that connect() can replay a prior subscribe_user() call.
     // Arc<AtomicBool> allows mutation from &self in subscribe_user().
     user_subscribed: Arc<AtomicBool>,
+    new_market_discovery_enabled: Arc<AtomicBool>,
+    connection_epoch: Arc<AtomicU64>,
+    shard_id: u64,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscribe_new_markets: bool,
     transport_backend: TransportBackend,
@@ -203,6 +213,9 @@ impl PolymarketWebSocketClient {
             subscriptions: SubscriptionState::new(':'),
             auth_tracker: AuthTracker::new(),
             user_subscribed: Arc::new(AtomicBool::new(false)),
+            new_market_discovery_enabled: Arc::new(AtomicBool::new(subscribe_new_markets)),
+            connection_epoch: Arc::new(AtomicU64::new(0)),
+            shard_id: NEXT_SHARD_ID.fetch_add(1, Ordering::Relaxed),
             task_handle: None,
             subscribe_new_markets,
             transport_backend,
@@ -240,6 +253,7 @@ impl PolymarketWebSocketClient {
 
         let client_mode = client.connection_mode_atomic();
         self.connection_mode = client_mode;
+        let connection_epoch = self.connection_epoch.fetch_add(1, Ordering::SeqCst) + 1;
 
         log::debug!("Polymarket WebSocket connected: {}", self.url);
 
@@ -253,11 +267,12 @@ impl PolymarketWebSocketClient {
         match self.channel {
             WsChannel::Market => {
                 let topics = self.subscriptions.all_topics();
+                if self.new_market_discovery_enabled.load(Ordering::SeqCst) {
+                    cmd_tx
+                        .send(HandlerCommand::SubscribeMarket(vec![]))
+                        .map_err(|e| anyhow::anyhow!("Failed to replay discovery: {e}"))?;
+                }
                 if !topics.is_empty() {
-                    log::debug!(
-                        "Replaying {} market subscription(s) onto new session",
-                        topics.len()
-                    );
                     cmd_tx
                         .send(HandlerCommand::SubscribeMarket(topics))
                         .map_err(|e| anyhow::anyhow!("Failed to replay SubscribeMarket: {e}"))?;
@@ -280,6 +295,9 @@ impl PolymarketWebSocketClient {
         let auth_tracker = self.auth_tracker.clone();
         let user_subscribed = self.user_subscribed.load(Ordering::Relaxed);
         let subscribe_new_markets = self.subscribe_new_markets;
+        let discovery_enabled = Arc::clone(&self.new_market_discovery_enabled);
+        let connection_epoch_state = Arc::clone(&self.connection_epoch);
+        let shard_id = self.shard_id;
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -293,6 +311,10 @@ impl PolymarketWebSocketClient {
                 auth_tracker,
                 user_subscribed,
                 subscribe_new_markets,
+                discovery_enabled,
+                connection_epoch_state,
+                connection_epoch,
+                shard_id,
             );
 
             loop {
@@ -446,6 +468,10 @@ impl PolymarketWebSocketClient {
                 "subscribe_market() requires a market-channel client (created with new_market())"
             );
         }
+        if asset_ids.is_empty() {
+            self.new_market_discovery_enabled
+                .store(true, Ordering::SeqCst);
+        }
         self.cmd_tx
             .read()
             .await
@@ -501,6 +527,7 @@ impl PolymarketWebSocketClient {
     pub fn clone_subscription_handle(&self) -> WsSubscriptionHandle {
         WsSubscriptionHandle {
             cmd_tx: Arc::clone(&self.cmd_tx),
+            new_market_discovery_enabled: Arc::clone(&self.new_market_discovery_enabled),
         }
     }
 
@@ -531,7 +558,7 @@ impl PolymarketWebSocketClient {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
+    use std::{net::SocketAddr, sync::atomic::Ordering};
 
     use axum::{
         Router,
@@ -607,6 +634,22 @@ mod tests {
             .disconnect()
             .await
             .expect("disconnect websocket client");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn empty_market_subscription_retains_discovery_intent() {
+        let client = PolymarketWebSocketClient::new_market(
+            Some("ws://127.0.0.1:1/ws".to_string()),
+            false,
+            TransportBackend::default(),
+        );
+
+        let result = client.subscribe_market(vec![]).await;
+
+        assert!(result.is_err(), "disconnected command sender must stay closed");
+        assert!(client.new_market_discovery_enabled.load(Ordering::SeqCst));
+        assert_eq!(client.subscription_count(), 0);
     }
 
     #[rstest]

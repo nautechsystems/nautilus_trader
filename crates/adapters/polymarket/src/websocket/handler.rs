@@ -17,7 +17,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use nautilus_network::{
@@ -71,6 +71,11 @@ pub(super) struct FeedHandler {
     message_buffer: Vec<PolymarketWsMessage>,
     // Whether to include `custom_feature_enabled: true` in the initial subscribe
     subscribe_new_markets: bool,
+    new_market_discovery_enabled: Arc<AtomicBool>,
+    connection_epoch_state: Arc<AtomicU64>,
+    connection_epoch: u64,
+    shard_id: u64,
+    awaiting_feed_resume_epoch: Option<u64>,
 }
 
 impl FeedHandler {
@@ -86,6 +91,10 @@ impl FeedHandler {
         auth_tracker: AuthTracker,
         user_subscribed: bool,
         subscribe_new_markets: bool,
+        new_market_discovery_enabled: Arc<AtomicBool>,
+        connection_epoch_state: Arc<AtomicU64>,
+        connection_epoch: u64,
+        shard_id: u64,
     ) -> Self {
         Self {
             signal,
@@ -101,6 +110,11 @@ impl FeedHandler {
             market_subscription_initialized: false,
             message_buffer: Vec::new(),
             subscribe_new_markets,
+            new_market_discovery_enabled,
+            connection_epoch_state,
+            connection_epoch,
+            shard_id,
+            awaiting_feed_resume_epoch: None,
         }
     }
 
@@ -114,11 +128,30 @@ impl FeedHandler {
         self.signal.load(Ordering::Relaxed)
     }
 
-    async fn send_subscribe_market(&mut self, asset_ids: &[String]) {
+    async fn send_subscribe_market(
+        &mut self,
+        asset_ids: &[String],
+        expected_epoch: Option<u64>,
+    ) -> bool {
+        if expected_epoch.is_some_and(|epoch| epoch != self.connection_epoch) {
+            log::warn!(
+                "replay_rejected shard_id={} channel={:?} expected_connection_epoch={:?} connection_epoch={}",
+                self.shard_id,
+                self.channel,
+                expected_epoch,
+                self.connection_epoch,
+            );
+            return false;
+        }
         let Some(ref client) = self.client else {
             log::warn!("No client available for market subscribe");
-            return;
+            return false;
         };
+
+        if asset_ids.is_empty() {
+            self.new_market_discovery_enabled
+                .store(true, Ordering::SeqCst);
+        }
 
         for id in asset_ids {
             self.subscriptions.mark_subscribe(id);
@@ -145,12 +178,14 @@ impl FeedHandler {
                         self.subscriptions.mark_failure(id);
                     }
                     log::error!("Failed to send market subscribe: {e}");
+                    return false;
                 } else {
                     self.market_subscription_initialized = true;
                     // Polymarket has no server ACK, treat successful send as confirmation
                     for id in asset_ids {
                         self.subscriptions.confirm_subscribe(id);
                     }
+                    return true;
                 }
             }
             Err(e) => {
@@ -160,6 +195,7 @@ impl FeedHandler {
                 log::error!("Failed to serialize market subscribe request: {e}");
             }
         }
+        false
     }
 
     async fn send_unsubscribe_market(&self, asset_ids: &[String]) {
@@ -229,14 +265,33 @@ impl FeedHandler {
         match self.channel {
             WsChannel::Market => {
                 let ids = self.subscriptions.all_topics();
-                if ids.is_empty() {
-                    return;
+                let discovery_enabled = self.new_market_discovery_enabled.load(Ordering::SeqCst);
+                let mut replay_frame_count = 0;
+                if discovery_enabled
+                    && self
+                        .send_subscribe_market(&[], Some(self.connection_epoch))
+                        .await
+                {
+                    replay_frame_count += 1;
                 }
+                if !ids.is_empty()
+                    && self
+                        .send_subscribe_market(&ids, Some(self.connection_epoch))
+                        .await
+                {
+                    replay_frame_count += 1;
+                }
+                self.awaiting_feed_resume_epoch =
+                    (replay_frame_count > 0).then_some(self.connection_epoch);
                 log::info!(
-                    "Resubscribing to {} market assets after reconnect",
-                    ids.len()
+                    "replay_sent shard_id={} channel={:?} connection_epoch={} desired_asset_count={} discovery_enabled={} replay_frame_count={}",
+                    self.shard_id,
+                    self.channel,
+                    self.connection_epoch,
+                    ids.len(),
+                    discovery_enabled,
+                    replay_frame_count,
                 );
-                self.send_subscribe_market(&ids).await;
             }
             WsChannel::User => {
                 if self.user_subscribed {
@@ -311,7 +366,7 @@ impl FeedHandler {
                             return None;
                         }
                         HandlerCommand::SubscribeMarket(ids) => {
-                            self.send_subscribe_market(&ids).await;
+                            self.send_subscribe_market(&ids, None).await;
                         }
                         HandlerCommand::UnsubscribeMarket(ids) => {
                             for id in &ids {
@@ -332,6 +387,9 @@ impl FeedHandler {
                     match raw {
                         Message::Text(text) => {
                             if text == RECONNECTED {
+                                self.connection_epoch += 1;
+                                self.connection_epoch_state
+                                    .store(self.connection_epoch, Ordering::SeqCst);
                                 self.market_subscription_initialized = false;
                                 self.resubscribe_all().await;
                                 return Some(PolymarketWsMessage::Reconnected);
@@ -344,6 +402,13 @@ impl FeedHandler {
                             // credentials; mark auth as successful on the first delivery.
                             if self.channel == WsChannel::User {
                                 self.auth_tracker.succeed();
+                            } else if let Some(epoch) = self.awaiting_feed_resume_epoch.take() {
+                                log::info!(
+                                    "feed_resumed shard_id={} channel={:?} connection_epoch={}",
+                                    self.shard_id,
+                                    self.channel,
+                                    epoch,
+                                );
                             }
                             // Buffer msgs[1..] so they are returned in order on subsequent
                             // next() calls; returning first directly preserves 0,1,2,...,n order
@@ -396,7 +461,22 @@ mod tests {
             AuthTracker::new(),
             false,
             false,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicU64::new(1)),
+            1,
+            1,
         )
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn rejects_replay_from_old_connection_epoch(mut market_handler: FeedHandler) {
+        assert!(
+            !market_handler
+                .send_subscribe_market(&["asset-1".to_string()], Some(0))
+                .await
+        );
+        assert!(market_handler.subscriptions.all_topics().is_empty());
     }
 
     #[rstest]
