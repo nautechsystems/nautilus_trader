@@ -154,7 +154,7 @@ pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
 #[cfg(test)]
 mod tests {
     use jiff::Timestamp;
-    use pyo3::{ffi::c_str, prelude::*};
+    use pyo3::ffi::c_str;
     use rstest::rstest;
 
     use super::*;
