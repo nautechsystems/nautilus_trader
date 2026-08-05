@@ -50,6 +50,7 @@ Released on TBD (UTC).
 
 - Consolidated Python v2 integration guides and examples on canonical paths
 - Corrected the Rust `DataTester` book depth support note in the data testing spec
+- Documented the transient startup position-check race in the Lighter integration guide
 
 ---
 

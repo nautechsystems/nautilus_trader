@@ -385,6 +385,11 @@ pages. Fill reconciliation remains repeatable across calls while suppressing fil
 from the live WebSocket stream. Historical order and fill reports bind a mapped client index only
 to its matching venue order ID so reused numeric indexes cannot merge unrelated lifecycles.
 
+A strategy that opens a position immediately on start can trigger a transient position-check
+discrepancy warning (`cached=0, venue=N`) when the venue's `account_all_positions` frame arrives a
+few milliseconds before the matching fill event is processed. The warning self-resolves once the
+fill applies; no reconciliation orders are generated.
+
 ## Account and position management
 
 Authenticated execution clients subscribe to these private streams:
