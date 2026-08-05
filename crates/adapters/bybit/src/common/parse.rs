@@ -2943,3 +2943,25 @@ mod tests {
         assert_eq!(report.venue_position_id, None);
     }
 }
+
+pub mod i32_from_str_or_number {
+    use serde::{de, Deserialize, Deserializer};
+    use std::str::FromStr;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<i32, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StringOrInt {
+            String(String),
+            Int(i32),
+        }
+
+        match StringOrInt::deserialize(deserializer)? {
+            StringOrInt::String(s) => i32::from_str(&s).map_err(de::Error::custom),
+            StringOrInt::Int(i) => Ok(i),
+        }
+    }
+}

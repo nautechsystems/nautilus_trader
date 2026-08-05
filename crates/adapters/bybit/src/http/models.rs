@@ -852,7 +852,7 @@ pub struct BybitAccountInfo {
     pub dcp_status: bool,
     #[serde(default)]
     pub time_window: i32,
-    #[serde(default)]
+    #[serde(default, with = "crate::common::parse::i32_from_str_or_number")]
     pub smp_group: i32,
 }
 
@@ -910,6 +910,7 @@ pub struct BybitOrder {
     pub reduce_only: bool,
     pub close_on_trigger: bool,
     pub smp_type: BybitSmpType,
+    #[serde(default, with = "crate::common::parse::i32_from_str_or_number")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub tpsl_mode: Option<BybitTpSlMode>,

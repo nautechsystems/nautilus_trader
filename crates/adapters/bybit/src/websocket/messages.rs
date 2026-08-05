@@ -792,6 +792,7 @@ pub struct BybitWsAccountOrder {
     pub close_on_trigger: bool,
     pub place_type: Ustr,
     pub smp_type: BybitSmpType,
+    #[serde(default, with = "crate::common::parse::i32_from_str_or_number")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub fee_currency: Ustr,
