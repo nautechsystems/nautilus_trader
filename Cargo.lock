@@ -6655,7 +6655,6 @@ dependencies = [
  "bytes",
  "criterion",
  "dashmap",
- "futures",
  "futures-util",
  "http",
  "log",

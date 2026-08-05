@@ -54,7 +54,7 @@ use crate::{
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::{ConnectionMode, ReadSessionFence},
     net::TcpStream,
-    tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
+    tls::{create_tls_config_from_certs_dir, tcp_tls},
 };
 
 // Connection timing constants
@@ -83,8 +83,8 @@ const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
 /// the received byte stream.
 struct SocketClientInner {
     config: SocketConfig,
-    connector: Option<Connector>,
-    read_task: Arc<tokio::task::JoinHandle<()>>,
+    connector: Option<Arc<rustls::ClientConfig>>,
+    read_task: tokio::task::JoinHandle<()>,
     read_fence: ReadSessionFence,
     write_task: tokio::task::JoinHandle<()>,
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
@@ -93,7 +93,6 @@ struct SocketClientInner {
     state_notify: Arc<tokio::sync::Notify>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
-    handler: Option<TcpMessageHandler>,
     reconnect_max_attempts: Option<u32>,
     reconnect_attempt_count: u32,
 }
@@ -124,39 +123,24 @@ impl SocketClientInner {
             anyhow::bail!("Idle timeout cannot be zero");
         }
 
-        let SocketConfig {
-            url,
-            mode,
-            heartbeat,
-            suffix,
-            message_handler,
-            reconnect_timeout_ms,
-            reconnect_delay_initial_ms,
-            reconnect_delay_max_ms,
-            reconnect_backoff_factor,
-            reconnect_jitter_ms,
-            connection_max_retries,
-            reconnect_max_attempts,
-            idle_timeout_ms,
-            certs_dir,
-        } = &config.clone();
-        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
+        let reconnect_timeout =
+            Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10_000));
         let reconnect_backoff = ExponentialBackoff::new(
-            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
-            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
-            reconnect_backoff_factor.unwrap_or(1.5),
-            reconnect_jitter_ms.unwrap_or(100),
+            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
+            config.reconnect_backoff_factor.unwrap_or(1.5),
+            config.reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
         )?;
-        let connector = if let Some(dir) = certs_dir {
+        let connector = if let Some(dir) = &config.certs_dir {
             let config = create_tls_config_from_certs_dir(Path::new(dir), false)?;
-            Some(Connector::Rustls(Arc::new(config)))
+            Some(Arc::new(config))
         } else {
             None
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
-        let max_retries = connection_max_retries.unwrap_or(5);
+        let max_retries = config.connection_max_retries.unwrap_or(5);
 
         let mut backoff = ExponentialBackoff::new(
             Duration::from_millis(500),
@@ -166,15 +150,13 @@ impl SocketClientInner {
             false,
         )?;
 
-        #[allow(unused_assignments)]
-        let mut last_error = String::new();
         let mut attempt = 0;
         let (reader, writer) = loop {
             attempt += 1;
 
-            match dst::time::timeout(
+            let last_error = match dst::time::timeout(
                 Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                Self::tls_connect_with_server(url, *mode, connector.clone()),
+                Self::tls_connect_with_server(&config.url, config.mode, connector.clone()),
             )
             .await
             {
@@ -185,32 +167,32 @@ impl SocketClientInner {
                     break result;
                 }
                 Ok(Err(e)) => {
-                    last_error = e.to_string();
+                    let error = e.to_string();
                     log::warn!(
-                        "Socket connection attempt {attempt}/{max_retries} to {url} failed: {last_error}"
+                        "Socket connection attempt {attempt}/{max_retries} to {} failed: {error}",
+                        config.url,
                     );
+                    error
                 }
                 Err(_) => {
-                    last_error = format!(
+                    let error = format!(
                         "Connection timeout after {CONNECTION_TIMEOUT_SECS}s (possible DNS resolution failure)"
                     );
                     log::warn!(
-                        "Socket connection attempt {attempt}/{max_retries} to {url} timed out"
+                        "Socket connection attempt {attempt}/{max_retries} to {} timed out",
+                        config.url,
                     );
+                    error
                 }
-            }
+            };
 
             if attempt >= max_retries {
                 anyhow::bail!(
                     "Failed to connect to {} after {} attempts: {}. \
                     If this is a DNS error, check your network configuration and DNS settings.",
-                    url,
+                    config.url,
                     max_retries,
-                    if last_error.is_empty() {
-                        "unknown error"
-                    } else {
-                        &last_error
-                    }
+                    last_error,
                 );
             }
 
@@ -229,14 +211,14 @@ impl SocketClientInner {
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let read_fence = ReadSessionFence::new();
 
-        let read_task = Arc::new(Self::spawn_read_task(
+        let read_task = Self::spawn_read_task(
             connection_mode.clone(),
             read_fence.clone(),
             reader,
-            message_handler.clone(),
-            suffix.clone(),
-            *idle_timeout_ms,
-        ));
+            config.message_handler.clone(),
+            config.suffix.clone(),
+            config.idle_timeout_ms,
+        );
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
 
@@ -245,17 +227,18 @@ impl SocketClientInner {
             state_notify.clone(),
             writer,
             writer_rx,
-            suffix.clone(),
+            config.suffix.clone(),
         );
 
         // Optionally spawn a heartbeat task to periodically ping server
-        let heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
+        let heartbeat_task = config.heartbeat.as_ref().map(|heartbeat| {
             Self::spawn_heartbeat_task(
                 connection_mode.clone(),
                 heartbeat.clone(),
                 writer_tx.clone(),
             )
         });
+        let reconnect_max_attempts = config.reconnect_max_attempts;
 
         Ok(Self {
             config,
@@ -269,8 +252,7 @@ impl SocketClientInner {
             state_notify,
             reconnect_timeout,
             backoff: reconnect_backoff,
-            handler: message_handler.clone(),
-            reconnect_max_attempts: *reconnect_max_attempts,
+            reconnect_max_attempts,
             reconnect_attempt_count: 0,
         })
     }
@@ -336,7 +318,7 @@ impl SocketClientInner {
     pub(crate) async fn tls_connect_with_server(
         url: &str,
         mode: Mode,
-        connector: Option<Connector>,
+        connector: Option<Arc<rustls::ClientConfig>>,
     ) -> Result<(TcpReader, TcpWriter), Error> {
         log::debug!("Connecting to {url}");
 
@@ -380,29 +362,14 @@ impl SocketClientInner {
             return Ok(());
         }
 
-        let SocketConfig {
-            url,
-            mode,
-            heartbeat: _,
-            suffix,
-            message_handler: _,
-            reconnect_timeout_ms: _,
-            reconnect_delay_initial_ms: _,
-            reconnect_backoff_factor: _,
-            reconnect_delay_max_ms: _,
-            reconnect_jitter_ms: _,
-            connection_max_retries: _,
-            reconnect_max_attempts: _,
-            idle_timeout_ms,
-            certs_dir: _,
-        } = &self.config;
-        // Create a fresh connection
-        let connector = self.connector.clone();
-
         // Bound only connection establishment; the swap below must run to completion
         let (reader, new_writer) = dst::time::timeout(
             self.reconnect_timeout,
-            Self::tls_connect_with_server(url, *mode, connector),
+            Self::tls_connect_with_server(
+                &self.config.url,
+                self.config.mode,
+                self.connector.clone(),
+            ),
         )
         .await
         .map_err(|_| {
@@ -485,14 +452,14 @@ impl SocketClientInner {
 
         // Spawn new read task
         self.read_fence = ReadSessionFence::new();
-        self.read_task = Arc::new(Self::spawn_read_task(
+        self.read_task = Self::spawn_read_task(
             self.connection_mode.clone(),
             self.read_fence.clone(),
             reader,
-            self.handler.clone(),
-            suffix.clone(),
-            *idle_timeout_ms,
-        ));
+            self.config.message_handler.clone(),
+            self.config.suffix.clone(),
+            self.config.idle_timeout_ms,
+        );
 
         log::debug!("Reconnect succeeded");
         Ok(())
@@ -663,8 +630,6 @@ impl SocketClientInner {
         let initial_buffer_len = buffer.len();
         log::info!("Sending {initial_buffer_len} buffered messages after reconnection");
 
-        let mut send_error_occurred = false;
-
         while let Some(buffered_msg) = buffer.front() {
             let mut combined_msg = Vec::with_capacity(buffered_msg.len() + suffix.len());
             combined_msg.extend_from_slice(buffered_msg);
@@ -682,18 +647,15 @@ impl SocketClientInner {
                         buffer.len()
                     );
                 }
-                send_error_occurred = true;
-                break;
+                return true;
             }
 
             buffer.pop_front();
         }
 
-        if buffer.is_empty() {
-            log::info!("Successfully sent all {initial_buffer_len} buffered messages");
-        }
+        log::info!("Successfully sent all {initial_buffer_len} buffered messages");
 
-        send_error_occurred
+        false
     }
 
     fn spawn_write_task<W>(
@@ -737,7 +699,8 @@ impl SocketClientInner {
                                 log::debug!("Received new writer");
 
                                 // Delay before closing connection
-                                dst::time::sleep(Duration::from_millis(100)).await;
+                                dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS))
+                                    .await;
 
                                 // Attempt to shutdown the writer gracefully before updating,
                                 // we ignore any error as the writer may already be closed.
@@ -775,14 +738,12 @@ impl SocketClientInner {
                                     );
                                 }
                             }
-                            _ if mode.is_reconnect() => {
-                                if let WriterCommand::Send(data) = msg {
-                                    log::debug!(
-                                        "Buffering message while reconnecting ({} bytes)",
-                                        data.len()
-                                    );
-                                    reconnect_buffer.push_back(data);
-                                }
+                            WriterCommand::Send(data) if mode.is_reconnect() => {
+                                log::debug!(
+                                    "Buffering message while reconnecting ({} bytes)",
+                                    data.len()
+                                );
+                                reconnect_buffer.push_back(data);
                             }
                             WriterCommand::Send(msg) => {
                                 write_buf.clear();

@@ -24,8 +24,6 @@ pub(crate) struct StateSnapshot {
     t: Nanos,
     /// The "burst capacity" of the bucket.
     tau: Nanos,
-    /// The time at which the measurement was taken.
-    pub(crate) time_of_measurement: Nanos,
     /// The next time a cell is expected to arrive
     pub(crate) tat: Nanos,
 }
@@ -33,38 +31,13 @@ pub(crate) struct StateSnapshot {
 impl StateSnapshot {
     /// Creates a new [`StateSnapshot`] instance.
     #[inline]
-    pub(crate) const fn new(t: Nanos, tau: Nanos, time_of_measurement: Nanos, tat: Nanos) -> Self {
-        Self {
-            t,
-            tau,
-            time_of_measurement,
-            tat,
-        }
+    pub(crate) const fn new(t: Nanos, tau: Nanos, tat: Nanos) -> Self {
+        Self { t, tau, tat }
     }
 
     /// Returns the quota used to make the rate limiting decision.
     pub(crate) fn quota(&self) -> Quota {
         Quota::from_gcra_parameters(self.t, self.tau)
-    }
-
-    /// Returns the number of cells that can be let through in
-    /// addition to a (possible) positive outcome.
-    ///
-    /// If this state snapshot is based on a negative rate limiting
-    /// outcome, this method returns 0.
-    #[allow(dead_code)]
-    pub(crate) fn remaining_burst_capacity(&self) -> u32 {
-        let t = self.t.as_u64();
-        if t == 0 {
-            return 0;
-        }
-
-        let t0 = self.time_of_measurement + self.t;
-
-        (cmp::min(
-            (t0 + self.tau).saturating_sub(self.tat).as_u64(),
-            self.tau.as_u64(),
-        ) / t) as u32
     }
 }
 
@@ -167,7 +140,7 @@ impl Gcra {
             let earliest_time = tat.saturating_sub(tau);
             if t0 < earliest_time {
                 Err(NotUntil::new(
-                    StateSnapshot::new(self.t, self.tau, earliest_time, earliest_time),
+                    StateSnapshot::new(self.t, self.tau, earliest_time),
                     start,
                 ))
             } else {

@@ -70,7 +70,9 @@ use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::client_async;
 #[cfg(not(feature = "turmoil"))]
 use tokio_tungstenite::connect_async_with_config;
-use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
+use tokio_tungstenite::tungstenite::{
+    client::IntoClientRequest, handshake::client::Request, http::HeaderValue,
+};
 use ustr::Ustr;
 
 #[cfg(not(feature = "turmoil"))]
@@ -190,8 +192,7 @@ pub struct WebSocketClientInner {
     config: WebSocketConfig,
     reconnect_headers: ReconnectHeaders,
     /// The function to handle incoming messages (stored separately from config).
-    message_handler: Option<MessageHandler>,
-    epoch_handler: Option<EpochMessageHandler>,
+    handler: Option<IncomingHandler>,
     /// The handler for incoming pings (stored separately from config).
     ping_handler: Option<PingHandler>,
     read_task: Option<tokio::task::JoinHandle<()>>,
@@ -204,10 +205,6 @@ pub struct WebSocketClientInner {
     state_notify: Arc<tokio::sync::Notify>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
-    /// True if this is a stream-based client (created via `connect_stream`).
-    /// Stream-based clients disable auto-reconnect because the reader is
-    /// owned by the caller and cannot be replaced during reconnection.
-    is_stream_mode: bool,
     /// Maximum number of reconnection attempts before giving up (None = unlimited).
     reconnect_max_attempts: Option<u32>,
     /// Current count of consecutive reconnection attempts.
@@ -216,6 +213,21 @@ pub struct WebSocketClientInner {
     auth_tracker: Arc<OnceLock<AuthTracker>>,
     /// Controls whether buffered replay waits for the next authenticated session.
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
+}
+
+#[derive(Clone)]
+enum IncomingHandler {
+    Message(MessageHandler),
+    Epoch(EpochMessageHandler),
+}
+
+impl IncomingHandler {
+    fn handle(&self, connection_epoch: u64, message: Message) {
+        match self {
+            Self::Message(handler) => handler(message),
+            Self::Epoch(handler) => handler(connection_epoch, message),
+        }
+    }
 }
 
 enum ReconnectBufferAction {
@@ -304,8 +316,7 @@ impl WebSocketClientInner {
         Ok(Self {
             config,
             reconnect_headers,
-            message_handler: None, // Stream mode has no handler
-            epoch_handler: None,
+            handler: None, // Stream mode has no handler
             ping_handler: None,
             writer_tx,
             connection_mode,
@@ -317,7 +328,6 @@ impl WebSocketClientInner {
             read_fence,
             write_task,
             backoff,
-            is_stream_mode: true,
             reconnect_max_attempts,
             reconnection_attempt_count: 0,
             auth_tracker,
@@ -337,13 +347,17 @@ impl WebSocketClientInner {
         message_handler: Option<MessageHandler>,
         ping_handler: Option<PingHandler>,
     ) -> Result<Self, TransportError> {
-        Self::connect_url_with_handlers(config, message_handler, None, ping_handler).await
+        Self::connect_url_with_handler(
+            config,
+            message_handler.map(IncomingHandler::Message),
+            ping_handler,
+        )
+        .await
     }
 
-    async fn connect_url_with_handlers(
+    async fn connect_url_with_handler(
         config: WebSocketConfig,
-        message_handler: Option<MessageHandler>,
-        epoch_handler: Option<EpochMessageHandler>,
+        handler: Option<IncomingHandler>,
         ping_handler: Option<PingHandler>,
     ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
@@ -362,8 +376,7 @@ impl WebSocketClientInner {
             )));
         }
 
-        // Capture whether we're in stream mode before moving config
-        let is_stream_mode = message_handler.is_none() && epoch_handler.is_none();
+        let is_stream_mode = handler.is_none();
         let reconnect_max_attempts = config.reconnect_max_attempts;
 
         if !is_stream_mode && config.reconnect_timeout_ms == Some(0) {
@@ -427,8 +440,7 @@ impl WebSocketClientInner {
                 read_fence.clone(),
                 reader,
                 0,
-                message_handler.as_ref(),
-                epoch_handler.as_ref(),
+                handler.as_ref(),
                 ping_handler.as_ref(),
                 config.idle_timeout_ms,
             );
@@ -465,8 +477,7 @@ impl WebSocketClientInner {
         Ok(Self {
             config,
             reconnect_headers,
-            message_handler,
-            epoch_handler,
+            handler,
             ping_handler,
             read_task,
             read_fence,
@@ -478,8 +489,6 @@ impl WebSocketClientInner {
             state_notify,
             reconnect_timeout,
             backoff,
-            // Set stream mode when no message handler (reader not managed by client)
-            is_stream_mode,
             reconnect_max_attempts,
             reconnection_attempt_count: 0,
             auth_tracker,
@@ -558,17 +567,7 @@ impl WebSocketClientInner {
         url: &str,
         headers: Vec<(String, String)>,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
-        let mut request = url.into_client_request().map_err(TransportError::from)?;
-        let req_headers = request.headers_mut();
-
-        for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val)
-                .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
-            let header_name: HeaderName = key
-                .parse()
-                .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
-            req_headers.insert(header_name, header_value);
-        }
+        let request = tungstenite_request(url, headers)?;
 
         let (stream, _resp) = connect_async_with_config(request, None, true)
             .await
@@ -602,17 +601,7 @@ impl WebSocketClientInner {
             }
         };
 
-        let mut request = url.into_client_request().map_err(TransportError::from)?;
-        let req_headers = request.headers_mut();
-
-        for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val)
-                .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
-            let header_name: HeaderName = key
-                .parse()
-                .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
-            req_headers.insert(header_name, header_value);
-        }
+        let request = tungstenite_request(url, headers)?;
 
         let target = WsTarget::parse(url)?;
         let stream = tunnel_via_proxy(&target, &proxy).await?;
@@ -663,17 +652,7 @@ impl WebSocketClientInner {
         url: &str,
         headers: Vec<(String, String)>,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
-        let mut request = url.into_client_request().map_err(TransportError::from)?;
-        let req_headers = request.headers_mut();
-
-        for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val)
-                .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
-            let header_name: HeaderName = key
-                .parse()
-                .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
-            req_headers.insert(header_name, header_value);
-        }
+        let request = tungstenite_request(url, headers)?;
 
         let uri = request.uri();
         let scheme = uri.scheme_str().unwrap_or("ws");
@@ -810,6 +789,24 @@ impl WebSocketClientInner {
         let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws));
         Ok(transport.split())
     }
+}
+
+fn tungstenite_request(
+    url: &str,
+    headers: Vec<(String, String)>,
+) -> Result<Request, TransportError> {
+    let mut request = url.into_client_request().map_err(TransportError::from)?;
+
+    for (key, value) in headers {
+        let value = HeaderValue::from_str(&value)
+            .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
+        let name: HeaderName = key
+            .parse()
+            .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
+        request.headers_mut().insert(name, value);
+    }
+
+    Ok(request)
 }
 
 fn is_connection_drop_transport_error(err: &TransportError) -> bool {
@@ -990,7 +987,7 @@ impl WebSocketClientInner {
     pub async fn reconnect(&mut self) -> Result<(), TransportError> {
         log::debug!("Reconnecting");
 
-        if self.is_stream_mode {
+        if self.handler.is_none() {
             log::warn!(
                 "Auto-reconnect disabled for stream-based WebSocket client; \
                 stream users must manually reconnect by creating a new connection"
@@ -1097,7 +1094,7 @@ impl WebSocketClientInner {
             return Ok(());
         }
 
-        if self.message_handler.is_some() || self.epoch_handler.is_some() {
+        if self.handler.is_some() {
             let read_fence = ReadSessionFence::new();
             self.read_task = Some(Self::spawn_message_handler_task(
                 self.connection_mode.clone(),
@@ -1105,8 +1102,7 @@ impl WebSocketClientInner {
                 read_fence.clone(),
                 reader,
                 connection_epoch,
-                self.message_handler.as_ref(),
-                self.epoch_handler.as_ref(),
+                self.handler.as_ref(),
                 self.ping_handler.as_ref(),
                 self.config.idle_timeout_ms,
             ));
@@ -1144,8 +1140,7 @@ impl WebSocketClientInner {
         read_fence: ReadSessionFence,
         mut reader: MessageReader,
         connection_epoch: u64,
-        message_handler: Option<&MessageHandler>,
-        epoch_handler: Option<&EpochMessageHandler>,
+        handler: Option<&IncomingHandler>,
         ping_handler: Option<&PingHandler>,
         idle_timeout_ms: Option<u64>,
     ) -> tokio::task::JoinHandle<()> {
@@ -1154,9 +1149,7 @@ impl WebSocketClientInner {
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
         let idle_timeout = idle_timeout_ms.map(Duration::from_millis);
 
-        // Clone Arc handlers for the async task
-        let message_handler = message_handler.cloned();
-        let epoch_handler = epoch_handler.cloned();
+        let handler = handler.cloned();
         let ping_handler = ping_handler.cloned();
 
         tokio::task::spawn(async move {
@@ -1197,12 +1190,8 @@ impl WebSocketClientInner {
                             break;
                         }
 
-                        if let Some(ref handler) = message_handler {
-                            handler(Message::Binary(data.clone()));
-                        }
-
-                        if let Some(ref handler) = epoch_handler {
-                            handler(connection_epoch, Message::Binary(data));
+                        if let Some(ref handler) = handler {
+                            handler.handle(connection_epoch, Message::Binary(data));
                         }
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
@@ -1219,12 +1208,8 @@ impl WebSocketClientInner {
                             break;
                         }
 
-                        if let Some(ref handler) = message_handler {
-                            handler(Message::Text(data.clone()));
-                        }
-
-                        if let Some(ref handler) = epoch_handler {
-                            handler(connection_epoch, Message::Text(data));
+                        if let Some(ref handler) = handler {
+                            handler.handle(connection_epoch, Message::Text(data));
                         }
                     }
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
@@ -1317,8 +1302,6 @@ impl WebSocketClientInner {
         let initial_buffer_len = buffer.len();
         log::info!("Sending {initial_buffer_len} buffered messages after reconnection");
 
-        let mut send_error_occurred = false;
-
         while let Some(buffered_msg) = buffer.front() {
             // Clone message before attempting send (to keep in buffer if send fails)
             let msg_to_send = buffered_msg.clone();
@@ -1335,8 +1318,7 @@ impl WebSocketClientInner {
                         buffer.len()
                     );
                 }
-                send_error_occurred = true;
-                break; // Stop processing buffer, remaining messages preserved for next reconnection
+                return true;
             }
 
             // Only remove from buffer after successful send
@@ -1347,7 +1329,7 @@ impl WebSocketClientInner {
             log::info!("Successfully sent all {initial_buffer_len} buffered messages");
         }
 
-        send_error_occurred
+        false
     }
 
     fn can_drain_reconnect_buffer(
@@ -1717,8 +1699,7 @@ impl CleanDrop for WebSocketClientInner {
         }
 
         // Clear handlers to break potential reference cycles
-        self.message_handler = None;
-        self.epoch_handler = None;
+        self.handler = None;
         self.ping_handler = None;
     }
 }
@@ -1736,7 +1717,7 @@ impl Debug for WebSocketClientInner {
                 &ConnectionMode::from_atomic(&self.connection_mode),
             )
             .field("reconnect_timeout", &self.reconnect_timeout)
-            .field("is_stream_mode", &self.is_stream_mode)
+            .field("is_stream_mode", &self.handler.is_none())
             .finish()
     }
 }
@@ -1905,7 +1886,19 @@ impl WebSocketClient {
         ping_handler: Option<PingHandler>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
-        Self::connect_with_handlers(config, message_handler, None, ping_handler, rate_limiter).await
+        let message_handler = message_handler.ok_or_else(|| {
+            TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Handler mode requires message_handler to be set. Use connect_stream() for stream mode without a handler.",
+            ))
+        })?;
+        Self::connect_with_handler(
+            config,
+            IncomingHandler::Message(message_handler),
+            ping_handler,
+            rate_limiter,
+        )
+        .await
     }
 
     /// Creates a handler-mode client whose incoming messages carry connection ownership.
@@ -1923,38 +1916,25 @@ impl WebSocketClient {
         ping_handler: Option<PingHandler>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
-        Self::connect_with_handlers(
+        Self::connect_with_handler(
             config,
-            None,
-            Some(epoch_handler),
+            IncomingHandler::Epoch(epoch_handler),
             ping_handler,
             rate_limiter,
         )
         .await
     }
 
-    async fn connect_with_handlers(
+    async fn connect_with_handler(
         config: WebSocketConfig,
-        message_handler: Option<MessageHandler>,
-        epoch_handler: Option<EpochMessageHandler>,
+        handler: IncomingHandler,
         ping_handler: Option<PingHandler>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
-        if message_handler.is_none() && epoch_handler.is_none() {
-            return Err(TransportError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Handler mode requires message_handler to be set. Use connect_stream() for stream mode without a handler.",
-            )));
-        }
-
         log::debug!("Connecting");
-        let inner = WebSocketClientInner::connect_url_with_handlers(
-            config,
-            message_handler,
-            epoch_handler,
-            ping_handler,
-        )
-        .await?;
+        let inner =
+            WebSocketClientInner::connect_url_with_handler(config, Some(handler), ping_handler)
+                .await?;
         let connection_mode = inner.connection_mode.clone();
         let connection_epoch = Arc::clone(&inner.connection_epoch);
         let state_notify = inner.state_notify.clone();
@@ -2423,7 +2403,7 @@ impl WebSocketClient {
                 }
 
                 if mode.is_active() && !inner.is_alive() {
-                    let target = if inner.is_stream_mode {
+                    let target = if inner.handler.is_none() {
                         ConnectionMode::Closed
                     } else {
                         ConnectionMode::Reconnect
@@ -2534,23 +2514,23 @@ impl WebSocketClient {
                             state_notify.notify_waiters();
 
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
-                                if let Some(ref handler) = inner.message_handler {
-                                    let reconnected_msg =
-                                        Message::Text(RECONNECTED.to_string().into());
-                                    handler(reconnected_msg);
-                                    log::debug!("Sent reconnected message to handler");
-                                }
-
-                                if let Some(ref handler) = inner.epoch_handler {
+                                if let Some(ref handler) = inner.handler {
                                     let connection_epoch =
                                         inner.connection_epoch.load(Ordering::Acquire);
                                     let reconnected_msg =
                                         Message::Text(RECONNECTED.to_string().into());
-                                    handler(connection_epoch, reconnected_msg);
-                                    log::debug!(
-                                        "Sent reconnected message to epoch handler: \
-                                         epoch={connection_epoch}",
-                                    );
+                                    handler.handle(connection_epoch, reconnected_msg);
+                                    match handler {
+                                        IncomingHandler::Message(_) => {
+                                            log::debug!("Sent reconnected message to handler");
+                                        }
+                                        IncomingHandler::Epoch(_) => {
+                                            log::debug!(
+                                                "Sent reconnected message to epoch handler: \
+                                                 epoch={connection_epoch}",
+                                            );
+                                        }
+                                    }
                                 }
 
                                 log::debug!("Reconnected successfully");
@@ -3300,7 +3280,7 @@ mod rust_tests {
     #[rstest]
     #[tokio::test]
     async fn test_stream_mode_disables_auto_reconnect() {
-        // Test that stream-based clients (created via connect_stream) set is_stream_mode flag
+        // Test that stream-based clients do not retain an internal message handler
         // and that reconnect() transitions to CLOSED state for stream mode
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -3336,7 +3316,7 @@ mod rust_tests {
 
         // Note: We can't easily test the reconnect behavior from the outside since
         // the inner client is private. The key fix is that WebSocketClientInner
-        // now has is_stream_mode=true for connect_stream, and reconnect() will
+        // now has no internal handler for connect_stream, and reconnect() will
         // transition to CLOSED state instead of creating a new reader that gets dropped.
         // This is tested implicitly by the fact that stream users won't get stuck
         // in an infinite reconnect loop.
@@ -4121,7 +4101,7 @@ mod rust_tests {
     #[tokio::test]
     async fn test_client_without_handler_sets_stream_mode() {
         // Test that if a client is created without a handler via connect_url,
-        // it properly sets is_stream_mode=true to prevent zombie connections
+        // it keeps the internal handler empty to prevent zombie connections
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -4156,10 +4136,10 @@ mod rust_tests {
             .await
             .unwrap();
 
-        // Verify is_stream_mode is true when no handler
+        // Verify stream mode does not retain an internal handler
         assert!(
-            inner.is_stream_mode,
-            "Client without handler should have is_stream_mode=true"
+            inner.handler.is_none(),
+            "Client without handler should not retain an internal handler"
         );
 
         // Verify that when stream mode is enabled, reconnection is disabled
@@ -4859,6 +4839,7 @@ mod rust_tests {
         let ping_count_clone = Arc::clone(&ping_count);
         let message_handler: MessageHandler =
             Arc::new(move |_| _ = message_count_clone.fetch_add(1, Ordering::SeqCst));
+        let message_handler = IncomingHandler::Message(message_handler);
         let ping_handler: PingHandler =
             Arc::new(move |_| _ = ping_count_clone.fetch_add(1, Ordering::SeqCst));
 
@@ -4869,7 +4850,6 @@ mod rust_tests {
             reader,
             0,
             Some(&message_handler),
-            None,
             Some(&ping_handler),
             None,
         );

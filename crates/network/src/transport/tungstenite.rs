@@ -29,7 +29,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{Sink, Stream};
+use futures_util::{Sink, Stream};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
     WebSocketStream,

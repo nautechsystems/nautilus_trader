@@ -32,7 +32,7 @@ use std::{
 };
 
 use bytes::{BufMut, Bytes, BytesMut};
-use futures::{Sink, Stream};
+use futures_util::{Sink, Stream};
 use sockudo_ws::{
     HandshakeResult,
     error::{CloseReason as SockudoCloseReason, Error as SockudoError},

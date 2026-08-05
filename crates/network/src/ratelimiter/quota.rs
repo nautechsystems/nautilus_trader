@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{num::NonZeroU32, prelude::v1::*, time::Duration};
+use std::{num::NonZeroU32, time::Duration};
 
 use super::nanos::Nanos;
 
@@ -170,32 +170,3 @@ impl Quota {
         }
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use nonzero_ext::nonzero;
-
-//     use super::*;
-//     use rstest::rstest;
-
-//     #[rstest]
-//     fn time_multiples() {
-//         let hourly = Quota::per_hour(nonzero!(1u32));
-//         let minutely = Quota::per_minute(nonzero!(1u32));
-//         let secondly = Quota::per_second(nonzero!(1u32));
-
-//         assert_eq!(
-//             hourly.replenish_interval() / 60,
-//             minutely.replenish_interval()
-//         );
-//         assert_eq!(
-//             minutely.replenish_interval() / 60,
-//             secondly.replenish_interval()
-//         );
-//     }
-
-//     #[rstest]
-//     fn period_error_cases() {
-//         assert!(Quota::with_period(Duration::from_secs(0)).is_none());
-//     }
-// }

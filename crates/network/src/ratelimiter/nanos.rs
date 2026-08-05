@@ -18,7 +18,6 @@
 use std::{
     fmt::Debug,
     ops::{Add, Div, Mul},
-    prelude::v1::*,
     time::Duration,
 };
 

@@ -222,7 +222,7 @@ where
                 attempt_future.await
             }?;
 
-            match result {
+            let (e, minimum_delay, timed_out) = match result {
                 Ok(Ok(success)) => {
                     if attempt > 0 {
                         log::trace!(
@@ -233,152 +233,117 @@ where
                     return Ok(success);
                 }
                 Ok(Err(e)) => {
-                    if !should_retry(&e) {
-                        log::trace!("Operation '{operation_name}' non-retryable error: {e}");
-                        return Err(e);
-                    }
-
-                    if attempt >= self.config.max_retries {
-                        log::trace!(
-                            "Operation '{operation_name}' retries exhausted after {} attempts: {e}",
-                            attempt + 1
-                        );
-                        return Err(e);
-                    }
-
                     let minimum_delay = retry_delay(&e);
-                    let mut delay = backoff.next_duration();
-
-                    if let Some(minimum_delay) = minimum_delay {
-                        delay = delay.max(minimum_delay);
-                    }
-
-                    if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
-                        let elapsed = start_time.elapsed();
-                        let remaining =
-                            Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
-
-                        if remaining.is_zero() {
-                            if minimum_delay.is_some() {
-                                return Err(e);
-                            }
-                            return Err(create_error(format!(
-                                "{}: last error: {e}",
-                                self.budget_exceeded_msg(attempt)
-                            )));
-                        }
-
-                        if minimum_delay.is_some() && delay >= remaining {
-                            return Err(e);
-                        }
-                        delay = delay.min(remaining);
-                    }
-
-                    debug_assert!(
-                        minimum_delay.is_none_or(|minimum_delay| delay >= minimum_delay),
-                        "retry delay must honor the error-provided minimum"
-                    );
-
-                    log::trace!(
-                        "Operation '{operation_name}' attempt {} failed, retrying in {}ms: {e}",
-                        attempt + 1,
-                        delay.as_millis()
-                    );
-
-                    // Yield even on zero-delay to avoid busy-wait loop
-                    if delay.is_zero() {
-                        tokio::task::yield_now().await;
-
-                        if minimum_delay.is_some() {
-                            last_delayed_error = Some(e);
-                        }
-                        attempt += 1;
-                        continue;
-                    }
-
-                    if let Some(token) = cancel {
-                        tokio::select! {
-                            biased;
-                            () = dst::time::sleep(delay) => {},
-                            () = token.cancelled() => {
-                                log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
-                                return Err(create_error("canceled".to_string()));
-                            }
-                        }
-                    } else {
-                        dst::time::sleep(delay).await;
-                    }
-
-                    if minimum_delay.is_some() {
-                        last_delayed_error = Some(e);
-                    }
-
-                    attempt += 1;
+                    (e, minimum_delay, false)
                 }
-                Err(_) => {
-                    let e = create_error(format!(
+                Err(_) => (
+                    create_error(format!(
                         "Timed out after {}ms",
                         self.config.operation_timeout_ms.unwrap_or(0)
-                    ));
+                    )),
+                    None,
+                    true,
+                ),
+            };
 
-                    if !should_retry(&e) {
-                        log::trace!("Operation '{operation_name}' non-retryable timeout: {e}");
-                        return Err(e);
-                    }
-
-                    if attempt >= self.config.max_retries {
-                        log::trace!(
-                            "Operation '{operation_name}' retries exhausted after timeout ({} attempts): {e}",
-                            attempt + 1
-                        );
-                        return Err(e);
-                    }
-
-                    let mut delay = backoff.next_duration();
-
-                    if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
-                        let elapsed = start_time.elapsed();
-                        let remaining =
-                            Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
-
-                        if remaining.is_zero() {
-                            return Err(create_error(format!(
-                                "{}: last error: {e}",
-                                self.budget_exceeded_msg(attempt)
-                            )));
-                        }
-
-                        delay = delay.min(remaining);
-                    }
-
-                    log::trace!(
-                        "Operation '{operation_name}' attempt {} timed out, retrying in {}ms: {e}",
-                        attempt + 1,
-                        delay.as_millis()
-                    );
-
-                    // Yield even on zero-delay to avoid busy-wait loop
-                    if delay.is_zero() {
-                        tokio::task::yield_now().await;
-                        attempt += 1;
-                        continue;
-                    }
-
-                    if let Some(token) = cancel {
-                        tokio::select! {
-                            biased;
-                            () = dst::time::sleep(delay) => {},
-                            () = token.cancelled() => {
-                                log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
-                                return Err(create_error("canceled".to_string()));
-                            }
-                        }
-                    } else {
-                        dst::time::sleep(delay).await;
-                    }
-                    attempt += 1;
+            if !should_retry(&e) {
+                if timed_out {
+                    log::trace!("Operation '{operation_name}' non-retryable timeout: {e}");
+                } else {
+                    log::trace!("Operation '{operation_name}' non-retryable error: {e}");
                 }
+                return Err(e);
             }
+
+            if attempt >= self.config.max_retries {
+                if timed_out {
+                    log::trace!(
+                        "Operation '{operation_name}' retries exhausted after timeout ({} attempts): {e}",
+                        attempt + 1
+                    );
+                } else {
+                    log::trace!(
+                        "Operation '{operation_name}' retries exhausted after {} attempts: {e}",
+                        attempt + 1
+                    );
+                }
+                return Err(e);
+            }
+
+            let mut delay = backoff.next_duration();
+
+            if let Some(minimum_delay) = minimum_delay {
+                delay = delay.max(minimum_delay);
+            }
+
+            if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
+                let elapsed = start_time.elapsed();
+                let remaining = Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
+
+                if remaining.is_zero() {
+                    if minimum_delay.is_some() {
+                        return Err(e);
+                    }
+                    return Err(create_error(format!(
+                        "{}: last error: {e}",
+                        self.budget_exceeded_msg(attempt)
+                    )));
+                }
+
+                if minimum_delay.is_some() && delay >= remaining {
+                    return Err(e);
+                }
+                delay = delay.min(remaining);
+            }
+
+            debug_assert!(
+                minimum_delay.is_none_or(|minimum_delay| delay >= minimum_delay),
+                "retry delay must honor the error-provided minimum"
+            );
+
+            if timed_out {
+                log::trace!(
+                    "Operation '{operation_name}' attempt {} timed out, retrying in {}ms: {e}",
+                    attempt + 1,
+                    delay.as_millis()
+                );
+            } else {
+                log::trace!(
+                    "Operation '{operation_name}' attempt {} failed, retrying in {}ms: {e}",
+                    attempt + 1,
+                    delay.as_millis()
+                );
+            }
+
+            // Yield even on zero-delay to avoid busy-wait loop
+            if delay.is_zero() {
+                tokio::task::yield_now().await;
+
+                if minimum_delay.is_some() {
+                    last_delayed_error = Some(e);
+                }
+                attempt += 1;
+                continue;
+            }
+
+            if let Some(token) = cancel {
+                tokio::select! {
+                    biased;
+                    () = dst::time::sleep(delay) => {},
+                    () = token.cancelled() => {
+                        log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
+                        return Err(create_error("canceled".to_string()));
+                    }
+                }
+            } else {
+                dst::time::sleep(delay).await;
+            }
+
+            if minimum_delay.is_some() {
+                last_delayed_error = Some(e);
+            }
+
+            attempt += 1;
         }
     }
 
@@ -1022,7 +987,7 @@ mod tests {
             &token,
         ));
 
-        assert!(futures::poll!(&mut operation).is_pending());
+        assert!(futures_util::poll!(&mut operation).is_pending());
         advance_clock(Duration::from_millis(100)).await;
         token.cancel();
 

@@ -17,7 +17,7 @@
 
 use std::pin::Pin;
 
-use futures::{Sink, Stream};
+use futures_util::{Sink, Stream};
 
 use super::{error::TransportError, message::Message};
 
@@ -27,8 +27,8 @@ use super::{error::TransportError, message::Message};
 /// reconnecting client, the auth tracker, the subscription manager) consume.
 /// Each transport backend implements it for its own native stream type.
 ///
-/// The trait combines [`futures::Stream`] for incoming messages and
-/// [`futures::Sink`] for outgoing messages, both keyed off the neutral
+/// The trait combines [`futures_util::Stream`] for incoming messages and
+/// [`futures_util::Sink`] for outgoing messages, both keyed off the neutral
 /// [`Message`] type and the neutral [`TransportError`].
 pub trait WsTransport:
     Stream<Item = Result<Message, TransportError>>

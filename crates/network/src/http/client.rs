@@ -169,23 +169,21 @@ impl HttpClient {
             .build()
             .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
 
-        // Pre-intern header keys as HeaderName, keeping both vectors aligned,
-        // an invalid key is an error: a silent drop would make response extraction read nothing.
-        let (valid_keys, header_names): (Vec<String>, Vec<HeaderName>) = header_keys
+        // Pre-intern header keys as HeaderName. An invalid key is an error: a silent drop would
+        // make response extraction read nothing.
+        let response_headers = header_keys
             .into_iter()
-            .map(|k| {
-                HeaderName::from_str(&k)
-                    .map(|name| (k.clone(), name))
-                    .map_err(|e| HttpClientError::Error(format!("Invalid header key '{k}': {e}")))
+            .map(|key| match HeaderName::from_str(&key) {
+                Ok(name) => Ok((key, name)),
+                Err(e) => Err(HttpClientError::Error(format!(
+                    "Invalid header key '{key}': {e}"
+                ))),
             })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .unzip();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let client = InnerHttpClient {
             client,
-            header_keys: Arc::from(valid_keys),
-            header_names: Arc::from(header_names),
+            response_headers: Arc::from(response_headers),
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         };
 
@@ -372,12 +370,11 @@ impl HttpClient {
 /// extract from the response.
 ///
 /// The client returns an [`HttpResponse`]. The client filters only the key value
-/// for the give `header_keys`.
+/// for the given `header_keys`.
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
-    pub(crate) header_keys: Arc<[String]>,
-    pub(crate) header_names: Arc<[HeaderName]>,
+    pub(crate) response_headers: Arc<[(String, HeaderName)]>,
     /// Maximum response body size in bytes; bodies exceeding this are rejected.
     pub(crate) max_response_bytes: usize,
 }
@@ -505,14 +502,16 @@ impl InnerHttpClient {
         log::trace!("{response:?}");
 
         let resp_headers = response.headers();
-        let mut headers =
-            HashMap::with_capacity(std::cmp::min(self.header_names.len(), resp_headers.len()));
+        let mut headers = HashMap::with_capacity(std::cmp::min(
+            self.response_headers.len(),
+            resp_headers.len(),
+        ));
 
-        for (name, key_str) in self.header_names.iter().zip(self.header_keys.iter()) {
+        for (key, name) in self.response_headers.iter() {
             if let Some(val) = resp_headers.get(name)
                 && let Ok(v) = val.to_str()
             {
-                headers.insert(key_str.clone(), v.to_owned());
+                headers.insert(key.clone(), v.to_owned());
             }
         }
 
@@ -575,8 +574,7 @@ impl Default for InnerHttpClient {
         let client = reqwest::Client::new();
         Self {
             client,
-            header_keys: Arc::default(),
-            header_names: Arc::default(),
+            response_headers: Arc::default(),
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         }
     }

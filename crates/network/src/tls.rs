@@ -15,108 +15,25 @@
 
 //! Module for wrapping raw socket streams with TLS encryption.
 
-use std::{fs::File, io::BufReader, path::Path};
+use std::{convert::TryFrom, fs::File, io::BufReader, path::Path, sync::Arc};
 
-use nautilus_cryptography::providers::install_cryptographic_provider;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use nautilus_cryptography::{providers::install_cryptographic_provider, tls::create_tls_config};
+use rustls::{
+    ClientConfig,
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::TlsConnector;
 use tokio_tungstenite::{
     MaybeTlsStream,
-    tungstenite::{Error, handshake::client::Request, stream::Mode},
+    tungstenite::{Error, error::TlsError, handshake::client::Request, stream::Mode},
 };
-
-/// A connector that can be used when establishing connections, allowing to control whether
-/// `native-tls` or `rustls` is used to create a TLS connection. Or TLS can be disabled with the
-/// `Plain` variant.
-#[non_exhaustive]
-#[derive(Clone)]
-#[allow(dead_code)]
-pub(crate) enum Connector {
-    /// No TLS connection.
-    Plain,
-    /// TLS connection using `rustls`.
-    Rustls(std::sync::Arc<rustls::ClientConfig>),
-}
-
-mod encryption {
-
-    pub(super) mod rustls {
-        use std::{convert::TryFrom, sync::Arc};
-
-        use nautilus_cryptography::tls::create_tls_config;
-        use rustls::{ClientConfig, pki_types::ServerName};
-        use tokio::io::{AsyncRead, AsyncWrite};
-        use tokio_rustls::TlsConnector as TokioTlsConnector;
-        use tokio_tungstenite::{
-            MaybeTlsStream,
-            tungstenite::{Error, error::TlsError, stream::Mode},
-        };
-
-        pub(crate) async fn wrap_stream<S>(
-            socket: S,
-            domain: String,
-            mode: Mode,
-            tls_connector: Option<Arc<ClientConfig>>,
-        ) -> Result<MaybeTlsStream<S>, Error>
-        where
-            S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
-        {
-            match mode {
-                Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
-                Mode::Tls => {
-                    let config: Arc<ClientConfig> = match tls_connector {
-                        Some(config) => config,
-                        None => create_tls_config(),
-                    };
-                    let domain = ServerName::try_from(domain.as_str())
-                        .map_err(|_| TlsError::InvalidDnsName)?
-                        .to_owned();
-                    let stream = TokioTlsConnector::from(config);
-                    let connected = stream.connect(domain, socket).await;
-
-                    match connected {
-                        Err(e) => Err(Error::Io(e)),
-                        Ok(s) => Ok(MaybeTlsStream::Rustls(s)),
-                    }
-                }
-            }
-        }
-    }
-
-    pub(super) mod plain {
-        use tokio::io::{AsyncRead, AsyncWrite};
-        use tokio_tungstenite::{
-            MaybeTlsStream,
-            tungstenite::{
-                error::{Error, UrlError},
-                stream::Mode,
-            },
-        };
-
-        #[expect(
-            clippy::unused_async,
-            reason = "signature mirrors the rustls variant which is genuinely async"
-        )]
-        pub(crate) async fn wrap_stream<S>(
-            socket: S,
-            mode: Mode,
-        ) -> Result<MaybeTlsStream<S>, Error>
-        where
-            S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
-        {
-            match mode {
-                Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
-                Mode::Tls => Err(Error::Url(UrlError::TlsFeatureNotEnabled)),
-            }
-        }
-    }
-}
 
 pub(crate) async fn tcp_tls<S>(
     request: &Request,
     mode: Mode,
     stream: S,
-    connector: Option<Connector>,
+    connector: Option<Arc<ClientConfig>>,
 ) -> Result<MaybeTlsStream<S>, Error>
 where
     S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -124,14 +41,28 @@ where
 {
     let domain = domain(request)?;
 
-    match connector {
-        Some(conn) => match conn {
-            Connector::Rustls(conn) => {
-                self::encryption::rustls::wrap_stream(stream, domain, mode, Some(conn)).await
-            }
-            Connector::Plain => self::encryption::plain::wrap_stream(stream, mode).await,
-        },
-        None => self::encryption::rustls::wrap_stream(stream, domain, mode, None).await,
+    wrap_stream(stream, domain, mode, connector).await
+}
+
+async fn wrap_stream<S>(
+    socket: S,
+    domain: String,
+    mode: Mode,
+    tls_config: Option<Arc<ClientConfig>>,
+) -> Result<MaybeTlsStream<S>, Error>
+where
+    S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
+{
+    match mode {
+        Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
+        Mode::Tls => {
+            let config = tls_config.unwrap_or_else(create_tls_config);
+            let domain = ServerName::try_from(domain.as_str())
+                .map_err(|_| TlsError::InvalidDnsName)?
+                .to_owned();
+            let stream = TlsConnector::from(config).connect(domain, socket).await?;
+            Ok(MaybeTlsStream::Rustls(stream))
+        }
     }
 }
 

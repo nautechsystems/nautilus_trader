@@ -125,35 +125,12 @@ impl ExponentialBackoff {
         let floor = std::cmp::min(self.delay_initial, self.delay_max);
         let clamped_delay = delay_with_jitter.clamp(floor, self.delay_max);
 
-        // Prepare the next delay with overflow protection
-        // Keep all math in u128 to avoid silent truncation
-        let current_nanos = self.delay_current.as_nanos();
-        let max_nanos = self.delay_max.as_nanos();
-
-        // Use checked floating point multiplication to prevent overflow
-        let next_nanos_u128 = if current_nanos > u128::from(u64::MAX) {
-            // Current is already at max representable value, cap to max
-            max_nanos
-        } else {
-            let current_u64 = current_nanos as u64;
-            let next_f64 = current_u64 as f64 * self.factor;
-
-            // Check for overflow in the float result
-            if next_f64 > u64::MAX as f64 {
-                u128::from(u64::MAX)
-            } else {
-                u128::from(next_f64 as u64)
-            }
-        };
-
-        let clamped = std::cmp::min(next_nanos_u128, max_nanos);
-        let final_nanos = if clamped > u128::from(u64::MAX) {
-            u64::MAX
-        } else {
-            clamped as u64
-        };
-
-        self.delay_current = Duration::from_nanos(final_nanos);
+        // The constructor guarantees both values fit in u64 nanoseconds. Float-to-integer casts
+        // saturate, so the final min preserves the configured cap even if multiplication overflows.
+        let current_nanos = self.delay_current.as_nanos() as u64;
+        let max_nanos = self.delay_max.as_nanos() as u64;
+        let next_nanos = (current_nanos as f64 * self.factor) as u64;
+        self.delay_current = Duration::from_nanos(next_nanos.min(max_nanos));
 
         clamped_delay
     }
