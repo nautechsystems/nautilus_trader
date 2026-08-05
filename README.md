@@ -2,9 +2,10 @@
 
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
+[![crates.io](https://img.shields.io/crates/v/nautilus-core?logo=rust)](https://crates.io/crates/nautilus-core)
+[![rustc](https://img.shields.io/crates/msrv/nautilus-core?color=ea7233&logo=rust&label=rustc)](https://crates.io/crates/nautilus-core)
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
-![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://img.shields.io/pepy/dt/nautilus-trader?color=blue)](https://pepy.tech/projects/nautilus-trader)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
@@ -82,9 +83,10 @@ execution, while Python serves as the control plane. The same architecture, exec
 semantics, and time model operate across both environments, allowing strategies to move
 from research to production without reimplementation.
 
-Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust-native v2 runtime.
-The legacy Cython v1 core remains supported during the v2 release-candidate phase.
-No Rust toolchain is required at install time.
+Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust‑native v2 runtime.
+During the v2 transition, v1 receives only critical security backports on the `develop_v1` branch.
+See the [v2 migration guide](/MIGRATION_V2.md) for migration steps and compatibility details.
+No Rust toolchain is required to install prebuilt wheels.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -138,7 +140,7 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) docu
 ## Roadmap
 
 The [Roadmap](/ROADMAP.md) outlines NautilusTrader's strategic direction.
-Current priorities include completing the Rust-native core, improving documentation, and enhancing code ergonomics.
+Current priorities include stabilizing the Rust‑native core, improving documentation, and enhancing code ergonomics.
 
 The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
 UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
@@ -228,9 +230,7 @@ which differ in their internal bit-width and maximum decimal precision.
 
 > [!NOTE]
 >
-> By default, the official Python wheels ship in high-precision (128-bit) mode on Linux and macOS.
-> On Windows, only standard-precision (64-bit) Python wheels are available because MSVC's C/C++ frontend
-> does not support `__int128`, preventing the Cython/FFI layer from handling 128-bit integers.
+> By default, the official Python wheels ship in high‑precision (128‑bit) mode on all supported platforms.
 >
 > For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
 > `i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable
@@ -278,14 +278,13 @@ The v2 release-candidate wheels use `2.0.0rcN` versions and are intended for com
 before the final `2.0.0` release. We do not recommend using release candidates in production
 environments, such as live trading controlling real capital.
 
-Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`,
-`ib`, `polymarket`, `visualization`):
+Install optional dependencies for interactive tearsheets and charts with the `visualization` extra:
 
 ```bash
-pip install -U "nautilus_trader[docker,ib]"
+pip install -U "nautilus_trader[visualization]"
 ```
 
-See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for the full list of available extras.
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for details.
 
 ### From the Nautech Systems package index
 
@@ -308,25 +307,22 @@ pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/si
 
 #### Development wheels
 
-The main package index publishes v1 development wheels from both the `nightly` and `develop`
+The main package index publishes v2 development wheels from both the `nightly` and `develop`
 branches, allowing users to test features and fixes ahead of stable releases.
 
 This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+- `develop` wheels use the version suffix `.devYYYYMMDD+run`.
+- `nightly` wheels use `.devYYYYMMDD` when the base version is already a pre‑release, and
+  `aYYYYMMDD` otherwise.
 
-| Platform           | v1 Nightly | v1 Develop |
-| :----------------- | :--------- | :--------- |
-| `Linux (x86_64)`   | ✓          | ✓          |
-| `Linux (ARM64)`    | ✓          | -          |
-| `macOS (ARM64)`    | ✓          | -          |
-| `Windows (x86_64)` | ✓          | -          |
-
-**Note**: The nightly merge publishes v1 and v2 wheels for all listed platforms, while `develop`
-publishes Linux x86_64 wheels only. Outside those publication builds, cross-platform nightly
-validation is v2-only; the scheduled nightly test workflow does not repeat the v1 platform matrix.
+| Platform           | Develop | Nightly |
+| :----------------- | :------ | :------ |
+| `Linux (x86_64)`   | ✓       | ✓       |
+| `Linux (ARM64)`    | -       | ✓       |
+| `macOS (ARM64)`    | -       | ✓       |
+| `Windows (x86_64)` | -       | ✓       |
 
 > [!WARNING]
 >
@@ -340,12 +336,6 @@ To install the latest available pre-release (including development wheels):
 
 ```bash
 pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
-```
-
-To install a specific development wheel (e.g., `1.221.0a20251026` for October 26, 2025):
-
-```bash
-pip install nautilus_trader==1.221.0a20251026 --index-url=https://packages.nautechsystems.io/simple
 ```
 
 #### Available versions
@@ -364,13 +354,14 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | s
 
 #### Branch updates
 
-- `develop` branch wheels (`.dev`): Build and publish continuously with every merged commit.
-- `nightly` branch wheels (`a`): Build and publish daily when we automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
+- `develop` branch wheels (`.devYYYYMMDD+run`): Build and publish continuously with every merged commit.
+- `nightly` branch wheels (`.devYYYYMMDD` or `aYYYYMMDD`): Build and publish daily when we
+  automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
-- `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
-- `nightly` branch wheels (`a`): We retain only the 30 most recent wheel builds.
+- `develop` branch wheels: We retain only the most recent wheel build.
+- `nightly` branch wheels: We retain only the 30 most recent publication dates per platform.
 
 #### Verifying build provenance
 
@@ -458,7 +449,7 @@ It's possible to install from source using pip if you first install the build de
         irm https://astral.sh/uv/install.ps1 | iex
         ```
 
-5. Clone the source with `git`, and install from the project's root directory:
+5. Clone the source with `git`, then sync its dependencies from the project root:
 
     ```bash
     git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
@@ -492,6 +483,12 @@ It's possible to install from source using pip if you first install the build de
 > The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
 > Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 
+7. Build and install NautilusTrader in release mode:
+
+    ```bash
+    make build
+    ```
+
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
 ## Redis
@@ -514,7 +511,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make clean`: Deletes build artifacts, caches, and build directories.
 - `make distclean`: **CAUTION** Removes all artifacts not in the git index when run with
   `FORCE=1`. This includes source files which have not been `git add`ed.
-- `make docs`: Builds the documentation HTML using Sphinx.
+- `make docs`: Builds the Python documentation with Sphinx and the Rust documentation with Cargo.
 - `make pre-commit`: Runs the pre-commit checks over all files.
 - `make ruff`: Runs Ruff over all files using `python/pyproject.toml` (with autofix).
 - `make pytest`: Runs all tests with `pytest`.
@@ -530,13 +527,14 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 ## Examples
 
-Indicators and strategies can be developed in Python, Cython, or Rust. For performance and
+Indicators and strategies can be developed in Python or Rust. For performance and
 latency-sensitive applications, we recommend Rust. Below are some examples:
 
 - [indicator](/examples/backtest/example_07_using_indicators/strategy.py) example written in Python.
 - [indicator](/python/nautilus_trader/indicators/) implementations exposed through PyO3.
 - [strategy](/examples/backtest/example_01_load_bars_from_custom_csv/strategy.py) example written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
+- [EMA crossover backtest](/crates/backtest/examples/engine_ema_cross.rs) example written in Rust.
 
 ## Docker
 

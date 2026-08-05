@@ -95,7 +95,7 @@ nautilus-trading = { path = "crates/trading", version = "0.62.0" }
 # -----------------------------------------------------------------------------
 # Adapters
 #
-# Note: default-features = false to control high-precision separately (not supported on Windows)
+# Note: default-features = false keeps high-precision selection explicit
 # -----------------------------------------------------------------------------
 nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.62.0" }
 nautilus-betfair = { path = "crates/adapters/betfair", version = "0.62.0", default-features = false }

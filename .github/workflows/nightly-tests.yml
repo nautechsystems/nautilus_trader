@@ -16,9 +16,9 @@ on:
 jobs:
   standard-precision:
     name: standard precision clippy
-    # Standard precision (64-bit) ships in the Windows wheels, which are also nightly-only.
-    # Clippy never sees this configuration on PRs, so lints that fire only when the raw
-    # types are u64/i64 reach develop unnoticed.
+    # Standard precision remains a supported Rust feature configuration,
+    # but Clippy does not see it on PRs, so lints that fire only when the raw
+    # types are u64/i64 can reach develop unnoticed.
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
     env:
       # Outside the workspace so it survives actions/checkout's git clean -ffdx,

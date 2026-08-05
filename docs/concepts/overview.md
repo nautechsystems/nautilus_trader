@@ -245,9 +245,8 @@ compilation.
 - `Quantity`
 - `Money`
 
-Official Python wheels use high‑precision mode on Linux and macOS, and standard‑precision mode on
-Windows. Pure Rust builds default to standard precision unless the `high-precision` feature is
-enabled.
+Official Python wheels use high‑precision mode on all supported platforms. Pure Rust builds default
+to standard precision unless the `high-precision` feature is enabled.
 
 ### High-precision mode (128-bit)
 
