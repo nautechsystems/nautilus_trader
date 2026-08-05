@@ -22,6 +22,7 @@ pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
     deserialize_optional_decimal_str, deserialize_string_to_u8,
 };
+use serde::{Deserialize, de::Error};
 
 /// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
 ///
@@ -75,6 +76,27 @@ pub mod bool_or_int {
                 "expected bool or 0/1, received {n}"
             ))),
         }
+    }
+}
+
+/// Deserializes an `i32` from either a JSON integer or base-10 integer string.
+///
+/// Bybit order responses can encode `smpGroup` in both forms.
+pub(crate) fn deserialize_i32_or_string<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<i32, D::Error> {
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum I32OrString {
+        Int(i32),
+        String(String),
+    }
+
+    match I32OrString::deserialize(d)? {
+        I32OrString::Int(value) => Ok(value),
+        I32OrString::String(value) => value
+            .parse()
+            .map_err(|e| D::Error::custom(format!("expected i32, received {value:?}: {e}"))),
     }
 }
 

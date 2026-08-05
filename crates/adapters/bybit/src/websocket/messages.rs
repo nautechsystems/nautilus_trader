@@ -29,8 +29,8 @@ use crate::{
             BybitWsOrderRequestOp,
         },
         parse::{
-            deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-            deserialize_optional_decimal_str,
+            deserialize_decimal_or_zero, deserialize_i32_or_string,
+            deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -792,6 +792,7 @@ pub struct BybitWsAccountOrder {
     pub close_on_trigger: bool,
     pub place_type: Ustr,
     pub smp_type: BybitSmpType,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub fee_currency: Ustr,
@@ -1328,6 +1329,18 @@ mod tests {
         assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
         assert_eq!(order.create_type, Some(BybitCreateType::CreateByUser));
         assert_eq!(order.side, BybitOrderSide::Buy);
+        assert_eq!(order.smp_group, 0);
+    }
+
+    #[rstest]
+    fn deserialize_account_order_frame_accepts_string_smp_group() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_order.json")).unwrap();
+        json["data"][0]["smpGroup"] = Value::String("123456789".to_string());
+
+        let frame: BybitWsAccountOrderMsg = serde_json::from_value(json).unwrap();
+
+        assert_eq!(frame.data[0].smp_group, 123_456_789);
     }
 
     #[rstest]

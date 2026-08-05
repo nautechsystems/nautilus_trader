@@ -34,8 +34,8 @@ use crate::common::{
         SpotPriceFilter,
     },
     parse::{
-        bool_or_int, deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-        deserialize_string_to_u8, masked_secret, on_off_bool,
+        bool_or_int, deserialize_decimal_or_zero, deserialize_i32_or_string,
+        deserialize_optional_decimal_or_zero, deserialize_string_to_u8, masked_secret, on_off_bool,
     },
 };
 
@@ -910,6 +910,7 @@ pub struct BybitOrder {
     pub reduce_only: bool,
     pub close_on_trigger: bool,
     pub smp_type: BybitSmpType,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub tpsl_mode: Option<BybitTpSlMode>,
@@ -1980,6 +1981,40 @@ mod tests {
         assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
         assert_eq!(order.order_type, BybitOrderType::Limit);
         assert_eq!(order.smp_type, BybitSmpType::None);
+        assert_eq!(order.smp_group, 0);
+    }
+
+    #[rstest]
+    fn deserialize_order_response_accepts_string_smp_group() {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        json["result"]["list"][0]["smpGroup"] = serde_json::Value::String("123456789".to_string());
+
+        let response: BybitOrderHistoryResponse = serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.result.list[0].smp_group, 123_456_789);
+    }
+
+    #[rstest]
+    #[case::malformed(
+        "invalid",
+        "expected i32, received \"invalid\": invalid digit found in string"
+    )]
+    #[case::out_of_range(
+        "2147483648",
+        "expected i32, received \"2147483648\": number too large to fit in target type"
+    )]
+    fn deserialize_order_response_rejects_invalid_string_smp_group(
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        json["result"]["list"][0]["smpGroup"] = serde_json::Value::String(value.to_string());
+
+        let result: Result<BybitOrderHistoryResponse, _> = serde_json::from_value(json);
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
     }
 
     #[rstest]

@@ -35,6 +35,7 @@ Released on TBD (UTC).
 - Fixed `on_historical_data` to receive each `CustomData` response item
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
+- Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
 
 ### Internal Improvements
