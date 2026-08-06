@@ -955,7 +955,7 @@ pub enum MarketStatus {
     /// Trading in the instrument has been paused.
     Paused = 3,
     /// Trading in the instrument has been halted.
-    // Halted = 4,  # TODO: Unfortunately can't use this yet due to Cython (C enum namespacing)
+    Halted = 4,
     /// Trading in the instrument has been suspended.
     Suspended = 5,
     /// Trading in the instrument is not available.

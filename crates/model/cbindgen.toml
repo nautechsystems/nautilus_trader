@@ -12,6 +12,9 @@ after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
+# Prefix variants with the enum name so duplicate variant names across enums
+# (e.g. MarketStatus::Halted and TradingState::Halted) cannot collide in the C header
+prefix_with_name = true
 
 [export]
 exclude = ["BarAggregation", "OrderId", "OrderSideSpecified"]
