@@ -864,6 +864,20 @@ mod connection_error_tests {
     #[case(TransportError::FrameTooLarge, false)]
     #[case(TransportError::InvalidUtf8, false)]
     #[case(TransportError::Other("backend protocol mismatch".into()), false)]
+    #[case(
+        TransportError::ClosedByPeer(Some(CloseFrame::new(
+            CloseFrame::TRY_AGAIN_LATER,
+            "reconnectable close code",
+        ))),
+        true
+    )]
+    #[case(
+        TransportError::ClosedByPeer(Some(CloseFrame::new(
+            CloseFrame::SERVICE_RESTART,
+            "reconnectable close code",
+        ))),
+        true
+    )]
     fn connection_drop_transport_error_classification(
         #[case] err: TransportError,
         #[case] expected: bool,

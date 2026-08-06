@@ -49,6 +49,7 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import RefreshBookSubscription
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -444,6 +445,23 @@ class PolymarketDataClient(LiveMarketDataClient):
         else:
             self._ws_client.add_subscription(token_id)
             self._schedule_delayed_connect()
+
+    async def _refresh_book_subscription(self, command: RefreshBookSubscription) -> None:
+        if not self.is_subscribed_order_book_deltas(command.instrument_id):
+            self._log.error(
+                f"Cannot refresh order book subscription for {command.instrument_id}: not subscribed",
+            )
+            return
+
+        token_id = get_polymarket_token_id(command.instrument_id)
+        if not self._ws_client.is_connected():
+            self._ws_client.add_subscription(token_id)
+            self._schedule_delayed_connect()
+            return
+
+        # Best-effort atomic refresh for the legacy Cython client path.
+        await self._ws_client.unsubscribe(token_id)
+        await self._ws_client.subscribe(token_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         if not await self._ensure_instrument_loaded(command.instrument_id):

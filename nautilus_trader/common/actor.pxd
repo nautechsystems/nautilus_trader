@@ -165,6 +165,12 @@ cdef class Actor(Component):
         bint pyo3_conversion=*,
         dict[str, object] params=*,
     )
+    cpdef void refresh_book_subscription(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id=*,
+        dict[str, object] params=*,
+    )
     cpdef void subscribe_order_book_depth(
         self,
         InstrumentId instrument_id,

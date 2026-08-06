@@ -164,6 +164,12 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, TimeInForce time_in_force=*, bint reduce_only=*, bint quote_quantity=*, dict[str, object] params=*)
     cpdef void query_account(self, AccountId account_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void query_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void refresh_book_subscription(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id=*,
+        dict[str, object] params=*,
+    )
     cpdef void market_exit(self)
     cpdef bint is_exiting(self)
     cdef ModifyOrder _create_modify_order(

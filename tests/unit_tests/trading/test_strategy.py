@@ -2678,3 +2678,7 @@ class TestStrategy:
         # Assert - strategy should be stopped and market exit state cleaned up
         assert strategy.state == ComponentState.STOPPED
         assert not strategy.is_exiting()
+
+
+def test_strategy_exposes_refresh_book_subscription() -> None:
+    assert hasattr(Strategy, "refresh_book_subscription")

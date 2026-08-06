@@ -39,6 +39,7 @@ from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOptionGreeks
+from nautilus_trader.data.messages cimport RefreshBookSubscription
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -132,6 +133,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_instruments(self, SubscribeInstruments command)
     cpdef void subscribe_instrument(self, SubscribeInstrument command)
     cpdef void subscribe_order_book_deltas(self, SubscribeOrderBook command)
+    cpdef void refresh_book_subscription(self, RefreshBookSubscription command)
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command)
     cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command)
     cpdef void subscribe_trade_ticks(self, SubscribeTradeTicks command)

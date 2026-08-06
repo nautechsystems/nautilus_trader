@@ -61,6 +61,10 @@ cdef class SubscribeOrderBook(SubscribeData):
     """The order book snapshot interval in milliseconds (must be positive for snapshots)."""
 
 
+cdef class RefreshBookSubscription(SubscribeData):
+    pass
+
+
 cdef class SubscribeQuoteTicks(SubscribeData):
     pass
 

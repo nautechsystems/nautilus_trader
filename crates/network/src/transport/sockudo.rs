@@ -328,6 +328,17 @@ impl From<SockudoError> for TransportError {
             SockudoError::ConnectionClosed => Self::ConnectionClosed,
             SockudoError::ConnectionReset => Self::ConnectionReset,
             SockudoError::Closed(reason) => Self::ClosedByPeer(reason.map(Into::into)),
+            // sockudo-ws rejects IANA soft-close codes such as 1013 (Try Again Later)
+            // as InvalidCloseCode. Treat reconnectable codes as a peer close so the
+            // client keeps desired subscriptions and replays them after backoff.
+            SockudoError::InvalidCloseCode(code)
+                if CloseFrame::is_reconnectable_close_code(code) =>
+            {
+                Self::ClosedByPeer(Some(CloseFrame::new(code, "reconnectable close code")))
+            }
+            SockudoError::InvalidCloseCode(code) => {
+                Self::Protocol(format!("Invalid close code: {code}"))
+            }
             SockudoError::MessageTooLarge => Self::MessageTooLarge,
             SockudoError::FrameTooLarge => Self::FrameTooLarge,
             SockudoError::InvalidUtf8 => Self::InvalidUtf8,
@@ -725,5 +736,27 @@ mod tests {
     fn error_translation_handshake() {
         let err: TransportError = SockudoError::HandshakeFailed("bad").into();
         assert!(matches!(err, TransportError::Handshake(_)));
+    }
+
+    #[rstest]
+    #[case(CloseFrame::TRY_AGAIN_LATER)]
+    #[case(CloseFrame::SERVICE_RESTART)]
+    #[case(CloseFrame::BAD_GATEWAY)]
+    fn error_translation_reconnectable_invalid_close_code(#[case] code: u16) {
+        let err: TransportError = SockudoError::InvalidCloseCode(code).into();
+        match &err {
+            TransportError::ClosedByPeer(Some(frame)) => {
+                assert_eq!(frame.code, code);
+                assert!(err.is_closed());
+            }
+            other => panic!("expected ClosedByPeer for code {code}, got {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn error_translation_non_reconnectable_invalid_close_code() {
+        let err: TransportError = SockudoError::InvalidCloseCode(1004).into();
+        assert!(matches!(err, TransportError::Protocol(_)));
+        assert!(!err.is_closed());
     }
 }

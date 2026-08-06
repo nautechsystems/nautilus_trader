@@ -89,6 +89,7 @@ from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_status_to_str
 from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -1523,6 +1524,28 @@ cdef class Strategy(Actor):
         )
 
         self._manager.send_exec_command(command)
+
+    cpdef void refresh_book_subscription(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Atomically refresh an existing order book subscription for the instrument.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument ID to refresh.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Actor.refresh_book_subscription(self, instrument_id, client_id, params)
 
     cpdef void query_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """

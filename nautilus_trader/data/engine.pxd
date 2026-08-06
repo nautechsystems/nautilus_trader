@@ -55,6 +55,7 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOptionChain
 from nautilus_trader.data.messages cimport SubscribeOptionGreeks
+from nautilus_trader.data.messages cimport RefreshBookSubscription
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -207,6 +208,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe(self, DataClient client, UnsubscribeData command)
     cpdef void _handle_subscribe_instruments(self, MarketDataClient client, SubscribeInstruments command)
     cpdef void _handle_subscribe_instrument(self, MarketDataClient client, SubscribeInstrument command)
+    cpdef void _handle_refresh_book_subscription(self, MarketDataClient client, RefreshBookSubscription command)
     cpdef void _handle_subscribe_order_book(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type)

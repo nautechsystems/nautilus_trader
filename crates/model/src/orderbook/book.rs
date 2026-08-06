@@ -15,9 +15,13 @@
 
 //! A performant, generic, multi-purpose order book.
 
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::{LazyLock, Mutex},
+    time::{Duration, Instant},
+};
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
@@ -39,6 +43,51 @@ use crate::{
         price::{PRICE_ERROR, PRICE_UNDEF},
     },
 };
+
+/// Per-instrument window used to rate-limit repeated out-of-order warnings.
+const OOO_WARN_WINDOW: Duration = Duration::from_secs(5);
+
+struct OooWarnState {
+    window_start: Instant,
+    warned_in_window: bool,
+    suppressed: u64,
+}
+
+static OOO_WARN_LIMITER: LazyLock<Mutex<AHashMap<InstrumentId, OooWarnState>>> =
+    LazyLock::new(|| Mutex::new(AHashMap::new()));
+
+fn log_ooo_update_warn(instrument_id: InstrumentId, detail: &str) {
+    let now = Instant::now();
+    let mut guard = OOO_WARN_LIMITER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let state = guard.entry(instrument_id).or_insert_with(|| OooWarnState {
+        window_start: now,
+        warned_in_window: false,
+        suppressed: 0,
+    });
+
+    if now.duration_since(state.window_start) >= OOO_WARN_WINDOW {
+        if state.suppressed > 0 {
+            log::warn!(
+                "Suppressed {} additional Out-of-order update warning(s) for {} over the prior window",
+                state.suppressed,
+                instrument_id
+            );
+        }
+        state.window_start = now;
+        state.warned_in_window = false;
+        state.suppressed = 0;
+    }
+
+    if state.warned_in_window {
+        state.suppressed = state.suppressed.saturating_add(1);
+        return;
+    }
+
+    log::warn!("Out-of-order update: {detail} (instrument_id={instrument_id})");
+    state.warned_in_window = true;
+}
 
 /// Provides a high-performance, versatile order book.
 ///
@@ -1065,20 +1114,16 @@ impl OrderBook {
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
         if sequence > 0 && sequence < self.sequence {
-            log::warn!(
-                "Out-of-order update: sequence {} < {} (instrument_id={})",
-                sequence,
-                self.sequence,
-                self.instrument_id
+            log_ooo_update_warn(
+                self.instrument_id,
+                &format!("sequence {sequence} < {}", self.sequence),
             );
         }
 
         if ts_event < self.ts_last {
-            log::warn!(
-                "Out-of-order update: ts_event {} < {} (instrument_id={})",
-                ts_event,
-                self.ts_last,
-                self.instrument_id
+            log_ooo_update_warn(
+                self.instrument_id,
+                &format!("ts_event {ts_event} < {}", self.ts_last),
             );
         }
 

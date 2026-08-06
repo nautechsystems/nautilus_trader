@@ -209,6 +209,30 @@ impl CloseFrame {
     pub const MESSAGE_TOO_LARGE: u16 = 1009;
     /// Internal server error (1011).
     pub const INTERNAL_ERROR: u16 = 1011;
+    /// Service restart (1012).
+    pub const SERVICE_RESTART: u16 = 1012;
+    /// Try again later (1013).
+    pub const TRY_AGAIN_LATER: u16 = 1013;
+    /// Bad gateway (1014).
+    pub const BAD_GATEWAY: u16 = 1014;
+
+    /// Returns `true` for peer close codes that should trigger reconnect backoff.
+    ///
+    /// Includes IANA codes that some WebSocket stacks (notably sockudo-ws) reject
+    /// as "invalid" even though venues use them as soft kicks.
+    #[must_use]
+    pub const fn is_reconnectable_close_code(code: u16) -> bool {
+        matches!(
+            code,
+            Self::NORMAL
+                | Self::GOING_AWAY
+                | Self::SERVICE_RESTART
+                | Self::TRY_AGAIN_LATER
+                | Self::BAD_GATEWAY
+                | 1005 // no status received
+                | 1006 // abnormal closure
+        ) || (code >= 3000 && code <= 4999)
+    }
 
     /// Construct a close frame.
     #[inline]
@@ -255,6 +279,17 @@ mod tests {
         let frame = CloseFrame::new(CloseFrame::GOING_AWAY, "shutdown");
         assert_eq!(frame.code, 1001);
         assert_eq!(frame.reason, "shutdown");
+    }
+
+    #[rstest]
+    #[case(CloseFrame::TRY_AGAIN_LATER, true)]
+    #[case(CloseFrame::SERVICE_RESTART, true)]
+    #[case(CloseFrame::BAD_GATEWAY, true)]
+    #[case(CloseFrame::NORMAL, true)]
+    #[case(1004, false)]
+    #[case(CloseFrame::PROTOCOL_ERROR, false)]
+    fn reconnectable_close_code_classification(#[case] code: u16, #[case] expected: bool) {
+        assert_eq!(CloseFrame::is_reconnectable_close_code(code), expected);
     }
 
     #[rstest]

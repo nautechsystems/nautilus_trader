@@ -81,6 +81,7 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOptionChain
 from nautilus_trader.data.messages cimport SubscribeOptionGreeks
+from nautilus_trader.data.messages cimport RefreshBookSubscription
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -1470,6 +1471,47 @@ cdef class Actor(Component):
             depth=depth,
             managed=managed,
             interval_ms=0,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void refresh_book_subscription(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Atomically refresh an existing order book subscription for the instrument.
+
+        Sends a refresh command without changing local message-bus topic
+        subscriptions. Venue clients that support atomic refresh use this to
+        re-establish the wire feed for a stalled book.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument ID to refresh.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef RefreshBookSubscription command = RefreshBookSubscription(
+            instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),

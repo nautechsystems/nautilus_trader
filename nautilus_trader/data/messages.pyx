@@ -372,6 +372,72 @@ cdef class SubscribeInstrument(SubscribeData):
         )
 
 
+cdef class RefreshBookSubscription(SubscribeData):
+    """
+    Represents a command to atomically refresh an existing order book subscription.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the subscription to refresh.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the refresh.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
+    ) -> None:
+        super().__init__(
+            DataType(OrderBookDelta),
+            instrument_id,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            params,
+            correlation_id,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}, "
+            f"correlation_id={self.correlation_id}{form_params_str(self.params)})"
+        )
+
+
 cdef class SubscribeOrderBook(SubscribeData):
     """
     Represents a command to subscribe to order book deltas for an instrument.

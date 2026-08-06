@@ -118,6 +118,7 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOptionChain
 from nautilus_trader.data.messages cimport SubscribeOptionGreeks
+from nautilus_trader.data.messages cimport RefreshBookSubscription
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -948,6 +949,8 @@ cdef class DataEngine(Component):
             self._handle_subscribe_instruments(client, command)
         elif isinstance(command, SubscribeInstrument):
             self._handle_subscribe_instrument(client, command)
+        elif isinstance(command, RefreshBookSubscription):
+            self._handle_refresh_book_subscription(client, command)
         elif isinstance(command, SubscribeOrderBook):
             self._handle_subscribe_order_book(client, command)
         elif isinstance(command, SubscribeQuoteTicks):
@@ -1017,6 +1020,23 @@ cdef class DataEngine(Component):
 
         if command.instrument_id not in client.subscribed_instruments():
             client.subscribe_instrument(command)
+
+    cpdef void _handle_refresh_book_subscription(self, MarketDataClient client, RefreshBookSubscription command):
+        Condition.not_none(client, "client")
+
+        if command.instrument_id.is_synthetic():
+            self._log.error(
+                f"Cannot refresh order book subscription for synthetic instrument {command.instrument_id}"
+            )
+            return
+
+        if not client.is_subscribed_order_book_deltas(command.instrument_id):
+            self._log.error(
+                f"Cannot refresh order book subscription for {command.instrument_id}: not subscribed"
+            )
+            return
+
+        client.refresh_book_subscription(command)
 
     cpdef void _handle_subscribe_order_book(self, MarketDataClient client, SubscribeOrderBook command):
         Condition.not_none(client, "client")

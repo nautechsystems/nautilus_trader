@@ -58,6 +58,7 @@ from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOptionGreeks
+from nautilus_trader.data.messages import RefreshBookSubscription
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -596,6 +597,14 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
+    def refresh_book_subscription(self, command: RefreshBookSubscription) -> None:
+        self.create_task(
+            self._refresh_book_subscription(command),
+            log_msg=f"refresh: order_book_subscription {command.instrument_id}",
+            success_msg=f"Refreshed {command.instrument_id} order book subscription",
+            success_color=LogColor.BLUE,
+        )
+
     def subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
         self._add_subscription_order_book_depth(command.instrument_id)
         self.create_task(
@@ -969,6 +978,11 @@ class LiveMarketDataClient(MarketDataClient):
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
+        )
+
+    async def _refresh_book_subscription(self, command: RefreshBookSubscription) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_refresh_book_subscription` coroutine",  # pragma: no cover
         )
 
     async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:

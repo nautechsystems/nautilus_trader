@@ -43,6 +43,7 @@ from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOptionGreeks
+from nautilus_trader.data.messages cimport RefreshBookSubscription
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -523,6 +524,22 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_order_book_deltas` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_order_book_deltas` must be implemented in the subclass")
+
+    cpdef void refresh_book_subscription(self, RefreshBookSubscription command):
+        """
+        Atomically refresh an existing order book subscription.
+
+        Parameters
+        ----------
+        command : RefreshBookSubscription
+            The refresh command.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot refresh order book subscription for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `refresh_book_subscription` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `refresh_book_subscription` must be implemented in the subclass")
 
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command):
         """
