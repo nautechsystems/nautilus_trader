@@ -31,6 +31,7 @@ from nautilus_trader.model import OrderEmulated
 from nautilus_trader.model import OrderExpired
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderFillVoided
+from nautilus_trader.model import OrderInitialized
 from nautilus_trader.model import OrderModifyRejected
 from nautilus_trader.model import OrderPendingCancel
 from nautilus_trader.model import OrderPendingUpdate
@@ -45,6 +46,7 @@ from nautilus_trader.model import PortfolioSnapshot
 from nautilus_trader.model import PositionId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import VenueOrderId
 
@@ -181,6 +183,36 @@ def test_portfolio_snapshot_valuation_metadata(account_id, audusd_id, uuid):
     assert snapshot.unpriced_instruments == []
 
 
+def test_order_event_dicts_preserve_causation_id(
+    trader_id,
+    strategy_id,
+    audusd_id,
+    account_id,
+    client_order_id,
+    venue_order_id,
+    uuid,
+):
+    events = _make_order_events(
+        trader_id,
+        strategy_id,
+        audusd_id,
+        account_id,
+        client_order_id,
+        venue_order_id,
+        uuid,
+    )
+    causation_id = "38e6a9e5-59a4-4e92-bc1f-2ed5790f9a4b"
+
+    for event in events:
+        values = event.to_dict()
+        assert values["causation_id"] is None
+
+        values["causation_id"] = causation_id
+        restored = type(event).from_dict(values)
+
+        assert restored.to_dict()["causation_id"] == causation_id
+
+
 def test_order_denied(trader_id, strategy_id, audusd_id, client_order_id, uuid):
     event = OrderDenied(
         trader_id=trader_id,
@@ -200,6 +232,75 @@ def test_order_denied(trader_id, strategy_id, audusd_id, client_order_id, uuid):
     assert event.reason == "Exceeded MAX_ORDER_SUBMIT_RATE"
     assert "OrderDenied" in repr(event)
     assert "AUD/USD.SIM" in str(event)
+
+
+def _make_order_events(
+    trader_id,
+    strategy_id,
+    instrument_id,
+    account_id,
+    client_order_id,
+    venue_order_id,
+    event_id,
+):
+    common = {
+        "trader_id": trader_id,
+        "strategy_id": strategy_id,
+        "instrument_id": instrument_id,
+        "client_order_id": client_order_id,
+        "event_id": event_id,
+        "ts_event": 1,
+        "ts_init": 2,
+    }
+    reconciled = {
+        **common,
+        "venue_order_id": venue_order_id,
+        "account_id": account_id,
+        "reconciliation": False,
+    }
+
+    return [
+        OrderDenied(**common, reason="DENIED"),
+        OrderFilled(
+            **reconciled,
+            trade_id=TradeId("1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            last_qty=Quantity.from_int(10),
+            last_px=Price.from_str("1.00000"),
+            currency=Currency.from_str("USD"),
+            liquidity_side=LiquiditySide.MAKER,
+        ),
+        OrderInitialized(
+            **common,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=Quantity.from_int(10),
+            time_in_force=TimeInForce.GTC,
+            post_only=True,
+            reduce_only=False,
+            quote_quantity=False,
+            reconciliation=False,
+            price=Price.from_str("1.00000"),
+        ),
+        OrderRejected(**common, account_id=account_id, reason="REJECTED", reconciliation=False),
+        OrderTriggered(**reconciled),
+        OrderSubmitted(**common, account_id=account_id),
+        OrderEmulated(**common),
+        OrderReleased(**common, released_price=Price.from_str("1.00000")),
+        OrderUpdated(
+            **reconciled,
+            quantity=Quantity.from_int(11),
+            price=Price.from_str("1.00001"),
+        ),
+        OrderPendingUpdate(**reconciled),
+        OrderPendingCancel(**reconciled),
+        OrderModifyRejected(**reconciled, reason="MODIFY_REJECTED"),
+        OrderAccepted(**reconciled),
+        OrderCancelRejected(**reconciled, reason="CANCEL_REJECTED"),
+        OrderCanceled(**reconciled),
+        OrderExpired(**reconciled),
+    ]
 
 
 def test_order_denied_to_dict_roundtrip(trader_id, strategy_id, audusd_id, client_order_id, uuid):

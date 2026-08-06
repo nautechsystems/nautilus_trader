@@ -1009,6 +1009,103 @@ def test_notional_value_currency_pair():
     assert notional.as_double() == pytest.approx(75_000.0)
 
 
+@pytest.mark.parametrize(
+    "instrument_type",
+    [CryptoFuture, CryptoOption, CryptoPerpetual, PerpetualContract],
+)
+@pytest.mark.parametrize(
+    ("settlement_code", "is_inverse", "is_quanto", "expected_amount", "expected_currency"),
+    [
+        ("USD", False, False, Decimal(2000), "USD"),
+        ("USDT", False, False, Decimal(2000), "USD"),
+        ("BTC", False, True, Decimal(2000), "BTC"),
+        ("ETH", True, False, Decimal("0.2"), "ETH"),
+    ],
+)
+def test_derivative_notional_value_contract(
+    instrument_type,
+    settlement_code,
+    is_inverse,
+    is_quanto,
+    expected_amount,
+    expected_currency,
+):
+    instrument = _make_derivative(instrument_type, settlement_code, is_inverse)
+    quantity = Quantity.from_int(2)
+    price = Price.from_str("100.00")
+
+    notional = instrument.notional_value(quantity, price)
+
+    assert instrument.is_quanto is is_quanto
+    assert notional.as_decimal() == expected_amount
+    assert notional.currency == Currency.from_str(expected_currency)
+
+    if is_inverse:
+        quote_notional = instrument.notional_value(quantity, price, use_quote_for_inverse=True)
+        assert quote_notional.as_decimal() == Decimal(2)
+        assert quote_notional.currency == Currency.from_str("USD")
+
+
+@pytest.mark.parametrize(
+    "instrument_type",
+    [CryptoFuture, CryptoOption, CryptoPerpetual, PerpetualContract],
+)
+def test_derivative_dict_roundtrip_preserves_fractional_lot_size(instrument_type):
+    original = _make_derivative(instrument_type, "USD", False)
+    values = original.to_dict()
+    values["lot_size"] = "0.25"
+
+    restored = instrument_type.from_dict(values)
+
+    assert restored.lot_size == Quantity.from_str("0.25")
+    assert restored.to_dict()["lot_size"] == "0.25"
+
+
+def _make_derivative(instrument_type, settlement_code, is_inverse):
+    common = {
+        "instrument_id": InstrumentId.from_str(f"{instrument_type.__name__.upper()}.SIM"),
+        "raw_symbol": Symbol(instrument_type.__name__.upper()),
+        "quote_currency": Currency.from_str("USD"),
+        "settlement_currency": Currency.from_str(settlement_code),
+        "is_inverse": is_inverse,
+        "price_precision": 2,
+        "size_precision": 0,
+        "price_increment": Price.from_str("0.01"),
+        "size_increment": Quantity.from_int(1),
+        "multiplier": Quantity.from_int(10),
+        "ts_event": 1,
+        "ts_init": 2,
+    }
+
+    if instrument_type is CryptoFuture:
+        return CryptoFuture(
+            **common,
+            underlying=Currency.from_str("ETH"),
+            activation_ns=3,
+            expiration_ns=4,
+        )
+    if instrument_type is CryptoOption:
+        return CryptoOption(
+            **common,
+            underlying=Currency.from_str("ETH"),
+            option_kind=OptionKind.CALL,
+            strike_price=Price.from_str("100.00"),
+            activation_ns=3,
+            expiration_ns=4,
+        )
+    if instrument_type is CryptoPerpetual:
+        return CryptoPerpetual(
+            **common,
+            base_currency=Currency.from_str("ETH"),
+        )
+    return PerpetualContract(
+        **common,
+        underlying="ETH",
+        asset_class=AssetClass.CRYPTOCURRENCY,
+        base_currency=Currency.from_str("ETH"),
+    )
+
+
 def test_synthetic_instrument_construction():
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")

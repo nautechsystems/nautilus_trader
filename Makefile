@@ -1170,10 +1170,9 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 	$Q bash scripts/ci/test-python-doctests.bash "$(CURDIR)/python"
 
 .PHONY: mypy
-mypy: build-debug  #-- Type-check supported Python authoring workflows
-	$(info $(M) Type-checking supported Python authoring workflows...)
-	$Q bash scripts/ci/test-python-types.bash \
-		python examples python/tests/type_checking/supported.py
+mypy: build-debug  #-- Type-check supported Python examples
+	$(info $(M) Type-checking supported Python examples...)
+	$Q bash scripts/ci/test-python-types.bash python examples
 
 #== CLI Tools
 

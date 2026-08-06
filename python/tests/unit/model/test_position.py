@@ -13,25 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentClass
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import Money
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderType
 from nautilus_trader.model import Position
+from nautilus_trader.model import PositionAdjusted
+from nautilus_trader.model import PositionAdjustmentType
 from nautilus_trader.model import PositionId
 from nautilus_trader.model import PositionSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import Symbol
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import VenueOrderId
@@ -51,10 +58,16 @@ def _make_fill(
     venue_order_id="1",
     trade_id="E-20210410-022422-001-001-1",
     commission="2.00 USD",
+    currency=None,
+    event_id=None,
     ts_event=0,
 ):
     if instrument is None:
         instrument = AUDUSD_SIM
+    if currency is None:
+        currency = instrument.quote_currency
+    if event_id is None:
+        event_id = UUID4()
     return OrderFilled(
         trader_id=TraderId("TESTER-001"),
         strategy_id=StrategyId("S-001"),
@@ -65,11 +78,11 @@ def _make_fill(
         trade_id=TradeId(trade_id),
         order_side=order_side,
         order_type=OrderType.MARKET,
-        last_qty=Quantity.from_int(last_qty),
+        last_qty=Quantity.from_str(str(last_qty)),
         last_px=Price.from_str(last_px),
-        currency=instrument.quote_currency,
+        currency=currency,
         liquidity_side=LiquiditySide.TAKER,
-        event_id=UUID4(),
+        event_id=event_id,
         ts_event=ts_event,
         ts_init=0,
         reconciliation=False,
@@ -410,3 +423,173 @@ def test_position_pnl_short_loss():
     pnl = position.unrealized_pnl(last)
 
     assert pnl == Money(-10.00, USD)
+
+
+def test_position_inverse_pnl_and_notional_value():
+    instrument = _inverse_perpetual()
+    fill = _make_fill(
+        instrument=instrument,
+        order_side=OrderSide.SELL,
+        last_px="10000.00",
+        last_qty=100_000,
+        commission="0.00000000 BTC",
+        currency=instrument.settlement_currency,
+    )
+    position = Position(instrument=instrument, fill=fill)
+
+    pnl = position.calculate_pnl(
+        avg_px_open=10_000.00,
+        avg_px_close=11_000.00,
+        quantity=Quantity.from_int(100_000),
+    )
+
+    assert pnl == Money(-0.90909091, Currency.from_str("BTC"))
+    assert position.unrealized_pnl(Price.from_str("11000.00")) == pnl
+    assert position.notional_value(Price.from_str("11000.00")) == Money(
+        9.09090909,
+        Currency.from_str("BTC"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("opening_side", "flipping_side", "expected_side", "expected_quantity"),
+    [
+        (OrderSide.SELL, OrderSide.BUY, PositionSide.LONG, Quantity.from_str("0.499")),
+        (OrderSide.BUY, OrderSide.SELL, PositionSide.SHORT, Quantity.from_str("0.501")),
+    ],
+)
+def test_position_flip_applies_full_base_currency_commission(
+    opening_side,
+    flipping_side,
+    expected_side,
+    expected_quantity,
+):
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    opening_fill = _make_fill(
+        instrument=instrument,
+        order_side=opening_side,
+        last_px="50000.00",
+        last_qty="1.0",
+        commission="0.00 USDT",
+    )
+    position = Position(instrument=instrument, fill=opening_fill)
+    flipping_fill = _make_fill(
+        instrument=instrument,
+        order_side=flipping_side,
+        last_px="50000.00",
+        last_qty="1.5",
+        client_order_id="O-2",
+        venue_order_id="2",
+        trade_id="E-2",
+        commission="0.001 BTC",
+        currency=instrument.base_currency,
+        event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+    )
+
+    position.apply(flipping_fill)
+
+    assert position.side == expected_side
+    assert position.quantity == expected_quantity
+    assert position.adjustments() == [
+        PositionAdjusted(
+            trader_id=flipping_fill.trader_id,
+            strategy_id=flipping_fill.strategy_id,
+            instrument_id=flipping_fill.instrument_id,
+            position_id=PositionId("P-123456"),
+            account_id=flipping_fill.account_id,
+            adjustment_type=PositionAdjustmentType.COMMISSION,
+            quantity_change=Decimal("-0.001"),
+            pnl_change=None,
+            reason=str(flipping_fill.client_order_id),
+            event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff3"),
+            ts_event=flipping_fill.ts_event,
+            ts_init=flipping_fill.ts_init,
+        ),
+    ]
+
+
+def test_position_adjustment_dict_roundtrip_preserves_optional_values():
+    adjustment = PositionAdjusted(
+        trader_id=TraderId("TESTER-001"),
+        strategy_id=StrategyId("S-001"),
+        instrument_id=AUDUSD_SIM.id,
+        position_id=PositionId("P-123456"),
+        account_id=AccountId("SIM-000"),
+        adjustment_type=PositionAdjustmentType.FUNDING,
+        quantity_change=None,
+        pnl_change=Money(-5.50, USD),
+        reason="funding_payment",
+        event_id=UUID4.from_str("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+        ts_event=1_000_000_000,
+        ts_init=2_000_000_000,
+    )
+
+    values = adjustment.to_dict()
+    restored = PositionAdjusted.from_dict(values)
+
+    assert values == {
+        "type": "PositionAdjusted",
+        "trader_id": "TESTER-001",
+        "strategy_id": "S-001",
+        "instrument_id": "AUD/USD.SIM",
+        "position_id": "P-123456",
+        "account_id": "SIM-000",
+        "adjustment_type": "FUNDING",
+        "quantity_change": None,
+        "pnl_change": "-5.50 USD",
+        "reason": "funding_payment",
+        "event_id": "91762096-b188-49ea-8562-8d8a4cc22ff2",
+        "ts_event": 1_000_000_000,
+        "ts_init": 2_000_000_000,
+    }
+    assert restored == adjustment
+
+
+def test_position_purge_events_removes_matching_adjustment():
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    first = _make_fill(
+        instrument=instrument,
+        last_px="50000.00",
+        last_qty="1.0",
+        client_order_id="O-1",
+        venue_order_id="1",
+        trade_id="E-1",
+        commission="0.001 BTC",
+        currency=instrument.base_currency,
+    )
+    second = _make_fill(
+        instrument=instrument,
+        last_px="51000.00",
+        last_qty="2.0",
+        client_order_id="O-2",
+        venue_order_id="2",
+        trade_id="E-2",
+        commission="0.002 BTC",
+        currency=instrument.base_currency,
+    )
+    position = Position(instrument=instrument, fill=first)
+    position.apply(second)
+
+    position.purge_events_for_order(first.client_order_id)
+
+    assert position.events() == [second]
+    assert [adjustment.quantity_change for adjustment in position.adjustments()] == [
+        Decimal("-0.002"),
+    ]
+
+
+def _inverse_perpetual():
+    return CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("XBTUSD-PERP.BITMEX"),
+        raw_symbol=Symbol("XBTUSD"),
+        base_currency=Currency.from_str("BTC"),
+        quote_currency=Currency.from_str("USD"),
+        settlement_currency=Currency.from_str("BTC"),
+        is_inverse=True,
+        price_precision=2,
+        size_precision=0,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )

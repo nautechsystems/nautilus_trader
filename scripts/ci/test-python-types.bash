@@ -3,7 +3,6 @@ set -euo pipefail
 
 pkg_dir=$1
 examples_dir=$2
-supported_path=$3
 
 VIRTUAL_ENV="" uv run --project "$pkg_dir" --no-sync mypy \
   --config-file "$pkg_dir/pyproject.toml" \
@@ -15,5 +14,4 @@ VIRTUAL_ENV="" uv run --project "$pkg_dir" --no-sync mypy \
   "$examples_dir/live/blockchain/node_test.py" \
   "$examples_dir/live/blockchain/node_test_factory.py" \
   "$examples_dir/live/lighter/nvda_composite_mm.py" \
-  "$examples_dir/live/polymarket/updown_smoke_tester.py" \
-  "$supported_path"
+  "$examples_dir/live/polymarket/updown_smoke_tester.py"

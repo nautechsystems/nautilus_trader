@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
+
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import custom_data_backend_kind
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import RustTestCustomData
@@ -40,7 +43,8 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path) -> None:
     catalog_path.mkdir()
     catalog = ParquetDataCatalog(str(catalog_path))
     instrument_id = InstrumentId.from_str("CUSTOM.TEST")
-    data_type = DataType("RustTestCustomData", identifier=str(instrument_id))
+    metadata = {"source": "python", "venue": "TEST"}
+    data_type = DataType("RustTestCustomData", metadata, str(instrument_id))
     custom_data = [
         CustomData(
             data_type,
@@ -56,7 +60,29 @@ def test_catalog_custom_data_reaches_backtest_strategy(tmp_path) -> None:
         "RustTestCustomData",
         identifiers=[str(instrument_id)],
     )
-    assert len(loaded) == 2
+
+    assert [custom_data_backend_kind(item) for item in loaded] == ["native", "native"]
+    assert [item.data_type.type_name for item in loaded] == ["RustTestCustomData"] * 2
+    assert [item.data_type.metadata for item in loaded] == [metadata] * 2
+    assert [item.data_type.identifier for item in loaded] == [str(instrument_id)] * 2
+    assert [item.data.instrument_id for item in loaded] == [instrument_id] * 2
+    assert [item.data.value for item in loaded] == [1.25, 2.5]
+    assert [item.data.flag for item in loaded] == [True, False]
+    assert [item.ts_event for item in loaded] == [1, 2]
+    assert [item.ts_init for item in loaded] == [1, 2]
+
+    encoded = loaded[0].to_json_bytes()
+    envelope = json.loads(encoded)
+    restored = CustomData.from_json_bytes(encoded)
+
+    assert set(envelope) == {"type", "data_type", "payload"}
+    assert envelope["payload"]["value"] == 1.25
+    assert restored.data_type == loaded[0].data_type
+    assert restored.data.instrument_id == instrument_id
+    assert restored.data.value == 1.25
+    assert restored.data.flag is True
+    assert restored.ts_event == 1
+    assert restored.ts_init == 1
 
     strategy = _CustomDataStrategy(
         StrategyConfig(

@@ -78,6 +78,20 @@ def test_custom_data_python_backend_and_json_bytes():
     assert b'"type":"Dummy"' in payload
 
 
+def test_custom_data_python_backend_equality_uses_identity():
+    class Dummy:
+        def __init__(self, value):
+            self.value = value
+            self.ts_event = 1
+            self.ts_init = 2
+
+    data_type = DataType("Dummy")
+    first = Dummy(7)
+
+    assert CustomData(data_type, first) == CustomData(data_type, first)
+    assert CustomData(data_type, first) != CustomData(data_type, Dummy(7))
+
+
 def test_register_custom_data_class_accepts_surface_compatible_class():
     class SurfaceCustomData:
         @classmethod
