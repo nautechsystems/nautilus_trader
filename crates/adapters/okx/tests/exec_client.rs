@@ -804,11 +804,7 @@ fn test_dispatch_order_triggered_passes_through() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
-    assert!(
-        state
-            .triggered_orders
-            .contains(&ClientOrderId::new("O-001"))
-    );
+    assert!(state.contains_triggered(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -822,7 +818,7 @@ fn test_dispatch_fill_report_passes_through() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
-    assert!(state.filled_orders.contains(&ClientOrderId::new("O-001")));
+    assert!(state.contains_filled(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -844,7 +840,7 @@ fn test_dispatch_order_status_report_accepted_passes_through() {
 fn test_dispatch_order_accepted_skipped_when_already_triggered() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.triggered_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_triggered(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -860,7 +856,7 @@ fn test_dispatch_order_accepted_skipped_when_already_triggered() {
 fn test_dispatch_order_accepted_skipped_when_already_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -876,7 +872,7 @@ fn test_dispatch_order_accepted_skipped_when_already_filled() {
 fn test_dispatch_order_triggered_skipped_when_already_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -892,7 +888,7 @@ fn test_dispatch_order_triggered_skipped_when_already_filled() {
 fn test_dispatch_status_report_accepted_skipped_when_triggered() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.triggered_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_triggered(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -908,7 +904,7 @@ fn test_dispatch_status_report_accepted_skipped_when_triggered() {
 fn test_dispatch_status_report_accepted_skipped_when_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -924,7 +920,7 @@ fn test_dispatch_status_report_accepted_skipped_when_filled() {
 fn test_dispatch_status_report_triggered_skipped_when_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -949,11 +945,7 @@ fn test_dispatch_status_report_triggered_records_state() {
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(
-        state
-            .triggered_orders
-            .contains(&ClientOrderId::new("O-001"))
-    );
+    assert!(state.contains_triggered(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -969,14 +961,14 @@ fn test_dispatch_status_report_filled_records_state() {
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(state.filled_orders.contains(&ClientOrderId::new("O-001")));
+    assert!(state.contains_filled(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
 fn test_dispatch_dedup_does_not_affect_different_orders() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-002",
@@ -1061,7 +1053,7 @@ fn test_dispatch_status_report_accepted_skipped_when_canceled() {
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(state.terminal_orders.contains(&ClientOrderId::new("O-001")));
+    assert!(state.contains_terminal(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -1121,7 +1113,7 @@ fn test_dispatch_spread_order_accept_then_cancel() {
     }
 
     assert!(state.order_identities.get(&cid).is_none());
-    assert!(!state.emitted_accepted.contains(&cid));
+    assert!(!state.contains_accepted(&cid));
 }
 
 #[rstest]
@@ -1266,7 +1258,7 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
     }
 
     assert!(state.order_identities.get(&cid).is_none());
-    assert!(state.filled_orders.contains(&cid));
+    assert!(state.contains_filled(&cid));
 
     dispatch_spread_message(
         fill,
@@ -1532,7 +1524,7 @@ fn test_dispatch_rpi_canceled_first_emits_rejection_without_acceptance() {
         event,
         ExecutionEvent::Order(OrderEventAny::Accepted(_) | OrderEventAny::Canceled(_))
     )));
-    assert!(!state.emitted_accepted.contains(&client_order_id));
+    assert!(!state.contains_accepted(&client_order_id));
     assert!(!state.order_identities.contains_key(&client_order_id));
 }
 
@@ -1885,11 +1877,11 @@ fn test_dispatch_duplicate_fill_still_updates_filled_state() {
     let fill = make_fill_report_with_trade_id("O-001", "t-dup-2");
     dispatch_execution_reports(vec![ExecutionReport::Fill(fill.clone())], &emitter, &state);
 
-    assert!(state.filled_orders.contains(&cid));
+    assert!(state.contains_filled(&cid));
 
     dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
 
-    assert!(state.filled_orders.contains(&cid));
+    assert!(state.contains_filled(&cid));
 }
 
 #[rstest]

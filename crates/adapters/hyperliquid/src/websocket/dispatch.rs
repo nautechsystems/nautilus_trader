@@ -66,15 +66,14 @@
 
 use std::{
     collections::VecDeque,
-    hash::Hash,
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
 
-use ahash::AHashSet;
 use dashmap::{DashMap, DashSet};
+use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -118,73 +117,6 @@ pub struct OrderIdentity {
     /// subsequent status reports so a cancel-replace `ACCEPTED` that omits
     /// `price` can still produce an `OrderUpdated` carrying an accurate value.
     pub price: Option<Price>,
-}
-
-/// Bounded FIFO deduplication set.
-///
-/// When the capacity is reached, the oldest entry is evicted on the next
-/// insert. A simple `clear()` at the threshold would drop every recent trade
-/// id at once, opening a window where a reconnect or replay right after the
-/// rollover could re-emit duplicate `OrderFilled` events; the FIFO window
-/// slides instead.
-#[derive(Debug)]
-pub struct BoundedDedup<T>
-where
-    T: Eq + Hash + Clone,
-{
-    order: VecDeque<T>,
-    set: AHashSet<T>,
-    capacity: usize,
-}
-
-impl<T> BoundedDedup<T>
-where
-    T: Eq + Hash + Clone,
-{
-    /// Creates a new bounded dedup set with the given `capacity`.
-    #[must_use]
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            order: VecDeque::with_capacity(capacity),
-            set: AHashSet::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    /// Inserts a value. Returns `true` when the value was already present.
-    pub fn insert(&mut self, value: T) -> bool {
-        if self.set.contains(&value) {
-            return true;
-        }
-
-        if self.order.len() >= self.capacity
-            && let Some(evicted) = self.order.pop_front()
-        {
-            self.set.remove(&evicted);
-        }
-
-        self.order.push_back(value.clone());
-        self.set.insert(value);
-        false
-    }
-
-    /// Returns the number of entries currently tracked.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.set.len()
-    }
-
-    /// Returns whether the dedup set is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.set.is_empty()
-    }
-
-    /// Returns whether the value is currently tracked.
-    #[must_use]
-    pub fn contains(&self, value: &T) -> bool {
-        self.set.contains(value)
-    }
 }
 
 /// Maximum in-flight modify intents tracked per order. Rapid repricing rarely
@@ -252,10 +184,10 @@ pub struct WsDispatchState {
     ///
     /// Bounded FIFO dedup to bound memory while keeping recent trade ids
     /// deduped across reconnects.
-    pub emitted_trades: Mutex<BoundedDedup<TradeId>>,
+    emitted_trades: Mutex<FifoCache<TradeId, DEDUP_CAPACITY>>,
     /// Raw Hyperliquid CLOIDs that reached a terminal state through the post
     /// response path before the matching `orderUpdates` event arrived.
-    pub terminal_cloids: Mutex<BoundedDedup<Ustr>>,
+    terminal_cloids: Mutex<FifoCache<Ustr, DEDUP_CAPACITY>>,
     /// Last venue order id observed for a tracked client order id.
     ///
     /// Populated on the first `OrderAccepted` and refreshed on every
@@ -297,8 +229,8 @@ impl Default for WsDispatchState {
             pending_submissions: DashSet::default(),
             pending_submission_rejections: DashMap::new(),
             filled_orders: DashSet::default(),
-            emitted_trades: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
-            terminal_cloids: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
+            emitted_trades: Mutex::new(FifoCache::new()),
+            terminal_cloids: Mutex::new(FifoCache::new()),
             cached_venue_order_ids: DashMap::new(),
             pending_modify_chains: DashMap::new(),
             buffered_fills: DashMap::new(),
@@ -402,7 +334,7 @@ impl WsDispatchState {
     )]
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
         let mut set = self.emitted_trades.lock().expect(MUTEX_POISONED);
-        set.insert(trade_id)
+        !set.insert(trade_id)
     }
 
     /// Records a terminal raw Hyperliquid CLOID.
@@ -417,7 +349,7 @@ impl WsDispatchState {
     )]
     pub fn insert_terminal_cloid(&self, cloid: Ustr) {
         let mut set = self.terminal_cloids.lock().expect(MUTEX_POISONED);
-        set.insert(cloid);
+        let _ = set.insert(cloid);
     }
 
     /// Returns whether a raw Hyperliquid CLOID reached a terminal state through
@@ -1518,22 +1450,6 @@ mod tests {
         let trade = TradeId::new("trade-1");
         assert!(!state.check_and_insert_trade(trade));
         assert!(state.check_and_insert_trade(trade));
-    }
-
-    #[rstest]
-    fn test_bounded_dedup_fifo_eviction_preserves_recent_ids() {
-        let mut dedup: BoundedDedup<TradeId> = BoundedDedup::new(3);
-        assert!(!dedup.insert(TradeId::new("t-0")));
-        assert!(!dedup.insert(TradeId::new("t-1")));
-        assert!(!dedup.insert(TradeId::new("t-2")));
-        assert_eq!(dedup.len(), 3);
-
-        // Overflow evicts the oldest.
-        assert!(!dedup.insert(TradeId::new("t-3")));
-        assert_eq!(dedup.len(), 3);
-        assert!(!dedup.contains(&TradeId::new("t-0")));
-        assert!(dedup.contains(&TradeId::new("t-1")));
-        assert!(dedup.contains(&TradeId::new("t-3")));
     }
 
     #[rstest]
