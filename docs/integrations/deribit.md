@@ -533,8 +533,8 @@ Request `DeribitBookSummary` custom data to fetch one bulk snapshot filtered by 
 kind. Each response item includes the Nautilus instrument ID, implied volatility, open interest,
 prices, volume, and other fields returned by `public/get_book_summary_by_currency`.
 
-The actor or strategy receives one `CustomData` callback for each instrument summary. Access the
-`DeribitBookSummary` through the wrapper's `data` field:
+The actor or strategy receives the complete response through one `on_historical_data` callback.
+Each item is a `CustomData` wrapper containing a `DeribitBookSummary` in its `data` field:
 
 ```python
 from nautilus_trader.adapters.deribit import DERIBIT_CLIENT_ID
@@ -553,18 +553,21 @@ def on_start(self) -> None:
     )
 
 
-def on_historical_data(self, data: CustomData) -> None:
-    summary = data.data
-    if isinstance(summary, DeribitBookSummary):
-        self.log.info(
-            f"{summary.instrument_id}: mark_iv={summary.mark_iv}, "
-            f"open_interest={summary.open_interest}",
-        )
+def on_historical_data(self, data: list[CustomData]) -> None:
+    for item in data:
+        summary = item.data
+        if isinstance(summary, DeribitBookSummary):
+            self.log.info(
+                f"{summary.instrument_id}: mark_iv={summary.mark_iv}, "
+                f"open_interest={summary.open_interest}",
+            )
 ```
 
 The `currency` metadata field is required. The optional `kind` field defaults to `option`.
 Decimal‑backed venue fields, such as `mark_iv` and `open_interest`, are exposed to Python as strings
-or `None`. An empty response invokes no `on_historical_data` callbacks.
+or `None`. An empty response invokes `on_historical_data` once with an empty list. A failed venue
+request also invokes the callback with an empty list after logging an error. A request rejected
+before it reaches the venue, such as one missing `currency`, produces no callback.
 
 ### Volatility index
 

@@ -317,6 +317,8 @@ impl DataActor for TestDataActor {
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         if let Some(custom_data) = data.downcast_ref::<CustomData>() {
             self.received_custom_data.push(custom_data.clone());
+        } else if let Some(custom_data) = data.downcast_ref::<Vec<CustomData>>() {
+            self.received_custom_data.extend_from_slice(custom_data);
         }
 
         self.received_data.push(format!("{data:?}"));
@@ -3288,7 +3290,7 @@ fn test_request_data(
 }
 
 #[rstest]
-fn test_handle_data_response_fans_out_custom_data_items(
+fn test_handle_data_response_preserves_custom_data_payload_shape(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -3302,7 +3304,25 @@ fn test_handle_data_response_fans_out_custom_data_items(
         make_test_custom_data("CustomData-01"),
         make_test_custom_data("CustomData-02"),
     ];
+    let scalar = make_test_custom_data("CustomData-scalar");
     let data_type = data[0].data_type.clone();
+    let scalar_response = CustomDataResponse::new(
+        UUID4::new(),
+        ClientId::new("TestClient"),
+        None,
+        scalar.data_type.clone(),
+        scalar.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    actor.handle_data_response(&scalar_response);
+
+    assert_eq!(actor.received_data.len(), 1);
+    assert_eq!(actor.received_custom_data, vec![scalar.clone()]);
+
     let empty_response = CustomDataResponse::new(
         UUID4::new(),
         ClientId::new("TestClient"),
@@ -3317,8 +3337,8 @@ fn test_handle_data_response_fans_out_custom_data_items(
 
     actor.handle_data_response(&empty_response);
 
-    assert!(actor.received_data.is_empty());
-    assert!(actor.received_custom_data.is_empty());
+    assert_eq!(actor.received_data.len(), 2);
+    assert_eq!(actor.received_custom_data, vec![scalar.clone()]);
 
     let client_id = ClientId::new("TestClient");
     let response = CustomDataResponse::new(
@@ -3335,8 +3355,11 @@ fn test_handle_data_response_fans_out_custom_data_items(
 
     actor.handle_data_response(&response);
 
-    assert_eq!(actor.received_data.len(), 2);
-    assert_eq!(actor.received_custom_data, data);
+    let mut expected = vec![scalar];
+    expected.extend(data);
+
+    assert_eq!(actor.received_data.len(), 3);
+    assert_eq!(actor.received_custom_data, expected);
 }
 
 #[cfg(feature = "defi")]

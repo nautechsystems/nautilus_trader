@@ -33,7 +33,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
-- Fixed `on_historical_data` to receive each `CustomData` response item
+- Fixed Python `on_historical_data` to receive `CustomData` response batches as a single list
 - Fixed `Cache::get_xrate` for instrument symbols that do not use the `BASE/QUOTE` format
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects

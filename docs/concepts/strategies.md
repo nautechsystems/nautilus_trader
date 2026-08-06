@@ -136,7 +136,7 @@ def on_instrument_status(self, data: InstrumentStatus) -> None:
 def on_instrument_close(self, data: InstrumentClose) -> None:
 def on_option_greeks(self, greeks: OptionGreeks) -> None:
 def on_option_chain(self, chain: OptionChainSlice) -> None:
-def on_historical_data(self, data: CustomData) -> None:
+def on_historical_data(self, data: CustomData | Sequence[CustomData]) -> None:
 def on_historical_book_deltas(self, deltas: Sequence[OrderBookDelta]) -> None:
 def on_historical_book_depth(self, depths: Sequence[OrderBookDepth10]) -> None:
 def on_historical_quotes(self, quotes: Sequence[QuoteTick]) -> None:

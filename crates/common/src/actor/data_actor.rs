@@ -603,7 +603,10 @@ pub trait DataActor: Component {
         Ok(())
     }
 
-    /// Actions to be performed when receiving historical data.
+    /// Actions to be performed when receiving historical custom data.
+    ///
+    /// The callback runs once per response. A scalar [`CustomData`] remains scalar, while a
+    /// `Vec<CustomData>` batch remains intact, including when empty.
     ///
     /// # Errors
     ///
@@ -1156,16 +1159,9 @@ pub trait DataActor: Component {
         if let Some(data) = resp.data.as_ref().downcast_ref::<Vec<CustomData>>() {
             log_received_bulk("CustomDataResponse", &resp.correlation_id, data.len());
             log::trace!("{RECV} {resp:?}");
-
-            for item in data {
-                if let Err(e) = self.on_historical_data(item) {
-                    log_error(&e);
-                }
-            }
-            return;
+        } else {
+            log_received(&resp);
         }
-
-        log_received(&resp);
 
         if let Err(e) = self.on_historical_data(resp.data.as_ref()) {
             log_error(&e);

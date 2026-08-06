@@ -169,7 +169,9 @@ The system distinguishes between two data flows:
 1. **Historical data** (from *requests*):
    - Obtained through methods like `request_bars()`, `request_quotes()`, etc.
    - Processed through type-specific batch handlers such as `on_historical_bars()` and
-     `on_historical_quotes()`. Custom data uses `on_historical_data()`.
+     `on_historical_quotes()`.
+   - Custom data uses `on_historical_data()` once per response. A scalar `CustomData` arrives as
+     that object, while a batch arrives as one list, including an empty list.
    - Used for initial data loading and historical analysis.
 
 2. **Real-time data** (from *subscriptions*):

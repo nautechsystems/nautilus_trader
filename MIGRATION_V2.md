@@ -127,20 +127,22 @@ standalone factory has no equivalent flag readback.
 
 Historical requests use type-specific batch callbacks in v2:
 
-| v1 data through `on_historical_data` | v2 callback                   | v2 argument                   |
-| ------------------------------------ | ----------------------------- | ----------------------------- |
-| Custom data                          | `on_historical_data`          | One `CustomData`              |
-| Book snapshot                        | `on_book`                     | One `OrderBook`               |
-| Book deltas                          | `on_historical_book_deltas`   | `Sequence[OrderBookDelta]`    |
-| Book depth                           | `on_historical_book_depth`    | `Sequence[OrderBookDepth10]`  |
-| Quote ticks                          | `on_historical_quotes`        | `Sequence[QuoteTick]`         |
-| Trade ticks                          | `on_historical_trades`        | `Sequence[TradeTick]`         |
-| Funding rates                        | `on_historical_funding_rates` | `Sequence[FundingRateUpdate]` |
-| Bars                                 | `on_historical_bars`          | `Sequence[Bar]`               |
+| v1 data through `on_historical_data` | v2 callback                   | v2 argument                                |
+| ------------------------------------ | ----------------------------- | ------------------------------------------ |
+| Custom data                          | `on_historical_data`          | One `CustomData` or `Sequence[CustomData]` |
+| Book snapshot                        | `on_book`                     | One `OrderBook`                            |
+| Book deltas                          | `on_historical_book_deltas`   | `Sequence[OrderBookDelta]`                 |
+| Book depth                           | `on_historical_book_depth`    | `Sequence[OrderBookDepth10]`               |
+| Quote ticks                          | `on_historical_quotes`        | `Sequence[QuoteTick]`                      |
+| Trade ticks                          | `on_historical_trades`        | `Sequence[TradeTick]`                      |
+| Funding rates                        | `on_historical_funding_rates` | `Sequence[FundingRateUpdate]`              |
+| Bars                                 | `on_historical_bars`          | `Sequence[Bar]`                            |
 
 Typed historical results no longer fall through to `on_historical_data`; that hook handles custom
-data. `on_historical_mark_prices` and `on_historical_index_prices` are available for native batch
-delivery, but the current public Python API does not initiate those requests.
+data. A response carrying one `CustomData` arrives as that object; a response carrying a batch
+arrives as one list, including an empty list. `on_historical_mark_prices` and
+`on_historical_index_prices` are available for native batch delivery, but the current public Python
+API does not initiate those requests.
 
 The generic `on_event` hook is removed. Replace timer handling with `on_time_event`, aggregate order
 handling with `on_order_event`, and aggregate position handling with `on_position_event`. For

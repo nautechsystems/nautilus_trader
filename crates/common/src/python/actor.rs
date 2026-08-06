@@ -1134,6 +1134,8 @@ impl DataActor for PyDataActorInner {
         Python::attach(|py| {
             let py_data: Py<PyAny> = if let Some(custom_data) = data.downcast_ref::<CustomData>() {
                 Py::new(py, custom_data.clone())?.into_any()
+            } else if let Some(custom_data) = data.downcast_ref::<Vec<CustomData>>() {
+                custom_data.clone().into_py_any(py)?
             } else {
                 anyhow::bail!("Failed to convert historical data to Python: unsupported type");
             };
@@ -4735,7 +4737,7 @@ class IndicatorEventActor:
     }
 
     #[rstest]
-    fn test_python_dispatch_historical_custom_data_response_items(
+    fn test_python_dispatch_historical_custom_data_preserves_payload_shape(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
@@ -4753,6 +4755,65 @@ class IndicatorEventActor:
                 stub_custom_data(1, 42, None, None),
                 stub_custom_data(2, 84, None, None),
             ];
+            let scalar = stub_custom_data(3, 126, None, None);
+            let scalar_response = CustomDataResponse::new(
+                UUID4::new(),
+                client_id,
+                None,
+                scalar.data_type.clone(),
+                scalar.clone(),
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            );
+
+            DataActor::handle_data_response(rust_actor.inner_mut(), &scalar_response);
+
+            let actual_scalar = py_actor
+                .call_method1(py, "last_call_args", ("on_historical_data",))
+                .unwrap()
+                .bind(py)
+                .get_item(0)
+                .unwrap()
+                .extract::<CustomData>()
+                .unwrap();
+
+            assert_eq!(
+                python_method_call_count(&py_actor, py, "on_historical_data"),
+                1
+            );
+            assert_eq!(actual_scalar, scalar);
+
+            let empty_response = CustomDataResponse::new(
+                UUID4::new(),
+                client_id,
+                None,
+                data[0].data_type.clone(),
+                Vec::<CustomData>::new(),
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            );
+
+            DataActor::handle_data_response(rust_actor.inner_mut(), &empty_response);
+
+            let empty = py_actor
+                .call_method1(py, "last_call_args", ("on_historical_data",))
+                .unwrap()
+                .bind(py)
+                .get_item(0)
+                .unwrap()
+                .extract::<Vec<CustomData>>()
+                .unwrap();
+
+            assert_eq!(
+                python_method_call_count(&py_actor, py, "on_historical_data"),
+                2
+            );
+            assert!(empty.is_empty());
+
             let response = CustomDataResponse::new(
                 UUID4::new(),
                 client_id,
@@ -4767,16 +4828,20 @@ class IndicatorEventActor:
 
             DataActor::handle_data_response(rust_actor.inner_mut(), &response);
 
-            let calls = py_actor
-                .getattr(py, "calls")
+            let actual = py_actor
+                .call_method1(py, "last_call_args", ("on_historical_data",))
                 .unwrap()
-                .extract::<Vec<(String, (CustomData,))>>(py)
+                .bind(py)
+                .get_item(0)
+                .unwrap()
+                .extract::<Vec<CustomData>>()
                 .unwrap();
-            assert_eq!(calls.len(), 2);
-            assert_eq!(calls[0].0, "on_historical_data");
-            assert_eq!(calls[0].1.0, data[0]);
-            assert_eq!(calls[1].0, "on_historical_data");
-            assert_eq!(calls[1].1.0, data[1]);
+
+            assert_eq!(
+                python_method_call_count(&py_actor, py, "on_historical_data"),
+                3
+            );
+            assert_eq!(actual, data);
         });
     }
 
