@@ -886,7 +886,7 @@ fn handle_md_message(
                 match Price::from_decimal_dp(mark_price, price_precision) {
                     Ok(price) => {
                         let update = MarkPriceUpdate::new(instrument_id, price, ts_event, ts_init);
-                        send_data_to_python(Data::MarkPriceUpdate(update), call_soon, callback);
+                        send_data_to_python(Data::MarkPrice(update), call_soon, callback);
                     }
                     Err(e) => {
                         log::error!("Failed to parse mark price for {}: {e}", ticker.s);

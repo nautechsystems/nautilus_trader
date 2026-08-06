@@ -413,7 +413,7 @@ impl DeriveDataClient {
 
                 if ctx.active_mark_subs.contains(&instrument_id) {
                     match parse_mark_price(&msg, price_precision, ts_init) {
-                        Ok(Some(update)) => Self::send_data(ctx, Data::MarkPriceUpdate(update)),
+                        Ok(Some(update)) => Self::send_data(ctx, Data::MarkPrice(update)),
                         Ok(None) => {}
                         Err(e) => log::warn!("Failed to parse Derive mark price: {e}"),
                     }
@@ -421,7 +421,7 @@ impl DeriveDataClient {
 
                 if ctx.active_index_subs.contains(&instrument_id) {
                     match parse_index_price(&msg, price_precision, ts_init) {
-                        Ok(Some(update)) => Self::send_data(ctx, Data::IndexPriceUpdate(update)),
+                        Ok(Some(update)) => Self::send_data(ctx, Data::IndexPrice(update)),
                         Ok(None) => {}
                         Err(e) => log::warn!("Failed to parse Derive index price: {e}"),
                     }
@@ -3205,7 +3205,7 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::MarkPriceUpdate(mark)) => {
+            DataEvent::Data(Data::MarkPrice(mark)) => {
                 assert_eq!(mark.instrument_id, instrument_id);
                 assert_eq!(mark.value, Price::from("3500.50"));
             }
@@ -3228,7 +3228,7 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::IndexPriceUpdate(index)) => {
+            DataEvent::Data(Data::IndexPrice(index)) => {
                 assert_eq!(index.instrument_id, instrument_id);
                 assert_eq!(index.value, Price::from("3500.00"));
             }
@@ -3350,13 +3350,13 @@ mod tests {
                 DataEvent::Data(Data::Quote(q)) => {
                     assert!(quote.replace(q).is_none(), "duplicate Quote emission");
                 }
-                DataEvent::Data(Data::MarkPriceUpdate(m)) => {
+                DataEvent::Data(Data::MarkPrice(m)) => {
                     assert!(
                         mark.replace(m).is_none(),
                         "duplicate MarkPriceUpdate emission"
                     );
                 }
-                DataEvent::Data(Data::IndexPriceUpdate(i)) => {
+                DataEvent::Data(Data::IndexPrice(i)) => {
                     assert!(
                         index.replace(i).is_none(),
                         "duplicate IndexPriceUpdate emission"

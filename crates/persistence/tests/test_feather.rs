@@ -125,7 +125,7 @@ async fn test_write_data_enum_all_types() {
         UnixNanos::from(4_000),
     );
     writer
-        .write_data(Data::FundingRateUpdate(funding_rate))
+        .write_data(Data::FundingRate(funding_rate))
         .await
         .unwrap();
 

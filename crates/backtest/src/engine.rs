@@ -1367,10 +1367,7 @@ impl BacktestEngine {
     fn route_data_to_exchange(&mut self, data: &Data) {
         if matches!(
             data,
-            Data::MarkPriceUpdate(_)
-                | Data::IndexPriceUpdate(_)
-                | Data::OptionGreeks(_)
-                | Data::Custom(_)
+            Data::MarkPrice(_) | Data::IndexPrice(_) | Data::OptionGreeks(_) | Data::Custom(_)
         ) {
             return;
         }
@@ -1402,7 +1399,7 @@ impl BacktestEngine {
                 Data::Bar(bar) => exchange_ref.process_bar(*bar),
                 Data::InstrumentStatus(status) => exchange_ref.process_instrument_status(*status),
                 Data::InstrumentClose(close) => exchange_ref.process_instrument_close(*close),
-                Data::FundingRateUpdate(funding) => {
+                Data::FundingRate(funding) => {
                     let settlement_ns =
                         exchange_ref.process_funding_rate_deferred(*funding, data.ts_init());
                     self.schedule_funding_settlement_if_required(venue, settlement_ns);

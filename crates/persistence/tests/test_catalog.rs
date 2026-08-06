@@ -1711,7 +1711,7 @@ fn test_write_data_enum_funding_rates_round_trip() {
     let data: Vec<Data> = funding_rates
         .iter()
         .copied()
-        .map(Data::FundingRateUpdate)
+        .map(Data::FundingRate)
         .collect();
 
     catalog

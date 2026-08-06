@@ -1056,7 +1056,7 @@ impl SimulatedExchange {
 
     fn queue_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> Option<UnixNanos> {
         for module in &self.modules {
-            module.pre_process(&Data::FundingRateUpdate(funding_rate));
+            module.pre_process(&Data::FundingRate(funding_rate));
         }
 
         let Some(boundary) = Self::funding_boundary(&funding_rate) else {

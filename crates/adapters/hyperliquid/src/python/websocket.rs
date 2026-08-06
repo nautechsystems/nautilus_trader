@@ -450,7 +450,7 @@ impl HyperliquidWebSocketClient {
                                     Python::attach(|py| {
                                         send_data_to_python(
                                             py,
-                                            Data::MarkPriceUpdate(mark_price),
+                                            Data::MarkPrice(mark_price),
                                             &call_soon,
                                             &callback,
                                         );
@@ -460,7 +460,7 @@ impl HyperliquidWebSocketClient {
                                     Python::attach(|py| {
                                         send_data_to_python(
                                             py,
-                                            Data::IndexPriceUpdate(index_price),
+                                            Data::IndexPrice(index_price),
                                             &call_soon,
                                             &callback,
                                         );

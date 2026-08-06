@@ -264,13 +264,13 @@ impl KrakenFuturesDataClient {
                 };
 
                 if let Some(mark) = parse_futures_ws_mark_price(&ticker, instrument, ts_init)
-                    && let Err(e) = sender.send(DataEvent::Data(Data::MarkPriceUpdate(mark)))
+                    && let Err(e) = sender.send(DataEvent::Data(Data::MarkPrice(mark)))
                 {
                     log::error!("Failed to send mark price: {e}");
                 }
 
                 if let Some(index) = parse_futures_ws_index_price(&ticker, instrument, ts_init)
-                    && let Err(e) = sender.send(DataEvent::Data(Data::IndexPriceUpdate(index)))
+                    && let Err(e) = sender.send(DataEvent::Data(Data::IndexPrice(index)))
                 {
                     log::error!("Failed to send index price: {e}");
                 }

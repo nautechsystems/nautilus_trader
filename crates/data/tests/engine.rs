@@ -9744,7 +9744,7 @@ fn test_process_mark_price(
     msgbus::subscribe_mark_prices(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::MarkPriceUpdate(mark_price));
+    data_engine.process_data(Data::MarkPrice(mark_price));
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -9799,7 +9799,7 @@ fn test_process_index_price(
     msgbus::subscribe_index_prices(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::IndexPriceUpdate(index_price));
+    data_engine.process_data(Data::IndexPrice(index_price));
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -9951,7 +9951,7 @@ fn test_process_funding_rate_data_variant(
     msgbus::subscribe_funding_rates(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::FundingRateUpdate(funding_rate));
+    data_engine.process_data(Data::FundingRate(funding_rate));
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -15106,7 +15106,7 @@ fn test_process_pipeline_mark_price_publishes_on_pipeline_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_pipeline(Data::MarkPriceUpdate(mark_price));
+    data_engine.process_pipeline(Data::MarkPrice(mark_price));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15152,7 +15152,7 @@ fn test_process_pipeline_index_price_publishes_on_pipeline_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_pipeline(Data::IndexPriceUpdate(index_price));
+    data_engine.process_pipeline(Data::IndexPrice(index_price));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15200,7 +15200,7 @@ fn test_process_pipeline_funding_rate_publishes_on_pipeline_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_pipeline(Data::FundingRateUpdate(funding_rate));
+    data_engine.process_pipeline(Data::FundingRate(funding_rate));
 
     assert!(
         live_saver.get_messages().is_empty(),

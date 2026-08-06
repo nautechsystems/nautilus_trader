@@ -1547,13 +1547,13 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
         quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("1000.00"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1687,13 +1687,13 @@ fn test_run_settles_distinct_funding_boundaries() {
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
         quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("1000.00"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1701,7 +1701,7 @@ fn test_run_settles_distinct_funding_boundaries() {
             UnixNanos::from(3_000_000_000),
             UnixNanos::from(3_000_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.002".parse().unwrap(),
             Some(480),
@@ -1736,13 +1736,13 @@ fn test_run_retries_funding_after_same_timestamp_mark_price() {
     let data = vec![
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("0.0"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1750,7 +1750,7 @@ fn test_run_retries_funding_after_same_timestamp_mark_price() {
             boundary,
             boundary,
         )),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("10000.0"),
             boundary,
@@ -1781,13 +1781,13 @@ fn test_run_stops_on_unpriced_funding_boundary() {
     let data = vec![
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("0.0"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1820,13 +1820,13 @@ fn test_end_stops_on_unpriced_funding_boundary() {
     let data = vec![
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("0.0"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1862,7 +1862,7 @@ fn test_run_rejects_late_funding_boundary() {
     engine.add_instrument(&instrument).unwrap();
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1893,7 +1893,7 @@ fn test_run_rejects_late_interval_funding_boundary() {
     let replay_ts = UnixNanos::from(61_000_000_000);
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(1),
@@ -1920,7 +1920,7 @@ fn test_reset_cancels_funding_timer() {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
-    let data = vec![Data::FundingRateUpdate(FundingRateUpdate::new(
+    let data = vec![Data::FundingRate(FundingRateUpdate::new(
         instrument_id,
         "0.001".parse().unwrap(),
         Some(480),

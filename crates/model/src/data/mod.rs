@@ -109,9 +109,9 @@ pub enum Data {
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
-    MarkPriceUpdate(MarkPriceUpdate), // TODO: Rename to MarkPrice once Cython gone
-    IndexPriceUpdate(IndexPriceUpdate), // TODO: Rename to IndexPrice once Cython gone
-    FundingRateUpdate(FundingRateUpdate),
+    MarkPrice(MarkPriceUpdate),
+    IndexPrice(IndexPriceUpdate),
+    FundingRate(FundingRateUpdate),
     OptionGreeks(OptionGreeks),
     InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
@@ -152,13 +152,13 @@ impl<'de> Deserialize<'de> for Data {
             "Bar" => Ok(Self::Bar(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "MarkPriceUpdate" => Ok(Self::MarkPriceUpdate(
+            "MarkPriceUpdate" => Ok(Self::MarkPrice(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "IndexPriceUpdate" => Ok(Self::IndexPriceUpdate(
+            "IndexPriceUpdate" => Ok(Self::IndexPrice(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "FundingRateUpdate" => Ok(Self::FundingRateUpdate(
+            "FundingRateUpdate" => Ok(Self::FundingRate(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "OptionGreeks" => Ok(Self::OptionGreeks(
@@ -192,9 +192,9 @@ impl Clone for Data {
             Self::Quote(x) => Self::Quote(*x),
             Self::Trade(x) => Self::Trade(*x),
             Self::Bar(x) => Self::Bar(*x),
-            Self::MarkPriceUpdate(x) => Self::MarkPriceUpdate(*x),
-            Self::IndexPriceUpdate(x) => Self::IndexPriceUpdate(*x),
-            Self::FundingRateUpdate(x) => Self::FundingRateUpdate(*x),
+            Self::MarkPrice(x) => Self::MarkPrice(*x),
+            Self::IndexPrice(x) => Self::IndexPrice(*x),
+            Self::FundingRate(x) => Self::FundingRate(*x),
             Self::OptionGreeks(x) => Self::OptionGreeks(*x),
             Self::InstrumentStatus(x) => Self::InstrumentStatus(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
@@ -214,9 +214,9 @@ impl PartialEq for Data {
             (Self::Quote(a), Self::Quote(b)) => a == b,
             (Self::Trade(a), Self::Trade(b)) => a == b,
             (Self::Bar(a), Self::Bar(b)) => a == b,
-            (Self::MarkPriceUpdate(a), Self::MarkPriceUpdate(b)) => a == b,
-            (Self::IndexPriceUpdate(a), Self::IndexPriceUpdate(b)) => a == b,
-            (Self::FundingRateUpdate(a), Self::FundingRateUpdate(b)) => a == b,
+            (Self::MarkPrice(a), Self::MarkPrice(b)) => a == b,
+            (Self::IndexPrice(a), Self::IndexPrice(b)) => a == b,
+            (Self::FundingRate(a), Self::FundingRate(b)) => a == b,
             (Self::OptionGreeks(a), Self::OptionGreeks(b)) => a == b,
             (Self::InstrumentStatus(a), Self::InstrumentStatus(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
@@ -240,9 +240,9 @@ impl Serialize for Data {
             Self::Quote(x) => x.serialize(serializer),
             Self::Trade(x) => x.serialize(serializer),
             Self::Bar(x) => x.serialize(serializer),
-            Self::MarkPriceUpdate(x) => x.serialize(serializer),
-            Self::IndexPriceUpdate(x) => x.serialize(serializer),
-            Self::FundingRateUpdate(x) => x.serialize(serializer),
+            Self::MarkPrice(x) => x.serialize(serializer),
+            Self::IndexPrice(x) => x.serialize(serializer),
+            Self::FundingRate(x) => x.serialize(serializer),
             Self::OptionGreeks(x) => x.serialize(serializer),
             Self::InstrumentStatus(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
@@ -296,9 +296,9 @@ impl_try_from_data!(Quote, QuoteTick);
 impl_try_from_data!(Delta, OrderBookDelta);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
-impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
-impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
-impl_try_from_data!(FundingRateUpdate, FundingRateUpdate);
+impl_try_from_data!(MarkPrice, MarkPriceUpdate);
+impl_try_from_data!(IndexPrice, IndexPriceUpdate);
+impl_try_from_data!(FundingRate, FundingRateUpdate);
 impl_try_from_data!(OptionGreeks, OptionGreeks);
 impl_try_from_data!(InstrumentStatus, InstrumentStatus);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
@@ -325,9 +325,9 @@ impl Data {
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
-            Self::MarkPriceUpdate(mark_price) => mark_price.instrument_id,
-            Self::IndexPriceUpdate(index_price) => index_price.instrument_id,
-            Self::FundingRateUpdate(funding_rate) => funding_rate.instrument_id,
+            Self::MarkPrice(mark_price) => mark_price.instrument_id,
+            Self::IndexPrice(index_price) => index_price.instrument_id,
+            Self::FundingRate(funding_rate) => funding_rate.instrument_id,
             Self::OptionGreeks(greeks) => greeks.instrument_id,
             Self::InstrumentStatus(status) => status.instrument_id,
             Self::InstrumentClose(close) => close.instrument_id,
@@ -416,9 +416,9 @@ impl HasTsInit for Data {
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
-            Self::MarkPriceUpdate(p) => p.ts_init,
-            Self::IndexPriceUpdate(p) => p.ts_init,
-            Self::FundingRateUpdate(f) => f.ts_init,
+            Self::MarkPrice(p) => p.ts_init,
+            Self::IndexPrice(p) => p.ts_init,
+            Self::FundingRate(f) => f.ts_init,
             Self::OptionGreeks(g) => g.ts_init,
             Self::InstrumentStatus(s) => s.ts_init,
             Self::InstrumentClose(c) => c.ts_init,
@@ -475,19 +475,19 @@ impl From<Bar> for Data {
 
 impl From<MarkPriceUpdate> for Data {
     fn from(value: MarkPriceUpdate) -> Self {
-        Self::MarkPriceUpdate(value)
+        Self::MarkPrice(value)
     }
 }
 
 impl From<IndexPriceUpdate> for Data {
     fn from(value: IndexPriceUpdate) -> Self {
-        Self::IndexPriceUpdate(value)
+        Self::IndexPrice(value)
     }
 }
 
 impl From<FundingRateUpdate> for Data {
     fn from(value: FundingRateUpdate) -> Self {
-        Self::FundingRateUpdate(value)
+        Self::FundingRate(value)
     }
 }
 

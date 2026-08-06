@@ -1058,11 +1058,11 @@ async fn test_subscribe_mark_index_funding_share_one_ws_subscription() {
         };
 
         match event {
-            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+            DataEvent::Data(Data::MarkPrice(update)) => {
                 saw_mark = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
-            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+            DataEvent::Data(Data::IndexPrice(update)) => {
                 saw_index = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
@@ -1142,11 +1142,11 @@ async fn test_market_stats_retry_preserves_kinds_piggybacked_on_failed_attempt()
         };
 
         match event {
-            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+            DataEvent::Data(Data::MarkPrice(update)) => {
                 saw_mark = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
-            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+            DataEvent::Data(Data::IndexPrice(update)) => {
                 saw_index = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }

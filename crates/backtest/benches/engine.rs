@@ -743,19 +743,19 @@ fn generate_price_status_funding_data(
             MarketStatusAction::Trading
         };
 
-        data.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        data.push(Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             price,
             UnixNanos::from(ts),
             UnixNanos::from(ts),
         )));
-        data.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
+        data.push(Data::IndexPrice(IndexPriceUpdate::new(
             instrument_id,
             price,
             UnixNanos::from(ts + 1),
             UnixNanos::from(ts + 1),
         )));
-        data.push(Data::FundingRateUpdate(FundingRateUpdate::new(
+        data.push(Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             Decimal::new(1, 4),
             None,

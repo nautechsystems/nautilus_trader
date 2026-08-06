@@ -1813,8 +1813,7 @@ impl DeribitWsFeedHandler {
                                                 ts_init,
                                             ) {
                                                 Ok(mark_price) => {
-                                                    data_vec
-                                                        .push(Data::MarkPriceUpdate(mark_price));
+                                                    data_vec.push(Data::MarkPrice(mark_price));
                                                 }
                                                 Err(e) => {
                                                     log::warn!("Failed to parse mark price: {e}");
@@ -1830,8 +1829,7 @@ impl DeribitWsFeedHandler {
                                                 ts_init,
                                             ) {
                                                 Ok(index_price) => {
-                                                    data_vec
-                                                        .push(Data::IndexPriceUpdate(index_price));
+                                                    data_vec.push(Data::IndexPrice(index_price));
                                                 }
                                                 Err(e) => {
                                                     log::warn!("Failed to parse index price: {e}");

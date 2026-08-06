@@ -319,7 +319,7 @@ pub(crate) fn emit_deriv_updates(
         && let Ok(price) = Price::from_decimal_dp(decimal, precision_from_index(raw))
     {
         let update = IndexPriceUpdate::new(instrument_id, price, ts_now, ts_now);
-        if let Err(e) = sender.send(DataEvent::Data(Data::IndexPriceUpdate(update))) {
+        if let Err(e) = sender.send(DataEvent::Data(Data::IndexPrice(update))) {
             log::error!("Failed to send IndexPriceUpdate for {instrument_id}: {e}");
         }
     }
@@ -451,7 +451,7 @@ mod tests {
 
         while let Ok(evt) = rx.try_recv() {
             match evt {
-                DataEvent::Data(Data::IndexPriceUpdate(ip)) => {
+                DataEvent::Data(Data::IndexPrice(ip)) => {
                     got_index = Some(ip);
                 }
                 DataEvent::FundingRate(fr) => got_funding = Some(fr),
@@ -814,7 +814,7 @@ mod tests {
 
         while let Ok(evt) = rx.try_recv() {
             match evt {
-                DataEvent::Data(Data::IndexPriceUpdate(_)) => {
+                DataEvent::Data(Data::IndexPrice(_)) => {
                     got_index = true;
                 }
                 DataEvent::FundingRate(_) => got_funding = true,
@@ -871,7 +871,7 @@ mod tests {
 
         while let Ok(evt) = rx.try_recv() {
             match evt {
-                DataEvent::Data(Data::IndexPriceUpdate(_)) => {
+                DataEvent::Data(Data::IndexPrice(_)) => {
                     got_index = true;
                 }
                 DataEvent::FundingRate(_) => got_funding = true,

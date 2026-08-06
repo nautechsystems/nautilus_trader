@@ -1753,15 +1753,15 @@ impl DataEngine {
             }
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),
-            Data::MarkPriceUpdate(mark_price) => {
+            Data::MarkPrice(mark_price) => {
                 self.handle_mark_price(mark_price);
                 self.drain_deferred_commands();
             }
-            Data::IndexPriceUpdate(index_price) => {
+            Data::IndexPrice(index_price) => {
                 self.handle_index_price(index_price);
                 self.drain_deferred_commands();
             }
-            Data::FundingRateUpdate(funding_rate) => {
+            Data::FundingRate(funding_rate) => {
                 self.handle_funding_rate(funding_rate);
                 self.drain_deferred_commands();
             }
@@ -1826,9 +1826,9 @@ impl DataEngine {
             Data::Quote(quote) => self.handle_quote_pipeline(quote),
             Data::Trade(trade) => self.handle_trade_pipeline(trade),
             Data::Bar(bar) => self.handle_bar_pipeline(bar),
-            Data::MarkPriceUpdate(mark_price) => self.handle_mark_price_pipeline(mark_price),
-            Data::IndexPriceUpdate(index_price) => self.handle_index_price_pipeline(index_price),
-            Data::FundingRateUpdate(funding_rate) => {
+            Data::MarkPrice(mark_price) => self.handle_mark_price_pipeline(mark_price),
+            Data::IndexPrice(index_price) => self.handle_index_price_pipeline(index_price),
+            Data::FundingRate(funding_rate) => {
                 self.handle_funding_rate_pipeline(funding_rate);
             }
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),

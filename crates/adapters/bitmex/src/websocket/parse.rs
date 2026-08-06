@@ -1072,7 +1072,7 @@ pub fn parse_instrument_msg(
     // For index symbols, markPrice equals lastPrice and is valid to emit
     if let Some(mark_price) = effective_mark_price {
         let price = Price::new(mark_price, price_precision);
-        updates.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        updates.push(Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             price,
             ts_event,
@@ -1083,7 +1083,7 @@ pub fn parse_instrument_msg(
     // Add index price update if present
     if let Some(index_price) = effective_index_price {
         let price = Price::new(index_price, price_precision);
-        updates.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
+        updates.push(Data::IndexPrice(IndexPriceUpdate::new(
             instrument_id,
             price,
             ts_event,
@@ -2005,7 +2005,7 @@ mod tests {
         assert_eq!(updates.len(), 2);
 
         match &updates[0] {
-            Data::MarkPriceUpdate(update) => {
+            Data::MarkPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
                 assert_eq!(update.value.as_f64(), 95125.7);
             }
@@ -2013,7 +2013,7 @@ mod tests {
         }
 
         match &updates[1] {
-            Data::IndexPriceUpdate(update) => {
+            Data::IndexPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
                 assert_eq!(update.value.as_f64(), 95126.0);
             }
@@ -2036,7 +2036,7 @@ mod tests {
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
-            Data::MarkPriceUpdate(update) => {
+            Data::MarkPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
                 assert_eq!(update.value.as_f64(), 95125.7);
             }
@@ -2059,7 +2059,7 @@ mod tests {
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
-            Data::IndexPriceUpdate(update) => {
+            Data::IndexPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
                 assert_eq!(update.value.as_f64(), 95126.0);
             }
@@ -2141,7 +2141,7 @@ mod tests {
 
         // Check mark price update
         match &updates[0] {
-            Data::MarkPriceUpdate(update) => {
+            Data::MarkPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), ".BXBT.BITMEX");
                 assert_eq!(update.value, Price::from("119163.05"));
             }
@@ -2150,7 +2150,7 @@ mod tests {
 
         // Check index price update
         match &updates[1] {
-            Data::IndexPriceUpdate(update) => {
+            Data::IndexPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), ".BXBT.BITMEX");
                 assert_eq!(update.value, Price::from("119163.05"));
                 assert_eq!(update.ts_init, UnixNanos::from(1));
@@ -2204,7 +2204,7 @@ mod tests {
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
-            Data::MarkPriceUpdate(update) => {
+            Data::MarkPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "DOTUSDT.BITMEX");
                 assert_eq!(update.value, Price::from("1.2669"));
             }
@@ -2228,7 +2228,7 @@ mod tests {
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
-            Data::IndexPriceUpdate(update) => {
+            Data::IndexPrice(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
                 assert_eq!(update.value, Price::from("75847.62"));
             }

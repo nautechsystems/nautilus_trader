@@ -625,8 +625,8 @@ impl BinanceFuturesDataClient {
                 if let Some(instrument) = cache.get(&mark_msg.symbol) {
                     match parse_mark_price(mark_msg, instrument, ts_init) {
                         Ok((mark_update, index_update, funding_update, custom_update)) => {
-                            Self::send_data(data_sender, Data::MarkPriceUpdate(mark_update));
-                            Self::send_data(data_sender, Data::IndexPriceUpdate(index_update));
+                            Self::send_data(data_sender, Data::MarkPrice(mark_update));
+                            Self::send_data(data_sender, Data::IndexPrice(index_update));
                             if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_update))
                             {
                                 log::error!("Failed to emit funding rate: {e}");

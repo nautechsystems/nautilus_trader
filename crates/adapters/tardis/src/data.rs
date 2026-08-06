@@ -319,7 +319,7 @@ impl TardisDataClient {
                 parse_derivative_ticker_mark_price(msg, info.instrument_id, info.price_precision)
                 && cache.should_emit_mark_price(&mark_price)
                 && sender
-                    .send(DataEvent::Data(Data::MarkPriceUpdate(mark_price)))
+                    .send(DataEvent::Data(Data::MarkPrice(mark_price)))
                     .is_err()
             {
                 return false;
@@ -329,7 +329,7 @@ impl TardisDataClient {
                 parse_derivative_ticker_index_price(msg, info.instrument_id, info.price_precision)
                 && cache.should_emit_index_price(&index_price)
                 && sender
-                    .send(DataEvent::Data(Data::IndexPriceUpdate(index_price)))
+                    .send(DataEvent::Data(Data::IndexPrice(index_price)))
                     .is_err()
             {
                 return false;

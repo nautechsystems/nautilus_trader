@@ -1734,15 +1734,15 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     }
 
     if let Ok(mark) = obj.extract::<MarkPriceUpdate>() {
-        return Ok(Data::MarkPriceUpdate(mark));
+        return Ok(Data::MarkPrice(mark));
     }
 
     if let Ok(index) = obj.extract::<IndexPriceUpdate>() {
-        return Ok(Data::IndexPriceUpdate(index));
+        return Ok(Data::IndexPrice(index));
     }
 
     if let Ok(funding_rate) = obj.extract::<FundingRateUpdate>() {
-        return Ok(Data::FundingRateUpdate(funding_rate));
+        return Ok(Data::FundingRate(funding_rate));
     }
 
     if let Ok(greeks) = obj.extract::<OptionGreeks>() {
@@ -1784,15 +1784,15 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     }
 
     if let Ok(mark) = MarkPriceUpdate::from_pyobject(obj) {
-        return Ok(Data::MarkPriceUpdate(mark));
+        return Ok(Data::MarkPrice(mark));
     }
 
     if let Ok(index) = IndexPriceUpdate::from_pyobject(obj) {
-        return Ok(Data::IndexPriceUpdate(index));
+        return Ok(Data::IndexPrice(index));
     }
 
     if let Ok(funding_rate) = FundingRateUpdate::from_pyobject(obj) {
-        return Ok(Data::FundingRateUpdate(funding_rate));
+        return Ok(Data::FundingRate(funding_rate));
     }
 
     if let Ok(greeks) = OptionGreeks::from_pyobject(obj) {

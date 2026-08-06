@@ -331,7 +331,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::IndexPriceUpdate(price)).await })
+                .block_on(async { writer.write_data(Data::IndexPrice(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write IndexPriceUpdate: {e}")));
         }
 
@@ -339,7 +339,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::MarkPriceUpdate(price)).await })
+                .block_on(async { writer.write_data(Data::MarkPrice(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write MarkPriceUpdate: {e}")));
         }
 

@@ -932,13 +932,13 @@ fn handle_ticker(
 
     if let Some(mark_price) = parse_futures_ws_mark_price(ticker, instrument, ts_init) {
         Python::attach(|py| {
-            send_data_to_python(py, Data::MarkPriceUpdate(mark_price), call_soon, callback);
+            send_data_to_python(py, Data::MarkPrice(mark_price), call_soon, callback);
         });
     }
 
     if let Some(index_price) = parse_futures_ws_index_price(ticker, instrument, ts_init) {
         Python::attach(|py| {
-            send_data_to_python(py, Data::IndexPriceUpdate(index_price), call_soon, callback);
+            send_data_to_python(py, Data::IndexPrice(index_price), call_soon, callback);
         });
     }
 

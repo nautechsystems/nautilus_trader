@@ -438,14 +438,14 @@ impl HyperliquidDataClient {
                                 }
                                 NautilusWsMessage::MarkPrice(update) => {
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::Data(Data::MarkPriceUpdate(update)))
+                                        .send(DataEvent::Data(Data::MarkPrice(update)))
                                     {
                                         log::error!("Failed to send mark price update: {e}");
                                     }
                                 }
                                 NautilusWsMessage::IndexPrice(update) => {
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::Data(Data::IndexPriceUpdate(update)))
+                                        .send(DataEvent::Data(Data::IndexPrice(update)))
                                     {
                                         log::error!("Failed to send index price update: {e}");
                                     }

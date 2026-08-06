@@ -431,13 +431,13 @@ impl ParquetDataCatalog {
                 Data::Bar(d) => {
                     bars.push(d);
                 }
-                Data::MarkPriceUpdate(p) => {
+                Data::MarkPrice(p) => {
                     mark_prices.push(p);
                 }
-                Data::IndexPriceUpdate(p) => {
+                Data::IndexPrice(p) => {
                     index_prices.push(p);
                 }
-                Data::FundingRateUpdate(p) => {
+                Data::FundingRate(p) => {
                     funding_rates.push(p);
                 }
                 Data::OptionGreeks(g) => {

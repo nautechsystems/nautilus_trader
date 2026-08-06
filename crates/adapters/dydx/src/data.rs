@@ -1336,7 +1336,7 @@ impl DydxDataClient {
 
                 if ctx.active_mark_price_subs.contains(&instrument_id) {
                     let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    let data = NautilusData::MarkPrice(mark_price);
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit mark price for {instrument_id}: {e}");
                     }
@@ -1344,7 +1344,7 @@ impl DydxDataClient {
 
                 if ctx.active_index_price_subs.contains(&instrument_id) {
                     let index_price = IndexPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    let data = NautilusData::IndexPrice(index_price);
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit index price for {instrument_id}: {e}");
                     }
@@ -1446,7 +1446,7 @@ impl DydxDataClient {
             {
                 if ctx.active_mark_price_subs.contains(&instrument_id) {
                     let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    let data = NautilusData::MarkPrice(mark_price);
 
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit mark price for {instrument_id}: {e}");
@@ -1455,7 +1455,7 @@ impl DydxDataClient {
 
                 if ctx.active_index_price_subs.contains(&instrument_id) {
                     let index_price = IndexPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    let data = NautilusData::IndexPrice(index_price);
 
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit index price for {instrument_id}: {e}");

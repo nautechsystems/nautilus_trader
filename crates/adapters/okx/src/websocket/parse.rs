@@ -784,7 +784,7 @@ pub fn parse_mark_price_msg_vec(
     parse_message_vec(
         data,
         |msg| parse_mark_price_msg(msg, *instrument_id, price_precision, ts_init),
-        Data::MarkPriceUpdate,
+        Data::MarkPrice,
     )
 }
 
@@ -802,7 +802,7 @@ pub fn parse_index_price_msg_vec(
     parse_message_vec(
         data,
         |msg| parse_index_price_msg(msg, *instrument_id, price_precision, ts_init),
-        Data::IndexPriceUpdate,
+        Data::IndexPrice,
     )
 }
 

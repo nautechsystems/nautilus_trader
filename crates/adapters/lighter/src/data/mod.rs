@@ -2111,7 +2111,7 @@ mod tests {
         ));
 
         match receiver.try_recv().unwrap() {
-            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+            DataEvent::Data(Data::MarkPrice(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.value, Price::from("2000.00"));
             }
@@ -2119,7 +2119,7 @@ mod tests {
         }
 
         match receiver.try_recv().unwrap() {
-            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+            DataEvent::Data(Data::IndexPrice(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.value, Price::from("1999.50"));
             }

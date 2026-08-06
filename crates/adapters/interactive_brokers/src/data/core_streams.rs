@@ -1793,7 +1793,7 @@ where
             )?;
 
             if data_sender
-                .send(DataEvent::Data(Data::IndexPriceUpdate(index_price)))
+                .send(DataEvent::Data(Data::IndexPrice(index_price)))
                 .is_err()
             {
                 return Ok(StreamAction::Stop);
@@ -1815,7 +1815,7 @@ where
             )?;
 
             if data_sender
-                .send(DataEvent::Data(Data::IndexPriceUpdate(index_price)))
+                .send(DataEvent::Data(Data::IndexPrice(index_price)))
                 .is_err()
             {
                 return Ok(StreamAction::Stop);
@@ -2521,7 +2521,7 @@ mod tests {
         assert!(matches!(action, StreamAction::Continue));
 
         match receiver.recv().await.unwrap() {
-            DataEvent::Data(Data::IndexPriceUpdate(index)) => {
+            DataEvent::Data(Data::IndexPrice(index)) => {
                 assert_eq!(index.value.as_f64(), 4525.25);
             }
             other => panic!("unexpected event: {other:?}"),
