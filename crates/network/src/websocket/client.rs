@@ -113,16 +113,6 @@ const WRITE_TIMEOUT_SECS: u64 = 5;
 /// The RFC 6455 control-frame payload limit.
 const MAX_CONTROL_FRAME_PAYLOAD_BYTES: usize = 125;
 
-fn validate_pong_payload(data: &[u8]) -> Result<(), SendError> {
-    if data.len() > MAX_CONTROL_FRAME_PAYLOAD_BYTES {
-        return Err(SendError::InvalidInput(format!(
-            "pong payload exceeds {MAX_CONTROL_FRAME_PAYLOAD_BYTES} bytes"
-        )));
-    }
-
-    Ok(())
-}
-
 /// Shared headers used by future automatic WebSocket reconnects.
 ///
 /// Updating these headers does not affect the active connection or trigger a reconnect.
@@ -2605,6 +2595,16 @@ fn fail_registered_auth(auth_tracker: &OnceLock<AuthTracker>, reason: &str) {
     if let Some(tracker) = auth_tracker.get() {
         tracker.fail(reason);
     }
+}
+
+fn validate_pong_payload(data: &[u8]) -> Result<(), SendError> {
+    if data.len() > MAX_CONTROL_FRAME_PAYLOAD_BYTES {
+        return Err(SendError::InvalidInput(format!(
+            "pong payload exceeds {MAX_CONTROL_FRAME_PAYLOAD_BYTES} bytes"
+        )));
+    }
+
+    Ok(())
 }
 
 impl Drop for WebSocketClient {
