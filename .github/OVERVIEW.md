@@ -32,8 +32,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   wheel jobs after `pre-commit`; every publication path requires it to pass. Pull request head
   updates and base retargets to `develop` run normal CI. Title‑only and body‑only edits execute no
   jobs.
-- **build-docs.yml**: builds the Python API documentation on `master` and `nightly`, then dispatches
-  the downstream documentation build after the local gate succeeds.
+- **build-docs.yml**: dispatches the documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds CLI archives for Linux x86, Linux ARM64, macOS ARM64, and Windows
   x86_64 on nightly pushes and manual dispatch. Nightly pushes publish versioned and latest
   artifacts to R2.
@@ -134,9 +133,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   cancel or replace an earlier push.
 - **Runners**: Trusted Linux x86 jobs in `build.yml`, including `test-ci`, use the self‑hosted
   `build` pool. Untrusted PRs use GitHub‑hosted runners under the policy below. Linux ARM and Windows
-  wheel matrices use Depot 8‑core runners, while macOS wheels and all CLI platforms use GitHub
-  runners. Scheduled Rust diagnostics use the self‑hosted `self-hosted-linux-x86` pool, and DST uses
-  the `build` pool. Custom runner labels are declared in `.github/actionlint.yaml`.
+  wheel matrices and Linux ARM Docker test and NautilusTrader production jobs use Depot 8‑core
+  runners. The ARM test job builds both NautilusTrader and JupyterLab. macOS wheels, all CLI
+  platforms, production JupyterLab builds, and other Docker jobs use GitHub runners. Scheduled Rust
+  diagnostics use the self‑hosted `self-hosted-linux-x86` pool, and DST uses the `build` pool. Custom
+  runner labels are declared in `.github/actionlint.yaml`.
 
 ### Runtime hardening
 

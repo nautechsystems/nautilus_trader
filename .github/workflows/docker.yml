@@ -32,7 +32,7 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-22.04
           - platform: linux/arm64
-            runner: ubuntu-22.04-arm
+            runner: depot-ubuntu-22.04-arm-8
     env:
       BUILD_MODE: release
     steps:
@@ -165,7 +165,7 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-22.04
           - platform: linux/arm64
-            runner: ubuntu-22.04-arm
+            runner: depot-ubuntu-22.04-arm-8
     env:
       BUILD_MODE: release
     steps:
