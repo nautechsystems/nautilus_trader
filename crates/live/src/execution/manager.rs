@@ -18,6 +18,8 @@
 //! This module provides the execution manager for reconciling execution state between
 //! the local cache and connected venues, as well as purging old state during live trading.
 
+#[cfg(feature = "node")]
+use std::collections::HashSet;
 use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time::Duration};
 
 use indexmap::{IndexMap, IndexSet};
@@ -2087,6 +2089,19 @@ impl ExecutionManager {
         self.external_order_claims.get(instrument_id).copied()
     }
 
+    /// Returns the instruments with external order claims owned by `strategy_id`.
+    #[must_use]
+    #[cfg(feature = "node")]
+    pub(crate) fn get_external_order_claims_for_strategy(
+        &self,
+        strategy_id: StrategyId,
+    ) -> HashSet<InstrumentId> {
+        self.external_order_claims
+            .iter()
+            .filter_map(|(instrument_id, owner)| (*owner == strategy_id).then_some(*instrument_id))
+            .collect()
+    }
+
     /// Claims external orders for a specific strategy and instrument.
     ///
     /// # Errors
@@ -2104,6 +2119,30 @@ impl ExecutionManager {
         self.external_order_claims
             .insert(instrument_id, strategy_id);
         Ok(())
+    }
+
+    #[cfg(feature = "node")]
+    pub(crate) fn register_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &HashSet<InstrumentId>,
+    ) {
+        self.external_order_claims.extend(
+            instrument_ids
+                .iter()
+                .map(|instrument_id| (*instrument_id, strategy_id)),
+        );
+    }
+
+    /// Deregisters all external order claims owned by `strategy_id`.
+    ///
+    /// Coordinated live-node callers should use
+    /// `LiveNode::deregister_external_order_claims` so the reconciliation
+    /// manager and execution engine remain consistent.
+    #[cfg(feature = "node")]
+    pub(crate) fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
+        self.external_order_claims
+            .retain(|_, owner| *owner != strategy_id);
     }
 
     /// Records position activity for reconciliation tracking, scoped per (instrument, account).
