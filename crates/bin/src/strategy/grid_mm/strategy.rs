@@ -149,7 +149,7 @@ nautilus_strategy!(GridMarketMaker, {
             let cache = self.cache();
             cache
                 .order(&event.client_order_id)
-                .is_some_and(|o| o.is_closed())
+                .is_some_and(|order| order.is_closed())
         };
 
         if closed {
@@ -264,7 +264,7 @@ impl DataActor for GridMarketMaker {
                 let inflight = cache.orders_inflight(None, inst, strategy, None, None);
                 open.iter()
                     .chain(inflight.iter())
-                    .map(|o| o.client_order_id())
+                    .map(|order| order.client_order_id())
                     .collect()
             };
             self.pending_self_cancels.extend(ids);

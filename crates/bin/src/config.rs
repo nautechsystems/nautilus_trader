@@ -15,6 +15,7 @@
 
 use anyhow::{Context, Result};
 use nautilus_common::enums::Environment;
+use nautilus_model::types::Quantity;
 use serde::{de, Deserialize, Deserializer};
 use std::path::Path;
 use std::str::FromStr;
@@ -51,7 +52,7 @@ pub struct RecorderTomlConfig {
 }
 
 
-
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 pub struct MattiasMarketMakerTomlConfig {
     pub exchange: String,
@@ -59,6 +60,9 @@ pub struct MattiasMarketMakerTomlConfig {
     pub instrument_id: String,
     #[serde(default = "default_recorder_path")]
     pub path: String,
+    pub Q_max: Quantity,
+    pub Φ_0: Quantity,
+    pub Φ_n: u8,
     /// execution environment. possible values are live and backtest
     #[serde(deserialize_with = "deserialize_environment")]
     pub execution_environment: Environment

@@ -1,3 +1,5 @@
+#![allow(mixed_script_confusables)]
+
 //! `mmm` - mattia's market maker
 
 use nautilus_backtest::node::BacktestNode;
@@ -37,15 +39,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mmm_config = MattiasMarketMakerConfig::builder()
         .instrument_id(instrument_id)
         .catalog_path(parquet_path.clone())
+        .Φ_n(config.Φ_n)
+        .Φ_0(config.Φ_0)
+        .Q_max(config.Q_max)
         .build();
 
     let strategy = MattiasMarketMaker::new(&mmm_config);
 
-    let start_date = Utc.with_ymd_and_hms(2026, 7, 27, 0, 0, 0).single().unwrap();
-    let end_date = Utc
-        .with_ymd_and_hms(2026, 7, 31, 12, 0, 0)
-        .single()
-        .unwrap();
+    let start_date = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).single().unwrap();
+    let end_date = Utc.with_ymd_and_hms(2026, 8, 3, 0, 0, 0).single().unwrap();
 
     match &config.execution_environment {
         Environment::Backtest => {
@@ -63,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .start_time(start_date.into())
                 .end_time(end_date.into())
                 .data_type(NautilusDataType::OrderBookDelta)
+                .optimize_file_loading(true)
                 .build()?;
 
             let trades = BacktestDataConfig::builder()
@@ -71,13 +74,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .start_time(start_date.into())
                 .end_time(end_date.into())
                 .data_type(NautilusDataType::TradeTick)
+                .optimize_file_loading(true)
                 .build()?;
 
             let run = BacktestRunConfig::builder()
                 .id("mmm-backtest".to_string())
                 .venues(vec![venue])
                 .data(vec![order_book, trades])
-                .chunk_size(100_000_000)
+                .chunk_size(1_000_000)
                 .build()?;
 
             let mut node = BacktestNode::new(vec![run])?;

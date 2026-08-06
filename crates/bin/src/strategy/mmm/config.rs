@@ -1,7 +1,8 @@
-use nautilus_model::identifiers::{InstrumentId, StrategyId};
+use nautilus_model::{identifiers::{InstrumentId, StrategyId}, types::Quantity};
 use nautilus_trading::StrategyConfig;
 
 
+#[allow(non_snake_case)]
 #[derive(Debug, Clone, bon::Builder)]
 pub struct MattiasMarketMakerConfig {
     #[builder(default = StrategyConfig {
@@ -11,5 +12,9 @@ pub struct MattiasMarketMakerConfig {
     })]
     pub base: StrategyConfig,
     pub instrument_id: InstrumentId,
-    pub catalog_path: String
+    pub catalog_path: String,
+
+    pub Φ_n: u8,
+    pub Φ_0: Quantity,
+    pub Q_max: Quantity
 }
