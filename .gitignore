@@ -121,7 +121,6 @@ env/
 !scripts/ci/security-audit-gate.sh
 !scripts/ci/set-cargo-build-jobs.sh
 !scripts/ci/update-pyproject-version.sh
-!scripts/ci/validate-wheel-count.sh
 !scripts/ci/verify-ci-inputs.sh
 !scripts/cli/install.sh
 !scripts/clippy-changed.sh
@@ -133,11 +132,9 @@ env/
 !scripts/install-osv-scanner.sh
 !scripts/package-version.sh
 !scripts/purge-orphan-dev-wheels.sh
-!scripts/python-version.sh
 !scripts/regen-capnp.sh
 !scripts/rust-toolchain.sh
 !scripts/soak-network-turmoil.sh
-!scripts/test-examples.sh
 !scripts/tool-version.sh
 !scripts/uv-version.sh
 *tmp/
