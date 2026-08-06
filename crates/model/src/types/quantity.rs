@@ -45,6 +45,7 @@ use std::{
     hash::{Hash, Hasher},
     ops::{Add, Deref, Div, Mul, Sub},
     str::FromStr,
+    iter::Sum
 };
 
 #[cfg(feature = "defi")]
@@ -919,6 +920,18 @@ pub fn check_positive_quantity(value: Quantity, param: &str) -> CorrectnessResul
         });
     }
     Ok(())
+}
+
+impl Sum for Quantity {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::from(0), |acc, x| acc + x)
+    }
+}
+
+impl<'a> Sum<&'a Self> for Quantity {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::from(0), |acc, x| acc + *x)
+    }
 }
 
 #[cfg(test)]
