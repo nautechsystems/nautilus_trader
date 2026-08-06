@@ -568,7 +568,7 @@ fn dispatch_maker_fills(
 }
 
 fn is_user_maker_order(order: &PolymarketMakerOrder, ctx: &WsDispatchContext<'_>) -> bool {
-    order.maker_address == ctx.user_address || order.owner == ctx.user_api_key
+    order.is_owned_by(ctx.user_address, ctx.user_api_key)
 }
 
 fn dispatch_taker_fill(
