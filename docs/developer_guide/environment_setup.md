@@ -15,7 +15,8 @@ is typically too old, so you may need to install from source (see below).
 
 :::info
 NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
-mind (use `std::path::Path`, avoid Bash-isms in shell scripts, etc.).
+mind: use `std::path::Path` in code and follow the
+[shell portability policy](shell.md#define-the-portability-target) for scripts.
 :::
 
 ## Setup
