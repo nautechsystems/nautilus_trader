@@ -49,9 +49,9 @@ jobs:
           TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
           echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
-      # https://github.com/actions-rust-lang/setup-rust-toolchain
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
+        # https://github.com/actions-rust-lang/setup-rust-toolchain
         uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
@@ -67,9 +67,9 @@ jobs:
           # Prefix the list here with "+" to use these queries and those in the config file.
           # queries: ./path/to/local/query, your-org/your-repo/queries@main
 
-      # https://github.com/github/codeql-action
       - name: Autobuild
         if: matrix.language == 'rust'
+        # https://github.com/github/codeql-action
         uses: github/codeql-action/autobuild@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
 
       - name: Perform CodeQL Analysis

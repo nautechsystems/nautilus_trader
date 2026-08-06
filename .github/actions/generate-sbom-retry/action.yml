@@ -31,6 +31,7 @@ runs:
     - name: Generate SBOM (attempt 1/3)
       id: sbom1
       continue-on-error: true
+      # https://github.com/anchore/sbom-action
       uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
       with:
         image: ${{ inputs.image }}
@@ -51,6 +52,7 @@ runs:
       id: sbom2
       if: steps.sbom1.outcome == 'failure'
       continue-on-error: true
+      # https://github.com/anchore/sbom-action
       uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
       with:
         image: ${{ inputs.image }}
@@ -69,6 +71,7 @@ runs:
 
     - name: Generate SBOM (attempt 3/3, final)
       if: steps.sbom2.outcome == 'failure'
+      # https://github.com/anchore/sbom-action
       uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
       with:
         image: ${{ inputs.image }}

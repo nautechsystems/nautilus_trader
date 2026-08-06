@@ -14,10 +14,10 @@ outputs:
 runs:
   using: composite
   steps:
-    # https://github.com/actions/attest-build-provenance
     - name: Attest build provenance (attempt 1/3)
       id: attest-1
       continue-on-error: true
+      # https://github.com/actions/attest-build-provenance
       uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
       with:
         subject-path: ${{ inputs.subject-path }}
@@ -33,6 +33,7 @@ runs:
       id: attest-2
       if: steps.attest-1.outcome == 'failure'
       continue-on-error: true
+      # https://github.com/actions/attest-build-provenance
       uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
       with:
         subject-path: ${{ inputs.subject-path }}
@@ -47,6 +48,7 @@ runs:
     - name: Attest build provenance (attempt 3/3, final)
       id: attest-3
       if: steps.attest-1.outcome == 'failure' && steps.attest-2.outcome == 'failure'
+      # https://github.com/actions/attest-build-provenance
       uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
       with:
         subject-path: ${{ inputs.subject-path }}

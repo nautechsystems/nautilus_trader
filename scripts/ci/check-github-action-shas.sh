@@ -1,6 +1,8 @@
 #!/bin/bash
-# A script to verify that GitHub Action SHAs match their expected release tags.
-# It expects the format: uses: owner/repo/path@<sha> # <tag>
+# Verify that external GitHub Actions identify their source and pin the expected release tag.
+# Expected format:
+#   # https://github.com/owner/repo
+#   uses: owner/repo/path@<sha> # <tag>
 
 if [ "$#" -eq 0 ]; then
   echo "Usage: $0 <action-file>..." >&2
@@ -8,7 +10,53 @@ if [ "$#" -eq 0 ]; then
 fi
 
 USES_LINES="$(mktemp)"
-trap 'rm -f "$USES_LINES"' EXIT
+ACTION_FAILURES="$(mktemp)"
+trap 'rm -f "$USES_LINES" "$ACTION_FAILURES"' EXIT
+
+FAILED=0
+
+awk '
+  FNR == 1 {
+    previous = ""
+  }
+
+  /^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*/ {
+    reference = $0
+    sub(/^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*/, "", reference)
+    sub(/[[:space:]#].*$/, "", reference)
+
+    if (reference !~ /^\.\// && reference !~ /^docker:\/\//) {
+      action = reference
+      sub(/@.*/, "", action)
+      split(action, parts, "/")
+      expected = "# https://github.com/" parts[1] "/" parts[2]
+      actual = previous
+      sub(/^[[:space:]]*/, "", actual)
+      sub(/[[:space:]]*$/, "", actual)
+
+      if (actual != expected) {
+        printf "%s:%d: FAILED (expected source comment %s immediately above): %s\n", \
+          FILENAME, FNR, expected, reference
+      }
+
+      pin = reference
+      sub(/^.*@/, "", pin)
+      if (length(pin) != 40 || pin ~ /[^0-9a-f]/) {
+        printf "%s:%d: FAILED (expected full 40-character commit SHA): %s\n", \
+          FILENAME, FNR, reference
+      }
+    }
+  }
+
+  {
+    previous = $0
+  }
+' "$@" > "$ACTION_FAILURES"
+
+if [ -s "$ACTION_FAILURES" ]; then
+  cat "$ACTION_FAILURES"
+  FAILED=1
+fi
 
 grep -h '^[[:space:]]*-*[[:space:]]*uses:[[:space:]]*' "$@" |
   grep '@[0-9a-f]\{40\}' |
@@ -17,10 +65,8 @@ grep -h '^[[:space:]]*-*[[:space:]]*uses:[[:space:]]*' "$@" |
 
 if [ ! -s "$USES_LINES" ]; then
   echo "No GitHub Action SHAs found."
-  exit 0
+  exit "$FAILED"
 fi
-
-FAILED=0
 
 while IFS= read -r line; do
   REPO_WITH_PATH=$(echo "$line" | cut -d'@' -f1)

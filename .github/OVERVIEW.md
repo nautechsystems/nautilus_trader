@@ -92,7 +92,9 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ### Build and publish controls
 
-- **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
+- **Action provenance**: Every external GitHub Action has its canonical repository URL on the
+  line immediately above `uses:`, a full commit SHA pin, and an inline release tag comment. Local
+  actions under `.github/actions` do not need external source metadata.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are
   pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
 - **Build attestations**: Development and nightly R2 jobs create and verify GitHub artifact

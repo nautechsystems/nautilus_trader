@@ -160,8 +160,8 @@ runs:
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
         echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
-    # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: ${{ env.TOOLCHAIN }}
@@ -169,9 +169,9 @@ runs:
         cache: false
         override: true
 
-    # https://github.com/Swatinem/rust-cache
     - name: Rust cache
       if: inputs.rust-cache-enabled == 'true'
+      # https://github.com/Swatinem/rust-cache
       uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
         workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}

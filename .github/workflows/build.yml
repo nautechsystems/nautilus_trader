@@ -85,6 +85,7 @@ jobs:
         run: echo "untrusted_pr=${UNTRUSTED_PR}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
@@ -152,6 +153,7 @@ jobs:
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: >-
@@ -163,6 +165,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -262,6 +265,7 @@ jobs:
         && format('{0}/target', github.workspace)
         || format('/home/runner/.cache/cargo-target/py{0}', matrix.python-version) }}
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: >-
@@ -273,6 +277,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -392,6 +397,7 @@ jobs:
           5
     # yamllint enable rule:line-length
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: >-
@@ -403,6 +409,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -492,6 +499,7 @@ jobs:
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -500,6 +508,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -559,6 +568,7 @@ jobs:
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -567,6 +577,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -630,6 +641,7 @@ jobs:
       # C:\agent exists. Keep this job out until upstream fixes cleanup.
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -676,6 +688,7 @@ jobs:
       - build-windows
     if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -684,6 +697,7 @@ jobs:
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -718,6 +732,7 @@ jobs:
         id: osv-scan
         if: steps.gate.outputs.override_active != 'true'
         continue-on-error: true
+        # https://github.com/google/osv-scanner-action
         uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         with:
           scan-args: |-
@@ -771,6 +786,7 @@ jobs:
       PUBLISH_WHEEL_MATRIX: ${{ needs.plan.outputs.wheel_matrix }}
       PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -782,6 +798,7 @@ jobs:
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -795,6 +812,7 @@ jobs:
         run: bash scripts/ci/check-security-audit-result.sh
 
       - name: Set up Python
+        # https://github.com/actions/setup-python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -804,11 +822,13 @@ jobs:
         run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Install uv
+        # https://github.com/astral-sh/setup-uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
 
       - name: Download built wheels
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
@@ -846,6 +866,7 @@ jobs:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -854,6 +875,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -874,6 +896,7 @@ jobs:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -882,6 +905,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -907,6 +931,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -918,6 +943,7 @@ jobs:
             static.crates.io:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -949,6 +975,7 @@ jobs:
     env:
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/release-docs-features-preflight
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -957,6 +984,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -971,8 +999,8 @@ jobs:
       - name: Install Rust nightly
         run: rustup toolchain install nightly
 
-      # https://github.com/taiki-e/install-action
       - name: Install cargo-hack
+        # https://github.com/taiki-e/install-action
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-hack
@@ -1005,6 +1033,7 @@ jobs:
       package_version: ${{ steps.metadata.outputs.package_version }}
       tag_name: ${{ steps.metadata.outputs.tag_name }}
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1013,6 +1042,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: true # Required for salsify action to push git tags
@@ -1020,6 +1050,7 @@ jobs:
           fetch-tags: true
 
       - name: Set up Python
+        # https://github.com/actions/setup-python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -1086,6 +1117,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1096,6 +1128,7 @@ jobs:
             files.pythonhosted.org:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -1114,6 +1147,7 @@ jobs:
         run: bash ./scripts/ci/build-sdist-release-asset.bash
 
       - name: Upload sdist artifact
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-sdist
@@ -1131,6 +1165,7 @@ jobs:
       actions: read # Required for downloading the sdist artifact
       contents: write # Required for uploading release assets
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1139,11 +1174,13 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Download sdist artifact
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-sdist
@@ -1177,6 +1214,7 @@ jobs:
       PUBLISH_WHEEL_MATRIX: stable
       PUBLISH_WHEEL_VERSION: ${{ needs.tag-release.outputs.package_version }}
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1187,11 +1225,13 @@ jobs:
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up Python
+        # https://github.com/actions/setup-python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -1201,11 +1241,13 @@ jobs:
         run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Install uv
+        # https://github.com/astral-sh/setup-uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
 
       - name: Download built wheels
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
@@ -1238,6 +1280,7 @@ jobs:
       - tag-release
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1251,6 +1294,7 @@ jobs:
             upload.pypi.org:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -1262,6 +1306,7 @@ jobs:
           echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
 
       - name: Install uv
+        # https://github.com/astral-sh/setup-uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: ${{ env.UV_VERSION }}
@@ -1271,6 +1316,7 @@ jobs:
         run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Download built wheel artifacts
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
@@ -1305,6 +1351,7 @@ jobs:
         run: bash ./scripts/ci/prepare-release-attestation-siblings.bash dist/nautilus_trader-*.whl
 
       - name: Upload wheel attestation siblings
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-wheel-attestation-siblings
@@ -1325,6 +1372,7 @@ jobs:
       - tag-release
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1336,6 +1384,7 @@ jobs:
             static.crates.io:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -1386,6 +1435,7 @@ jobs:
       id-token: write # Required for PyPI Trusted Publishing and publish attestations
       attestations: write # Required for GitHub artifact attestations
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1399,6 +1449,7 @@ jobs:
             upload.pypi.org:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -1410,6 +1461,7 @@ jobs:
           echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
 
       - name: Install uv
+        # https://github.com/astral-sh/setup-uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: ${{ env.UV_VERSION }}
@@ -1419,6 +1471,7 @@ jobs:
         run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Download sdist artifact
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-sdist
@@ -1452,6 +1505,7 @@ jobs:
         run: bash ./scripts/ci/prepare-release-attestation-siblings.bash dist/nautilus_trader-*.tar.gz
 
       - name: Upload sdist attestation sibling
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-sdist-attestation-sibling
@@ -1473,6 +1527,7 @@ jobs:
       actions: write # Required for downloading and deleting release artifacts
       contents: write # Required for uploading release integrity assets
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1488,6 +1543,7 @@ jobs:
             static.crates.io:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
@@ -1499,6 +1555,7 @@ jobs:
           echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
 
       - name: Install uv
+        # https://github.com/astral-sh/setup-uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: ${{ env.UV_VERSION }}
@@ -1548,6 +1605,7 @@ jobs:
           release-assets/crates-manifest.json
 
       - name: Download attestation sibling artifacts
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: release-attestations
@@ -1580,6 +1638,7 @@ jobs:
       attestations: read # Required for verifying the immutable release attestation
       contents: write # Required for publishing the draft release
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -1589,6 +1648,7 @@ jobs:
             rekor.sigstore.dev:443
 
       - name: Checkout repository
+        # https://github.com/actions/checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false

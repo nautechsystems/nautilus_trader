@@ -31,15 +31,15 @@ runs:
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
         echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
-    # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         override: true
 
-    # https://github.com/actions/cache
     - name: Cache tool binary
+      # https://github.com/actions/cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
