@@ -28,7 +28,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas, OrderBookDeltas_API, QuoteTick},
+    data::{Data, OrderBookDeltas, QuoteTick},
     enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -1028,12 +1028,7 @@ fn handle_book_snapshot(
             let deltas_key = format!("deltas:{}", snapshot.product_id);
             if subscriptions.get_reference_count(&deltas_key) > 0 {
                 Python::attach(|py| {
-                    send_data_to_python(
-                        py,
-                        Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                        call_soon,
-                        callback,
-                    );
+                    send_data_to_python(py, Data::Deltas(Box::new(deltas)), call_soon, callback);
                 });
             }
         }
@@ -1087,12 +1082,7 @@ fn handle_book_delta(
             let deltas_key = format!("deltas:{}", delta.product_id);
             if subscriptions.get_reference_count(&deltas_key) > 0 {
                 Python::attach(|py| {
-                    send_data_to_python(
-                        py,
-                        Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                        call_soon,
-                        callback,
-                    );
+                    send_data_to_python(py, Data::Deltas(Box::new(deltas)), call_soon, callback);
                 });
             }
         }

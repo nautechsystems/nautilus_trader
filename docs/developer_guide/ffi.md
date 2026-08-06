@@ -61,28 +61,39 @@ Memory allocated outside Rust must not be reconstructed as `Vec<T>`. Borrow it w
 `CVec::as_slice`, and copy it with `to_vec()` when Rust needs owned storage. The foreign caller keeps
 ownership and must release the original buffer with the allocator that created it.
 
-## Box‑backed API wrappers
+## Opaque pointers
 
-Model objects that cannot cross the ABI by value use a small `repr(C)` wrapper around a Rust
-allocation. Every consuming constructor must have a matching drop function:
+Model objects whose layout is not `repr(C)` cross the ABI as opaque owning pointers. The generated
+header forward‑declares the type, so foreign callers handle it only through exported functions.
+Constructors return an owning `*mut T` from `Box::into_raw`, pure accessors take `&T` or `&mut T`
+references, and every constructor must have a matching drop function:
 
 ```rust
-#[repr(C)]
-pub struct OrderBook_API(Box<OrderBook>);
-
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_new(id: InstrumentId, book_type: BookType) -> OrderBook_API {
-    OrderBook_API(Box::new(OrderBook::new(id, book_type)))
+pub extern "C" fn orderbook_new(id: InstrumentId, book_type: BookType) -> *mut OrderBook {
+    Box::into_raw(Box::new(OrderBook::new(id, book_type)))
 }
 
+/// # Safety
+///
+/// `book` must be a live owning pointer returned by [`orderbook_new`], and must not
+/// be used after this call.
+///
+/// # Panics
+///
+/// Panics if `book` is null.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_drop(book: OrderBook_API) {
-    drop(book);
+pub unsafe extern "C" fn orderbook_drop(book: *mut OrderBook) {
+    abort_on_panic(|| {
+        assert!(!book.is_null(), "`book` was NULL");
+        // SAFETY: Caller guarantees `book` was allocated by `orderbook_new`
+        drop(unsafe { Box::from_raw(book) });
+    });
 }
 ```
 
-The foreign owner must call the drop function exactly once. It must not copy an owning wrapper and
-then consume both copies.
+The foreign owner must call the drop function exactly once. It must not copy the pointer, consume
+both copies, or use the pointer after the drop.
 
 ## Review checklist
 

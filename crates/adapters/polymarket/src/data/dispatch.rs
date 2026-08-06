@@ -35,9 +35,7 @@ use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{live::get_runtime, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
-    data::{
-        Data as NautilusData, InstrumentStatus, OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
-    },
+    data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas, QuoteTick},
     enums::{BookType, MarketStatusAction, RecordFlag},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -238,7 +236,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         };
 
                         if let Some(deltas) = emit {
-                            let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
+                            let data: NautilusData = deltas.into();
                             if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                                 log::error!("Failed to emit book deltas: {e}");
                             }
@@ -373,7 +371,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 log::error!("Failed to apply book deltas for {instrument_id}: {e}");
                             }
 
-                            let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
+                            let data: NautilusData = deltas.into();
                             if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                                 log::error!("Failed to emit book deltas: {e}");
                             }
@@ -4050,7 +4048,7 @@ mod tests {
     ) -> Vec<OrderBookDeltas> {
         std::iter::from_fn(|| data_rx.try_recv().ok())
             .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas.into_inner()),
+                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(*deltas),
                 _ => None,
             })
             .collect()

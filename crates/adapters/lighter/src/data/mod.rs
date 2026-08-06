@@ -52,7 +52,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, InstrumentStatus, OrderBookDeltas_API, TradeTick},
+    data::{Data, InstrumentStatus, TradeTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -376,7 +376,7 @@ impl LighterDataClient {
                                 }
                             }
                             Some(NautilusWsMessage::Deltas(deltas)) => {
-                                let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+                                let data = Data::Deltas(Box::new(deltas));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send order book deltas: {e}");
                                 }

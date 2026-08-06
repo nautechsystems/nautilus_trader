@@ -49,7 +49,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::Data,
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -274,9 +274,7 @@ fn dispatch_ws_message(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
-            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
-                OrderBookDeltas_API::new(deltas),
-            ))) {
+            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas)))) {
                 log::error!("Failed to send order book deltas: {e}");
             }
         }

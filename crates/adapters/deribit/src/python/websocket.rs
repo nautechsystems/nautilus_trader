@@ -39,7 +39,7 @@ use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
 use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API},
+    data::{BarType, Data},
     enums::{OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     python::{
@@ -304,7 +304,7 @@ impl DeribitWebSocketClient {
                         }),
                         NautilusWsMessage::Deltas(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| {
-                                data_to_pyobject(py, Data::Deltas(OrderBookDeltas_API::new(msg)))
+                                data_to_pyobject(py, Data::Deltas(Box::new(msg)))
                             });
                         }
                         NautilusWsMessage::Error(err) => {

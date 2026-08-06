@@ -52,10 +52,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, QuoteTick,
-    },
+    data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{
         AggregationSource, BookAction, BookType, MarketStatusAction, OrderSide, PriceType,
         RecordFlag,
@@ -618,10 +615,7 @@ impl BinanceFuturesDataClient {
                                 }
                             }
 
-                            Self::send_data(
-                                data_sender,
-                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                            );
+                            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse depth update: {e}"),
                     }
@@ -838,7 +832,7 @@ impl BinanceFuturesDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
         }
     }
 
@@ -1077,16 +1071,16 @@ impl BinanceFuturesDataClient {
                     replay_ready.push(update);
                 }
 
-                if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                    OrderBookDeltas_API::new(snapshot_deltas),
-                ))) {
+                if let Err(e) =
+                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
-                    if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                        OrderBookDeltas_API::new(update.deltas),
-                    ))) {
+                    if let Err(e) =
+                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                    {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
                 }
@@ -1162,9 +1156,9 @@ impl BinanceFuturesDataClient {
                         last_final_update_id = update.final_update_id;
                         replayed += 1;
 
-                        if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                            OrderBookDeltas_API::new(update.deltas),
-                        ))) {
+                        if let Err(e) =
+                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        {
                             log::error!("Failed to send replayed deltas: {e}");
                         }
                     }

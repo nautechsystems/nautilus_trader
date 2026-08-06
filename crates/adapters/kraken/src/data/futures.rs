@@ -50,7 +50,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas, OrderBookDeltas_API, QuoteTick},
+    data::{Data, OrderBookDeltas, QuoteTick},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -342,11 +342,11 @@ impl KrakenFuturesDataClient {
 
                         let has_book_sub = book_instruments.contains(&instrument_id);
 
-                        if has_book_sub {
-                            let api_deltas = OrderBookDeltas_API::new(deltas);
-                            if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(api_deltas))) {
-                                log::error!("Failed to send book snapshot deltas: {e}");
-                            }
+                        if has_book_sub
+                            && let Err(e) =
+                                sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                        {
+                            log::error!("Failed to send book snapshot deltas: {e}");
                         }
                     }
                     Err(e) => log::error!("Failed to parse book snapshot: {e}"),
@@ -384,11 +384,11 @@ impl KrakenFuturesDataClient {
 
                         let has_book_sub = book_instruments.contains(&instrument_id);
 
-                        if has_book_sub {
-                            let api_deltas = OrderBookDeltas_API::new(deltas);
-                            if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(api_deltas))) {
-                                log::error!("Failed to send book delta: {e}");
-                            }
+                        if has_book_sub
+                            && let Err(e) =
+                                sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                        {
+                            log::error!("Failed to send book delta: {e}");
                         }
                     }
                     Err(e) => log::error!("Failed to parse book delta: {e}"),

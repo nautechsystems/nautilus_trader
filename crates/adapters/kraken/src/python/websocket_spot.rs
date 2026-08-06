@@ -55,7 +55,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API},
+    data::{BarType, Data, OrderBookDeltas},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
     },
@@ -350,7 +350,7 @@ impl KrakenSpotWebSocketClient {
                                             Python::attach(|py| {
                                                 send_data_to_python(
                                                     py,
-                                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                                    Data::Deltas(Box::new(deltas)),
                                                     &call_soon,
                                                     &callback,
                                                 );
@@ -923,9 +923,14 @@ struct PyDeltaSink<'a> {
 }
 
 impl L3Sink for PyDeltaSink<'_> {
-    fn emit_deltas(&mut self, deltas: OrderBookDeltas_API) {
+    fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
         Python::attach(|py| {
-            send_data_to_python(py, Data::Deltas(deltas), self.call_soon, self.callback);
+            send_data_to_python(
+                py,
+                Data::Deltas(Box::new(deltas)),
+                self.call_soon,
+                self.callback,
+            );
         });
     }
 }

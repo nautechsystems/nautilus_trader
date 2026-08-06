@@ -42,7 +42,7 @@ use nautilus_model::{
     data::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{
@@ -1714,7 +1714,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     }
 
     if let Ok(deltas) = obj.extract::<OrderBookDeltas>() {
-        return Ok(Data::Deltas(OrderBookDeltas_API::new(deltas)));
+        return Ok(Data::Deltas(Box::new(deltas)));
     }
 
     if let Ok(quote) = obj.extract::<QuoteTick>() {

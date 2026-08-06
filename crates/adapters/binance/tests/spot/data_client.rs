@@ -1501,7 +1501,7 @@ async fn test_subscribe_l1_mbp_uses_sbe_best_bid_ask() {
     let Data::Deltas(deltas) = data else {
         panic!("expected SBE L1 deltas");
     };
-    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+    assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
 }
 
 #[rstest]
@@ -1559,7 +1559,7 @@ async fn test_subscribe_l1_mbp_uses_json_top_of_book_and_rejects_invalid_depth()
     let Data::Deltas(deltas) = data else {
         panic!("expected JSON L1 deltas");
     };
-    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+    assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
 
     let invalid = client.subscribe_book_deltas(SubscribeBookDeltas::new(
         InstrumentId::from("ETHUSDT.BINANCE"),

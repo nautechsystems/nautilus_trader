@@ -787,9 +787,9 @@ impl FeatherWriter {
             Data::InstrumentStatus(status) => self.write(status).await,
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
-            Data::Deltas(deltas_api) => {
+            Data::Deltas(deltas) => {
                 // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
-                self.write_batch(deltas_api.deltas.clone()).await
+                self.write_batch(deltas.deltas.clone()).await
             }
             #[cfg(feature = "defi")]
             Data::Defi(_) => Err("Unsupported Data::Defi variant for feather writes".into()),
@@ -972,7 +972,7 @@ mod tests {
     use datafusion::arrow::ipc::reader::StreamReader;
     use nautilus_common::clock::TestClock;
     use nautilus_model::{
-        data::{Data, OrderBookDeltas_API, QuoteTick, TradeTick},
+        data::{Data, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
@@ -1397,10 +1397,12 @@ mod tests {
         );
 
         let book_deltas = OrderBookDeltas::new(instrument_id, vec![delta1, delta2]);
-        let deltas_api = OrderBookDeltas_API::new(book_deltas);
 
         // Test writing OrderBookDeltas via write_data
-        writer.write_data(Data::Deltas(deltas_api)).await.unwrap();
+        writer
+            .write_data(Data::Deltas(Box::new(book_deltas)))
+            .await
+            .unwrap();
         writer.flush().await.unwrap();
     }
 

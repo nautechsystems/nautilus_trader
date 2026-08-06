@@ -116,7 +116,7 @@ The backtest engine accepts the `Data` enum, so we map the variants we need
 and skip the Betfair-specific types:
 
 ```rust
-use nautilus_model::data::{Data, OrderBookDeltas_API};
+use nautilus_model::data::Data;
 
 let mut instruments = AHashMap::new();
 let mut data: Vec<Data> = Vec::new();
@@ -127,7 +127,7 @@ for item in items {
             instruments.insert(inst.id(), *inst);
         }
         BetfairDataItem::Deltas(d) => {
-            data.push(Data::Deltas(OrderBookDeltas_API::new(d)));
+            data.push(Data::Deltas(Box::new(d)));
         }
         BetfairDataItem::Trade(t) => {
             data.push(Data::Trade(t));
@@ -140,8 +140,7 @@ for item in items {
 }
 ```
 
-`OrderBookDeltas_API` is a thin FFI wrapper around `OrderBookDeltas`
-required by the `Data` enum.
+`Data::Deltas` boxes its `OrderBookDeltas` payload to keep the enum small.
 
 Instruments are re-emitted on every market definition update in the stream,
 so the map deduplicates them by keeping the latest version.

@@ -54,7 +54,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas_API},
+    data::{Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -1198,8 +1198,7 @@ fn handle_md_message(
 
             match parse_book_l2_deltas(&book, instrument, sequence, ts_init()) {
                 Ok(deltas) => {
-                    let api_deltas = OrderBookDeltas_API::new(deltas);
-                    let _ = sender.send(DataEvent::Data(Data::Deltas(api_deltas)));
+                    let _ = sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))));
                 }
                 Err(e) => log::error!("Failed to parse L2 to OrderBookDeltas: {e}"),
             }
@@ -1230,8 +1229,7 @@ fn handle_md_message(
 
             match parse_book_l3_deltas(&book, instrument, sequence, ts_init()) {
                 Ok(deltas) => {
-                    let api_deltas = OrderBookDeltas_API::new(deltas);
-                    let _ = sender.send(DataEvent::Data(Data::Deltas(api_deltas)));
+                    let _ = sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))));
                 }
                 Err(e) => log::error!("Failed to parse L3 to OrderBookDeltas: {e}"),
             }

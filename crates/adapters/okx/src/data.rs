@@ -52,7 +52,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas_API},
+    data::{Data, FundingRateUpdate, InstrumentStatus},
     enums::{BookType, GreeksConvention, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -836,7 +836,7 @@ fn dispatch_parsed_data(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
-            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+            let data = Data::Deltas(Box::new(deltas));
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 log::error!("Failed to emit data event: {e}");
             }

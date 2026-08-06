@@ -52,7 +52,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{BarType, Data, InstrumentStatus, OrderBookDeltas_API},
+    data::{BarType, Data, InstrumentStatus},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     events::{OrderAccepted, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -2964,12 +2964,7 @@ fn dispatch_nautilus_ws_msg_to_python(
             }
         }),
         NautilusWsMessage::Deltas(deltas) => Python::attach(|py| {
-            send_data_to_python(
-                py,
-                Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                call_soon,
-                callback,
-            );
+            send_data_to_python(py, Data::Deltas(Box::new(deltas)), call_soon, callback);
         }),
         NautilusWsMessage::FundingRates(updates) => {
             for data in updates {

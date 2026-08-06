@@ -55,7 +55,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
+    data::{Bar, Data, ForwardPrice, QuoteTick},
     enums::{AggregationSource, BookType, PriceType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -332,7 +332,7 @@ impl DeriveDataClient {
                         ts_init,
                     ) {
                         Ok(deltas) => {
-                            Self::send_data(ctx, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                            Self::send_data(ctx, Data::Deltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
                     }

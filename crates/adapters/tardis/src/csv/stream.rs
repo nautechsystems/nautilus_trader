@@ -18,16 +18,13 @@ use std::{io::Read, path::Path};
 use ahash::AHashMap;
 use csv::{Reader, StringRecord};
 use nautilus_core::UnixNanos;
+#[cfg(feature = "python")]
+use nautilus_model::{data::OrderBookDeltas, python::data::data_to_pyobject};
 use nautilus_model::{
     data::{DEPTH10_LEN, Data, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
     types::Quantity,
-};
-#[cfg(feature = "python")]
-use nautilus_model::{
-    data::{OrderBookDeltas, OrderBookDeltas_API},
-    python::data::data_to_pyobject,
 };
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny, PyResult, Python};
@@ -530,7 +527,7 @@ impl Iterator for BatchedDeltasStreamIterator {
                     .into_iter()
                     .map(|batch| {
                         let deltas = OrderBookDeltas::new(self.instrument_id, batch);
-                        let deltas = OrderBookDeltas_API::new(deltas);
+                        let deltas = Box::new(deltas);
                         data_to_pyobject(py, Data::Deltas(deltas))
                     })
                     .collect::<PyResult<Vec<_>>>()

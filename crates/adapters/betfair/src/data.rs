@@ -41,10 +41,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, OrderBookDeltas_API,
-        TradeTick,
-    },
+    data::{CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, TradeTick},
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
@@ -306,7 +303,7 @@ impl BetfairDataClient {
                                     Ok(Some(deltas)) => {
                                         if is_snapshot {
                                             if let Err(e) = data_sender.send(DataEvent::Data(
-                                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                                Data::Deltas(Box::new(deltas)),
                                             )) {
                                                 log::warn!("Failed to send book deltas: {e}");
                                             }
@@ -404,9 +401,9 @@ impl BetfairDataClient {
                         }
 
                         for deltas in buffered_deltas {
-                            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
-                                OrderBookDeltas_API::new(deltas),
-                            ))) {
+                            if let Err(e) =
+                                data_sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                            {
                                 log::warn!("Failed to send book deltas: {e}");
                             }
                         }

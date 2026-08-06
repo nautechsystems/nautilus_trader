@@ -50,10 +50,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        Bar, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
-        OrderBookDeltas_API, TradeTick,
-    },
+    data::{Bar, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate, TradeTick},
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -419,7 +416,7 @@ impl HyperliquidDataClient {
                                 NautilusWsMessage::Deltas(deltas) => {
                                     if let Err(e) = data_sender
                                         .send(DataEvent::Data(Data::Deltas(
-                                            OrderBookDeltas_API::new(deltas),
+                                            Box::new(deltas),
                                         )))
                                     {
                                         log::error!("Failed to send order book deltas: {e}");

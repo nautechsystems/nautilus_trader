@@ -53,7 +53,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, BookType,
@@ -654,9 +654,10 @@ fn generate_l2_delta_data(instrument_id: InstrumentId, event_count: usize) -> Ve
         if i.is_multiple_of(2) {
             data.push(Data::Delta(bid));
         } else {
-            data.push(Data::Deltas(OrderBookDeltas_API::new(
-                OrderBookDeltas::new(instrument_id, vec![bid, ask]),
-            )));
+            data.push(Data::Deltas(Box::new(OrderBookDeltas::new(
+                instrument_id,
+                vec![bid, ask],
+            ))));
         }
     }
 

@@ -44,7 +44,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelAny},
     data::{
         Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType},
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
@@ -798,7 +798,7 @@ impl SimulatedExchange {
     /// Panics if adding a missing instrument during deltas processing fails.
     pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         for module in &self.modules {
-            module.pre_process(&Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+            module.pre_process(&Data::Deltas(Box::new(deltas.clone())));
         }
 
         if !self.matching_engines.contains_key(&deltas.instrument_id) {

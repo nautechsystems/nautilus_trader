@@ -27,8 +27,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, OptionGreekValues, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
-        option_chain::OptionGreeks,
+        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN, option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -648,15 +647,14 @@ pub fn parse_book_msg_vec(
     let mut deltas = Vec::with_capacity(data.len());
 
     for msg in data {
-        let deltas_api = OrderBookDeltas_API::new(parse_book_msg(
+        deltas.push(Data::Deltas(Box::new(parse_book_msg(
             &msg,
             *instrument_id,
             price_precision,
             size_precision,
             &action,
             ts_init,
-        )?);
-        deltas.push(Data::Deltas(deltas_api));
+        )?)));
     }
 
     Ok(deltas)
@@ -678,15 +676,14 @@ pub fn parse_rpi_book_msg_vec(
     let mut deltas = Vec::with_capacity(data.len());
 
     for msg in data {
-        let deltas_api = OrderBookDeltas_API::new(parse_rpi_book_msg(
+        deltas.push(Data::Deltas(Box::new(parse_rpi_book_msg(
             &msg,
             *instrument_id,
             price_precision,
             size_precision,
             &action,
             ts_init,
-        )?);
-        deltas.push(Data::Deltas(deltas_api));
+        )?)));
     }
 
     Ok(deltas)

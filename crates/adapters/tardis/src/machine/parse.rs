@@ -22,7 +22,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DEPTH10_LEN, Data, FundingRateUpdate, IndexPriceUpdate,
         MarkPriceUpdate, NULL_ORDER, OptionGreekValues, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
@@ -70,7 +70,7 @@ pub fn parse_tardis_ws_message(
                 info.size_precision,
                 info.instrument_id,
             ) {
-                Ok(deltas) => Some(Data::Deltas(deltas)),
+                Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
                 Err(e) => {
                     log::error!("Failed to parse book change message: {e}");
                     None
@@ -114,7 +114,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(deltas) => Some(Data::Deltas(deltas)),
+                        Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as deltas: {e}");
                             None
@@ -302,7 +302,7 @@ pub fn parse_book_change_msg_as_deltas(
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-) -> anyhow::Result<OrderBookDeltas_API> {
+) -> anyhow::Result<OrderBookDeltas> {
     parse_book_msg_as_deltas(
         &msg.bids,
         &msg.asks,
@@ -326,7 +326,7 @@ pub fn parse_book_snapshot_msg_as_deltas(
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-) -> anyhow::Result<OrderBookDeltas_API> {
+) -> anyhow::Result<OrderBookDeltas> {
     parse_book_msg_as_deltas(
         &msg.bids,
         &msg.asks,
@@ -407,7 +407,7 @@ pub fn parse_book_msg_as_deltas(
     instrument_id: InstrumentId,
     timestamp: Timestamp,
     local_timestamp: Timestamp,
-) -> anyhow::Result<OrderBookDeltas_API> {
+) -> anyhow::Result<OrderBookDeltas> {
     let ts_event = timestamp_to_unix_nanos(timestamp, "event timestamp")?;
     let ts_init = timestamp_to_unix_nanos(local_timestamp, "init timestamp")?;
 
@@ -458,11 +458,7 @@ pub fn parse_book_msg_as_deltas(
         last_delta.flags |= RecordFlag::F_LAST as u8;
     }
 
-    // TODO: Opaque pointer wrapper necessary for Cython (remove once Cython gone)
-    Ok(OrderBookDeltas_API::new(OrderBookDeltas::new(
-        instrument_id,
-        deltas,
-    )))
+    Ok(OrderBookDeltas::new(instrument_id, deltas))
 }
 
 /// Parse a single book level into an order book delta.

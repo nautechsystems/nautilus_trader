@@ -22,7 +22,7 @@ use nautilus_core::python::{
     IntoPyObjectNautilusExt, call_python_threadsafe, to_pyruntime_err, to_pyvalue_err,
 };
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API},
+    data::{BarType, Data},
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     orders::OrderAny,
@@ -420,7 +420,7 @@ impl HyperliquidWebSocketClient {
                                     Python::attach(|py| {
                                         send_data_to_python(
                                             py,
-                                            Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                            Data::Deltas(Box::new(deltas)),
                                             &call_soon,
                                             &callback,
                                         );

@@ -26,7 +26,7 @@ use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
-        Bar, BarType, CatalogPathPrefix, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas_API,
+        Bar, BarType, CatalogPathPrefix, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas,
         OrderBookDepth10, QuoteTick, TradeTick,
     },
     identifiers::InstrumentId,
@@ -297,7 +297,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 }
 
 fn handle_deltas_msg(
-    deltas: &OrderBookDeltas_API,
+    deltas: &OrderBookDeltas,
     map: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,

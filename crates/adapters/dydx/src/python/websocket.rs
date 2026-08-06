@@ -32,7 +32,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, BarType, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDeltas_API,
+        OrderBookDeltas,
     },
     enums::{AccountType, MarketStatusAction, OrderSide, OrderStatus, OrderType},
     events::{AccountState, OrderAccepted, OrderCanceled},
@@ -265,7 +265,7 @@ impl DydxWebSocketClient {
                                 ) {
                                     Ok(deltas) => {
                                         Python::attach(|py| {
-                                            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+                                            let data = Data::Deltas(Box::new(deltas));
                                             send_data_to_python(py, data, &call_soon, &callback);
                                         });
                                     }
@@ -290,7 +290,7 @@ impl DydxWebSocketClient {
                                 ) {
                                     Ok(deltas) => {
                                         Python::attach(|py| {
-                                            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+                                            let data = Data::Deltas(Box::new(deltas));
                                             send_data_to_python(py, data, &call_soon, &callback);
                                         });
                                     }
@@ -348,7 +348,7 @@ impl DydxWebSocketClient {
                                 if parse_ok && !all_deltas.is_empty() {
                                     let combined = OrderBookDeltas::new(instrument_id, all_deltas);
                                     Python::attach(|py| {
-                                        let data = Data::Deltas(OrderBookDeltas_API::new(combined));
+                                        let data = Data::Deltas(Box::new(combined));
                                         send_data_to_python(py, data, &call_soon, &callback);
                                     });
                                 }

@@ -51,7 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{BarType, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
+    data::{BarType, Data, ForwardPrice, QuoteTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -366,7 +366,7 @@ fn handle_ws_message(
             if has_book_sub {
                 match parse_orderbook_deltas(msg, instrument, ts_init) {
                     Ok(deltas) => {
-                        send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                        send_data(data_sender, Data::Deltas(Box::new(deltas)));
                     }
                     Err(e) => log::error!("Failed to parse orderbook deltas: {e}"),
                 }

@@ -20,8 +20,7 @@ use nautilus_common::clock::{Clock, TestClock};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        BookOrder, Data, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        QuoteTick, TradeTick,
+        BookOrder, Data, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{AggressorSide, BookAction, OrderSide},
     identifiers::{InstrumentId, TradeId},
@@ -167,10 +166,12 @@ async fn test_write_data_orderbook_deltas() {
     );
 
     let deltas = OrderBookDeltas::new(instrument_id, vec![delta1, delta2]);
-    let deltas_api = OrderBookDeltas_API::new(deltas);
 
     // Test writing OrderBookDeltas via write_data
-    writer.write_data(Data::Deltas(deltas_api)).await.unwrap();
+    writer
+        .write_data(Data::Deltas(Box::new(deltas)))
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 }
 
@@ -313,9 +314,11 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
     );
 
     let deltas = OrderBookDeltas::new(instrument_id, vec![clear, add]);
-    let deltas_api = OrderBookDeltas_API::new(deltas);
 
-    writer.write_data(Data::Deltas(deltas_api)).await.unwrap();
+    writer
+        .write_data(Data::Deltas(Box::new(deltas)))
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     let feather_path = find_feather_file(temp_dir.path());
@@ -375,9 +378,11 @@ async fn test_write_orderbook_deltas_all_sentinel_metadata_fallback() {
     );
 
     let deltas = OrderBookDeltas::new(instrument_id, vec![clear1, clear2]);
-    let deltas_api = OrderBookDeltas_API::new(deltas);
 
-    writer.write_data(Data::Deltas(deltas_api)).await.unwrap();
+    writer
+        .write_data(Data::Deltas(Box::new(deltas)))
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     let feather_path = find_feather_file(temp_dir.path());

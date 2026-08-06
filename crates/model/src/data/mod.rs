@@ -67,7 +67,7 @@ pub use custom::{
     get_python_data_class, reconstruct_python_custom_data, register_python_data_class,
 };
 pub use delta::OrderBookDelta;
-pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
+pub use deltas::OrderBookDeltas;
 pub use depth::{DEPTH10_LEN, OrderBookDepth10};
 pub use forward::ForwardPrice;
 pub use funding::FundingRateUpdate;
@@ -104,7 +104,7 @@ use crate::identifiers::{InstrumentId, Venue};
 #[derive(Debug)]
 pub enum Data {
     Delta(OrderBookDelta),
-    Deltas(OrderBookDeltas_API),
+    Deltas(Box<OrderBookDeltas>),
     Depth10(Box<OrderBookDepth10>), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
@@ -130,7 +130,7 @@ pub enum Data {
 #[allow(non_camel_case_types)]
 pub enum DataFFI {
     Delta(OrderBookDelta),
-    Deltas(OrderBookDeltas_API),
+    Deltas(Box<OrderBookDeltas>),
     Depth10(Box<OrderBookDepth10>),
     Quote(QuoteTick),
     Trade(TradeTick),
@@ -349,9 +349,19 @@ impl TryFrom<Data> for OrderBookDepth10 {
     }
 }
 
+impl TryFrom<Data> for OrderBookDeltas {
+    type Error = ();
+
+    fn try_from(value: Data) -> Result<Self, Self::Error> {
+        match value {
+            Data::Deltas(x) => Ok(*x),
+            _ => Err(()),
+        }
+    }
+}
+
 impl_try_from_data!(Quote, QuoteTick);
 impl_try_from_data!(Delta, OrderBookDelta);
-impl_try_from_data!(Deltas, OrderBookDeltas_API);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
 impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
@@ -501,9 +511,9 @@ impl From<OrderBookDelta> for Data {
     }
 }
 
-impl From<OrderBookDeltas_API> for Data {
-    fn from(value: OrderBookDeltas_API) -> Self {
-        Self::Deltas(value)
+impl From<OrderBookDeltas> for Data {
+    fn from(value: OrderBookDeltas) -> Self {
+        Self::Deltas(Box::new(value))
     }
 }
 

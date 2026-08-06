@@ -133,7 +133,7 @@ pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
         Data::Trade(trade) => Py::new(py, trade).map(Py::into_any),
         Data::Bar(bar) => Py::new(py, bar).map(Py::into_any),
         Data::Delta(delta) => Py::new(py, delta).map(Py::into_any),
-        Data::Deltas(deltas) => Py::new(py, deltas.into_inner()).map(Py::into_any),
+        Data::Deltas(deltas) => Py::new(py, *deltas).map(Py::into_any),
         Data::Depth10(depth) => Py::new(py, *depth).map(Py::into_any),
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(Py::into_any),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(Py::into_any),
@@ -648,7 +648,7 @@ mod tests {
 
     use super::*;
     use crate::data::{
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
+        OrderBookDeltas, OrderBookDepth10,
         stubs::{
             quote_audusd, stub_bar, stub_delta, stub_deltas, stub_depth10, stub_trade_ethusdt_buyer,
         },
@@ -672,11 +672,8 @@ mod tests {
 
         Python::attach(|py| {
             let py_delta = data_to_pyobject(py, Data::Delta(expected_delta)).unwrap();
-            let py_deltas = data_to_pyobject(
-                py,
-                Data::Deltas(OrderBookDeltas_API::new(expected_deltas.clone())),
-            )
-            .unwrap();
+            let py_deltas =
+                data_to_pyobject(py, Data::Deltas(Box::new(expected_deltas.clone()))).unwrap();
             let py_depth = data_to_pyobject(py, Data::Depth10(Box::new(expected_depth))).unwrap();
             let py_quote = data_to_pyobject(py, Data::Quote(expected_quote)).unwrap();
             let py_trade = data_to_pyobject(py, Data::Trade(expected_trade)).unwrap();

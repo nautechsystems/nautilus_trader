@@ -51,7 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{CustomData, Data, DataType, ForwardPrice, OrderBookDeltas_API},
+    data::{CustomData, Data, DataType, ForwardPrice},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -239,7 +239,7 @@ impl DeribitDataClient {
                 }
             }
             NautilusWsMessage::Deltas(deltas) => {
-                Self::send_data(sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                Self::send_data(sender, Data::Deltas(Box::new(deltas)));
             }
             NautilusWsMessage::Instrument(instrument) => {
                 let instrument_any = *instrument;

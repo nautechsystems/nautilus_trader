@@ -45,7 +45,7 @@ use nautilus_betfair::{
     loader::{BetfairDataItem, BetfairDataLoader},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::Data,
     enums::{AccountType, BookType, OmsType},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -63,8 +63,7 @@ const LOG_INTERVAL: u64 = 5000;
 /// deltas, trades, and settlement events, and skip Betfair-specific types
 /// (tickers, BSP, race GPS data) that have no `Data` variant.
 ///
-/// `OrderBookDeltas_API` is a thin wrapper around `OrderBookDeltas` needed
-/// by the `Data` enum (legacy FFI shim, will be removed).
+/// `Data::Deltas` boxes its `OrderBookDeltas` payload to keep the enum small.
 fn load_betfair_data(
     filepath: &std::path::Path,
 ) -> anyhow::Result<(AHashMap<InstrumentId, InstrumentAny>, Vec<Data>)> {
@@ -94,7 +93,7 @@ fn load_betfair_data(
             }
             // Order book deltas and trades map directly to Data variants
             BetfairDataItem::Deltas(d) => {
-                data.push(Data::Deltas(OrderBookDeltas_API::new(d)));
+                data.push(Data::Deltas(Box::new(d)));
             }
             BetfairDataItem::Trade(t) => {
                 data.push(Data::Trade(t));

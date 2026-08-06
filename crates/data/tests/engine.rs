@@ -89,7 +89,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
         IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
@@ -5566,8 +5566,8 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    let deltas_api = OrderBookDeltas_API::new(deltas);
-    data_engine.process_data(Data::Deltas(deltas_api.clone()));
+    let deltas = Box::new(deltas);
+    data_engine.process_data(Data::Deltas(deltas.clone()));
 
     assert_eq!(
         saver.get_messages().len(),
@@ -5576,7 +5576,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     );
 
     // Same deltas, same top-of-book: idempotent
-    data_engine.process_data(Data::Deltas(deltas_api));
+    data_engine.process_data(Data::Deltas(deltas));
     assert_eq!(saver.get_messages().len(), 1);
 }
 
@@ -9045,8 +9045,7 @@ fn test_process_book_deltas(
 
     data_engine.borrow_mut().execute(cmd);
 
-    // TODO: Using FFI API wrapper temporarily until Cython gone
-    let deltas = OrderBookDeltas_API::new(stub_deltas());
+    let deltas = Box::new(stub_deltas());
     let (handler, saver) = get_typed_message_saving_handler::<OrderBookDeltas>(None);
     let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
@@ -12523,7 +12522,7 @@ fn test_process_book_snapshot_publish(
 
     // Process deltas to populate the order book
     let delta = OrderBookDeltaTestBuilder::new(audusd_sim.id).build();
-    let deltas = OrderBookDeltas_API::new(OrderBookDeltas::new(audusd_sim.id, vec![delta]));
+    let deltas = Box::new(OrderBookDeltas::new(audusd_sim.id, vec![delta]));
     data_engine.borrow_mut().process_data(Data::Deltas(deltas));
 
     // Advance clock past the interval to trigger snapshot timer
@@ -13302,7 +13301,7 @@ fn execute_book_snapshot_unsubscribe(
 
 fn process_book_delta(data_engine: &Rc<RefCell<DataEngine>>, instrument_id: InstrumentId) {
     let delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    let deltas = OrderBookDeltas_API::new(OrderBookDeltas::new(instrument_id, vec![delta]));
+    let deltas = Box::new(OrderBookDeltas::new(instrument_id, vec![delta]));
     data_engine.borrow_mut().process_data(Data::Deltas(deltas));
 }
 
@@ -15367,7 +15366,7 @@ fn test_process_pipeline_deltas_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+    data_engine.process_pipeline(Data::Deltas(Box::new(deltas.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),

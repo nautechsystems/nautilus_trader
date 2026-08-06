@@ -49,7 +49,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, Data, OrderBookDeltas_API},
+    data::{Bar, Data, OrderBookDeltas},
     enums::{AggregationSource, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -84,8 +84,11 @@ struct DataEventSink<'a> {
 }
 
 impl L3Sink for DataEventSink<'_> {
-    fn emit_deltas(&mut self, deltas: OrderBookDeltas_API) {
-        if let Err(e) = self.sender.send(DataEvent::Data(Data::Deltas(deltas))) {
+    fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
+        if let Err(e) = self
+            .sender
+            .send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+        {
             log::error!("Failed to send L3 deltas: {e}");
         }
     }
@@ -523,11 +526,10 @@ impl KrakenSpotDataClient {
                             context
                                 .book_sequence
                                 .store(next_sequence, Ordering::Relaxed);
-                            let api_deltas = OrderBookDeltas_API::new(deltas);
 
                             if let Err(e) = context
                                 .sender
-                                .send(DataEvent::Data(Data::Deltas(api_deltas)))
+                                .send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
                             {
                                 log::error!("Failed to send deltas: {e}");
                             }

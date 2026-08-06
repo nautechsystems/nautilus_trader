@@ -27,7 +27,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API, QuoteTick},
+    data::{BarType, Data, QuoteTick},
     enums::{
         AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce,
         TriggerType,
@@ -1458,11 +1458,7 @@ fn handle_orderbook(
 
     match parse_orderbook_deltas(msg, instrument, ts_init) {
         Ok(deltas) => {
-            send_data_to_python(
-                Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                call_soon,
-                callback,
-            );
+            send_data_to_python(Data::Deltas(Box::new(deltas)), call_soon, callback);
         }
         Err(e) => log::error!("Failed to parse orderbook deltas: {e}"),
     }

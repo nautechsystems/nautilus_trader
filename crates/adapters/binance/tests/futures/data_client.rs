@@ -1713,7 +1713,7 @@ async fn test_subscribe_l1_mbp_uses_book_ticker_and_rejects_invalid_depth() {
     let Data::Deltas(deltas) = data else {
         panic!("expected L1 deltas");
     };
-    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+    assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
 
     let invalid = client.subscribe_book_deltas(SubscribeBookDeltas::new(
         InstrumentId::from("ETHUSDT-PERP.BINANCE"),

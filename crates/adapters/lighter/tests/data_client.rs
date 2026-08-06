@@ -74,7 +74,7 @@ use nautilus_lighter::{
     http::{client::LIGHTER_FUNDINGS_MAX_LIMIT, query::LighterFundingsQuery},
 };
 use nautilus_model::{
-    data::{BarSpecification, BarType, Data, OrderBookDeltas_API},
+    data::{BarSpecification, BarType, Data, OrderBookDeltas},
     enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
@@ -471,7 +471,7 @@ async fn collect_managed_book_batches(
     client: &mut LighterDataClient,
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     state: &TestServerState,
-) -> (OrderBookDeltas_API, OrderBookDeltas_API) {
+) -> (OrderBookDeltas, OrderBookDeltas) {
     state
         .enqueue_push(load_json("ws_order_book_subscribed.json"))
         .await;
@@ -525,7 +525,7 @@ async fn collect_managed_book_batches(
         unreachable!("event predicate requires deltas")
     };
 
-    (snapshot, incremental)
+    (*snapshot, *incremental)
 }
 
 #[rstest]
