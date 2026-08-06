@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod context;
 pub mod emitter;
 pub mod manager;
 
