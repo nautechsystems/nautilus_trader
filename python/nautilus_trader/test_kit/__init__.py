@@ -13,16 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Re-export the shipped test kit providers for the test suite.
+The `test_kit` subpackage provides test instrument factories and test data loaders for
+examples, tutorials, and tests.
 """
-
-from nautilus_trader.test_kit.providers import TEST_DATA_DIR
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
-
-__all__ = [
-    "TEST_DATA_DIR",
-    "TestDataProvider",
-    "TestInstrumentProvider",
-]

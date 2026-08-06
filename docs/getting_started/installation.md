@@ -50,7 +50,7 @@ uv pip install nautilus_trader
 
 ### Release-candidate wheels
 
-The Rust + PyO3 package under `python/` publishes release‑candidate wheels to PyPI using
+NautilusTrader publishes release‑candidate wheels to PyPI using
 `2.0.0rcN` versions while final validation is in progress.
 
 ```bash
@@ -98,7 +98,7 @@ Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to 
 
 ### Development wheels
 
-The main package index publishes v2 development wheels from both the `nightly` and `develop`
+The main package index publishes development wheels from both the `nightly` and `develop`
 branches, allowing users to test features and fixes ahead of stable releases.
 
 This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
@@ -391,19 +391,13 @@ Performance benchmarks comparing the modes are pending.
 
 ### Build configuration
 
-The precision mode is determined by:
+The precision mode is selected at compile time through the `high-precision` Rust feature flag.
+The Python package enables this flag in the maturin build features (see `python/pyproject.toml`),
+so source builds default to high-precision. For a standard-precision (64-bit) Python build,
+remove `high-precision` from the maturin feature list, then build as usual:
 
-- Setting the `HIGH_PRECISION` environment variable during compilation, **and/or**
-- Enabling the `high-precision` Rust feature flag explicitly.
-
-```bash tab="High-precision (128-bit)"
-export HIGH_PRECISION=true
-make install-debug
-```
-
-```bash tab="Standard-precision (64-bit)"
-export HIGH_PRECISION=false
-make install-debug
+```bash
+make build-debug
 ```
 
 ### Rust feature flag
@@ -412,7 +406,7 @@ To enable high-precision (128-bit) mode in Rust, add the `high-precision` featur
 
 ```toml
 [dependencies]
-nautilus_core = { version = "*", features = ["high-precision"] }
+nautilus-core = { version = "*", features = ["high-precision"] }
 ```
 
 :::info

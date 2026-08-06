@@ -19,23 +19,25 @@
 # %%
 import os
 import shutil
-from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
 
+from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import Quantity
 from nautilus_trader.persistence import ParquetDataCatalog
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.providers import CSVTickDataLoader
+from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.trading import EmaCrossConfig
 
 
 # %% [markdown]
@@ -67,37 +69,20 @@ raw_files
 # %% [markdown]
 # ## Load data into the catalog
 #
-# Histdata CSV files contain `timestamp, bid_price, ask_price` fields. Load the
-# raw data into a DataFrame, then process it into Nautilus `QuoteTick` objects
-# with a `QuoteTickDataWrangler`.
+# Histdata CSV files contain `timestamp, bid_price, ask_price` fields.
+# `TestDataProvider.quotes_from_histdata_csv` parses them into Nautilus
+# `QuoteTick` objects with a default notional size.
 
 # %%
-# Load the first CSV file into a pandas DataFrame
-df = CSVTickDataLoader.load(
-    file_path=raw_files[0],
-    index_col=0,
-    header=None,
-    names=["timestamp", "bid_price", "ask_price", "volume"],
-    usecols=["timestamp", "bid_price", "ask_price"],
-    parse_dates=["timestamp"],
-    date_format="%Y%m%d %H%M%S%f",
-)
-
-df = df.sort_index()
-df.head(2)
-
-# %%
-# Process quotes using a wrangler
+# Create a EUR/USD instrument on the SIM venue and parse the CSV into quote ticks
 EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
-wrangler = QuoteTickDataWrangler(EURUSD)
-
-ticks = wrangler.process(df)
+ticks = TestDataProvider.quotes_from_histdata_csv(EURUSD, raw_files[0])
 
 # Preview: see first 2 ticks
 ticks[0:2]
 
 # %% [markdown]
-# See the [Loading data](../concepts/data) guide for more details.
+# See the [Loading data](../concepts/data/) guide for more details.
 #
 # Instantiate a `ParquetDataCatalog` with a storage directory (here we use the current directory).
 # Write the instrument and tick data to the catalog.
@@ -112,19 +97,19 @@ if CATALOG_PATH.exists():
 CATALOG_PATH.mkdir(parents=True)
 
 # Create a catalog instance
-catalog = ParquetDataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # Write instrument to the catalog
-catalog.write_data([EURUSD])
+catalog.write_instruments([EURUSD])
 
-# Write ticks to catalog
-catalog.write_data(ticks)
+# Write ticks to the catalog
+catalog.write_quote_ticks(ticks)
 
 # %% [markdown]
 # ## Query the catalog
 #
-# The catalog provides methods like `.instruments()` and `.quotes()` to
-# query stored data and determine the available time range.
+# The catalog provides methods like `.instruments()` and `.query_quote_ticks()`
+# to query stored data and determine the available time range.
 
 # %%
 # Get list of all instruments in catalog
@@ -137,7 +122,7 @@ instrument
 
 # %%
 # Query quote ticks from catalog to determine the data range
-all_ticks = catalog.quotes(instrument_ids=[EURUSD.id.value])
+all_ticks = catalog.query_quote_ticks(identifiers=[EURUSD.id.value])
 print(f"Total ticks in catalog: {len(all_ticks)}")
 
 if all_ticks:
@@ -146,16 +131,14 @@ if all_ticks:
     last_tick_time = pd.Timestamp(all_ticks[-1].ts_init, unit="ns", tz="UTC")
     print(f"Data range: {first_tick_time} to {last_tick_time}")
 
-    # Set backtest range to first 2 weeks of data (as ISO strings for BacktestDataConfig)
-    start_time = first_tick_time.isoformat()
-    end_time = (first_tick_time + pd.Timedelta(days=14)).isoformat()
-    print(f"Backtest range: {start_time} to {end_time}")
-
-    # Preview selected data
+    # Set backtest range to first 2 weeks of data (as UNIX nanoseconds)
     start_ns = all_ticks[0].ts_init
     end_ns = dt_to_unix_nanos(first_tick_time + pd.Timedelta(days=14))
-    selected_quote_ticks = catalog.quotes(
-        instrument_ids=[EURUSD.id.value],
+    print(f"Backtest range: {first_tick_time} to {first_tick_time + pd.Timedelta(days=14)}")
+
+    # Preview selected data
+    selected_quote_ticks = catalog.query_quote_ticks(
+        identifiers=[EURUSD.id.value],
         start=start_ns,
         end=end_ns,
     )
@@ -171,9 +154,10 @@ else:
 venue_configs = [
     BacktestVenueConfig(
         name="SIM",
-        oms_type="HEDGING",
-        account_type="MARGIN",
-        base_currency="USD",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        base_currency=Currency.from_str("USD"),
         starting_balances=["1_000_000 USD"],
     ),
 ]
@@ -187,44 +171,48 @@ str(CATALOG_PATH)
 # %%
 data_configs = [
     BacktestDataConfig(
+        data_type="QuoteTick",
         catalog_path=str(CATALOG_PATH),
-        data_cls=QuoteTick,
         instrument_id=instrument.id,
-        start_time=start_time,
-        end_time=end_time,
-    ),
-]
-
-# %% [markdown]
-# ## Add strategies
-
-# %%
-strategies = [
-    ImportableStrategyConfig(
-        strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
-        config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-        config={
-            "instrument_id": instrument.id,
-            "bar_type": "EUR/USD.SIM-15-MINUTE-BID-INTERNAL",
-            "fast_ema_period": 10,
-            "slow_ema_period": 20,
-            "trade_size": Decimal(1_000_000),
-        },
+        start_time=start_ns,
+        end_time=end_ns,
     ),
 ]
 
 # %% [markdown]
 # ## Configure the backtest
 #
-# `BacktestRunConfig` centralizes venue, data, and strategy configuration in one
-# object. It is Partialable, so you can build it in stages. This reduces
-# boilerplate when running parameter sweeps or grid searches.
+# `BacktestRunConfig` centralizes venue and data configuration in one object.
 
 # %%
 config = BacktestRunConfig(
-    engine=BacktestEngineConfig(strategies=strategies),
-    data=data_configs,
     venues=venue_configs,
+    data=data_configs,
+    engine=BacktestEngineConfig(),
+)
+
+# %% [markdown]
+# ## Add the strategy
+#
+# Build the node, then attach a strategy to the run configuration. Here we add
+# the built-in `EmaCross` example strategy, which subscribes to the quote ticks
+# and trades the crossover of a fast and slow EMA on the mid price. To run your
+# own strategy, make it importable and use `node.add_strategy_from_config()`
+# with an `ImportableStrategyConfig` instead.
+
+# %%
+node = BacktestNode(configs=[config])
+node.build()
+
+node.add_builtin_strategy(
+    config.id,
+    "EmaCross",
+    EmaCrossConfig(
+        instrument_id=instrument.id,
+        trade_size=Quantity.from_int(1_000_000),
+        fast_period=10,
+        slow_period=20,
+    ),
 )
 
 # %% [markdown]
@@ -235,7 +223,5 @@ config = BacktestRunConfig(
 # algorithms) carry forward to live trading with `LiveNode`.
 
 # %%
-node = BacktestNode(configs=[config])
-
 results = node.run()
 results
