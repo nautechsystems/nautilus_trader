@@ -74,7 +74,7 @@ impl PolymarketMakerOrder {
     /// commonly lowercase, or vice versa. The API-key comparison stays exact
     /// because keys are opaque credentials.
     #[must_use]
-    pub fn is_owned_by(&self, user_address: &str, api_key: &str) -> bool {
+    pub(crate) fn is_owned_by(&self, user_address: &str, api_key: &str) -> bool {
         self.maker_address.eq_ignore_ascii_case(user_address) || self.owner == api_key
     }
 }

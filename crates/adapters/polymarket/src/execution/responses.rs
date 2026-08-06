@@ -1092,6 +1092,7 @@ mod tests {
         trade.maker_orders[0].maker_address = uppercase_variant_address;
         let foreign_api_key = "ffffffff-ffff-ffff-ffff-ffffffffffff";
         assert_ne!(trade.maker_orders[0].owner, foreign_api_key);
+        let expected_venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
 
         let instruments = AtomicMap::new();
         instruments.insert(trade.asset_id, instrument);
@@ -1116,11 +1117,47 @@ mod tests {
             1,
             "the account's own confirmed maker fill must be reported",
         );
+        assert_eq!(reports[0].venue_order_id, expected_venue_order_id);
         assert_eq!(
             discards.unowned_maker_trades, 0,
             "entry-level skips of foreign entries in an owned trade are not trade drops",
         );
         assert_eq!(discards.unmapped_instruments, 0);
+    }
+
+    #[rstest]
+    #[case(PolymarketLiquiditySide::Maker)]
+    #[case(PolymarketLiquiditySide::Taker)]
+    fn test_confirmed_trade_without_instrument_counts_unmapped_discard(
+        #[case] trader_side: PolymarketLiquiditySide,
+    ) {
+        let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        trade.trader_side = trader_side;
+        let instruments = AtomicMap::new();
+        let ctx = crate::execution::reconciliation::FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(reports.len(), 0);
+        assert_eq!(
+            discards,
+            crate::execution::reconciliation::FillBuildDiscards {
+                unmapped_instruments: 1,
+                unowned_maker_trades: 0,
+            },
+        );
     }
 
     #[rstest]

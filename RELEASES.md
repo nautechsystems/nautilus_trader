@@ -8,6 +8,8 @@ Released on TBD (UTC).
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added `LiveNode.start()` warning when external message bus ingress requires `run()`
+- Added runtime external‑order claim registration and removal to Rust `LiveNode` (#4620), thanks @folknor
+- Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 - Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
 
@@ -31,6 +33,7 @@ Released on TBD (UTC).
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
 - Fixed malformed external message topics aborting Python v2 `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
+- Fixed fee model panics from invalid Python inputs and decimal overflow (#4640), thanks @dfjmax
 - Fixed Rust network and WebSocket adapter logs that could expose credentials and payload contents
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
 
@@ -41,9 +44,13 @@ Released on TBD (UTC).
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
 - Fixed `Position` average open price (`avg_px_open`) for exact closes after partial fills
 - Fixed order list `OrderInitialized` events to carry `order_list_id` through publication, persistence, and replay
+- Fixed failed live strategy registrations leaving orphaned external‑order claims (#4620), thanks @folknor
+- Fixed Python v2 `FeeModel` subclass constructors and concrete model inheritance (#4640), thanks @dfjmax
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
+- Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
+- Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
 
 ### Internal Improvements
 
