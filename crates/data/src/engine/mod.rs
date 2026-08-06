@@ -460,6 +460,87 @@ impl DataEngine {
         log::debug!("Registered client {client_id}");
     }
 
+    /// Validates that a client and all of its routing can be registered atomically.
+    ///
+    /// A primary venue keeps [`Self::register_client`]'s overwrite semantics and never
+    /// conflicts; explicit venue routes conflict when routed to a different client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client ID, default routing, or any explicit venue routing
+    /// conflicts with an existing registration.
+    pub fn validate_client_registration(
+        &self,
+        client_id: ClientId,
+        primary_venue: Option<Venue>,
+        default: bool,
+        venue_routes: &[Venue],
+    ) -> anyhow::Result<()> {
+        if self.clients.contains_key(&client_id) {
+            anyhow::bail!("Data client {client_id} is already registered");
+        }
+
+        if default && self.default_client_id.is_some_and(|id| id != client_id) {
+            anyhow::bail!("default client already registered");
+        }
+
+        for venue in venue_routes {
+            if primary_venue == Some(*venue) {
+                continue;
+            }
+
+            if let Some(existing_client_id) = self.routing_map.get(venue)
+                && *existing_client_id != client_id
+            {
+                anyhow::bail!(
+                    "Venue {venue} already routed to {existing_client_id}, cannot re-route to {client_id}"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Registers a client and all routing after validating that the complete operation can
+    /// succeed without mutating the engine.
+    ///
+    /// A primary venue keeps [`Self::register_client`]'s overwrite semantics; explicit venue
+    /// routes conflict when routed to a different client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client ID, default routing, or any explicit venue routing
+    /// conflicts with an existing registration.
+    pub fn register_client_checked(
+        &mut self,
+        client: DataClientAdapter,
+        primary_venue: Option<Venue>,
+        default: bool,
+        venue_routes: &[Venue],
+    ) -> anyhow::Result<()> {
+        let client_id = client.client_id();
+        self.validate_client_registration(client_id, primary_venue, default, venue_routes)?;
+
+        if let Some(venue) = primary_venue {
+            self.routing_map.insert(venue, client_id);
+            log::debug!("Set client {client_id} routing for {venue}");
+        }
+
+        for venue in venue_routes {
+            self.routing_map.insert(*venue, client_id);
+            log::debug!("Set client {client_id} routing for {venue}");
+        }
+
+        if default || (client.venue.is_none() && self.default_client_id.is_none()) {
+            self.default_client_id = Some(client_id);
+            log::debug!("Registered client {client_id} for default routing");
+        }
+
+        self.clients.insert(client_id, client);
+        log::debug!("Registered client {client_id}");
+        Ok(())
+    }
+
     /// Deregisters the client for the `client_id`.
     ///
     /// # Panics

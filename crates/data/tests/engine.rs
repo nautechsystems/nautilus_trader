@@ -634,6 +634,74 @@ fn test_register_and_deregister_client(
 }
 
 #[rstest]
+fn test_register_client_checked_preserves_primary_venue_overwrite(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let venue = Venue::test_default();
+    let client_id1 = ClientId::new("C1");
+    let data_client1 = DataClientAdapter::new(
+        client_id1,
+        Some(venue),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id1,
+            Some(venue),
+        )),
+    );
+    data_engine
+        .register_client_checked(data_client1, Some(venue), false, &[])
+        .unwrap();
+
+    // A second primary registration for the same venue keeps register_client's
+    // overwrite semantics: the later client takes the route.
+    let client_id2 = ClientId::new("C2");
+    let data_client2 = DataClientAdapter::new(
+        client_id2,
+        Some(venue),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id2,
+            Some(venue),
+        )),
+    );
+    data_engine
+        .register_client_checked(data_client2, Some(venue), false, &[])
+        .unwrap();
+    assert_eq!(
+        data_engine
+            .get_client(None, Some(&venue))
+            .unwrap()
+            .client_id(),
+        client_id2
+    );
+
+    // An explicit route to a venue owned by a different client still conflicts.
+    let client_id3 = ClientId::new("C3");
+    let data_client3 = DataClientAdapter::new(
+        client_id3,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(clock, cache, client_id3, Some(venue))),
+    );
+    let error = data_engine
+        .register_client_checked(data_client3, None, false, &[venue])
+        .unwrap_err();
+    assert!(error.to_string().contains("already routed"));
+    assert!(!data_engine.registered_clients().contains(&client_id3));
+}
+
+#[rstest]
 fn test_register_default_client(
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,

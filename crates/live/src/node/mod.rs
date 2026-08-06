@@ -87,6 +87,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     component::Component,
     enums::{Environment, LogColor},
+    factories::{ClientConfig, DataClientFactory},
     live::dst,
     log_info,
     messages::{
@@ -102,10 +103,11 @@ use nautilus_core::{
     UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
 };
+use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue},
     orders::Order,
     reports::{OrderStatusReport, PositionStatusReport},
 };
@@ -141,7 +143,7 @@ mod state;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
-use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
+use config::{LiveNodeConfig, PluginConfig, RoutingConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
@@ -169,6 +171,7 @@ pub struct LiveNode {
     exec_manager: ExecutionManager,
     exec_clients: Vec<LiveExecutionClient>,
     cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
+    data_client_names: HashSet<String>,
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
@@ -187,6 +190,7 @@ impl LiveNode {
         exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
+        data_client_names: HashSet<String>,
         external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
         Self {
@@ -197,6 +201,7 @@ impl LiveNode {
             exec_manager,
             exec_clients,
             cache_database_factory,
+            data_client_names,
             external_msgbus,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
@@ -270,6 +275,7 @@ impl LiveNode {
             exec_manager,
             exec_clients: Vec::new(),
             cache_database_factory: None,
+            data_client_names: HashSet::new(),
             external_msgbus: None,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
@@ -280,6 +286,165 @@ impl LiveNode {
         log::info!("LiveNode built successfully with kernel config");
 
         Ok(node)
+    }
+
+    /// Adds, starts, and connects a data client to a running node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node is not running, event-store replay is active, the name or
+    /// routing conflicts with an existing client, or the client cannot start or connect.
+    pub async fn add_data_client(
+        &mut self,
+        name: Option<String>,
+        factory: Box<dyn DataClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<ClientId> {
+        self.add_data_client_with_routing(name, factory, config, RoutingConfig::default())
+            .await
+    }
+
+    /// Adds, starts, and connects a data client with explicit routing to a running node.
+    ///
+    /// Registration is committed only after the client is connected and ready.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node is not running, event-store replay is active, the name or
+    /// routing conflicts with an existing client, or the client cannot start or connect.
+    pub async fn add_data_client_with_routing(
+        &mut self,
+        name: Option<String>,
+        factory: Box<dyn DataClientFactory>,
+        config: Box<dyn ClientConfig>,
+        routing: RoutingConfig,
+    ) -> anyhow::Result<ClientId> {
+        if !self.state().is_running() {
+            anyhow::bail!("LiveNode is not running");
+        }
+
+        if self.kernel.is_event_store_replay() {
+            anyhow::bail!("Cannot add a data client during event-store replay");
+        }
+
+        let name = name.unwrap_or_else(|| factory.name().to_string());
+        if self.data_client_names.contains(&name) {
+            anyhow::bail!("Data client '{name}' is already registered");
+        }
+
+        let client = factory.create(
+            &name,
+            config.as_ref(),
+            self.kernel.cache().into(),
+            self.kernel.clock(),
+        )?;
+        let client_id = client.client_id();
+        let primary_venue = client.venue();
+        let venue_routes = routing
+            .venues
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(Venue::new)
+            .collect::<Vec<_>>();
+        let adapter = DataClientAdapter::new(client_id, primary_venue, true, true, client);
+
+        self.kernel
+            .data_engine
+            .try_borrow_mut()
+            .map_err(|e| {
+                anyhow::anyhow!("Cannot borrow data engine to validate client {client_id}: {e}")
+            })?
+            .validate_client_registration(
+                client_id,
+                primary_venue,
+                routing.default,
+                &venue_routes,
+            )?;
+
+        let mut guard = LateDataClientGuard::new(adapter);
+        if let Err(e) = guard.adapter_mut().start() {
+            return Err(cleanup_late_data_client(
+                guard,
+                self.config.timeout_disconnection,
+                client_id,
+                e.context(format!("Failed to start data client {client_id}")),
+            )
+            .await);
+        }
+
+        let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
+        let remaining = connection_deadline.saturating_duration_since(dst::time::Instant::now());
+        let connect_result = dst::time::timeout(remaining, guard.adapter_mut().connect()).await;
+        let connect_result = match connect_result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow::anyhow!("connection timeout")),
+        };
+
+        if let Err(e) = connect_result {
+            return Err(cleanup_late_data_client(
+                guard,
+                self.config.timeout_disconnection,
+                client_id,
+                e.context(format!("Failed to connect data client {client_id}")),
+            )
+            .await);
+        }
+
+        while !guard.adapter_mut().is_connected() {
+            let now = dst::time::Instant::now();
+            if now >= connection_deadline {
+                let error = anyhow::anyhow!("Data client {client_id} readiness timed out");
+                return Err(cleanup_late_data_client(
+                    guard,
+                    self.config.timeout_disconnection,
+                    client_id,
+                    error,
+                )
+                .await);
+            }
+            dst::time::sleep(Duration::from_millis(100).min(connection_deadline - now)).await;
+        }
+
+        // One borrow spans revalidation and commit: no await separates them, so the
+        // validated state cannot change before the adapter is consumed.
+        let commit_result = self
+            .kernel
+            .data_engine
+            .try_borrow_mut()
+            .map_err(|e| {
+                anyhow::anyhow!("Cannot borrow data engine to register client {client_id}: {e}")
+            })
+            .and_then(|mut data_engine| {
+                data_engine.validate_client_registration(
+                    client_id,
+                    primary_venue,
+                    routing.default,
+                    &venue_routes,
+                )?;
+                data_engine.register_client_checked(
+                    guard.take(),
+                    primary_venue,
+                    routing.default,
+                    &venue_routes,
+                )
+            });
+
+        if let Err(e) = commit_result {
+            return Err(cleanup_late_data_client(
+                guard,
+                self.config.timeout_disconnection,
+                client_id,
+                e,
+            )
+            .await);
+        }
+        self.data_client_names.insert(name);
+
+        if let Some(runner) = self.runner.as_mut() {
+            runner.flush_pending_data();
+        }
+        Ok(client_id)
     }
 
     /// Loads and registers plug-ins declared on the node config.
@@ -2770,6 +2935,88 @@ impl LiveNode {
         drop(targeted_order_report_task.take());
         drop(position_report_task.take());
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+    }
+}
+
+struct LateDataClientGuard {
+    adapter: Option<DataClientAdapter>,
+}
+
+impl LateDataClientGuard {
+    fn new(adapter: DataClientAdapter) -> Self {
+        Self {
+            adapter: Some(adapter),
+        }
+    }
+
+    fn adapter_mut(&mut self) -> &mut DataClientAdapter {
+        self.adapter
+            .as_mut()
+            .expect("late data client guard should contain an adapter")
+    }
+
+    fn take(&mut self) -> DataClientAdapter {
+        self.adapter
+            .take()
+            .expect("late data client guard should contain an adapter")
+    }
+
+    async fn cleanup(mut self, timeout: Duration) -> anyhow::Result<()> {
+        // Empty when the commit consumed the adapter before erroring; the engine
+        // then owns whatever state remains and there is nothing left to clean.
+        let Some(mut adapter) = self.adapter.take() else {
+            return Ok(());
+        };
+
+        let mut errors = Vec::new();
+
+        match dst::time::timeout(timeout, adapter.disconnect()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => errors.push(format!("disconnect failed: {e}")),
+            Err(_) => errors.push("disconnect timed out".to_string()),
+        }
+
+        if let Err(e) = adapter.stop() {
+            errors.push(format!("stop failed: {e}"));
+        }
+
+        if let Err(e) = adapter.dispose() {
+            errors.push(format!("dispose failed: {e}"));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
+    }
+}
+
+impl Drop for LateDataClientGuard {
+    fn drop(&mut self) {
+        if let Some(adapter) = self.adapter.as_mut() {
+            if let Err(e) = adapter.stop() {
+                log::error!("Failed to stop uncommitted data client: {e}");
+            }
+
+            if let Err(e) = adapter.dispose() {
+                log::error!("Failed to dispose uncommitted data client: {e}");
+            }
+        }
+    }
+}
+
+async fn cleanup_late_data_client(
+    guard: LateDataClientGuard,
+    timeout: Duration,
+    client_id: ClientId,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    match guard.cleanup(timeout).await {
+        Ok(()) => error,
+        Err(cleanup_error) => {
+            anyhow::anyhow!("{error}; failed to clean up data client {client_id}: {cleanup_error}")
+        }
     }
 }
 

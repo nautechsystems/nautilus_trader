@@ -561,6 +561,7 @@ impl LiveNodeBuilder {
         );
 
         self.config.validate_runtime_support()?;
+        let data_client_names = self.data_client_factories.keys().cloned().collect();
 
         if self.config.event_store.is_some() && self.event_store_factory.is_none() {
             anyhow::bail!(
@@ -629,23 +630,19 @@ impl LiveNodeBuilder {
 
                 let routing = self.data_client_routing.remove(&name).unwrap_or_default();
 
-                {
-                    let mut data_engine = kernel.data_engine.borrow_mut();
-                    data_engine.register_client(adapter, venue);
-
-                    if routing.default {
-                        data_engine.set_default_client(client_id)?;
-                    }
-
-                    if let Some(venues) = &routing.venues {
-                        for venue_str in venues {
-                            data_engine.register_venue_routing(
-                                client_id,
-                                Venue::new(venue_str.as_str()),
-                            )?;
-                        }
-                    }
-                }
+                let venue_routes = routing
+                    .venues
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(Venue::new)
+                    .collect::<Vec<_>>();
+                kernel.data_engine.borrow_mut().register_client_checked(
+                    adapter,
+                    venue,
+                    routing.default,
+                    &venue_routes,
+                )?;
 
                 log::info!("Registered DataClient-{client_id}");
             } else {
@@ -721,6 +718,7 @@ impl LiveNodeBuilder {
             exec_manager,
             exec_clients,
             self.cache_database_factory,
+            data_client_names,
             self.external_msgbus_ingress,
         );
         node.load_configured_plugins()?;

@@ -38,8 +38,9 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    live::dst,
+    live::{dst, runner::get_data_event_sender},
     messages::{
+        DataEvent,
         execution::{
             CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder,
@@ -53,7 +54,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
-    config::{LiveExecEngineConfig, LiveNodeConfig},
+    config::{LiveExecEngineConfig, LiveNodeConfig, RoutingConfig},
     node::{LiveNode, LiveNodeHandle, NodeState},
 };
 use nautilus_model::{
@@ -312,6 +313,10 @@ mod serial_tests {
 
     #[derive(Clone, Debug, Default)]
     struct LifecycleClientState {
+        factory_created: Arc<AtomicBool>,
+        started: Arc<AtomicBool>,
+        stopped: Arc<AtomicBool>,
+        disposed: Arc<AtomicBool>,
         connected: Arc<AtomicBool>,
         connect_attempted: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
@@ -346,6 +351,10 @@ mod serial_tests {
     struct LifecycleDataClient {
         state: LifecycleClientState,
         behavior: LifecycleClientBehavior,
+        client_id: ClientId,
+        venue: Option<Venue>,
+        connect_instrument: Option<InstrumentAny>,
+        hostile_connect: bool,
     }
 
     struct LifecycleExecutionClient {
@@ -420,6 +429,10 @@ mod serial_tests {
     struct LifecycleDataClientFactory {
         state: LifecycleClientState,
         behavior: LifecycleClientBehavior,
+        client_id: ClientId,
+        venue: Option<Venue>,
+        connect_instrument: Option<InstrumentAny>,
+        hostile_connect: bool,
     }
 
     #[derive(Debug)]
@@ -442,7 +455,30 @@ mod serial_tests {
 
     impl LifecycleDataClientFactory {
         fn new(state: LifecycleClientState, behavior: LifecycleClientBehavior) -> Self {
-            Self { state, behavior }
+            Self {
+                state,
+                behavior,
+                client_id: ClientId::from("LIFECYCLE-DATA"),
+                venue: None,
+                connect_instrument: None,
+                hostile_connect: false,
+            }
+        }
+
+        fn with_client(mut self, client_id: ClientId, venue: Option<Venue>) -> Self {
+            self.client_id = client_id;
+            self.venue = venue;
+            self
+        }
+
+        fn with_connect_instrument(mut self, instrument: InstrumentAny) -> Self {
+            self.connect_instrument = Some(instrument);
+            self
+        }
+
+        fn with_hostile_connect(mut self) -> Self {
+            self.hostile_connect = true;
+            self
         }
     }
 
@@ -504,9 +540,14 @@ mod serial_tests {
             _cache: CacheView,
             _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn DataClient>> {
+            self.state.factory_created.store(true, Ordering::Relaxed);
             Ok(Box::new(LifecycleDataClient {
                 state: self.state.clone(),
                 behavior: self.behavior,
+                client_id: self.client_id,
+                venue: self.venue,
+                connect_instrument: self.connect_instrument.clone(),
+                hostile_connect: self.hostile_connect,
             }))
         }
 
@@ -586,18 +627,20 @@ mod serial_tests {
     #[async_trait(?Send)]
     impl DataClient for LifecycleDataClient {
         fn client_id(&self) -> ClientId {
-            ClientId::from("LIFECYCLE-DATA")
+            self.client_id
         }
 
         fn venue(&self) -> Option<Venue> {
-            None
+            self.venue
         }
 
         fn start(&mut self) -> anyhow::Result<()> {
+            self.state.started.store(true, Ordering::Relaxed);
             Ok(())
         }
 
         fn stop(&mut self) -> anyhow::Result<()> {
+            self.state.stopped.store(true, Ordering::Relaxed);
             Ok(())
         }
 
@@ -606,6 +649,7 @@ mod serial_tests {
         }
 
         fn dispose(&mut self) -> anyhow::Result<()> {
+            self.state.disposed.store(true, Ordering::Relaxed);
             Ok(())
         }
 
@@ -619,6 +663,17 @@ mod serial_tests {
 
         async fn connect(&mut self) -> anyhow::Result<()> {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
+
+            if self.hostile_connect {
+                let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &instrument);
+            }
+
+            if let Some(instrument) = self.connect_instrument.clone() {
+                get_data_event_sender()
+                    .send(DataEvent::Instrument(instrument))
+                    .map_err(|e| anyhow::anyhow!("failed to emit connect instrument: {e}"))?;
+            }
 
             match self.behavior {
                 LifecycleClientBehavior::ConnectPending => {
@@ -1377,6 +1432,264 @@ mod serial_tests {
         let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
 
         assert_eq!(node.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_after_start_registers_connects_routes_and_flushes() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(50),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("LateDataClientNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+
+        let state = LifecycleClientState::default();
+        let client_id = ClientId::from("LATE-DATA");
+        let venue = Venue::from("LATE-ROUTE");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let factory =
+            LifecycleDataClientFactory::new(state.clone(), LifecycleClientBehavior::Connects)
+                .with_client(client_id, None)
+                .with_connect_instrument(instrument);
+        let routing = RoutingConfig {
+            venues: Some(vec![venue.to_string()]),
+            ..Default::default()
+        };
+
+        let registered_id = node
+            .add_data_client_with_routing(
+                Some("late-data".to_string()),
+                Box::new(factory),
+                Box::new(LifecycleDataClientConfig),
+                routing,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(registered_id, client_id);
+        assert!(state.factory_created.load(Ordering::Relaxed));
+        assert!(state.started.load(Ordering::Relaxed));
+        assert!(state.connect_attempted.load(Ordering::Relaxed));
+        assert!(state.connected.load(Ordering::Relaxed));
+        assert!(
+            node.kernel()
+                .cache
+                .borrow()
+                .instrument(&instrument_id)
+                .is_some()
+        );
+        assert_eq!(
+            node.kernel()
+                .data_engine
+                .borrow_mut()
+                .get_client(None, Some(&venue))
+                .map(|client| client.client_id()),
+            Some(client_id)
+        );
+
+        node.stop().await.unwrap();
+
+        assert!(state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(state.stopped.load(Ordering::Relaxed));
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_rejects_build_time_name_collision_before_factory() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(50),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let build_state = LifecycleClientState::default();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("LateDataClientNameCollisionNode")
+            .add_data_client(
+                Some("existing-data".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    build_state,
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.start().await.unwrap();
+
+        let late_state = LifecycleClientState::default();
+        let error = node
+            .add_data_client(
+                Some("existing-data".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    late_state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .await
+            .expect_err("duplicate build-time name should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "Data client 'existing-data' is already registered"
+        );
+        assert!(!late_state.factory_created.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_connect_timeout_does_not_register_client() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateDataClientTimeoutNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+
+        let state = LifecycleClientState::default();
+        let client_id = ClientId::from("LATE-PENDING");
+        let factory =
+            LifecycleDataClientFactory::new(state.clone(), LifecycleClientBehavior::ConnectPending)
+                .with_client(client_id, None);
+        let error = node
+            .add_data_client(
+                Some("late-pending".to_string()),
+                Box::new(factory),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .await
+            .expect_err("pending connect should time out");
+
+        assert!(format!("{error:#}").contains("connection timeout"));
+        assert!(state.connect_attempted.load(Ordering::Relaxed));
+        assert!(state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(state.stopped.load(Ordering::Relaxed));
+        assert!(state.disposed.load(Ordering::Relaxed));
+        assert!(
+            node.kernel()
+                .data_engine()
+                .get_clients()
+                .iter()
+                .all(|client| client.client_id() != client_id)
+        );
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_route_conflict_precedes_start_and_connect() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(50),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let venue = Venue::from("CONFLICT");
+        let build_state = LifecycleClientState::default();
+        let build_factory =
+            LifecycleDataClientFactory::new(build_state, LifecycleClientBehavior::Connects)
+                .with_client(ClientId::from("ROUTE-OWNER"), Some(venue));
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("LateDataClientRouteConflictNode")
+            .add_data_client(
+                Some("route-owner".to_string()),
+                Box::new(build_factory),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.start().await.unwrap();
+
+        let late_state = LifecycleClientState::default();
+        let late_factory =
+            LifecycleDataClientFactory::new(late_state.clone(), LifecycleClientBehavior::Connects)
+                .with_client(ClientId::from("ROUTE-CONTENDER"), None);
+        let error = node
+            .add_data_client_with_routing(
+                Some("route-contender".to_string()),
+                Box::new(late_factory),
+                Box::new(LifecycleDataClientConfig),
+                RoutingConfig {
+                    default: false,
+                    venues: Some(vec![venue.to_string()]),
+                },
+            )
+            .await
+            .expect_err("explicit route to another client's venue should be rejected");
+
+        assert!(error.to_string().contains("already routed"));
+        assert!(late_state.factory_created.load(Ordering::Relaxed));
+        assert!(!late_state.started.load(Ordering::Relaxed));
+        assert!(!late_state.connect_attempted.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_connect_can_reenter_data_engine_endpoint() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(50),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateDataClientHostileConnectNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+
+        let state = LifecycleClientState::default();
+        let client_id = ClientId::from("HOSTILE-CONNECT");
+        let factory =
+            LifecycleDataClientFactory::new(state.clone(), LifecycleClientBehavior::Connects)
+                .with_client(client_id, None)
+                .with_hostile_connect();
+
+        let registered_id = node
+            .add_data_client(
+                Some("hostile-connect".to_string()),
+                Box::new(factory),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(registered_id, client_id);
+        assert!(state.connected.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
     }
 
     #[rstest]
