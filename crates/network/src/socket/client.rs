@@ -350,7 +350,7 @@ impl SocketClientInner {
     /// reader to a timeout; the writer task bounds both the old-writer
     /// shutdown and the buffer drain with its graceful-shutdown timeout.
     async fn reconnect(&mut self) -> Result<(), Error> {
-        log::debug!("Reconnecting");
+        log::info!("Reconnecting");
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted due to disconnect state");
@@ -456,7 +456,7 @@ impl SocketClientInner {
             self.config.idle_timeout_ms,
         );
 
-        log::debug!("Reconnect succeeded");
+        log::info!("Reconnect succeeded");
         Ok(())
     }
 
@@ -1167,7 +1167,7 @@ impl SocketClient {
                         )
                         .is_ok()
                     {
-                        log::debug!("Detected dead read task, transitioning to RECONNECT");
+                        log::info!("Detected dead read task, transitioning to RECONNECT");
                     }
                     mode = ConnectionMode::from_atomic(&connection_mode);
                 }
