@@ -534,6 +534,29 @@ identity in the report and let the engine apply
 [external order ownership](../concepts/execution.md#external-order-creation). The adapter may use
 any state structure that proves this routing decision.
 
+Model tracked ownership with two conceptual layers. Order identity contains the stable fields that
+associate an update with the submitted order: client order ID, strategy, instrument, side, and order
+type. Order context combines that identity with the submitted order shape needed to construct later
+events without accessing the engine cache, such as quantity, price and trigger details, time in
+force, and execution flags. Keep venue order bindings, request correlation, cumulative fills, and
+replace state in adapter‑owned context around that common surface.
+
+Register the order context before sending or spawning work that can produce an inbound update.
+Restore context for active local orders before processing their live updates, and retain it while
+the order can still produce owned updates. Do not evict active context merely to bound replay state.
+
+Make every execution update take one explicit route:
+
+| Route      | Evidence                                               | Result                                                         |
+| ---------- | ------------------------------------------------------ | -------------------------------------------------------------- |
+| Tracked    | Active or pending context owns the order.              | Emit, deduplicate, or safely defer typed order events.         |
+| External   | No tracked, pending, or terminal ownership exists.     | Forward reports for reconciliation or external order creation. |
+| Suppressed | The update is proven duplicated, stale, or superseded. | Emit neither an event nor a report.                            |
+
+Missing tracked metadata, a parse failure, or an unresolved venue binding does not prove that an
+update is external. A tracked status with no corresponding Nautilus lifecycle event is a tracked
+no‑op or deferred update unless the adapter documents and tests a report exception.
+
 #### Event ordering and deduplication
 
 A venue can report the same transition through an order response, private stream, query, and
@@ -547,8 +570,15 @@ the update:
   reserves first, release the key after a failure so a replay can recover the event.
 - Bound long‑lived deduplication state, but retain enough history across reconnects to cover venue
   replay. Reset it only when the protocol proves old identifiers cannot return.
+- Reuse the shared [`FifoCache` and `FifoCacheMap`](../../crates/common/src/cache/fifo.rs) when
+  first‑in, first‑out eviction matches the replay contract. Keep adapter‑specific locking where
+  several state changes must remain atomic.
 - Make repeated acknowledgements and order snapshots idempotent. They must not regress state or
   emit a second lifecycle event.
+
+Keep active order context, pending correlation, replay deduplication, and terminal tombstones as
+separate lifecycle concepts even when one state object owns them. Bound replay and tombstone state
+without letting eviction reclassify an update for an active order as external.
 
 For a tracked order, a definitive fill can arrive before an acknowledgement or open‑order update.
 Emit any required preceding lifecycle event only when the adapter has complete order identity and
@@ -560,6 +590,10 @@ When a venue implements modify as cancel‑replace, update the venue order ID ma
 the replacement leg. Distinguish a stale cancel for the old leg from cancellation of the active
 replacement, and calculate replacement quantity from current cumulative fills. This behavior is
 venue‑specific and needs focused race tests; it does not imply a shared dispatch state layout.
+
+Focused tests distinguish tracked and external updates, fills that precede acknowledgement,
+duplicates from overlapping sources, submission or venue‑binding races, and stale post‑terminal
+updates. Test active‑context retention separately from bounded replay eviction.
 
 #### Order command outcome policy
 
@@ -706,10 +740,10 @@ configuration in the integration guide.
 
 ## WebSocket client patterns
 
-WebSocket dispatch organization has more repository variance than most adapter boundaries and is
-under active standardization. Keep new code aligned with the shared network abstractions and the
-nearest protocol peers, but do not treat one adapter's dispatch modules or state structs as the
-target architecture.
+WebSocket dispatch follows the shared ownership and routing contract while module layout and state
+containers remain adapter‑specific. Keep new code aligned with the shared network abstractions,
+bounded cache primitives, and nearest protocol peers. Do not treat one adapter's dispatch modules
+or a union of venue state as the target architecture.
 
 ### Client structure
 
@@ -839,8 +873,15 @@ Keep the routing boundary auditable:
 - Dispatch domain events outside mutable protocol state where practical.
 - Preserve enough identity to correlate execution responses and deduplicate overlapping sources.
 
-Dispatch module layout, intermediate enum names, and state containers remain adapter‑specific.
-Prefer the smallest design that makes protocol ownership and state transitions testable.
+The handler owns transport control, authentication, subscription acknowledgements, frame decoding,
+and protocol correlation. The consuming data or execution client owns domain routing and emission.
+Parsing may remain in the handler when it depends on handler‑owned protocol state, but tracked versus
+external execution ownership remains a client decision.
+
+Dispatch module layout, intermediate enum names, context registries, venue bindings, and state
+containers remain adapter‑specific. Prefer the smallest design that makes protocol ownership and
+state transitions testable; extract another component only when multiple adapters share its
+semantics and atomicity.
 
 ### Reconnection and shutdown
 
