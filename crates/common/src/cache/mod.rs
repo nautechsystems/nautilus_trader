@@ -4489,6 +4489,18 @@ impl Cache {
 
         log::debug!("Adding {order:?}");
 
+        if let Some(database) = &mut self.database {
+            database.add_order(&order, client_id)?;
+            // TODO: Implement
+            // if self.config.snapshot_orders {
+            //     database.snapshot_order_state(order)?;
+            // }
+        }
+
+        if let Some(position_id) = position_id {
+            self.persist_order_position(&position_id, &client_order_id)?;
+        }
+
         self.index.orders.insert(client_order_id);
 
         if order.is_active_local() {
@@ -4558,26 +4570,18 @@ impl Cache {
 
         // Index position ID if provided
         if let Some(position_id) = position_id {
-            self.add_position_id(
+            self.commit_order_position(
                 &position_id,
                 &order.instrument_id().venue,
                 &client_order_id,
                 &strategy_id,
-            )?;
+            );
         }
 
         // Index client ID if provided
         if let Some(client_id) = client_id {
             self.index.order_client.insert(client_order_id, client_id);
             log::debug!("Indexed {client_id:?}");
-        }
-
-        if let Some(database) = &mut self.database {
-            database.add_order(&order, client_id)?;
-            // TODO: Implement
-            // if self.config.snapshot_orders {
-            //     database.snapshot_order_state(order)?;
-            // }
         }
 
         match self.orders.get(&client_order_id) {
@@ -4623,14 +4627,37 @@ impl Cache {
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
+        // Legacy ordering preserved deliberately: existing callers that ignore or
+        // log this error rely on `order_position` surviving a database failure.
         self.index
             .order_position
             .insert(*client_order_id, *position_id);
+        self.persist_order_position(position_id, client_order_id)?;
+        self.commit_order_position(position_id, venue, client_order_id, strategy_id);
+        Ok(())
+    }
 
-        // Index: ClientOrderId -> PositionId
+    fn persist_order_position(
+        &mut self,
+        position_id: &PositionId,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
             database.index_order_position(*client_order_id, *position_id)?;
         }
+        Ok(())
+    }
+
+    fn commit_order_position(
+        &mut self,
+        position_id: &PositionId,
+        venue: &Venue,
+        client_order_id: &ClientOrderId,
+        strategy_id: &StrategyId,
+    ) {
+        self.index
+            .order_position
+            .insert(*client_order_id, *position_id);
 
         // Index: PositionId -> StrategyId
         self.index
@@ -4657,8 +4684,6 @@ impl Cache {
             .entry(*venue)
             .or_default()
             .insert(*position_id);
-
-        Ok(())
     }
 
     // Propagates parent OTO `position_id` to contingent children that are missing one.

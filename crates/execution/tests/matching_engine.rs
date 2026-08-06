@@ -12977,11 +12977,33 @@ fn open_long_option_position(
     quantity: Quantity,
     open_price: Price,
 ) -> Position {
+    open_long_option_position_with_ids(
+        cache,
+        instrument,
+        account_id,
+        quantity,
+        open_price,
+        ClientOrderId::from("OPT-OPEN-1"),
+        VenueOrderId::from("OPT-OPEN-1"),
+        PositionId::from("P-OPT-1"),
+        TradeId::from("OPT-OPEN-1"),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn open_long_option_position_with_ids(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    quantity: Quantity,
+    open_price: Price,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    position_id: PositionId,
+    trade_id: TradeId,
+) -> Position {
     let trader_id = TraderId::from("TRADER-001");
     let strategy_id = StrategyId::from("S-001");
-    let client_order_id = ClientOrderId::from("OPT-OPEN-1");
-    let venue_order_id = VenueOrderId::from("OPT-OPEN-1");
-    let position_id = PositionId::from("P-OPT-1");
 
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
@@ -13003,7 +13025,7 @@ fn open_long_option_position(
         client_order_id,
         venue_order_id,
         account_id,
-        TradeId::from("OPT-OPEN-1"),
+        trade_id,
         OrderSide::Buy,
         OrderType::Market,
         quantity,
@@ -13304,7 +13326,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
             UnixNanos::from(1),
         ))
         .unwrap();
-    open_long_option_position(
+    let option_position = open_long_option_position(
         &cache,
         &option,
         account_id,
@@ -13331,7 +13353,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         OmsType::Netting,
         AccountType::Cash,
         clock.clone(),
-        cache,
+        cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
     let events = Rc::new(RefCell::new(Vec::new()));
@@ -13350,6 +13372,16 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         .submit(true)
         .build();
     engine.process_order(&mut resting_order, account_id);
+    let order_ids_before_failure = cache
+        .borrow()
+        .client_order_ids_view(None, None, None, None)
+        .into_owned();
+    let position_order_ids_before_failure: HashSet<ClientOrderId> = cache
+        .borrow()
+        .orders_for_position(&option_position.id)
+        .into_iter()
+        .map(|order| order.client_order_id())
+        .collect();
     // Arm the fault only now: the resting order's own DB write must not
     // consume the counter (it resets on set), so call 2 is the second
     // settlement leg.
@@ -13358,6 +13390,96 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
 
     clock.borrow_mut().set_time(expiration_ns);
     engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    database_control.set_fail_add_order_on(None);
+    let order_ids_after_failure = cache
+        .borrow()
+        .client_order_ids_view(None, None, None, None)
+        .into_owned();
+    let position_order_ids_after_failure: HashSet<ClientOrderId> = cache
+        .borrow()
+        .orders_for_position(&option_position.id)
+        .into_iter()
+        .map(|order| order.client_order_id())
+        .collect();
+
+    let option_b = InstrumentAny::OptionContract(option_contract(
+        "AAPL",
+        venue,
+        expiration_ns,
+        OptionKind::Put,
+    ));
+    cache.borrow_mut().add_instrument(option_b.clone()).unwrap();
+    open_long_option_position_with_ids(
+        &cache,
+        &option_b,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+        ClientOrderId::from("OPT-OPEN-2"),
+        VenueOrderId::from("OPT-OPEN-2"),
+        PositionId::from("P-OPT-2"),
+        TradeId::from("OPT-OPEN-2"),
+    );
+
+    let option_b_clock = Rc::new(RefCell::new(TestClock::new()));
+    option_b_clock.borrow_mut().set_time(expiration_ns);
+    let mut option_b_engine = OrderMatchingEngine::new(
+        option_b,
+        2,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        option_b_clock,
+        cache.clone(),
+        OrderMatchingEngineConfig::default(),
+    );
+    option_b_engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+
+    assert!(
+        option_b_engine.is_expiration_processed(),
+        "Second option must settle after the first option registration failure",
+    );
+    assert!(
+        order_ids_before_failure.is_subset(&order_ids_after_failure),
+        "Failed settlement plan must not remove any existing order ID",
+    );
+    let added_order_ids: HashSet<ClientOrderId> = order_ids_after_failure
+        .difference(&order_ids_before_failure)
+        .copied()
+        .collect();
+    assert_eq!(
+        added_order_ids.len(),
+        1,
+        "Failed settlement plan must leave only its successfully registered close leg",
+    );
+    let registered_order_id = *added_order_ids.iter().next().unwrap();
+    assert!(
+        position_order_ids_before_failure.is_subset(&position_order_ids_after_failure),
+        "Failed settlement plan must not remove any position-order relationship",
+    );
+    let added_position_order_ids: HashSet<ClientOrderId> = position_order_ids_after_failure
+        .difference(&position_order_ids_before_failure)
+        .copied()
+        .collect();
+    assert_eq!(
+        added_position_order_ids,
+        HashSet::from([registered_order_id]),
+        "Successfully registered close leg must retain its position relationship",
+    );
+    let cache_ref = cache.borrow();
+    assert!(
+        cache_ref.order(&registered_order_id).is_some(),
+        "Registered settlement order ID must resolve to an order object",
+    );
+    assert_eq!(
+        cache_ref.position_id(&registered_order_id),
+        Some(&option_position.id),
+        "Registered settlement order must resolve to its option position",
+    );
+    drop(cache_ref);
 
     assert!(
         events
@@ -13379,7 +13501,6 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
     );
 
     events.borrow_mut().clear();
-    database_control.set_fail_add_order_on(None);
     engine.process_instrument_expiration(UnixNanos::from(expiration_ns.as_u64() + 1));
     assert!(
         events.borrow().is_empty(),
@@ -14104,6 +14225,50 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
             .iter()
             .all(|event| !matches!(event, OrderEventAny::Filled(_))),
         "Missing price must not dispatch a settlement fill",
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+    let probe_client_order_id = ClientOrderId::from("O-PROBE-OPTION-2");
+    let mut probe_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(option_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from(1))
+        .client_order_id(probe_client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut probe_order, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let rejected = events.iter().find_map(|event| match event {
+        OrderEventAny::Rejected(rejected) if rejected.client_order_id == probe_client_order_id => {
+            Some(rejected)
+        }
+        _ => None,
+    });
+    assert!(
+        rejected.is_some(),
+        "Expected pending-resolution rejection, received {events:?}",
+    );
+    assert!(
+        rejected
+            .unwrap()
+            .reason
+            .as_str()
+            .contains("pending resolution"),
+        "Expected pending-resolution rejection reason",
+    );
+    assert!(
+        events.iter().all(|event| !matches!(
+            event,
+            OrderEventAny::Accepted(accepted)
+                if accepted.client_order_id == probe_client_order_id
+        )),
+        "Deferred option expiry must not accept the probe order",
+    );
+    assert!(
+        !engine.order_exists(probe_client_order_id),
+        "Deferred option expiry must keep the probe order out of the matching core",
     );
 
     clear_order_event_handler_messages(&order_event_handler);
