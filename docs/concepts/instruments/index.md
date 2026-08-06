@@ -142,7 +142,7 @@ currencies, limits, margins, fees, metadata, and timestamps.
 Generic test instruments can be instantiated through the `TestInstrumentProvider`:
 
 ```python
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ```

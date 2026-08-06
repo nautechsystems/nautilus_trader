@@ -16,9 +16,9 @@
 Re-export the shipped test kit providers for the test suite.
 """
 
-from nautilus_trader.test_kit.providers import TEST_DATA_DIR
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TEST_DATA_DIR
+from nautilus_trader.testkit.providers import TestDataProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
 __all__ = [

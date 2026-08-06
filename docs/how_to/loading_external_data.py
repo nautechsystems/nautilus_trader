@@ -26,8 +26,8 @@ from nautilus_trader.model import BarType
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.providers import CSVTickDataLoader
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import CSVTickDataLoader
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
 # %% [markdown]

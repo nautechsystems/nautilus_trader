@@ -35,8 +35,8 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Quantity
 from nautilus_trader.persistence import ParquetDataCatalog
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestDataProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import EmaCrossConfig
 
 

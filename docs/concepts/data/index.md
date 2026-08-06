@@ -580,7 +580,7 @@ from pathlib import Path
 
 from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
 # Load raw data

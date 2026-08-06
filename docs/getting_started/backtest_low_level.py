@@ -34,8 +34,8 @@ from nautilus_trader.model import OmsType
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestDataProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import Strategy
 
 

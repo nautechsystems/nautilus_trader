@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import urllib.request
 from datetime import datetime
 from decimal import Decimal
@@ -61,7 +62,9 @@ __all__ = [
 ]
 
 
-TEST_DATA_DIR = Path(__file__).resolve().parents[3] / "test_data"
+TEST_DATA_DIR = (
+    Path(__file__).resolve().parents[3] / os.environ.get("TEST_DATA_ROOT_PATH", "") / "test_data"
+)
 
 _GITHUB_RAW_URL = (
     "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/{branch}/test_data/{path}"

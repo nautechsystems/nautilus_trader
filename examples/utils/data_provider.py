@@ -21,7 +21,7 @@ import pandas as pd
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
 TEST_DATA_DIR = Path(__file__).resolve().parents[2] / "test_data"

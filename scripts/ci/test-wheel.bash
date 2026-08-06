@@ -34,6 +34,11 @@ uv pip install --only-binary :all: "pyarrow==25.0.0" # Test-only pending runtime
 unset PYTHONPATH
 unset VIRTUAL_ENV
 unset MYPYPATH
+TEST_DATA_ROOT_PATH="$(
+  uv run --project "$pkg_dir" --no-sync python -c \
+    'from pathlib import Path; print(Path.cwd().resolve().parent)'
+)"
+export TEST_DATA_ROOT_PATH
 cd "$neutral_dir"
 
 uv run --project "$pkg_dir" --no-sync python -c '
