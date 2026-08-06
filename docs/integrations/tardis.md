@@ -224,10 +224,23 @@ working directory.
 
 ### Procedure
 
+:::warning
+Do not publish Tardis Machine ports on the host address `0.0.0.0`. Docker
+[publishes ports on all host interfaces by default](https://docs.docker.com/engine/network/port-publishing/)
+when a mapping omits the host address. On Linux, Docker
+[diverts published container traffic before `ufw` applies its rules](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw),
+which can bypass the expected firewall restrictions. Bind both ports to `127.0.0.1` unless you
+require and separately secure remote access.
+:::
+
 First, ensure the `tardis-machine` docker container is running. Use the following command:
 
 ```bash
-docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
+docker run \
+  -p 127.0.0.1:8000:8000 \
+  -p 127.0.0.1:8001:8001 \
+  -e "TM_API_KEY=YOUR_API_KEY" \
+  -d tardisdev/tardis-machine
 ```
 
 This command starts the `tardis-machine` server without a persistent local cache, which may affect

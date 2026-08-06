@@ -23,7 +23,16 @@
 //! - Set `TARDIS_API_KEY` (used by the HTTP client to fetch instrument metadata)
 //! - Set `TM_API_KEY` (used by the tardis-machine Docker container)
 //! - Set `TARDIS_MACHINE_WS_URL=ws://localhost:8001`
-//! - `docker run --platform linux/amd64 -p 8000:8000 -p 8001:8001 -e TM_API_KEY -d tardisdev/tardis-machine`
+//! - Run:
+//!
+//!   ```bash
+//!   docker run \
+//!     --platform linux/amd64 \
+//!     -p 127.0.0.1:8000:8000 \
+//!     -p 127.0.0.1:8001:8001 \
+//!     -e TM_API_KEY \
+//!     -d tardisdev/tardis-machine
+//!   ```
 
 use jiff::civil::Date;
 use nautilus_common::enums::Environment;
