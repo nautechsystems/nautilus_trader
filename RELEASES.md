@@ -28,7 +28,7 @@ Released on TBD (UTC).
 ### Security
 
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
-- Fixed macOS ARM64 `pyarrow` import‑order SIGSEGV (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
+- Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
 
 ### Fixes

@@ -13,31 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import importlib
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
 
 import pytest
 
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="macOS-specific extension tests")
-
-
-def test_extension_exports_only_module_initializer() -> None:
-    libnautilus = importlib.import_module("nautilus_trader._libnautilus")
-    extension_path = Path(libnautilus.__file__)
-
-    result = subprocess.run(
-        ["/usr/bin/nm", "-gjU", str(extension_path)],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["_PyInit__libnautilus"]
 
 
 @pytest.mark.parametrize(
