@@ -9,6 +9,7 @@ matrix="${PUBLISH_WHEEL_MATRIX:?PUBLISH_WHEEL_MATRIX is required}"
 bucket="${CLOUDFLARE_R2_BUCKET_NAME:?CLOUDFLARE_R2_BUCKET_NAME is required}"
 prefix="${CLOUDFLARE_R2_PREFIX:?CLOUDFLARE_R2_PREFIX is required}"
 endpoint="${CLOUDFLARE_R2_URL:?CLOUDFLARE_R2_URL is required}"
+skip_file="${PUBLISH_WHEELS_SKIP_FILE:?PUBLISH_WHEELS_SKIP_FILE is required}"
 bucket_path="s3://${bucket}/${prefix}/"
 
 if [[ ! -s "$manifest" ]]; then
@@ -59,8 +60,9 @@ if [[ "$matrix" == "development" ]]; then
       remote_run="${BASH_REMATCH[2]}"
       if [[ "$remote_date" > "$current_date" ]] ||
         [[ "$remote_date" == "$current_date" && "$remote_run" -gt "$current_run" ]]; then
-        echo "Error: Refusing stale development publication behind ${remote_date}+${remote_run}" >&2
-        exit 1
+        echo "More recent development wheels (${remote_date}+${remote_run}) already exist; skipping upload of ${version}"
+        : > "$skip_file"
+        exit 0
       fi
     fi
   done < "$remote_files"

@@ -620,13 +620,22 @@ test_publication_transaction() {
 
   prepare_transaction "$stale" "$version"
   printf 'newer-development\n' > \
-    "${stale}/r2/nautilus_trader-2.0.0rc3.dev20260804+500-cp313-cp313-manylinux_2_34_x86_64.whl"
+    "${stale}/r2/nautilus_trader-2.0.0rc3.dev20260803+452-cp313-cp313-manylinux_2_34_x86_64.whl"
   write_index "${stale}/r2"
   cp "${stale}/r2/index.html" "${stale}/original-index.html"
-  run_expect_failure "$output" run_transaction "$stale" "$version"
+  run_transaction "$stale" "$version" > "$output" 2>&1
+  assert_line "$output" \
+    "More recent development wheels (20260803+452) already exist; skipping upload of ${version}"
   cmp -s "${stale}/original-index.html" "${stale}/r2/index.html" ||
     fail "Stale publication changed the index"
-  assert_absent "${stale}/r2/nautilus_trader-${version}-cp312-cp312-manylinux_2_34_x86_64.whl"
+  assert_file "${stale}/r2/${old}"
+  if [[ -s "${stale}/uv.log" ]]; then
+    fail "Stale publication ran public-index verification"
+  fi
+  for python_tag in cp312 cp313 cp314; do
+    assert_absent \
+      "${stale}/r2/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
+  done
 
   prepare_transaction "$mismatch" "$version"
   printf 'wrong-current-bytes\n' > \
