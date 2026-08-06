@@ -300,13 +300,13 @@ mod tests {
         assert!(cmo.value <= 100.0 && cmo.value >= -100.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_cmo_value_stays_within_bounds() {
-        use crate::average::vidya::VariableIndexDynamicAverage;
+        use crate::{average::vidya::VariableIndexDynamicAverage, MovingAverage};
 
         let mut cmo = ChandeMomentumOscillator::new(14, None);
         let mut vidya = VariableIndexDynamicAverage::new(14, None, None);
-        for price in std::iter::repeat(100.0).take(21).chain(std::iter::repeat(50.0).take(20)) {
+        for price in std::iter::repeat_n(100.0, 21).chain(std::iter::repeat_n(50.0, 20)) {
             cmo.update_raw(price);
             vidya.update_raw(price);
         }
