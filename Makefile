@@ -336,7 +336,11 @@ ib-stop:  #-- Stop local TWS/IBC processes and Docker IB Gateway containers
 
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
-	$Q rm -rf dist target 2>/dev/null || true
+	$Q rm -rf dist target \
+		crates/adapters/derive/fuzz/target \
+		crates/adapters/lighter/fuzz/target \
+		crates/adapters/lighter/fuzz/pornin/target \
+		2>/dev/null || true
 
 .PHONY: clean-build-artifacts
 clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, and .pyc files)
