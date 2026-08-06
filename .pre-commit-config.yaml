@@ -161,6 +161,7 @@ repos:
                 -r2(-remove-old-wheels|-upload-index|-upload-new-wheels|-verify-files)?|
                 -sha256
               )?|
+              release-version-policy|
               security-audit-gate|
               test-publish-wheels|
               update-pyproject-version|

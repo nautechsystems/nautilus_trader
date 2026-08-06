@@ -27,16 +27,17 @@ trap 'rm -rf "$build_root" "$target_entries"' EXIT
 # so a direct workspace build can package local Rust target directories if present.
 git archive --format=tar HEAD | tar -xf - -C "$build_root"
 (
-  cd "$build_root"
+  cd "$build_root/python"
   uv build --sdist --out-dir "$output_dist_dir"
 )
 
-asset_path="$(
-  find "$dist_dir" -maxdepth 1 -name '*.tar.gz' -type f -printf '%T@ %p\n' |
-    sort -nr |
-    head -n 1 |
-    cut -d ' ' -f2-
-)"
+asset_path=""
+for candidate in "$dist_dir"/*.tar.gz; do
+  [[ -f "$candidate" ]] || continue
+  if [[ -z "$asset_path" || "$candidate" -nt "$asset_path" ]]; then
+    asset_path="$candidate"
+  fi
+done
 
 if [[ -z "$asset_path" ]]; then
   echo "::error::No .tar.gz files found in $dist_dir"

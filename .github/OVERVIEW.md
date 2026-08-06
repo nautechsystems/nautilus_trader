@@ -22,13 +22,16 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: main wheel CI pipeline for planning, `pre-commit`, workspace Rust tests, Python
-  tests, wheel builds, provenance, and publication. `develop` publishes Linux x86 development
-  wheels to R2, `nightly` publishes every supported wheel platform to R2 after its security gate,
-  and `master` publishes every platform to PyPI after `cargo-deny` and `cargo-vet`. A dedicated
-  Linux x86 job runs the Rust suite once in parallel with the three required Python wheel jobs after
-  `pre-commit`; both R2 and PyPI publication require it to pass. The plan step skips builds on
-  docs‑only changes and skips Rust tests on Python‑only changes that cannot publish.
+- **build.yml**: main CI and release pipeline for planning, `pre-commit`, workspace Rust tests,
+  Python tests, wheel builds, provenance, and publication. `develop` publishes Linux x86
+  development wheels to R2, and `nightly` publishes every supported wheel platform to R2 after its
+  security gate. A release commit on `master` also runs Cargo and docs/features preflights, creates
+  a tag and draft GitHub release, publishes wheels to R2 and PyPI, publishes the sdist to PyPI,
+  publishes Cargo crates, verifies the registries and release assets, then publishes the GitHub
+  release. A dedicated Linux x86 job runs the Rust suite once in parallel with the required Python
+  wheel jobs after `pre-commit`; every publication path requires it to pass. Pull request head
+  updates and base retargets to `develop` run normal CI. Title‑only and body‑only edits execute no
+  jobs.
 - **build-docs.yml**: builds the Python API documentation on `master` and `nightly`, then dispatches
   the downstream documentation build after the local gate succeeds.
 - **cli-binaries.yml**: builds CLI archives for Linux x86, Linux ARM64, macOS ARM64, and Windows
@@ -92,26 +95,41 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are
   pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
-- **Build attestations**: R2 and PyPI wheel jobs create and verify GitHub artifact attestations
-  before upload. The PyPI job also creates PyPI publish attestations. Docker images receive cosign
-  signatures and SPDX SBOM attestations, which the workflow verifies after pushing. Verify Python
-  artifacts with `gh attestation verify` and container images with `cosign verify`.
+- **Build attestations**: Development and nightly R2 jobs create and verify GitHub artifact
+  attestations before upload. Stable wheels and sdists receive GitHub and PyPI attestations before
+  PyPI publication, with provenance siblings attached to the GitHub release. Docker images receive
+  cosign signatures and SPDX SBOM attestations, which the workflow verifies after pushing. Verify
+  Python artifacts with `gh attestation verify` and container images with `cosign verify`.
 - **Wheel publication**: `develop` publication requires a successful same‑commit security audit when
   audit‑relevant paths change. `nightly` publication requires its `cargo audit` and OSV gate.
-  `master` PyPI publication requires `cargo-deny`, `cargo-vet`, every platform wheel job, and the
-  Rust suite. Development and nightly wheels publish to `packages.nautechsystems.io`; master wheels
-  publish to PyPI.
-- **PyPI Trusted Publishing**: `publish-pypi` uploads wheels through OIDC instead of a long‑lived
-  API token. The PyPI publisher is bound to repository `nautechsystems/nautilus_trader`, workflow
-  `build.yml`, and environment `release`. `uv publish --trusted-publishing automatic` mints a
-  short‑lived token at publish time, so no `PYPI_*` secret is required.
+  Stable publication requires `cargo-deny`, `cargo-vet`, every platform wheel job, the Rust suite,
+  and the release preflights. Development, nightly, and stable wheels publish to
+  `packages.nautechsystems.io`; stable wheels and the sdist also publish to PyPI.
+- **Release sequencing**: Stable releases create a draft GitHub release first, attach wheel and
+  sdist assets, publish to package indexes, verify registries, attach final integrity assets, then
+  publish the GitHub release.
+- **Release checksums**: GitHub releases attach `SHA256SUMS`, per‑asset `.sha256` files,
+  `dist-manifest.json`, `crates-manifest.json`, and per‑artifact `.sigstore` and `.intoto.jsonl`
+  provenance siblings for Python artifacts.
+- **PyPI Trusted Publishing**: `publish-wheels-pypi` and `publish-sdist-pypi` upload through OIDC
+  instead of a long‑lived API token. The PyPI publisher is bound to repository
+  `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`.
+- **crates.io Trusted Publishing**: `publish-cargo-crates` obtains a short‑lived crates.io token
+  through GitHub Actions OIDC and publishes crates one at a time in dependency order. Each crate's
+  publisher is bound to this repository, `build.yml`, and the `release` environment.
+- **Post‑publish verification**: `publish-release-integrity` compares PyPI and crates.io records
+  with the draft release assets and expected publisher identities before it attaches final
+  integrity files. `publish-github-release` verifies the complete draft asset set, publishes the
+  release, and verifies GitHub's release attestation.
 - **Caching**: The dedicated Linux x86 Rust job restores its action cache for untrusted PRs and
   produces it from trusted `develop` and `test-ci` pushes. Its other self-hosted runs use a
   persistent target. Linux x86 wheel jobs disable action caching and use persistent targets for
   trusted pushes. Other wheel-matrix Rust caches save only on pushes. Prek hook environments use a
   separate cache. The active large Parquet fixtures save after the Rust tests on a cache miss.
-- **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
-  mainline branches are never cancelled.
+- **Concurrency**: Normal PR CI events share a per‑PR group and cancel older active or pending runs.
+  Metadata‑only edits use unique non‑cancelling groups and different skipped check names, so they
+  cannot replace required checks. Pushes use commit‑specific groups, so a newer commit does not
+  cancel or replace an earlier push.
 - **Runners**: Trusted Linux x86 jobs in `build.yml`, including `test-ci`, use the self‑hosted
   `build` pool. Untrusted PRs use GitHub‑hosted runners under the policy below. Linux ARM and Windows
   wheel matrices use Depot 8‑core runners, while macOS wheels and all CLI platforms use GitHub

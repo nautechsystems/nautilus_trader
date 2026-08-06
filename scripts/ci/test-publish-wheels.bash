@@ -60,6 +60,16 @@ test_policy_and_version() {
     fail "Develop push must use development publication"
   [[ "$(bash "${repo_root}/scripts/ci/publish-wheels-policy.bash" push test-ci)" == "none" ]] ||
     fail "Test-ci push must not publish"
+  [[ "$(bash "${repo_root}/scripts/ci/release-version-policy.bash" 2.0.0)" == "release" ]] ||
+    fail "Final version must use release policy"
+  [[ "$(bash "${repo_root}/scripts/ci/release-version-policy.bash" 2.0.0rc3)" == "prerelease" ]] ||
+    fail "Release candidate must use prerelease policy"
+  [[ "$(bash "${repo_root}/scripts/ci/release-version-policy.bash" 2.0.0a1)" == "prerelease" ]] ||
+    fail "Alpha version must use prerelease policy"
+  [[ "$(bash "${repo_root}/scripts/ci/release-version-policy.bash" 2.0.0b2)" == "prerelease" ]] ||
+    fail "Beta version must use prerelease policy"
+  run_expect_failure "$output" bash "${repo_root}/scripts/ci/release-version-policy.bash" \
+    2.0.0rc3.dev20260803
 
   (
     cd "$repo_root"
@@ -261,7 +271,7 @@ create_development_wheels() {
   printf 'cp314-%s\n' "$version" > "${dist}/nautilus_trader-${version}-cp314-cp314-manylinux_2_34_x86_64.whl"
 }
 
-create_nightly_wheels() {
+create_full_wheels() {
   local dist=$1
   local version=$2
 
@@ -281,6 +291,7 @@ test_artifact_matrix() {
   local mixed="${work_dir}/matrix-mixed"
   local extra="${work_dir}/matrix-extra"
   local nightly="${work_dir}/matrix-nightly"
+  local stable="${work_dir}/matrix-stable"
   local output="${work_dir}/matrix-output"
 
   create_development_wheels "${valid}/dist" "$version"
@@ -307,7 +318,7 @@ test_artifact_matrix() {
   run_expect_failure "$output" bash -c \
     "cd '$extra' && PUBLISH_WHEEL_VERSION='$version' PUBLISH_WHEEL_MATRIX=development bash '$repo_root/scripts/ci/validate-wheel-artifacts.bash' manifest"
 
-  create_nightly_wheels "${nightly}/dist" "2.0.0rc3.dev20260803"
+  create_full_wheels "${nightly}/dist" "2.0.0rc3.dev20260803"
   (
     cd "$nightly"
     PUBLISH_WHEEL_VERSION=2.0.0rc3.dev20260803 PUBLISH_WHEEL_MATRIX=nightly \
@@ -315,6 +326,18 @@ test_artifact_matrix() {
   )
   [[ "$(wc -l < "${nightly}/manifest" | tr -d ' ')" == "12" ]] ||
     fail "Valid nightly matrix must have twelve wheels"
+
+  create_full_wheels "${stable}/dist" "2.0.0rc3"
+  (
+    cd "$stable"
+    PUBLISH_WHEEL_VERSION=2.0.0rc3 PUBLISH_WHEEL_MATRIX=stable \
+      bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
+  )
+  [[ "$(wc -l < "${stable}/manifest" | tr -d ' ')" == "12" ]] ||
+    fail "Valid stable matrix must have twelve wheels"
+
+  run_expect_failure "$output" bash -c \
+    "cd '$stable' && PUBLISH_WHEEL_VERSION='2.0.0rc3.dev20260803' PUBLISH_WHEEL_MATRIX=stable bash '$repo_root/scripts/ci/validate-wheel-artifacts.bash' manifest"
 }
 
 create_r2_mocks() {
@@ -494,6 +517,33 @@ run_transaction() {
   )
 }
 
+test_stable_retention_plan() {
+  local case_dir="${work_dir}/stable-retention"
+  local mock_bin="${work_dir}/r2-bin"
+  local prefix="simple/test-nautilus-trader"
+
+  mkdir -p "${case_dir}/r2"
+  create_r2_mocks "$mock_bin"
+  printf 'older-release\n' > \
+    "${case_dir}/r2/nautilus_trader-1.231.0-cp313-cp313-manylinux_2_34_x86_64.whl"
+  printf 'development\n' > \
+    "${case_dir}/r2/nautilus_trader-2.0.0rc3.dev20260803+451-cp313-cp313-manylinux_2_34_x86_64.whl"
+
+  PATH="${mock_bin}:$PATH" \
+    MOCK_R2_ROOT="${case_dir}/r2" \
+    CLOUDFLARE_R2_BUCKET_NAME=test-bucket \
+    CLOUDFLARE_R2_PREFIX="$prefix" \
+    CLOUDFLARE_R2_URL=https://r2.invalid \
+    PUBLISH_WHEELS_DELETE_MANIFEST="${case_dir}/delete" \
+    PUBLISH_WHEEL_MATRIX=stable \
+    PUBLISH_WHEEL_VERSION=2.0.0rc3 \
+    bash "${repo_root}/scripts/ci/publish-wheels-r2-remove-old-wheels.sh" plan
+
+  if [[ -s "${case_dir}/delete" ]]; then
+    fail "Stable publication must not delete existing wheels"
+  fi
+}
+
 test_orphan_purge_index_order() {
   local case_dir="${work_dir}/orphan-purge"
   local mock_bin="${work_dir}/r2-bin"
@@ -607,6 +657,7 @@ test_policy_and_version
 test_security_gate
 test_sha256_portability
 test_artifact_matrix
+test_stable_retention_plan
 test_publication_transaction
 test_orphan_purge_index_order
 

@@ -105,7 +105,7 @@ elif [[ "$matrix" == "nightly" ]]; then
       done < "$candidates"
     done
   fi
-else
+elif [[ "$matrix" != "stable" ]]; then
   echo "Error: Unknown wheel matrix ${matrix}" >&2
   exit 1
 fi

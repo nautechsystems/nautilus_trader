@@ -25,6 +25,9 @@ case "$matrix" in
       exit 1
     fi
     ;;
+  stable)
+    bash "${script_dir}/release-version-policy.bash" "$version" > /dev/null
+    ;;
   *)
     echo "Error: Unknown wheel matrix ${matrix}" >&2
     exit 1
@@ -109,7 +112,7 @@ done < "$files"
 for python_tag in cp312 cp313 cp314; do
   {
     printf '%s\t%s\n' "$python_tag" "linux_x86_64"
-    if [[ "$matrix" == "nightly" ]]; then
+    if [[ "$matrix" == "nightly" || "$matrix" == "stable" ]]; then
       printf '%s\t%s\n' "$python_tag" "linux_aarch64"
       printf '%s\t%s\n' "$python_tag" "macos_arm64"
       printf '%s\t%s\n' "$python_tag" "windows_x86_64"
