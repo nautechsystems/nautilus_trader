@@ -188,15 +188,21 @@ pub fn compute_max_fee(
 }
 
 fn apply_buffer_bps(value: u128, buffer_bps: u32) -> anyhow::Result<u128> {
-    let multiplier = BPS_DENOMINATOR
-        .checked_add(u128::from(buffer_bps))
-        .context("buffer bps overflow")?;
+    let buffer_bps = u128::from(buffer_bps);
+    let buffer_whole = (value / BPS_DENOMINATOR)
+        .checked_mul(buffer_bps)
+        .context("buffered value overflow")?;
 
     // Round up so the buffer is never silently reduced by integer division
-    value
-        .checked_mul(multiplier)
+    let buffer_remainder = (value % BPS_DENOMINATOR)
+        .checked_mul(buffer_bps)
         .and_then(|v| v.checked_add(BPS_DENOMINATOR - 1))
         .map(|v| v / BPS_DENOMINATOR)
+        .context("buffered value overflow")?;
+
+    value
+        .checked_add(buffer_whole)
+        .and_then(|v| v.checked_add(buffer_remainder))
         .context("buffered value overflow")
 }
 
@@ -266,6 +272,18 @@ mod tests {
     #[rstest]
     fn test_derive_fees_allows_fee_at_ceiling() {
         assert!(derive_fees(100, 5, 2_000, 125).is_ok());
+    }
+
+    #[rstest]
+    fn test_compute_max_fee_zero_buffer_accepts_maximum_value() {
+        assert_eq!(compute_max_fee(u128::MAX, 0, 0).unwrap(), u128::MAX);
+    }
+
+    #[rstest]
+    fn test_compute_max_fee_rejects_buffered_value_overflow() {
+        let error = compute_max_fee(u128::MAX, 0, 1).unwrap_err();
+
+        assert_eq!(error.to_string(), "buffered value overflow");
     }
 
     #[rstest]

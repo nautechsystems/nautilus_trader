@@ -1103,17 +1103,20 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    fn broadcast_error_classification_maps_timeout_after_send() {
+    fn broadcast_error_classification_sanitizes_transport_failure() {
+        const SECRET: &str = "https://rpc.example.com/private-api-key";
         let timeout = HttpClientError::TimeoutError("timed out".to_string());
-        let transport = HttpClientError::Error("refused".to_string());
+        let transport = HttpClientError::Error(SECRET.to_string());
 
         assert!(matches!(
             classify_broadcast_transport_error(&timeout),
             BroadcastError::TimeoutAfterSend
         ));
-        assert!(matches!(
-            classify_broadcast_transport_error(&transport),
-            BroadcastError::Failed(_)
-        ));
+        let classified = classify_broadcast_transport_error(&transport);
+        assert_eq!(
+            classified.to_string(),
+            "Broadcast failed ambiguously: transport error"
+        );
+        assert!(!classified.to_string().contains(SECRET));
     }
 }

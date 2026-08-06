@@ -1217,6 +1217,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preflight_not_ready_without_pool_fee() {
+        let addr = start_mock_rpc_server(ready_rpc_state()).await;
+        let mut pool = test_pool();
+        pool.fee = None;
+        let client = test_client_from_config(test_config(format!("http://{addr}")), pool.clone());
+
+        let report = client.preflight(&pool.instrument_id).await.unwrap();
+
+        assert!(!report.ready);
+        assert_eq!(report.pool.fee, None);
+        assert_eq!(report.issues, vec!["Pool fee tier is missing"]);
+    }
+
+    #[tokio::test]
     async fn preflight_not_ready_on_wrong_chain() {
         let state = ready_rpc_state().with_response("eth_chainId", CHAIN_ID_ETHEREUM);
         let (client, _) = client_with_mock_rpc(state).await;
@@ -2161,6 +2175,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancellation_during_receipt_polling_keeps_record_and_in_flight_slot() {
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_sleep(
+                "eth_getTransactionReceipt",
+                Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
+            );
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_receipt_cancel_test", state).await
+        else {
+            return;
+        };
+
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        tokio::select! {
+            result = &mut wrap => panic!("receipt polling completed before cancellation: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if state.recorded_requests().iter().any(|request| {
+                        request["method"] == "eth_getTransactionReceipt"
+                    }) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }) => result.unwrap(),
+        }
+        drop(wrap);
+
+        let in_flight = client.in_flight.unwrap();
+        let second_error = client
+            .wrap(U256::from(2_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let record = client
+            .cache
+            .get_execution_transaction(42161, &in_flight.tx_hash.to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        let requests = state.recorded_requests();
+
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert!(
+            second_error
+                .to_string()
+                .contains("still awaiting inclusion"),
+            "was: {second_error}"
+        );
+        assert_eq!(record.nonce, 7);
+        assert_eq!(record.transaction_hash, in_flight.tx_hash.to_string());
+        assert_eq!(record.purpose, "wrap");
+        assert_eq!(record.status, "pending");
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_getTransactionReceipt")
+                .count(),
+            1
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
     async fn rejected_broadcast_marks_record_rejected_before_releasing_slot() {
         let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast rejection").await
         else {
@@ -2287,6 +2377,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn included_receipt_keeps_slot_when_status_update_fails() {
+        let state = ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_sleep("eth_getTransactionReceipt", Duration::from_secs(1));
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_included_update_test", state).await
+        else {
+            return;
+        };
+
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        tokio::select! {
+            result = &mut wrap => panic!("receipt completed before database failure: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if state.recorded_requests().iter().any(|request| {
+                        request["method"] == "eth_getTransactionReceipt"
+                    }) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }) => result.unwrap(),
+        }
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TABLE {schema}.execution_transaction"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let error = wrap.await.unwrap_err();
+        let in_flight = client.in_flight.unwrap();
+        let requests = state.recorded_requests();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to update persisted status"),
+            "was: {error}"
+        );
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_getTransactionReceipt")
+                .count(),
+            1
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
     async fn broadcast_timeout_after_send_keeps_record_pending() {
         let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast timeout").await else {
             return;
@@ -2341,6 +2496,49 @@ mod tests {
             .execute(&admin_pool)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn duplicate_execution_transaction_preserves_original_record() {
+        const TRANSACTION_HASH: &str = "0xduplicate-transaction-hash";
+        let Some((admin_pool, schema, client, _)) =
+            execution_client_with_database("execution_duplicate_record_test", ready_rpc_state())
+                .await
+        else {
+            return;
+        };
+
+        client
+            .cache
+            .add_execution_transaction(42161, 7, TRANSACTION_HASH, "wrap", "pending")
+            .await
+            .unwrap();
+        client
+            .cache
+            .add_execution_transaction(42161, 8, TRANSACTION_HASH, "approve", "included")
+            .await
+            .unwrap();
+
+        let record = client
+            .cache
+            .get_execution_transaction(42161, TRANSACTION_HASH)
+            .await
+            .unwrap()
+            .unwrap();
+        let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(record.nonce, 7);
+        assert_eq!(record.transaction_hash, TRANSACTION_HASH);
+        assert_eq!(record.purpose, "wrap");
+        assert_eq!(record.status, "pending");
+        assert_eq!(count, 1);
+
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
