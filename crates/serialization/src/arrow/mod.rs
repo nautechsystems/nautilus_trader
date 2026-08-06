@@ -44,7 +44,10 @@ use std::{
 };
 
 use arrow::{
-    array::{Array, ArrayRef, FixedSizeBinaryArray, StringArray, StringViewArray},
+    array::{
+        Array, ArrayRef, BinaryArray, BinaryViewArray, FixedSizeBinaryArray, StringArray,
+        StringViewArray,
+    },
     datatypes::{DataType, Schema},
     error::ArrowError,
     ipc::writer::StreamWriter,
@@ -435,6 +438,57 @@ impl StringColumnRef<'_> {
         match self {
             Self::Utf8(arr) => arr.value(i),
             Self::Utf8View(arr) => arr.value(i),
+        }
+    }
+}
+
+/// Extracts a binary column, accepting both Binary (`BinaryArray`) and BinaryView
+/// (`BinaryViewArray`).
+/// DataFusion may return BinaryView when reading Parquet, so this handles both formats.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `column_index` is out of range: `EncodingError::MissingColumn`.
+/// - The column type is neither Binary nor BinaryView: `EncodingError::InvalidColumnType`.
+pub fn extract_column_binary<'a>(
+    cols: &'a [ArrayRef],
+    column_key: &'static str,
+    column_index: usize,
+) -> Result<BinaryColumnRef<'a>, EncodingError> {
+    let column_values = cols
+        .get(column_index)
+        .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
+    let dt = column_values.data_type();
+    if let Some(arr) = column_values.as_any().downcast_ref::<BinaryArray>() {
+        Ok(BinaryColumnRef::Binary(arr))
+    } else if let Some(arr) = column_values.as_any().downcast_ref::<BinaryViewArray>() {
+        Ok(BinaryColumnRef::BinaryView(arr))
+    } else {
+        Err(EncodingError::InvalidColumnType(
+            column_key,
+            column_index,
+            DataType::Binary,
+            dt.clone(),
+        ))
+    }
+}
+
+/// Reference to a binary column, either Binary or BinaryView.
+#[derive(Debug)]
+pub enum BinaryColumnRef<'a> {
+    Binary(&'a BinaryArray),
+    BinaryView(&'a BinaryViewArray),
+}
+
+impl BinaryColumnRef<'_> {
+    /// Returns the bytes at row `i`.
+    #[inline]
+    #[must_use]
+    pub fn value(&self, i: usize) -> &[u8] {
+        match self {
+            Self::Binary(arr) => arr.value(i),
+            Self::BinaryView(arr) => arr.value(i),
         }
     }
 }

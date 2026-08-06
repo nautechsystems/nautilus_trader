@@ -49,6 +49,14 @@ pub struct RustTestCustomData {
     pub ts_init: UnixNanos,
 }
 
+/// Rust custom data type that exercises raw byte field support.
+#[custom_data]
+pub struct RustTestBytesCustomData {
+    pub value: Vec<u8>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
 /// YieldCurveData-equivalent custom data type using the macro with `Vec<f64>` fields.
 ///
 /// Tests `Vec<f64>` / `ListFloat64` support. Exposed to Python for roundtrip tests.
