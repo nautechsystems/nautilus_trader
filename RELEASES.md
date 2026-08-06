@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Fixed Python `on_historical_data` to receive `CustomData` response batches as a single list
 - Fixed `Cache::get_xrate` for instrument symbols that do not use the `BASE/QUOTE` format
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
+- Fixed `Position` average open price (`avg_px_open`) for exact closes after partial fills
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
