@@ -4,7 +4,7 @@ This guide covers the release process and the standards for writing release note
 
 ## Overview
 
-NautilusTrader uses a three-branch model:
+NautilusTrader uses a three‑branch model:
 
 - **`develop`**: active development; publishes dev wheels to Cloudflare R2 on every push.
 - **`nightly`**: pre‑release testing; publishes all supported pre‑release wheels and CLI binaries.
@@ -82,13 +82,14 @@ Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
 
 The project maintains two version numbers:
 
-| File                     | Scope          | Example    |
-| ------------------------ | -------------- | ---------- |
-| `python/pyproject.toml`  | Python package | `2.0.0rc3` |
-| `Cargo.toml` (workspace) | Rust crates    | `0.62.0`   |
+| File                     | Scope          |
+| ------------------------ | -------------- |
+| `python/pyproject.toml`  | Python package |
+| `Cargo.toml` (workspace) | Rust crates    |
 
-These are bumped independently. The Python version drives the release tag (`v2.0.0rc3`). Versions
-ending in `aN`, `bN`, or `rcN` create a GitHub pre‑release; final versions create a normal release.
+These are bumped independently. The Python version drives the `v<python-version>` release tag.
+Versions ending in `aN`, `bN`, or `rcN` create a GitHub pre‑release; final versions create a normal
+release.
 
 ## Crates.io publishing
 
@@ -222,7 +223,6 @@ Includes significant hardening improvements elevated from Internal Improvements.
 **Format**:
 
 ```markdown
-- Fixed non-executable stack for Cython extensions to support hardened Linux systems
 - Fixed divide-by-zero and overflow bugs in model crate that could cause crashes
 - Fixed core arithmetic operations to reject NaN/Infinity values and improve overflow handling
 ```
@@ -334,7 +334,7 @@ Note: Plain logic panics belong in Fixes unless they threaten system stability o
 
 ```markdown
 - Fixed divide-by-zero in margin calculations that could crash the engine
-- Fixed non-executable stack for Cython extensions to support hardened systems
+- Fixed integer overflow in model arithmetic that could crash the process
 ```
 
 **Fixes** (incorrect but safe):

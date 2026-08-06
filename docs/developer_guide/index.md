@@ -22,7 +22,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Docs Style](docs.md)
 - [Markdown Style](markdown_style.md)
 - [Release Notes](releases.md)
-- [Release Security Architecture](release_security.md)
+- [Security Architecture](security.md)
 - [Adapters](adapters.md)
 - [Data Testing Spec](spec_data_testing.md)
 - [Execution Testing Spec](spec_exec_testing.md)

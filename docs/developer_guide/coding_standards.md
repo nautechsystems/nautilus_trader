@@ -100,7 +100,7 @@ representation. Include the representation only when real sibling formats exist.
 
 #### Adapter package facades
 
-Each package under `nautilus_trader/adapters/` is a thin facade over the private
+Each package under `python/nautilus_trader/adapters/` is a thin facade over the private
 `_libnautilus` extension. Every adapter `__init__.py` declares a deterministic `__all__` that is
 the single source of truth for its public API; `python/generate_stubs.py` copies that list into the
 matching `.pyi` so runtime and stub exports agree exactly.

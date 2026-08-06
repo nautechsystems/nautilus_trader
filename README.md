@@ -191,7 +191,7 @@ A careful vulnerability report takes real time and effort. We appreciate that, a
 to remain anonymous, we credit reporters in the relevant security advisory and release notes.
 
 The [Security Policy](SECURITY.md) details scope, coordinated disclosure, and step-by-step release
-verification. The [Release Security Architecture](docs/developer_guide/release_security.md)
+verification. The [Security Architecture](docs/developer_guide/security.md)
 describes the release supply chain end-to-end. For the full policies, see the
 [Responsible Disclosure](https://nautilustrader.io/security/responsible-disclosure/) and
 [Supply Chain Security](https://nautilustrader.io/security/supply-chain/) policies; CI/CD security is

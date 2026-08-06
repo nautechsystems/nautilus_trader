@@ -160,15 +160,15 @@ release wheel.
 For abort-prone PyO3 or FFI methods, verify the Python signature and parameter names, or isolate
 the call in a subprocess.
 
-For performance tests:
+For the registered Rust benchmark set:
 
 ```bash
-make test-performance
-# or
-uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+make cargo-ci-benches
 ```
 
-The `--benchmark-disable-gc` flag prevents garbage collection from skewing results. Run performance tests in isolation (not with unit tests) to avoid interference.
+No canonical Python performance suite is wired into CI. See the
+[Benchmarking guide](benchmarking.md) for focused Criterion and iai commands, profiling, and
+measurement policy. Run benchmarks separately from unit tests to avoid interference.
 
 ### Rust tests
 
@@ -189,7 +189,7 @@ cargo test --doc --workspace --features "arrow,ffi,python,high-precision,streami
 ```
 
 Doc examples are a maintained test surface: CI runs this target on pull requests that touch Rust
-code, and both pre-flight targets include it. See the [Rust guide](rust.md#doc-examples) for how to
+code, and the `pre-flight` target includes it. See the [Rust guide](rust.md#doc-examples) for how to
 annotate a fence so it compiles.
 
 #### Testing with optional features
@@ -254,7 +254,8 @@ see the [Rust guide](rust.md#testing-conventions).
 
 ## Waiting for asynchronous effects
 
-When waiting for background work to complete, prefer the polling helpers `await eventually(...)` from `nautilus_trader.test_kit.functions` and `wait_until_async(...)` from `nautilus_common::testing` instead of arbitrary sleeps. They surface failures faster and reduce flakiness in CI because they stop as soon as the condition is satisfied or time out with a useful error.
+In Rust tests, prefer `wait_until_async(...)` from `nautilus_common::testing` to arbitrary sleeps.
+It stops as soon as the condition succeeds and applies a bounded timeout.
 
 ## Mocks
 
@@ -294,63 +295,24 @@ In IntelliJ IDEA, adjust the run configuration for parametrised `#[rstest]` case
 
 In VS Code you can pick the specific test case to debug directly.
 
-## Python + Rust Mixed Debugging
+## Debugging Python and Rust
 
-This workflow lets you debug Python and Rust code simultaneously from a Jupyter notebook inside VS Code.
+Build the PyO3 extension with the workspace's `debug-pyo3` Cargo profile when a native debugger
+needs Rust symbols:
 
-### Setup
-
-Install these VS Code extensions: Rust Analyzer, CodeLLDB, Python, Jupyter.
-
-### Step 0: Compile `nautilus_trader` with debug symbols
-
-   ```bash
-   cd nautilus_trader && make build-debug-pyo3
-   ```
-
-### Step 1: Set up debugging configuration
-
-```python
-from nautilus_trader.test_kit.debug_helpers import setup_debugging
-
-setup_debugging()
+```bash
+make sync
+(
+  cd python
+  UV_PROJECT_ENVIRONMENT=../.venv \
+    CARGO_TARGET_DIR=../target \
+    uv run --no-sync maturin develop --profile debug-pyo3
+)
 ```
 
-This command creates the required VS Code debugging configurations and starts a `debugpy` server for the Python debugger.
-
-By default `setup_debugging()` expects the `.vscode` folder one level above the `nautilus_trader` root directory.
-Adjust the target location if your workspace layout differs.
-
-### Step 2: Set breakpoints
-
-- **Python breakpoints:** Set in VS Code in the Python source files.
-- **Rust breakpoints:** Set in VS Code in the Rust source files.
-
-### Step 3: Start mixed debugging
-
-1. In VS Code select the **"Debug Jupyter + Rust (Mixed)"** configuration.
-2. Start debugging (F5) or press the green run arrow.
-3. Both Python and Rust debuggers attach to your Jupyter session.
-
-### Step 4: Execute code
-
-Run Jupyter notebook cells that call Rust functions. The debugger stops at breakpoints in both Python and Rust code.
-
-### Available configurations
-
-`setup_debugging()` creates these VS Code configurations:
-
-- **`Debug Jupyter + Rust (Mixed)`** - Mixed debugging for Jupyter notebooks.
-- **`Jupyter Mixed Debugging (Python)`** - Python-only debugging for notebooks.
-- **`Rust Debugger (for Jupyter debugging)`** - Rust-only debugging for notebooks.
-
-### Example
-
-Open and run the example notebook: `debug_mixed_jupyter.ipynb`.
-
-### Reference
-
-- [PyO3 debugging](https://pyo3.rs/v0.25.1/debugging.html?highlight=deb#debugging-from-jupyter-notebooks)
+Start the Python program or notebook with the Python debugger, then attach LLDB or GDB to that
+Python process for Rust breakpoints. The repository does not generate editor launch
+configurations, so configure both debugger sessions in the editor you use.
 
 ## Data type testing
 

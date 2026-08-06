@@ -41,11 +41,11 @@ def get_instrument(self, id: InstrumentId) -> Instrument | None:
 def get_instrument(self, id: InstrumentId) -> Optional[Instrument]:
 ```
 
-**Generic types**: Use `TypeVar` for reusable components:
+**Generic types**: Use Python 3.12 type parameter syntax for reusable functions and classes:
 
 ```python
-T = TypeVar("T")
-class ThrottledEnqueuer(Generic[T]):
+def first[T](values: list[T]) -> T:
+    return values[0]
 ```
 
 ### Docstrings
@@ -116,14 +116,22 @@ When adding Python-aware live code:
 
 ### Test naming
 
-Descriptive names explaining the scenario:
+Use descriptive names that explain the scenario. Keep tests as annotated pytest free functions:
 
 ```python
-def test_currency_with_negative_precision_raises_overflow_error(self):
-def test_sma_with_no_inputs_returns_zero_count(self):
-def test_sma_with_single_input_returns_expected_value(self):
+def test_write_and_query_option_greeks_round_trip() -> None:
+    ...
+
+
+def test_catalog_loaded_greeks_reach_on_option_greeks() -> None:
+    ...
+
+
+def test_backend_session_rejects_zero_chunk_size() -> None:
+    ...
 ```
 
 ### Ruff
 
-[ruff](https://astral.sh/ruff) is used to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
+[Ruff](https://astral.sh/ruff) is used to lint the codebase. Its rules are configured in
+`python/pyproject.toml`, with ignore justifications typically commented.

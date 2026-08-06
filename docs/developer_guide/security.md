@@ -1,15 +1,15 @@
-# Release Security Architecture
+# Security Architecture
 
 This page describes the security model for the NautilusTrader release pipeline.
 It explains how release artifacts are built, published, attested, and verified.
 
 Use this page with:
 
+- [Supply chain policy](https://nautilustrader.io/security/supply-chain/), which states the public
+  dependency and release integrity commitments.
 - [Releases](releases.md), which documents the release workflow and checklist.
-- [Security Policy](https://github.com/nautechsystems/nautilus_trader/blob/develop/SECURITY.md),
-  which gives consumer-facing verification commands.
-- [.github/OVERVIEW.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/.github/OVERVIEW.md#security),
-  which documents CI/CD controls.
+- [Security Policy](../../SECURITY.md), which gives consumer‑facing verification commands.
+- [GitHub Actions overview](../../.github/OVERVIEW.md#security), which documents CI/CD controls.
 
 ## Security goals
 
@@ -145,11 +145,12 @@ Verify:
 Example:
 
 ```bash
-export TAG=v1.228.0
-export REPO=nautechsystems/nautilus_trader
-export ARTIFACT=nautilus_trader-1.228.0.tar.gz
-export ISSUER=https://token.actions.githubusercontent.com
-export IDENTITY='^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/build\.yml@refs/heads/(master|nightly)$'
+: "${VERSION:?Set VERSION to the Python package version}"
+: "${ARTIFACT:?Set ARTIFACT to the release asset filename}"
+TAG="v$VERSION"
+REPO=nautechsystems/nautilus_trader
+ISSUER=https://token.actions.githubusercontent.com
+IDENTITY='^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/build\.yml@refs/heads/(master|nightly)$'
 
 gh release download "$TAG" --repo "$REPO" --pattern "$ARTIFACT" --pattern "$ARTIFACT.sha256"
 sha256sum -c "$ARTIFACT.sha256"
@@ -170,9 +171,9 @@ Verify:
 Example:
 
 ```bash
-export VERSION=1.228.0
-export ARTIFACT=nautilus_trader-1.228.0.tar.gz
-export PYPI_URL=$(curl -sS "https://pypi.org/pypi/nautilus_trader/$VERSION/json" | \
+: "${VERSION:?Set VERSION to the Python package version}"
+: "${ARTIFACT:?Set ARTIFACT to the release asset filename}"
+PYPI_URL=$(curl -sS "https://pypi.org/pypi/nautilus_trader/$VERSION/json" | \
   jq -r --arg artifact "$ARTIFACT" '.urls[] | select(.filename == $artifact) | .url')
 
 uv run --no-project --no-build --with pypi-attestations -- \
@@ -194,12 +195,12 @@ Verify:
 Example:
 
 ```bash
-export CRATE=nautilus-core
-export VERSION=0.58.0
-export REPO=nautechsystems/nautilus_trader
-export VERSION_JSON=$(curl -sS "https://crates.io/api/v1/crates/$CRATE/versions" | \
+CRATE=${CRATE:-nautilus-core}
+: "${VERSION:?Set VERSION to the crate version}"
+REPO=nautechsystems/nautilus_trader
+VERSION_JSON=$(curl -sS "https://crates.io/api/v1/crates/$CRATE/versions" | \
   jq -c --arg version "$VERSION" '.versions[] | select(.num == $version)')
-export CRATE_SHA256=$(printf '%s\n' "$VERSION_JSON" | jq -r '.checksum')
+CRATE_SHA256=$(printf '%s\n' "$VERSION_JSON" | jq -r '.checksum')
 
 printf '%s\n' "$VERSION_JSON" | jq -e --arg repo "$REPO" \
   '.trustpub_data.provider == "github" and .trustpub_data.repository == $repo and .published_by == null'

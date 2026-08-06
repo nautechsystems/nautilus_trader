@@ -270,9 +270,9 @@ cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocaptur
 
 ## Tutorial test data
 
-Several tutorials load user-provided market data. The `NAUTILUS_DATA_DIR` environment variable
-overrides the base data path used by these tutorials. The test suite sets this variable to
-`test_data/local/` so that tutorials run against small sample files stored locally.
+Several tutorials and guides load user-provided market data. The `NAUTILUS_DATA_DIR` environment
+variable overrides their base data path. Use `test_data/local/` as an ignored repository-local
+location for these files.
 
 ### Directory layout
 
@@ -287,7 +287,8 @@ test_data/local/
     DAT_ASCII_EURUSD_T_202001.csv.gz
 ```
 
-The `test_data/local/` directory is gitignored. Tests skip when the data is absent.
+The `test_data/local/` directory is gitignored. The tutorial scripts stop with a missing-data
+message when the expected files are absent.
 
 ### Obtaining the data
 
@@ -310,13 +311,19 @@ smaller zip.
 EUR/USD ASCII tick data for any month and place the CSV (or `.csv.gz`) under
 `test_data/local/HISTDATA/`.
 
-### Running the tests
+### Running the tutorials
+
+Build the V2 Python package, then run the source tutorials from the repository root:
 
 ```bash
-pytest tests/docs_tests/test_tutorials.py::test_tutorial_with_local_data -v
+make build-debug
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" \
+  NAUTILUS_DATA_DIR="$PWD/test_data/local" \
+  uv run --project python --no-sync python docs/tutorials/backtest_orderbook_binance.py
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" \
+  NAUTILUS_DATA_DIR="$PWD/test_data/local" \
+  uv run --project python --no-sync python docs/tutorials/backtest_orderbook_bybit.py
 ```
-
-Tests skip with a message when the corresponding data subdirectory is empty or missing.
 
 ## Legacy datasets
 
