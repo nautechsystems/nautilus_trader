@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, consts::NAUTILUS_VERSION_CORE};
 use nautilus_model::identifiers::TraderId;
 use sysinfo::System;
 use ustr::Ustr;
@@ -81,23 +81,21 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     log_rust_versioning(c);
 
     #[cfg(feature = "python")]
-    log_python_versioning(c);
+    if python_available() {
+        log_python_versioning(c);
+    } else {
+        log_rust_versioning(c);
+    }
 }
 
-#[cfg(not(feature = "python"))]
 #[rustfmt::skip]
 fn log_rust_versioning(c: Ustr) {
-    use nautilus_core::consts::NAUTILUS_VERSION;
-    header_line(c, &format!("nautilus_trader: {NAUTILUS_VERSION}"));
+    header_line(c, &format!("nautilus_trader: {NAUTILUS_VERSION_CORE}"));
 }
 
 #[cfg(feature = "python")]
 #[rustfmt::skip]
 fn log_python_versioning(c: Ustr) {
-    if !python_available() {
-        return;
-    }
-
     let package = "nautilus_trader";
     header_line(c, &format!("{package}: {}", python_package_version(package)));
     header_line(c, &format!("python: {}", python_version()));
