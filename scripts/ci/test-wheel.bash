@@ -29,9 +29,7 @@ uv pip install --only-binary :all: \
   "python-dateutil==2.9.0.post0" \
   "six==1.17.0"
 
-if [ "$platform" = "Darwin" ]; then
-  uv pip install --only-binary :all: "pyarrow==24.0.0"
-fi
+uv pip install --only-binary :all: "pyarrow==25.0.0" # Test-only pending runtime dependencies
 
 unset PYTHONPATH
 unset VIRTUAL_ENV
