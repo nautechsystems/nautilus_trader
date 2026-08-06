@@ -38,7 +38,10 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
-    data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidPublicTrade},
+    data_types::{
+        HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidPublicTrade,
+        HyperliquidTwapHistory, HyperliquidTwapSliceFill,
+    },
     websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
 use nautilus_model::{
@@ -239,6 +242,10 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                         }),
                                         "allMids" => allmids_payload.clone(),
                                         "allDexsAssetCtxs" => all_dexs_asset_ctxs_payload.clone(),
+                                        "userTwapHistory" => load_json("ws_user_twap_history.json"),
+                                        "userTwapSliceFills" => {
+                                            load_json("ws_user_twap_slice_fills.json")
+                                        }
                                         _ => json!({"channel": sub_type, "data": {}}),
                                     };
 
@@ -698,6 +705,98 @@ async fn test_subscribe_public_trades_emits_complete_custom_data() {
     assert_eq!(trade.buyer, "0xbuyer");
     assert_eq!(trade.seller, "0xseller");
     assert_eq!(trade.hash, "0xabc123");
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_user_twap_history_emits_custom_data() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_user_twap_history(TEST_USER_ADDRESS)
+        .await
+        .expect("subscribe failed");
+
+    let msg = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(msg) = client.next_event().await {
+                break msg;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for TWAP history");
+
+    let NautilusWsMessage::CustomData(Data::Custom(custom)) = msg else {
+        panic!("Expected custom TWAP history, was: {msg:?}");
+    };
+    let history = custom
+        .data
+        .as_any()
+        .downcast_ref::<HyperliquidTwapHistory>()
+        .expect("expected HyperliquidTwapHistory");
+    // Fixture is a live mainnet snapshot (user may differ from TEST_USER_ADDRESS).
+    assert!(!history.user.is_empty());
+    assert!(!history.coin.is_empty());
+    assert!(history.twap_id.is_some());
+    assert!(history.is_snapshot);
+    assert_eq!(custom.data_type.type_name(), "HyperliquidTwapHistory");
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_user_twap_slice_fills_emits_custom_data() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_user_twap_slice_fills(TEST_USER_ADDRESS)
+        .await
+        .expect("subscribe failed");
+
+    let msg = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(msg) = client.next_event().await {
+                break msg;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for TWAP slice fill");
+
+    let NautilusWsMessage::CustomData(Data::Custom(custom)) = msg else {
+        panic!("Expected custom TWAP slice fill, was: {msg:?}");
+    };
+    let fill = custom
+        .data
+        .as_any()
+        .downcast_ref::<HyperliquidTwapSliceFill>()
+        .expect("expected HyperliquidTwapSliceFill");
+    // Fixture is a live mainnet snapshot (user may differ from TEST_USER_ADDRESS).
+    assert!(!fill.user.is_empty());
+    assert!(fill.twap_id > 0);
+    assert!(!fill.hash.is_empty());
+    assert!(fill.is_snapshot);
+    assert_eq!(custom.data_type.type_name(), "HyperliquidTwapSliceFill");
 
     client.disconnect().await.expect("close failed");
 }

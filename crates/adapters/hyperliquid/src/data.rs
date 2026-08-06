@@ -306,6 +306,16 @@ impl HyperliquidDataClient {
         Ok(Some(instrument_id))
     }
 
+    fn custom_user(data_type: &DataType) -> Option<String> {
+        data_type
+            .metadata()
+            .and_then(|m| m.get("user"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = self
             .http_client
@@ -683,6 +693,30 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
+        if data_type == "HyperliquidTwapHistory" {
+            let ws = self.ws_client.clone();
+            let user = Self::custom_user(&cmd.data_type)
+                .context("HyperliquidTwapHistory subscriptions require metadata['user']")?;
+
+            self.spawn_task("subscribe_user_twap_history", async move {
+                ws.subscribe_user_twap_history(&user).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidTwapSliceFill" {
+            let ws = self.ws_client.clone();
+            let user = Self::custom_user(&cmd.data_type)
+                .context("HyperliquidTwapSliceFill subscriptions require metadata['user']")?;
+
+            self.spawn_task("subscribe_user_twap_slice_fills", async move {
+                ws.subscribe_user_twap_slice_fills(&user).await
+            });
+
+            return Ok(());
+        }
+
         log::warn!("Unsupported custom data subscription: {data_type}");
         Ok(())
     }
@@ -742,6 +776,30 @@ impl DataClient for HyperliquidDataClient {
 
             self.spawn_task("unsubscribe_public_trades", async move {
                 ws.unsubscribe_public_trades(instrument_id).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidTwapHistory" {
+            let ws = self.ws_client.clone();
+            let user = Self::custom_user(&cmd.data_type)
+                .context("HyperliquidTwapHistory unsubscriptions require metadata['user']")?;
+
+            self.spawn_task("unsubscribe_user_twap_history", async move {
+                ws.unsubscribe_user_twap_history(&user).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidTwapSliceFill" {
+            let ws = self.ws_client.clone();
+            let user = Self::custom_user(&cmd.data_type)
+                .context("HyperliquidTwapSliceFill unsubscriptions require metadata['user']")?;
+
+            self.spawn_task("unsubscribe_user_twap_slice_fills", async move {
+                ws.unsubscribe_user_twap_slice_fills(&user).await
             });
 
             return Ok(());

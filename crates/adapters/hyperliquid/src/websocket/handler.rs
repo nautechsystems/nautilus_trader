@@ -55,7 +55,8 @@ use super::{
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
         parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
-        parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick,
+        parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick, parse_ws_twap_history_row,
+        parse_ws_twap_slice_fill,
     },
     post::PostRouter,
     trades::TradeStreamUses,
@@ -645,6 +646,16 @@ impl FeedHandler {
                     ts_init,
                 ));
             }
+            HyperliquidWsMessage::UserTwapHistory { data } => {
+                result.extend(Self::handle_user_twap_history(&data, instruments, ts_init));
+            }
+            HyperliquidWsMessage::UserTwapSliceFills { data } => {
+                result.extend(Self::handle_user_twap_slice_fills(
+                    &data,
+                    instruments,
+                    ts_init,
+                ));
+            }
             HyperliquidWsMessage::Error { data } => {
                 log::warn!("Received error from Hyperliquid WebSocket: {data}");
             }
@@ -1183,6 +1194,84 @@ impl FeedHandler {
             "HyperliquidPublicTrade",
             Some(metadata),
             Some(instrument_id.to_string()),
+        )
+    }
+
+    fn handle_user_twap_history(
+        data: &super::messages::WsUserTwapHistoryData,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let is_snapshot = data.is_snapshot.unwrap_or(false);
+        let mut result = Vec::with_capacity(data.history.len());
+
+        for row in &data.history {
+            let instrument = instruments.get(&row.state.coin);
+            match parse_ws_twap_history_row(row, &data.user, is_snapshot, instrument, ts_init) {
+                Ok(payload) => {
+                    let user = payload.user.clone();
+                    result.push(NautilusWsMessage::CustomData(Data::Custom(
+                        CustomData::new(Arc::new(payload), Self::twap_history_data_type(&user)),
+                    )));
+                }
+                Err(e) => {
+                    log::error!("Error parsing TWAP history row: {e}");
+                }
+            }
+        }
+
+        result
+    }
+
+    fn handle_user_twap_slice_fills(
+        data: &super::messages::WsUserTwapSliceFillsData,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let is_snapshot = data.is_snapshot.unwrap_or(false);
+        let mut result = Vec::with_capacity(data.twap_slice_fills.len());
+
+        for item in &data.twap_slice_fills {
+            let instrument = instruments.get(&item.fill.coin);
+            match parse_ws_twap_slice_fill(item, &data.user, is_snapshot, instrument, ts_init) {
+                Ok(payload) => {
+                    let user = payload.user.clone();
+                    result.push(NautilusWsMessage::CustomData(Data::Custom(
+                        CustomData::new(Arc::new(payload), Self::twap_slice_fill_data_type(&user)),
+                    )));
+                }
+                Err(e) => {
+                    log::error!("Error parsing TWAP slice fill: {e}");
+                }
+            }
+        }
+
+        result
+    }
+
+    fn twap_history_data_type(user: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        );
+        DataType::new(
+            "HyperliquidTwapHistory",
+            Some(metadata),
+            Some(user.to_string()),
+        )
+    }
+
+    fn twap_slice_fill_data_type(user: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        );
+        DataType::new(
+            "HyperliquidTwapSliceFill",
+            Some(metadata),
+            Some(user.to_string()),
         )
     }
 }

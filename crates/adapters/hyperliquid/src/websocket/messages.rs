@@ -16,7 +16,8 @@
 use ahash::AHashMap;
 use derive_builder::Builder;
 use nautilus_core::serialization::{
-    deserialize_decimal_from_str, deserialize_optional_decimal_from_str, serialize_decimal_as_str,
+    deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+    serialize_decimal_as_str,
 };
 use nautilus_model::{
     data::{
@@ -874,6 +875,8 @@ pub struct WsTwapHistoryData {
     pub state: TwapStateData,
     pub status: TwapStatusData,
     pub time: u64,
+    #[serde(default, rename = "twapId")]
+    pub twap_id: Option<u64>,
 }
 
 /// TWAP state data.
@@ -882,11 +885,13 @@ pub struct TwapStateData {
     pub coin: Ustr,
     pub user: String,
     pub side: HyperliquidSide,
-    pub sz: f64,
-    #[serde(rename = "executedSz")]
-    pub executed_sz: f64,
-    #[serde(rename = "executedNtl")]
-    pub executed_ntl: f64,
+    /// Venue may send a JSON string or number.
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub sz: Decimal,
+    #[serde(rename = "executedSz", deserialize_with = "deserialize_decimal")]
+    pub executed_sz: Decimal,
+    #[serde(rename = "executedNtl", deserialize_with = "deserialize_decimal")]
+    pub executed_ntl: Decimal,
     pub minutes: u32,
     #[serde(rename = "reduceOnly")]
     pub reduce_only: bool,
@@ -898,6 +903,8 @@ pub struct TwapStateData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TwapStatusData {
     pub status: HyperliquidTwapStatus,
+    /// Present when `status` is `error`; otherwise often omitted.
+    #[serde(default)]
     pub description: String,
 }
 

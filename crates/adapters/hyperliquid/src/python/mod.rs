@@ -52,7 +52,8 @@ use crate::{
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
     data_types::{
         HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidOpenInterest,
-        HyperliquidPublicTrade, register_hyperliquid_custom_data,
+        HyperliquidPublicTrade, HyperliquidTwapHistory, HyperliquidTwapSliceFill,
+        register_hyperliquid_custom_data,
     },
     factories::{
         HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
@@ -255,12 +256,16 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HyperliquidAllMids>()?;
     m.add_class::<HyperliquidOpenInterest>()?;
     m.add_class::<HyperliquidPublicTrade>()?;
+    m.add_class::<HyperliquidTwapHistory>()?;
+    m.add_class::<HyperliquidTwapSliceFill>()?;
 
     register_hyperliquid_custom_data();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllDexsAssetCtxs>();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllMids>();
     let _result = ensure_rust_extractor_registered::<HyperliquidOpenInterest>();
     let _result = ensure_rust_extractor_registered::<HyperliquidPublicTrade>();
+    let _result = ensure_rust_extractor_registered::<HyperliquidTwapHistory>();
+    let _result = ensure_rust_extractor_registered::<HyperliquidTwapSliceFill>();
 
     let registry = get_global_pyo3_registry();
 

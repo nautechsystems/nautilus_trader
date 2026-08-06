@@ -602,6 +602,8 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.               |
 | All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.                      |
 | All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.             |
+| TWAP history      | ✓    | -        | -     | `HyperliquidTwapHistory`      | Opt‑in custom data from `userTwapHistory`.       |
+| TWAP slice fills  | ✓    | -        | -     | `HyperliquidTwapSliceFill`    | Opt‑in custom data from `userTwapSliceFills`.    |
 
 :::note
 Historical quote requests are not supported. Historical trade requests use the
@@ -658,6 +660,10 @@ The adapter emits Hyperliquid-specific custom data types:
   mark prices, index prices, and funding rates.
 - `HyperliquidPublicTrade` from `trades` and `recentTrades`. Each event is
   self-contained and includes the buyer, seller, and venue hash.
+- `HyperliquidTwapHistory` from the WebSocket `userTwapHistory` feed. Each
+  event is one history/lifecycle row for a user address.
+- `HyperliquidTwapSliceFill` from the WebSocket `userTwapSliceFills` feed.
+  Each event is one TWAP child-slice fill.
 
 | Field      | Type             | Description                                              |
 | ---------- | ---------------- | -------------------------------------------------------- |
@@ -733,6 +739,81 @@ requested. Unlike a sidecar `users` event, each `HyperliquidPublicTrade` is
 independently Arrow-serializable and can be recorded to and queried from a
 Nautilus catalog without a join. `RequestCustomData` for this type uses the
 same recent-only `recentTrades` snapshot as historical trade requests.
+
+`HyperliquidTwapHistory` and `HyperliquidTwapSliceFill` are opt-in user-keyed
+custom data. They are **not** included in the execution account
+`subscribe_all_user_channels` path. Subscribe with the target wallet address in
+`metadata["user"]` (the address need not be the adapter trading account).
+
+`HyperliquidTwapHistory` fields:
+
+| Field                | Type                    | Description                                                   |
+| -------------------- | ----------------------- | ------------------------------------------------------------- |
+| `user`               | `str`                   | User address from the subscription envelope.                  |
+| `twap_id`            | `int \| None`           | Venue `twapId` when present on the history row.               |
+| `coin`               | `str`                   | Raw Hyperliquid coin symbol.                                  |
+| `instrument_id`      | `InstrumentId \| None`  | Resolved Nautilus instrument ID when the coin is known.       |
+| `side`               | `OrderSide`             | TWAP order side.                                              |
+| `size`               | `Decimal`               | Total TWAP size.                                              |
+| `executed_size`      | `Decimal`               | Executed size so far.                                         |
+| `executed_notional`  | `Decimal`               | Executed notional so far.                                     |
+| `minutes`            | `int`                   | TWAP duration in minutes.                                     |
+| `reduce_only`        | `bool`                  | Whether the TWAP is reduce‑only.                              |
+| `randomize`          | `bool`                  | Whether slice timing is randomized.                           |
+| `status`             | `HyperliquidTwapStatus` | Venue status (`activated`/`terminated`/`finished`/`error`/…). |
+| `status_description` | `str`                   | Venue status description (often set when status is `error`).  |
+| `state_timestamp`    | `int`                   | `state.timestamp` as UNIX nanoseconds.                        |
+| `is_snapshot`        | `bool`                  | Whether this row belongs to a venue snapshot batch.           |
+| `ts_event`           | `int`                   | History row time (`history.time`) as UNIX nanoseconds.        |
+| `ts_init`            | `int`                   | UNIX timestamp in nanoseconds when the object was built.      |
+
+`HyperliquidTwapSliceFill` fields:
+
+| Field           | Type                   | Description                                              |
+| --------------- | ---------------------- | -------------------------------------------------------- |
+| `user`          | `str`                  | User address from the subscription envelope.             |
+| `twap_id`       | `int`                  | Venue TWAP order identifier.                             |
+| `coin`          | `str`                  | Raw Hyperliquid coin symbol.                             |
+| `instrument_id` | `InstrumentId \| None` | Resolved Nautilus instrument ID when the coin is known.  |
+| `price`         | `Decimal`              | Fill price.                                              |
+| `size`          | `Decimal`              | Fill size.                                               |
+| `side`          | `OrderSide`            | Fill side.                                               |
+| `hash`          | `str`                  | L1 transaction hash.                                     |
+| `oid`           | `int`                  | Venue order id for the slice.                            |
+| `tid`           | `int`                  | Venue trade id.                                          |
+| `crossed`       | `bool`                 | Whether the fill crossed the spread (taker).             |
+| `fee`           | `Decimal`              | Fee amount (negative means rebate).                      |
+| `fee_token`     | `str`                  | Token the fee was paid in.                               |
+| `dir`           | `str`                  | Venue frontend direction string.                         |
+| `closed_pnl`    | `Decimal`              | Closed PnL for the fill.                                 |
+| `is_snapshot`   | `bool`                 | Whether this fill belongs to a venue snapshot batch.     |
+| `ts_event`      | `int`                  | Fill time as UNIX nanoseconds.                           |
+| `ts_init`       | `int`                  | UNIX timestamp in nanoseconds when the object was built. |
+
+```python
+from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
+from nautilus_trader.adapters.hyperliquid import HyperliquidTwapHistory
+from nautilus_trader.adapters.hyperliquid import HyperliquidTwapSliceFill
+from nautilus_trader.model import DataType
+
+self.subscribe_data(
+    data_type=DataType(
+        HyperliquidTwapHistory.__name__,
+        metadata={"user": "0x..."},
+    ),
+    client_id=HYPERLIQUID_CLIENT_ID,
+)
+self.subscribe_data(
+    data_type=DataType(
+        HyperliquidTwapSliceFill.__name__,
+        metadata={"user": "0x..."},
+    ),
+    client_id=HYPERLIQUID_CLIENT_ID,
+)
+```
+
+Venue snapshot batches set `is_snapshot=True` on every row/fill from that
+batch so consumers can clear and rebuild local TWAP state.
 
 In a Python strategy running inside a `LiveNode`, the payload is delivered
 to `on_data` as the concrete custom data type itself:
