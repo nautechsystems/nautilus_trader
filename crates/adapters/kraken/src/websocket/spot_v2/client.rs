@@ -836,7 +836,11 @@ impl KrakenSpotWebSocketClient {
         let payload =
             serde_json::to_string(request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
 
-        log::trace!("Sending message: {payload}");
+        log::trace!(
+            "Sending WebSocket request: method={:?} ({} bytes)",
+            request.method,
+            payload.len(),
+        );
 
         let cmd = match request.method {
             KrakenWsMethod::Subscribe => SpotHandlerCommand::Subscribe {
@@ -1619,13 +1623,52 @@ fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::Ordering};
+    use std::sync::{Arc, Mutex, atomic::Ordering};
 
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
 
     use super::*;
     use crate::config::KrakenDataClientConfig;
+
+    const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+
+    struct OutboundLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static OUTBOUND_LOG_CAPTURE: OutboundLogCapture = OutboundLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    impl OutboundLogCapture {
+        fn clear(&self) {
+            self.messages.lock().unwrap().clear();
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    impl Log for OutboundLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Trace
+                && metadata.target() == "nautilus_kraken::websocket::spot_v2::client"
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                let message = record.args().to_string();
+                if message.starts_with("Sending WebSocket request") {
+                    self.messages.lock().unwrap().push(message);
+                }
+            }
+        }
+
+        fn flush(&self) {}
+    }
 
     #[rstest]
     fn test_req_id_counter_is_shared_arc_and_monotonic() {
@@ -1665,6 +1708,50 @@ mod tests {
             CancellationToken::new(),
             None,
         )
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_outbound_logs_omit_payload_bodies() {
+        log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Trace);
+
+        let client = test_client_without_credentials();
+        let request = KrakenWsRequest {
+            method: KrakenWsMethod::Subscribe,
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
+                channel: KrakenWsChannel::Executions,
+                symbol: None,
+                snapshot: None,
+                depth: None,
+                interval: None,
+                event_trigger: None,
+                token: Some(SECRET_MARKER.to_string()),
+                snap_orders: Some(true),
+                snap_trades: Some(false),
+            })),
+            req_id: Some(426),
+        };
+        let payload_len = serde_json::to_string(&request).unwrap().len();
+        OUTBOUND_LOG_CAPTURE.clear();
+
+        let error = client.send_command(&request).await.unwrap_err();
+        let messages = OUTBOUND_LOG_CAPTURE.messages();
+
+        assert!(matches!(error, KrakenWsError::ConnectionError(_)));
+        assert!(
+            messages
+                .iter()
+                .all(|message| !message.contains(SECRET_MARKER)),
+            "outbound logs exposed the secret marker: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| {
+                message
+                    == &format!("Sending WebSocket request: method=Subscribe ({payload_len} bytes)")
+            }),
+            "subscribe metadata missing or inaccurate: {messages:?}"
+        );
     }
 
     #[rstest]

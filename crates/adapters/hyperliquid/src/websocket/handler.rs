@@ -287,7 +287,7 @@ impl FeedHandler {
                                 let request = HyperliquidWsRequest::Subscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        log::debug!("Sending subscribe payload: {payload}");
+                                        log::debug!("Sending subscribe payload ({} bytes)", payload.len());
                                         if let Err(e) = self.send_with_retry(payload).await {
                                             log::error!("Error subscribing to {key}: {e}");
                                             self.subscriptions.mark_failure(&key);
@@ -308,7 +308,7 @@ impl FeedHandler {
                                 let request = HyperliquidWsRequest::Unsubscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        log::debug!("Sending unsubscribe payload: {payload}");
+                                        log::debug!("Sending unsubscribe payload ({} bytes)", payload.len());
                                         if let Err(e) = self.send_with_retry(payload).await {
                                             log::error!("Error unsubscribing from {key}: {e}");
                                         }
@@ -1294,6 +1294,7 @@ mod tests {
     };
 
     use ahash::{AHashMap, AHashSet};
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
@@ -1313,8 +1314,9 @@ mod tests {
         super::{
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             messages::{
-                NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
-                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+                HyperliquidWsRequest, NautilusWsMessage, PerpsAssetCtx, PostRequest,
+                SharedAssetCtx, SpotAssetCtx, SubscriptionRequest, WsActiveAssetCtxData,
+                WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
             },
             post::PostRouter,
         },
@@ -1324,6 +1326,44 @@ mod tests {
         common::consts::HYPERLIQUID_VENUE,
         data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest},
     };
+
+    const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+
+    struct OutboundLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static OUTBOUND_LOG_CAPTURE: OutboundLogCapture = OutboundLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    impl OutboundLogCapture {
+        fn clear(&self) {
+            self.messages.lock().unwrap().clear();
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    impl Log for OutboundLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Debug
+                && metadata.target() == "nautilus_hyperliquid::websocket::handler"
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                let message = record.args().to_string();
+                if message.starts_with("Sending ") {
+                    self.messages.lock().unwrap().push(message);
+                }
+            }
+        }
+
+        fn flush(&self) {}
+    }
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -1487,6 +1527,85 @@ mod tests {
             .await
             .expect("post id should be reusable after cancellation");
         assert!(task.await.unwrap().is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn outbound_subscription_logs_omit_payload_bodies() {
+        log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Debug);
+
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let post_router = PostRouter::new();
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            cloid_cache,
+            post_router,
+        );
+        let subscription = SubscriptionRequest::Notification {
+            user: SECRET_MARKER.to_string(),
+        };
+        let subscribe_len = serde_json::to_string(&HyperliquidWsRequest::Subscribe {
+            subscription: subscription.clone(),
+        })
+        .unwrap()
+        .len();
+        let unsubscribe_len = serde_json::to_string(&HyperliquidWsRequest::Unsubscribe {
+            subscription: subscription.clone(),
+        })
+        .unwrap()
+        .len();
+        OUTBOUND_LOG_CAPTURE.clear();
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription.clone()],
+            })
+            .unwrap();
+        cmd_tx
+            .send(HandlerCommand::Unsubscribe {
+                subscriptions: vec![subscription],
+            })
+            .unwrap();
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        assert!(handler.next().await.is_none());
+
+        let messages = OUTBOUND_LOG_CAPTURE.messages();
+
+        assert!(
+            messages
+                .iter()
+                .all(|message| !message.contains(SECRET_MARKER)),
+            "outbound logs exposed the secret marker: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message
+                    == &format!("Sending subscribe payload ({subscribe_len} bytes)")),
+            "subscribe metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| {
+                message == &format!("Sending unsubscribe payload ({unsubscribe_len} bytes)")
+            }),
+            "unsubscribe metadata missing or inaccurate: {messages:?}"
+        );
     }
 
     #[rstest]

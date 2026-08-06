@@ -133,7 +133,7 @@ impl HttpClient {
             let header_name = HeaderName::from_str(&key)
                 .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
             let header_value = HeaderValue::from_str(&value).map_err(|e| {
-                HttpClientError::Error(format!("Invalid header value '{value}': {e}"))
+                HttpClientError::Error(format!("Invalid header value for '{key}': {e}"))
             })?;
             header_map.insert(header_name, header_value);
         }
@@ -433,6 +433,8 @@ impl InnerHttpClient {
             Url::parse(url).map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
 
         let mut request_builder = self.client.request(method, reqwest_url);
+        let extra_header_count = headers.as_ref().map_or(0, HashMap::len);
+        let body_len = body.as_ref().map_or(0, Vec::len);
 
         if let Some(headers) = headers {
             let mut header_map = HeaderMap::with_capacity(headers.len());
@@ -440,13 +442,16 @@ impl InnerHttpClient {
                 let key = HeaderName::from_bytes(header_key.as_bytes())
                     .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
 
-                if let Some(old_value) = header_map.insert(
-                    key.clone(),
-                    header_value
-                        .parse()
-                        .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
-                ) {
-                    log::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
+                if header_map
+                    .insert(
+                        key.clone(),
+                        header_value.parse().map_err(|e| {
+                            HttpClientError::from(format!("Invalid header value: {e}"))
+                        })?,
+                    )
+                    .is_some()
+                {
+                    log::trace!("Replaced duplicate request header '{key}'");
                 }
             }
             request_builder = request_builder.headers(header_map);
@@ -468,7 +473,12 @@ impl InnerHttpClient {
             None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
-        log::trace!("{} {}", request.method(), request.url());
+        let query_len = request.url().query().map_or(0, str::len);
+        log::trace!(
+            "Sending HTTP request: method={} extra_headers={extra_header_count} \
+             query_bytes={query_len} body_bytes={body_len}",
+            request.method(),
+        );
 
         let response = self
             .client
@@ -487,9 +497,9 @@ impl InnerHttpClient {
     ///
     /// Returns an error if unable to send request or times out.
     pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
-        log::trace!("{response:?}");
-
+        let status_code = response.status();
         let resp_headers = response.headers();
+        let header_count = resp_headers.len();
         let mut headers = HashMap::with_capacity(std::cmp::min(
             self.response_headers.len(),
             resp_headers.len(),
@@ -503,8 +513,13 @@ impl InnerHttpClient {
             }
         }
 
-        let status = HttpStatus::new(response.status());
+        let status = HttpStatus::new(status_code);
         let body = self.read_body_capped(response).await?;
+
+        log::trace!(
+            "Received HTTP response: status={status_code} headers={header_count} body_bytes={}",
+            body.len(),
+        );
 
         Ok(HttpResponse {
             status,

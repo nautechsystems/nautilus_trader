@@ -462,7 +462,7 @@ impl FeedHandler {
         let request = LighterWsRequest::unsubscribe(channel.subscription_channel());
         match serde_json::to_string(&request) {
             Ok(payload) => {
-                log::debug!("Sending Lighter unsubscribe payload: {payload}");
+                log::debug!("Sending Lighter unsubscribe ({} bytes)", payload.len());
                 if let Err(e) = self.send_with_retry(payload).await {
                     log::error!("Error unsubscribing from {topic}: {e}");
                 }
@@ -2104,8 +2104,9 @@ pub(crate) fn create_lighter_ws_timeout_error(_msg: String) -> LighterWsError {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Mutex, time::Duration};
 
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_model::{
         enums::AccountType,
         identifiers::{InstrumentId, Symbol, Venue},
@@ -2121,6 +2122,44 @@ mod tests {
         common::enums::{LighterCandleResolution, LighterTxType},
         websocket::messages::{LighterMarketSelection, LighterWsCandle, LighterWsChannel},
     };
+
+    const SECRET_MARKER: &str = "426426426";
+
+    struct OutboundLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static OUTBOUND_LOG_CAPTURE: OutboundLogCapture = OutboundLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    impl OutboundLogCapture {
+        fn clear(&self) {
+            self.messages.lock().unwrap().clear();
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    impl Log for OutboundLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Debug
+                && metadata.target() == "nautilus_lighter::websocket::handler"
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                let message = record.args().to_string();
+                if message.starts_with("Sending Lighter unsubscribe") {
+                    self.messages.lock().unwrap().push(message);
+                }
+            }
+        }
+
+        fn flush(&self) {}
+    }
 
     const WS_ACCOUNT_ORDERS_UPDATE: &str =
         include_str!("../../test_data/ws_account_orders_update.json");
@@ -2227,6 +2266,40 @@ mod tests {
         handler.instruments.insert(0, stub_eth_perp_instrument());
         handler.exec_account = Some((AccountId::from("LIGHTER-1234"), 1234));
         handler
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_outbound_unsubscribe_log_omits_payload_body() {
+        log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Debug);
+
+        let handler = make_handler_with_account();
+        let account_index = SECRET_MARKER.parse::<i64>().unwrap();
+        let channel = LighterWsChannel::AccountAll(account_index);
+        let payload_len = serde_json::to_string(&LighterWsRequest::unsubscribe(
+            channel.subscription_channel(),
+        ))
+        .unwrap()
+        .len();
+        OUTBOUND_LOG_CAPTURE.clear();
+
+        handler.dispatch_unsubscribe(channel).await;
+
+        let messages = OUTBOUND_LOG_CAPTURE.messages();
+
+        assert!(
+            messages
+                .iter()
+                .all(|message| !message.contains(SECRET_MARKER)),
+            "outbound logs exposed the secret marker: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| {
+                message == &format!("Sending Lighter unsubscribe ({payload_len} bytes)")
+            }),
+            "unsubscribe metadata missing or inaccurate: {messages:?}"
+        );
     }
 
     fn mark_subscription_inflight(

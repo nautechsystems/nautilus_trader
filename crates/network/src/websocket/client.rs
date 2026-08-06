@@ -1195,7 +1195,7 @@ impl WebSocketClientInner {
                         }
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
-                        log::trace!("Received message: {data:?}");
+                        log::trace!("Received text frame ({} bytes)", data.len());
                         last_data_time = dst::time::Instant::now();
 
                         if !ConnectionMode::from_atomic(&connection_state).is_active()
@@ -1213,7 +1213,7 @@ impl WebSocketClientInner {
                         }
                     }
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
-                        log::trace!("Received ping: {ping_data:?}");
+                        log::trace!("Received ping frame ({} bytes)", ping_data.len());
                         // Do not reset last_data_time: pings are keep-alive frames, not application
                         // data, so a peer that emits only pings must still trip the idle timeout.
                         // Checked here too: a ping flood faster than the check interval starves the timeout branch
@@ -2235,7 +2235,7 @@ impl WebSocketClient {
         self.await_rate_limit_or_closed(keys).await?;
         self.wait_for_active().await?;
 
-        log::trace!("Sending text: {data:?}");
+        log::trace!("Sending text frame ({} bytes)", data.len());
 
         let msg = Message::Text(data.into());
         self.writer_tx
@@ -2268,7 +2268,10 @@ impl WebSocketClient {
         self.await_rate_limit_or_closed(keys).await?;
         self.wait_for_active().await?;
 
-        log::trace!("Sending text once: {data:?}");
+        log::trace!(
+            "Sending text frame once: epoch={connection_epoch} ({} bytes)",
+            data.len()
+        );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         self.writer_tx
@@ -2315,7 +2318,7 @@ impl WebSocketClient {
         self.await_rate_limit_or_closed(keys).await?;
         self.wait_for_active().await?;
 
-        log::trace!("Sending bytes: {data:?}");
+        log::trace!("Sending binary frame ({} bytes)", data.len());
 
         let msg = Message::Binary(data.into());
         self.writer_tx
@@ -2592,9 +2595,16 @@ impl Drop for WebSocketClient {
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use std::{num::NonZeroU32, sync::Arc, time::Duration};
+    use std::{
+        collections::HashMap,
+        num::NonZeroU32,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
+    use axum::{Router, routing::post};
     use futures_util::{SinkExt, StreamExt};
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use rstest::rstest;
     use tokio::{
         net::TcpListener,
@@ -2610,15 +2620,27 @@ mod tests {
     };
 
     use crate::{
+        http::{HttpClient, Method},
         mode::ConnectionMode,
         ratelimiter::quota::Quota,
         websocket::{TransportBackend, WebSocketClient, WebSocketConfig},
     };
 
+    const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+    const PING_TRIGGER: &str = "send-test-ping";
+
     struct TestServer {
         task: JoinHandle<()>,
         port: u16,
     }
+
+    struct NetworkLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static NETWORK_LOG_CAPTURE: NetworkLogCapture = NetworkLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
 
     #[derive(Debug, Clone)]
     struct TestCallback {
@@ -2643,6 +2665,40 @@ mod tests {
 
             Ok(response)
         }
+    }
+
+    impl NetworkLogCapture {
+        fn clear(&self) {
+            self.messages.lock().unwrap().clear();
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    impl Log for NetworkLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Trace
+                && matches!(
+                    metadata.target(),
+                    "nautilus_network::http::client" | "nautilus_network::websocket::client"
+                )
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                let message = record.args().to_string();
+                if message.starts_with("Sending ")
+                    || message.starts_with("Received ")
+                    || message.starts_with("Replaced ")
+                {
+                    self.messages.lock().unwrap().push(message);
+                }
+            }
+        }
+
+        fn flush(&self) {}
     }
 
     impl TestServer {
@@ -2674,6 +2730,12 @@ mod tests {
                                     // This sends a close frame, then stops reading
                                     let _ = websocket.close(None).await;
                                     break;
+                                }
+                                WsMessage::Text(txt) if txt == PING_TRIGGER => {
+                                    let ping = format!("{SECRET_MARKER}:ping");
+                                    if websocket.send(WsMessage::Ping(ping.into())).await.is_err() {
+                                        break;
+                                    }
                                 }
                                 // Echo text/binary frames
                                 WsMessage::Text(_) | WsMessage::Binary(_) => {
@@ -2723,6 +2785,188 @@ mod tests {
         WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, vec![], None)
             .await
             .expect("Failed to connect")
+    }
+
+    async fn setup_http_test_server() -> (JoinHandle<()>, u16) {
+        let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = server.local_addr().unwrap().port();
+        let app = Router::new().route(
+            "/logging",
+            post(|| async {
+                (
+                    [("x-secret-response", SECRET_MARKER)],
+                    format!("{SECRET_MARKER}:response"),
+                )
+            }),
+        );
+
+        let task = task::spawn(async move {
+            axum::serve(server, app).await.unwrap();
+        });
+
+        (task, port)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_network_logs_omit_payload_bodies() {
+        log::set_logger(&NETWORK_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Trace);
+
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+        NETWORK_LOG_CAPTURE.clear();
+        let binary = format!("{SECRET_MARKER}:binary").into_bytes();
+        let binary_marker = format!("{binary:?}");
+
+        client
+            .send_text(format!("{SECRET_MARKER}:café"), None)
+            .await
+            .unwrap();
+        client
+            .send_text_on_connection(
+                format!("{SECRET_MARKER}:owned-é"),
+                None,
+                client.connection_epoch(),
+            )
+            .await
+            .unwrap();
+        client.send_bytes(binary, None).await.unwrap();
+        client
+            .send_text(PING_TRIGGER.to_string(), None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if NETWORK_LOG_CAPTURE
+                    .messages()
+                    .iter()
+                    .any(|message| message == "Received ping frame (27 bytes)")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed out waiting for inbound WebSocket metadata log");
+
+        let (http_task, http_port) = setup_http_test_server().await;
+        let invalid_headers =
+            HashMap::from([("x-secret-default".to_string(), format!("{SECRET_MARKER}\n"))]);
+        let invalid_header_error =
+            HttpClient::new(invalid_headers, vec![], vec![], None, None, None).unwrap_err();
+        let http_client =
+            HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let params = HashMap::from([("secret".to_string(), vec![SECRET_MARKER.to_string()])]);
+        let headers = HashMap::from([
+            (
+                "X-Secret-Request".to_string(),
+                format!("{SECRET_MARKER}:first"),
+            ),
+            (
+                "x-secret-request".to_string(),
+                format!("{SECRET_MARKER}:second"),
+            ),
+        ]);
+        let http_body = format!("{SECRET_MARKER}:http-body").into_bytes();
+        http_client
+            .request(
+                Method::POST,
+                format!("http://127.0.0.1:{http_port}/logging"),
+                Some(&params),
+                Some(headers),
+                Some(http_body),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let messages = NETWORK_LOG_CAPTURE.messages();
+        let invalid_header_message = invalid_header_error.to_string();
+
+        assert!(
+            messages.iter().all(|message| {
+                !message.contains(SECRET_MARKER) && !message.contains(&binary_marker)
+            }),
+            "network logs exposed the secret marker: {messages:?}"
+        );
+        assert!(
+            !invalid_header_message.contains(SECRET_MARKER),
+            "invalid header error exposed the secret marker: {invalid_header_message}"
+        );
+        assert!(
+            invalid_header_message.contains("x-secret-default"),
+            "invalid header error omitted safe header metadata: {invalid_header_message}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Sending text frame (28 bytes)"),
+            "text send metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| { message == "Sending text frame once: epoch=0 (31 bytes)" }),
+            "ownership-bound text metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Sending binary frame (29 bytes)"),
+            "binary send metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Received text frame (28 bytes)"),
+            "text receive metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Received text frame (31 bytes)"),
+            "ownership-bound text receive metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Received message <binary> 29 bytes"),
+            "binary receive metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Received ping frame (27 bytes)"),
+            "ping receive metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| {
+                message
+                    == "Sending HTTP request: method=POST extra_headers=2 query_bytes=29 \
+                        body_bytes=32"
+            }),
+            "HTTP request metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Replaced duplicate request header 'x-secret-request'"),
+            "duplicate header metadata missing: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| {
+                message.starts_with("Received HTTP response: status=200 OK headers=")
+                    && message.ends_with(" body_bytes=31")
+            }),
+            "HTTP response metadata missing or inaccurate: {messages:?}"
+        );
+
+        client.disconnect().await;
+        http_task.abort();
     }
 
     #[tokio::test]
