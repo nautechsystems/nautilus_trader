@@ -120,74 +120,6 @@ pub enum Data {
     Defi(Box<DefiData>), // This variant is significantly larger
 }
 
-/// A C-compatible representation of [`Data`] for FFI.
-///
-/// This enum matches the standard variants of [`Data`] but excludes the `Custom`
-/// variant which is not FFI-safe.
-#[cfg(feature = "ffi")]
-#[repr(C)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(non_camel_case_types)]
-pub enum DataFFI {
-    Delta(OrderBookDelta),
-    Deltas(Box<OrderBookDeltas>),
-    Depth10(Box<OrderBookDepth10>),
-    Quote(QuoteTick),
-    Trade(TradeTick),
-    Bar(Bar),
-    MarkPriceUpdate(MarkPriceUpdate),
-    IndexPriceUpdate(IndexPriceUpdate),
-    InstrumentClose(InstrumentClose),
-}
-
-#[cfg(feature = "ffi")]
-impl TryFrom<Data> for DataFFI {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Data) -> Result<Self, Self::Error> {
-        match value {
-            Data::Delta(x) => Ok(Self::Delta(x)),
-            Data::Deltas(x) => Ok(Self::Deltas(x)),
-            Data::Depth10(x) => Ok(Self::Depth10(x)),
-            Data::Quote(x) => Ok(Self::Quote(x)),
-            Data::Trade(x) => Ok(Self::Trade(x)),
-            Data::Bar(x) => Ok(Self::Bar(x)),
-            Data::MarkPriceUpdate(x) => Ok(Self::MarkPriceUpdate(x)),
-            Data::IndexPriceUpdate(x) => Ok(Self::IndexPriceUpdate(x)),
-            Data::FundingRateUpdate(_) => {
-                anyhow::bail!("Cannot convert Data::FundingRateUpdate to DataFFI")
-            }
-            Data::OptionGreeks(_) => {
-                anyhow::bail!("Cannot convert Data::OptionGreeks to DataFFI")
-            }
-            Data::InstrumentStatus(_) => {
-                anyhow::bail!("Cannot convert Data::InstrumentStatus to DataFFI")
-            }
-            Data::InstrumentClose(x) => Ok(Self::InstrumentClose(x)),
-            Data::Custom(_) => anyhow::bail!("Cannot convert Data::Custom to DataFFI"),
-            #[cfg(feature = "defi")]
-            Data::Defi(_) => anyhow::bail!("Cannot convert Data::Defi to DataFFI"),
-        }
-    }
-}
-
-#[cfg(feature = "ffi")]
-impl From<DataFFI> for Data {
-    fn from(value: DataFFI) -> Self {
-        match value {
-            DataFFI::Delta(x) => Self::Delta(x),
-            DataFFI::Deltas(x) => Self::Deltas(x),
-            DataFFI::Depth10(x) => Self::Depth10(x),
-            DataFFI::Quote(x) => Self::Quote(x),
-            DataFFI::Trade(x) => Self::Trade(x),
-            DataFFI::Bar(x) => Self::Bar(x),
-            DataFFI::MarkPriceUpdate(x) => Self::MarkPriceUpdate(x),
-            DataFFI::IndexPriceUpdate(x) => Self::IndexPriceUpdate(x),
-            DataFFI::InstrumentClose(x) => Self::InstrumentClose(x),
-        }
-    }
-}
-
 impl<'de> Deserialize<'de> for Data {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1070,26 +1002,6 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         data_type.hash(&mut hasher);
         hasher.finish()
-    }
-
-    #[cfg(feature = "ffi")]
-    #[rstest]
-    fn test_funding_rate_update_does_not_convert_to_data_ffi() {
-        let funding_rate = FundingRateUpdate::new(
-            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
-            "0.0001".parse().unwrap(),
-            Some(480),
-            Some(UnixNanos::from(1_000_000_000)),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
-
-        let err = DataFFI::try_from(Data::FundingRateUpdate(funding_rate)).unwrap_err();
-
-        assert_eq!(
-            err.to_string(),
-            "Cannot convert Data::FundingRateUpdate to DataFFI"
-        );
     }
 
     #[rstest]

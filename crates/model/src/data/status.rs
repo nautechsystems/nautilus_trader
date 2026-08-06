@@ -697,11 +697,4 @@ mod tests {
         let cloned = data.clone();
         assert_eq!(data, cloned);
     }
-
-    #[cfg(feature = "ffi")]
-    #[rstest]
-    fn test_data_ffi_try_from_instrument_status_errors(stub_instrument_status: InstrumentStatus) {
-        let data: crate::data::Data = stub_instrument_status.into();
-        assert!(crate::data::DataFFI::try_from(data).is_err());
-    }
 }
