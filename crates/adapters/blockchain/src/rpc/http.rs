@@ -94,10 +94,20 @@ impl BlockchainHttpRpcClient {
             BlockchainRpcClientError::ClientError(format!("Failed to serialize request: {e}"))
         })?;
 
+        self.post_json_body(body_bytes, timeout_secs)
+            .await
+            .map_err(|e| BlockchainRpcClientError::ClientError(e.to_string()))
+    }
+
+    async fn post_json_body(
+        &self,
+        body_bytes: Vec<u8>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpBytes, HttpClientError> {
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-        match self
+        let response = self
             .http_client
             .request_with_url_redacted(
                 Method::POST,
@@ -108,11 +118,9 @@ impl BlockchainHttpRpcClient {
                 timeout_secs,
                 None,
             )
-            .await
-        {
-            Ok(response) => Ok(response.body),
-            Err(e) => Err(BlockchainRpcClientError::ClientError(e.to_string())),
-        }
+            .await?;
+
+        Ok(response.body)
     }
 
     /// Executes an Ethereum JSON-RPC call and deserializes the response into the specified type T.
@@ -523,25 +531,13 @@ impl BlockchainHttpRpcClient {
         let body_bytes = serde_json::to_vec(&request)
             .map_err(|e| BroadcastError::Failed(format!("Failed to serialize request: {e}")))?;
 
-        let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/json".to_string());
-
-        let response = self
-            .http_client
-            .request_with_url_redacted(
-                Method::POST,
-                self.http_rpc_url.clone(),
-                None,
-                Some(headers),
-                Some(body_bytes),
-                Some(EXECUTION_RPC_TIMEOUT_SECS),
-                None,
-            )
+        let body = self
+            .post_json_body(body_bytes, Some(EXECUTION_RPC_TIMEOUT_SECS))
             .await
             .map_err(|e| classify_broadcast_transport_error(&e))?;
 
-        let parsed = serde_json::from_slice::<RpcNodeHttpResponse<String>>(&response.body)
-            .map_err(|_| {
+        let parsed =
+            serde_json::from_slice::<RpcNodeHttpResponse<String>>(&body).map_err(|_| {
                 BroadcastError::Failed("Failed to parse broadcast response".to_string())
             })?;
 

@@ -408,17 +408,8 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        let full_url = encode_url_params(&url, params)?;
-        self.send_request_internal(
-            method,
-            full_url.as_ref(),
-            None::<&()>,
-            headers,
-            body,
-            timeout_secs,
-            false,
-        )
-        .await
+        self.send_request_with_redaction(method, url, params, headers, body, timeout_secs, false)
+            .await
     }
 
     async fn send_request_with_url_redacted(
@@ -430,6 +421,21 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
+        self.send_request_with_redaction(method, url, params, headers, body, timeout_secs, true)
+            .await
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    async fn send_request_with_redaction(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        redact_url: bool,
+    ) -> Result<HttpResponse, HttpClientError> {
         let full_url = encode_url_params(&url, params)?;
         self.send_request_internal(
             method,
@@ -438,7 +444,7 @@ impl InnerHttpClient {
             headers,
             body,
             timeout_secs,
-            true,
+            redact_url,
         )
         .await
     }

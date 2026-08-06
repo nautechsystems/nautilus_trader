@@ -836,16 +836,20 @@ mod tests {
         assert_eq!(hex::encode(&calldata), expected);
     }
 
-    #[tokio::test]
-    async fn test_balance_of_against_mock_rpc() {
-        let state = MockRpcState::default().with_call_response("0x70a08231", CALL_BALANCE);
+    async fn erc20_contract_against(state: MockRpcState) -> (Erc20Contract, MockRpcState) {
         let addr = start_mock_rpc_server(state.clone()).await;
         let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             format!("http://{addr}"),
             None,
             None,
         ));
-        let contract = Erc20Contract::new(rpc_client, true);
+        (Erc20Contract::new(rpc_client, true), state)
+    }
+
+    #[tokio::test]
+    async fn test_balance_of_against_mock_rpc() {
+        let state = MockRpcState::default().with_call_response("0x70a08231", CALL_BALANCE);
+        let (contract, state) = erc20_contract_against(state).await;
 
         let balance = contract
             .balance_of(
@@ -865,13 +869,7 @@ mod tests {
     #[tokio::test]
     async fn test_balance_of_at_against_mock_rpc() {
         let state = MockRpcState::default().with_call_response("0x70a08231", CALL_BALANCE);
-        let addr = start_mock_rpc_server(state.clone()).await;
-        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            format!("http://{addr}"),
-            None,
-            None,
-        ));
-        let contract = Erc20Contract::new(rpc_client, true);
+        let (contract, state) = erc20_contract_against(state).await;
 
         let balance = contract
             .balance_of_at(
@@ -891,13 +889,7 @@ mod tests {
     #[tokio::test]
     async fn test_allowance_against_mock_rpc() {
         let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
-        let addr = start_mock_rpc_server(state.clone()).await;
-        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            format!("http://{addr}"),
-            None,
-            None,
-        ));
-        let contract = Erc20Contract::new(rpc_client, true);
+        let (contract, state) = erc20_contract_against(state).await;
 
         let allowance = contract
             .allowance(
@@ -918,13 +910,7 @@ mod tests {
     #[tokio::test]
     async fn test_allowance_at_against_mock_rpc() {
         let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
-        let addr = start_mock_rpc_server(state.clone()).await;
-        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            format!("http://{addr}"),
-            None,
-            None,
-        ));
-        let contract = Erc20Contract::new(rpc_client, true);
+        let (contract, state) = erc20_contract_against(state).await;
 
         let allowance = contract
             .allowance_at(
@@ -946,13 +932,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_approve_rejects_malformed_bool() {
         let state = MockRpcState::default().with_response("eth_call", CALL_MAX);
-        let addr = start_mock_rpc_server(state.clone()).await;
-        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            format!("http://{addr}"),
-            None,
-            None,
-        ));
-        let contract = Erc20Contract::new(rpc_client, true);
+        let (contract, state) = erc20_contract_against(state).await;
         let owner = address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
         let error = contract

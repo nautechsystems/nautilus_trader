@@ -379,7 +379,7 @@ impl BlockchainExecutionClient {
         self.ensure_transaction_ready(TransactionPurpose::Wrap)?;
         self.ensure_contract_deployed(&self.weth_address, "WETH")
             .await?;
-        let _balance_before_broadcast = self
+        let _balance_probe = self
             .erc20_contract
             .balance_of(&self.weth_address, &self.wallet_address)
             .await?;
@@ -1049,6 +1049,9 @@ mod tests {
     const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
     const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 
+    const WETH_ADDRESS: Address = address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1");
+    const ROUTER_ADDRESS: Address = address!("E592427A0AEce92De3Edee1F18E0157C05861564");
+
     // Anvil development key for WALLET (public, test-only)
     const TEST_PRIVATE_KEY: &str =
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -1164,6 +1167,59 @@ mod tests {
         execution_rpc_state()
             .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
             .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
+    }
+
+    fn signing_rpc_state() -> MockRpcState {
+        ready_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+    }
+
+    fn broadcast_rpc_state() -> MockRpcState {
+        execution_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
+    }
+
+    async fn expected_wrap_tx_hash(value: U256) -> B256 {
+        // The orchestration's policy math is deterministic: nonce 7 from the fixture,
+        // buffered gas 78000, buffered max fee 130000000, priority fee 10000000
+        let expected_tx = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            WETH_ADDRESS,
+            value,
+            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
+        );
+        let (expected_hash, _) = sign_eip1559_transaction(
+            expected_tx,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+        expected_hash
+    }
+
+    async fn await_recorded_request(state: &MockRpcState, method: &str) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if state
+                    .recorded_requests()
+                    .iter()
+                    .any(|request| request["method"] == method)
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -1454,7 +1510,7 @@ mod tests {
 
         let error = client
             .approve(
-                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+                WETH_ADDRESS,
                 U256::from(1_000u64),
                 address!("68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
             )
@@ -1551,12 +1607,8 @@ mod tests {
 
     #[tokio::test]
     async fn wrap_rejects_included_transaction_without_balance_delta() {
-        let state = execution_rpc_state()
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE])
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let state = broadcast_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE]);
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_wrap_no_delta_test", state).await
         else {
@@ -1592,15 +1644,10 @@ mod tests {
 
     #[tokio::test]
     async fn wrap_reports_inclusion_when_postcondition_read_fails() {
-        let state = execution_rpc_state()
-            .with_response_sequence(
-                "eth_call",
-                &[CALL_BALANCE, CALL_BALANCE, RPC_METHOD_NOT_FOUND],
-            )
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let state = broadcast_rpc_state().with_response_sequence(
+            "eth_call",
+            &[CALL_BALANCE, CALL_BALANCE, RPC_METHOD_NOT_FOUND],
+        );
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_wrap_postcondition_rpc_test", state).await
         else {
@@ -1633,11 +1680,7 @@ mod tests {
         };
 
         let error = client
-            .approve(
-                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                U256::from(1_000u64),
-                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-            )
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -1654,12 +1697,8 @@ mod tests {
 
     #[tokio::test]
     async fn approve_accepts_empty_return_with_sufficient_allowance() {
-        let state = execution_rpc_state()
-            .with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ALLOWANCE])
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let state =
+            broadcast_rpc_state().with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ALLOWANCE]);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_empty_test", state).await
         else {
@@ -1667,11 +1706,7 @@ mod tests {
         };
 
         let tx_hash = client
-            .approve(
-                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                U256::from(1_000u64),
-                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-            )
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
             .await
             .unwrap();
 
@@ -1690,12 +1725,8 @@ mod tests {
 
     #[tokio::test]
     async fn approve_rejects_empty_return_with_insufficient_allowance() {
-        let state = execution_rpc_state()
-            .with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ZERO])
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let state =
+            broadcast_rpc_state().with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ZERO]);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_insufficient_test", state).await
         else {
@@ -1703,11 +1734,7 @@ mod tests {
         };
 
         let error = client
-            .approve(
-                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                U256::from(1_000u64),
-                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-            )
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -1722,12 +1749,8 @@ mod tests {
 
     #[tokio::test]
     async fn approve_reports_inclusion_when_postcondition_read_fails() {
-        let state = execution_rpc_state()
-            .with_response_sequence("eth_call", &[CALL_BOOL_TRUE, RPC_METHOD_NOT_FOUND])
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
+        let state = broadcast_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_BOOL_TRUE, RPC_METHOD_NOT_FOUND]);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_postcondition_rpc_test", state).await
         else {
@@ -1735,11 +1758,7 @@ mod tests {
         };
 
         let error = client
-            .approve(
-                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                U256::from(1_000u64),
-                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-            )
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -1906,9 +1925,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS);
+        let state = signing_rpc_state();
         let addr = start_mock_rpc_server(state.clone()).await;
 
         let mut client = test_client(format!("http://{addr}"));
@@ -1972,22 +1989,7 @@ mod tests {
             .into_iter()
             .filter(|request| request["method"] == "eth_sendRawTransaction")
             .count();
-        let expected_tx = build_eip1559_transaction(
-            42161,
-            7,
-            78_000,
-            130_000_000,
-            10_000_000,
-            address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            value,
-            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
-        );
-        let (expected_hash, _) = sign_eip1559_transaction(
-            expected_tx,
-            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
-        )
-        .await
-        .unwrap();
+        let expected_hash = expected_wrap_tx_hash(value).await;
 
         assert_eq!(in_flight.nonce, 7);
         assert_eq!(in_flight.tx_hash, expected_hash);
@@ -2001,43 +2003,23 @@ mod tests {
         assert_eq!(broadcasts, 0);
 
         lock_transaction.rollback().await.unwrap();
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn persistence_failure_keeps_unbroadcast_slot() {
-        let Some((admin_pool, pg_config)) = connect_test_postgres("persistence failure").await
+        let state = signing_rpc_state();
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_persist_fail_test", state).await
         else {
             return;
         };
-
-        let schema = format!("execution_persist_fail_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP TABLE {schema}.execution_transaction"
         )))
         .execute(&admin_pool)
         .await
         .unwrap();
-
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS);
-        let addr = start_mock_rpc_server(state.clone()).await;
-
-        let mut client = test_client(format!("http://{addr}"));
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
 
         let value = U256::from(1_000_000_000_000_000u64);
         let error = client.wrap(value).await.unwrap_err();
@@ -2051,22 +2033,7 @@ mod tests {
             .into_iter()
             .filter(|request| request["method"] == "eth_sendRawTransaction")
             .count();
-        let expected_tx = build_eip1559_transaction(
-            42161,
-            7,
-            78_000,
-            130_000_000,
-            10_000_000,
-            address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            value,
-            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
-        );
-        let (expected_hash, _) = sign_eip1559_transaction(
-            expected_tx,
-            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
-        )
-        .await
-        .unwrap();
+        let expected_hash = expected_wrap_tx_hash(value).await;
 
         let error_message = error.to_string();
         assert!(
@@ -2090,55 +2057,25 @@ mod tests {
         );
         assert_eq!(broadcasts, 0);
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn cancellation_after_dispatch_keeps_record_and_in_flight_slot() {
-        let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast cancellation").await
+        let state = signing_rpc_state().with_sleep(
+            "eth_sendRawTransaction",
+            Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
+        );
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_cancel_test", state).await
         else {
             return;
         };
 
-        let schema = format!("execution_cancel_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
-
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_sleep(
-                "eth_sendRawTransaction",
-                Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
-            );
-        let addr = start_mock_rpc_server(state.clone()).await;
-
-        let mut client = test_client(format!("http://{addr}"));
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
-
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("broadcast completed before cancellation: {result:?}"),
-            result = tokio::time::timeout(Duration::from_secs(2), async {
-                loop {
-                    if state.recorded_requests().iter().any(|request| {
-                        request["method"] == "eth_sendRawTransaction"
-                    }) {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-            }) => result.unwrap(),
+            () = await_recorded_request(&state, "eth_sendRawTransaction") => {}
         }
         drop(wrap);
 
@@ -2168,17 +2105,12 @@ mod tests {
         assert_eq!(record.status, "pending");
         assert_eq!(broadcasts, 1);
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn cancellation_during_receipt_polling_keeps_record_and_in_flight_slot() {
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
+        let state = signing_rpc_state()
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
             .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
             .with_sleep(
@@ -2194,16 +2126,7 @@ mod tests {
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("receipt polling completed before cancellation: {result:?}"),
-            result = tokio::time::timeout(Duration::from_secs(2), async {
-                loop {
-                    if state.recorded_requests().iter().any(|request| {
-                        request["method"] == "eth_getTransactionReceipt"
-                    }) {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-            }) => result.unwrap(),
+            () = await_recorded_request(&state, "eth_getTransactionReceipt") => {}
         }
         drop(wrap);
 
@@ -2252,30 +2175,13 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_broadcast_marks_record_rejected_before_releasing_slot() {
-        let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast rejection").await
+        let state = signing_rpc_state()
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_rejected_test", state).await
         else {
             return;
         };
-
-        let schema = format!("execution_rejected_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
-
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED);
-        let addr = start_mock_rpc_server(state.clone()).await;
-
-        let mut client = test_client(format!("http://{addr}"));
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -2304,54 +2210,24 @@ mod tests {
         assert_eq!(status, "rejected");
         assert_eq!(broadcasts, 1);
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn rejected_broadcast_keeps_slot_when_status_update_fails() {
-        let Some((admin_pool, pg_config)) =
-            connect_test_postgres("broadcast rejection persistence failure").await
+        let state = signing_rpc_state()
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED)
+            .with_sleep("eth_sendRawTransaction", Duration::from_secs(1));
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_rejected_update_test", state).await
         else {
             return;
         };
 
-        let schema = format!("execution_rejected_update_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
-
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED)
-            .with_sleep("eth_sendRawTransaction", Duration::from_secs(1));
-        let addr = start_mock_rpc_server(state.clone()).await;
-
-        let mut client = test_client(format!("http://{addr}"));
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
-
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("broadcast completed before database failure: {result:?}"),
-            result = tokio::time::timeout(Duration::from_secs(2), async {
-                loop {
-                    if state.recorded_requests().iter().any(|request| {
-                        request["method"] == "eth_sendRawTransaction"
-                    }) {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-            }) => result.unwrap(),
+            () = await_recorded_request(&state, "eth_sendRawTransaction") => {}
         }
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP TABLE {schema}.execution_transaction"
@@ -2370,17 +2246,12 @@ mod tests {
         assert_eq!(in_flight.nonce, 7);
         assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn included_receipt_keeps_slot_when_status_update_fails() {
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
+        let state = signing_rpc_state()
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
             .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
             .with_sleep("eth_getTransactionReceipt", Duration::from_secs(1));
@@ -2393,16 +2264,7 @@ mod tests {
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("receipt completed before database failure: {result:?}"),
-            result = tokio::time::timeout(Duration::from_secs(2), async {
-                loop {
-                    if state.recorded_requests().iter().any(|request| {
-                        request["method"] == "eth_getTransactionReceipt"
-                    }) {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-            }) => result.unwrap(),
+            () = await_recorded_request(&state, "eth_getTransactionReceipt") => {}
         }
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP TABLE {schema}.execution_transaction"
@@ -2443,32 +2305,15 @@ mod tests {
 
     #[tokio::test]
     async fn broadcast_timeout_after_send_keeps_record_pending() {
-        let Some((admin_pool, pg_config)) = connect_test_postgres("broadcast timeout").await else {
+        let state = signing_rpc_state().with_sleep(
+            "eth_sendRawTransaction",
+            Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
+        );
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_timeout_test", state).await
+        else {
             return;
         };
-
-        let schema = format!("execution_timeout_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
-
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_sleep(
-                "eth_sendRawTransaction",
-                Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
-            );
-        let addr = start_mock_rpc_server(state).await;
-
-        let mut client = test_client(format!("http://{addr}"));
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -2492,10 +2337,7 @@ mod tests {
             .unwrap();
         assert_eq!(record.status, "pending");
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
@@ -2543,20 +2385,6 @@ mod tests {
 
     #[tokio::test]
     async fn wrap_then_approve_persists_records_and_clears_in_flight() {
-        let Some((admin_pool, pg_config)) = connect_test_postgres("execution persistence").await
-        else {
-            return;
-        };
-
-        let schema = format!("execution_client_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
-
         let state = execution_rpc_state()
             .with_response_sequence(
                 "eth_call",
@@ -2575,14 +2403,12 @@ mod tests {
                 &[RPC_METHOD_NOT_FOUND, RECEIPT_SUCCESS, RECEIPT_SUCCESS],
             )
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
-        let addr = start_mock_rpc_server(state.clone()).await;
-
-        let mut config = test_config(format!("http://{addr}"));
-        config.unlimited_approval = true;
-        let mut client = test_client_from_config(config, test_pool());
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_client_test", state).await
+        else {
+            return;
+        };
+        client.config.unlimited_approval = true;
 
         let wrap_hash = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -2601,11 +2427,7 @@ mod tests {
 
         // The in-flight slot cleared after inclusion, so a second transaction proceeds
         let approve_hash = client
-            .approve(
-                address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                U256::from(1_000u64),
-                address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-            )
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
             .await
             .unwrap();
 
@@ -2659,38 +2481,19 @@ mod tests {
             "was: {approve_data}"
         );
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn reverted_receipt_marks_record_reverted_and_errors() {
-        let Some((admin_pool, pg_config)) = connect_test_postgres("reverted receipt").await else {
-            return;
-        };
-
-        let schema = format!("execution_reverted_test_{}", std::process::id());
-        setup_execution_schema(&admin_pool, &schema).await;
-
-        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
-
-        let state = ready_rpc_state()
-            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
+        let state = signing_rpc_state()
             .with_response("eth_getTransactionReceipt", RECEIPT_REVERTED)
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION);
-        let addr = start_mock_rpc_server(state).await;
-
-        let mut client = test_client(format!("http://{addr}"));
-        client.cache.database = Some(database);
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
-        client.core.set_connected();
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_reverted_test", state).await
+        else {
+            return;
+        };
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -2703,24 +2506,7 @@ mod tests {
         );
         assert!(client.in_flight.is_none());
 
-        // The orchestration's policy math is deterministic: nonce 7 from the fixture,
-        // buffered gas 78000, buffered max fee 130000000, priority fee 10000000
-        let expected_tx = build_eip1559_transaction(
-            42161,
-            7,
-            78_000,
-            130_000_000,
-            10_000_000,
-            address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            U256::from(1_000_000_000_000_000u64),
-            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
-        );
-        let (expected_hash, _) = sign_eip1559_transaction(
-            expected_tx,
-            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
-        )
-        .await
-        .unwrap();
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
 
         let record = client
             .cache
@@ -2730,10 +2516,7 @@ mod tests {
             .unwrap();
         assert_eq!(record.status, "reverted");
 
-        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-            .execute(&admin_pool)
-            .await
-            .unwrap();
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     async fn connect_test_postgres(
