@@ -119,16 +119,13 @@ When adding Python-aware live code:
 Use descriptive names that explain the scenario. Keep tests as annotated pytest free functions:
 
 ```python
-def test_write_and_query_option_greeks_round_trip() -> None:
-    ...
+def test_write_and_query_option_greeks_round_trip() -> None: ...
 
 
-def test_catalog_loaded_greeks_reach_on_option_greeks() -> None:
-    ...
+def test_catalog_loaded_greeks_reach_on_option_greeks() -> None: ...
 
 
-def test_backend_session_rejects_zero_chunk_size() -> None:
-    ...
+def test_backend_session_rejects_zero_chunk_size() -> None: ...
 ```
 
 ### Ruff

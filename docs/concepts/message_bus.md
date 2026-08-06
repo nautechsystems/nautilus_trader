@@ -273,6 +273,11 @@ subscribers, then serialized into the existing `BusMessage` wire record:
 - `encoding`: the payload encoding selected from the message bus encoding policy.
 - `payload`: serialized bytes encoded with the selected encoding.
 
+An external producer that writes directly to a Redis stream must include `topic`, `type`, and
+`payload`. The `topic` must be a valid publish topic and cannot contain `*` or `?`. The `encoding`
+field is optional and defaults to JSON when omitted. The receiving node skips entries without
+`type` because it cannot select a payload decoder.
+
 External egress receives that record as `publish(BusMessage)`. This outbound call must not block the
 node's bus thread. Bounded egress implementations drop on a full queue instead of applying
 back-pressure to the trading loop. Closing the message bus closes the configured egress.
@@ -282,6 +287,18 @@ Ingress yields the same `BusMessage { topic, payload_type, encoding, payload }` 
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. The inbound payload type must first be registered for
 streaming on the receiving message bus; unregistered types are skipped without decoding.
+
+For Python custom data, register the class before starting the node:
+
+```python
+from nautilus_trader.model import register_custom_data_class
+
+register_custom_data_class(MyData)
+```
+
+The external‑client subscription registers the payload type for streaming, while
+`register_custom_data_class(...)` installs the process‑wide JSON decoder. Both registrations are
+required. See [Custom data](custom_data.md#registration-architecture) for the class requirements.
 
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.

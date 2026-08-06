@@ -332,6 +332,12 @@ impl LiveNode {
             anyhow::bail!("Already running");
         }
 
+        if self.external_msgbus.is_some() {
+            log::warn!(
+                "External message bus ingress is configured but LiveNode::start() with poll() does not service it; use LiveNode::run()"
+            );
+        }
+
         self.prepare_cache().await?;
 
         if let Some(runner) = self.runner.as_ref() {

@@ -204,6 +204,9 @@ streams. Entries already in a stream before the node starts are not replayed. A 
 `start()` and `poll()` does not service external message‑bus ingress; use `run()` when
 `external_streams` is configured. See [message bus backing
 configuration](../concepts/message_bus.md#backing-config) for lifecycle and ingress details.
+External producers that write directly to Redis must supply the required `type` field. See
+[external egress and ingress](../concepts/message_bus.md#external-egress-and-ingress) for the wire
+fields and Python custom‑data registration.
 
 ## Multi-venue configuration
 

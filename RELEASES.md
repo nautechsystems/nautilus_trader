@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
+- Added `LiveNode.start()` warning when external message bus ingress requires `run()`
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 - Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
 
@@ -28,6 +29,7 @@ Released on TBD (UTC).
 ### Security
 
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
+- Fixed malformed external message topics aborting Python v2 `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
 - Fixed Rust network and WebSocket adapter logs that could expose credentials and payload contents
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
@@ -64,6 +66,7 @@ Released on TBD (UTC).
 
 - Consolidated Python v2 integration guides and examples on canonical paths
 - Corrected the Rust `DataTester` book depth support note in the data testing spec
+- Documented external Redis message fields and Python custom-data registration
 - Documented the transient startup position-check race in the Lighter integration guide
 - Fixed broken README links on PyPI (#4644, #4648), thanks for reporting @ZhongxuanWang; thanks @xxxjqm
 
