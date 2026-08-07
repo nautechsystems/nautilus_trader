@@ -2162,7 +2162,7 @@ mod tests {
             AccountType, BookType, MarketStatus, MarketStatusAction, OmsType, OrderSide,
             OrderStatus, OrderType, TriggerType,
         },
-        identifiers::{AccountId, ActorId, ClientId, ComponentId, PositionId, StrategyId, Venue},
+        identifiers::{AccountId, ActorId, ClientId, PositionId, StrategyId, Venue},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
@@ -2594,7 +2594,7 @@ mod tests {
         let strategy_save =
             IndexMap::from([("strategy-save".to_string(), b"strategy-saved".to_vec())]);
         let (database, control) = TestCacheDatabaseControl::create();
-        control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+        control.set_actor_state(actor_id, &actor_load);
         control.set_strategy_state(strategy_id, &strategy_load);
         let config = BacktestEngineConfig {
             load_state: true,
@@ -2651,10 +2651,7 @@ mod tests {
                 "database.close",
             ]
         );
-        assert_eq!(
-            control.actor_state(&ComponentId::from(actor_id.as_str())),
-            Some(actor_save)
-        );
+        assert_eq!(control.actor_state(&actor_id), Some(actor_save));
         assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
         assert_eq!(engine.backtest_end, Some(UnixNanos::from(0)));
     }

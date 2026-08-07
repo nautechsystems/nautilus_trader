@@ -29,6 +29,7 @@ Released on TBD (UTC).
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
 - Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
 - Changed adapter callbacks to receive typed model objects instead of `PyCapsule` objects
+- Changed the cache actor APIs to use `ActorId` instead of `ComponentId`, covering `Cache.actor_ids()` and the Rust `CacheDatabaseAdapter` actor state methods
 - Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
 - Changed portfolio statistic `calculate_from_positions` to require `Position` objects instead of arbitrary objects with an `entry` attribute
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer
@@ -60,6 +61,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added `From` conversions from `ActorId`, `ExecAlgorithmId`, and `StrategyId` to `ComponentId` that reuse the interned value
 - Hardened development wheel publishing to validate exact artifacts and fail closed
 - Improved native backtest workload coverage for canonical result checks
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92

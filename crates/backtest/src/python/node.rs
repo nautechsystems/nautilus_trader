@@ -313,7 +313,7 @@ impl BacktestNode {
         // TestClock in backtest so each actor gets its own default timer handler)
         let trader_id = engine.kernel().config.trader_id();
         let cache = engine.kernel().cache.clone();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = engine
             .kernel_mut()
             .trader
@@ -481,7 +481,7 @@ impl BacktestNode {
         let trader_id = engine.kernel().config.trader_id();
         let cache = engine.kernel().cache.clone();
         let portfolio = engine.kernel().portfolio.clone();
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let component_id = ComponentId::from(strategy_id);
         let clock = engine
             .kernel_mut()
             .trader

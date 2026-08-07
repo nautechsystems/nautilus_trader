@@ -3224,8 +3224,8 @@ mod tests {
             order::spec::{OrderAcceptedSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
         },
         identifiers::{
-            AccountId, ActorId, ClientId, ComponentId, InstrumentId, PositionId, StrategyId,
-            TradeId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -5100,7 +5100,7 @@ mod tests {
         let strategy_save =
             IndexMap::from([("strategy-save".to_string(), b"strategy-saved".to_vec())]);
         let (database, control) = TestCacheDatabaseControl::create();
-        control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+        control.set_actor_state(actor_id, &actor_load);
         control.set_strategy_state(strategy_id, &strategy_load);
         let config = LiveNodeConfig {
             load_state: true,
@@ -5154,10 +5154,7 @@ mod tests {
                 "database.close",
             ]
         );
-        assert_eq!(
-            control.actor_state(&ComponentId::from(actor_id.as_str())),
-            Some(actor_save)
-        );
+        assert_eq!(control.actor_state(&actor_id), Some(actor_save));
         assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
         assert_eq!(node.state(), NodeState::Stopped);
     }

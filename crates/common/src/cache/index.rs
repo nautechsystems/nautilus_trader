@@ -17,7 +17,7 @@ use ahash::{AHashMap, AHashSet};
 use nautilus_model::{
     enums::OmsType,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, PositionId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, Venue, VenueOrderId,
     },
 };
@@ -54,7 +54,7 @@ pub(super) struct CacheIndex {
     pub(crate) positions: AHashSet<PositionId>,
     pub(crate) positions_open: AHashSet<PositionId>,
     pub(crate) positions_closed: AHashSet<PositionId>,
-    pub(crate) actors: AHashSet<ComponentId>,
+    pub(crate) actors: AHashSet<ActorId>,
     pub(crate) strategies: AHashSet<StrategyId>,
     pub(crate) exec_algorithms: AHashSet<ExecAlgorithmId>,
 }

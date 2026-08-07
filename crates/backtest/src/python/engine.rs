@@ -1048,7 +1048,7 @@ impl PyBacktestEngine {
 
         let trader_id = self.0.kernel().config.trader_id();
         let cache = self.0.kernel().cache.clone();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = self
             .0
             .kernel_mut()
@@ -1178,7 +1178,7 @@ impl PyBacktestEngine {
 
         let trader_id = self.0.kernel().config.trader_id();
         let cache = self.0.kernel().cache.clone();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = self
             .0
             .kernel_mut()

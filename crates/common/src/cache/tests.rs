@@ -48,8 +48,8 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
+        PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
@@ -7123,7 +7123,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(None)
     }
 
-    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+    fn load_actor(&self, _actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
         Ok(AHashMap::new())
     }
 
@@ -7239,7 +7239,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(())
     }
 
-    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+    fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -7277,7 +7277,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 
     fn update_actor(
         &self,
-        _component_id: &ComponentId,
+        _actor_id: &ActorId,
         _state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
         Ok(())

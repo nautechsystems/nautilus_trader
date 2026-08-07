@@ -48,8 +48,8 @@ mod serial_tests {
             position::snapshot::PositionSnapshot,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, ComponentId, PositionId, StrategyId, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny, SyntheticInstrument, stubs::crypto_perpetual_ethusdt,
@@ -912,7 +912,7 @@ mod serial_tests {
         position.apply(&close_fill);
         adapter.update_position(&position).unwrap();
 
-        let actor_id = ComponentId::new("ACTOR-001");
+        let actor_id = ActorId::new("ACTOR-001");
         assert!(adapter.load_actor(&actor_id).unwrap().is_empty());
         let mut actor_state = AHashMap::new();
         actor_state.insert("A".to_string(), Bytes::from_static(b"1"));

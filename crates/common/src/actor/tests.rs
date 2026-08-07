@@ -540,6 +540,16 @@ fn test_nautilus_actor_macro_custom_field_generates_native_core_access() {
 }
 
 #[rstest]
+fn test_data_actor_component_id_erases_actor_id() {
+    let actor = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::from("COMPONENT-ID-ACTOR-001")),
+        ..Default::default()
+    });
+
+    assert_eq!(actor.component_id().as_str(), "COMPONENT-ID-ACTOR-001");
+}
+
+#[rstest]
 fn test_data_actor_clock_api(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -1276,7 +1286,7 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
         cache_api.try_account(&account_id);
     let _: Option<AccountAny> = cache_api.account_for_venue(&venue);
     let _: Option<AccountId> = cache_api.account_id(&venue);
-    let _: AHashSet<ComponentId> = cache_api.actor_ids();
+    let _: AHashSet<ActorId> = cache_api.actor_ids();
     let _: AHashSet<StrategyId> = cache_api.strategy_ids();
     let _: AHashSet<ExecAlgorithmId> = cache_api.exec_algorithm_ids();
     let _: Option<OrderAny> = cache_api.order(&client_order_id);

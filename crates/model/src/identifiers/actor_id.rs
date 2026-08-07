@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Represents a valid component ID.
+//! Represents a valid actor ID.
 
 use std::{
     fmt::{Debug, Display},
@@ -25,7 +25,7 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
-/// Represents a valid component ID.
+/// Represents a valid actor ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(

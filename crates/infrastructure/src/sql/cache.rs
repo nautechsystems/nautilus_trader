@@ -35,7 +35,7 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
@@ -787,11 +787,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         rx.recv()?
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        anyhow::bail!("load_actor not implemented for PostgreSQL cache adapter: {component_id}")
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_actor not implemented for PostgreSQL cache adapter: {actor_id}")
     }
 
-    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+    fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -1141,10 +1141,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn update_actor(
         &self,
-        component_id: &ComponentId,
+        actor_id: &ActorId,
         _state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        anyhow::bail!("update_actor not implemented for PostgreSQL cache adapter: {component_id}")
+        anyhow::bail!("update_actor not implemented for PostgreSQL cache adapter: {actor_id}")
     }
 
     fn update_strategy(

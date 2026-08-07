@@ -28,7 +28,7 @@ use nautilus_model::{
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -226,12 +226,12 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if loading a single position fails.
     async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>>;
 
-    /// Loads actor state by component ID.
+    /// Loads actor state by actor ID.
     ///
     /// # Errors
     ///
     /// Returns an error if loading actor state fails.
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>>;
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads strategy state by strategy ID.
     ///
@@ -440,7 +440,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if deleting actor state fails.
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
+    fn delete_actor(&self, actor_id: &ActorId) -> anyhow::Result<()>;
 
     /// Deletes strategy state from the cache.
     ///
@@ -499,7 +499,7 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if updating actor state fails.
     fn update_actor(
         &self,
-        component_id: &ComponentId,
+        actor_id: &ActorId,
         state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()>;
 

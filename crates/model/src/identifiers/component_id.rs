@@ -25,6 +25,8 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
+use crate::identifiers::{ActorId, ExecAlgorithmId, StrategyId};
+
 /// Represents a valid component ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -82,6 +84,10 @@ impl ComponentId {
     }
 }
 
+impl_from_identifier_for_component_id!(ActorId);
+impl_from_identifier_for_component_id!(ExecAlgorithmId);
+impl_from_identifier_for_component_id!(StrategyId);
+
 impl Debug for ComponentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\"{}\"", self.0)
@@ -99,12 +105,30 @@ mod tests {
     use rstest::rstest;
 
     use super::ComponentId;
-    use crate::identifiers::stubs::*;
+    use crate::identifiers::{ActorId, ExecAlgorithmId, StrategyId, stubs::*};
 
     #[rstest]
     fn test_string_reprs(component_risk_engine: ComponentId) {
         assert_eq!(component_risk_engine.as_str(), "RiskEngine");
         assert_eq!(format!("{component_risk_engine}"), "RiskEngine");
+    }
+
+    #[rstest]
+    fn test_from_actor_id() {
+        let component_id = ComponentId::from(ActorId::from("MyActor"));
+        assert_eq!(component_id, ComponentId::from("MyActor"));
+    }
+
+    #[rstest]
+    fn test_from_exec_algorithm_id() {
+        let component_id = ComponentId::from(ExecAlgorithmId::from("TWAP"));
+        assert_eq!(component_id, ComponentId::from("TWAP"));
+    }
+
+    #[rstest]
+    fn test_from_strategy_id() {
+        let component_id = ComponentId::from(StrategyId::from("EMACross-001"));
+        assert_eq!(component_id, ComponentId::from("EMACross-001"));
     }
 
     #[rstest]

@@ -317,7 +317,7 @@ impl Trader {
             anyhow::bail!("Actor {actor_id} is already registered");
         }
 
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = self.create_component_clock(component_id);
 
         let mut actor_mut = actor;
@@ -379,7 +379,7 @@ impl Trader {
         python_actor: &Py<PyAny>,
         actor_id: ActorId,
     ) -> anyhow::Result<()> {
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = self.create_component_clock(component_id);
         let trader_id = self.trader_id;
         let cache = self.cache.clone();
@@ -828,7 +828,7 @@ impl Trader {
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
         ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
 
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let component_id = ComponentId::from(strategy_id);
         let clock = self.create_component_clock(component_id);
         let trader_id = self.trader_id;
         let cache = self.cache.clone();
@@ -950,7 +950,7 @@ impl Trader {
                 .strategy_id())
         })?;
 
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let component_id = ComponentId::from(strategy_id);
         let clock = self.create_component_clock(component_id);
         let trader_id = self.trader_id;
         let cache = self.cache.clone();
@@ -1523,7 +1523,7 @@ impl Trader {
         for strategy_id in &self.strategy_ids {
             log::debug!("Disposing strategy {strategy_id}");
             dispose_component(&strategy_id.inner())?;
-            let component_id = ComponentId::new(strategy_id.inner().as_str());
+            let component_id = ComponentId::from(*strategy_id);
             if let Some(clock) = self.clocks.get(&component_id) {
                 clock.borrow_mut().cancel_timers();
             }
@@ -1563,7 +1563,7 @@ impl Trader {
             // misbehaving actor does not leave the rest in a half-cleared state.
             let _ = stop_component(&actor_id.inner());
             dispose_component(&actor_id.inner())?;
-            let component_id = ComponentId::new(actor_id.inner().as_str());
+            let component_id = ComponentId::from(*actor_id);
             if let Some(clock) = self.clocks.get(&component_id) {
                 clock.borrow_mut().cancel_timers();
             }
@@ -1588,7 +1588,7 @@ impl Trader {
             dispose_component(&exec_algorithm_id.inner())?;
             let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
             msgbus::deregister_any(endpoint.into());
-            let component_id = ComponentId::new(exec_algorithm_id.inner().as_str());
+            let component_id = ComponentId::from(exec_algorithm_id);
             if let Some(clock) = self.clocks.get(&component_id) {
                 clock.borrow_mut().cancel_timers();
             }
@@ -1651,7 +1651,7 @@ impl Trader {
 
         self.actor_ids.swap_remove(pos);
         self.actor_state_callbacks.remove(actor_id);
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(*actor_id);
         if let Some(clock) = self.clocks.get(&component_id) {
             clock.borrow_mut().cancel_timers();
         }
@@ -1778,7 +1778,7 @@ impl Trader {
         self.strategy_ids.swap_remove(pos);
         self.strategy_state_callbacks.remove(strategy_id);
         self.strategy_stop_fns.remove(strategy_id);
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let component_id = ComponentId::from(*strategy_id);
         if let Some(clock) = self.clocks.get(&component_id) {
             clock.borrow_mut().cancel_timers();
         }
@@ -1814,10 +1814,9 @@ impl Trader {
         }
 
         for (actor_id, callbacks) in actor_callbacks {
-            let component_id = ComponentId::new(actor_id.inner().as_str());
             let state = cache
                 .borrow()
-                .load_actor_state(&component_id)
+                .load_actor_state(&actor_id)
                 .map_err(|e| anyhow::anyhow!("Failed to load actor {actor_id} state: {e:#}"))?;
             let Some(state) = state.filter(|state| !state.is_empty()) else {
                 continue;
@@ -1872,8 +1871,7 @@ impl Trader {
         for (actor_id, callbacks) in actor_callbacks {
             match (callbacks.save)(actor_id.inner()) {
                 Ok(state) => {
-                    let component_id = ComponentId::new(actor_id.inner().as_str());
-                    if let Err(e) = cache.borrow().update_actor_state(&component_id, &state) {
+                    if let Err(e) = cache.borrow().update_actor_state(&actor_id, &state) {
                         errors.push(format!("actor {actor_id} persistence: {e:#}"));
                     }
                 }
@@ -3771,7 +3769,7 @@ class StateComponent:
                 b"python-strategy-loaded".to_vec(),
             )]);
             let (database, control) = TestCacheDatabaseControl::create();
-            control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+            control.set_actor_state(actor_id, &actor_load);
             control.set_strategy_state(strategy_id, &strategy_load);
 
             let (
@@ -3799,7 +3797,7 @@ class StateComponent:
                 ..Default::default()
             }));
             actor.set_python_instance(py_actor.clone_ref(py));
-            let actor_clock = trader.create_component_clock(ComponentId::from(actor_id.as_str()));
+            let actor_clock = trader.create_component_clock(ComponentId::from(actor_id));
             actor
                 .register(trader_id, actor_clock, cache.clone())
                 .unwrap();
@@ -3813,8 +3811,7 @@ class StateComponent:
                 ..Default::default()
             }));
             strategy.set_python_instance(py_strategy.clone_ref(py));
-            let strategy_clock =
-                trader.create_component_clock(ComponentId::from(strategy_id.as_str()));
+            let strategy_clock = trader.create_component_clock(ComponentId::from(strategy_id));
             strategy
                 .register(trader_id, strategy_clock, cache, portfolio)
                 .unwrap();
@@ -3864,10 +3861,7 @@ class StateComponent:
             );
             assert_eq!(actor_calls, vec!["on_load", "on_save"]);
             assert_eq!(strategy_calls, vec!["on_load", "on_save"]);
-            assert_eq!(
-                control.actor_state(&ComponentId::from(actor_id.as_str())),
-                Some(actor_save)
-            );
+            assert_eq!(control.actor_state(&actor_id), Some(actor_save));
             assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
         });
     }

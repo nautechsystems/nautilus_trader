@@ -66,7 +66,7 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
@@ -1529,8 +1529,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        let key = format!("{ACTORS}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        let key = format!("{ACTORS}{REDIS_DELIMITER}{actor_id}{REDIS_DELIMITER}state");
         self.load_state(key)
     }
 
@@ -1723,8 +1723,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()> {
-        let key = format!("{ACTORS}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+    fn delete_actor(&self, actor_id: &ActorId) -> anyhow::Result<()> {
+        let key = format!("{ACTORS}{REDIS_DELIMITER}{actor_id}{REDIS_DELIMITER}state");
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
         self.database
             .tx
@@ -1859,10 +1859,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn update_actor(
         &self,
-        component_id: &ComponentId,
+        actor_id: &ActorId,
         state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        let key = format!("{ACTORS}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+        let key = format!("{ACTORS}{REDIS_DELIMITER}{actor_id}{REDIS_DELIMITER}state");
         self.update_state(key, state)
     }
 

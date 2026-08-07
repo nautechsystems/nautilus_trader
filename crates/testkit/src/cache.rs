@@ -33,7 +33,7 @@ use nautilus_model::{
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -50,7 +50,7 @@ use ustr::Ustr;
 )]
 #[derive(Debug, Default)]
 struct TestCacheDatabaseState {
-    actors: AHashMap<ComponentId, AHashMap<String, Bytes>>,
+    actors: AHashMap<ActorId, AHashMap<String, Bytes>>,
     strategies: AHashMap<StrategyId, AHashMap<String, Bytes>>,
     events: Vec<String>,
     fail_load_actor: bool,
@@ -94,12 +94,12 @@ impl TestCacheDatabaseControl {
     }
 
     /// Seeds actor state for a later load.
-    pub fn set_actor_state(&self, component_id: ComponentId, state: &IndexMap<String, Vec<u8>>) {
+    pub fn set_actor_state(&self, actor_id: ActorId, state: &IndexMap<String, Vec<u8>>) {
         self.state
             .lock()
             .unwrap()
             .actors
-            .insert(component_id, encode_state(state));
+            .insert(actor_id, encode_state(state));
     }
 
     /// Seeds strategy state for a later load.
@@ -113,12 +113,12 @@ impl TestCacheDatabaseControl {
 
     /// Returns persisted actor state.
     #[must_use]
-    pub fn actor_state(&self, component_id: &ComponentId) -> Option<IndexMap<String, Vec<u8>>> {
+    pub fn actor_state(&self, actor_id: &ActorId) -> Option<IndexMap<String, Vec<u8>>> {
         self.state
             .lock()
             .unwrap()
             .actors
-            .get(component_id)
+            .get(actor_id)
             .cloned()
             .map(decode_state)
     }
@@ -246,13 +246,13 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(None)
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        self.control.record(format!("actor.load:{component_id}"));
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        self.control.record(format!("actor.load:{actor_id}"));
         let state = self.control.state.lock().unwrap();
         if state.fail_load_actor {
             anyhow::bail!("test actor load failure");
         }
-        Ok(state.actors.get(component_id).cloned().unwrap_or_default())
+        Ok(state.actors.get(actor_id).cloned().unwrap_or_default())
     }
 
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
@@ -381,7 +381,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(())
     }
 
-    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+    fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -419,15 +419,15 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
 
     fn update_actor(
         &self,
-        component_id: &ComponentId,
+        actor_id: &ActorId,
         actor_state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        self.control.record(format!("actor.update:{component_id}"));
+        self.control.record(format!("actor.update:{actor_id}"));
         let mut state = self.control.state.lock().unwrap();
         if state.fail_update_actor {
             anyhow::bail!("test actor update failure");
         }
-        state.actors.insert(*component_id, actor_state.clone());
+        state.actors.insert(*actor_id, actor_state.clone());
         Ok(())
     }
 

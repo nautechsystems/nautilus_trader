@@ -392,7 +392,7 @@ impl LiveNode {
         // inside a `Python::attach` block, hence the separate phases.
         let trader_id = self.kernel().trader_id();
         let cache = self.kernel().cache();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = self
             .kernel_mut()
             .trader
@@ -647,7 +647,7 @@ impl LiveNode {
         let trader_id = self.kernel().trader_id();
         let cache = self.kernel().cache();
         let portfolio = self.kernel().portfolio.clone();
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let component_id = ComponentId::from(strategy_id);
         let clock = self
             .kernel_mut()
             .trader
@@ -906,7 +906,7 @@ impl LiveNode {
         // inside a `Python::attach` block, hence the separate phases.
         let trader_id = self.kernel().trader_id();
         let cache = self.kernel().cache();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let component_id = ComponentId::from(actor_id);
         let clock = self
             .kernel_mut()
             .trader

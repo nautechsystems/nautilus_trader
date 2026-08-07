@@ -2659,7 +2659,7 @@ where
     T: DataActor + DataActorNative + Debug + 'static,
 {
     fn component_id(&self) -> ComponentId {
-        ComponentId::new(self.core().actor_id.inner().as_str())
+        ComponentId::from(self.core().actor_id)
     }
 
     fn state(&self) -> ComponentState {
