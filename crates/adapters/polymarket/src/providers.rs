@@ -215,46 +215,67 @@ impl PolymarketInstrumentProvider {
         Ok(())
     }
 
+    /// Loads instruments for the given Gamma series IDs additively into the store.
+    ///
+    /// Resolves each series to its active, unresolved events and loads their
+    /// markets. Unlike [`Self::load_all`], this does **not** clear existing
+    /// instruments or mark the store as initialized.
+    pub async fn load_by_series_ids(&mut self, series_ids: Vec<u64>) -> anyhow::Result<()> {
+        let instruments = self
+            .http_client
+            .request_instruments_by_event_params(series_events_params(series_ids))
+            .await?;
+        self.add_instruments(instruments);
+        Ok(())
+    }
+
     /// Initializes the provider using its configured bootstrap scope.
     pub async fn initialize(&mut self, reload: bool) -> anyhow::Result<()> {
         if self.store.is_initialized() && !reload {
             return Ok(());
         }
 
-        if self.config.should_load_all() {
-            self.load_scoped_all().await?;
-            self.store.set_initialized();
+        let should_load_all = self.config.should_load_all();
+        let has_load_ids = self.config.has_load_ids();
+
+        if !should_load_all && !has_load_ids {
+            if self.config.log_warnings {
+                log::warn!(
+                    "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, instrument_config.event_slugs, instrument_config.market_slugs, instrument_config.event_slug_builder, or instrument_config.series_ids"
+                );
+            }
             return Ok(());
         }
 
-        if self.config.has_load_ids() {
-            let load_ids = self.config.load_ids.clone().unwrap_or_default();
-            let filters = self.config.filters.clone();
-            self.load_ids(&load_ids, filters.as_ref()).await?;
-            self.store.set_initialized();
-            return Ok(());
-        }
-
-        if self.config.log_warnings {
+        // Registered `InstrumentFilter`s take precedence over the Gamma filter map,
+        // so say when the map is being dropped rather than ignoring it silently.
+        if self.config.log_warnings
+            && !self.filters.is_empty()
+            && self.config.has_nonempty_filters()
+        {
             log::warn!(
-                "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, instrument_config.event_slugs, instrument_config.market_slugs, or instrument_config.event_slug_builder"
+                "Registered instrument filters take precedence: instrument_config.filters is ignored for this bootstrap"
             );
         }
+
+        if should_load_all {
+            self.load_scoped_all().await?;
+        }
+
+        if has_load_ids {
+            // Deliberately not passed `config.filters`: `load_ids` names instruments
+            // explicitly, so intersecting it with the filter map would silently drop
+            // any ID that falls outside those filters. The scopes are additive, and
+            // an explicitly requested instrument is requested unconditionally.
+            let load_ids = self.config.load_ids.clone().unwrap_or_default();
+            self.load_ids(&load_ids, None).await?;
+        }
+
+        self.store.set_initialized();
         Ok(())
     }
 
     async fn load_scoped_all(&mut self) -> anyhow::Result<()> {
-        let has_explicit_slug_scope = self.config.event_slug_builder.is_some()
-            || self
-                .config
-                .event_slugs
-                .as_ref()
-                .is_some_and(|slugs| !slugs.is_empty())
-            || self
-                .config
-                .market_slugs
-                .as_ref()
-                .is_some_and(|slugs| !slugs.is_empty());
         let event_slugs = self.resolve_event_slugs()?;
         let market_slugs = self
             .config
@@ -264,6 +285,33 @@ impl PolymarketInstrumentProvider {
             .into_iter()
             .filter(|slug| !slug.trim().is_empty())
             .collect::<Vec<_>>();
+        let series_ids = self.config.series_ids.clone().unwrap_or_default();
+
+        // The clearing bulk load must run before the additive scoped loads.
+        // Explicit scoping never broadens into an unfiltered full-universe fetch,
+        // but every filter-driven query is bounded, so it composes with explicit
+        // scopes instead of being silently dropped. Registered `InstrumentFilter`s
+        // count here just as the Gamma filter map does, otherwise this path would
+        // drop them while `fetch_configured_instruments` keeps them, and the
+        // bootstrap and interval-refresh universes would diverge.
+        //
+        // This deliberately does not go through `load_all`, which marks the store
+        // initialized on completion. The additive scopes below are still
+        // outstanding at this point, and a failure in one of them would otherwise
+        // leave an initialized-but-incomplete store that makes a subsequent
+        // `initialize(false)` short-circuit and skip the missing scopes for good.
+        if !self.config.has_explicit_scope()
+            || self.config.has_nonempty_filters()
+            || !self.filters.is_empty()
+        {
+            let filters = self.config.filters.clone();
+            let instruments = self.fetch_bulk_instruments(filters.as_ref()).await?;
+            self.replace_instruments(instruments);
+        }
+
+        if !series_ids.is_empty() {
+            self.load_by_series_ids(series_ids).await?;
+        }
 
         if !event_slugs.is_empty() {
             self.load_by_event_slugs(event_slugs).await?;
@@ -273,12 +321,7 @@ impl PolymarketInstrumentProvider {
             self.load_by_slugs(market_slugs).await?;
         }
 
-        if has_explicit_slug_scope {
-            return Ok(());
-        }
-
-        let filters = self.config.filters.clone();
-        self.load_all(filters.as_ref()).await
+        Ok(())
     }
 
     fn resolve_event_slugs(&self) -> anyhow::Result<Vec<String>> {
@@ -300,6 +343,38 @@ impl PolymarketInstrumentProvider {
     /// each filter's methods that return `Some`.
     async fn load_filtered(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         fetch_instruments(&self.http_client, &self.filters).await
+    }
+
+    /// Fetches the bulk instrument universe without mutating provider state.
+    ///
+    /// Registered [`InstrumentFilter`]s take precedence; otherwise a non-empty
+    /// Gamma filter map bounds the query, and an absent or empty map falls back
+    /// to the full universe.
+    async fn fetch_bulk_instruments(
+        &self,
+        filters: Option<&HashMap<String, String>>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        if !self.filters.is_empty() {
+            return self.load_filtered().await;
+        }
+
+        match filters {
+            Some(map) if !map.is_empty() => {
+                let params = build_gamma_params_from_hashmap(map)?;
+                self.http_client.request_instruments_by_params(params).await
+            }
+            _ => self.http_client.request_instruments().await,
+        }
+    }
+
+    /// Replaces the store contents, leaving the initialized flag untouched.
+    ///
+    /// Callers that complete a full bootstrap are responsible for marking the
+    /// store initialized once every scope has succeeded.
+    fn replace_instruments(&mut self, instruments: Vec<InstrumentAny>) {
+        self.store.clear();
+        self.token_index.clear();
+        self.add_instruments(instruments);
     }
 }
 
@@ -375,15 +450,7 @@ pub async fn fetch_configured_instruments(
     let mut instruments = Vec::new();
 
     if config.should_load_all() {
-        let has_explicit_slug_scope = config.event_slug_builder.is_some()
-            || config
-                .event_slugs
-                .as_ref()
-                .is_some_and(|slugs| !slugs.is_empty())
-            || config
-                .market_slugs
-                .as_ref()
-                .is_some_and(|slugs| !slugs.is_empty());
+        let has_explicit_scope = config.has_explicit_scope();
         let event_slugs = if let Some(builder) = config.event_slug_builder.as_ref() {
             builder.build_event_slugs()?
         } else {
@@ -404,6 +471,30 @@ pub async fn fetch_configured_instruments(
             .filter(|slug| !slug.trim().is_empty())
             .collect::<Vec<_>>();
 
+        let series_ids = config.series_ids.clone().unwrap_or_default();
+
+        // Explicit scoping never broadens into an unfiltered full-universe
+        // fetch, but every filter-driven query is bounded, so it composes with
+        // explicit series and slug scopes instead of being silently dropped.
+        // This mirrors `load_scoped_all`, which the interval refresh and
+        // `request_instruments` paths must stay consistent with.
+        if !filters.is_empty() {
+            instruments.extend(fetch_instruments(http_client, filters).await?);
+        } else if let Some(map) = config.filters.as_ref().filter(|map| !map.is_empty()) {
+            let params = build_gamma_params_from_hashmap(map)?;
+            instruments.extend(http_client.request_instruments_by_params(params).await?);
+        } else if !has_explicit_scope {
+            instruments.extend(http_client.request_instruments().await?);
+        }
+
+        if !series_ids.is_empty() {
+            instruments.extend(
+                http_client
+                    .request_instruments_by_event_params(series_events_params(series_ids))
+                    .await?,
+            );
+        }
+
         if !event_slugs.is_empty() {
             instruments.extend(
                 http_client
@@ -419,31 +510,13 @@ pub async fn fetch_configured_instruments(
                     .await?,
             );
         }
+    }
 
-        if has_explicit_slug_scope {
-            // Explicit slug scoping should never broaden into a full-universe fetch.
-        } else if filters.is_empty() {
-            if let Some(map) = config.filters.as_ref() {
-                if map.is_empty() {
-                    instruments.extend(http_client.request_instruments().await?);
-                } else {
-                    let params = build_gamma_params_from_hashmap(map)?;
-                    instruments.extend(http_client.request_instruments_by_params(params).await?);
-                }
-            } else {
-                instruments.extend(http_client.request_instruments().await?);
-            }
-        } else {
-            instruments.extend(fetch_instruments(http_client, filters).await?);
-        }
-    } else if config.has_load_ids() {
-        let base_params = config
-            .filters
-            .as_ref()
-            .map(build_gamma_params_from_hashmap)
-            .transpose()?
-            .unwrap_or_default();
-
+    if config.has_load_ids() {
+        // Queried by condition ID alone. Merging `config.filters` in here would
+        // intersect an explicit scope with a filter scope, so an ID outside those
+        // filters would never load despite being named directly. Mirrors the
+        // `load_ids` call in `initialize`.
         let condition_ids = config
             .load_ids
             .clone()
@@ -457,16 +530,32 @@ pub async fn fetch_configured_instruments(
         for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
             let params = GetGammaMarketsParams {
                 condition_ids: Some(chunk.to_vec()),
-                ..base_params.clone()
+                ..Default::default()
             };
             instruments.extend(http_client.request_instruments_by_params(params).await?);
         }
     }
 
+    // Deduplicated but NOT filtered by `accept` here. `fetch_instruments` already
+    // applies acceptance to the results of filter-driven queries, which is the only
+    // place it belongs: applying it again across the whole collection would let a
+    // registered filter reject series, slug, and ID instruments that the provider's
+    // `load_scoped_all` adds unconditionally, so a refresh would silently drop
+    // instruments the bootstrap had loaded.
     let mut seen = AHashSet::new();
     instruments.retain(|inst| seen.insert(inst.id()));
-    instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
     Ok(instruments)
+}
+
+/// Builds the Gamma events query that resolves series IDs to their active,
+/// unresolved events.
+fn series_events_params(series_ids: Vec<u64>) -> GetGammaEventsParams {
+    GetGammaEventsParams {
+        series_id: Some(series_ids),
+        active: Some(true),
+        closed: Some(false),
+        ..Default::default()
+    }
 }
 
 /// Extracts the condition ID from an instrument symbol.
@@ -936,27 +1025,8 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
     }
 
     async fn load_all(&mut self, filters: Option<&HashMap<String, String>>) -> anyhow::Result<()> {
-        let instruments = if self.filters.is_empty() {
-            // If HashMap filters are provided, convert to Gamma params
-            if let Some(map) = filters {
-                if map.is_empty() {
-                    self.http_client.request_instruments().await?
-                } else {
-                    let params = build_gamma_params_from_hashmap(map)?;
-                    self.http_client
-                        .request_instruments_by_params(params)
-                        .await?
-                }
-            } else {
-                self.http_client.request_instruments().await?
-            }
-        } else {
-            self.load_filtered().await?
-        };
-
-        self.store.clear();
-        self.token_index.clear();
-        self.add_instruments(instruments);
+        let instruments = self.fetch_bulk_instruments(filters).await?;
+        self.replace_instruments(instruments);
         self.store.set_initialized();
 
         Ok(())
@@ -1034,8 +1104,12 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
             }
         }
 
-        // Fallback: full load_all if not initialized
-        if !self.store.is_initialized() {
+        // Fallback: full load_all if not initialized. A provider with an explicit
+        // scope is excluded: `load_all` would broaden it into the full-universe
+        // fetch that scoping exists to avoid, and would also clear the partially
+        // loaded store and mark it initialized, making a later `initialize(false)`
+        // skip the scopes it still owes after a failed bootstrap.
+        if !self.store.is_initialized() && !self.config.has_explicit_scope() {
             self.load_all(filters).await?;
         }
 

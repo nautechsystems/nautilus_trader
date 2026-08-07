@@ -752,8 +752,19 @@ demand so that strategies can subscribe to markets that are not in the cache:
 
 The feature is enabled by default. Disable it by setting `auto_load_missing_instruments=False` on
 `PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
-`load_ids`, `event_slugs`, `market_slugs`, or `event_slug_builder` on
+`load_ids`, `event_slugs`, `market_slugs`, `event_slug_builder`, or `series_ids` on
 `PolymarketInstrumentProviderConfig`.
+
+These scopes compose rather than override each other: filter-driven queries run alongside any
+explicit slug or series scope, and `load_ids` loads additively on top. Only the unfiltered
+full-universe fetch is suppressed once an explicit scope is present. The same composition applies
+to the periodic refresh driven by `update_instruments_interval_mins`, so a scope configured at
+startup keeps refreshing for the life of the client, and the bootstrap and refresh universes
+match.
+
+Filters come in two forms: the `filters` map on `PolymarketInstrumentProviderConfig`, and Rust
+`InstrumentFilter`s registered on the client. Registered filters take precedence: when both are
+present the `filters` map is ignored and the provider logs a warning.
 
 Newly-minted markets pass through a CLOB hydration window of several minutes during which Gamma
 reports `active=true` but `GET /markets/{cid}` returns either a 404 or a 200 with empty
@@ -1096,6 +1107,7 @@ Pass `PolymarketInstrumentProviderConfig` as `instrument_config` on the data cli
 | `event_slugs`        | `None`  | Resolve all markets for the listed events at bootstrap. |
 | `market_slugs`       | `None`  | Load the listed Gamma market slugs at bootstrap.        |
 | `event_slug_builder` | `None`  | Rust‑backed Up/Down event‑slug generator.               |
+| `series_ids`         | `None`  | Load markets for the listed Gamma series at bootstrap.  |
 | `log_warnings`       | `true`  | Emit provider warnings.                                 |
 | `use_gamma_markets`  | `false` | Reserved compatibility field with no additional effect. |
 
@@ -1169,9 +1181,30 @@ instrument_config = PolymarketInstrumentProviderConfig(
 )
 ```
 
-For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, or add a Rust
-filter or builder. The adapter rejects Python callable `event_slug_builder` values so adapter
-operations do not cross into Python during live trading.
+For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, scope by
+`series_ids`, or add a Rust filter or builder. The adapter rejects Python callable
+`event_slug_builder` values so adapter operations do not cross into Python during live trading.
+
+#### Series IDs
+
+A Gamma *series* groups a recurring market family, such as the 5-minute Up/Down crypto intervals or
+a daily weather market. Scoping by `series_ids` loads the markets of every active, unresolved event
+in those series, which avoids reconstructing slugs client-side as each interval rolls over:
+
+```python
+from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
+
+instrument_config = PolymarketInstrumentProviderConfig(
+    series_ids=[10684, 10192],
+)
+```
+
+The provider resolves each series through the Gamma events endpoint with `active=true` and
+`closed=false`, then loads the markets of the matching events. Because the query is re-evaluated on
+every refresh, pairing `series_ids` with `update_instruments_interval_mins` on the data client keeps
+a rolling family of markets current without any slug arithmetic.
+
+Find the series ID for a market family in the `series` field of its Gamma event payload.
 
 ## Python discovery and historical data
 

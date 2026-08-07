@@ -79,7 +79,7 @@ impl PolymarketInstrumentProviderConfig {
     /// This mirrors the Python adapter's `instrument_config` layering so scoped
     /// market bootstrap can migrate naturally to the Rust/pyO3 live path.
     #[new]
-    #[pyo3(signature = (load_all=None, load_ids=None, filters=None, event_slugs=None, market_slugs=None, event_slug_builder=None, log_warnings=None, use_gamma_markets=None))]
+    #[pyo3(signature = (load_all=None, load_ids=None, filters=None, event_slugs=None, market_slugs=None, event_slug_builder=None, log_warnings=None, use_gamma_markets=None, series_ids=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         load_all: Option<bool>,
@@ -90,6 +90,7 @@ impl PolymarketInstrumentProviderConfig {
         event_slug_builder: Option<PolymarketUpDownEventSlugConfig>,
         log_warnings: Option<bool>,
         use_gamma_markets: Option<bool>,
+        series_ids: Option<Vec<u64>>,
     ) -> PyResult<Self> {
         let default = Self::default();
         let config = Self {
@@ -99,6 +100,7 @@ impl PolymarketInstrumentProviderConfig {
             event_slugs,
             market_slugs,
             event_slug_builder,
+            series_ids,
             log_warnings: log_warnings.unwrap_or(default.log_warnings),
             use_gamma_markets: use_gamma_markets.unwrap_or(default.use_gamma_markets),
         };
