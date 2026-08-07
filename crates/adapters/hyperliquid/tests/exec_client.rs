@@ -2215,9 +2215,9 @@ fn make_limit_order(id: &str) -> OrderAny {
 async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     // When the exchange accepts the request envelope but rejects the
     // individual order via `statuses[0].error`, the submit-order spawn task
-    // must run `cleanup_terminal` on the dispatch state so the identity
+    // must run `cleanup_terminal` on the dispatch state so the context
     // registered at submission time is not left behind. A regression here
-    // would leak an order identity per failed submission in long-running
+    // would leak an order context per failed submission in long-running
     // sessions.
     //
     // The top-level `status="err"` envelope (`reject_next_order`) is
@@ -2227,7 +2227,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     let state = TestServerState::default();
     state.inner_order_error_next.store(true, Ordering::Relaxed);
     // Hold the exchange response so the spawned submit task stays parked in
-    // `post_action_exec` while we assert the identity was registered. Without
+    // `post_action_exec` while we assert the context was registered. Without
     // the gate the rejection path can run `cleanup_terminal` before the
     // assertion observes the registration, racing the spawn task.
     state.pause_next_exchange.store(true, Ordering::Relaxed);
@@ -2248,9 +2248,9 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     assert!(
         client
             .ws_dispatch_state()
-            .lookup_identity(&order.client_order_id())
+            .lookup_context(&order.client_order_id())
             .is_none(),
-        "identity should not be registered before submit",
+        "context should not be registered before submit",
     );
 
     let cmd = SubmitOrder::from_order(
@@ -2266,7 +2266,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
 
     // Wait until the mock has received the submit, proving the spawned task is
     // parked at the post await behind the pause. The rejection/cleanup cannot
-    // have run yet, so the identity registered synchronously inside
+    // have run yet, so the context registered synchronously inside
     // `submit_order` is deterministically still present here.
     wait_until_async(
         move || {
@@ -2280,13 +2280,13 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     assert!(
         client
             .ws_dispatch_state()
-            .lookup_identity(&order.client_order_id())
+            .lookup_context(&order.client_order_id())
             .is_some(),
-        "identity should be registered immediately on submit",
+        "context should be registered immediately on submit",
     );
 
     // Release the held response: the spawn task processes the inner error and
-    // invokes `cleanup_terminal`. Poll until the identity is gone.
+    // invokes `cleanup_terminal`. Poll until the context is gone.
     pause_release.notify_one();
 
     let dispatch = client.ws_dispatch_state().clone();
@@ -2294,7 +2294,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     wait_until_async(
         move || {
             let dispatch = dispatch.clone();
-            async move { dispatch.lookup_identity(&cid).is_none() }
+            async move { dispatch.lookup_context(&cid).is_none() }
         },
         Duration::from_secs(5),
     )
@@ -5375,7 +5375,7 @@ async fn test_submit_order_list_per_order_inner_error_rejects_only_failing() {
     // Two-order list where the venue returns one status per order: the first
     // is a success and the second carries an inline `error`. The execution
     // client must emit OrderRejected for the failing entry only and leave
-    // the successful order's identity in place.
+    // the successful order's context in place.
     let state = TestServerState::default();
     *state.order_response_override.lock().await = Some(json!({
         "status": "ok",
@@ -5458,14 +5458,14 @@ async fn test_submit_order_list_per_order_inner_error_rejects_only_failing() {
         rejected[0].1,
     );
 
-    // Successful leg keeps its identity; failed leg is cleaned up.
+    // Successful leg keeps its context; failed leg is cleaned up.
     assert!(
-        client.ws_dispatch_state().lookup_identity(&cid_a).is_some(),
-        "successful order identity must remain",
+        client.ws_dispatch_state().lookup_context(&cid_a).is_some(),
+        "successful order context must remain",
     );
     assert!(
-        client.ws_dispatch_state().lookup_identity(&cid_b).is_none(),
-        "failed order identity must be cleaned up",
+        client.ws_dispatch_state().lookup_context(&cid_b).is_none(),
+        "failed order context must be cleaned up",
     );
 
     client.disconnect().await.unwrap();
@@ -5537,8 +5537,8 @@ async fn test_submit_order_list_single_inner_error_rejects_entire_batch() {
             .iter()
             .all(|(_, reason)| reason == "Order rejected: insufficient margin")
     );
-    assert!(client.ws_dispatch_state().lookup_identity(&cid_a).is_none());
-    assert!(client.ws_dispatch_state().lookup_identity(&cid_b).is_none());
+    assert!(client.ws_dispatch_state().lookup_context(&cid_a).is_none());
+    assert!(client.ws_dispatch_state().lookup_context(&cid_b).is_none());
 
     client.disconnect().await.unwrap();
 }
@@ -5706,19 +5706,9 @@ async fn test_submit_order_list_normal_tpsl_stages_children_until_parent_fill() 
         wire_orders[0]["c"],
         Cloid::from_client_order_id(cid_p).to_hex()
     );
-    assert!(client.ws_dispatch_state().lookup_identity(&cid_p).is_some());
-    assert!(
-        client
-            .ws_dispatch_state()
-            .lookup_identity(&cid_tp)
-            .is_none()
-    );
-    assert!(
-        client
-            .ws_dispatch_state()
-            .lookup_identity(&cid_sl)
-            .is_none()
-    );
+    assert!(client.ws_dispatch_state().lookup_context(&cid_p).is_some());
+    assert!(client.ws_dispatch_state().lookup_context(&cid_tp).is_none());
+    assert!(client.ws_dispatch_state().lookup_context(&cid_sl).is_none());
 
     client.disconnect().await.unwrap();
 }

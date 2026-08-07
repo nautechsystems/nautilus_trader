@@ -72,7 +72,7 @@ construction.
 ## Dispatch (`exec.rs`)
 
 Venue report (`FillReport`, `OrderStatusReport`) -> events emitted via
-`ExecutionEventEmitter`. Covers dedup + identity lookup + event construction.
+`ExecutionEventEmitter`. Covers dedup + context lookup + event construction.
 
 Note: these numbers include per-iteration `WsDispatchState` construction +
 drop, which is a bench-only artifact. In production, state lives forever and

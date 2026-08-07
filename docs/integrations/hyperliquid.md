@@ -974,8 +974,8 @@ The Rust-native `HyperliquidExecutionClient` (used through
 `HyperliquidExecutionClientFactory`) runs detection, deduplication, and event promotion on the
 Rust side via the
 [`WsDispatchState`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/hyperliquid/src/websocket/dispatch.rs)
-owned by the execution client. On submission the client registers an `OrderIdentity` (strategy,
-instrument, side, type, quantity, last-known price) keyed by `client_order_id`. Each inbound
+owned by the execution client. On submission the client registers an `OrderContext` keyed by
+`client_order_id`, using its strategy, instrument, side, type, quantity, and last-known price. Each inbound
 status report or fill is routed through the dispatch: tracked orders emit typed
 `OrderEventAny::*` events via `ExecutionEventEmitter::send_order_event`; external orders fall
 back to the raw `OrderStatusReport` / `FillReport` so the engine can reconcile. The dispatch
