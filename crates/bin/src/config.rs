@@ -16,6 +16,7 @@
 use anyhow::{Context, Result};
 use nautilus_common::enums::Environment;
 use nautilus_model::types::Quantity;
+use rust_decimal::Decimal;
 use serde::{de, Deserialize, Deserializer};
 use std::path::Path;
 use std::str::FromStr;
@@ -63,6 +64,10 @@ pub struct MattiasMarketMakerTomlConfig {
     pub Q_max: Quantity,
     pub Φ_0: Quantity,
     pub Φ_n: u8,
+    pub Δ_0: Decimal,
+    pub Δ_μ: Decimal,
+    pub β: Decimal,
+    
     /// execution environment. possible values are live and backtest
     #[serde(deserialize_with = "deserialize_environment")]
     pub execution_environment: Environment

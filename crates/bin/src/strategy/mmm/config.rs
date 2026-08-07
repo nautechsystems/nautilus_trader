@@ -1,6 +1,9 @@
-use nautilus_model::{identifiers::{InstrumentId, StrategyId}, types::Quantity};
+use nautilus_model::{
+    identifiers::{InstrumentId, StrategyId},
+    types::Quantity,
+};
 use nautilus_trading::StrategyConfig;
-
+use rust_decimal::Decimal;
 
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, bon::Builder)]
@@ -16,5 +19,8 @@ pub struct MattiasMarketMakerConfig {
 
     pub Φ_n: u8,
     pub Φ_0: Quantity,
-    pub Q_max: Quantity
+    pub Q_max: Quantity,
+    pub Δ_0: Decimal,
+    pub Δ_μ: Decimal,
+    pub β: Decimal,
 }

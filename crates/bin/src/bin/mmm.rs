@@ -28,6 +28,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load("/etc/nautilus-trader/config.toml".to_string())?
         .mmm
         .unwrap();
+
+    log::info!("{config:#?}");
+
     let parquet_path = config.path.clone();
 
     let exchange: Exchange = config.exchange.parse()?;
@@ -42,6 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .Φ_n(config.Φ_n)
         .Φ_0(config.Φ_0)
         .Q_max(config.Q_max)
+        .Δ_μ(config.Δ_μ)
+        .Δ_0(config.Δ_0)
+        .β(config.β)
         .build();
 
     let strategy = MattiasMarketMaker::new(&mmm_config);
