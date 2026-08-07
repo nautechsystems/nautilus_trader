@@ -23,7 +23,7 @@ use nautilus_core::python::{
 };
 use nautilus_model::{
     data::{BarType, Data},
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{BookType, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     orders::OrderAny,
     python::{
@@ -741,7 +741,7 @@ impl HyperliquidWebSocketClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        _book_type: u8,
+        _book_type: BookType,
         _depth: u64,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -777,7 +777,7 @@ impl HyperliquidWebSocketClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        _book_type: u8,
+        _book_type: BookType,
         _depth: u64,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

@@ -223,6 +223,31 @@ class TestInstrumentProvider:
             taker_fee=Decimal("0.000180"),
         )
 
+    @staticmethod
+    def xbtusd_bitmex() -> CryptoPerpetual:
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BITMEX")),
+            raw_symbol=Symbol("XBTUSD"),
+            base_currency=Currency.from_str("BTC"),
+            quote_currency=Currency.from_str("USD"),
+            settlement_currency=Currency.from_str("BTC"),
+            is_inverse=True,
+            price_precision=1,
+            size_precision=0,
+            price_increment=Price.from_str("0.5"),
+            size_increment=Quantity.from_str("1"),
+            ts_event=0,
+            ts_init=0,
+            max_notional=Money(10_000_000.00, Currency.from_str("USD")),
+            min_notional=Money(1.00, Currency.from_str("USD")),
+            max_price=Price.from_str("10000000"),
+            min_price=Price.from_str("0.01"),
+            margin_init=Decimal("0.01"),
+            margin_maint=Decimal("0.0035"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+        )
+
 
 class TestDataProvider:
     """

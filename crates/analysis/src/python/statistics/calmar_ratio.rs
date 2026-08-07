@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 
+use nautilus_model::position::Position;
 use pyo3::prelude::*;
 
 use super::transform_returns;
@@ -60,7 +61,7 @@ impl CalmarRatio {
     }
 
     #[pyo3(name = "calculate_from_positions")]
-    fn py_calculate_from_positions(&self, _positions: Vec<Py<PyAny>>) -> Option<f64> {
+    fn py_calculate_from_positions(&self, _positions: Vec<Position>) -> Option<f64> {
         None
     }
 

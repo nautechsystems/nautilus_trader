@@ -549,19 +549,4 @@ mod tests {
         assert_eq!(trade.size, Quantity::from("1.00000000"));
         assert_eq!(trade.trade_id, TradeId::from("123456789"));
     }
-
-    #[cfg(feature = "python")]
-    #[rstest]
-    fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
-        use pyo3::{IntoPyObjectExt, Python};
-
-        let trade = stub_trade_ethusdt_buyer;
-
-        Python::initialize();
-        Python::attach(|py| {
-            let tick_pyobject = trade.into_py_any(py).unwrap();
-            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, trade);
-        });
-    }
 }

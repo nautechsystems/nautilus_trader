@@ -239,8 +239,7 @@ example in `crates/backtest/examples/`.
 The option chain system is event-driven and built around per-series isolation. The
 `DataEngine` creates one Rust `OptionChainManager` per subscribed option series. The
 manager wraps `OptionChainAggregator` and `AtmTracker`, registers message bus handlers,
-publishes snapshots, and queues wire subscription changes for the engine to drain. A
-separate PyO3 `OptionChainManager` exposes the same aggregation core to Python.
+publishes snapshots, and queues wire subscription changes for the engine to drain.
 
 ```mermaid
 flowchart TD
@@ -287,9 +286,8 @@ expire, it tears down the manager, cancels the timer, and unsubscribes wire-leve
 A per-series Rust manager around `OptionChainAggregator` and `AtmTracker`. The
 `DataEngine` feeds it market data through `handle_quote()` and `handle_greeks()`.
 In snapshot mode, timer callbacks call `publish_slice()`. In raw mode, each active
-quote or Greeks update calls `publish_slice()` immediately. The Python-facing manager
-has `handle_*` methods that return whether the first ATM price bootstrapped the active
-instrument set; the Rust manager performs that bootstrap internally.
+quote or Greeks update calls `publish_slice()` immediately. The manager bootstraps the
+active instrument set internally on the first ATM price.
 
 #### OptionChainAggregator
 

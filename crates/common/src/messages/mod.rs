@@ -48,7 +48,8 @@ pub use execution::ExecutionReport;
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
-    Instrument(InstrumentAny), // TODO: Eventually this can be `Data` once Cython is gone
+    // Kept separate from `Data` pending the decision on generic dispatch versus this routing enum
+    Instrument(InstrumentAny),
     FundingRate(FundingRateUpdate),
     InstrumentStatus(InstrumentStatus),
     OptionGreeks(OptionGreeks),

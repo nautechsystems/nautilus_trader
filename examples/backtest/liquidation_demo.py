@@ -28,23 +28,59 @@ import sys
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import ImportableStrategyConfig as _ISC
 from nautilus_trader.model import AccountType
-from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import Venue
 from nautilus_trader.testkit.providers import TestInstrumentProvider
+from nautilus_trader.trading import Strategy
 
 
 BTC = Currency.from_str("BTC")
 BITMEX = Venue("BITMEX")
-_xbtusd_cython = TestInstrumentProvider.xbtusd_bitmex()
-XBTUSD = CryptoPerpetual.from_dict(_xbtusd_cython.to_dict(_xbtusd_cython))
+XBTUSD = TestInstrumentProvider.xbtusd_bitmex()
+
+
+class MarketBuyOnStart(Strategy):
+    """
+    Submits a single market BUY on the first quote, then holds the position.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        # `Strategy` is a pyo3 type whose `__new__` accepts only `config`, so the
+        # subclass arguments must not reach it.
+        return super().__new__(cls)
+
+    def __init__(self, instrument_id: InstrumentId, trade_size: Quantity):
+        super().__init__()
+        self._instrument_id = instrument_id
+        self._trade_size = trade_size
+        self._submitted = False
+
+    def on_start(self):
+        self.subscribe_quotes(self._instrument_id)
+
+    def on_quote(self, quote: QuoteTick):
+        if self._submitted:
+            return
+
+        self._submitted = True
+        self.submit_order(
+            self.order_factory.market(
+                instrument_id=self._instrument_id,
+                order_side=OrderSide.BUY,
+                quantity=self._trade_size,
+                time_in_force=TimeInForce.GTC,
+            ),
+        )
+
 
 _STEPS: list[str] = []
 
@@ -99,18 +135,10 @@ def run_demo() -> dict:
     )
     engine.add_instrument(XBTUSD)
 
-    engine.add_strategy_from_config(
-        _ISC(
-            strategy_path=(
-                "nautilus_trader.examples.strategies.market_buy_on_start:MarketBuyOnStart"
-            ),
-            config_path=(
-                "nautilus_trader.examples.strategies.market_buy_on_start:MarketBuyOnStartConfig"
-            ),
-            config={
-                "instrument_id": str(XBTUSD.id),
-                "trade_size": QUANTITY,
-            },
+    engine.add_strategy(
+        MarketBuyOnStart(
+            instrument_id=XBTUSD.id,
+            trade_size=Quantity.from_int(QUANTITY),
         ),
     )
 

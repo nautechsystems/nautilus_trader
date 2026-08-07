@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 #[allow(unused_imports)] // Used in template pattern for returns conversion
 use nautilus_core::UnixNanos;
-use nautilus_model::enums::OrderSide;
+use nautilus_model::position::Position;
 use pyo3::prelude::*;
 
 use crate::{statistic::PortfolioStatistic, statistics::long_ratio::LongRatio};
@@ -48,30 +48,8 @@ impl LongRatio {
 
     #[pyo3(name = "calculate_from_positions")]
     #[expect(clippy::needless_pass_by_value)]
-    fn py_calculate_from_positions(
-        &mut self,
-        py: Python,
-        positions: Vec<Py<PyAny>>,
-    ) -> PyResult<Option<f64>> {
-        if positions.is_empty() {
-            return Ok(None);
-        }
-
-        // Extract entry side from each Cython Position object
-        // OrderSide.Buy has value 1 in both Cython and Rust
-        let mut longs = 0;
-
-        for position in &positions {
-            let entry = position.getattr(py, "entry")?;
-            let entry_value: u8 = entry.extract(py)?;
-            if entry_value == OrderSide::Buy as u8 {
-                longs += 1;
-            }
-        }
-
-        let value = f64::from(longs) / positions.len() as f64;
-        let scale = 10f64.powi(self.precision as i32);
-        Ok(Some((value * scale).round() / scale))
+    fn py_calculate_from_positions(&mut self, positions: Vec<Position>) -> Option<f64> {
+        self.calculate_from_positions(&positions)
     }
 
     #[pyo3(name = "calculate_from_realized_pnls")]

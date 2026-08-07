@@ -68,9 +68,7 @@ fn py_bybit_extract_raw_symbol(symbol: &str) -> &str {
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
 #[pyo3(name = "bybit_bar_spec_to_interval")]
-fn py_bybit_bar_spec_to_interval(aggregation: u8, step: u64) -> PyResult<String> {
-    let aggregation = BarAggregation::from_repr(aggregation as usize)
-        .ok_or_else(|| to_pyvalue_err(format!("Invalid BarAggregation value: {aggregation}")))?;
+fn py_bybit_bar_spec_to_interval(aggregation: BarAggregation, step: u64) -> PyResult<String> {
     let interval = bar_spec_to_bybit_interval(aggregation, step).map_err(to_pyvalue_err)?;
     Ok(interval.to_string())
 }
