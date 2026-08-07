@@ -50,7 +50,9 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, execution::context::OrderIdentity,
+};
 use nautilus_model::{
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -82,8 +84,8 @@ use nautilus_okx::{
     http::models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
     websocket::{
         dispatch::{
-            AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_execution_reports,
-            dispatch_ws_message, emit_algo_cancel_rejections, emit_batch_cancel_failure,
+            AlgoCancelContext, WsDispatchState, dispatch_execution_reports, dispatch_ws_message,
+            emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
         enums::{OKXWsChannel, OKXWsOperation},
         messages::{ExecutionReport, OKXOrderMsg, OKXWsFrame, OKXWsMessage},
@@ -253,6 +255,7 @@ fn track_spread_order(state: &WsDispatchState, client_order_id: ClientOrderId) {
     state.order_identities.insert(
         client_order_id,
         OrderIdentity {
+            client_order_id,
             instrument_id: InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
             strategy_id: StrategyId::from("STRATEGY-001"),
             order_side: OrderSide::Buy,
@@ -622,6 +625,7 @@ fn state_with_order_identity(
     state.order_identities.insert(
         client_order_id,
         OrderIdentity {
+            client_order_id,
             instrument_id,
             strategy_id: StrategyId::from("STRATEGY-001"),
             order_side: OrderSide::Buy,
@@ -1066,6 +1070,16 @@ fn test_dispatch_spread_order_accept_then_cancel() {
     let cid = ClientOrderId::new("OSPRD001");
     let venue_order_id = "3386544889978159104";
     track_spread_order(&state, cid);
+    assert_eq!(
+        state.order_identities.get(&cid).map(|entry| *entry),
+        Some(OrderIdentity {
+            client_order_id: cid,
+            instrument_id: InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        })
+    );
 
     dispatch_spread_message(
         make_spread_order_msg(OKXOrderStatus::Live, cid, venue_order_id),

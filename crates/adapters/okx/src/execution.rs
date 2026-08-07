@@ -41,7 +41,10 @@ use nautilus_core::{
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter,
+    execution::context::{OrderContext, OrderIdentity},
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType},
@@ -72,8 +75,8 @@ use crate::{
     websocket::{
         client::OKXWebSocketClient,
         dispatch::{
-            AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_ws_message,
-            emit_algo_cancel_rejections, emit_batch_cancel_failure,
+            AlgoCancelContext, WsDispatchState, dispatch_ws_message, emit_algo_cancel_rejections,
+            emit_batch_cancel_failure,
         },
         error::OKXWsError,
         parse::OrderStateSnapshot,
@@ -316,28 +319,23 @@ impl OKXExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let trader_id = self.core.trader_id;
-        let client_order_id = order.client_order_id();
-        let strategy_id = order.strategy_id();
-        let instrument_id = order.instrument_id();
+        let context = OrderContext::from(&order);
 
-        self.ws_dispatch_state.order_identities.insert(
-            client_order_id,
-            OrderIdentity {
-                instrument_id,
-                strategy_id,
-                order_side: order.order_side(),
-                order_type: order.order_type(),
-            },
-        );
-        let order_side = order.order_side();
-        let order_type = order.order_type();
-        let quantity = order.quantity();
-        let time_in_force = order.time_in_force();
-        let price = order.price();
-        let trigger_price = order.trigger_price();
-        let is_post_only = order.is_post_only();
-        let is_reduce_only = order.is_reduce_only();
-        let is_quote_quantity = order.is_quote_quantity();
+        self.ws_dispatch_state
+            .order_identities
+            .insert(context.identity.client_order_id, context.identity);
+        let client_order_id = context.identity.client_order_id;
+        let strategy_id = context.identity.strategy_id;
+        let instrument_id = context.identity.instrument_id;
+        let order_side = context.identity.order_side;
+        let order_type = context.identity.order_type;
+        let quantity = context.quantity;
+        let time_in_force = context.time_in_force;
+        let price = context.price;
+        let trigger_price = context.trigger_price;
+        let is_post_only = context.is_post_only;
+        let is_reduce_only = context.is_reduce_only;
+        let is_quote_quantity = context.is_quote_quantity;
 
         let px_usd = get_param_as_string(&cmd.params, "px_usd");
         let px_vol = get_param_as_string(&cmd.params, "px_vol");
@@ -413,25 +411,20 @@ impl OKXExecutionClient {
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let client_order_id = order.client_order_id();
-        let strategy_id = order.strategy_id();
-        let instrument_id = order.instrument_id();
+        let context = OrderContext::from(&order);
 
-        self.ws_dispatch_state.order_identities.insert(
-            client_order_id,
-            OrderIdentity {
-                instrument_id,
-                strategy_id,
-                order_side: order.order_side(),
-                order_type: order.order_type(),
-            },
-        );
-        let order_side = order.order_side();
-        let order_type = order.order_type();
-        let quantity = order.quantity();
-        let time_in_force = order.time_in_force();
-        let price = order.price();
-        let is_post_only = order.is_post_only();
+        self.ws_dispatch_state
+            .order_identities
+            .insert(context.identity.client_order_id, context.identity);
+        let client_order_id = context.identity.client_order_id;
+        let strategy_id = context.identity.strategy_id;
+        let instrument_id = context.identity.instrument_id;
+        let order_side = context.identity.order_side;
+        let order_type = context.identity.order_type;
+        let quantity = context.quantity;
+        let time_in_force = context.time_in_force;
+        let price = context.price;
+        let is_post_only = context.is_post_only;
         let rpi = get_param_as_bool(&cmd.params, "rpi");
         let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
         let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
@@ -498,26 +491,21 @@ impl OKXExecutionClient {
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let client_order_id = order.client_order_id();
-        let strategy_id = order.strategy_id();
-        let instrument_id = order.instrument_id();
-        let order_side = order.order_side();
-        let order_type = order.order_type();
+        let context = OrderContext::from(&order);
 
-        self.ws_dispatch_state.order_identities.insert(
-            client_order_id,
-            OrderIdentity {
-                instrument_id,
-                strategy_id,
-                order_side,
-                order_type,
-            },
-        );
-        let quantity = order.quantity();
-        let trigger_type = order.trigger_type();
-        let trigger_price = order.trigger_price();
-        let price = order.price();
-        let is_reduce_only = order.is_reduce_only();
+        self.ws_dispatch_state
+            .order_identities
+            .insert(context.identity.client_order_id, context.identity);
+        let client_order_id = context.identity.client_order_id;
+        let strategy_id = context.identity.strategy_id;
+        let instrument_id = context.identity.instrument_id;
+        let order_side = context.identity.order_side;
+        let order_type = context.identity.order_type;
+        let quantity = context.quantity;
+        let trigger_type = context.trigger_type;
+        let trigger_price = context.trigger_price;
+        let price = context.price;
+        let is_reduce_only = context.is_reduce_only;
 
         let trailing_offset = order.trailing_offset();
         let trailing_offset_type = order.trailing_offset_type();
@@ -813,6 +801,7 @@ impl OKXExecutionClient {
                 drop(cache);
 
                 OrderIdentity {
+                    client_order_id,
                     instrument_id,
                     strategy_id,
                     order_side,
@@ -1922,20 +1911,21 @@ impl ExecutionClient for OKXExecutionClient {
 
         for client_order_id in &cmd.order_list.client_order_ids {
             let order = cache.order(client_order_id).expect("validated above");
+            let context = OrderContext::from(order.as_ref());
 
             batch_orders.push((
                 inst_type,
                 cmd.instrument_id,
                 self.trade_mode_for_order(cmd.instrument_id, &cmd.params),
-                order.client_order_id(),
-                order.order_side(),
+                context.identity.client_order_id,
+                context.identity.order_side,
                 None, // position_side: WS client defaults to Net for derivatives
-                order.order_type(),
-                order.quantity(),
-                order.price(),
-                order.trigger_price(),
-                Some(order.is_post_only()),
-                Some(order.is_reduce_only()),
+                context.identity.order_type,
+                context.quantity,
+                context.price,
+                context.trigger_price,
+                Some(context.is_post_only),
+                Some(context.is_reduce_only),
                 speed_bump.clone(),
                 outcome.clone(),
                 rpi,
@@ -1943,15 +1933,9 @@ impl ExecutionClient for OKXExecutionClient {
                 rpi_px_round,
             ));
 
-            self.ws_dispatch_state.order_identities.insert(
-                order.client_order_id(),
-                OrderIdentity {
-                    instrument_id: cmd.instrument_id,
-                    strategy_id: order.strategy_id(),
-                    order_side: order.order_side(),
-                    order_type: order.order_type(),
-                },
-            );
+            self.ws_dispatch_state
+                .order_identities
+                .insert(context.identity.client_order_id, context.identity);
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(&order);
@@ -2892,6 +2876,31 @@ mod tests {
         );
 
         OKXExecutionClient::new(core, config).expect("failed to build test client")
+    }
+
+    #[rstest]
+    fn test_ensure_order_identity_restores_available_fields_without_cached_order() {
+        let client = build_test_exec_client();
+        let client_order_id = ClientOrderId::from("O-RESTORED-001");
+        let strategy_id = StrategyId::from("S-RESTORED-002");
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        client.ensure_order_identity(client_order_id, strategy_id, instrument_id);
+
+        assert_eq!(
+            client
+                .ws_dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .map(|entry| *entry),
+            Some(OrderIdentity {
+                client_order_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::NoOrderSide,
+                order_type: OrderType::Market,
+            })
+        );
     }
 
     #[rstest]

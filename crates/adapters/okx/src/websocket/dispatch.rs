@@ -30,9 +30,9 @@ use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicMap, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_live::{ExecutionEventEmitter, execution::context::OrderIdentity};
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType},
+    enums::OrderStatus,
     events::{OrderAccepted, OrderEventAny, OrderFilled, OrderRejected},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
@@ -102,20 +102,6 @@ where
     fn remove(&self, key: &K) {
         self.inner.lock().expect(MUTEX_POISONED).remove(key);
     }
-}
-
-/// Order identity context stored at submission time, used by the WS dispatch
-/// task to produce proper order events without Cache access.
-///
-/// These fields are immutable for the lifetime of an order and are used to
-/// construct proper order events (OrderAccepted, OrderFilled, etc.) instead
-/// of execution reports.
-#[derive(Debug, Clone)]
-pub struct OrderIdentity {
-    pub instrument_id: InstrumentId,
-    pub strategy_id: StrategyId,
-    pub order_side: OrderSide,
-    pub order_type: OrderType,
 }
 
 /// Shared state for cross-stream event deduplication between the private
@@ -408,7 +394,7 @@ pub fn dispatch_ws_message(
                 let Some(ident) = state
                     .order_identities
                     .get(&client_order_id)
-                    .map(|entry| entry.clone())
+                    .map(|entry| *entry)
                 else {
                     log::warn!(
                         "Order response error for untracked order: \
@@ -580,30 +566,27 @@ fn dispatch_order_messages(
         // parent algo order ID for triggered child orders. OKX assigns a new
         // cl_ord_id to child orders when an algo/stop triggers, preserving the
         // parent's client order ID in algo_cl_ord_id.
-        let (client_order_id, identity) = match state
-            .order_identities
-            .get(&client_order_id)
-            .map(|r| r.clone())
-        {
-            Some(ident) => (client_order_id, Some(ident)),
-            None => {
-                if let Some(parent_id) = msg
-                    .algo_cl_ord_id
-                    .as_deref()
-                    .and_then(parse_client_order_id)
-                {
-                    let parent_ident = state.order_identities.get(&parent_id).map(|r| r.clone());
+        let (client_order_id, identity) =
+            match state.order_identities.get(&client_order_id).map(|r| *r) {
+                Some(ident) => (client_order_id, Some(ident)),
+                None => {
+                    if let Some(parent_id) = msg
+                        .algo_cl_ord_id
+                        .as_deref()
+                        .and_then(parse_client_order_id)
+                    {
+                        let parent_ident = state.order_identities.get(&parent_id).map(|r| *r);
 
-                    if parent_ident.is_some() {
-                        (parent_id, parent_ident)
+                        if parent_ident.is_some() {
+                            (parent_id, parent_ident)
+                        } else {
+                            (client_order_id, None)
+                        }
                     } else {
                         (client_order_id, None)
                     }
-                } else {
-                    (client_order_id, None)
                 }
-            }
-        };
+            };
 
         if let Some(ident) = identity {
             let is_post_only_cancel = is_post_only_auto_cancel(msg);
@@ -747,10 +730,7 @@ fn dispatch_spread_order_messages(
             continue;
         };
 
-        let identity = state
-            .order_identities
-            .get(&client_order_id)
-            .map(|r| r.clone());
+        let identity = state.order_identities.get(&client_order_id).map(|r| *r);
 
         if let Some(ident) = identity {
             if is_spread_post_only_auto_cancel(msg) {
