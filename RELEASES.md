@@ -26,10 +26,11 @@ Released on TBD (UTC).
 - Removed `nautilus_trader.data.OptionChainManager`; use `subscribe_option_chain` and handle `OptionChainSlice` in `on_option_chain`
 - Removed duck-typed object conversion from `BacktestEngine.add_data`; pass model objects such as `QuoteTick`, `TradeTick`, and `Bar`
 - Removed Rust `from_pyobject` constructors from `nautilus_model` data types; use `Bound::extract` for the target type
+- Removed `Cache.actor_ids()`, which always returned an empty set because no data flowing through the cache carries an actor ID; the Rust `Trader::actor_ids()` still lists registered actors
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
 - Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
 - Changed adapter callbacks to receive typed model objects instead of `PyCapsule` objects
-- Changed the cache actor APIs to use `ActorId` instead of `ComponentId`, covering `Cache.actor_ids()` and the Rust `CacheDatabaseAdapter` actor state methods
+- Changed the cache actor APIs to use `ActorId` instead of `ComponentId`, covering the Rust `CacheDatabaseAdapter` actor state methods
 - Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
 - Changed portfolio statistic `calculate_from_positions` to require `Position` objects instead of arbitrary objects with an `entry` attribute
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer

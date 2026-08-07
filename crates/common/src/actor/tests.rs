@@ -1286,7 +1286,6 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
         cache_api.try_account(&account_id);
     let _: Option<AccountAny> = cache_api.account_for_venue(&venue);
     let _: Option<AccountId> = cache_api.account_id(&venue);
-    let _: AHashSet<ActorId> = cache_api.actor_ids();
     let _: AHashSet<StrategyId> = cache_api.strategy_ids();
     let _: AHashSet<ExecAlgorithmId> = cache_api.exec_algorithm_ids();
     let _: Option<OrderAny> = cache_api.order(&client_order_id);

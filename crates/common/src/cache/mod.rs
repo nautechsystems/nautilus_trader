@@ -373,16 +373,6 @@ impl<'a> CacheApi<'a> {
             .position_closed_ids(venue, instrument_id, strategy_id, account_id)
     }
 
-    /// Returns the actor IDs in the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cache is already mutably borrowed.
-    #[must_use]
-    pub fn actor_ids(&self) -> AHashSet<ActorId> {
-        self.cache().actor_ids()
-    }
-
     /// Returns the strategy IDs in the cache.
     ///
     /// # Panics
@@ -6057,12 +6047,6 @@ impl Cache {
             strategy_id,
             account_id,
         )
-    }
-
-    /// Returns the `ActorId`s of all actors.
-    #[must_use]
-    pub fn actor_ids(&self) -> AHashSet<ActorId> {
-        self.index.actors.clone()
     }
 
     /// Returns the `StrategyId`s of all strategies.

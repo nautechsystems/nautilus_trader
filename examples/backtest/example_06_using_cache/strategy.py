@@ -327,7 +327,3 @@ class CacheDemoStrategy(Strategy):
         # Show active strategies
         strategy_ids = self.cache.strategy_ids()
         self.log.info(f"Active Strategies: {strategy_ids}")
-
-        # Show actor IDs
-        actor_ids = self.cache.actor_ids()
-        self.log.info(f"Active Actors: {actor_ids}")
