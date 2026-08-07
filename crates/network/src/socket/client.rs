@@ -62,7 +62,7 @@ use crate::{
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence},
+    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome},
     net::TcpStream,
     tls::{create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -349,12 +349,12 @@ impl SocketClientInner {
     /// so buffered messages can never drain into a connection that lost its
     /// reader to a timeout; the writer task bounds both the old-writer
     /// shutdown and the buffer drain with its graceful-shutdown timeout.
-    async fn reconnect(&mut self) -> Result<(), Error> {
+    async fn reconnect(&mut self) -> Result<ReconnectOutcome, Error> {
         log::info!("Reconnecting");
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted due to disconnect state");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         // Bound only connection establishment; the swap below must run to completion
@@ -379,7 +379,7 @@ impl SocketClientInner {
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted mid-flight (after connect)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
         log::debug!("Connected");
 
@@ -419,7 +419,7 @@ impl SocketClientInner {
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted mid-flight (after delay)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         self.read_fence.invalidate();
@@ -431,18 +431,9 @@ impl SocketClientInner {
 
         // Atomically transition from Reconnect to Active
         // This prevents race condition where disconnect could be requested between check and store
-        if self
-            .connection_mode
-            .compare_exchange(
-                ConnectionMode::Reconnect.as_u8(),
-                ConnectionMode::Active.as_u8(),
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_err()
-        {
+        if ConnectionMode::complete_reconnect(&self.connection_mode) == ReconnectOutcome::Aborted {
             log::debug!("Reconnect aborted (state changed during reconnect)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         // Spawn new read task
@@ -457,7 +448,7 @@ impl SocketClientInner {
         );
 
         log::info!("Reconnect succeeded");
-        Ok(())
+        Ok(ReconnectOutcome::Reconnected)
     }
 
     /// Returns whether the read and write tasks are still running.
@@ -1253,12 +1244,15 @@ impl SocketClient {
                         None => {
                             log::debug!("Reconnect interrupted by disconnect");
                         }
-                        Some(Ok(())) => {
+                        Some(Ok(ReconnectOutcome::Reconnected)) => {
                             log::debug!("Reconnected successfully");
                             reconnected_at = Some(dst::time::Instant::now());
 
                             state_notify.notify_waiters();
 
+                            // The outcome records a completed reconnection; emit recovery
+                            // callbacks only while the replacement is still `Active`, not
+                            // after a teardown or another drop.
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
                                 if let Some(ref handler) = post_reconnection {
                                     handler();
@@ -1269,6 +1263,9 @@ impl SocketClient {
                                     "Skipping post_reconnection handlers due to disconnect state"
                                 );
                             }
+                        }
+                        Some(Ok(ReconnectOutcome::Aborted)) => {
+                            log::debug!("Reconnect aborted");
                         }
                         Some(Err(e)) => {
                             let duration = inner.backoff.next_duration();
@@ -1741,6 +1738,74 @@ mod rust_tests {
             Ok(Err(e)) => panic!("{name} failed: {e}"),
             Err(e) => panic!("{name} did not terminate within the test timeout: {e}"),
         }
+    }
+
+    fn reconnect_test_config(port: u16) -> SocketConfig {
+        SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            certs_dir: None,
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_outcome_is_aborted_before_dial() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port))
+            .await
+            .unwrap();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect().await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Aborted);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_outcome_is_reconnected() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (_first, _) = listener.accept().await.unwrap();
+            let (_second, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port))
+            .await
+            .unwrap();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect().await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Reconnected);
+        assert_eq!(
+            ConnectionMode::from_atomic(&inner.connection_mode),
+            ConnectionMode::Active
+        );
+        server.abort();
     }
 
     struct ScriptedReader {

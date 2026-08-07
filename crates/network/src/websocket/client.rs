@@ -103,7 +103,7 @@ use crate::{
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence},
+    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     transport::{BoxedWsTransport, Message, TransportError, tungstenite::TungsteniteTransport},
 };
@@ -988,6 +988,10 @@ impl WebSocketClientInner {
     /// - The reconnection attempt times out.
     /// - The connection to the server fails.
     pub async fn reconnect(&mut self) -> Result<(), TransportError> {
+        self.reconnect_with_outcome().await.map(|_| ())
+    }
+
+    async fn reconnect_with_outcome(&mut self) -> Result<ReconnectOutcome, TransportError> {
         log::info!("Reconnecting");
 
         if self.handler.is_none() {
@@ -1002,12 +1006,16 @@ impl WebSocketClientInner {
                 self.auth_tracker.as_ref(),
                 "WebSocket stream mode cannot reconnect",
             );
-            return Ok(());
+            // Publish the terminal state only once its bookkeeping is complete; the
+            // controller used to notify after `reconnect` returned, so a waiter must
+            // not observe `Closed` before pending authentication has been failed.
+            self.state_notify.notify_waiters();
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted due to disconnect state");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         // Bound only connection establishment; the swap below must run to completion
@@ -1033,7 +1041,7 @@ impl WebSocketClientInner {
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted mid-flight (after connect)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         // Use a oneshot channel to synchronize the writer swap before transitioning
@@ -1067,7 +1075,7 @@ impl WebSocketClientInner {
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted mid-flight (after delay)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         if let Some(read_fence) = self.read_fence.take() {
@@ -1083,18 +1091,9 @@ impl WebSocketClientInner {
 
         // Atomically transition from Reconnect to Active
         // This prevents race condition where disconnect could be requested between check and store
-        if self
-            .connection_mode
-            .compare_exchange(
-                ConnectionMode::Reconnect.as_u8(),
-                ConnectionMode::Active.as_u8(),
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_err()
-        {
+        if ConnectionMode::complete_reconnect(&self.connection_mode) == ReconnectOutcome::Aborted {
             log::debug!("Reconnect aborted (state changed during reconnect)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         if self.handler.is_some() {
@@ -1116,7 +1115,7 @@ impl WebSocketClientInner {
         }
 
         log::info!("Reconnect succeeded");
-        Ok(())
+        Ok(ReconnectOutcome::Reconnected)
     }
 
     /// Returns whether the client's transport tasks are still running.
@@ -2510,7 +2509,7 @@ impl WebSocketClient {
                     // Race reconnect against disconnect notification
                     let reconnect_result = tokio::select! {
                         biased;
-                        result = inner.reconnect() => Some(result),
+                        result = inner.reconnect_with_outcome() => Some(result),
                         () = async {
                             loop {
                                 // Enable before the check so a disconnect notify between iterations is not missed
@@ -2529,11 +2528,14 @@ impl WebSocketClient {
                         None => {
                             log::debug!("Reconnect interrupted by disconnect");
                         }
-                        Some(Ok(())) => {
+                        Some(Ok(ReconnectOutcome::Reconnected)) => {
                             reconnected_at = Some(dst::time::Instant::now());
 
                             state_notify.notify_waiters();
 
+                            // The outcome records a completed reconnection; emit recovery
+                            // callbacks only while the replacement is still `Active`, not
+                            // after a teardown or another drop.
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
                                 if let Some(ref handler) = inner.handler {
                                     let connection_epoch =
@@ -2558,6 +2560,9 @@ impl WebSocketClient {
                             } else {
                                 log::debug!("Skipping reconnect handlers due to disconnect state");
                             }
+                        }
+                        Some(Ok(ReconnectOutcome::Aborted)) => {
+                            log::debug!("Reconnect aborted");
                         }
                         Some(Err(e)) => {
                             let duration = inner.backoff.next_duration();
@@ -3466,7 +3471,7 @@ mod rust_tests {
     };
 
     use super::*;
-    use crate::websocket::types::channel_message_handler;
+    use crate::websocket::types::{channel_epoch_message_handler, channel_message_handler};
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -3518,6 +3523,123 @@ mod rust_tests {
             Ok(Err(e)) => panic!("{name} failed: {e}"),
             Err(e) => panic!("{name} did not terminate within the test timeout: {e}"),
         }
+    }
+
+    fn reconnect_test_config(port: u16) -> WebSocketConfig {
+        WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: None,
+            reconnect_delay_max_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_outcome_is_aborted_before_dial() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _websocket = accept_async(stream).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let (handler, _rx) = channel_message_handler();
+        let mut inner =
+            WebSocketClientInner::connect_url(reconnect_test_config(port), Some(handler), None)
+                .await
+                .unwrap();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect_with_outcome().await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Aborted);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_stream_reconnect_outcome_is_aborted_and_notifies_closed() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _websocket = accept_async(stream).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let mut inner = WebSocketClientInner::connect_url(reconnect_test_config(port), None, None)
+            .await
+            .unwrap();
+        let state_notify = Arc::clone(&inner.state_notify);
+        let mut notified = std::pin::pin!(state_notify.notified());
+        notified.as_mut().enable();
+
+        let outcome = inner.reconnect_with_outcome().await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Aborted);
+        assert_eq!(
+            ConnectionMode::from_atomic(&inner.connection_mode),
+            ConnectionMode::Closed
+        );
+        tokio::time::timeout(TEST_TIMEOUT, notified)
+            .await
+            .expect("stream close notification was not published");
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_outcome_is_reconnected_with_handler() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _first = accept_async(stream).await.unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut second = accept_async(stream).await.unwrap();
+            second
+                .send(WsMessage::Text("replacement".into()))
+                .await
+                .unwrap();
+            std::future::pending::<()>().await;
+        });
+        let (epoch_handler, mut epoch_rx) = channel_epoch_message_handler();
+        let mut inner = WebSocketClientInner::connect_url_with_handler(
+            reconnect_test_config(port),
+            Some(IncomingHandler::Epoch(epoch_handler)),
+            None,
+        )
+        .await
+        .unwrap();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect_with_outcome().await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Reconnected);
+        assert_eq!(
+            ConnectionMode::from_atomic(&inner.connection_mode),
+            ConnectionMode::Active
+        );
+        let (epoch, message) = tokio::time::timeout(TEST_TIMEOUT, epoch_rx.recv())
+            .await
+            .expect("replacement epoch message was not delivered")
+            .expect("epoch handler channel closed");
+        assert_eq!(epoch, 1);
+        assert_eq!(message, WsMessage::Text("replacement".into()));
+        server.abort();
     }
 
     struct RecordingServer {

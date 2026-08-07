@@ -49,6 +49,20 @@ impl ReadSessionFence {
     }
 }
 
+/// Result of a reconnection attempt that did not fail outright.
+///
+/// A reconnect can finish without reconnecting: a teardown may be requested while
+/// it is in flight, at which point it unwinds and leaves the mode terminal. That is
+/// normal control flow rather than an error, so it needs to be distinguishable from
+/// a completed reconnection by the caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReconnectOutcome {
+    /// A replacement connection was established and the mode is now `Active`.
+    Reconnected,
+    /// The attempt unwound without reconnecting; the mode was left unchanged.
+    Aborted,
+}
+
 /// The lifecycle state of a socket client.
 ///
 /// Clients store the active, reconnecting, disconnecting, or closed state in an atomic flag so
@@ -127,6 +141,30 @@ impl ConnectionMode {
             .is_ok()
     }
 
+    /// Atomically completes a reconnection by transitioning `Reconnect` to `Active`.
+    ///
+    /// Returns [`ReconnectOutcome::Reconnected`] if this call performed the
+    /// transition, and [`ReconnectOutcome::Aborted`] if the mode had already moved
+    /// on - which a concurrent [`Self::request_disconnect`] or a terminal `Closed`
+    /// store can do while the reconnect is in flight. Aborting here is not an
+    /// error: it means a teardown won the race and the replacement connection must
+    /// not be adopted.
+    pub(crate) fn complete_reconnect(value: &AtomicU8) -> ReconnectOutcome {
+        if value
+            .compare_exchange(
+                Self::Reconnect.as_u8(),
+                Self::Active.as_u8(),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            ReconnectOutcome::Reconnected
+        } else {
+            ReconnectOutcome::Aborted
+        }
+    }
+
     /// Converts a [`ConnectionMode`] to its `u8` representation.
     #[inline]
     #[must_use]
@@ -182,6 +220,41 @@ mod tests {
         let mode = AtomicU8::new(start.as_u8());
 
         assert_eq!(ConnectionMode::request_reconnect(&mode), expected_result);
+        assert_eq!(ConnectionMode::from_atomic(&mode), expected_mode);
+    }
+
+    // Only a mode still in `Reconnect` may be adopted as `Active`. A teardown that won
+    // the race - `Disconnect` or `Closed` - must report `Aborted` and leave the terminal
+    // mode intact, so the caller can tell a completed reconnection from an unwound one.
+    #[rstest]
+    #[case(
+        ConnectionMode::Reconnect,
+        ReconnectOutcome::Reconnected,
+        ConnectionMode::Active
+    )]
+    #[case(
+        ConnectionMode::Disconnect,
+        ReconnectOutcome::Aborted,
+        ConnectionMode::Disconnect
+    )]
+    #[case(
+        ConnectionMode::Closed,
+        ReconnectOutcome::Aborted,
+        ConnectionMode::Closed
+    )]
+    #[case(
+        ConnectionMode::Active,
+        ReconnectOutcome::Aborted,
+        ConnectionMode::Active
+    )]
+    fn complete_reconnect_transitions(
+        #[case] start: ConnectionMode,
+        #[case] expected_outcome: ReconnectOutcome,
+        #[case] expected_mode: ConnectionMode,
+    ) {
+        let mode = AtomicU8::new(start.as_u8());
+
+        assert_eq!(ConnectionMode::complete_reconnect(&mode), expected_outcome);
         assert_eq!(ConnectionMode::from_atomic(&mode), expected_mode);
     }
 
