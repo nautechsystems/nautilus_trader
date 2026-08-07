@@ -211,6 +211,17 @@ fn dispatch_order_update(
     // Tracked own orders route through order events; externally-managed orders
     // (no captured identity) buffer until accepted or fall back to reports.
     let identity = ctx.order_identities.get(&venue_order_id);
+
+    // Emit fills first: a terminal status would otherwise close the order ahead of them
+    for fill in buffered_fills {
+        match identity {
+            Some(identity) => {
+                emit_buffered_order_filled(&identity, &fill, ctx);
+            }
+            None => ctx.emitter.send_fill_report(fill.report),
+        }
+    }
+
     if is_accepted || local_client_order_id.is_some() {
         match identity {
             Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
@@ -224,15 +235,6 @@ fn dispatch_order_update(
         match ctx.order_identities.get(&venue_order_id) {
             Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
             None => ctx.emitter.send_order_status_report(report),
-        }
-    }
-
-    for fill in buffered_fills {
-        match identity {
-            Some(identity) => {
-                emit_buffered_order_filled(&identity, &fill, ctx);
-            }
-            None => ctx.emitter.send_fill_report(fill.report),
         }
     }
 
@@ -1068,9 +1070,11 @@ mod tests {
         enums::{AccountType, OrderStatus},
         events::OrderEventAny,
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+        orders::{Order, builder::OrderTestBuilder},
         types::Currency,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::http::{
@@ -2089,6 +2093,128 @@ mod tests {
         // Cancel should be buffered (not emitted) AND saved to terminal_cancel_reports
         assert!(fill_tracker.has_pending_report(&venue_order_id));
         assert!(state.terminal_cancel_reports.get(&venue_order_id).is_some());
+    }
+
+    // A trade landing before the submit response buffers its fill, so the order update that
+    // registers the order must emit that fill before its own terminal status
+    #[rstest]
+    #[case(PolymarketOrderStatus::Canceled, "Canceled", OrderStatus::Canceled)]
+    #[case(
+        PolymarketOrderStatus::CanceledMarketResolved,
+        "Expired",
+        OrderStatus::Expired
+    )]
+    fn test_buffered_fill_emitted_before_terminal_status(
+        #[case] status: PolymarketOrderStatus,
+        #[case] expected_terminal: &str,
+        #[case] expected_order_status: OrderStatus,
+    ) {
+        let mut terminal_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
+        terminal_order.status = status;
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let instrument = test_instrument();
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(terminal_order.asset_id, instrument.clone());
+
+        // No registration: the submit response has not landed
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from(terminal_order.id.as_str());
+        let client_order_id = ClientOrderId::from("O-BUFFERED");
+
+        let pending_submits = PendingSubmitTracker::default();
+        pending_submits.insert(venue_order_id, client_order_id);
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            client_order_id.as_str(),
+        );
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        // The trade arrives first and buffers its fill
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+        assert!(
+            receiver.try_recv().is_err(),
+            "a buffered fill must emit no event before the order is registered",
+        );
+
+        // The order update registers the order and drains the buffered fill
+        dispatch_user_message(&UserWsMessage::Order(terminal_order), &ctx, &mut state);
+
+        let mut emitted = Vec::new();
+
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                ExecutionEvent::Order(order_event) => emitted.push(order_event),
+                other => panic!("expected only order events, was {other:?}"),
+            }
+        }
+
+        assert_eq!(emitted.len(), 3, "emitted sequence was {emitted:?}");
+        match &emitted[0] {
+            OrderEventAny::Accepted(accepted) => {
+                assert_eq!(accepted.client_order_id, client_order_id);
+                assert_eq!(accepted.venue_order_id, venue_order_id);
+            }
+            other => panic!("expected accepted event first, was {other:?}"),
+        }
+
+        match &emitted[1] {
+            OrderEventAny::Filled(filled) => {
+                assert_eq!(filled.client_order_id, client_order_id);
+                assert_eq!(filled.venue_order_id, venue_order_id);
+                assert_eq!(filled.last_qty.as_decimal(), dec!(25));
+            }
+            other => panic!("expected filled event before the terminal status, was {other:?}"),
+        }
+        let terminal = match &emitted[2] {
+            OrderEventAny::Canceled(canceled) => {
+                assert_eq!(canceled.client_order_id, client_order_id);
+                assert_eq!(canceled.venue_order_id, Some(venue_order_id));
+                "Canceled"
+            }
+            OrderEventAny::Expired(expired) => {
+                assert_eq!(expired.client_order_id, client_order_id);
+                assert_eq!(expired.venue_order_id, Some(venue_order_id));
+                "Expired"
+            }
+            other => panic!("expected a terminal order event last, was {other:?}"),
+        };
+        assert_eq!(terminal, expected_terminal);
+
+        // The engine's state machine is what proves the order actually closes
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .strategy_id(StrategyId::from("S-001"))
+            .side(OrderSide::Buy)
+            .price(Price::from("0.5"))
+            .quantity(Quantity::from("100"))
+            .build();
+
+        for event in emitted {
+            order.apply(event).expect("emitted sequence must be valid");
+        }
+
+        assert_eq!(order.status(), expected_order_status);
+        assert_eq!(order.filled_qty().as_decimal(), dec!(25));
     }
 
     /// Replays the exact 5-message WS sequence from issue #3797.
