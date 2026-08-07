@@ -15,13 +15,12 @@
 
 //! Grid market making strategy implementation.
 
-use std::{fmt::Debug, time::Duration};
+use std::{fmt::Debug, num::NonZeroUsize, time::Duration};
 
 use ahash::AHashSet;
 use nautilus_common::actor::DataActor;
 use nautilus_model::{
-    data::QuoteTick,
-    enums::{OrderSide, TimeInForce},
+    enums::{BookType, OrderSide, TimeInForce},
     events::{OrderCanceled, OrderExpired, OrderFilled, OrderRejected},
     identifiers::ClientOrderId,
     instruments::{Instrument, InstrumentAny},
@@ -191,18 +190,28 @@ impl DataActor for GridMarketMaker {
         self.price_precision = Some(instrument.price_precision());
         self.instrument = Some(instrument);
 
-        // Resolve trade_size from instrument when not explicitly provided
-        if self.trade_size.is_none() {
-            self.trade_size =
-                Some(min_quantity.unwrap_or_else(|| Quantity::new(1.0, size_precision)));
-        }
+        // Resolve trade_size from instrument when not explicitly provided,
+        // normalizing to the instrument's size precision so orders are not
+        // rejected (e.g. precision 0 when size precision is 1)
+        let trade_size = match self.trade_size {
+            Some(qty) => Quantity::from_decimal_dp(qty.as_decimal(), size_precision)
+                .map_err(|e| anyhow::anyhow!("Invalid trade_size precision: {e}"))?,
+            None => min_quantity.unwrap_or_else(|| Quantity::new(1.0, size_precision)),
+        };
+        self.trade_size = Some(trade_size);
 
-        self.subscribe_quotes(instrument_id, None, None);
-        // self.subscribe_data(data_type, client_id, params);
+        self.subscribe_book_deltas(
+            instrument_id,
+            BookType::L2_MBP,
+            NonZeroUsize::new(50),
+            None,
+            true,
+            None,
+        );
 
         self.clock().set_timer(
             "GRID_MM_TIMER",
-            Duration::from_secs(1),
+            Duration::from_secs(5),
             None,
             None,
             None,
@@ -213,29 +222,22 @@ impl DataActor for GridMarketMaker {
         Ok(())
     }
 
-    fn on_time_event(&mut self, event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
-        log::info!("{event:#?}");
-        Ok(())
-    }
-
-    fn on_stop(&mut self) -> anyhow::Result<()> {
-        let instrument_id = self.config.instrument_id;
-        self.cancel_all_orders(instrument_id, None, None, None)?;
-        self.close_all_positions(instrument_id, None, None, None, None, None, None, None)?;
-        self.unsubscribe_quotes(instrument_id, None, None);
-        Ok(())
-    }
-
-    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        log::info!("{quote:#?}");
-        let mid_f64 = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
-        let price_precision = self.price_precision.ok_or_else(|| {
-            anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
-        })?;
-        let mid = Price::new(mid_f64, price_precision);
-
+    fn on_time_event(&mut self, _event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         let strategy_id = self.strategy_id().expect("Strategy must be registered");
+        let price_precision = self.price_precision.ok_or_else(|| {
+            anyhow::anyhow!("Cannot requote grid: price_precision is not resolved")
+        })?;
+
+        let order_book = self
+            .cache()
+            .order_book(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Cannot requote grid: order book not found for {instrument_id}"))?;
+        let (Some(bid_price), Some(ask_price)) = (order_book.best_bid_price(), order_book.best_ask_price()) else {
+            return Ok(());
+        };
+        let mid_f64 = f64::midpoint(bid_price.as_f64(), ask_price.as_f64());
+        let mid = Price::new(mid_f64, price_precision);
 
         // Always requote when the grid is empty, even if mid is within threshold
         let has_resting = {
@@ -327,7 +329,7 @@ impl DataActor for GridMarketMaker {
 
         let trade_size = self
             .trade_size
-            .ok_or_else(|| anyhow::anyhow!("Cannot handle quote: trade_size is not resolved"))?;
+            .ok_or_else(|| anyhow::anyhow!("Cannot requote grid: trade_size is not resolved"))?;
 
         let (tif, expire_time) = match self.config.expire_time_secs {
             Some(secs) => {
@@ -339,7 +341,7 @@ impl DataActor for GridMarketMaker {
         };
 
         for (side, price) in grid {
-            let _order = self.order().limit(
+            let order = self.order().limit(
                 instrument_id,
                 side,
                 trade_size,
@@ -357,10 +359,18 @@ impl DataActor for GridMarketMaker {
                 None,
                 None,
             );
-            // self.submit_order(order, None, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
 
         self.last_quoted_mid = Some(mid);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        let instrument_id = self.config.instrument_id;
+        self.cancel_all_orders(instrument_id, None, None, None)?;
+        self.close_all_positions(instrument_id, None, None, None, None, None, None, None)?;
+        self.unsubscribe_book_deltas(instrument_id, None, None);
         Ok(())
     }
 

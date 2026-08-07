@@ -39,6 +39,10 @@ pub struct GridMarketMakerTomlConfig {
     pub expire_time_secs: Option<u64>,
     #[serde(default)]
     pub on_cancel_resubmit: bool,
+    #[serde(default = "default_recorder_path")]
+    pub path: String,
+    #[serde(deserialize_with = "deserialize_environment")]
+    pub execution_environment: Environment,
 }
 
 #[derive(Debug, Deserialize)]
