@@ -2084,7 +2084,8 @@ pub(crate) fn should_retry_lighter_ws_error(error: &LighterWsError) -> bool {
         // may already have the message and a retry could duplicate it.
         LighterWsError::Transport(send_error) => match send_error {
             SendError::Timeout => true,
-            SendError::Closed
+            SendError::InvalidInput(_)
+            | SendError::Closed
             | SendError::ConnectionChanged
             | SendError::BrokenPipe(_)
             | SendError::WriteTimeout => false,
@@ -3646,6 +3647,10 @@ mod tests {
     #[case::parse_does_not_retry(LighterWsError::Parse("bad json".into()), false)]
     #[case::client_does_not_retry(LighterWsError::Client("no active WebSocket client".into()), false)]
     #[case::transport_closed_does_not_retry(LighterWsError::Transport(SendError::Closed), false)]
+    #[case::transport_invalid_input_does_not_retry(
+        LighterWsError::Transport(SendError::InvalidInput("pong payload too large".into())),
+        false
+    )]
     #[case::transport_connection_changed_does_not_retry(
         LighterWsError::Transport(SendError::ConnectionChanged),
         false
@@ -3668,6 +3673,7 @@ mod tests {
     // Pins the `#[from] SendError` derive that `.map_err(LighterWsError::Transport)` relies on.
     #[rstest]
     #[case::closed(SendError::Closed)]
+    #[case::invalid_input(SendError::InvalidInput("pong payload too large".into()))]
     #[case::timeout(SendError::Timeout)]
     #[case::write_timeout(SendError::WriteTimeout)]
     #[case::connection_changed(SendError::ConnectionChanged)]

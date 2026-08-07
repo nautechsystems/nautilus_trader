@@ -110,6 +110,9 @@ use crate::{
 
 const WRITE_TIMEOUT_SECS: u64 = 5;
 
+/// The RFC 6455 control-frame payload limit.
+const MAX_CONTROL_FRAME_PAYLOAD_BYTES: usize = 125;
+
 /// Shared headers used by future automatic WebSocket reconnects.
 ///
 /// Updating these headers does not affect the active connection or trigger a reconnect.
@@ -2286,19 +2289,35 @@ impl WebSocketClient {
             .map_err(|e| SendError::BrokenPipe(e.to_string()))?
     }
 
-    /// Sends a pong frame back to the server.
+    /// Sends a pong frame back to the server when the connection is active.
+    ///
+    /// The pong is skipped silently if the connection is not active when called:
+    /// a pong belongs to the connection whose ping caused it, so this method does
+    /// not wait for reconnection before enqueueing it.
     ///
     /// # Errors
     ///
-    /// Returns a websocket error if unable to send.
+    /// Returns an error if:
+    /// - The payload exceeds 125 bytes, the RFC 6455 control-frame limit.
+    /// - The writer channel is broken.
+    #[allow(unknown_lints, reason = "Clippy lint is unavailable on Rust 1.97")]
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "skipping instead of waiting removes the only await; the signature is public API shared with the other send methods"
+    )]
     pub async fn send_pong(&self, data: Vec<u8>) -> Result<(), SendError> {
-        self.wait_for_active().await?;
+        validate_pong_payload(&data)?;
+
+        if !self.connection_mode().is_active() {
+            log::debug!("Skipping pong: connection not active");
+            return Ok(());
+        }
 
         log::trace!("Sending pong frame ({} bytes)", data.len());
 
-        let msg = Message::Pong(data.into());
         self.writer_tx
-            .send(WriterCommand::Send(msg))
+            .send(WriterCommand::Send(Message::Pong(data.into())))
             .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
@@ -2578,6 +2597,16 @@ fn fail_registered_auth(auth_tracker: &OnceLock<AuthTracker>, reason: &str) {
     }
 }
 
+fn validate_pong_payload(data: &[u8]) -> Result<(), SendError> {
+    if data.len() > MAX_CONTROL_FRAME_PAYLOAD_BYTES {
+        return Err(SendError::InvalidInput(format!(
+            "pong payload exceeds {MAX_CONTROL_FRAME_PAYLOAD_BYTES} bytes"
+        )));
+    }
+
+    Ok(())
+}
+
 impl Drop for WebSocketClient {
     fn drop(&mut self) {
         self.connection_mode
@@ -2598,7 +2627,7 @@ mod tests {
     use std::{
         collections::HashMap,
         num::NonZeroU32,
-        sync::{Arc, Mutex},
+        sync::{Arc, Mutex, atomic::Ordering},
         time::Duration,
     };
 
@@ -2608,10 +2637,11 @@ mod tests {
     use rstest::rstest;
     use tokio::{
         net::TcpListener,
+        sync::{mpsc, oneshot},
         task::{self, JoinHandle},
     };
     use tokio_tungstenite::{
-        accept_hdr_async,
+        accept_async, accept_hdr_async,
         tungstenite::{
             Message as WsMessage,
             handshake::server::{self, Callback},
@@ -2620,6 +2650,7 @@ mod tests {
     };
 
     use crate::{
+        error::SendError,
         http::{HttpClient, Method},
         mode::ConnectionMode,
         ratelimiter::quota::Quota,
@@ -2785,6 +2816,41 @@ mod tests {
         WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, vec![], None)
             .await
             .expect("Failed to connect")
+    }
+
+    async fn setup_reconnecting_client(port: u16) -> WebSocketClient {
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: Some(1),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_delay_max_ms: Some(1),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+        WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, vec![], None)
+            .await
+            .expect("client should connect")
+    }
+
+    async fn wait_for_mode(client: &WebSocketClient, expected: ConnectionMode) {
+        crate::dst::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if ConnectionMode::from_atomic(&client.connection_mode) == expected {
+                    break;
+                }
+
+                crate::dst::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("client should reach expected connection mode");
     }
 
     async fn setup_http_test_server() -> (JoinHandle<()>, u16) {
@@ -2967,6 +3033,149 @@ mod tests {
 
         client.disconnect().await;
         http_task.abort();
+    }
+
+    // A pong belongs to the connection whose ping caused it: while the
+    // replacement handshake is gated the pong must be dropped rather than
+    // waited on, and the next pong must ride the new connection.
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_pong_skips_gated_reconnect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (second_accepted_tx, second_accepted_rx) = oneshot::channel();
+        let (handshake_gate_tx, handshake_gate_rx) = oneshot::channel();
+        let (observed_tx, mut observed_rx) = mpsc::unbounded_channel();
+
+        let server_task = task::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let first_websocket = accept_async(first).await.unwrap();
+            drop(first_websocket);
+
+            let (second, _) = listener.accept().await.unwrap();
+            second_accepted_tx.send(()).unwrap();
+            handshake_gate_rx.await.unwrap();
+            let mut replacement = accept_async(second).await.unwrap();
+
+            while let Some(message) = replacement.next().await {
+                match message.unwrap() {
+                    WsMessage::Pong(data) => observed_tx.send(data.to_vec()).unwrap(),
+                    WsMessage::Close(_) => {
+                        let _ = replacement.close(None).await;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        let client = setup_reconnecting_client(port).await;
+
+        crate::dst::time::timeout(Duration::from_secs(5), second_accepted_rx)
+            .await
+            .expect("replacement connection should be accepted")
+            .unwrap();
+        wait_for_mode(&client, ConnectionMode::Reconnect).await;
+
+        let rejected = client.send_pong(vec![2; 126]).await;
+        assert!(matches!(rejected, Err(SendError::InvalidInput(_))));
+
+        // The gate is still shut, so a pong that waited for the connection to
+        // become active could not complete here.
+        crate::dst::time::timeout(
+            Duration::from_secs(1),
+            client.send_pong(b"stale-pong".to_vec()),
+        )
+        .await
+        .expect("pong raised during reconnect should not wait for the replacement")
+        .expect("skipped pong should report success");
+
+        handshake_gate_tx.send(()).unwrap();
+        wait_for_mode(&client, ConnectionMode::Active).await;
+
+        let fresh_payload = b"fresh-pong".to_vec();
+        client.send_pong(fresh_payload.clone()).await.unwrap();
+        assert_eq!(
+            crate::dst::time::timeout(Duration::from_secs(5), observed_rx.recv())
+                .await
+                .expect("replacement connection should receive the fresh pong"),
+            Some(fresh_payload)
+        );
+
+        client.disconnect().await;
+        server_task.await.unwrap();
+        assert_eq!(
+            observed_rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected),
+            "replacement connection should receive exactly one pong"
+        );
+    }
+
+    // Validation must precede the inactive skip: an oversized pong during
+    // reconnect is a caller error, not a silently skipped frame.
+    #[rstest]
+    #[tokio::test]
+    async fn test_pong_validation_precedes_inactive_skip() {
+        let server = TestServer::setup().await;
+        let client = setup_test_client(server.port).await;
+        client
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let result = client.send_pong(vec![2; 126]).await;
+
+        assert!(matches!(result, Err(SendError::InvalidInput(_))));
+    }
+
+    // A rejected oversized pong must not disturb the connection: the frame is
+    // never enqueued, so the next in-range pong still rides the same socket.
+    #[rstest]
+    #[tokio::test]
+    async fn test_pong_payload_limit_preserves_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (pong_tx, mut pong_rx) = mpsc::unbounded_channel();
+
+        let server_task = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(stream).await.unwrap();
+
+            while let Some(message) = websocket.next().await {
+                match message.unwrap() {
+                    WsMessage::Pong(data) => pong_tx.send(data.to_vec()).unwrap(),
+                    WsMessage::Close(_) => {
+                        let _ = websocket.close(None).await;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let client = setup_reconnecting_client(port).await;
+        let accepted = vec![1; 125];
+        let follow_up = vec![3; 125];
+
+        client.send_pong(accepted.clone()).await.unwrap();
+        assert_eq!(
+            crate::dst::time::timeout(Duration::from_secs(5), pong_rx.recv())
+                .await
+                .unwrap(),
+            Some(accepted)
+        );
+
+        let rejected = client.send_pong(vec![2; 126]).await;
+        assert!(matches!(rejected, Err(SendError::InvalidInput(_))));
+
+        client.send_pong(follow_up.clone()).await.unwrap();
+        assert_eq!(
+            crate::dst::time::timeout(Duration::from_secs(5), pong_rx.recv())
+                .await
+                .unwrap(),
+            Some(follow_up)
+        );
+
+        client.disconnect().await;
+        server_task.await.unwrap();
     }
 
     #[tokio::test]
