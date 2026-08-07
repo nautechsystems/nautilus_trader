@@ -227,9 +227,10 @@ impl PolymarketInstrumentProviderConfig {
         Self::default()
     }
 
+    /// Returns whether any configured scope drives a bootstrap load.
     #[must_use]
     pub fn should_load_all(&self) -> bool {
-        self.load_all || self.has_explicit_scope()
+        self.load_all || self.has_explicit_scope() || self.has_nonempty_filters()
     }
 
     /// Returns whether any explicit bootstrap scope (slug, builder, or series) is configured.
@@ -722,6 +723,29 @@ mod tests {
         };
 
         assert!(!config.has_series_ids());
+        assert!(!config.should_load_all());
+    }
+
+    #[rstest]
+    fn provider_config_filters_trigger_load_all() {
+        let config = PolymarketInstrumentProviderConfig {
+            filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+            ..PolymarketInstrumentProviderConfig::default()
+        };
+
+        assert!(config.has_nonempty_filters());
+        assert!(!config.has_explicit_scope());
+        assert!(config.should_load_all());
+    }
+
+    #[rstest]
+    fn provider_config_empty_filters_do_not_trigger_load_all() {
+        let config = PolymarketInstrumentProviderConfig {
+            filters: Some(HashMap::new()),
+            ..PolymarketInstrumentProviderConfig::default()
+        };
+
+        assert!(!config.has_nonempty_filters());
         assert!(!config.should_load_all());
     }
 

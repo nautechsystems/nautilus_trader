@@ -1968,6 +1968,215 @@ async fn test_provider_initialize_composes_series_ids_with_registered_filters() 
 
 #[rstest]
 #[tokio::test]
+async fn test_provider_initialize_bootstraps_from_filters_alone() {
+    let state = TestServerState::default();
+
+    let filtered_market = gamma_market_with_slug(
+        "filters-only-market",
+        "0xcondition_filters_only",
+        ["69000000000000000001", "69000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+
+    // A filters map bounds the universe on its own, so it bootstraps without
+    // needing load_all or a slug/series scope alongside it.
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.get("tag_id").is_some_and(|value| value == "84")),
+        "the filters map must drive a bounded query rather than being skipped"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_bootstraps_from_registered_filter_alone() {
+    let state = TestServerState::default();
+
+    let filtered_market = gamma_market_with_slug(
+        "registered-only-market",
+        "0xcondition_registered_only",
+        ["69000000000000000003", "69000000000000000004"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::with_filter(
+        http_client,
+        None,
+        Arc::new(TagFilter::from_tag_id(84)),
+    );
+
+    provider.initialize(false).await.unwrap();
+
+    // Registered filters live on the provider rather than the config, so the config
+    // predicate cannot observe them and the bootstrap gate must widen for them too.
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.get("tag_id").is_some_and(|value| value == "84")),
+        "a registered filter must drive a bounded query rather than being skipped"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_ignores_accept_only_registered_filter() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "accept-only-market",
+        "0xcondition_accept_only",
+        ["69000000000000000011", "69000000000000000012"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::with_filter(
+        http_client,
+        None,
+        Arc::new(PredicateFilter::new("accept-all", |_| true)),
+    );
+
+    provider.initialize(false).await.unwrap();
+
+    // An accept-only filter does enter the bootstrap and does clear the store, but sources no
+    // query, so nothing loads. The latch is then withheld: marking the store initialized would
+    // short-circuit the next `initialize(false)` and strand the provider empty.
+    assert_eq!(provider.store().count(), 0);
+    assert!(!provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_does_not_latch_filters_map_with_accept_only_filter() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "map-and-accept-only",
+        "0xcondition_map_accept_only",
+        ["69000000000000000015", "69000000000000000016"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::with_filter(
+        http_client,
+        Some(config),
+        Arc::new(PredicateFilter::new("accept-all", |_| true)),
+    );
+
+    provider.initialize(false).await.unwrap();
+
+    // Registered filters take precedence over the `filters` map, so the map never runs and
+    // nothing loads. The latch must still be withheld even though `should_load_all()` reports
+    // true because of that ignored map.
+    assert_eq!(provider.store().count(), 0);
+    assert!(!provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_ignores_registered_filter_with_empty_slugs() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "empty-slug-market",
+        "0xcondition_empty_slug",
+        ["69000000000000000013", "69000000000000000014"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::with_filter(
+        http_client,
+        None,
+        Arc::new(MarketSlugFilter::from_slugs(Vec::new())),
+    );
+
+    provider.initialize(false).await.unwrap();
+
+    // `fetch_instruments` skips empty slug collections, so nothing loads and the latch is
+    // withheld. A dynamic slug filter can be empty for the current period and yield slugs on a
+    // later cycle, so latching here would strand the store permanently.
+    assert_eq!(provider.store().count(), 0);
+    assert!(!provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_composes_filters_with_load_ids() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "filters-and-ids-market",
+        "0xcondition_filters_and_ids",
+        ["69000000000000000005", "69000000000000000006"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
+        // Deliberately outside the filtered result so `load_ids` cannot short-circuit
+        // on an instrument the filter query already placed in the store.
+        load_ids: Some(vec![InstrumentId::from(
+            "0xcondition_ids_only-69000000000000000009.POLYMARKET",
+        )]),
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+
+    assert!(provider.store().is_initialized());
+
+    // The discriminating assertion: each scope issues its own query. Pairing filters
+    // with load_ids previously ran the condition-ID lookup alone.
+    let markets_queries = state.gamma_markets_query_log.lock().await;
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.get("tag_id").is_some_and(|value| value == "84")),
+        "the filters map must still be queried when load_ids is also configured"
+    );
+    assert!(
+        markets_queries
+            .iter()
+            .any(|params| params.contains_key("condition_ids")),
+        "load_ids must still be queried when filters is also configured"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_provider_load_does_not_mark_partial_scoped_store_initialized() {
     let state = TestServerState::default();
 
@@ -2283,6 +2492,47 @@ async fn test_fetch_configured_instruments_load_ids_are_not_intersected_with_fil
     assert!(
         !id_query.contains_key("tag_id"),
         "load_ids must be queried by condition ID alone: {id_query:?}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_configured_instruments_bootstraps_from_registered_filter_alone() {
+    let state = TestServerState::default();
+
+    let filtered_market = gamma_market_with_slug(
+        "refresh-registered-only",
+        "0xcondition_refresh_registered",
+        ["69000000000000000007", "69000000000000000008"],
+    );
+    *state.gamma_response.lock().await = Some(json!([filtered_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig::default();
+    let filters: Vec<Arc<dyn InstrumentFilter>> = vec![Arc::new(TagFilter::from_tag_id(84))];
+
+    let instruments = nautilus_polymarket::providers::fetch_configured_instruments(
+        &http_client,
+        &config,
+        &filters,
+    )
+    .await
+    .expect("a registered filter should drive the refresh");
+
+    // The refresh must return the same universe the bootstrap loads, otherwise the
+    // first interval refresh would empty a filter-only provider.
+    let mut ids = instruments
+        .iter()
+        .map(|instrument| instrument.id().to_string())
+        .collect::<Vec<_>>();
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec![
+            "0xcondition_refresh_registered-69000000000000000007.POLYMARKET".to_string(),
+            "0xcondition_refresh_registered-69000000000000000008.POLYMARKET".to_string(),
+        ]
     );
 }
 

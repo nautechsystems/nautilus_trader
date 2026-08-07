@@ -12,6 +12,8 @@ Released on TBD (UTC).
 - Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 - Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
+- Added Polymarket `series_ids` instrument provider scoping for recurring Gamma market families (#4650), thanks @mystic-io
+- Added Polymarket instrument bootstrap from a `filters` map or a market-sourcing registered `InstrumentFilter` alone, without requiring `load_all`
 
 ### Breaking Changes
 
@@ -53,6 +55,8 @@ Released on TBD (UTC).
 - Fixed `Position` average open price (`avg_px_open`) for exact closes after partial fills
 - Fixed order list `OrderInitialized` events to carry `order_list_id` through publication, persistence, and replay
 - Fixed failed live strategy registrations leaving orphaned external‑order claims (#4620), thanks @folknor
+- Fixed network controllers treating aborted reconnects as completed reconnections (#4623), thanks @folknor
+- Fixed WebSocket pong frames being held across a reconnect and enqueued on the replacement connection (#4613), thanks @folknor
 - Fixed Python v2 `FeeModel` subclass constructors and concrete model inheritance (#4640), thanks @dfjmax
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack

@@ -107,9 +107,9 @@ pub(super) async fn refresh_scoped_instruments(
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<usize> {
-    let Some(instrument_config) = instrument_config else {
-        return Ok(0);
-    };
+    // Defaulted rather than returning early: a client can carry registered filters with
+    // no instrument_config, and those filters bound the refresh universe on their own.
+    let instrument_config = instrument_config.unwrap_or_default();
     let refreshed =
         crate::providers::fetch_configured_instruments(&http_client, &instrument_config, &filters)
             .await?;
@@ -149,7 +149,13 @@ impl PolymarketDataClient {
             return;
         };
 
-        if interval_mins == 0 || self.config.instrument_config.is_none() {
+        let filters = self.provider.filters();
+
+        // A registered filter is a bootstrap scope in its own right, so a client carrying only
+        // filters keeps refreshing instead of freezing at the universe it loaded on connect.
+        // Filter source methods are deliberately not evaluated here: they are documented as
+        // re-evaluated each load cycle, so probing them would consume a batch the refresh misses.
+        if interval_mins == 0 || (self.config.instrument_config.is_none() && filters.is_empty()) {
             return;
         }
 
@@ -157,7 +163,6 @@ impl PolymarketDataClient {
         let cancellation = self.cancellation_token.clone();
         let http_client = self.provider.http_client().clone();
         let instrument_config = self.config.instrument_config.clone();
-        let filters = self.provider.filters();
         let instruments_cache = self.instruments.clone();
         let token_meta = self.token_meta.clone();
         let data_sender = self.data_sender.clone();
@@ -208,16 +213,105 @@ impl PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::AssetClass,
-        identifiers::Symbol,
+        identifiers::{ClientId, Symbol},
         instruments::BinaryOption,
         types::{Currency, Price, Quantity},
     };
+    use nautilus_network::{retry::RetryConfig, websocket::config::TransportBackend};
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::consts::WS_DEFAULT_SUBSCRIPTIONS,
+        config::PolymarketDataClientConfig,
+        filters::{PredicateFilter, TagFilter},
+        http::{
+            clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
+            gamma::PolymarketGammaHttpClient,
+        },
+        websocket::pool::PolymarketMarketConnectionPool,
+    };
+
+    fn make_client(config: PolymarketDataClientConfig) -> PolymarketDataClient {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let gamma = PolymarketGammaHttpClient::new(
+            Some("http://localhost".to_string()),
+            1,
+            RetryConfig::default(),
+        )
+        .expect("gamma client");
+        let clob = PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 1)
+            .expect("clob client");
+        let data_api = PolymarketDataApiHttpClient::new(Some("http://localhost".to_string()), 1)
+            .expect("data api client");
+        let ws = PolymarketMarketConnectionPool::new(
+            Some("ws://localhost/ws/market".to_string()),
+            false,
+            TransportBackend::default(),
+            WS_DEFAULT_SUBSCRIPTIONS,
+        );
+
+        PolymarketDataClient::new(
+            ClientId::from("POLY-TEST"),
+            config,
+            gamma,
+            clob,
+            data_api,
+            ws,
+        )
+    }
+
+    #[rstest]
+    fn refresh_task_spawns_for_registered_filter_without_instrument_config() {
+        let mut client = make_client(PolymarketDataClientConfig {
+            update_instruments_interval_mins: Some(1),
+            instrument_config: None,
+            ..PolymarketDataClientConfig::default()
+        });
+        client.add_instrument_filter(Arc::new(TagFilter::from_tag_id(84)));
+
+        client.spawn_instrument_refresh_task();
+
+        // Without this the client would bootstrap from the filter and then freeze at its
+        // connect-time universe, because the guard used to require an instrument_config.
+        assert_eq!(client.tasks.len(), 1);
+    }
+
+    #[rstest]
+    fn refresh_task_does_not_spawn_without_config_or_filters() {
+        let mut client = make_client(PolymarketDataClientConfig {
+            update_instruments_interval_mins: Some(1),
+            instrument_config: None,
+            ..PolymarketDataClientConfig::default()
+        });
+
+        client.spawn_instrument_refresh_task();
+
+        assert_eq!(client.tasks.len(), 0);
+    }
+
+    #[rstest]
+    fn refresh_task_spawns_for_accept_only_filter() {
+        let mut client = make_client(PolymarketDataClientConfig {
+            update_instruments_interval_mins: Some(1),
+            instrument_config: None,
+            ..PolymarketDataClientConfig::default()
+        });
+        client.add_instrument_filter(Arc::new(PredicateFilter::new("accept-all", |_| true)));
+
+        client.spawn_instrument_refresh_task();
+
+        // Accepted cost of not probing filter sources here: an accept-only filter spawns a timer
+        // whose refresh issues no HTTP. A wakeup every N minutes is cheaper than consuming a
+        // dynamic filter's batch at connect.
+        assert_eq!(client.tasks.len(), 1);
+    }
 
     fn stub_instrument(
         raw_symbol: &str,

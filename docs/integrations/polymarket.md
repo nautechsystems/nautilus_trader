@@ -751,9 +751,15 @@ demand so that strategies can subscribe to markets that are not in the cache:
   unsubscribes while the auto-load is in flight does not see a spurious subscription opened.
 
 The feature is enabled by default. Disable it by setting `auto_load_missing_instruments=False` on
-`PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
-`load_ids`, `event_slugs`, `market_slugs`, `event_slug_builder`, or `series_ids` on
-`PolymarketInstrumentProviderConfig`.
+`PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply any of
+these on `PolymarketInstrumentProviderConfig`:
+
+- `load_ids`
+- `filters`
+- `event_slugs`
+- `market_slugs`
+- `event_slug_builder`
+- `series_ids`
 
 These scopes compose rather than override each other: filter-driven queries run alongside any
 explicit slug or series scope, and `load_ids` loads additively on top. Only the unfiltered
@@ -761,10 +767,6 @@ full-universe fetch is suppressed once an explicit scope is present. The same co
 to the periodic refresh driven by `update_instruments_interval_mins`, so a scope configured at
 startup keeps refreshing for the life of the client, and the bootstrap and refresh universes
 match.
-
-Filters come in two forms: the `filters` map on `PolymarketInstrumentProviderConfig`, and Rust
-`InstrumentFilter`s registered on the client. Registered filters take precedence: when both are
-present the `filters` map is ignored and the provider logs a warning.
 
 Newly-minted markets pass through a CLOB hydration window of several minutes during which Gamma
 reports `active=true` but `GET /markets/{cid}` returns either a 404 or a 200 with empty
@@ -1156,6 +1158,25 @@ or numeric bounds, and invalid combinations raise `ValueError` during Python con
 See the official [market keyset](https://docs.polymarket.com/api-reference/markets/list-markets-keyset-pagination)
 and [event keyset](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination)
 references for the venue contract.
+
+#### Filter scopes
+
+Filters come in two forms: the `filters` map on `PolymarketInstrumentProviderConfig`, and Rust
+`InstrumentFilter`s registered on the client. Registered filters take precedence: when both are
+present the `filters` map is ignored and the provider logs a warning.
+
+A filter that sources markets is a complete bootstrap scope on its own and does not need
+`load_all` or a slug or series scope alongside it. A registered filter sources markets when it
+supplies any of:
+
+- Market or event slugs
+- Gamma market query params
+- Gamma event params
+- Search params
+
+A non-empty `filters` map qualifies on the same basis. A filter that only accepts or rejects
+instruments, such as `PredicateFilter`, refines another source's results and still needs one of
+those alongside it.
 
 #### Event slug builder
 

@@ -235,13 +235,13 @@ impl PolymarketInstrumentProvider {
             return Ok(());
         }
 
-        let should_load_all = self.config.should_load_all();
+        let should_load_all = has_bootstrap_scope(&self.config, &self.filters);
         let has_load_ids = self.config.has_load_ids();
 
         if !should_load_all && !has_load_ids {
             if self.config.log_warnings {
                 log::warn!(
-                    "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, instrument_config.event_slugs, instrument_config.market_slugs, instrument_config.event_slug_builder, or instrument_config.series_ids"
+                    "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, instrument_config.filters, instrument_config.event_slugs, instrument_config.market_slugs, instrument_config.event_slug_builder, or instrument_config.series_ids, or register an instrument filter"
                 );
             }
             return Ok(());
@@ -269,6 +269,15 @@ impl PolymarketInstrumentProvider {
             // an explicitly requested instrument is requested unconditionally.
             let load_ids = self.config.load_ids.clone().unwrap_or_default();
             self.load_ids(&load_ids, None).await?;
+        }
+
+        // Registered filters take precedence over the `filters` map, so a map paired with an
+        // accept-only filter loads nothing while `should_load_all()` still reports true. Latching
+        // empty would strand the provider against a later `initialize(false)`.
+        let sourced_by_registered_filters = !has_load_ids && !self.filters.is_empty();
+
+        if sourced_by_registered_filters && self.store.count() == 0 {
+            return Ok(());
         }
 
         self.store.set_initialized();
@@ -449,7 +458,7 @@ pub async fn fetch_configured_instruments(
 ) -> anyhow::Result<Vec<InstrumentAny>> {
     let mut instruments = Vec::new();
 
-    if config.should_load_all() {
+    if has_bootstrap_scope(config, filters) {
         let has_explicit_scope = config.has_explicit_scope();
         let event_slugs = if let Some(builder) = config.event_slug_builder.as_ref() {
             builder.build_event_slugs()?
@@ -545,6 +554,16 @@ pub async fn fetch_configured_instruments(
     let mut seen = AHashSet::new();
     instruments.retain(|inst| seen.insert(inst.id()));
     Ok(instruments)
+}
+
+// Registered filters live on the provider, not the config, so the config predicate alone cannot
+// see them. Source methods are deliberately not evaluated: they are documented as re-evaluated
+// each load cycle, so probing here would consume a batch the fetch then misses.
+fn has_bootstrap_scope(
+    config: &PolymarketInstrumentProviderConfig,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> bool {
+    config.should_load_all() || !filters.is_empty()
 }
 
 /// Builds the Gamma events query that resolves series IDs to their active,
