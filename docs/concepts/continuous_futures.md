@@ -85,9 +85,8 @@ contract on either side.
 
 ## Validation
 
-The Rust request path (`crates/data/src/engine/requests.rs`) and the Cython request and
-subscription paths (`engine.pyx::_continuous_future_validate_transitions`) validate transition
-params before allocating any aggregator:
+The request and subscription paths share one parser in `crates/data/src/engine/requests.rs`, so
+both apply the same rules to transition params before allocating any aggregator:
 
 - `continuous_future_adjustment_mode` must parse as a valid `ContinuousFutureAdjustmentType`.
 - `continuous_future_transitions` must be a list or tuple of dict rows.
@@ -103,16 +102,18 @@ params before allocating any aggregator:
   the target venue, and appear as a `post_instrument_id` in the transition list. The same
   applies to `first_pre_instrument_id`.
 
-On validation failure the Rust request returns an error before it allocates child segment state.
-The Cython request handler calls `_abort_request` to drop workflow state it had begun to set up;
-the Cython subscription path logs a specific error and returns.
+On validation failure both paths return an error before allocating any aggregator or child
+segment state. A failure after that point unwinds what was already set up: the request path
+releases its request-scoped aggregators, and the subscription path stops the target aggregator it
+created. A rejected request or subscription therefore leaves no partially initialized workflow
+behind.
 
 ## Target instrument auto-synthesis
 
 The continuous root (for example `ES.XCME`) is a synthetic id with no market data of its own,
 but downstream consumers (aggregators, cache lookups, serialization) still expect an `Instrument`
-in the cache. After validation, the Rust request path and the Cython request and subscription
-paths ensure the target instrument exists:
+in the cache. After validation, both the request and subscription paths ensure the target
+instrument exists:
 
 - If the target id is already cached, the target setup is a no-op. Callers can pre-register a custom
   continuous instrument and the engine respects it.
@@ -140,11 +141,12 @@ flowchart TD
     SubReq --> Agg[(Primary aggregator<br/>BarBuilder.set_adjustment)]
     LiveSub --> Agg2[(Live aggregator<br/>BarBuilder.set_adjustment)]
 
-    Agg -->|Rust request path| ReqAgg[(Request-scoped aggregator chain)]
-    Agg -->|Cython request path| Chain[Cython chain aggregators]
+    Agg -->|adjusted bars| ReqAgg[(Request-scoped aggregator chain)]
+    ReqAgg -->|bars at every level| Cache[(Cache)]
     Agg2 -->|adjusted bars| MsgBus[(msgbus: data.bars.*)]
-    Chain -->|final bars| PipelineBus[(Cython msgbus: data.pipeline.bars.*)]
 ```
+
+Request-path bars land in the cache; subscription-path bars publish to the message bus.
 
 The design has two entry points, one outer loop shape (walk the segments), two ways to fetch
 per-segment data (historical sub-requests or live sub-subscriptions), and one adjustment
@@ -196,11 +198,10 @@ next segment.
 ### Chain aggregators
 
 If the caller sets `bar_types = (bar_type_1, bar_type_2)` for multi-level internal aggregation,
-the setup creates all aggregators keyed by `parent.id`. The Rust request path routes segment
+the setup creates all aggregators keyed by `parent.id`. The request path routes segment
 source responses into the primary continuous target, then forwards emitted bars to matching
-request-scoped downstream aggregators. The Cython path wires pipeline topics between levels so
-the chain walks up automatically. Only the primary builder has `set_adjustment` called on it;
-higher levels re-aggregate already adjusted data in both paths.
+request-scoped downstream aggregators. Only the primary builder has `set_adjustment` called on
+it; higher levels re-aggregate already adjusted data.
 
 ## Subscription flow
 

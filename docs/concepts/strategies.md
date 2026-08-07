@@ -737,7 +737,7 @@ order IDs unique across strategies for the same trader.
 
 :::info Rust implementation
 Rust treats `StrategyConfig` as immutable construction input. The runtime
-`StrategyId` carries the order ID tag, matching Python/Cython behavior. This keeps
+`StrategyId` carries the order ID tag, matching the Python behavior. This keeps
 actor registration, client order ID generation, order list ID generation, and
 position ID generation aligned through `strategy_id.get_tag()`.
 

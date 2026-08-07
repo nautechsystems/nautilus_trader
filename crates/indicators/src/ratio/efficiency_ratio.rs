@@ -101,9 +101,8 @@ impl EfficiencyRatio {
 
     pub fn update_raw(&mut self, value: f64) {
         self.inputs.push(value);
-        // Bound the inputs window to `period`, matching the Cython
-        // `deque(maxlen=period)`; otherwise the net change below is measured from
-        // the all-time-first price instead of `period` bars back.
+        // Bound the inputs window to `period`; otherwise the net change below is measured
+        // from the all-time-first price instead of `period` bars back.
         if self.inputs.len() > self.period {
             self.inputs.remove(0);
         }
@@ -118,7 +117,7 @@ impl EfficiencyRatio {
             (self.inputs[self.inputs.len() - 1] - self.inputs[self.inputs.len() - 2]).abs();
         self.deltas.push(last_diff);
         // Bound the deltas window to `period` as well, so the sum reflects only
-        // the last `period` absolute changes (Cython `deque(maxlen=period)`).
+        // the last `period` absolute changes.
         if self.deltas.len() > self.period {
             self.deltas.remove(0);
         }
@@ -220,8 +219,8 @@ mod tests {
     #[rstest]
     fn test_value_bounded_to_period_after_warmup(mut efficiency_ratio_10: EfficiencyRatio) {
         // Regression: with more than `period` inputs the rolling window must stay
-        // bounded to `period` (matching the Cython `deque(maxlen=period)`), so the
-        // net change and summed deltas use only the last `period` prices.
+        // bounded to `period`, so the net change and summed deltas use only the last
+        // `period` prices.
         let prices = [
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0,
         ];
@@ -239,7 +238,7 @@ mod tests {
     #[rstest]
     fn test_reset_clears_deltas(mut efficiency_ratio_10: EfficiencyRatio) {
         // Regression: reset must clear the deltas buffer too, otherwise stale
-        // deltas leak into the next run's sum (matching the Cython `_reset`).
+        // deltas leak into the next run's sum.
         for price in [1.0, 3.0, 6.0, 10.0, 15.0] {
             efficiency_ratio_10.update_raw(price);
         }

@@ -345,5 +345,5 @@ The complete example is at
 - **Multiple markets**. Load several `.gz` files and run them through the
   same engine to test cross-market signals.
 - **Compare with Python**. Run the same backtest from Python using the
-  `BacktestEngine` Python API. The Rust engine processes the same data
-  pipeline at roughly six times the throughput of the Python/Cython path.
+  `BacktestEngine` Python API. Both surfaces drive the same Rust engine over
+  the same data pipeline, so the results should match.

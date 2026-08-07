@@ -46,6 +46,24 @@ if matches=$(rg -n "cython-compat" crates python Cargo.toml Makefile 2> /dev/nul
   exit 1
 fi
 
+# Deliberately line-scoped: matching across adjacent comment lines cannot tell a wrapped
+# deferral from an unrelated TODO sitting next to an intentional historical reference.
+if matches=$(
+  rg -n -i '(TODO|FIXME).*cython|cython.*(TODO|FIXME)' . \
+    --glob '!RELEASES.md' \
+    --glob '!MIGRATION_V2.md' \
+    --glob '!.pre-commit-hooks/**' \
+    2> /dev/null
+); then
+  echo "Error: found deferrals conditioned on removing Cython"
+  echo
+  echo "$matches"
+  echo
+  echo "Cython removal is complete, so state the remaining work on its own terms."
+  echo "Historical, migration, and release references carrying no deferral marker are allowed."
+  exit 1
+fi
+
 if matches=$(rg --files crates | rg '/cbindgen_cython\.toml$|\.(pyx|pxd|pxi)$'); then
   echo "Error: found removed Cython or Cython cbindgen files"
   echo

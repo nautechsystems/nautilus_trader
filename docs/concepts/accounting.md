@@ -157,7 +157,7 @@ Point queries return `None` when the entry is absent; total queries always
 return a `Money` (zero for the currency if nothing matches).
 
 :::note
-The names below are the Python / Cython API on `MarginAccount`. Rust strategies
+The names below are the Python API on `MarginAccount`. Rust strategies
 using the `nautilus-model` crate call `account_margin(&currency)`,
 `account_initial_margin(&currency)`, `account_maintenance_margin(&currency)`,
 `total_initial_margin(currency)`, and `total_maintenance_margin(currency)`: the

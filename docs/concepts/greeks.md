@@ -6,9 +6,9 @@ Nautilus provides two paths for working with option Greeks
 1. **Venue-provided Greeks (Rust/PyO3)**: real-time Greeks streamed from venues
    like Deribit, Bybit, and OKX via the `OptionGreeks` data type and the option
    chain aggregation system.
-2. **Local Greeks calculator (Cython/Python and Rust/PyO3)**: the `GreeksCalculator`
-   class computes Black-Scholes Greeks from cached market data, with support for
-   portfolio aggregation, shock scenarios, and beta weighting.
+2. **Local Greeks calculator (Rust/PyO3)**: the `GreeksCalculator` class computes
+   Black-Scholes Greeks from cached market data, with support for portfolio
+   aggregation, shock scenarios, and beta weighting.
 
 Either path works independently or together. Venue-provided Greeks arrive
 through the data subscription system and require no local computation. The local
@@ -132,19 +132,16 @@ The `BlackScholesGreeksResult` returned by these functions contains: `price`, `v
 - Theta is scaled by 1/365.25 (daily decay).
 - American-style options are priced as European for Greeks computation.
 
-## Local Greeks calculators
+## Local Greeks calculator
 
 ### GreeksCalculator
 
-The legacy Cython `GreeksCalculator` class in `nautilus_trader/model/greeks.pyx` computes
-Black‑Scholes Greeks from cached market data. The current PyO3 calculator is exposed from
-`nautilus_trader.common.GreeksCalculator`.
-Both calculators use the cache and clock and are accessible from actors or strategies.
+The `GreeksCalculator` class computes Black‑Scholes Greeks from cached market data. It is
+exposed from `nautilus_trader.common.GreeksCalculator`, uses the cache and clock, and is
+accessible from actors or strategies.
 
 ```python
 from nautilus_trader.common import GreeksCalculator
-
-# Legacy Cython: from nautilus_trader.model.greeks import GreeksCalculator
 
 # Typically created in on_start()
 calculator = GreeksCalculator(cache=self.cache, clock=self.clock)
@@ -159,10 +156,10 @@ greeks = calculator.instrument_greeks(
     instrument_id=option_id,
     flat_interest_rate=0.0425,  # used if no yield curve in cache
 )
-# Both surfaces return GreeksData or None while market data is warming up.
+# Returns GreeksData or None while market data is warming up.
 ```
 
-Both calculators:
+The calculator performs these steps:
 
 1. Look up the instrument and its underlying in the cache.
 2. Retrieve current prices (MID preferred, LAST as fallback).
@@ -171,8 +168,7 @@ Both calculators:
 5. Return a `GreeksData` object with all computed values.
 
 Missing prices return `None`, which lets strategies treat warm-up as a normal no-op path.
-The v2 PyO3 surface still raises a Python exception for setup errors such as a missing
-instrument definition.
+Setup errors such as a missing instrument definition raise a Python exception instead.
 
 For non-option instruments (futures, equities), the calculator returns a `GreeksData`
 with `delta=1` (or beta-weighted delta) and no gamma/vega/theta.
@@ -249,10 +245,10 @@ Filters:
 
 ### GreeksData
 
-On the legacy Python surface, `GreeksData` is a Python custom data class
-(`@customdataclass`) that carries the full context of a single instrument's Greeks
-computation. It extends `Data` and supports Arrow serialization, cache storage, and
-catalog persistence. The v2/PyO3 surface exposes the same core fields from Rust.
+`GreeksData` carries the full context of a single instrument's Greeks computation and is
+exposed from `nautilus_trader.model`. Passing `cache_greeks=True` stores the result in the
+cache. The Rust `GreeksCalculator` can also publish it to the
+`data.GreeksData.instrument_id={symbol}` topic; the Python surface does not expose that flag.
 
 | Field              | Type           | Description                                            |
 | ------------------ | -------------- | ------------------------------------------------------ |

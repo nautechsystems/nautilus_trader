@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Refined CI, build, and dependency configuration after the v1 removal
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei
+- Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
 - Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-01`
 - Upgraded Python and workflow tools: `uv` v0.12.1, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled

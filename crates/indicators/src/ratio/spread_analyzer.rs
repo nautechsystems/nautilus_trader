@@ -88,16 +88,14 @@ impl Indicator for SpreadAnalyzer {
         self.current = spread;
         self.spreads.push(spread);
 
-        // Bound the rolling window to `capacity`, matching the Cython
-        // `deque(maxlen=capacity)`. Without this the buffer grows unbounded and
-        // `fast_mean_iterated` errors (panicking on `unwrap`) once the length
-        // exceeds `capacity`.
+        // Bound the rolling window to `capacity`. Without this the buffer grows unbounded and
+        // `fast_mean_iterated` errors (panicking on `unwrap`) once the length exceeds `capacity`.
         if self.spreads.len() > self.capacity {
             self.spreads.remove(0);
         }
 
-        // Recompute the average over the bounded window. The Cython reference uses an
-        // incremental `fast_mean_iterated(..., drop_left=false)` update, but at capacity
+        // Recompute the average over the bounded window. An incremental
+        // `fast_mean_iterated(..., drop_left=false)` update is cheaper, but at capacity
         // that subtracts `values[length - 1]` (the spread just pushed) rather than the
         // evicted oldest value, so the average freezes for non-constant spreads.
         // Recomputing from the bounded window is O(capacity) and always correct.
@@ -212,9 +210,8 @@ mod tests {
         mut spread_analyzer_10: SpreadAnalyzer,
     ) {
         // Regression: feeding more than `capacity` quotes must not panic, and the
-        // internal window must stay bounded to `capacity` (matching the Cython
-        // `deque(maxlen=capacity)`). Previously the unbounded buffer caused
-        // `fast_mean_iterated` to error and panic on the (capacity + 1)th quote.
+        // internal window must stay bounded to `capacity`. Previously the unbounded buffer
+        // caused `fast_mean_iterated` to error and panic on the (capacity + 1)th quote.
         let bid_price: [&str; 15] = [
             "100.50", "100.45", "100.55", "100.60", "100.52", "100.48", "100.53", "100.57",
             "100.49", "100.51", "100.54", "100.56", "100.58", "100.50", "100.52",

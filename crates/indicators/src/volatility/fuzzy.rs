@@ -322,9 +322,8 @@ impl FuzzyCandlesticks {
 
         let total = (high - low).abs();
 
-        // Bound the rolling windows to `period`, matching the Cython
-        // `deque(maxlen=period)`. Without this the fixed-capacity deques grow to
-        // their 1024 capacity, so the means (sum / period) and standard
+        // Bound the rolling windows to `period`. Without this the fixed-capacity deques
+        // grow to their 1024 capacity, so the means (sum / period) and standard
         // deviations are computed over far more than `period` candles.
         if self.lengths.len() == self.period {
             self.lengths.pop_front();
@@ -628,9 +627,8 @@ mod tests {
 
     #[rstest]
     fn test_windows_bounded_to_period(mut fuzzy_candlesticks_10: FuzzyCandlesticks) {
-        // Regression: the four rolling windows must stay bounded to `period`
-        // (matching the Cython `deque(maxlen=period)`). Previously the
-        // fixed-capacity deques grew to their 1024 capacity, so the means
+        // Regression: the four rolling windows must stay bounded to `period`. Previously
+        // the fixed-capacity deques grew to their 1024 capacity, so the means
         // (sum / period) and standard deviations were computed over far more than
         // `period` candles.
         let bars = [

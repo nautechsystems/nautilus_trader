@@ -302,7 +302,7 @@ repos:
 
       - id: check-no-legacy-paths
         name: check no legacy paths
-        description: Fails on removed Python namespace paths and unexpected FFI surfaces
+        description: Fails on removed Python namespace paths, Cython-conditioned deferrals, and unexpected FFI surfaces
         entry: bash .pre-commit-hooks/check_no_legacy_paths.sh
         language: system
         files: ^(crates|docs|examples|python)/|[.]md$|^(Cargo[.]toml|Makefile)$

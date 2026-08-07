@@ -7271,8 +7271,8 @@ fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
     client_id: ClientId,
     venue: Venue,
 ) {
-    // Matches the Cython DataEngine: internal aggregation is local to the engine,
-    // and exact subscribers keep the aggregator active without forwarding to the client.
+    // Internal aggregation is local to the engine, and exact subscribers keep the
+    // aggregator active without forwarding to the client.
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(

@@ -2030,7 +2030,6 @@ impl DataEngine {
     // Replays a day-start snapshot forward to the request's original start: when the first delta
     // is an F_SNAPSHOT on a UTC day boundary, rebuilds the book from the pre-start deltas and
     // replaces them with one snapshot keyed at the original start, then forwards the rest.
-    // Mirrors the Cython `_handle_order_book_deltas_snapshot_replay`.
     fn book_deltas_snapshot_replay(&self, resp: &mut BookDeltasResponse) {
         let Some(original_start_ns) = resp.start else {
             return;
@@ -4434,7 +4433,6 @@ impl DataEngine {
             return Ok(());
         }
 
-        // Setup time bar aggregator if needed (matches Cython _setup_bar_aggregator)
         self.setup_bar_aggregator(bar_type, false, request_id)?;
 
         aggregator.borrow_mut().set_is_running(true);
@@ -4491,7 +4489,7 @@ impl DataEngine {
         }
     }
 
-    /// Sets up a bar aggregator, matching Cython `_setup_bar_aggregator` logic.
+    /// Sets up a bar aggregator.
     ///
     /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
     fn setup_bar_aggregator(

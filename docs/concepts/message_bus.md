@@ -123,7 +123,7 @@ The Data publish/subscribe approach works well when you need:
 
 - **Exchange of structured trading data** like market data, indicators, custom metrics, or option greeks.
 - **Proper event ordering** via built-in timestamps (`ts_event`, `ts_init`) crucial for backtest accuracy.
-- **Data persistence and serialization** through the `@customdataclass` decorator, integrating with NautilusTrader's data catalog system.
+- **Data persistence and serialization** through registered custom data classes, integrating with NautilusTrader's data catalog system.
 - **Standardized trading data exchange** between system components.
 
 #### Considerations
@@ -420,9 +420,9 @@ when the matching Rust feature is enabled. `encoding_builtin = "sbe"` and
 `encoding_builtin = "capnp"` fail validation until those schema codecs cover the built-in event
 category.
 
-The legacy Python/Cython Redis serializer and the Redis cache payload path support MessagePack and
-JSON. SBE and Cap'n Proto are schema payload encodings for Rust-native external message bus egress,
-not Redis cache encodings.
+The Redis cache payload path supports MessagePack and JSON only. SBE and Cap'n Proto are schema
+payload encodings for Rust-native external message bus egress, not Redis cache encodings, and
+selecting either for a Redis cache payload is an error.
 
 :::tip
 The `json` encoding is used by default for human readability and interoperability.

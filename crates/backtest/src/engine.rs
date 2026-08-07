@@ -441,8 +441,8 @@ impl BacktestEngine {
         }
 
         if validate {
-            // Mirror Cython: validate against the first element only and assume the
-            // batch is homogeneous (documented contract on add_data).
+            // Validate against the first element only and assume the batch is
+            // homogeneous (documented contract on add_data).
             let first = &to_add[0];
             #[cfg(feature = "defi")]
             let first_is_defi = matches!(first, Data::Defi(_));

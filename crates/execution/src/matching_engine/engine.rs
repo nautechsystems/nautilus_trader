@@ -2146,7 +2146,7 @@ impl OrderMatchingEngine {
                 }
             }
             AggressorSide::NoAggressor => {
-                // Force both sides to trade price (parity with Cython)
+                // No directional information, so both sides take the trade price
                 self.core.set_bid_raw(trade.price);
                 self.core.set_ask_raw(trade.price);
             }

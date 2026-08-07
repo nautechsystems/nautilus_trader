@@ -372,16 +372,6 @@ Current behavior:
   (type_name, metadata, identifier) and return results sorted by `ts_init`;
   this is exposed via the PyO3 `RedisCacheDatabase` API.
 
-## Cython custom data
-
-The Cython `@customdataclass` system is separate from this architecture.
-This document describes the PyO3 custom-data system:
-
-- PyO3 `CustomData`.
-- Dynamic runtime registration.
-- Arrow/Parquet persistence.
-- Native Rust execution paths.
-
 ## Practical implications
 
 This architecture gives Nautilus two important properties:

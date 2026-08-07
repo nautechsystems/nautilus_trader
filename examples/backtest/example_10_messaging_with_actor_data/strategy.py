@@ -18,6 +18,10 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model import InstrumentId
+
+# TODO: `nautilus_trader.model.custom` is not part of the v2 package, so this import fails.
+# Use `register_custom_data_class` from `nautilus_trader.model` instead; see
+# docs/concepts/custom_data.md. `Last10BarsStatsSerializable` below is unused by this strategy.
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType

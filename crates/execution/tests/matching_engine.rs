@@ -12089,8 +12089,8 @@ fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
     assert_eq!(engine.best_ask_price(), Some(Price::from("1000.00")));
 }
 
-// Cython-vs-Rust parity: a non-crossing modify must keep the core's
-// `RestingOrder` snapshot in sync so a later quote fills at the new price.
+// A non-crossing modify must keep the core's `RestingOrder` snapshot in sync
+// so a later quote fills at the new price.
 #[rstest]
 fn test_modify_then_iterate_fills_at_new_limit_price(
     instrument_eth_usdt: InstrumentAny,

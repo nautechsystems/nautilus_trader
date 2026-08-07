@@ -1747,9 +1747,9 @@ impl PositionSideSpecified {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum PriceType {
-    // TODO: Revisit during v2 cutover after Cython and legacy FFI removal. Make bar price
-    // sources consistent with mark/index price subscriptions, including `PriceType::Index` and
-    // internal bar aggregation from mark/index updates. Document the source derivation order.
+    // Bar price sources are not yet consistent with mark/index price subscriptions. The open
+    // decisions are whether to add a `PriceType::Index` variant, whether to aggregate bars
+    // internally from mark/index updates, and what the documented source derivation order is.
     /// The best quoted price at which buyers are willing to buy a quantity of an instrument.
     /// Often considered the best bid in the order book.
     Bid = 1,

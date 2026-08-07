@@ -96,7 +96,7 @@ pub struct HyperliquidOutcomeMetadata {
 
 /// Normalized instrument definition produced by this parser.
 ///
-/// This deliberately avoids any tight coupling to Nautilus' Cython types.
+/// This deliberately avoids any tight coupling to Nautilus domain types.
 /// The InstrumentProvider can later convert this into Nautilus `Instrument`s.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidInstrumentDef {

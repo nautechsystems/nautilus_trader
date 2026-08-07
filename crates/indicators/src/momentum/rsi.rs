@@ -308,9 +308,9 @@ mod tests {
 
     #[rstest]
     fn test_recovers_below_max_after_losses() {
-        // Regression for the flat-1.0 defect (mirrors Cython fix #2703): once real down-moves
-        // arrive, RSI must fall below `rsi_max` rather than staying pinned at 1.0 because
-        // `last_value` was never advanced on zero-loss bars.
+        // Regression for the flat-1.0 defect (#2703): once real down-moves arrive, RSI must
+        // fall below `rsi_max` rather than staying pinned at 1.0 because `last_value` was
+        // never advanced on zero-loss bars.
         let mut values: Vec<f64> = (1..=15).map(f64::from).collect();
         values.extend([14.0, 12.0, 9.0, 5.0, 2.0]);
 
