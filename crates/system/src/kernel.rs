@@ -666,12 +666,21 @@ impl NautilusKernel {
     pub fn start_trader(&mut self) -> anyhow::Result<()> {
         log::info!("Starting trader...");
 
-        if self.config.load_state() {
+        let load_state = self.config.load_state();
+        let save_state = self.config.save_state();
+
+        if (load_state || save_state) && !self.cache.borrow().has_backing() {
+            log::warn!(
+                "Cache has no database backing, load_state={load_state} and save_state={save_state} will have no effect"
+            );
+        }
+
+        if load_state {
             Trader::load_state(&self.trader)
                 .map_err(|e| anyhow::anyhow!("Failed to load actor and strategy state: {e:#}"))?;
         }
 
-        self.state_save_armed = self.config.save_state();
+        self.state_save_armed = save_state;
         self.order_emulator.start();
 
         if let Err(start_err) = Trader::start_with_component_callbacks(&self.trader) {

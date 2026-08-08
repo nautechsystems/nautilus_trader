@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added `LiveNode.start()` warning when external message bus ingress requires `run()`
+- Added trader start warning when `load_state` or `save_state` is enabled without a cache database backing
 - Added runtime external‑order claim registration and removal to Rust `LiveNode` (#4620), thanks @folknor
 - Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
