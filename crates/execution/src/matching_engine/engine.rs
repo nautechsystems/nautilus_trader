@@ -76,8 +76,6 @@ use crate::{
     trailing::trailing_stop_calculate,
 };
 
-const OPTION_SETTLEMENT_ID_ATTEMPTS: usize = 16;
-
 /// An order matching engine for a single market.
 pub struct OrderMatchingEngine {
     /// The venue for the matching engine.
@@ -152,7 +150,6 @@ impl Debug for OrderMatchingEngine {
 struct OptionSettlementLeg {
     order: OrderAny,
     venue_order_id: VenueOrderId,
-    trade_id: TradeId,
     position_id: Option<PositionId>,
     fill: OrderFilled,
 }
@@ -2577,28 +2574,16 @@ impl OrderMatchingEngine {
         let custom_option_price = self.settlement_price;
         let should_exercise = self.option_should_exercise(underlying_price);
 
-        // Built once: the cache cannot mutate between collision attempts, and a
-        // per-attempt rescan would make expiration O(legs x trade history).
-        let cached_trade_ids = self.option_cached_trade_ids();
-
-        for _ in 0..OPTION_SETTLEMENT_ID_ATTEMPTS {
-            let plan = self.option_create_settlement_plan(
-                &positions,
-                &underlying_instrument,
-                underlying_price,
-                should_exercise,
-                ts_now,
-                custom_option_price,
-            );
-
-            if self.option_apply_settlement_plan(plan, &cached_trade_ids)? {
-                return Ok(true);
-            }
-        }
-
-        Err(anyhow::anyhow!(
-            "exhausted {OPTION_SETTLEMENT_ID_ATTEMPTS} settlement ID attempts"
-        ))
+        let plan = self.option_create_settlement_plan(
+            &positions,
+            &underlying_instrument,
+            underlying_price,
+            should_exercise,
+            ts_now,
+            custom_option_price,
+        );
+        self.option_apply_settlement_plan(plan)?;
+        Ok(true)
     }
 
     fn option_settlement_retry(&mut self, reason: &'static str, message: &str) -> bool {
@@ -2637,47 +2622,6 @@ impl OrderMatchingEngine {
         OptionSettlementPlan { legs }
     }
 
-    fn option_cached_trade_ids(&self) -> IndexSet<TradeId> {
-        let cache = self.cache.borrow();
-        let mut trade_ids = IndexSet::new();
-
-        for client_order_id in cache.client_order_ids_view(None, None, None, None).iter() {
-            let order = cache
-                .order(client_order_id)
-                .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
-            trade_ids.extend(order.trade_ids().into_iter().copied());
-        }
-
-        for position_id in cache.position_ids_view(None, None, None, None).iter() {
-            let position = cache
-                .position(position_id)
-                .unwrap_or_else(|| panic!("Position {position_id} not found"));
-            trade_ids.extend(position.trade_ids.iter().copied());
-        }
-
-        trade_ids
-    }
-
-    fn option_settlement_plan_collides(
-        &self,
-        plan: &OptionSettlementPlan,
-        cached_trade_ids: &IndexSet<TradeId>,
-    ) -> bool {
-        let mut client_order_ids = IndexSet::new();
-        let mut venue_order_ids = IndexSet::new();
-        let mut trade_ids = IndexSet::new();
-        let cache = self.cache.borrow();
-
-        plan.legs.iter().any(|leg| {
-            !client_order_ids.insert(leg.order.client_order_id())
-                || !venue_order_ids.insert(leg.venue_order_id)
-                || !trade_ids.insert(leg.trade_id)
-                || cache.order_exists(&leg.order.client_order_id())
-                || cache.client_order_id(&leg.venue_order_id).is_some()
-                || cached_trade_ids.contains(&leg.trade_id)
-        })
-    }
-
     fn option_register_settlement_plan(&self, plan: &OptionSettlementPlan) -> anyhow::Result<()> {
         for leg in &plan.legs {
             let client_order_id = leg.order.client_order_id();
@@ -2699,15 +2643,7 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
-    fn option_apply_settlement_plan(
-        &mut self,
-        plan: OptionSettlementPlan,
-        cached_trade_ids: &IndexSet<TradeId>,
-    ) -> anyhow::Result<bool> {
-        if self.option_settlement_plan_collides(&plan, cached_trade_ids) {
-            return Ok(false);
-        }
-
+    fn option_apply_settlement_plan(&mut self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
         self.option_register_settlement_plan(&plan)?;
 
         for leg in &plan.legs {
@@ -2727,7 +2663,7 @@ impl OrderMatchingEngine {
             self.dispatch_order_event(OrderEventAny::Filled(leg.fill));
         }
 
-        Ok(true)
+        Ok(())
     }
 
     fn option_should_exercise(&self, underlying_price: Price) -> bool {
@@ -2796,8 +2732,8 @@ impl OrderMatchingEngine {
         custom_option_price: Option<Price>,
     ) -> OptionSettlementLeg {
         let venue = self.venue;
-        let client_order_id = ClientOrderId::from(UUID4::new().to_string());
-        let venue_order_id = VenueOrderId::from(UUID4::new().to_string());
+        let client_order_id = ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let venue_order_id = VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
         let trade_id = TradeId::from(UUID4::new().to_string());
         let close_px = custom_option_price
             .unwrap_or_else(|| self.option_settlement_price(underlying_price, true));
@@ -2822,7 +2758,6 @@ impl OrderMatchingEngine {
         OptionSettlementLeg {
             order,
             venue_order_id,
-            trade_id,
             position_id: Some(position.id),
             fill,
         }
@@ -2854,11 +2789,15 @@ impl OrderMatchingEngine {
         };
 
         let venue = self.venue;
-        let close_client_order_id = ClientOrderId::from(UUID4::new().to_string());
-        let close_venue_order_id = VenueOrderId::from(UUID4::new().to_string());
+        let close_client_order_id =
+            ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let close_venue_order_id =
+            VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
         let close_trade_id = TradeId::from(UUID4::new().to_string());
-        let open_client_order_id = ClientOrderId::from(UUID4::new().to_string());
-        let open_venue_order_id = VenueOrderId::from(UUID4::new().to_string());
+        let open_client_order_id =
+            ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let open_venue_order_id =
+            VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
         let open_trade_id = TradeId::from(UUID4::new().to_string());
         let settlement_px = self.option_settlement_price(underlying_price, false);
         let option_close_px =
@@ -2911,14 +2850,12 @@ impl OrderMatchingEngine {
             OptionSettlementLeg {
                 order: close_order,
                 venue_order_id: close_venue_order_id,
-                trade_id: close_trade_id,
                 position_id: Some(position.id),
                 fill: option_fill,
             },
             OptionSettlementLeg {
                 order: open_order,
                 venue_order_id: open_venue_order_id,
-                trade_id: open_trade_id,
                 position_id: None,
                 fill: underlying_fill,
             },
@@ -2932,8 +2869,8 @@ impl OrderMatchingEngine {
         custom_option_price: Option<Price>,
     ) -> OptionSettlementLeg {
         let venue = self.venue;
-        let client_order_id = ClientOrderId::from(UUID4::new().to_string());
-        let venue_order_id = VenueOrderId::from(UUID4::new().to_string());
+        let client_order_id = ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let venue_order_id = VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
         let trade_id = TradeId::from(UUID4::new().to_string());
         let close_px =
             custom_option_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
@@ -2958,7 +2895,6 @@ impl OrderMatchingEngine {
         OptionSettlementLeg {
             order,
             venue_order_id,
-            trade_id,
             position_id: Some(position.id),
             fill,
         }
@@ -6943,24 +6879,20 @@ mod tests {
             OrderType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
         },
         events::OrderEventAny,
-        identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es},
         },
         orderbook::OrderBook,
         orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::Position,
         types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::Decimal;
 
-    use super::{
-        BarTickSizes, OptionSettlementLeg, OptionSettlementPlan, OrderMatchingEngine,
-        PostMatchOrderAction, post_match_order_action,
-    };
+    use super::{BarTickSizes, OrderMatchingEngine, PostMatchOrderAction, post_match_order_action};
     use crate::{
         matching_engine::config::OrderMatchingEngineConfig,
         models::{
@@ -7115,176 +7047,6 @@ mod tests {
             .client_order_id(ClientOrderId::from("POST-MATCH-TRAIL"))
             .submit(true)
             .build()
-    }
-
-    #[rstest]
-    fn test_option_cached_trade_ids_preserves_order_and_position_union() {
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let order_trade_id = TradeId::from("ORDER-ONLY-TRADE-ID");
-        let position_trade_id = TradeId::from("POSITION-ONLY-TRADE-ID");
-
-        let mut cached_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(instrument.id())
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from("1.000"))
-            .client_order_id(ClientOrderId::from("CACHED-ORDER"))
-            .submit(true)
-            .build();
-        cached_order
-            .apply(TestOrderEventStubs::accepted(
-                &cached_order,
-                AccountId::from("ACCOUNT-001"),
-                VenueOrderId::from("CACHED-VENUE-ORDER"),
-            ))
-            .unwrap();
-        let order_fill = TestOrderEventStubs::filled(
-            &cached_order,
-            &instrument,
-            Some(order_trade_id),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(AccountId::from("ACCOUNT-001")),
-        );
-        cached_order.apply(order_fill).unwrap();
-        cache
-            .borrow_mut()
-            .add_order(cached_order, None, None, false)
-            .unwrap();
-
-        let position_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(instrument.id())
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from("1.000"))
-            .client_order_id(ClientOrderId::from("UNCACHED-POSITION-ORDER"))
-            .build();
-        let position_fill = match TestOrderEventStubs::filled(
-            &position_order,
-            &instrument,
-            Some(position_trade_id),
-            Some(PositionId::from("POSITION-001")),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(AccountId::from("ACCOUNT-001")),
-        ) {
-            OrderEventAny::Filled(fill) => fill,
-            _ => unreachable!(),
-        };
-        let position = Position::new(&instrument, position_fill);
-        cache
-            .borrow_mut()
-            .add_position(&position, OmsType::Hedging)
-            .unwrap();
-
-        let engine = OrderMatchingEngine::new(
-            instrument,
-            1,
-            FillModelHandle::default(),
-            FeeModelAny::default().into(),
-            BookType::L1_MBP,
-            OmsType::Netting,
-            AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
-            cache,
-            Default::default(),
-        );
-
-        let cached_trade_ids = engine.option_cached_trade_ids();
-        assert!(cached_trade_ids.contains(&order_trade_id));
-        assert!(cached_trade_ids.contains(&position_trade_id));
-    }
-
-    #[rstest]
-    fn test_option_settlement_collision_dispatches_nothing() {
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let client_order_id = ClientOrderId::from("COLLIDING-SETTLEMENT-ID");
-        let existing_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(instrument.id())
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from("1.000"))
-            .client_order_id(client_order_id)
-            .build();
-        cache
-            .borrow_mut()
-            .add_order(existing_order.clone(), None, None, false)
-            .unwrap();
-
-        let settlement_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(instrument.id())
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from("1.000"))
-            .client_order_id(client_order_id)
-            .build();
-        let trade_id = TradeId::from("INDEPENDENT-TRADE-ID");
-        let fill = match TestOrderEventStubs::filled(
-            &settlement_order,
-            &instrument,
-            Some(trade_id),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(AccountId::from("ACCOUNT-001")),
-        ) {
-            OrderEventAny::Filled(fill) => fill,
-            _ => unreachable!(),
-        };
-        let plan = OptionSettlementPlan {
-            legs: vec![OptionSettlementLeg {
-                order: settlement_order,
-                venue_order_id: VenueOrderId::from("INDEPENDENT-VENUE-ID"),
-                trade_id,
-                position_id: None,
-                fill,
-            }],
-        };
-
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        let mut engine = OrderMatchingEngine::new(
-            instrument,
-            1,
-            FillModelHandle::default(),
-            FeeModelAny::default().into(),
-            BookType::L1_MBP,
-            OmsType::Netting,
-            AccountType::Margin,
-            clock,
-            cache.clone(),
-            Default::default(),
-        );
-        let events = Rc::new(RefCell::new(Vec::new()));
-        let event_handler = Rc::clone(&events);
-        engine.set_event_handler(Rc::new(move |event| {
-            event_handler.borrow_mut().push(event);
-        }));
-
-        let cached_trade_ids = engine.option_cached_trade_ids();
-        assert!(
-            !engine
-                .option_apply_settlement_plan(plan, &cached_trade_ids)
-                .unwrap()
-        );
-        assert!(events.borrow().is_empty());
-        assert_eq!(
-            cache
-                .borrow()
-                .orders_total_count(None, None, None, None, None),
-            1
-        );
-        assert_eq!(
-            cache.borrow().order(&client_order_id).unwrap().order_side(),
-            existing_order.order_side()
-        );
     }
 
     #[rstest]

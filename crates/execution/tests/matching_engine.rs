@@ -13061,6 +13061,7 @@ fn settlement_client_order_id(cache: &Rc<RefCell<Cache>>, tag: &str) -> ClientOr
 fn assert_full_width_independent_settlement_ids(
     events: &[OrderEventAny],
     client_order_id: ClientOrderId,
+    venue: &str,
 ) -> [String; 3] {
     let accepted = events
         .iter()
@@ -13079,27 +13080,36 @@ fn assert_full_width_independent_settlement_ids(
         })
         .expect("Expected settlement fill");
 
-    Uuid::parse_str(client_order_id.as_str()).expect("Client order ID must be a full UUID");
-    Uuid::parse_str(accepted.venue_order_id.as_str()).expect("Venue order ID must be a full UUID");
+    let prefix = format!("EXPIRATION-{venue}-");
+    let client_uuid = client_order_id
+        .as_str()
+        .strip_prefix(&prefix)
+        .expect("Client order ID must have the expiration prefix");
+    let venue_uuid = accepted
+        .venue_order_id
+        .as_str()
+        .strip_prefix(&prefix)
+        .expect("Venue order ID must have the expiration prefix");
+    Uuid::parse_str(client_uuid).expect("Client order ID suffix must be a full UUID");
+    Uuid::parse_str(venue_uuid).expect("Venue order ID suffix must be a full UUID");
     Uuid::parse_str(fill.trade_id.as_str()).expect("Trade ID must be a full UUID");
     assert_ne!(
-        client_order_id.as_str(),
-        accepted.venue_order_id.as_str(),
+        client_uuid, venue_uuid,
         "Client and venue order IDs must be independent",
     );
     assert_ne!(
-        client_order_id.as_str(),
+        client_uuid,
         fill.trade_id.as_str(),
         "Client order and trade IDs must be independent",
     );
     assert_ne!(
-        accepted.venue_order_id.as_str(),
+        venue_uuid,
         fill.trade_id.as_str(),
         "Venue order and trade IDs must be independent",
     );
     [
-        client_order_id.to_string(),
-        accepted.venue_order_id.to_string(),
+        client_uuid.to_string(),
+        venue_uuid.to_string(),
         fill.trade_id.to_string(),
     ]
 }
@@ -13164,7 +13174,7 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
 
     let events = get_order_event_handler_messages(&order_event_handler);
     let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
-    assert_full_width_independent_settlement_ids(&events, client_order_id);
+    assert_full_width_independent_settlement_ids(&events, client_order_id, venue);
     let fills: Vec<OrderFilled> = events
         .into_iter()
         .filter_map(|e| match e {
@@ -13251,8 +13261,10 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
         settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_PHYSICAL_CLOSE"));
     let open_client_order_id =
         settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_PHYSICAL_OPEN"));
-    let close_ids = assert_full_width_independent_settlement_ids(&events, close_client_order_id);
-    let open_ids = assert_full_width_independent_settlement_ids(&events, open_client_order_id);
+    let close_ids =
+        assert_full_width_independent_settlement_ids(&events, close_client_order_id, venue);
+    let open_ids =
+        assert_full_width_independent_settlement_ids(&events, open_client_order_id, venue);
     assert_eq!(
         close_ids
             .into_iter()
@@ -13452,10 +13464,30 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         .collect();
     assert_eq!(
         added_order_ids.len(),
-        1,
-        "Failed settlement plan must leave only its successfully registered close leg",
+        2,
+        "Failed settlement plan must expose both indexed settlement order IDs",
     );
-    let registered_order_id = *added_order_ids.iter().next().unwrap();
+    let cache_ref = cache.borrow();
+    let registered_order_ids: Vec<ClientOrderId> = added_order_ids
+        .iter()
+        .copied()
+        .filter(|client_order_id| cache_ref.order(client_order_id).is_some())
+        .collect();
+    assert_eq!(
+        registered_order_ids.len(),
+        1,
+        "Only the successfully registered close leg must resolve to an order object",
+    );
+    let registered_order_id = registered_order_ids[0];
+    assert_eq!(
+        added_order_ids
+            .iter()
+            .filter(|client_order_id| cache_ref.order(client_order_id).is_none())
+            .count(),
+        1,
+        "The failed second leg must leave one stale order ID index",
+    );
+    drop(cache_ref);
     assert!(
         position_order_ids_before_failure.is_subset(&position_order_ids_after_failure),
         "Failed settlement plan must not remove any position-order relationship",
@@ -13701,7 +13733,7 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
 
     let events = get_order_event_handler_messages(&order_event_handler);
     let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_OTM"));
-    assert_full_width_independent_settlement_ids(&events, client_order_id);
+    assert_full_width_independent_settlement_ids(&events, client_order_id, venue);
     let fills: Vec<OrderFilled> = events
         .into_iter()
         .filter_map(|e| match e {
