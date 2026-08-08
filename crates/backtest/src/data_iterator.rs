@@ -183,6 +183,18 @@ impl BacktestDataIterator {
         self.rebuild_heap();
     }
 
+    /// Returns the next backtest data element without advancing the stream cursor.
+    pub(crate) fn peek(&self) -> Option<&Data> {
+        if let Some(p) = self.single_priority {
+            let data = self.streams.get(&p)?;
+            let idx = *self.indices.get(&p)?;
+            return data.get(idx);
+        }
+
+        let entry = self.heap.peek()?;
+        self.streams.get(&entry.priority)?.get(entry.index)
+    }
+
     /// Returns the next backtest data element across all streams in replay order.
     pub(crate) fn next_item(&mut self) -> Option<Data> {
         // Fast path for single stream
@@ -341,6 +353,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_peek_does_not_consume_single_stream_item() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data("s", vec![quote("A.B", 1), quote("A.B", 2)], true);
+
+        assert_eq!(it.peek().unwrap().ts_init(), UnixNanos::from(1));
+        assert_eq!(it.peek().unwrap().ts_init(), UnixNanos::from(1));
+        assert_eq!(it.next().unwrap().ts_init(), UnixNanos::from(1));
+        assert_eq!(it.peek().unwrap().ts_init(), UnixNanos::from(2));
+    }
+
+    #[rstest]
     fn test_single_stream_sorts_unsorted_input() {
         let mut it = BacktestDataIterator::new();
         it.add_data(
@@ -359,6 +382,19 @@ mod tests {
         it.add_data("s2", vec![quote("C.D", 2), quote("C.D", 3)], false);
 
         assert_eq!(collect_ts(&mut it), vec![1, 2, 3, 4]);
+    }
+
+    #[rstest]
+    fn test_peek_does_not_consume_multi_stream_heap_item() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data("s1", vec![quote("A.B", 1), quote("A.B", 4)], true);
+        it.add_data("s2", vec![quote("C.D", 2), quote("C.D", 3)], true);
+
+        assert_eq!(it.peek().unwrap().ts_init(), UnixNanos::from(1));
+        assert_eq!(it.peek().unwrap().ts_init(), UnixNanos::from(1));
+        assert_eq!(it.next().unwrap().ts_init(), UnixNanos::from(1));
+        assert_eq!(it.peek().unwrap().ts_init(), UnixNanos::from(2));
+        assert_eq!(collect_ts(&mut it), vec![2, 3, 4]);
     }
 
     #[rstest]
