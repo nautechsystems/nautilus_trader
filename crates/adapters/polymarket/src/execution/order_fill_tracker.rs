@@ -544,6 +544,16 @@ impl OrderFillTrackerMap {
             .insert(venue_order_id, new_order_state(submitted_qty, order_side));
     }
 
+    /// Returns the registered submitted quantity for an order, if tracked.
+    pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .orders
+            .get(venue_order_id)
+            .map(|s| s.submitted_qty)
+    }
+
     /// Records a fill against a registered order, for tests that drive fill accumulation directly.
     pub(crate) fn record_fill(&self, venue_order_id: &VenueOrderId, qty: Quantity) {
         record_fill_in(

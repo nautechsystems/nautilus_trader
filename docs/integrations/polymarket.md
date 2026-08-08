@@ -657,6 +657,17 @@ accept, so fill reports for orders placed in another session pass through
 unchanged. `DUST_SNAP_THRESHOLD` is not configurable per-strategy; it lives
 in `nautilus_polymarket::common::consts`.
 
+### Order message size denomination
+
+The user channel reports `original_size` on an `order` message as the signed `makerAmount`. For a
+market order type (`FAK` or `FOK`) BUY that amount is the pUSD budget rather than a share count, so
+a BUY of 100 shares at 0.01 reports `1`. The adapter divides by the order price to recover the
+submitted share quantity before the size reaches the fill tracker or an order status report.
+
+A SELL signs shares as its maker amount and needs no conversion. Resting types (`GTC` and `GTD`)
+pass through unchanged: their denomination is unconfirmed, and converting a share‑denominated size
+would misreport every externally‑managed resting order.
+
 ### Exec tester close residuals
 
 `close_positions_qty_precision` is an `ExecTesterConfig` option. It defaults to `None`, which

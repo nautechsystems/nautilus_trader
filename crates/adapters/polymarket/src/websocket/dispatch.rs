@@ -51,7 +51,10 @@ use super::{
 };
 use crate::{
     common::{
-        enums::{PolymarketLiquiditySide, PolymarketOrderStatus, PolymarketTradeStatus},
+        enums::{
+            PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderStatus,
+            PolymarketOrderType, PolymarketTradeStatus,
+        },
         models::PolymarketMakerOrder,
     },
     execution::{
@@ -672,18 +675,18 @@ fn build_ws_order_status_report(
     let time_in_force = TimeInForce::from(order.order_type);
     let size_precision = instrument.size_precision();
     let price_precision = instrument.price_precision();
+    let price_dec = Decimal::from_str(&order.price).unwrap_or_default();
     let quantity = Decimal::from_str(&order.original_size)
         .ok()
+        .map(|size| original_size_to_shares(size, price_dec, order.side, order.order_type))
         .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
         .unwrap_or_else(|| Quantity::zero(size_precision));
     let filled_qty = Decimal::from_str(&order.size_matched)
         .ok()
         .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
         .unwrap_or_else(|| Quantity::zero(size_precision));
-    let price = Decimal::from_str(&order.price)
-        .ok()
-        .and_then(|d| Price::from_decimal_dp(d, price_precision).ok())
-        .unwrap_or_else(|| Price::zero(price_precision));
+    let price = Price::from_decimal_dp(price_dec, price_precision)
+        .unwrap_or_else(|_| Price::zero(price_precision));
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -703,6 +706,42 @@ fn build_ws_order_status_report(
     );
     report.price = Some(price);
     report
+}
+
+/// Converts a venue-reported `original_size` on a user-channel order message into shares.
+///
+/// The venue echoes the signed `makerAmount`, which for a BUY is the pUSD budget rather than a
+/// share count (see `compute_maker_taker_amounts`). Dividing by the order price recovers the
+/// signed `takerAmount`, which is the share quantity the client submitted.
+///
+/// This is confirmed for the market order types (`FAK` and `FOK`), where a BUY at 0.01 for 100
+/// shares reports `1`. A SELL signs shares as its maker amount and needs no conversion. Resting
+/// types pass through unchanged: their denomination is unconfirmed, and converting a
+/// share-denominated size would misreport every externally-managed resting order.
+fn original_size_to_shares(
+    original_size: Decimal,
+    price: Decimal,
+    side: PolymarketOrderSide,
+    order_type: PolymarketOrderType,
+) -> Decimal {
+    if side != PolymarketOrderSide::Buy
+        || !matches!(
+            order_type,
+            PolymarketOrderType::FAK | PolymarketOrderType::FOK
+        )
+    {
+        return original_size;
+    }
+
+    if price <= Decimal::ZERO {
+        log::warn!(
+            "Cannot convert {order_type} BUY size {original_size} pUSD to shares \
+             without a positive price, reporting the venue amount"
+        );
+        return original_size;
+    }
+
+    original_size / price
 }
 
 fn build_ws_taker_fill_report(
@@ -1141,7 +1180,12 @@ mod tests {
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
-        assert!(report.price.is_some());
+        // A resting BUY already reports shares, so its size passes through unconverted
+        assert_eq!(report.quantity.as_decimal(), dec!(100));
+        assert_eq!(
+            report.price.map(|price| price.as_decimal()),
+            Some(dec!(0.5))
+        );
         assert_eq!(report.ts_accepted, ts_event);
         assert_eq!(report.ts_init, ts_init);
     }
@@ -1162,6 +1206,210 @@ mod tests {
         );
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
+    }
+
+    // A market-order-type BUY reports the signed pUSD maker amount, so shares come from
+    // dividing by the price. A SELL and the resting types already report shares.
+    #[rstest]
+    #[case(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::FOK,
+        dec!(1.01),
+        dec!(0.01),
+        dec!(101)
+    )]
+    #[case(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::FOK,
+        dec!(12),
+        dec!(0.6),
+        dec!(20)
+    )]
+    #[case(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::FAK,
+        dec!(1),
+        dec!(0.01),
+        dec!(100)
+    )]
+    #[case(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::GTC,
+        dec!(20),
+        dec!(0.18),
+        dec!(20)
+    )]
+    #[case(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::GTD,
+        dec!(20),
+        dec!(0.18),
+        dec!(20)
+    )]
+    #[case(
+        PolymarketOrderSide::Sell,
+        PolymarketOrderType::FOK,
+        dec!(20),
+        dec!(0.6),
+        dec!(20)
+    )]
+    #[case(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::FOK,
+        dec!(1.01),
+        dec!(0),
+        dec!(1.01)
+    )]
+    fn test_original_size_to_shares(
+        #[case] side: PolymarketOrderSide,
+        #[case] order_type: PolymarketOrderType,
+        #[case] original_size: Decimal,
+        #[case] price: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        let shares = original_size_to_shares(original_size, price, side, order_type);
+
+        assert_eq!(shares, expected);
+    }
+
+    // A non-terminating division must still round to the instrument's size precision, and a
+    // price the venue omits must leave the size unconverted rather than drop the report to zero.
+    #[rstest]
+    #[case("1", "0.03", "33.333333", "0.03")]
+    #[case("1.01", "", "1.01", "0")]
+    fn test_build_ws_order_status_report_fok_buy_quantity(
+        #[case] original_size: &str,
+        #[case] price: &str,
+        #[case] expected_quantity: &str,
+        #[case] expected_price: &str,
+    ) {
+        let mut order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        order.original_size = original_size.to_string();
+        order.price = price.to_string();
+        let instrument = test_instrument();
+
+        let report = build_ws_order_status_report(
+            &order,
+            &instrument,
+            AccountId::from("POLY-001"),
+            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(2_000_000_000u64),
+        );
+
+        assert_eq!(
+            report.quantity.as_decimal(),
+            Decimal::from_str_exact(expected_quantity).unwrap()
+        );
+        assert_eq!(
+            report.price.map(|price| price.as_decimal()),
+            Some(Decimal::from_str_exact(expected_price).unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_dispatch_fok_buy_registers_share_quantity_for_in_flight_submit() {
+        let order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        let instrument = test_instrument();
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, instrument.clone());
+
+        // No registration: the submit response has not landed, so the order update registers it
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        let emitter = test_emitter();
+
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+        let client_order_id = ClientOrderId::from("O-FOK-IN-FLIGHT");
+        pending_submits.insert(venue_order_id, client_order_id);
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            client_order_id.as_str(),
+        );
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
+
+        // The venue reported 1.01 pUSD for the 101 shares submitted at 0.01
+        assert_eq!(
+            fill_tracker
+                .submitted_qty(&venue_order_id)
+                .map(|qty| qty.as_decimal()),
+            Some(dec!(101)),
+        );
+    }
+
+    #[rstest]
+    fn test_dispatch_fok_buy_report_quantity_is_shares_without_identity() {
+        let order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        let instrument = test_instrument();
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, instrument.clone());
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("101"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        let pending_submits = PendingSubmitTracker::default();
+        // No identity registered, so the order surfaces as a report for reconciliation
+        let order_identities = OrderIdentityRegistry::default();
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
+
+        let event = receiver.try_recv().expect("expected order report");
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("expected an order report, was {event:?}");
+        };
+
+        assert_eq!(report.venue_order_id, venue_order_id);
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.time_in_force, TimeInForce::Fok);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.quantity.as_decimal(), dec!(101));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(0));
+        assert_eq!(
+            report.price.map(|price| price.as_decimal()),
+            Some(dec!(0.01))
+        );
     }
 
     #[rstest]
