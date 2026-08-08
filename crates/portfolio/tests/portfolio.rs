@@ -5054,8 +5054,135 @@ fn test_realized_pnl_for_closed_cached_netting_position_without_base_conversion(
         .realized_pnl(&instrument_audusd.id())
         .expect("realized_pnl should be Some");
 
-    // Conversion is disabled, so the amounts stay at face value rather than halving
-    assert_eq!(pnl, Money::from("22.00 EUR"));
+    // Conversion is disabled, so the amounts stay at face value rather than halving, and stay
+    // keyed by the position cost currency rather than the account base currency.
+    assert_eq!(pnl, Money::from("22.00 USD"));
+}
+
+#[rstest]
+fn test_pnls_and_exposure_without_base_conversion_keep_cost_currency(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    let venue = instrument_audusd.id().venue;
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache
+        .add_quote(get_quote_tick(&instrument_audusd, 110.0, 111.0, 1.0, 1.0))
+        .unwrap();
+    let config = PortfolioConfig::builder()
+        .convert_to_account_base_currency(false)
+        .build()
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000.00 EUR"),
+            Money::zero(Currency::EUR()),
+            Money::from("1000.00 EUR"),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        Some(Currency::EUR()),
+    ));
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::new(100.0, 0),
+        PositionId::new("P-NATIVE-COST-CCY"),
+    );
+    let position = Position::new(&instrument_audusd, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let unrealized = portfolio.unrealized_pnl(&instrument_audusd.id());
+    let unrealized_by_currency = portfolio.unrealized_pnls(&venue, None);
+    let exposure = portfolio.net_exposure(&instrument_audusd.id(), None);
+    let exposure_by_currency = portfolio.net_exposures(&venue, None);
+
+    // The account is EUR-based but conversion is disabled, so every value stays denominated in
+    // the position cost currency instead of being relabelled with the account base currency.
+    assert_eq!(unrealized, Some(Money::from("10.00 USD")));
+    assert_eq!(
+        unrealized_by_currency,
+        IndexMap::from([(Currency::USD(), Money::from("10.00 USD"))])
+    );
+    assert_eq!(exposure, Some(Money::from("110.00 USD")));
+    assert_eq!(
+        exposure_by_currency,
+        Some(IndexMap::from([(
+            Currency::USD(),
+            Money::from("110.00 USD")
+        )]))
+    );
+}
+
+#[rstest]
+fn test_account_state_log_throttle_survives_regressing_ts_init(
+    simple_cache: Cache,
+    clock: TestClock,
+) {
+    let account_id = AccountId::new("SIM-001");
+    let config = PortfolioConfig::builder()
+        .min_account_state_logging_interval_ms(1_000)
+        .build()
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+
+    let account_state = |ts_init: u64| {
+        AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000.00 USD"),
+                Money::zero(Currency::USD()),
+                Money::from("1000.00 USD"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            ts_init.into(),
+            ts_init.into(),
+            Some(Currency::USD()),
+        )
+    };
+
+    portfolio.update_account(&account_state(5_000_000_000));
+
+    // An out-of-order event carrying an earlier `ts_init` must not underflow the throttle window
+    let regressed = account_state(1_000_000_000);
+    portfolio.update_account(&regressed);
+
+    assert_eq!(
+        portfolio
+            .cache()
+            .borrow()
+            .account(&account_id)
+            .and_then(|account| account.last_event())
+            .map(|event| event.event_id),
+        Some(regressed.event_id)
+    );
 }
 
 fn make_fill_for_account(

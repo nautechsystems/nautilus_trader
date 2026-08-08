@@ -655,7 +655,9 @@ impl Portfolio {
                 return None; // Cannot calculate
             };
 
-            let output_currency = account.base_currency().unwrap_or(notional.currency);
+            let output_currency = self
+                .conversion_base_currency(&account)
+                .unwrap_or(notional.currency);
 
             let (_, sum) = instrument_sums
                 .entry(position.instrument_id)
@@ -1455,8 +1457,10 @@ impl Portfolio {
                 }
             };
 
+            let base_currency = self.conversion_base_currency(&account);
+
             // Validate consistent base currency across accounts
-            if let Some(base) = account.base_currency() {
+            if let Some(base) = base_currency {
                 match output_currency {
                     None => {
                         output_currency = Some(base);
@@ -1486,7 +1490,7 @@ impl Portfolio {
             };
             let source_currency = notional_value.currency;
 
-            if account.base_currency().is_none() {
+            if base_currency.is_none() {
                 match output_currency {
                     None => output_currency = Some(source_currency),
                     Some(first) if first != source_currency => {
@@ -1953,7 +1957,8 @@ impl Portfolio {
             return None;
         };
 
-        let mut output_currency = account.base_currency();
+        let base_currency = self.conversion_base_currency(&account);
+        let mut output_currency = base_currency;
 
         let positions_open =
             cache.positions_open(None, Some(instrument_id), None, account_id, None);
@@ -1995,7 +2000,7 @@ impl Portfolio {
                 }
             };
             let source_currency = position_pnl.currency;
-            let currency = account.base_currency().unwrap_or(source_currency);
+            let currency = base_currency.unwrap_or(source_currency);
             match output_currency {
                 None => output_currency = Some(currency),
                 Some(first) if first != currency => {
@@ -2009,7 +2014,7 @@ impl Portfolio {
             }
             let mut pnl = position_pnl.as_decimal();
 
-            if let Some(base_currency) = account.base_currency() {
+            if let Some(base_currency) = base_currency {
                 let xrate = if let Some(xrate) =
                     self.calculate_xrate_to_base(instrument, &account, source_currency)
                 {
@@ -2324,7 +2329,8 @@ impl Portfolio {
             return None;
         }
 
-        let currency = account.base_currency().unwrap_or_else(|| {
+        let base_currency = self.conversion_base_currency(&account);
+        let currency = base_currency.unwrap_or_else(|| {
             positions
                 .first()
                 .map(|position| position.settlement_currency)
@@ -2383,12 +2389,12 @@ impl Portfolio {
                 });
 
                 if let Some(sum_pnl) = sum_pnl {
-                    if !pnl_currency_is_compatible(&account, currency, sum_pnl.currency) {
+                    if !pnl_currency_is_compatible(base_currency, currency, sum_pnl.currency) {
                         return None;
                     }
                     let mut pnl = sum_pnl.as_decimal();
 
-                    if let Some(base_currency) = account.base_currency() {
+                    if let Some(base_currency) = base_currency {
                         let xrate = if let Some(xrate) =
                             self.calculate_xrate_to_base(instrument, &account, sum_pnl.currency)
                         {
@@ -2422,12 +2428,12 @@ impl Portfolio {
                 }
 
                 if let Some(realized_pnl) = position.realized_pnl {
-                    if !pnl_currency_is_compatible(&account, currency, realized_pnl.currency) {
+                    if !pnl_currency_is_compatible(base_currency, currency, realized_pnl.currency) {
                         return None;
                     }
                     let mut pnl = realized_pnl.as_decimal();
 
-                    if let Some(base_currency) = account.base_currency() {
+                    if let Some(base_currency) = base_currency {
                         let xrate = if let Some(xrate) = self.calculate_xrate_to_base(
                             instrument,
                             &account,
@@ -2467,12 +2473,12 @@ impl Portfolio {
                     .copied();
 
                 if let Some(sum_pnl) = sum_pnl {
-                    if !pnl_currency_is_compatible(&account, currency, sum_pnl.currency) {
+                    if !pnl_currency_is_compatible(base_currency, currency, sum_pnl.currency) {
                         return None;
                     }
                     let mut pnl = sum_pnl.as_decimal();
 
-                    if let Some(base_currency) = account.base_currency() {
+                    if let Some(base_currency) = base_currency {
                         let xrate = cache.get_xrate(
                             instrument_id.venue,
                             sum_pnl.currency,
@@ -2509,12 +2515,12 @@ impl Portfolio {
                 }
 
                 if let Some(realized_pnl) = position.realized_pnl {
-                    if !pnl_currency_is_compatible(&account, currency, realized_pnl.currency) {
+                    if !pnl_currency_is_compatible(base_currency, currency, realized_pnl.currency) {
                         return None;
                     }
                     let mut pnl = realized_pnl.as_decimal();
 
-                    if let Some(base_currency) = account.base_currency() {
+                    if let Some(base_currency) = base_currency {
                         let xrate = if let Some(xrate) = self.calculate_xrate_to_base(
                             instrument,
                             &account,
@@ -2673,16 +2679,27 @@ impl Portfolio {
             None
         }
     }
+
+    // Pairs with `calculate_xrate_to_base`, which yields a unit rate when conversion is disabled:
+    // the output currency must ignore the account base currency for the same reason, otherwise a
+    // native cost-currency amount is labelled with a currency it was never converted into.
+    fn conversion_base_currency(&self, account: &AccountAny) -> Option<Currency> {
+        if self.config.convert_to_account_base_currency {
+            account.base_currency()
+        } else {
+            None
+        }
+    }
 }
 
 // Helper functions
 
 fn pnl_currency_is_compatible(
-    account: &AccountAny,
+    base_currency: Option<Currency>,
     output_currency: Currency,
     source_currency: Currency,
 ) -> bool {
-    if account.base_currency().is_none() && source_currency != output_currency {
+    if base_currency.is_none() && source_currency != output_currency {
         log::error!(
             "Cannot calculate realized PnL: records have different cost currencies \
             ({output_currency} vs {source_currency})"
@@ -3483,7 +3500,10 @@ fn update_account(
             .copied()
             .unwrap_or(0);
 
-        if last_ts == 0 || (current_ts - last_ts) >= inner_ref.min_account_state_logging_interval_ns
+        // Saturating: an out-of-order event carrying an earlier `ts_init` keeps the throttle
+        // engaged rather than wrapping into an interval that always logs.
+        if last_ts == 0
+            || current_ts.saturating_sub(last_ts) >= inner_ref.min_account_state_logging_interval_ns
         {
             inner_ref
                 .last_account_state_log_ts
