@@ -29,6 +29,8 @@ use nautilus_common::{
 pub struct RunnerChannelMetricsSnapshot {
     /// Number of messages dispatched from this channel.
     pub dispatched: u64,
+    /// Cumulative nanoseconds spent dispatching from this channel.
+    pub dispatch_busy_ns: u64,
     /// Receiver backlog sampled on the runner loop thread.
     pub queue_depth: usize,
     /// Runner-loop elapsed nanoseconds at this channel's last dispatch.
@@ -81,6 +83,16 @@ pub struct RunnerMetricsDelta {
     pub data_events: u64,
     /// Number of data commands dispatched during the sample window.
     pub data_commands: u64,
+    /// Nanoseconds spent dispatching time events during the sample window.
+    pub time_events_busy_ns: u64,
+    /// Nanoseconds spent dispatching execution events during the sample window.
+    pub exec_events_busy_ns: u64,
+    /// Nanoseconds spent dispatching execution commands during the sample window.
+    pub exec_commands_busy_ns: u64,
+    /// Nanoseconds spent dispatching data events during the sample window.
+    pub data_events_busy_ns: u64,
+    /// Nanoseconds spent dispatching data commands during the sample window.
+    pub data_commands_busy_ns: u64,
     /// Nanoseconds spent in the five dispatch branches during the sample window.
     pub dispatch_busy_ns: u64,
     /// Nanoseconds spent in maintenance and reconciliation processing during the sample window.
@@ -95,27 +107,28 @@ impl RunnerMetricsDelta {
     /// Returns the saturating delta between two runner metrics snapshots.
     #[must_use]
     pub fn from_snapshots(before: RunnerMetricsSnapshot, after: RunnerMetricsSnapshot) -> Self {
+        let (time_events, time_events_busy_ns) =
+            channel_dispatch_delta(before.time_events, after.time_events);
+        let (exec_events, exec_events_busy_ns) =
+            channel_dispatch_delta(before.exec_events, after.exec_events);
+        let (exec_commands, exec_commands_busy_ns) =
+            channel_dispatch_delta(before.exec_commands, after.exec_commands);
+        let (data_events, data_events_busy_ns) =
+            channel_dispatch_delta(before.data_events, after.data_events);
+        let (data_commands, data_commands_busy_ns) =
+            channel_dispatch_delta(before.data_commands, after.data_commands);
+
         Self {
-            time_events: after
-                .time_events
-                .dispatched
-                .saturating_sub(before.time_events.dispatched),
-            exec_events: after
-                .exec_events
-                .dispatched
-                .saturating_sub(before.exec_events.dispatched),
-            exec_commands: after
-                .exec_commands
-                .dispatched
-                .saturating_sub(before.exec_commands.dispatched),
-            data_events: after
-                .data_events
-                .dispatched
-                .saturating_sub(before.data_events.dispatched),
-            data_commands: after
-                .data_commands
-                .dispatched
-                .saturating_sub(before.data_commands.dispatched),
+            time_events,
+            exec_events,
+            exec_commands,
+            data_events,
+            data_commands,
+            time_events_busy_ns,
+            exec_events_busy_ns,
+            exec_commands_busy_ns,
+            data_events_busy_ns,
+            data_commands_busy_ns,
             dispatch_busy_ns: after
                 .dispatch_busy_ns
                 .saturating_sub(before.dispatch_busy_ns),
@@ -182,6 +195,22 @@ impl RunnerMetricsDelta {
             .unwrap_or(0)
     }
 
+    /// Returns mean dispatch time in nanoseconds for `channel` during the sample window.
+    ///
+    /// Returns zero when the channel dispatched no messages.
+    #[must_use]
+    pub fn channel_mean_dispatch_ns(&self, channel: SystemChannel) -> u64 {
+        let (dispatched, dispatch_busy_ns) = match channel {
+            SystemChannel::TimeEvents => (self.time_events, self.time_events_busy_ns),
+            SystemChannel::ExecEvents => (self.exec_events, self.exec_events_busy_ns),
+            SystemChannel::ExecCommands => (self.exec_commands, self.exec_commands_busy_ns),
+            SystemChannel::DataEvents => (self.data_events, self.data_events_busy_ns),
+            SystemChannel::DataCommands => (self.data_commands, self.data_commands_busy_ns),
+        };
+
+        dispatch_busy_ns.checked_div(dispatched).unwrap_or(0)
+    }
+
     /// Returns the total nanoseconds spent in timed runner-loop work.
     #[must_use]
     pub const fn total_busy_ns(&self) -> u64 {
@@ -191,6 +220,18 @@ impl RunnerMetricsDelta {
     }
 }
 
+fn channel_dispatch_delta(
+    before: RunnerChannelMetricsSnapshot,
+    after: RunnerChannelMetricsSnapshot,
+) -> (u64, u64) {
+    (
+        after.dispatched.saturating_sub(before.dispatched),
+        after
+            .dispatch_busy_ns
+            .saturating_sub(before.dispatch_busy_ns),
+    )
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct RunnerMetrics {
     time_events: RunnerChannelMetrics,
@@ -198,7 +239,6 @@ pub(crate) struct RunnerMetrics {
     exec_commands: RunnerChannelMetrics,
     data_events: RunnerChannelMetrics,
     data_commands: RunnerChannelMetrics,
-    dispatch_busy_ns: AtomicU64,
     maintenance_busy_ns: AtomicU64,
     external_msgbus_busy_ns: AtomicU64,
     elapsed_ns: AtomicU64,
@@ -211,20 +251,30 @@ impl RunnerMetrics {
         self.exec_commands.reset();
         self.data_events.reset();
         self.data_commands.reset();
-        self.dispatch_busy_ns.store(0, Ordering::Relaxed);
         self.maintenance_busy_ns.store(0, Ordering::Relaxed);
         self.external_msgbus_busy_ns.store(0, Ordering::Relaxed);
         self.elapsed_ns.store(0, Ordering::Relaxed);
     }
 
     pub(crate) fn snapshot(&self) -> RunnerMetricsSnapshot {
+        let time_events = self.time_events.snapshot();
+        let exec_events = self.exec_events.snapshot();
+        let exec_commands = self.exec_commands.snapshot();
+        let data_events = self.data_events.snapshot();
+        let data_commands = self.data_commands.snapshot();
+
         RunnerMetricsSnapshot {
-            time_events: self.time_events.snapshot(),
-            exec_events: self.exec_events.snapshot(),
-            exec_commands: self.exec_commands.snapshot(),
-            data_events: self.data_events.snapshot(),
-            data_commands: self.data_commands.snapshot(),
-            dispatch_busy_ns: self.dispatch_busy_ns.load(Ordering::Relaxed),
+            time_events,
+            exec_events,
+            exec_commands,
+            data_events,
+            data_commands,
+            dispatch_busy_ns: time_events
+                .dispatch_busy_ns
+                .saturating_add(exec_events.dispatch_busy_ns)
+                .saturating_add(exec_commands.dispatch_busy_ns)
+                .saturating_add(data_events.dispatch_busy_ns)
+                .saturating_add(data_commands.dispatch_busy_ns),
             maintenance_busy_ns: self.maintenance_busy_ns.load(Ordering::Relaxed),
             external_msgbus_busy_ns: self.external_msgbus_busy_ns.load(Ordering::Relaxed),
             elapsed_ns: self.elapsed_ns.load(Ordering::Relaxed),
@@ -238,8 +288,8 @@ impl RunnerMetrics {
         elapsed_since_start: Duration,
     ) {
         let elapsed_ns = duration_ns(elapsed_since_start);
-        self.channel(channel).record_dispatch(elapsed_ns);
-        saturating_fetch_add(&self.dispatch_busy_ns, duration_ns(dispatch_elapsed));
+        self.channel(channel)
+            .record_dispatch(duration_ns(dispatch_elapsed), elapsed_ns);
         self.elapsed_ns.store(elapsed_ns, Ordering::Relaxed);
     }
 
@@ -325,6 +375,7 @@ impl RunnerChannelQueueDepths {
 #[derive(Debug, Default)]
 struct RunnerChannelMetrics {
     dispatched: AtomicU64,
+    dispatch_busy_ns: AtomicU64,
     queue_depth: AtomicUsize,
     last_dispatch_at_ns: AtomicU64,
 }
@@ -332,6 +383,7 @@ struct RunnerChannelMetrics {
 impl RunnerChannelMetrics {
     fn reset(&self) {
         self.dispatched.store(0, Ordering::Relaxed);
+        self.dispatch_busy_ns.store(0, Ordering::Relaxed);
         self.queue_depth.store(0, Ordering::Relaxed);
         self.last_dispatch_at_ns.store(0, Ordering::Relaxed);
     }
@@ -339,13 +391,15 @@ impl RunnerChannelMetrics {
     fn snapshot(&self) -> RunnerChannelMetricsSnapshot {
         RunnerChannelMetricsSnapshot {
             dispatched: self.dispatched.load(Ordering::Relaxed),
+            dispatch_busy_ns: self.dispatch_busy_ns.load(Ordering::Relaxed),
             queue_depth: self.queue_depth.load(Ordering::Relaxed),
             last_dispatch_at_ns: self.last_dispatch_at_ns.load(Ordering::Relaxed),
         }
     }
 
-    fn record_dispatch(&self, last_dispatch_at_ns: u64) {
+    fn record_dispatch(&self, dispatch_busy_ns: u64, last_dispatch_at_ns: u64) {
         self.dispatched.fetch_add(1, Ordering::Relaxed);
+        saturating_fetch_add(&self.dispatch_busy_ns, dispatch_busy_ns);
         self.last_dispatch_at_ns
             .store(last_dispatch_at_ns, Ordering::Relaxed);
     }
@@ -400,8 +454,8 @@ mod tests {
 
     #[rstest]
     fn test_runner_metrics_delta_saturates_when_after_is_lower_than_before() {
-        let before = runner_snapshot([10, 9, 8, 7, 6], 100, 90, 80, 70);
-        let after = runner_snapshot([5, 4, 3, 2, 1], 50, 40, 30, 20);
+        let before = runner_snapshot([10, 9, 8, 7, 6], [20, 20, 20, 20, 20], 90, 80, 70);
+        let after = runner_snapshot([5, 4, 3, 2, 1], [10, 10, 10, 10, 10], 40, 30, 20);
 
         let delta = RunnerMetricsDelta::from_snapshots(before, after);
 
@@ -412,7 +466,7 @@ mod tests {
     fn test_runner_metrics_delta_zero_elapsed_window_returns_zero_utilization() {
         let delta = RunnerMetricsDelta::from_snapshots(
             RunnerMetricsSnapshot::default(),
-            runner_snapshot([1, 0, 0, 0, 0], 10, 20, 30, 0),
+            runner_snapshot([1, 0, 0, 0, 0], [10, 0, 0, 0, 0], 20, 30, 0),
         );
 
         assert!(delta.dispatch_utilization().abs() < f64::EPSILON);
@@ -423,17 +477,18 @@ mod tests {
     fn test_runner_metrics_delta_zero_dispatched_returns_zero_mean_dispatch_time() {
         let delta = RunnerMetricsDelta::from_snapshots(
             RunnerMetricsSnapshot::default(),
-            runner_snapshot([0, 0, 0, 0, 0], 100, 0, 0, 100),
+            runner_snapshot([0, 0, 0, 0, 0], [100, 0, 0, 0, 0], 0, 0, 100),
         );
 
         assert_eq!(delta.mean_dispatch_ns(), 0);
+        assert_eq!(delta.channel_mean_dispatch_ns(SystemChannel::TimeEvents), 0);
     }
 
     #[rstest]
     fn test_runner_metrics_delta_total_dispatched_sums_all_channels() {
         let delta = RunnerMetricsDelta::from_snapshots(
             RunnerMetricsSnapshot::default(),
-            runner_snapshot([1, 2, 3, 4, 5], 0, 0, 0, 100),
+            runner_snapshot([1, 2, 3, 4, 5], [0, 0, 0, 0, 0], 0, 0, 100),
         );
 
         assert_eq!(delta.total_dispatched(), 15);
@@ -441,16 +496,50 @@ mod tests {
 
     #[rstest]
     fn test_runner_metrics_delta_derived_metrics_use_sample_window_values() {
-        let before = runner_snapshot([1, 2, 0, 0, 0], 100, 10, 5, 200);
-        let after = runner_snapshot([4, 3, 2, 1, 0], 160, 30, 15, 300);
+        let before = runner_snapshot([1, 2, 0, 0, 0], [40, 20, 30, 10, 0], 10, 5, 200);
+        let after = runner_snapshot([4, 3, 2, 1, 0], [70, 40, 40, 10, 0], 30, 15, 300);
 
         let delta = RunnerMetricsDelta::from_snapshots(before, after);
 
         assert_eq!(delta.total_dispatched(), 7);
+        assert_eq!(delta.dispatch_busy_ns, 60);
         assert_eq!(delta.total_busy_ns(), 90);
         assert_eq!(delta.mean_dispatch_ns(), 8);
         assert!((delta.dispatch_utilization() - 0.6).abs() < f64::EPSILON);
         assert!((delta.loop_utilization() - 0.9).abs() < f64::EPSILON);
+    }
+
+    #[rstest]
+    #[case(SystemChannel::TimeEvents, 10)]
+    #[case(SystemChannel::ExecEvents, 20)]
+    #[case(SystemChannel::ExecCommands, 5)]
+    #[case(SystemChannel::DataEvents, 4)]
+    #[case(SystemChannel::DataCommands, 0)]
+    fn test_runner_metrics_delta_channel_mean_dispatch_ns_divides_selected_channel(
+        #[case] channel: SystemChannel,
+        #[case] expected_mean_ns: u64,
+    ) {
+        let before = runner_snapshot([1, 2, 3, 4, 5], [10, 20, 30, 40, 50], 0, 0, 100);
+        let after = runner_snapshot([4, 3, 5, 9, 5], [40, 40, 40, 60, 90], 0, 0, 200);
+
+        let delta = RunnerMetricsDelta::from_snapshots(before, after);
+
+        assert_eq!(delta.channel_mean_dispatch_ns(channel), expected_mean_ns);
+    }
+
+    #[rstest]
+    fn test_runner_metrics_delta_channel_busy_ns_sums_to_dispatch_busy_ns() {
+        let before = runner_snapshot([1, 2, 3, 4, 5], [10, 20, 30, 40, 50], 0, 0, 100);
+        let after = runner_snapshot([4, 3, 5, 9, 5], [40, 40, 40, 60, 90], 0, 0, 200);
+
+        let delta = RunnerMetricsDelta::from_snapshots(before, after);
+
+        assert_eq!(delta.time_events_busy_ns, 30);
+        assert_eq!(delta.exec_events_busy_ns, 20);
+        assert_eq!(delta.exec_commands_busy_ns, 10);
+        assert_eq!(delta.data_events_busy_ns, 20);
+        assert_eq!(delta.data_commands_busy_ns, 40);
+        assert_eq!(delta.dispatch_busy_ns, 120);
     }
 
     #[rstest]
@@ -471,8 +560,10 @@ mod tests {
         let snapshot = metrics.snapshot();
 
         assert_eq!(snapshot.exec_commands.dispatched, 1);
+        assert_eq!(snapshot.exec_commands.dispatch_busy_ns, 10);
         assert_eq!(snapshot.exec_commands.last_dispatch_at_ns, 50);
         assert_eq!(snapshot.data_events.dispatched, 1);
+        assert_eq!(snapshot.data_events.dispatch_busy_ns, 7);
         assert_eq!(snapshot.data_events.last_dispatch_at_ns, 90);
         assert_eq!(snapshot.dispatch_busy_ns, 17);
         assert_eq!(snapshot.maintenance_busy_ns, 0);
@@ -481,14 +572,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SystemChannel::TimeEvents, [1, 0, 0, 0, 0], [50, 0, 0, 0, 0])]
-    #[case(SystemChannel::ExecEvents, [0, 1, 0, 0, 0], [0, 50, 0, 0, 0])]
-    #[case(SystemChannel::ExecCommands, [0, 0, 1, 0, 0], [0, 0, 50, 0, 0])]
-    #[case(SystemChannel::DataEvents, [0, 0, 0, 1, 0], [0, 0, 0, 50, 0])]
-    #[case(SystemChannel::DataCommands, [0, 0, 0, 0, 1], [0, 0, 0, 0, 50])]
+    #[case(SystemChannel::TimeEvents, [1, 0, 0, 0, 0], [10, 0, 0, 0, 0], [50, 0, 0, 0, 0])]
+    #[case(SystemChannel::ExecEvents, [0, 1, 0, 0, 0], [0, 10, 0, 0, 0], [0, 50, 0, 0, 0])]
+    #[case(SystemChannel::ExecCommands, [0, 0, 1, 0, 0], [0, 0, 10, 0, 0], [0, 0, 50, 0, 0])]
+    #[case(SystemChannel::DataEvents, [0, 0, 0, 1, 0], [0, 0, 0, 10, 0], [0, 0, 0, 50, 0])]
+    #[case(SystemChannel::DataCommands, [0, 0, 0, 0, 1], [0, 0, 0, 0, 10], [0, 0, 0, 0, 50])]
     fn test_runner_metrics_record_dispatch_updates_selected_channel(
         #[case] channel: SystemChannel,
         #[case] expected_dispatched: [u64; 5],
+        #[case] expected_dispatch_busy_ns: [u64; 5],
         #[case] expected_last_dispatch: [u64; 5],
     ) {
         let metrics = RunnerMetrics::default();
@@ -497,6 +589,10 @@ mod tests {
         let snapshot = metrics.snapshot();
 
         assert_eq!(snapshot_dispatch_counts(snapshot), expected_dispatched);
+        assert_eq!(
+            snapshot_dispatch_busy_ns(snapshot),
+            expected_dispatch_busy_ns
+        );
         assert_eq!(
             snapshot_last_dispatch_at_ns(snapshot),
             expected_last_dispatch
@@ -600,11 +696,12 @@ mod tests {
 
     fn runner_snapshot(
         dispatched: [u64; 5],
-        dispatch_busy_ns: u64,
+        dispatch_busy_ns: [u64; 5],
         maintenance_busy_ns: u64,
         external_msgbus_busy_ns: u64,
         elapsed_ns: u64,
     ) -> RunnerMetricsSnapshot {
+        let total_dispatch_busy_ns = dispatch_busy_ns.into_iter().fold(0, u64::saturating_add);
         let [
             time_events,
             exec_events,
@@ -612,23 +709,31 @@ mod tests {
             data_events,
             data_commands,
         ] = dispatched;
+        let [
+            time_events_busy_ns,
+            exec_events_busy_ns,
+            exec_commands_busy_ns,
+            data_events_busy_ns,
+            data_commands_busy_ns,
+        ] = dispatch_busy_ns;
 
         RunnerMetricsSnapshot {
-            time_events: channel_snapshot(time_events),
-            exec_events: channel_snapshot(exec_events),
-            exec_commands: channel_snapshot(exec_commands),
-            data_events: channel_snapshot(data_events),
-            data_commands: channel_snapshot(data_commands),
-            dispatch_busy_ns,
+            time_events: channel_snapshot(time_events, time_events_busy_ns),
+            exec_events: channel_snapshot(exec_events, exec_events_busy_ns),
+            exec_commands: channel_snapshot(exec_commands, exec_commands_busy_ns),
+            data_events: channel_snapshot(data_events, data_events_busy_ns),
+            data_commands: channel_snapshot(data_commands, data_commands_busy_ns),
+            dispatch_busy_ns: total_dispatch_busy_ns,
             maintenance_busy_ns,
             external_msgbus_busy_ns,
             elapsed_ns,
         }
     }
 
-    fn channel_snapshot(dispatched: u64) -> RunnerChannelMetricsSnapshot {
+    fn channel_snapshot(dispatched: u64, dispatch_busy_ns: u64) -> RunnerChannelMetricsSnapshot {
         RunnerChannelMetricsSnapshot {
             dispatched,
+            dispatch_busy_ns,
             ..Default::default()
         }
     }
@@ -640,6 +745,16 @@ mod tests {
             snapshot.exec_commands.dispatched,
             snapshot.data_events.dispatched,
             snapshot.data_commands.dispatched,
+        ]
+    }
+
+    fn snapshot_dispatch_busy_ns(snapshot: RunnerMetricsSnapshot) -> [u64; 5] {
+        [
+            snapshot.time_events.dispatch_busy_ns,
+            snapshot.exec_events.dispatch_busy_ns,
+            snapshot.exec_commands.dispatch_busy_ns,
+            snapshot.data_events.dispatch_busy_ns,
+            snapshot.data_commands.dispatch_busy_ns,
         ]
     }
 

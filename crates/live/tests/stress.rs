@@ -108,7 +108,7 @@ use nautilus_common::{
         execution::{CancelOrder, TradingCommand},
     },
     msgbus::{self, MessagingSwitchboard},
-    runner::{TradingCommandMessage, get_trading_cmd_sender},
+    runner::{SystemChannel, TradingCommandMessage, get_trading_cmd_sender},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
@@ -357,6 +357,11 @@ async fn stress_trade_burst() {
 
         assert_eq!(runner_delta.data_events, total as u64);
         assert_eq!(runner_delta.total_dispatched(), total as u64);
+        // Only the data events channel dispatches here, so it carries the whole total
+        assert_eq!(
+            runner_delta.data_events_busy_ns,
+            runner_delta.dispatch_busy_ns
+        );
         assert_runner_timing_advanced(&runner_delta);
 
         println!(
@@ -493,6 +498,13 @@ async fn stress_cancel_starvation() {
             runner_delta.total_dispatched(),
             (trades_sent + cancels) as u64
         );
+        // Only data events and exec commands dispatch here, so they carry the whole total
+        assert_eq!(
+            runner_delta
+                .data_events_busy_ns
+                .saturating_add(runner_delta.exec_commands_busy_ns),
+            runner_delta.dispatch_busy_ns
+        );
         assert_runner_timing_advanced(&runner_delta);
 
         println!(
@@ -506,7 +518,8 @@ async fn stress_cancel_starvation() {
              runner.dispatch_busy_ns={} runner.elapsed_ns={} runner.maintenance_busy_ns={} \
              runner.external_msgbus_busy_ns={} runner.total_busy_ns={} \
              runner.dispatch_utilization={:.6} runner.loop_utilization={:.6} \
-             runner.mean_dispatch_ns={}",
+             runner.mean_dispatch_ns={} runner.mean_dispatch_ns.data_events={} \
+             runner.mean_dispatch_ns.exec_commands={}",
             cancels,
             trades_sent,
             total_elapsed.as_millis(),
@@ -531,6 +544,8 @@ async fn stress_cancel_starvation() {
             runner_delta.dispatch_utilization(),
             runner_delta.loop_utilization(),
             runner_delta.mean_dispatch_ns(),
+            runner_delta.channel_mean_dispatch_ns(SystemChannel::DataEvents),
+            runner_delta.channel_mean_dispatch_ns(SystemChannel::ExecCommands),
         );
 
         driver_handle.stop();

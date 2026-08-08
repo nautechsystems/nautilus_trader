@@ -5511,6 +5511,10 @@ mod tests {
             snapshot.data_commands.last_dispatch_at_ns,
             snapshot.elapsed_ns
         );
+        assert_eq!(
+            snapshot.data_commands.dispatch_busy_ns,
+            snapshot.dispatch_busy_ns
+        );
         assert!(snapshot.dispatch_busy_ns < snapshot.elapsed_ns);
     }
 
