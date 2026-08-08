@@ -65,6 +65,9 @@ pub type EpochMessageHandler = Arc<dyn Fn(u64, Message) + Send + Sync>;
 /// Function type for handling WebSocket ping messages.
 pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 
+/// Function type for handling WebSocket ping messages with connection ownership.
+pub type EpochPingHandler = Arc<dyn Fn(u64, Vec<u8>) + Send + Sync>;
+
 /// Creates a channel-based message handler.
 ///
 /// The handler accepts neutral [`Message`] values. The receiver yields
@@ -124,6 +127,11 @@ pub(crate) enum WriterCommand {
         connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<(), SendError>>,
     },
+    /// Sends a pong if the active connection still owns the ping that caused it.
+    SendPongOnConnection {
+        data: Vec<u8>,
+        connection_epoch: u64,
+    },
 }
 
 impl Debug for WriterCommand {
@@ -133,6 +141,9 @@ impl Debug for WriterCommand {
             Self::Send(msg) => f.debug_tuple("Send").field(msg).finish(),
             Self::SendOnConnection { message, .. } => {
                 f.debug_tuple("SendOnConnection").field(message).finish()
+            }
+            Self::SendPongOnConnection { data, .. } => {
+                f.debug_tuple("SendPongOnConnection").field(data).finish()
             }
         }
     }
