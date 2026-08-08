@@ -620,10 +620,12 @@ impl RedisCacheDatabase {
     /// Returns an error if the command cannot be sent to the background task channel.
     pub fn delete_account_event(
         &self,
-        _account_id: &AccountId,
-        _event_id: &str,
+        account_id: &AccountId,
+        event_id: &str,
     ) -> anyhow::Result<()> {
-        log::warn!("Deleting account events currently a no-op (pending redesign)");
+        log::warn!(
+            "Deleting account events currently a no-op (pending redesign), {account_id}: {event_id}"
+        );
         Ok(())
     }
 }
@@ -1695,16 +1697,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
-        let json_bytes = serde_json::to_vec(data)
-            .map_err(|e| anyhow::anyhow!("CustomData serialization failed: {e}"))?;
-        let ts_init = data.ts_init().as_u64();
-        let key = format!(
-            "{CUSTOM}{REDIS_DELIMITER}{:020}{REDIS_DELIMITER}{}",
-            ts_init,
-            UUID4::new()
-        );
-        self.database
-            .insert(key, Some(vec![Bytes::from(json_bytes)]))
+        self.database.add_custom_data(data)
     }
 
     fn add_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
@@ -1742,92 +1735,15 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn delete_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
-        let order_id_bytes = Bytes::from(client_order_id.to_string());
-
-        log::debug!("Deleting order: {client_order_id} from Redis");
-        log::debug!("Trader key: {}", self.database.trader_key);
-
-        // Delete the order itself
-        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
-        log::debug!("Deleting order key: {key}");
-        let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
-        self.database
-            .tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("Failed to send delete order command: {e}"))?;
-
-        // Delete from all order indexes
-        let index_keys = [
-            INDEX_ORDER_IDS,
-            INDEX_ORDERS,
-            INDEX_ORDERS_OPEN,
-            INDEX_ORDERS_CLOSED,
-            INDEX_ORDERS_EMULATED,
-            INDEX_ORDERS_INFLIGHT,
-        ];
-
-        for index_key in &index_keys {
-            let key = (*index_key).to_string();
-            log::debug!("Deleting from index: {key} (order_id: {client_order_id})");
-            let payload = vec![order_id_bytes.clone()];
-            let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
-            self.database
-                .tx
-                .send(op)
-                .map_err(|e| anyhow::anyhow!("Failed to send delete order index command: {e}"))?;
-        }
-
-        // Delete from hash indexes
-        let hash_indexes = [INDEX_ORDER_POSITION, INDEX_ORDER_CLIENT];
-        for index_key in &hash_indexes {
-            let key = (*index_key).to_string();
-            log::debug!("Deleting from hash index: {key} (order_id: {client_order_id})");
-            let payload = vec![order_id_bytes.clone()];
-            let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
-            self.database.tx.send(op).map_err(|e| {
-                anyhow::anyhow!("Failed to send delete order hash index command: {e}")
-            })?;
-        }
-
-        log::debug!("Sent all delete commands for order: {client_order_id}");
-        Ok(())
+        self.database.delete_order(client_order_id)
     }
 
     fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()> {
-        let position_id_bytes = Bytes::from(position_id.to_string());
-
-        // Delete the position itself
-        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
-        let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
-        self.database
-            .tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("Failed to send delete position command: {e}"))?;
-
-        // Delete from all position indexes
-        let index_keys = [
-            INDEX_POSITIONS,
-            INDEX_POSITIONS_OPEN,
-            INDEX_POSITIONS_CLOSED,
-        ];
-
-        for index_key in &index_keys {
-            let key = (*index_key).to_string();
-            let payload = vec![position_id_bytes.clone()];
-            let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
-            self.database.tx.send(op).map_err(|e| {
-                anyhow::anyhow!("Failed to send delete position index command: {e}")
-            })?;
-        }
-
-        Ok(())
+        self.database.delete_position(position_id)
     }
 
     fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
-        log::warn!(
-            "Deleting account events currently a no-op (pending redesign), {account_id}: {event_id}"
-        );
-        Ok(())
+        self.database.delete_account_event(account_id, event_id)
     }
 
     fn index_venue_order_id(

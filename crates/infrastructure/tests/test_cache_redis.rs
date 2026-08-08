@@ -262,6 +262,39 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
+    #[tokio::test]
+    async fn test_delete_account_event_is_a_no_op() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let account_id = AccountId::new("BINANCE-001");
+        let event_id = UUID4::new().to_string();
+        let account_key = format!("{}:accounts:{account_id}", adapter.database.trader_key);
+
+        let mut conn = adapter.database.con.clone();
+        let _: () = conn.set(&account_key, "test_data").await.unwrap();
+        let exists_before: bool = conn.exists(&account_key).await.unwrap();
+        assert!(exists_before);
+
+        adapter
+            .delete_account_event(&account_id, &event_id)
+            .unwrap();
+
+        // Deletion is dispatched asynchronously, so allow a real delete to land before asserting
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let exists_after: bool = conn.exists(&account_key).await.unwrap();
+        assert!(
+            exists_after,
+            "delete_account_event is a documented no-op pending redesign"
+        );
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "integration test verifies order deletion across every Redis index"
