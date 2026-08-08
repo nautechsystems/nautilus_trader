@@ -38,18 +38,25 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    live::{dst, runner::get_data_event_sender},
+    live::{
+        dst,
+        runner::{get_data_event_sender, get_exec_event_sender},
+    },
     messages::{
-        DataEvent,
+        DataEvent, ExecutionEvent,
         execution::{
             CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
-            GeneratePositionStatusReports, QueryOrder,
+            GeneratePositionStatusReports, QueryOrder, TradingCommand,
         },
         system::{QueueStateChanged, ShutdownSystem},
     },
     msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, switchboard},
     nautilus_actor,
+    runner::{
+        TimeEventMessage, TradingCommandMessage, get_time_event_sender, get_trading_cmd_sender,
+    },
     testing::{wait_until, wait_until_async},
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
@@ -320,12 +327,18 @@ mod serial_tests {
         connected: Arc<AtomicBool>,
         connect_attempted: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
+        connect_entered: Arc<tokio::sync::Notify>,
+        release_connect: Arc<tokio::sync::Notify>,
     }
 
     #[derive(Clone, Copy, Debug)]
     enum LifecycleClientBehavior {
         Connects,
+        ConnectFailsCleanup,
+        ConnectFailsDisconnectPending,
+        ConnectGated,
         ConnectPending,
+        ReadinessGated,
         ReadinessPending,
         ConnectDelayedReadinessPending,
         DisconnectPending,
@@ -676,8 +689,24 @@ mod serial_tests {
             }
 
             match self.behavior {
+                LifecycleClientBehavior::ConnectFailsCleanup => {
+                    anyhow::bail!("simulated data client connect failure")
+                }
+                LifecycleClientBehavior::ConnectFailsDisconnectPending => {
+                    anyhow::bail!("simulated data client connect failure before pending disconnect")
+                }
+                LifecycleClientBehavior::ConnectGated => {
+                    self.state.connect_entered.notify_one();
+                    self.state.release_connect.notified().await;
+                    self.state.connected.store(true, Ordering::Relaxed);
+                    Ok(())
+                }
                 LifecycleClientBehavior::ConnectPending => {
                     std::future::pending::<anyhow::Result<()>>().await
+                }
+                LifecycleClientBehavior::ReadinessGated => {
+                    self.state.connect_entered.notify_one();
+                    Ok(())
                 }
                 LifecycleClientBehavior::ReadinessPending => Ok(()),
                 LifecycleClientBehavior::ConnectDelayedReadinessPending => {
@@ -698,7 +727,15 @@ mod serial_tests {
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
 
-            if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
+            if matches!(self.behavior, LifecycleClientBehavior::ConnectFailsCleanup) {
+                anyhow::bail!("simulated late data client cleanup failure");
+            }
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::DisconnectPending
+                    | LifecycleClientBehavior::ConnectFailsDisconnectPending
+            ) {
                 return std::future::pending::<anyhow::Result<()>>().await;
             }
 
@@ -870,6 +907,14 @@ mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
+                LifecycleClientBehavior::ConnectFailsCleanup
+                | LifecycleClientBehavior::ConnectFailsDisconnectPending => {
+                    anyhow::bail!("simulated execution client connect failure")
+                }
+                LifecycleClientBehavior::ConnectGated | LifecycleClientBehavior::ReadinessGated => {
+                    self.state.connected.store(true, Ordering::Relaxed);
+                    Ok(())
+                }
                 LifecycleClientBehavior::ConnectPending => {
                     std::future::pending::<anyhow::Result<()>>().await
                 }
@@ -1502,6 +1547,137 @@ mod serial_tests {
         assert!(!state.connected.load(Ordering::Relaxed));
     }
 
+    async fn assert_late_data_client_registration_services_runner(
+        behavior: LifecycleClientBehavior,
+    ) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_secs(2),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateDataClientTrafficNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let strategy_id = StrategyId::from("LATE-TRAFFIC-001");
+        let account_id = AccountId::from("LATE-TRAFFIC-001");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        let exec_engine = node.kernel().exec_engine.clone();
+        let pre_event_count = exec_engine.borrow().event_count();
+        let pre_command_count = exec_engine.borrow().command_count();
+        let state = LifecycleClientState::default();
+        let producer_state = state.clone();
+        let registration_returned = Arc::new(AtomicBool::new(false));
+        let producer_registration_returned = registration_returned.clone();
+        let time_acknowledged = Arc::new(AtomicBool::new(false));
+        let producer_time_acknowledged = time_acknowledged.clone();
+
+        let registration = async {
+            let result = node
+                .add_data_client(
+                    Some("traffic-gated".to_string()),
+                    Box::new(LifecycleDataClientFactory::new(state, behavior)),
+                    Box::new(LifecycleDataClientConfig),
+                )
+                .await;
+            registration_returned.store(true, Ordering::Relaxed);
+            result
+        };
+        let producer = async move {
+            producer_state.connect_entered.notified().await;
+            let time_ack = producer_time_acknowledged.clone();
+            get_time_event_sender().send(TimeEventMessage::new(
+                TimeEvent::new(
+                    "late-registration".into(),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                ),
+                TimeEventCallback::from(move |_: TimeEvent| {
+                    time_ack.store(true, Ordering::Relaxed);
+                }),
+            ));
+            get_exec_event_sender()
+                .send(ExecutionEvent::Order(submitted))
+                .unwrap();
+            get_trading_cmd_sender().execute(TradingCommandMessage::new(
+                MessagingSwitchboard::exec_engine_execute(),
+                TradingCommand::QueryOrder(QueryOrder::new(
+                    TraderId::from("TESTER-001"),
+                    None,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )),
+            ));
+
+            wait_until_async(
+                || async {
+                    producer_time_acknowledged.load(Ordering::Relaxed)
+                        && exec_engine.borrow().event_count() > pre_event_count
+                        && exec_engine.borrow().command_count() > pre_command_count
+                },
+                Duration::from_secs(1),
+            )
+            .await;
+            assert!(!producer_registration_returned.load(Ordering::Relaxed));
+
+            match behavior {
+                LifecycleClientBehavior::ConnectGated => {
+                    producer_state.release_connect.notify_one();
+                }
+                LifecycleClientBehavior::ReadinessGated => {
+                    producer_state.connected.store(true, Ordering::Relaxed);
+                }
+                _ => unreachable!("traffic test requires a gated behavior"),
+            }
+        };
+
+        let (registered, ()) = tokio::join!(registration, producer);
+        registered.unwrap();
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_services_runner_while_connect_is_blocked() {
+        assert_late_data_client_registration_services_runner(LifecycleClientBehavior::ConnectGated)
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_services_runner_during_readiness_wait() {
+        assert_late_data_client_registration_services_runner(
+            LifecycleClientBehavior::ReadinessGated,
+        )
+        .await;
+    }
+
     #[rstest]
     #[tokio::test(flavor = "current_thread")]
     async fn test_add_data_client_rejects_build_time_name_collision_before_factory() {
@@ -1651,7 +1827,360 @@ mod serial_tests {
         assert!(late_state.factory_created.load(Ordering::Relaxed));
         assert!(!late_state.started.load(Ordering::Relaxed));
         assert!(!late_state.connect_attempted.load(Ordering::Relaxed));
+        assert!(late_state.stopped.load(Ordering::Relaxed));
+        assert!(late_state.disposed.load(Ordering::Relaxed));
         node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_duplicate_id_disposes_created_client() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let client_id = ClientId::from("DUPLICATE-LATE-ID");
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("LateDataClientDuplicateIdNode")
+            .add_data_client(
+                Some("existing-id-owner".to_string()),
+                Box::new(
+                    LifecycleDataClientFactory::new(
+                        LifecycleClientState::default(),
+                        LifecycleClientBehavior::Connects,
+                    )
+                    .with_client(client_id, None),
+                ),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.start().await.unwrap();
+        let late_state = LifecycleClientState::default();
+
+        let error = node
+            .add_data_client(
+                Some("duplicate-id-contender".to_string()),
+                Box::new(
+                    LifecycleDataClientFactory::new(
+                        late_state.clone(),
+                        LifecycleClientBehavior::Connects,
+                    )
+                    .with_client(client_id, None),
+                ),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .await
+            .expect_err("duplicate client ID should be rejected");
+
+        assert!(error.to_string().contains("already registered"));
+        assert!(late_state.stopped.load(Ordering::Relaxed));
+        assert!(late_state.disposed.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_default_conflict_disposes_created_client() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("LateDataClientDefaultConflictNode")
+            .add_data_client_with_routing(
+                Some("default-owner".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    LifecycleClientState::default(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleDataClientConfig),
+                RoutingConfig {
+                    default: true,
+                    venues: None,
+                },
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.start().await.unwrap();
+        let late_state = LifecycleClientState::default();
+
+        let error = node
+            .add_data_client_with_routing(
+                Some("default-contender".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    late_state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleDataClientConfig),
+                RoutingConfig {
+                    default: true,
+                    venues: None,
+                },
+            )
+            .await
+            .expect_err("second default client should be rejected");
+
+        assert!(!error.to_string().is_empty());
+        assert!(late_state.stopped.load(Ordering::Relaxed));
+        assert!(late_state.disposed.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    #[allow(
+        clippy::await_holding_refcell_ref,
+        reason = "the held borrow is the condition under test"
+    )]
+    async fn test_add_data_client_held_engine_borrow_disposes_created_client() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateDataClientBorrowConflictNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+        let late_state = LifecycleClientState::default();
+        let data_engine = node.kernel().data_engine.clone();
+        let held_borrow = data_engine.borrow_mut();
+
+        let error = node
+            .add_data_client(
+                Some("borrow-contender".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    late_state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .await
+            .expect_err("held data engine borrow should reject registration");
+
+        assert!(error.to_string().contains("Cannot borrow data engine"));
+        assert!(late_state.stopped.load(Ordering::Relaxed));
+        assert!(late_state.disposed.load(Ordering::Relaxed));
+        drop(held_borrow);
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_rejects_malformed_route_before_factory() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("MalformedLateRouteNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+        let state = LifecycleClientState::default();
+
+        let error = node
+            .add_data_client_with_routing(
+                Some("malformed-route".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleDataClientConfig),
+                RoutingConfig {
+                    default: false,
+                    venues: Some(vec![String::new()]),
+                },
+            )
+            .await
+            .expect_err("empty venue route should return an error");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Invalid data client venue route ''")
+        );
+        assert!(!state.factory_created.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_cleanup_preserves_connect_error_source() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("LateCleanupChainNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+        let state = LifecycleClientState::default();
+
+        let error = node
+            .add_data_client(
+                Some("failing-cleanup".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    state,
+                    LifecycleClientBehavior::ConnectFailsCleanup,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .await
+            .expect_err("connect and cleanup should fail");
+
+        assert!(
+            error
+                .chain()
+                .any(|cause| cause.to_string() == "simulated data client connect failure")
+        );
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_cancelled_during_cleanup_still_disposes() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            // Longer than the drop deadline below, so the disconnect is still
+            // pending when the registration future is cancelled.
+            timeout_disconnection: Duration::from_secs(30),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateCancelDuringCleanupNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+        let state = LifecycleClientState::default();
+
+        let registration = node.add_data_client(
+            Some("cancelled-cleanup".to_string()),
+            Box::new(LifecycleDataClientFactory::new(
+                state.clone(),
+                LifecycleClientBehavior::ConnectFailsDisconnectPending,
+            )),
+            Box::new(LifecycleDataClientConfig),
+        );
+        // Elapsing drops the registration future while cleanup awaits disconnect.
+        dst::time::timeout(Duration::from_millis(200), registration)
+            .await
+            .expect_err("registration should still be inside a pending disconnect");
+
+        assert!(state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(state.stopped.load(Ordering::Relaxed));
+        assert!(state.disposed.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_shutdown_interrupts_blocked_connect() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_secs(5),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateConnectShutdownNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+        let handle = node.handle();
+        let state = LifecycleClientState::default();
+        let stop_state = state.clone();
+        let stop = async move {
+            wait_until_async(
+                || async { stop_state.connect_attempted.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            handle.stop();
+        };
+        let register = node.add_data_client(
+            Some("blocked-connect".to_string()),
+            Box::new(LifecycleDataClientFactory::new(
+                state.clone(),
+                LifecycleClientBehavior::ConnectPending,
+            )),
+            Box::new(LifecycleDataClientConfig),
+        );
+        let (error, ()) = tokio::join!(register, stop);
+        let error = error.expect_err("shutdown should interrupt blocked connect");
+
+        assert!(format!("{error:#}").contains("Shutdown requested"));
+        assert!(state.stopped.load(Ordering::Relaxed));
+        assert!(state.disposed.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_shutdown_interrupts_readiness_wait() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_secs(5),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateReadinessShutdownNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+        let handle = node.handle();
+        let state = LifecycleClientState::default();
+        let stop_state = state.clone();
+        let stop = async move {
+            wait_until_async(
+                || async { stop_state.connect_attempted.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            handle.stop();
+        };
+        let register = node.add_data_client(
+            Some("readiness-pending".to_string()),
+            Box::new(LifecycleDataClientFactory::new(
+                state.clone(),
+                LifecycleClientBehavior::ReadinessPending,
+            )),
+            Box::new(LifecycleDataClientConfig),
+        );
+        let (error, ()) = tokio::join!(register, stop);
+        let error = error.expect_err("shutdown should interrupt readiness wait");
+
+        assert!(format!("{error:#}").contains("Shutdown requested"));
+        assert!(state.stopped.load(Ordering::Relaxed));
+        assert!(state.disposed.load(Ordering::Relaxed));
     }
 
     #[rstest]

@@ -77,7 +77,10 @@
 //! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
 //! by at most one body duration per fire.
 
-use std::{collections::HashSet, fmt::Debug, future::Future, pin::Pin, time::Duration};
+use std::{
+    cell::Cell, collections::HashSet, fmt::Debug, future::Future, pin::Pin, task::Poll,
+    time::Duration,
+};
 
 use anyhow::Context;
 use indexmap::IndexSet;
@@ -183,6 +186,7 @@ impl LiveNode {
     ///
     /// This is an internal constructor used by `LiveNodeBuilder`.
     #[must_use]
+    #[expect(clippy::too_many_arguments)]
     pub(crate) fn new_from_builder(
         kernel: NautilusKernel,
         runner: AsyncRunner,
@@ -332,6 +336,16 @@ impl LiveNode {
             anyhow::bail!("Data client '{name}' is already registered");
         }
 
+        let venue_routes = routing
+            .venues
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|value| {
+                Venue::new_checked(value)
+                    .map_err(|e| anyhow::anyhow!("Invalid data client venue route '{value}': {e}"))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let client = factory.create(
             &name,
             config.as_ref(),
@@ -340,29 +354,35 @@ impl LiveNode {
         )?;
         let client_id = client.client_id();
         let primary_venue = client.venue();
-        let venue_routes = routing
-            .venues
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .map(Venue::new)
-            .collect::<Vec<_>>();
         let adapter = DataClientAdapter::new(client_id, primary_venue, true, true, client);
+        let mut guard = LateDataClientGuard::new(adapter);
 
-        self.kernel
+        let validation_result = self
+            .kernel
             .data_engine
             .try_borrow_mut()
             .map_err(|e| {
                 anyhow::anyhow!("Cannot borrow data engine to validate client {client_id}: {e}")
-            })?
-            .validate_client_registration(
-                client_id,
-                primary_venue,
-                routing.default,
-                &venue_routes,
-            )?;
+            })
+            .and_then(|data_engine| {
+                data_engine.validate_client_registration(
+                    client_id,
+                    primary_venue,
+                    routing.default,
+                    &venue_routes,
+                )
+            });
 
-        let mut guard = LateDataClientGuard::new(adapter);
+        if let Err(e) = validation_result {
+            return Err(cleanup_late_data_client(
+                guard,
+                self.config.timeout_disconnection,
+                client_id,
+                e,
+            )
+            .await);
+        }
+
         if let Err(e) = guard.adapter_mut().start() {
             return Err(cleanup_late_data_client(
                 guard,
@@ -373,15 +393,86 @@ impl LiveNode {
             .await);
         }
 
+        if let Some(runner) = self.runner.as_mut() {
+            runner.bind_senders();
+        }
         let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
-        let remaining = connection_deadline.saturating_duration_since(dst::time::Instant::now());
-        let connect_result = dst::time::timeout(remaining, guard.adapter_mut().connect()).await;
-        let connect_result = match connect_result {
-            Ok(result) => result,
-            Err(_) => Err(anyhow::anyhow!("connection timeout")),
+        let registration_result = {
+            let phase = Cell::new(RegistrationPhase::Connection);
+            let registration = async {
+                guard.adapter_mut().connect().await?;
+                phase.set(RegistrationPhase::Readiness);
+                std::future::poll_fn(|_| {
+                    if guard.adapter_mut().is_connected() {
+                        Poll::Ready(())
+                    } else {
+                        Poll::Pending
+                    }
+                })
+                .await;
+                anyhow::Ok(())
+            };
+            tokio::pin!(registration);
+            let interval = Duration::from_millis(100);
+            let mut first_poll = true;
+            let result = loop {
+                if self.handle.should_stop() || self.kernel.is_shutdown_requested() {
+                    break Err(anyhow::anyhow!(
+                        "Shutdown requested during data client registration"
+                    ));
+                }
+
+                let now = dst::time::Instant::now();
+                let outcome = if !first_poll && now >= connection_deadline {
+                    RegistrationOutcome::TimedOut(phase.get())
+                } else {
+                    let tick = (now + interval).min(connection_deadline);
+
+                    if let Some(runner) = self.runner.as_mut() {
+                        tokio::select! {
+                            biased;
+                            result = &mut registration => RegistrationOutcome::Complete(result),
+                            () = dst::time::sleep_until(tick) => RegistrationOutcome::Tick,
+                            event = runner.recv() => match event {
+                                Some(event) => RegistrationOutcome::Event(Box::new(event)),
+                                None => RegistrationOutcome::RunnerClosed,
+                            },
+                        }
+                    } else {
+                        tokio::select! {
+                            biased;
+                            result = &mut registration => RegistrationOutcome::Complete(result),
+                            () = dst::time::sleep_until(tick) => RegistrationOutcome::Tick,
+                        }
+                    }
+                };
+                first_poll = false;
+
+                match outcome {
+                    RegistrationOutcome::Complete(result) => break result,
+                    RegistrationOutcome::RunnerClosed => {
+                        break Err(anyhow::anyhow!(
+                            "Runner closed during data client registration"
+                        ));
+                    }
+                    RegistrationOutcome::TimedOut(RegistrationPhase::Connection) => {
+                        break Err(anyhow::anyhow!("connection timeout"));
+                    }
+                    RegistrationOutcome::TimedOut(RegistrationPhase::Readiness) => {
+                        break Err(anyhow::anyhow!(
+                            "Data client {client_id} readiness timed out"
+                        ));
+                    }
+                    RegistrationOutcome::Tick => {}
+                    RegistrationOutcome::Event(event) => self.process_runner_event(*event),
+                }
+            };
+            // The staged future and its borrow of `guard` end with this block, which
+            // is what lets the cleanup and commit paths below take the guard.
+            result
         };
 
-        if let Err(e) = connect_result {
+        if let Err(e) = registration_result {
             return Err(cleanup_late_data_client(
                 guard,
                 self.config.timeout_disconnection,
@@ -389,21 +480,6 @@ impl LiveNode {
                 e.context(format!("Failed to connect data client {client_id}")),
             )
             .await);
-        }
-
-        while !guard.adapter_mut().is_connected() {
-            let now = dst::time::Instant::now();
-            if now >= connection_deadline {
-                let error = anyhow::anyhow!("Data client {client_id} readiness timed out");
-                return Err(cleanup_late_data_client(
-                    guard,
-                    self.config.timeout_disconnection,
-                    client_id,
-                    error,
-                )
-                .await);
-            }
-            dst::time::sleep(Duration::from_millis(100).min(connection_deadline - now)).await;
         }
 
         // One borrow spans revalidation and commit: no await separates them, so the
@@ -2964,17 +3040,23 @@ impl LateDataClientGuard {
     async fn cleanup(mut self, timeout: Duration) -> anyhow::Result<()> {
         // Empty when the commit consumed the adapter before erroring; the engine
         // then owns whatever state remains and there is nothing left to clean.
-        let Some(mut adapter) = self.adapter.take() else {
+        if self.adapter.is_none() {
             return Ok(());
-        };
+        }
 
         let mut errors = Vec::new();
 
-        match dst::time::timeout(timeout, adapter.disconnect()).await {
+        // The adapter stays in `self` across the disconnect await so that dropping
+        // this future mid-disconnect still runs stop/dispose through `Drop`; it is
+        // taken only once the synchronous half below has run, which is what keeps
+        // that half from running twice.
+        match dst::time::timeout(timeout, self.adapter_mut().disconnect()).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => errors.push(format!("disconnect failed: {e}")),
             Err(_) => errors.push("disconnect timed out".to_string()),
         }
+
+        let mut adapter = self.take();
 
         if let Err(e) = adapter.stop() {
             errors.push(format!("stop failed: {e}"));
@@ -3006,6 +3088,20 @@ impl Drop for LateDataClientGuard {
     }
 }
 
+#[derive(Clone, Copy)]
+enum RegistrationPhase {
+    Connection,
+    Readiness,
+}
+
+enum RegistrationOutcome {
+    Complete(anyhow::Result<()>),
+    RunnerClosed,
+    TimedOut(RegistrationPhase),
+    Tick,
+    Event(Box<PendingRunnerEvent>),
+}
+
 async fn cleanup_late_data_client(
     guard: LateDataClientGuard,
     timeout: Duration,
@@ -3014,9 +3110,9 @@ async fn cleanup_late_data_client(
 ) -> anyhow::Error {
     match guard.cleanup(timeout).await {
         Ok(()) => error,
-        Err(cleanup_error) => {
-            anyhow::anyhow!("{error}; failed to clean up data client {client_id}: {cleanup_error}")
-        }
+        Err(cleanup_error) => error.context(format!(
+            "Failed to clean up data client {client_id}: {cleanup_error}"
+        )),
     }
 }
 
