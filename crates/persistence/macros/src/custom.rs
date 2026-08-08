@@ -207,6 +207,11 @@ fn use_string_extract(ty: &Type, json: bool) -> bool {
     }
 }
 
+/// Returns true if the field uses binary extraction (`Binary` or `BinaryView`).
+fn use_binary_extract(ty: &Type) -> bool {
+    type_for_macro(ty).is_some_and(|(outer, inner)| outer == "Vec" && inner == "u8")
+}
+
 /// Arrow `DataType` and array type for encoding/decoding. Emits token streams that reference
 /// `arrow::datatypes::DataType` and arrow array types.
 fn arrow_type_for_rust_type(
@@ -1075,6 +1080,14 @@ fn gen_decode_batch_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
             if use_string_extract(ty, f.options.serde) {
                 quote! {
                     let #col_name = nautilus_serialization::arrow::extract_column_string(
+                        record_batch.columns(),
+                        #fn_str,
+                        #idx,
+                    )?;
+                }
+            } else if use_binary_extract(ty) {
+                quote! {
+                    let #col_name = nautilus_serialization::arrow::extract_column_binary(
                         record_batch.columns(),
                         #fn_str,
                         #idx,

@@ -42,8 +42,8 @@ use nautilus_persistence::{
         session::{DataBackendSession, QueryResult},
     },
     test_data::{
-        MacroYieldCurveData, RustTestCustomData, RustTestHashMapCustomData,
-        RustTestParamsCustomData, RustTestPriceMapCustomData,
+        MacroYieldCurveData, RustTestBytesCustomData, RustTestCustomData,
+        RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
     },
 };
 use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
@@ -65,6 +65,7 @@ fn ensure_test_custom_data_registered() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         ensure_custom_data_registered::<MacroYieldCurveData>();
+        ensure_custom_data_registered::<RustTestBytesCustomData>();
         ensure_custom_data_registered::<RustTestCustomData>();
         ensure_custom_data_registered::<RustTestHashMapCustomData>();
         ensure_custom_data_registered::<RustTestParamsCustomData>();
@@ -3603,6 +3604,66 @@ fn test_rust_custom_data_roundtrip() {
         } else {
             panic!("Expected Data::Custom variant");
         }
+    }
+}
+
+#[rstest]
+fn test_rust_custom_data_binary_roundtrip() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = DataType::new(
+        "RustTestBytesCustomData",
+        None,
+        Some(instrument_id.to_string()),
+    );
+    let original_data = [
+        RustTestBytesCustomData {
+            value: Vec::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestBytesCustomData {
+            value: vec![0x00, 0x7F, 0xFF],
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+    let custom_data = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let identifiers = [instrument_id.to_string()];
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestBytesCustomData",
+            Some(&identifiers),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+    for (expected, actual) in original_data.iter().zip(&loaded) {
+        let Data::Custom(custom) = actual else {
+            panic!("Expected custom data, was {actual:?}");
+        };
+        let actual = custom
+            .data
+            .as_any()
+            .downcast_ref::<RustTestBytesCustomData>()
+            .expect("Expected RustTestBytesCustomData");
+        assert_eq!(actual, expected);
     }
 }
 
