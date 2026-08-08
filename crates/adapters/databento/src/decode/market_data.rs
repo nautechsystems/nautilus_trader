@@ -194,12 +194,20 @@ pub fn decode_mbo_msg(
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
+    // A replayed snapshot can carry source packet sequences in non-monotonic order,
+    // so it must not advance the book's incremental high-water mark.
+    let sequence = if msg.flags.is_snapshot() {
+        0
+    } else {
+        msg.sequence
+    };
+
     let delta = OrderBookDelta::new(
         instrument_id,
         action,
         order,
         msg.flags.raw(),
-        msg.sequence.into(),
+        sequence.into(),
         ts_event,
         ts_init,
     );

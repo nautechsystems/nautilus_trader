@@ -610,6 +610,23 @@ fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
 }
 
 #[rstest]
+#[case::incremental(dbn::FlagSet::empty(), 1_000_000)]
+#[case::snapshot(dbn::FlagSet::empty().set_snapshot(), 0)]
+fn test_decode_mbo_msg_snapshot_does_not_advance_sequence(
+    #[case] flags: dbn::FlagSet,
+    #[case] expected_sequence: u64,
+) {
+    let msg = mbo_msg_with_action('A' as c_char, flags);
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    let delta = delta.unwrap();
+
+    assert!(trade.is_none());
+    assert_eq!(delta.flags, flags.raw());
+    assert_eq!(delta.sequence, expected_sequence);
+}
+
+#[rstest]
 #[case('F' as c_char, true)] // Fill: attribution only - book impact arrives as explicit C/M
 #[case('F' as c_char, false)]
 #[case('N' as c_char, true)] // None: status record, no book impact
