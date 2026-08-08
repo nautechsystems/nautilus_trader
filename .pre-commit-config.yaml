@@ -61,7 +61,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.48.0
+    rev: v1.49.0
     hooks:
       - id: typos
         description: Checks for common typos
@@ -525,7 +525,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.1
+    rev: v0.16.2
     hooks:
       - id: ruff
         name: ruff

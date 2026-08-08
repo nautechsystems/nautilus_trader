@@ -11,7 +11,7 @@ version = "nightly-2026-08-01"
 rustc-version = "1.99.0"
 
 [prek]
-version = "0.4.11"
+version = "0.4.12"
 
 [pip-audit]
 version = "2.10.1"

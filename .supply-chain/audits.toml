@@ -385,6 +385,12 @@ criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
+[[audits.android_system_properties]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.5 -> 0.1.6"
+notes = 'Marks the system-property FFI callback extern "C" so it is no longer a plain Rust fn passed into a C callback slot, and switches its out-parameter from String to Option<String> so non-UTF-8 property values return None instead of panicking across the FFI boundary. Manifest license string normalized to SPDX. Android-only code path; no new build, filesystem, network, process, or credential behavior.'
+
 [[audits.arc-swap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -499,6 +505,12 @@ criteria = "safe-to-deploy"
 delta = "1.17.1 -> 1.17.3"
 notes = "Reviewed the Rust wrapper, compiler probes, packaged sources, generated bindings, and bundled AWS-LC delta. Changes harden memcmp probing, add local version reporting and PQDSA docs, fix TLS unexpected EOF handling, add peer-certificate APIs, and guard null cleanup. No new network fetch, external process beyond local compiler probes, binary asset, credential, or data-exfiltration behavior."
 
+[[audits.aws-lc-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.17.3 -> 1.18.0"
+notes = "Reviewed the Rust wrapper delta. ML-DSA/PQDSA moves from unstable::signature to signature with deprecated aliases, which is inert for this workspace since it enables neither unstable nor fips; the FIPS 4.0 module switch applies only to aws-lc-fips-sys behind the fips feature. Also adds out-of-place AEAD seal_out_of_place_scatter with length checks made before the AEAD call, guards a length underflow in key-wrap decrypt when ciphertext is shorter than 8 bytes, and exports rsa::KeyPairComponents. The hmac, digest, rand, and rsa paths this workspace uses are unchanged. No new build, network, process, filesystem, or credential behavior."
+
 [[audits.aws-lc-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -510,6 +522,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.42.0 -> 0.43.0"
 notes = "Reviewed the build script, packaged sources, generated bindings, and bundled AWS-LC commit delta. Build changes are bounded local compiler probes and skip cross builds; packaged crates contain no upstream prebuilt object files or network fetch path."
+
+[[audits.aws-lc-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.43.0 -> 0.44.0"
+notes = "Reviewed the build scripts, generated bindings, packaged sources, and bundled AWS-LC delta (5.2.0 -> 5.5.0). The bulk of the diff is the mechanical aws_lc_0_43_0_ to aws_lc_0_44_0_ symbol-prefix rename across generated bindings and generated-src. Build changes add an OPENSSL_SMALL size-optimized option plumbed through the cc, cmake, and nasm builders, a copy_writable that clears read-only permissions when staging prebuilt objects out of a read-only store, and a platform-specific library_filename for system-library probing. C changes are an upstream sync confined to fipsmodule, cipher_extra, chacha, and rsa_extra. The refreshed Windows prebuilt NASM objects stay gated behind use_prebuilt_nasm, which needs Windows x86_64, absent NASM, and explicit env or feature opt-in that this workspace does not set. No network fetch, credential, or new process behavior beyond local compiler probes."
 
 [[audits.base32]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -540,6 +558,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.13.0 -> 2.13.1"
 notes = "Makes Flags::all use a const expression and updates docs and metadata. Existing optional bytemuck unsafe impl generation is unchanged; no new dependencies, build script, filesystem, network, or process behavior."
+
+[[audits.blake3]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.8.5 -> 1.8.6"
+notes = "Build script moves to the cargo:: directive syntax with no behavior change. maybe_mmap_file now takes the length by seeking instead of metadata, tolerates mapping failure, and rewinds the cursor before returning None, so block devices and Windows NUL hash correctly; the unsafe memmap2 contract is unchanged and the path is behind the mmap feature this workspace does not enable. No new build, network, process, or credential behavior."
 
 [[audits.borsh]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -628,6 +652,12 @@ criteria = "safe-to-deploy"
 delta = "1.3.0 -> 1.4.0"
 notes = "Reviewed clang-cl path-remapping flag support and tests. No new unsafe, network, credential, or external filesystem behavior; existing compiler process execution remains the advertised build-time capability."
 
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.0 -> 1.4.1"
+notes = "Emits -mno-omit-leaf-frame-pointer alongside -fno-omit-frame-pointer when force-frame-pointers is set and stops emitting -fomit-frame-pointer when it is not, accepts thumbv7a-vex-v5 in the target parser, and adds managarm, aarch64_be, and Motor OS entries to the target tables. Compiler-flag and target-table changes only; no new process spawn beyond the existing compiler invocation, and no network, filesystem, or credential behavior."
+
 [[audits.cfg_aliases]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -652,11 +682,23 @@ criteria = "safe-to-deploy"
 delta = "4.6.4 -> 4.6.5"
 notes = "Help rendering, completion, and parser fixes with tests. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
+[[audits.clap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.5 -> 4.6.6"
+notes = "Adds Command::get_overridden_usage and renames the internal Arg::blacklist field to conflicts; the rest is examples and docs. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
 [[audits.clap_builder]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.6.2 -> 4.6.5"
 notes = "Fixes display formatting for partially optional argument values and documents empty exclusive-range debug assertions. No unsafe, build script, filesystem, network, process, or credential behavior changed."
+
+[[audits.clap_builder]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.5 -> 4.6.6"
+notes = "Renames the internal Arg::blacklist field to conflicts and promotes the crate-private get_override_usage to the public get_overridden_usage; parser, validator, and usage output follow the rename. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
 [[audits.cmake]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -741,6 +783,12 @@ criteria = "safe-to-deploy"
 delta = "0.54.0 -> 0.55.0"
 notes = "Published crate code only bumps dbn to 0.63.0 and updates the changelog. No source logic, build script, feature, or network behavior changes in databento itself."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.55.0 -> 0.57.0"
+notes = "Adds an allocate_isins builder field to the adjustment-factors, corporate-actions, and security-master range and last params, plus CorporateActionsClient::list_events and list_enums, which issue GETs to Databento reference endpoints through the crate's existing authenticated client. Remaining changes bump dbn to 0.65.0 and update the changelog. No new host, credential, build script, filesystem, or process behavior."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -783,6 +831,12 @@ criteria = "safe-to-deploy"
 delta = "0.62.0 -> 0.63.0"
 notes = "Adds a stable u8 representation and Python integer conversion for VersionUpgradePolicy. No new unsafe, dependencies, build script, filesystem, or network behavior."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.63.0 -> 0.65.0"
+notes = "Adds record_as_u8_slice, which sizes the slice from the header record_size() with a debug assert against size_of::<T>(), fixing re-encoding that dropped appended ts_out bytes. Also adds the ReplayDataAgedOut error code, JPX publishers, DynWriter::finish for the zstd end-of-frame block, and an optional zstd feature. New unsafe is confined to that one bounded slice constructor and to test-only RecordRef::new. No new build, filesystem, network, process, or credential behavior."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -824,6 +878,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.62.0 -> 0.63.0"
 notes = "No source changes; version bump only to stay in lockstep with dbn 0.63.0."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.63.0 -> 0.65.0"
+notes = "The generated AsRef<[u8]> impl now delegates to dbn::record::record_as_u8_slice instead of building the slice from size_of::<Self>(), which is the fix for dropped ts_out bytes. No new build, filesystem, network, process, or credential behavior in the macro crate."
 
 [[audits.displaydoc]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -891,6 +951,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.0 -> 2.4.1"
 notes = "JS feature build fix, getrandom::getrandom renamed to getrandom::fill."
 
+[[audits.find-msvc-tools]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.9 -> 0.1.10"
+notes = "Edition 2021 modernization: Box<dyn Iterator>, max_by_key, next_back, Option::filter, and core::ffi integer types in the winapi shims, with the registry max_version lookup relocated unchanged. Windows toolchain probing behavior is unchanged and is not exercised on this workspace's Linux or macOS builds. No new process, network, or credential behavior."
+
 [[audits.hashlink]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -955,6 +1021,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.0.17 -> 1.0.18"
 notes = "Performance optimization for 128-bit integer formatting, pointer simplification in Buffer::format. No new unsafe patterns."
+
+[[audits.keccak]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.0 -> 0.2.1"
+notes = "Gates the aarch64_sha3 backend off on softfloat ABI targets and adds a compile_error! guard when the feature is forced there, fixing a build warning. The permutation itself is unchanged. No new build, filesystem, network, process, or credential behavior."
 
 [[audits.log]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1052,7 +1124,25 @@ criteria = "safe-to-deploy"
 delta = "0.29.0 -> 0.29.1"
 notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
 
+[[audits.pyo3]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.1 -> 0.29.2"
+notes = "Fixes the 0.29.1 PyPy regression by borrowing rather than owning the type object in tp_dealloc, repairs a reference leak in initialize_tp_dict (into_ptr to as_ptr), includes the NUL terminator when setting tp_doc, and adds a diagnostic trait for pyo3(get) return types. All changes stay inside existing unsafe CPython FFI paths. No new build, filesystem, network, process, or credential behavior."
+
 [[audits.pyo3-build-config]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.29.1"
+notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
+
+[[audits.pyo3-build-config]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.1 -> 0.29.2"
+notes = "Corrects MinGW Python library naming to carry the lib prefix so raw-dylib resolves, and reworks default_lib_name_unix to key stable-ABI names off the ABI kind rather than a cygwin flag. Build-time name computation only; no new process, filesystem, or network behavior."
+
+[[audits.pyo3-ffi]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.29.0 -> 0.29.1"
@@ -1061,10 +1151,22 @@ notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arit
 [[audits.pyo3-ffi]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
+delta = "0.29.1 -> 0.29.2"
+notes = "Build script gates Windows raw-dylib linking on a known set of Python library names with a PYO3_USE_RAW_DYLIB override, and otherwise falls back to conventional rustc-link-lib emission with a pythonXY alias. Link configuration only; no new process spawn, filesystem, or network behavior."
+
+[[audits.pyo3-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
 delta = "0.29.0 -> 0.29.1"
 notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
 
 [[audits.pyo3-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.1 -> 0.29.2"
+notes = "Version bump only; the manifests are the sole change."
+
+[[audits.pyo3-macros-backend]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.29.0 -> 0.29.1"
@@ -1073,8 +1175,8 @@ notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arit
 [[audits.pyo3-macros-backend]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
-delta = "0.29.0 -> 0.29.1"
-notes = "Reviewed PyO3 v0.29.0 -> v0.29.1 monorepo delta. Fixes FFI pointer arithmetic, free-threaded atomic loads, pyclass lifetime, GC and reference leaks, platform builds, and duration overflow. New WASM developer Makefiles are not package build scripts or runtime paths. No new shipped network, process, filesystem, credential, or data-exfiltration behavior."
+delta = "0.29.1 -> 0.29.2"
+notes = "Adds a ClassMethodReceiver distinction so a classmethod invoked on an instance resolves its receiver via Py_TYPE with an optional checked cast, and threads IntoPyObject type hints through introspection for pyo3(get) fields. Generated code stays within the existing PyO3 FFI and error-handling patterns. No new build, filesystem, network, process, or credential behavior."
 
 [[audits.rapidhash]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1440,17 +1542,35 @@ criteria = "safe-to-deploy"
 delta = "1.0.1 -> 1.0.2"
 notes = "Adds TreeError conversion impls for Bits<I> in binary mode and deprecates tuple-offset helpers. No parser-core logic, unsafe, build, or network changes."
 
+[[audits.xml-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.28 -> 0.8.29"
+notes = "Escapes namespace URIs through AttributeEscapes when the writer emits xmlns and xmlns:prefix attributes, closing an attribute-injection hole for untrusted URIs. Manifest maintenance status changes to deprecated, since upstream has moved to the xml 1.x crate. No new build, filesystem, network, process, or credential behavior."
+
 [[audits.yoke]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.2 -> 0.8.3"
 notes = "Fixes unsafe Send and Sync bounds for CartableOptionPointer and adds thread-drop tests. Safety improvement only; no new dependencies, build script, filesystem, or network behavior."
 
+[[audits.zerocopy]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.55 -> 0.8.56"
+notes = "Drops the authors metadata, bumps the rand dev-dependency to 0.8.7, and narrows one alloc cfg by removing the kani arm. No change to the unsafe transmutation code paths, and no new build, filesystem, network, process, or credential behavior."
+
 [[audits.zerocopy-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.40 -> 0.8.42"
 notes = "Version bump only, no code changes."
+
+[[audits.zerocopy-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.55 -> 0.8.56"
+notes = "Adds validate_crate_path, which rejects malformed crate_path attribute inputs such as Self and a leading :: before crate, self, or super, so the derive fails at expansion instead of emitting a path that resolves somewhere unintended. Input validation is strictly tightening. Relaxes the prettyplease dev-dependency from an exact pin to a caret requirement. No new build, filesystem, network, process, or credential behavior in the generated code."
 
 [[audits.zlib-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"

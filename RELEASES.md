@@ -58,6 +58,7 @@ Released on TBD (UTC).
 - Fixed network controllers treating aborted reconnects as completed reconnections (#4623), thanks @folknor
 - Fixed WebSocket pong frames being held across a reconnect and enqueued on the replacement connection (#4613), thanks @folknor
 - Fixed Python v2 `FeeModel` subclass constructors and concrete model inheritance (#4640), thanks @dfjmax
+- Fixed `ChandeMomentumOscillator` returning a value outside [-100, 100] for a zero gain average, which gave `VariableIndexDynamicAverage` a smoothing weight above 1 (#4667), thanks @mkzung
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
@@ -79,9 +80,9 @@ Released on TBD (UTC).
 - Upgraded Python and workflow tools: `uv` v0.12.1, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
-- Upgraded `clap` to v4.6.5, `http` to v1.5.0, `time` to v0.3.55, and `toml` to v1.1.4
+- Upgraded `time` crate to v0.3.55
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
-- Upgraded `pyo3` crate to v0.29.1 for object‑lifetime, free‑threading, and compatibility fixes
+- Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
 - Upgraded `redis` crate to v1.5.0
 
 ### Documentation Updates
