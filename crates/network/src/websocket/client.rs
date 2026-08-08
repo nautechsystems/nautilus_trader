@@ -85,8 +85,8 @@ use super::{
         GRACEFUL_SHUTDOWN_TIMEOUT_SECS,
     },
     types::{
-        EpochMessageHandler, MessageHandler, MessageReader, MessageWriter, PingHandler,
-        WriterCommand,
+        EpochMessageHandler, EpochPingHandler, MessageHandler, MessageReader, MessageWriter,
+        PingHandler, WriterCommand,
     },
 };
 #[cfg(feature = "turmoil")]
@@ -203,7 +203,7 @@ pub struct WebSocketClientInner {
     config: WebSocketConfig,
     reconnect_headers: ReconnectHeaders,
     handler: Option<IncomingHandler>,
-    ping_handler: Option<PingHandler>,
+    ping_handler: Option<IncomingPingHandler>,
     read_task: Option<tokio::task::JoinHandle<()>>,
     read_fence: Option<ReadSessionFence>,
     write_task: tokio::task::JoinHandle<()>,
@@ -231,6 +231,21 @@ impl IncomingHandler {
         match self {
             Self::Message(handler) => handler(message),
             Self::Epoch(handler) => handler(connection_epoch, message),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum IncomingPingHandler {
+    Ping(PingHandler),
+    Epoch(EpochPingHandler),
+}
+
+impl IncomingPingHandler {
+    fn handle(&self, connection_epoch: u64, data: Vec<u8>) {
+        match self {
+            Self::Ping(handler) => handler(data),
+            Self::Epoch(handler) => handler(connection_epoch, data),
         }
     }
 }
@@ -355,7 +370,7 @@ impl WebSocketClientInner {
         Self::connect_url_with_handler(
             config,
             message_handler.map(IncomingHandler::Message),
-            ping_handler,
+            ping_handler.map(IncomingPingHandler::Ping),
         )
         .await
     }
@@ -363,7 +378,7 @@ impl WebSocketClientInner {
     async fn connect_url_with_handler(
         config: WebSocketConfig,
         handler: Option<IncomingHandler>,
-        ping_handler: Option<PingHandler>,
+        ping_handler: Option<IncomingPingHandler>,
     ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
@@ -1143,7 +1158,7 @@ impl WebSocketClientInner {
         mut reader: MessageReader,
         connection_epoch: u64,
         handler: Option<&IncomingHandler>,
-        ping_handler: Option<&PingHandler>,
+        ping_handler: Option<&IncomingPingHandler>,
         idle_timeout_ms: Option<u64>,
     ) -> tokio::task::JoinHandle<()> {
         log::debug!("Started message handler task 'read'");
@@ -1230,7 +1245,7 @@ impl WebSocketClientInner {
                                 );
                                 break;
                             }
-                            handler(ping_data.to_vec());
+                            handler.handle(connection_epoch, ping_data.to_vec());
                         }
 
                         if idle_timeout_exceeded(last_data_time, idle_timeout) {
@@ -1495,6 +1510,50 @@ impl WebSocketClientInner {
                                 if mode.is_reconnect() =>
                             {
                                 _ = response_tx.send(Err(SendError::ConnectionChanged));
+                            }
+                            WriterCommand::SendPongOnConnection { .. } if mode.is_reconnect() => {}
+                            WriterCommand::SendPongOnConnection {
+                                data,
+                                connection_epoch: expected_epoch,
+                            } => {
+                                let epoch = connection_epoch.load(Ordering::Acquire);
+                                if epoch != expected_epoch {
+                                    continue;
+                                }
+
+                                let send_result = dst::time::timeout(
+                                    Duration::from_secs(WRITE_TIMEOUT_SECS),
+                                    active_writer.send(Message::Pong(data.into())),
+                                )
+                                .await;
+                                let send_failed = match send_result {
+                                    Ok(Ok(())) => false,
+                                    Ok(Err(e)) => {
+                                        if is_connection_drop_transport_error(&e) {
+                                            log::warn!("Failed to send pong: {e}");
+                                        } else {
+                                            log::error!("Failed to send pong: {e}");
+                                        }
+                                        true
+                                    }
+                                    Err(_) => {
+                                        log::warn!(
+                                            "Timed out sending pong after {WRITE_TIMEOUT_SECS}s"
+                                        );
+                                        true
+                                    }
+                                };
+
+                                if send_failed
+                                    && ConnectionMode::request_reconnect(&connection_state)
+                                {
+                                    log::warn!("Writer triggering reconnect");
+
+                                    if let Some(tracker) = auth_tracker.get() {
+                                        tracker.invalidate();
+                                    }
+                                    state_notify.notify_one();
+                                }
                             }
                             WriterCommand::SendOnConnection {
                                 message,
@@ -1899,7 +1958,7 @@ impl WebSocketClient {
         Self::connect_with_handler(
             config,
             IncomingHandler::Message(message_handler),
-            ping_handler,
+            ping_handler.map(IncomingPingHandler::Ping),
             rate_limiter,
         )
         .await
@@ -1923,7 +1982,27 @@ impl WebSocketClient {
         Self::connect_with_handler(
             config,
             IncomingHandler::Epoch(epoch_handler),
-            ping_handler,
+            ping_handler.map(IncomingPingHandler::Ping),
+            rate_limiter,
+        )
+        .await
+    }
+
+    /// Creates a handler-mode client whose incoming messages and pings carry connection ownership.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established.
+    pub async fn connect_with_rate_limiter_and_epoch_handlers(
+        config: WebSocketConfig,
+        epoch_handler: EpochMessageHandler,
+        epoch_ping_handler: Option<EpochPingHandler>,
+        rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
+    ) -> Result<Self, TransportError> {
+        Self::connect_with_handler(
+            config,
+            IncomingHandler::Epoch(epoch_handler),
+            epoch_ping_handler.map(IncomingPingHandler::Epoch),
             rate_limiter,
         )
         .await
@@ -1932,7 +2011,7 @@ impl WebSocketClient {
     async fn connect_with_handler(
         config: WebSocketConfig,
         handler: IncomingHandler,
-        ping_handler: Option<PingHandler>,
+        ping_handler: Option<IncomingPingHandler>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     ) -> Result<Self, TransportError> {
         log::debug!("Connecting");
@@ -2317,6 +2396,46 @@ impl WebSocketClient {
 
         self.writer_tx
             .send(WriterCommand::Send(Message::Pong(data.into())))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+    }
+
+    /// Sends a pong if the connection that received its ping is still active.
+    ///
+    /// The pong is skipped silently if the connection is inactive or its epoch has changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The payload exceeds 125 bytes, the RFC 6455 control-frame limit.
+    /// - The writer channel is broken.
+    #[allow(unknown_lints, reason = "Clippy lint is unavailable on Rust 1.97")]
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "the public send API is async even though this method only enqueues"
+    )]
+    pub async fn send_pong_on_connection(
+        &self,
+        data: Vec<u8>,
+        connection_epoch: u64,
+    ) -> Result<(), SendError> {
+        validate_pong_payload(&data)?;
+
+        if !self.connection_mode().is_active() {
+            log::debug!("Skipping pong: connection not active");
+            return Ok(());
+        }
+
+        log::trace!(
+            "Sending pong frame once: epoch={connection_epoch} ({} bytes)",
+            data.len()
+        );
+
+        self.writer_tx
+            .send(WriterCommand::SendPongOnConnection {
+                data,
+                connection_epoch,
+            })
             .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
@@ -3128,8 +3247,10 @@ mod tests {
             .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
 
         let result = client.send_pong(vec![2; 126]).await;
+        let epoch_result = client.send_pong_on_connection(vec![2; 126], 0).await;
 
         assert!(matches!(result, Err(SendError::InvalidInput(_))));
+        assert!(matches!(epoch_result, Err(SendError::InvalidInput(_))));
     }
 
     // A rejected oversized pong must not disturb the connection: the frame is
@@ -5388,6 +5509,99 @@ mod rust_tests {
     }
 
     #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_pong_is_bound_to_connection_epoch() {
+        let initial_state = Arc::new(RecordingState {
+            messages: Arc::new(StdMutex::new(Vec::new())),
+            recorded_notify: tokio::sync::Notify::new(),
+        });
+        let initial_transport: BoxedWsTransport = Box::pin(RecordingTransport {
+            state: initial_state,
+        });
+        let (writer, _reader) = initial_transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let auth_tracker = Arc::new(OnceLock::new());
+        let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            Arc::new(AtomicU64::new(0)),
+            auth_tracker,
+            reconnect_buffer_waits_for_auth,
+        );
+
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let replacement_state = Arc::new(RecordingState {
+            messages: Arc::clone(&recorded),
+            recorded_notify: tokio::sync::Notify::new(),
+        });
+        let replacement_transport: BoxedWsTransport = Box::pin(RecordingTransport {
+            state: replacement_state,
+        });
+        let (replacement_writer, _reader) = replacement_transport.split();
+        let (update_tx, update_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(replacement_writer, update_tx))
+            .unwrap();
+        writer_tx
+            .send(WriterCommand::SendPongOnConnection {
+                data: b"stale-pong".to_vec(),
+                connection_epoch: 0,
+            })
+            .unwrap();
+
+        tokio::time::advance(Duration::from_millis(100)).await;
+        assert_eq!(update_rx.await.unwrap(), 1);
+
+        let (sentinel_tx, sentinel_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("sentinel-1"),
+                connection_epoch: 1,
+                response_tx: sentinel_tx,
+            })
+            .unwrap();
+        sentinel_rx.await.unwrap().unwrap();
+        assert_eq!(
+            recorded.lock().unwrap().as_slice(),
+            &[Message::text("sentinel-1")]
+        );
+
+        writer_tx
+            .send(WriterCommand::SendPongOnConnection {
+                data: b"fresh-pong".to_vec(),
+                connection_epoch: 1,
+            })
+            .unwrap();
+        let (sentinel_tx, sentinel_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::SendOnConnection {
+                message: Message::text("sentinel-2"),
+                connection_epoch: 1,
+                response_tx: sentinel_tx,
+            })
+            .unwrap();
+        sentinel_rx.await.unwrap().unwrap();
+        assert_eq!(
+            recorded.lock().unwrap().as_slice(),
+            &[
+                Message::text("sentinel-1"),
+                Message::Pong(b"fresh-pong".to_vec().into()),
+                Message::text("sentinel-2"),
+            ]
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
+
+    #[rstest]
     #[case(Message::text("stale"))]
     #[case(Message::Binary(vec![1, 2, 3].into()))]
     #[case(Message::Ping(vec![1, 2, 3].into()))]
@@ -5416,6 +5630,7 @@ mod rust_tests {
         let message_handler = IncomingHandler::Message(message_handler);
         let ping_handler: PingHandler =
             Arc::new(move |_| _ = ping_count_clone.fetch_add(1, Ordering::SeqCst));
+        let ping_handler = IncomingPingHandler::Ping(ping_handler);
 
         let read_task = WebSocketClientInner::spawn_message_handler_task(
             Arc::clone(&connection_state),
