@@ -2670,6 +2670,48 @@ async fn test_submit_market_order_rejected_empty_book() {
     assert_order_event(event, "Rejected");
 }
 
+// The CLOB rejects a killed FOK with HTTP 400 and a structured body, so the strategy must receive
+// the venue's own text without the JSON envelope or the `orderID` that body also carries.
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_rejected_reason_carries_venue_error_text() {
+    let state = TestServerState::default();
+    *state.order_response_status.lock().await = StatusCode::BAD_REQUEST;
+    *state.order_response.lock().await = Some(json!({
+        "error": "order couldn't be fully filled. FOK orders are fully filled or killed.",
+        "orderID": "0x3776d59db9ea1e4bbedf33f6f79ca677cfa6c93c2a44801f5a10516d822cc502",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_market_order_with_time_in_force(
+        "O-FOK-KILLED",
+        instrument_id,
+        OrderSide::Buy,
+        true,
+        TimeInForce::Fok,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+
+    assert_eq!(
+        order_event_reason(&rejected),
+        "bad request: HTTP 400: order couldn't be fully filled. FOK orders are fully filled or killed."
+    );
+}
+
 fn assert_order_status_report(event: ExecutionEvent, expected_status: OrderStatus) {
     match event {
         ExecutionEvent::Report(report) => match report {
