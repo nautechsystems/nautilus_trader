@@ -2433,10 +2433,15 @@ fn test_process_leg_fill_without_order_updates_position_and_publishes_order_befo
     assert_eq!(position.id, expected_position_id);
     assert_eq!(position.opening_order_id, client_order_id);
     assert_eq!(position.quantity, Quantity::from(1));
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.position_id(&client_order_id), None);
     assert_eq!(
         topics.borrow().as_slice(),
         ["portfolio", "orders", "positions"]
     );
+    drop(position);
+    drop(cache);
+    assert!(execution_engine.cache().borrow_mut().check_integrity());
 }
 
 #[rstest]

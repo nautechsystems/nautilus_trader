@@ -3766,7 +3766,15 @@ impl ExecutionEngine {
             position.replay_events.extend(current_replay);
             position.fill_voids = prior.fill_voids;
         }
-        self.cache.borrow_mut().add_position(&position, oms_type)?;
+        let is_orderless_leg = self.is_leg_fill(&fill)
+            && !self.cache.borrow().order_exists(&position.opening_order_id);
+        if is_orderless_leg {
+            self.cache
+                .borrow_mut()
+                .add_position_without_order(&position, oms_type)?;
+        } else {
+            self.cache.borrow_mut().add_position(&position, oms_type)?;
+        }
 
         if self.config.snapshot_positions {
             self.create_position_state_snapshot(&position, true);
