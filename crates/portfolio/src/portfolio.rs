@@ -2479,20 +2479,10 @@ impl Portfolio {
                     let mut pnl = sum_pnl.as_decimal();
 
                     if let Some(base_currency) = base_currency {
-                        let xrate = cache.get_xrate(
-                            instrument_id.venue,
-                            sum_pnl.currency,
-                            base_currency,
-                            PriceType::Mid,
-                        );
-
-                        if let Some(xrate) = xrate {
-                            pnl = self.checked_convert_realized_pnl(
-                                pnl,
-                                xrate,
-                                currency,
-                                *instrument_id,
-                            )?;
+                        let xrate = if let Some(xrate) =
+                            self.calculate_xrate_to_base(instrument, &account, sum_pnl.currency)
+                        {
+                            xrate
                         } else {
                             log::warn!(
                                 "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
@@ -2501,7 +2491,14 @@ impl Portfolio {
                             );
                             self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
                             return None;
-                        }
+                        };
+
+                        pnl = self.checked_convert_realized_pnl(
+                            pnl,
+                            xrate,
+                            currency,
+                            *instrument_id,
+                        )?;
                     }
 
                     total_pnl = self.checked_add_realized_pnl(total_pnl, pnl, *instrument_id)?;
