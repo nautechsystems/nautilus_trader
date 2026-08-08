@@ -36,7 +36,9 @@ use nautilus_core::{
     AtomicMap, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, execution::failure::CommandFailure,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -308,10 +310,10 @@ impl AxExecutionClient {
 
             if let Err(e) = result {
                 match classify_ax_ws_failure(&e) {
-                    AxCommandFailure::LocalValidation(reason) => {
-                        log::warn!(
-                            "AX submit failed local validation for {client_order_id}: {reason}"
-                        );
+                    // AX classifies no send failure as a venue rejection (see
+                    // `classify_ax_ws_failure`); both terminal-valid classes reject the same way.
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        log::warn!("AX submit failed for {client_order_id}: {reason}");
                         emitter.emit_order_rejected(
                             &order_for_task,
                             &reason,
@@ -319,7 +321,7 @@ impl AxExecutionClient {
                             false,
                         );
                     }
-                    AxCommandFailure::Ambiguous(reason) => {
+                    CommandFailure::Ambiguous(reason) => {
                         log::warn!(
                             "Ambiguous AX submit failure for {client_order_id}, awaiting reconciliation: {reason}"
                         );
@@ -343,12 +345,10 @@ impl AxExecutionClient {
         self.spawn_task("cancel_order", async move {
             if let Err(e) = ws_orders.cancel_order(client_order_id, venue_order_id).await {
                 match classify_ax_ws_failure(&e) {
-                    AxCommandFailure::LocalValidation(reason) => {
-                        log::warn!(
-                            "Cancel command failed local validation for {client_order_id}: {reason}"
-                        );
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        log::warn!("Cancel command failed for {client_order_id}: {reason}");
                     }
-                    AxCommandFailure::Ambiguous(reason) => {
+                    CommandFailure::Ambiguous(reason) => {
                         log::warn!(
                             "Ambiguous AX cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
                         );
@@ -840,7 +840,7 @@ impl ExecutionClient for AxExecutionClient {
                 // No replace failure is an unambiguous rejection (see
                 // `classify_ax_http_failure`); leave the order pending.
                 Err(e) => match classify_ax_http_failure(&e) {
-                    AxCommandFailure::LocalValidation(reason) => {
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
                         emit_ax_modify_rejected(
                             &emitter,
                             clock,
@@ -851,7 +851,7 @@ impl ExecutionClient for AxExecutionClient {
                             &reason,
                         );
                     }
-                    AxCommandFailure::Ambiguous(reason) => {
+                    CommandFailure::Ambiguous(reason) => {
                         log::warn!(
                             "Ambiguous AX modify failure for {client_order_id}, awaiting reconciliation: {reason}"
                         );
@@ -929,10 +929,10 @@ impl ExecutionClient for AxExecutionClient {
                 // A whole-request failure has no per-order venue results and
                 // must not fan out per-order rejections.
                 Err(e) => match classify_ax_http_failure(&e) {
-                    AxCommandFailure::LocalValidation(reason) => {
-                        log::warn!("Cancel-all for {instrument_id} failed local validation: {reason}");
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        log::warn!("Cancel-all for {instrument_id} failed: {reason}");
                     }
-                    AxCommandFailure::Ambiguous(reason) => {
+                    CommandFailure::Ambiguous(reason) => {
                         log::warn!(
                             "Ambiguous AX cancel-all failure for {instrument_id}, awaiting reconciliation: {reason}"
                         );
@@ -1930,39 +1930,32 @@ fn validate_order_instructions(
     Ok(())
 }
 
-#[derive(Debug)]
-enum AxCommandFailure {
-    LocalValidation(String),
-    Ambiguous(String),
-}
-
 // The AX HTTP API documents only a bare 400 with no error schema, so no venue
 // failure can be allowlisted as an unambiguous rejection; those arrive via the
-// orders WS `Rejected` and `CancelRejected` events instead.
-fn classify_ax_http_failure(error: &AxHttpError) -> AxCommandFailure {
+// orders WS `Rejected` and `CancelRejected` events instead. AX therefore never
+// classifies a send failure as `CommandFailure::VenueRejected`.
+fn classify_ax_http_failure(error: &AxHttpError) -> CommandFailure {
     let message = error.to_string();
     match error {
         AxHttpError::MissingCredentials
         | AxHttpError::MissingSessionToken
         | AxHttpError::ValidationError(_)
-        | AxHttpError::BuildError(_) => AxCommandFailure::LocalValidation(message),
+        | AxHttpError::BuildError(_) => CommandFailure::NotSent(message),
         AxHttpError::ApiError { .. }
         | AxHttpError::JsonError(_)
         | AxHttpError::Canceled(_)
         | AxHttpError::NetworkError(_)
-        | AxHttpError::UnexpectedStatus { .. } => AxCommandFailure::Ambiguous(message),
+        | AxHttpError::UnexpectedStatus { .. } => CommandFailure::Ambiguous(message),
     }
 }
 
-fn classify_ax_ws_failure(error: &AxOrdersWsClientError) -> AxCommandFailure {
+fn classify_ax_ws_failure(error: &AxOrdersWsClientError) -> CommandFailure {
     match error {
-        AxOrdersWsClientError::ClientError(message) => {
-            AxCommandFailure::LocalValidation(message.clone())
-        }
+        AxOrdersWsClientError::ClientError(message) => CommandFailure::NotSent(message.clone()),
         AxOrdersWsClientError::Transport(_)
         | AxOrdersWsClientError::ChannelError(_)
         | AxOrdersWsClientError::AuthenticationError(_) => {
-            AxCommandFailure::Ambiguous(error.to_string())
+            CommandFailure::Ambiguous(error.to_string())
         }
     }
 }
@@ -2624,31 +2617,35 @@ mod tests {
     #[case(AxHttpError::NetworkError("timeout".to_string()), false)]
     #[case(AxHttpError::UnexpectedStatus { status: 400, body: "invalid".to_string() }, false)]
     #[case(AxHttpError::UnexpectedStatus { status: 503, body: String::new() }, false)]
-    fn test_classify_ax_http_failure(#[case] error: AxHttpError, #[case] expect_local: bool) {
-        let failure = classify_ax_http_failure(&error);
+    fn test_classify_ax_http_failure(#[case] error: AxHttpError, #[case] expect_not_sent: bool) {
+        // Asserting the exact variant also pins that AX never classifies a venue rejection
+        let expected = if expect_not_sent {
+            CommandFailure::NotSent(error.to_string())
+        } else {
+            CommandFailure::Ambiguous(error.to_string())
+        };
 
-        assert_eq!(
-            matches!(failure, AxCommandFailure::LocalValidation(_)),
-            expect_local,
-            "failure was: {failure:?}"
-        );
+        assert_eq!(classify_ax_http_failure(&error), expected);
     }
 
     #[rstest]
-    #[case(AxOrdersWsClientError::ClientError("missing venue_order_id".to_string()), true)]
-    #[case(AxOrdersWsClientError::ChannelError("handler closed".to_string()), false)]
-    #[case(AxOrdersWsClientError::Transport("connection reset".to_string()), false)]
-    #[case(AxOrdersWsClientError::AuthenticationError("token expired".to_string()), false)]
+    #[case(
+        AxOrdersWsClientError::ClientError("missing venue_order_id".to_string()),
+        Some("missing venue_order_id")
+    )]
+    #[case(AxOrdersWsClientError::ChannelError("handler closed".to_string()), None)]
+    #[case(AxOrdersWsClientError::Transport("connection reset".to_string()), None)]
+    #[case(AxOrdersWsClientError::AuthenticationError("token expired".to_string()), None)]
     fn test_classify_ax_ws_failure(
         #[case] error: AxOrdersWsClientError,
-        #[case] expect_local: bool,
+        #[case] not_sent_reason: Option<&str>,
     ) {
-        let failure = classify_ax_ws_failure(&error);
+        // Asserting the exact variant also pins that AX never classifies a venue rejection
+        let expected = match not_sent_reason {
+            Some(reason) => CommandFailure::NotSent(reason.to_string()),
+            None => CommandFailure::Ambiguous(error.to_string()),
+        };
 
-        assert_eq!(
-            matches!(failure, AxCommandFailure::LocalValidation(_)),
-            expect_local,
-            "failure was: {failure:?}"
-        );
+        assert_eq!(classify_ax_ws_failure(&error), expected);
     }
 }

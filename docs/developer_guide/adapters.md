@@ -640,7 +640,8 @@ Keep this policy independent of the HTTP or WebSocket path used to send a comman
 
 Name the three classes consistently. Adapters that invent their own vocabulary for this cannot be
 compared, and the same wire condition ends up classified differently across venues. Classify every
-state‑changing order command failure as one `CommandFailure` variant:
+state‑changing order command failure as one
+[`CommandFailure`](../../crates/live/src/execution/failure.rs) variant:
 
 | Evidence class             | `CommandFailure` variant | Terminal event from this evidence |
 | -------------------------- | ------------------------ | --------------------------------- |

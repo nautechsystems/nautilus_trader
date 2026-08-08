@@ -38,7 +38,9 @@ use nautilus_core::{
     AtomicMap, MUTEX_POISONED, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, execution::failure::CommandFailure,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType},
@@ -54,7 +56,7 @@ use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use super::{CancelCommandFailure, classify_cancel_http_failure};
+use super::classify_cancel_http_failure;
 use crate::{
     common::{
         consts::KRAKEN_VENUE,
@@ -1011,11 +1013,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                         }
                     }
                     Err(e) => match classify_cancel_http_failure(e) {
-                        CancelCommandFailure::LocalValidation(reason) => {
+                        CommandFailure::NotSent(reason) => {
                             log::warn!("Cancel-all failed local validation: {reason}");
                         }
-                        CancelCommandFailure::Ambiguous(reason)
-                        | CancelCommandFailure::VenueReject(reason) => {
+                        CommandFailure::Ambiguous(reason)
+                        | CommandFailure::VenueRejected(reason) => {
                             log::warn!(
                                 "Cancel-all ambiguous failure, awaiting reconciliation: {reason}"
                             );
@@ -1122,17 +1124,17 @@ async fn cancel_order_for_futures(
     instrument_id: InstrumentId,
     client_order_id: Option<ClientOrderId>,
     venue_order_id: Option<VenueOrderId>,
-) -> Result<(), CancelCommandFailure> {
+) -> Result<(), CommandFailure> {
     http.get_cached_instrument(&instrument_id.symbol.inner())
         .ok_or_else(|| {
-            CancelCommandFailure::local(InstrumentLookupError::not_found(instrument_id).to_string())
+            CommandFailure::not_sent(InstrumentLookupError::not_found(instrument_id).to_string())
         })?;
 
     let order_id = venue_order_id.as_ref().map(ToString::to_string);
     let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
 
     if order_id.is_none() && cli_ord_id.is_none() {
-        return Err(CancelCommandFailure::local(
+        return Err(CommandFailure::not_sent(
             "Either client_order_id or venue_order_id must be provided",
         ));
     }
@@ -1146,7 +1148,7 @@ async fn cancel_order_for_futures(
     if response.result != KrakenApiResult::Success
         || response.cancel_status.status != KrakenSendStatus::Cancelled
     {
-        return Err(CancelCommandFailure::venue_reject(format!(
+        return Err(CommandFailure::venue_rejected(format!(
             "cancel-order rejected: status={}",
             response.cancel_status.status
         )));
@@ -1170,15 +1172,13 @@ async fn batch_cancel_orders_for_futures(
                 contexts.push(context);
                 items.push(item);
             }
-            Err(CancelCommandFailure::LocalValidation(reason)) => {
+            Err(CommandFailure::NotSent(reason)) => {
                 log::warn!(
                     "Batch cancel command failed local validation for {}: {reason}",
                     cancel.client_order_id
                 );
             }
-            Err(
-                CancelCommandFailure::Ambiguous(reason) | CancelCommandFailure::VenueReject(reason),
-            ) => {
+            Err(CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason)) => {
                 log::warn!(
                     "Batch cancel command ambiguous failure for {}, awaiting reconciliation: {reason}",
                     cancel.client_order_id
@@ -1199,11 +1199,10 @@ async fn batch_cancel_orders_for_futures(
             Ok(response) => response,
             Err(e) => {
                 match classify_cancel_http_failure(e) {
-                    CancelCommandFailure::LocalValidation(reason) => {
+                    CommandFailure::NotSent(reason) => {
                         log::warn!("Batch cancel failed local validation: {reason}");
                     }
-                    CancelCommandFailure::Ambiguous(reason)
-                    | CancelCommandFailure::VenueReject(reason) => {
+                    CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
                         log::warn!(
                             "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
                         );
@@ -1263,10 +1262,10 @@ async fn batch_cancel_orders_for_futures(
 fn batch_cancel_item_for_futures(
     http: &KrakenFuturesHttpClient,
     cancel: &CancelOrder,
-) -> Result<(CancelRequestContext, KrakenFuturesBatchCancelItem), CancelCommandFailure> {
+) -> Result<(CancelRequestContext, KrakenFuturesBatchCancelItem), CommandFailure> {
     http.get_cached_instrument(&cancel.instrument_id.symbol.inner())
         .ok_or_else(|| {
-            CancelCommandFailure::local(
+            CommandFailure::not_sent(
                 InstrumentLookupError::not_found(cancel.instrument_id).to_string(),
             )
         })?;
@@ -1335,10 +1334,10 @@ fn handle_cancel_failure(
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
-    failure: CancelCommandFailure,
+    failure: CommandFailure,
 ) {
     match failure {
-        CancelCommandFailure::VenueReject(reason) => {
+        CommandFailure::VenueRejected(reason) => {
             emitter.emit_order_cancel_rejected_event(
                 strategy_id,
                 instrument_id,
@@ -1348,10 +1347,10 @@ fn handle_cancel_failure(
                 clock.get_time_ns(),
             );
         }
-        CancelCommandFailure::LocalValidation(reason) => {
+        CommandFailure::NotSent(reason) => {
             log::warn!("Cancel command failed local validation for {client_order_id}: {reason}");
         }
-        CancelCommandFailure::Ambiguous(reason) => {
+        CommandFailure::Ambiguous(reason) => {
             log::warn!(
                 "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
             );
@@ -1501,7 +1500,7 @@ mod tests {
         .await;
 
         match result {
-            Err(CancelCommandFailure::LocalValidation(reason)) => {
+            Err(CommandFailure::NotSent(reason)) => {
                 assert_eq!(
                     reason,
                     InstrumentLookupError::not_found(instrument_id).to_string()
@@ -1531,7 +1530,7 @@ mod tests {
         let result = batch_cancel_item_for_futures(&http, &cancel);
 
         match result {
-            Err(CancelCommandFailure::LocalValidation(reason)) => {
+            Err(CommandFailure::NotSent(reason)) => {
                 assert_eq!(
                     reason,
                     InstrumentLookupError::not_found(instrument_id).to_string()

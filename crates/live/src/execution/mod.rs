@@ -15,6 +15,7 @@
 
 pub mod context;
 pub mod emitter;
+pub mod failure;
 pub mod manager;
 
 pub(crate) mod recency;
