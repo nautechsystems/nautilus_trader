@@ -8,9 +8,9 @@ name: security-audit
 #     audit-relevant paths change. The gate job remains as a second check
 #     before the audit jobs run.
 #   - Pushes to develop / master / test-ci / test-security: GitHub path filters
-#     create a workflow run only when audit-relevant paths change. Development-
-#     wheel publication commits force all audit jobs. An active, expiring
-#     SECURITY_GATE_OVERRIDE skips forced audit jobs for push runs only.
+#     create a workflow run only when audit-relevant paths change. Do not broaden
+#     this filter to every develop push. Development wheel publication waits for
+#     and forces all audit jobs only within that path-scoped run.
 
 permissions:
   contents: read
@@ -46,6 +46,7 @@ on:
       - scripts/rust-toolchain.sh
       - scripts/uv-version.sh
       - scripts/ci/check-security-audit-result.sh
+      - scripts/ci/check-security-gate-result.bash
       - scripts/ci/plan-wheel-publication.bash
       - scripts/ci/publish-wheels*
       - scripts/ci/security-audit-gate.sh
@@ -62,13 +63,14 @@ on:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
+# The six audit job names and their "Run ..." step names are checked by
+# scripts/ci/check-security-audit-result.sh. Keep both files in sync.
 jobs:
   changes:
     name: changes
     runs-on: ubuntu-22.04
     outputs:
       audit_needed: ${{ steps.filter.outputs.audit_needed }}
-      override_active: ${{ steps.filter.outputs.override_active }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -93,7 +95,6 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
-          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
         run: |
           mode="$(bash scripts/ci/publish-wheels-policy.bash "$EVENT_NAME" "$GITHUB_REF_NAME")"
           if [ "$mode" = "development" ]; then
@@ -183,8 +184,10 @@ jobs:
 
       - name: Run cargo-audit
         run: |
-          cargo audit
-          cargo audit --file crates/adapters/lighter/fuzz/pornin/Cargo.lock
+          status=0
+          cargo audit || status=$?
+          cargo audit --file crates/adapters/lighter/fuzz/pornin/Cargo.lock || status=$?
+          exit "$status"
 
   cargo-deny:
     name: cargo-deny
@@ -213,10 +216,12 @@ jobs:
 
       - name: Run cargo-deny (advisories, licenses, sources, bans)
         run: |
-          cargo deny --all-features check advisories licenses sources bans
+          status=0
+          cargo deny --all-features check advisories licenses sources bans || status=$?
           cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
             --config .cargo/deny-fuzz.toml --locked --all-features check \
-            advisories licenses sources bans
+            advisories licenses sources bans || status=$?
+          exit "$status"
 
   cargo-vet:
     name: cargo-vet
@@ -245,9 +250,11 @@ jobs:
 
       - name: Run cargo-vet
         run: |
-          cargo vet --locked
+          status=0
+          cargo vet --locked || status=$?
           cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
-            --store-path .supply-chain
+            --store-path .supply-chain || status=$?
+          exit "$status"
 
   pip-audit:
     name: pip-audit

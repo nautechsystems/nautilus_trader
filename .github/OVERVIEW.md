@@ -117,10 +117,32 @@ the endpoint variables. Other workflows retain the configured policy and default
 
 ### Security gate override
 
-The `SECURITY_GATE_OVERRIDE` repository variable accepts an ISO 8601 UTC expiry timestamp. While the
-timestamp is in the future, it skips the nightly publication security gate and forced security
-audits for development wheel publication pushes. It does not suppress pull request, scheduled, or
-manual audits, and it expires without a separate reset.
+The `SECURITY_GATE_OVERRIDE` environment‑scoped configuration variable permits a reviewed security
+gate failure for one commit. Configure it on both `r2-develop` and `r2-nightly`, set it to `disabled`
+during normal operation, and remove any repository‑scoped variable with the same name. Only
+repository admins can configure environment variables, while users with write access can configure
+repository variables.
 
-Leave the variable unset during normal operation. Set it only after reviewing the blocked audit and
-limit the expiry to the minimum time needed for the affected publication run.
+An active value uses `<UTC expiry>@<full commit SHA>`, for example:
+
+```text
+2026-08-08T12:00:00Z@0123456789abcdef0123456789abcdef01234567
+```
+
+The expiry must use the exact `YYYY-MM-DDTHH:MM:SSZ` format and be no more than two hours in the
+future. The SHA must match the publication commit. Missing, malformed, expired, overlong, or
+mismatched values fail closed. Cancelled, skipped, and other incomplete gate results cannot be
+overridden.
+
+Development security audits remain path‑scoped: ordinary pushes to `develop` do not start the
+workflow. When an audit‑relevant change triggers the workflow, the publication job waits for its
+same‑commit result. The nightly security gate also completes its scans before the publication job
+checks the override. The override does not suppress pull request, scheduled, manual, or stable
+release audits.
+
+To approve a blocked development or nightly publication:
+
+1. Review the failed audit and confirm that publishing the affected commit is acceptable.
+1. Set `SECURITY_GATE_OVERRIDE` on the matching `r2-develop` or `r2-nightly` environment.
+1. Re‑run the failed build jobs for the same commit.
+1. Reset the environment variable to `disabled` after the publication completes.

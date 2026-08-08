@@ -153,7 +153,7 @@ repos:
             \.pre-commit-config\.yaml|
             scripts/purge-orphan-dev-wheels\.sh|
             scripts/ci/(
-              check-security-audit-result|
+              check-security-(audit|gate)-result|
               plan-wheel-publication|
               publish-wheels(
                 -generate-index|

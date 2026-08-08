@@ -39,30 +39,10 @@ set -euo pipefail
 
 emit() {
   echo "audit_needed=$1" >> "$GITHUB_OUTPUT"
-  echo "override_active=${override_active}" >> "$GITHUB_OUTPUT"
   echo "audit_needed=$1 ($2)"
 }
 
-override_active=false
-
 if [[ "$EVENT_NAME" == "push" && "${FORCE_SECURITY_AUDIT:-false}" == "true" ]]; then
-  override="${SECURITY_GATE_OVERRIDE:-}"
-  override_epoch=0
-  if [[ -n "$override" ]]; then
-    override_epoch="$(
-      date -u -d "$override" +%s 2> /dev/null ||
-        date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$override" +%s 2> /dev/null ||
-        echo 0
-    )"
-  fi
-  if [[ -n "$override" ]] &&
-    [[ "$(date -u +%s)" -lt "$override_epoch" ]]; then
-    echo "::warning::Security audit override active until $override"
-    override_active=true
-    emit false "trusted push override"
-    exit 0
-  fi
-
   emit true "required for wheel publication"
   exit 0
 fi
@@ -116,7 +96,7 @@ pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
 pattern+='|scripts/(cargo-tool-version|rust-toolchain|uv-version)\.sh'
 pattern+='|scripts/purge-orphan-dev-wheels\.sh'
 pattern+='|scripts/ci/('
-pattern+='check-security-audit-result|plan-wheel-publication|publish-wheels.*'
+pattern+='check-security-audit-result|check-security-gate-result|plan-wheel-publication|publish-wheels.*'
 pattern+='|security-audit-gate|test-publish-wheels|update-pyproject-version|validate-wheel-artifacts'
 pattern+=')\.(sh|bash)'
 pattern+='|\.github/actions/.*'

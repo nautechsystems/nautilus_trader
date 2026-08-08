@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 sha="${SECURITY_AUDIT_SHA:-${GITHUB_SHA:?GITHUB_SHA is required}}"
 branch="${SECURITY_AUDIT_BRANCH:-${GITHUB_REF_NAME:?GITHUB_REF_NAME is required}}"
@@ -8,6 +9,58 @@ workflow="${SECURITY_AUDIT_WORKFLOW:-security-audit.yml}"
 event_name="${SECURITY_AUDIT_EVENT_NAME:-${GITHUB_EVENT_NAME:?GITHUB_EVENT_NAME is required}}"
 timeout_seconds="${SECURITY_AUDIT_TIMEOUT_SECONDS:-1800}"
 poll_seconds="${SECURITY_AUDIT_POLL_SECONDS:-15}"
+
+require_completed_audits() {
+  local run_id=$1
+  local audit_steps
+  local job
+  local step
+  local conclusion
+  local audit_failed=false
+
+  audit_steps="$(
+    # shellcheck disable=SC2016 # jq variables must remain literal.
+    gh api --method GET "repos/${repo}/actions/runs/${run_id}/jobs" \
+      -f "per_page=100" \
+      --jq '
+        .jobs[]
+        | .name as $job
+        | .steps[]?
+        | [$job, .name, (.conclusion // "")]
+        | join("|")
+      '
+  )"
+
+  # Keep in sync with the six audit jobs and their "Run ..." steps in security-audit.yml.
+  while IFS='|' read -r job step; do
+    conclusion="$(
+      printf '%s\n' "$audit_steps" |
+        awk -F '|' -v job="$job" -v step="$step" \
+          '$1 == job && $2 == step { print $3; exit }'
+    )"
+
+    case "$conclusion" in
+      success) ;;
+      failure) audit_failed=true ;;
+      *)
+        echo "::error::Security audit step ${job} / ${step} did not complete or its workflow name changed; blocking override" >&2
+        return 1
+        ;;
+    esac
+  done << 'AUDIT_STEPS'
+zizmor|Run zizmor
+cargo-audit|Run cargo-audit
+cargo-deny|Run cargo-deny (advisories, licenses, sources, bans)
+cargo-vet|Run cargo-vet
+pip-audit|Run pip-audit
+osv-scanner|Run osv-scanner
+AUDIT_STEPS
+
+  if [[ "$audit_failed" != "true" ]]; then
+    echo "::error::No completed audit step reported a failure; blocking override" >&2
+    return 1
+  fi
+}
 
 if [[ "$event_name" != "push" ]]; then
   echo "::error::Security audit publication gate is push-only, was ${event_name}" >&2
@@ -53,7 +106,16 @@ while true; do
         exit 0
       fi
 
-      echo "::error::Security audit concluded ${conclusion:-unknown}; blocking publish" >&2
+      if [[ "$conclusion" == "failure" ]]; then
+        require_completed_audits "$run_id" || exit 1
+      fi
+
+      if SECURITY_GATE_RESULT="${conclusion:-unknown}" \
+        SECURITY_GATE_SHA="$sha" \
+        bash "${script_dir}/check-security-gate-result.bash"; then
+        exit 0
+      fi
+
       exit 1
     fi
   else

@@ -115,7 +115,6 @@ test_policy_and_version() {
 
 test_security_gate() {
   local case_dir="${work_dir}/security"
-  local date_bin="${case_dir}/date-bin"
   local mock_bin="${case_dir}/bin"
   local output="${case_dir}/output"
 
@@ -124,6 +123,10 @@ test_security_gate() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${MOCK_GH_ARGS_LOG:?}"
+if [[ "$*" == *"/actions/runs/"*"/jobs"* ]]; then
+  printf '%s\n' "${MOCK_GH_JOBS_RESPONSE:-}"
+  exit 0
+fi
 if [[ -n "${MOCK_GH_RESPONSES:-}" ]]; then
   count="$(cat "${MOCK_GH_COUNT:?}")"
   count=$((count + 1))
@@ -133,25 +136,71 @@ if [[ -n "${MOCK_GH_RESPONSES:-}" ]]; then
 fi
 printf '%s\n' "${MOCK_GH_RESPONSE:-}"
 MOCK
+  cat > "${mock_bin}/date" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "-u +%s" ]]; then
+  echo 100
+  exit 0
+fi
+
+timestamp=""
+if [[ "${1:-}" == "-u" && "${2:-}" == "-d" && "${4:-}" == "+%s" ]]; then
+  if [[ "${MOCK_DATE_GNU_FAIL:-false}" == "true" ]]; then
+    exit 1
+  fi
+  timestamp="${3:-}"
+elif [[ "${1:-}" == "-j" && "${2:-}" == "-u" && "${3:-}" == "-f" &&
+  "${4:-}" == "%Y-%m-%dT%H:%M:%SZ" && "${6:-}" == "+%s" ]]; then
+  timestamp="${5:-}"
+else
+  exit 1
+fi
+
+case "$timestamp" in
+  1970-01-01T00:00:50Z) echo 50 ;;
+  1970-01-01T00:03:20Z) echo 200 ;;
+  1970-01-01T03:00:00Z) echo 10800 ;;
+  *) exit 1 ;;
+esac
+MOCK
   cat > "${mock_bin}/sleep" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 exit 0
 MOCK
-  chmod +x "${mock_bin}/gh" "${mock_bin}/sleep"
+  chmod +x "${mock_bin}/date" "${mock_bin}/gh" "${mock_bin}/sleep"
 
   run_audit_check() {
     PATH="${mock_bin}:$PATH" \
       MOCK_GH_ARGS_LOG="${case_dir}/gh-args" \
       MOCK_GH_RESPONSE="${1:-}" \
+      MOCK_GH_JOBS_RESPONSE="${4:-}" \
       GITHUB_REPOSITORY=nautechsystems/nautilus_trader \
       GITHUB_SHA=1111111111111111111111111111111111111111 \
       GITHUB_REF_NAME=develop \
       GITHUB_EVENT_NAME="${2:-push}" \
+      SECURITY_GATE_OVERRIDE="${3:-}" \
       SECURITY_AUDIT_TIMEOUT_SECONDS=0 \
       SECURITY_AUDIT_POLL_SECONDS=1 \
       bash "${repo_root}/scripts/ci/check-security-audit-result.sh"
   }
+
+  run_gate_check() {
+    PATH="${mock_bin}:$PATH" \
+      SECURITY_GATE_RESULT="$1" \
+      SECURITY_GATE_OVERRIDE="${2:-}" \
+      SECURITY_GATE_SHA=1111111111111111111111111111111111111111 \
+      bash "${repo_root}/scripts/ci/check-security-gate-result.bash"
+  }
+
+  local audit_steps_failure='zizmor|Run zizmor|failure
+cargo-audit|Run cargo-audit|success
+cargo-deny|Run cargo-deny (advisories, licenses, sources, bans)|success
+cargo-vet|Run cargo-vet|success
+pip-audit|Run pip-audit|success
+osv-scanner|Run osv-scanner|success'
+  local audit_steps_success="${audit_steps_failure/failure/success}"
 
   run_audit_check '123|completed|success|https://example.invalid/run|2026-08-03T00:00:00Z'
   grep -Fq 'branch=develop' "${case_dir}/gh-args" || fail "Audit query did not bind the branch"
@@ -186,61 +235,49 @@ MOCK
     '123|completed|neutral|https://example.invalid/run|2026-08-03T00:00:00Z'
   run_expect_failure "$output" run_audit_check \
     '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z'
+  run_audit_check \
+    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z' \
+    push \
+    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111' \
+    "$audit_steps_failure"
+  run_expect_failure "$output" run_audit_check \
+    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z' \
+    push \
+    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111' \
+    "${audit_steps_failure%$'\n'*}"
+  grep -Fq "did not complete" "$output" || fail "Incomplete audit must not be overridden"
+  run_expect_failure "$output" run_audit_check \
+    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z' \
+    push \
+    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111' \
+    "$audit_steps_success"
+  grep -Fq "No completed audit step reported a failure" "$output" ||
+    fail "Non-audit workflow failure must not be overridden"
   run_expect_failure "$output" run_audit_check \
     '123|completed|success|https://example.invalid/run|2026-08-03T00:00:00Z' pull_request
 
-  : > "$output"
-  EVENT_NAME=push \
-    FORCE_SECURITY_AUDIT=true \
-    SECURITY_GATE_OVERRIDE=2999-01-01T00:00:00Z \
-    GITHUB_OUTPUT="$output" \
-    bash "${repo_root}/scripts/ci/security-audit-gate.sh"
-  assert_line "$output" "audit_needed=false"
-  assert_line "$output" "override_active=true"
+  run_gate_check success malformed
+  run_gate_check failure \
+    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111'
+  MOCK_DATE_GNU_FAIL=true run_gate_check failure \
+    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111'
+  run_expect_failure "$output" run_gate_check failure disabled
+  run_expect_failure "$output" run_gate_check failure 2999-01-01T00:00:00Z
+  run_expect_failure "$output" run_gate_check failure \
+    '1970-01-01T00:00:50Z@1111111111111111111111111111111111111111'
+  run_expect_failure "$output" run_gate_check failure \
+    '1970-01-01T03:00:00Z@1111111111111111111111111111111111111111'
+  run_expect_failure "$output" run_gate_check failure \
+    '1970-01-01T00:03:20Z@2222222222222222222222222222222222222222'
+  run_expect_failure "$output" run_gate_check neutral \
+    '1970-01-01T00:03:20Z@1111111111111111111111111111111111111111'
 
   : > "$output"
   EVENT_NAME=push \
     FORCE_SECURITY_AUDIT=true \
-    SECURITY_GATE_OVERRIDE=2000-01-01T00:00:00Z \
     GITHUB_OUTPUT="$output" \
     bash "${repo_root}/scripts/ci/security-audit-gate.sh"
   assert_line "$output" "audit_needed=true"
-  assert_line "$output" "override_active=false"
-
-  mkdir -p "$date_bin"
-  cat > "${date_bin}/date" << 'MOCK'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == "-u +%s" ]]; then
-  echo 100
-elif [[ "${1:-}" == "-u" && "${2:-}" == "-d" ]]; then
-  exit 1
-elif [[ "$*" == "-j -u -f %Y-%m-%dT%H:%M:%SZ 2999-01-01T00:00:00Z +%s" ]]; then
-  echo 200
-else
-  exit 1
-fi
-MOCK
-  chmod +x "${date_bin}/date"
-  : > "$output"
-  PATH="${date_bin}:$PATH" \
-    EVENT_NAME=push \
-    FORCE_SECURITY_AUDIT=true \
-    SECURITY_GATE_OVERRIDE=2999-01-01T00:00:00Z \
-    GITHUB_OUTPUT="$output" \
-    bash "${repo_root}/scripts/ci/security-audit-gate.sh"
-  assert_line "$output" "audit_needed=false"
-  assert_line "$output" "override_active=true"
-
-  : > "$output"
-  EVENT_NAME=pull_request \
-    FORCE_SECURITY_AUDIT=true \
-    PR_BASE_REF=develop \
-    PR_HEAD_SHA="$(git -C "$repo_root" rev-parse HEAD)" \
-    SECURITY_GATE_OVERRIDE=2999-01-01T00:00:00Z \
-    GITHUB_OUTPUT="$output" \
-    bash "${repo_root}/scripts/ci/security-audit-gate.sh"
-  assert_line "$output" "override_active=false"
 }
 
 test_sha256_portability() {

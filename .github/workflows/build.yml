@@ -655,6 +655,8 @@ jobs:
   security-gate-nightly:
     name: security-gate-nightly
     runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.result.outputs.result }}
     needs:
       - build
       - build-linux-arm
@@ -676,35 +678,22 @@ jobs:
         with:
           persist-credentials: false
 
-      # Requires admin access to modify; does not widen attack surface
-      - name: Check security gate override
-        id: gate
-        env:
-          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
-        run: |
-          override="${SECURITY_GATE_OVERRIDE}"
-          if [ -n "$override" ] && [ "$(date -u +%s)" -lt "$(date -u -d "$override" +%s 2>/dev/null || echo 0)" ]; then
-            echo "::warning::Security gate override active until $override"
-            echo "override_active=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "override_active=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Install cargo-audit
-        if: steps.gate.outputs.override_active != 'true'
         uses: ./.github/actions/cargo-tool-install
         with:
           tool-name: cargo-audit
 
       - name: Run cargo-audit
-        if: steps.gate.outputs.override_active != 'true'
+        id: cargo-audit
+        continue-on-error: true
         run: |
-          cargo audit --deny unsound
-          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/pornin/Cargo.lock
+          status=0
+          cargo audit --deny unsound || status=$?
+          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/pornin/Cargo.lock || status=$?
+          exit "$status"
 
       - name: Run osv-scanner
         id: osv-scan
-        if: steps.gate.outputs.override_active != 'true'
         continue-on-error: true
         # https://github.com/google/osv-scanner-action
         uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
@@ -718,8 +707,25 @@ jobs:
             --lockfile=python/uv.lock
 
       - name: Check OSV severity
-        if: steps.osv-scan.outcome == 'failure' && steps.gate.outputs.override_active != 'true'
+        id: osv-severity
+        if: steps.osv-scan.outcome == 'failure'
+        continue-on-error: true
         run: bash scripts/ci/osv-severity-gate.sh osv-results.json
+
+      - name: Record security gate result
+        id: result
+        if: always()
+        env:
+          CARGO_AUDIT_OUTCOME: ${{ steps.cargo-audit.outcome }}
+          OSV_SCAN_OUTCOME: ${{ steps.osv-scan.outcome }}
+          OSV_SEVERITY_OUTCOME: ${{ steps.osv-severity.outcome }}
+        run: |
+          if [ "$CARGO_AUDIT_OUTCOME" = "success" ] &&
+            { [ "$OSV_SCAN_OUTCOME" = "success" ] || [ "$OSV_SEVERITY_OUTCOME" = "success" ]; }; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+          fi
 
   publish:
     needs:
@@ -777,12 +783,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Require successful nightly security gate
+        if: needs.plan.outputs.wheel_matrix == 'nightly'
+        env:
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
+          SECURITY_GATE_RESULT: ${{ needs.security-gate-nightly.outputs.result }}
+          SECURITY_GATE_SHA: ${{ github.sha }}
+        run: bash scripts/ci/check-security-gate-result.bash
+
       - name: Require successful same-commit security audit
         if: >-
           needs.plan.outputs.publish_development == 'true' &&
           needs.plan.outputs.security-audit-needed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
         run: bash scripts/ci/check-security-audit-result.sh
 
       - name: Set up Python
