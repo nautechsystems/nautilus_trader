@@ -646,6 +646,51 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_response_trade_ids_without_transaction_hashes() {
+        // The post-rollout matched shape drops `transactionsHashes` and returns `tradeIDs`
+        // alone, so the modeled fields must survive without the hashes present.
+        let resp: OrderResponse = load("http_order_response_trade_ids_only.json");
+
+        assert!(resp.success);
+        assert_eq!(
+            resp.order_id.as_deref(),
+            Some("0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe")
+        );
+        assert!(resp.error_msg.is_none());
+    }
+
+    #[rstest]
+    fn test_batch_order_response_legs() {
+        // `POST /orders` returns one entry per submitted leg, and the three outcomes carry
+        // different field combinations: accepted with an ID, rejected as success=true with an
+        // empty ID and a reason, and a hard failure with a null ID.
+        let resps: Vec<OrderResponse> = load("http_batch_order_response.json");
+
+        assert_eq!(resps.len(), 3);
+
+        assert!(resps[0].success);
+        assert_eq!(
+            resps[0].order_id.as_deref(),
+            Some("0x1111111111111111111111111111111111111111111111111111111111111111")
+        );
+        assert!(resps[0].error_msg.is_none());
+
+        assert!(resps[1].success);
+        assert_eq!(resps[1].order_id.as_deref(), Some(""));
+        assert_eq!(
+            resps[1].error_msg.as_deref(),
+            Some("not enough balance / allowance: the balance is not enough")
+        );
+
+        assert!(!resps[2].success);
+        assert!(resps[2].order_id.is_none());
+        assert_eq!(
+            resps[2].error_msg.as_deref(),
+            Some("invalid post-only order: order crosses book")
+        );
+    }
+
+    #[rstest]
     fn test_cancel_response_ok() {
         let resp: CancelResponse = load("http_cancel_response_ok.json");
 

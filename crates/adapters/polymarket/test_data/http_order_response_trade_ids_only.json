@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "orderID": "0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe",
+  "errorMsg": null,
+  "tradeIDs": [
+    "trade-0x101",
+    "trade-0x102"
+  ]
+}

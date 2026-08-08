@@ -75,6 +75,7 @@ Released on TBD (UTC).
 - Improved native backtest workload coverage for canonical result checks
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
+- Improved Polymarket order response tests for the `tradeIDs` matched shape and batch submission legs
 - Refined CI, build, and dependency configuration after the v1 removal
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
