@@ -52,6 +52,15 @@ impl HistoricalInteractiveBrokersClient {
 
     /// Request historical bars.
     ///
+    /// # Continuous futures
+    ///
+    /// Continuous futures (`CONTFUT`) reject an explicit end date/time with IB
+    /// error 10339. For these contracts the end date is dropped and only the
+    /// first duration segment is requested, anchored to the current time, so
+    /// the returned bars may fall outside `[start_date_time, end_date_time]`.
+    /// A warning is logged when the requested end date/time is in the past or
+    /// the range spans more than one duration segment.
+    ///
     /// # Arguments
     ///
     /// * `bar_specifications` - List of bar specifications (e.g., ["1-HOUR-LAST"])
