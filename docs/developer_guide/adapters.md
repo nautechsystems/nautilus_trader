@@ -636,6 +636,43 @@ unambiguous command rejection.
 
 Keep this policy independent of the HTTP or WebSocket path used to send a command.
 
+#### Naming the evidence classes
+
+Name the three classes consistently. Adapters that invent their own vocabulary for this cannot be
+compared, and the same wire condition ends up classified differently across venues. Classify every
+state‑changing order command failure as one `CommandFailure` variant:
+
+| Evidence class             | `CommandFailure` variant | Terminal event from this evidence |
+| -------------------------- | ------------------------ | --------------------------------- |
+| Definitive local failure   | `NotSent`                | Valid                             |
+| Definitive venue rejection | `VenueRejected`          | Valid                             |
+| Unknown outcome            | `Ambiguous`              | Never                             |
+
+An `Ambiguous` classification never emits a terminal event by itself. Later definitive evidence
+from a stream update, query, poll, or reconciliation still resolves the command either way.
+
+A definitive venue acceptance or update is not a failure and carries no variant. Apply the venue
+event directly.
+
+Classify once, where the error surfaces, rather than re‑branching on the error enum at each emit
+site. Apply this to every state‑changing order command, submit, modify, and cancel alike, including
+their batch and list forms. A classifier scoped to one command type leaves the others to drift.
+Queries produce no terminal command event and need no classification.
+
+Keep this axis separate from `is_retryable`. Retryability answers whether to send the request
+again; ambiguity answers whether the venue may already have acted on the first attempt. An error
+can be both, either, or neither, and collapsing them is what makes an unknown outcome look like a
+rejection.
+
+Two conditions are easy to misfile:
+
+- An HTTP 5xx without definitive command evidence is ambiguous. It proves only that the command
+  was not confirmed, never that it was not applied, and a gateway 5xx does not prove the request
+  failed to reach the venue.
+- A response parse failure is ambiguous, while a request encoding failure is `NotSent`. Both may
+  surface as one serialization error variant, so classify by which side of the write boundary
+  the failure occurred on.
+
 ## HTTP client patterns
 
 ### Client structure
