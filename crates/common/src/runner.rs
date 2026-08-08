@@ -42,6 +42,18 @@ const CALLBACK_CLOSED: usize = 1 << (usize::BITS - 1);
 const CALLBACK_LEASES: usize = CALLBACK_CLOSED - 1;
 static NEXT_TIME_EVENT_CALLBACK_ID: AtomicU64 = AtomicU64::new(1);
 
+/// A message channel feeding the runner event loop.
+///
+/// Each variant identifies one of the channels the runner dispatches from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SystemChannel {
+    TimeEvents,
+    ExecEvents,
+    ExecCommands,
+    DataEvents,
+    DataCommands,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct TimeEventCallbackId(NonZeroU64);
 

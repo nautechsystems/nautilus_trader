@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_common::{
     messages::{DataEvent, ExecutionEvent, data::DataCommand},
-    runner::{TimeEventMessage, TradingCommandMessage},
+    runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
 };
 
 /// Primitive metrics for one `LiveNode::run` dispatch channel after startup.
@@ -233,7 +233,7 @@ impl RunnerMetrics {
 
     pub(crate) fn record_dispatch(
         &self,
-        channel: RunnerMetricChannel,
+        channel: SystemChannel,
         dispatch_elapsed: Duration,
         elapsed_since_start: Duration,
     ) {
@@ -273,13 +273,13 @@ impl RunnerMetrics {
             .store(duration_ns(elapsed_since_start), Ordering::Relaxed);
     }
 
-    fn channel(&self, channel: RunnerMetricChannel) -> &RunnerChannelMetrics {
+    fn channel(&self, channel: SystemChannel) -> &RunnerChannelMetrics {
         match channel {
-            RunnerMetricChannel::TimeEvents => &self.time_events,
-            RunnerMetricChannel::ExecEvents => &self.exec_events,
-            RunnerMetricChannel::ExecCommands => &self.exec_commands,
-            RunnerMetricChannel::DataEvents => &self.data_events,
-            RunnerMetricChannel::DataCommands => &self.data_commands,
+            SystemChannel::TimeEvents => &self.time_events,
+            SystemChannel::ExecEvents => &self.exec_events,
+            SystemChannel::ExecCommands => &self.exec_commands,
+            SystemChannel::DataEvents => &self.data_events,
+            SystemChannel::DataCommands => &self.data_commands,
         }
     }
 
@@ -293,15 +293,6 @@ impl RunnerMetrics {
         self.elapsed_ns
             .store(duration_ns(elapsed_since_start), Ordering::Relaxed);
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum RunnerMetricChannel {
-    TimeEvents,
-    ExecEvents,
-    ExecCommands,
-    DataEvents,
-    DataCommands,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -467,12 +458,12 @@ mod tests {
         let metrics = RunnerMetrics::default();
 
         metrics.record_dispatch(
-            RunnerMetricChannel::ExecCommands,
+            SystemChannel::ExecCommands,
             Duration::from_nanos(10),
             Duration::from_nanos(50),
         );
         metrics.record_dispatch(
-            RunnerMetricChannel::DataEvents,
+            SystemChannel::DataEvents,
             Duration::from_nanos(7),
             Duration::from_nanos(90),
         );
@@ -490,13 +481,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(RunnerMetricChannel::TimeEvents, [1, 0, 0, 0, 0], [50, 0, 0, 0, 0])]
-    #[case(RunnerMetricChannel::ExecEvents, [0, 1, 0, 0, 0], [0, 50, 0, 0, 0])]
-    #[case(RunnerMetricChannel::ExecCommands, [0, 0, 1, 0, 0], [0, 0, 50, 0, 0])]
-    #[case(RunnerMetricChannel::DataEvents, [0, 0, 0, 1, 0], [0, 0, 0, 50, 0])]
-    #[case(RunnerMetricChannel::DataCommands, [0, 0, 0, 0, 1], [0, 0, 0, 0, 50])]
+    #[case(SystemChannel::TimeEvents, [1, 0, 0, 0, 0], [50, 0, 0, 0, 0])]
+    #[case(SystemChannel::ExecEvents, [0, 1, 0, 0, 0], [0, 50, 0, 0, 0])]
+    #[case(SystemChannel::ExecCommands, [0, 0, 1, 0, 0], [0, 0, 50, 0, 0])]
+    #[case(SystemChannel::DataEvents, [0, 0, 0, 1, 0], [0, 0, 0, 50, 0])]
+    #[case(SystemChannel::DataCommands, [0, 0, 0, 0, 1], [0, 0, 0, 0, 50])]
     fn test_runner_metrics_record_dispatch_updates_selected_channel(
-        #[case] channel: RunnerMetricChannel,
+        #[case] channel: SystemChannel,
         #[case] expected_dispatched: [u64; 5],
         #[case] expected_last_dispatch: [u64; 5],
     ) {
@@ -534,7 +525,7 @@ mod tests {
         let metrics = RunnerMetrics::default();
 
         metrics.record_dispatch(
-            RunnerMetricChannel::TimeEvents,
+            SystemChannel::TimeEvents,
             Duration::from_nanos(10),
             Duration::from_nanos(30),
         );

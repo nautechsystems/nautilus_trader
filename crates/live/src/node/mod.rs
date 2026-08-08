@@ -95,7 +95,7 @@ use nautilus_common::{
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
-    runner::{TimeEventMessage, TradingCommandMessage},
+    runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
 };
 use nautilus_core::{
     UUID4,
@@ -141,7 +141,7 @@ use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
 use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
-use metrics::{RunnerChannelQueueDepths, RunnerMetricChannel, RunnerMetrics};
+use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use state::{EngineConnectionStatus, RunningTransition};
 pub use state::{LiveNodeHandle, NodeState};
 
@@ -1474,7 +1474,7 @@ impl LiveNode {
                     if dispatched {
                         record_runner_dispatch(
                             &metrics,
-                            RunnerMetricChannel::TimeEvents,
+                            SystemChannel::TimeEvents,
                             dispatch_start,
                             metrics_start,
                         );
@@ -1491,7 +1491,7 @@ impl LiveNode {
                     self.process_exec_event(evt);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::ExecEvents,
+                        SystemChannel::ExecEvents,
                         dispatch_start,
                         metrics_start,
                     );
@@ -1507,7 +1507,7 @@ impl LiveNode {
                     self.process_exec_command(cmd);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::ExecCommands,
+                        SystemChannel::ExecCommands,
                         dispatch_start,
                         metrics_start,
                     );
@@ -1546,7 +1546,7 @@ impl LiveNode {
                     AsyncRunner::handle_data_event(evt);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::DataEvents,
+                        SystemChannel::DataEvents,
                         dispatch_start,
                         metrics_start,
                     );
@@ -1561,7 +1561,7 @@ impl LiveNode {
                     AsyncRunner::handle_data_command(cmd);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::DataCommands,
+                        SystemChannel::DataCommands,
                         dispatch_start,
                         metrics_start,
                     );
@@ -2712,7 +2712,7 @@ impl LiveNode {
 
 fn record_runner_dispatch(
     metrics: &RunnerMetrics,
-    channel: RunnerMetricChannel,
+    channel: SystemChannel,
     dispatch_start: dst::time::Instant,
     metrics_start: dst::time::Instant,
 ) {
@@ -5496,7 +5496,7 @@ mod tests {
 
         record_runner_dispatch(
             &metrics,
-            RunnerMetricChannel::DataCommands,
+            SystemChannel::DataCommands,
             dispatch_start,
             metrics_start,
         );
