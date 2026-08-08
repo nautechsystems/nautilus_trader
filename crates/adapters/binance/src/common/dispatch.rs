@@ -68,6 +68,12 @@ pub struct OrderIdentity {
     pub quantity: Quantity,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AlgoOrderIds {
+    algo: VenueOrderId,
+    current: VenueOrderId,
+}
+
 /// Tracks order lifecycle state for dispatch routing.
 ///
 /// Orders with a registered identity (submitted through this client) produce
@@ -77,6 +83,7 @@ pub struct OrderIdentity {
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
+    algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
 }
@@ -86,6 +93,7 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
+            algo_order_ids: DashMap::new(),
             emitted_accepted: Mutex::new(FifoCache::new()),
             filled_orders: Mutex::new(FifoCache::new()),
         }
@@ -118,9 +126,39 @@ impl WsDispatchState {
         self.filled_orders.lock().expect(MUTEX_POISONED).add(cid);
     }
 
+    pub fn insert_algo_order_id(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
+        self.algo_order_ids.entry(cid).or_insert(AlgoOrderIds {
+            algo: venue_order_id,
+            current: venue_order_id,
+        });
+    }
+
+    /// Promotes a known Algo order to its matching-engine venue order ID.
+    ///
+    /// Returns `None` for an unknown Algo order, `Some(true)` for a new ID, and
+    /// `Some(false)` when the ID was already current.
+    pub fn promote_algo_order_id(
+        &self,
+        cid: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> Option<bool> {
+        let mut ids = self.algo_order_ids.get_mut(&cid)?;
+        let changed = ids.current != venue_order_id;
+        ids.current = venue_order_id;
+        Some(changed)
+    }
+
+    /// Returns the matching-engine venue order ID for a promoted Algo order.
+    pub fn promoted_algo_order_id(&self, cid: &ClientOrderId) -> Option<VenueOrderId> {
+        self.algo_order_ids
+            .get(cid)
+            .and_then(|ids| (ids.current != ids.algo).then_some(ids.current))
+    }
+
     /// Removes all tracking state for a terminal order.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
         self.order_identities.remove(&cid);
+        self.algo_order_ids.remove(&cid);
         self.emitted_accepted
             .lock()
             .expect(MUTEX_POISONED)

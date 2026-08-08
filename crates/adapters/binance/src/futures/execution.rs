@@ -741,17 +741,23 @@ impl BinanceFuturesExecutionClient {
             .cache()
             .order(&command.client_order_id)
             .is_some_and(|order| is_algo_order_type(order.order_type()));
-        let is_triggered = self
-            .triggered_algo_order_ids
-            .contains(&command.client_order_id);
-        let use_algo_cancel = is_algo && !is_triggered;
+        let promoted_venue_order_id = self
+            .dispatch_state
+            .promoted_algo_order_id(&command.client_order_id);
+        let use_algo_cancel = should_use_algo_cancel(
+            is_algo,
+            self.triggered_algo_order_ids
+                .contains(&command.client_order_id),
+            promoted_venue_order_id.is_some(),
+        );
 
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
         let clock = self.clock;
         let instrument_id = command.instrument_id;
-        let venue_order_id = command.venue_order_id;
+        let venue_order_id =
+            cancel_venue_order_id(is_algo, command.venue_order_id, promoted_venue_order_id);
         let client_order_id = command.client_order_id;
 
         // Non-algo cancels can route through WS trading API when active
@@ -3070,6 +3076,22 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 }
 
+fn should_use_algo_cancel(is_algo: bool, is_triggered: bool, has_promoted_id: bool) -> bool {
+    is_algo && !is_triggered && !has_promoted_id
+}
+
+fn cancel_venue_order_id(
+    is_algo: bool,
+    venue_order_id: Option<VenueOrderId>,
+    promoted_algo_order_id: Option<VenueOrderId>,
+) -> Option<VenueOrderId> {
+    if is_algo {
+        promoted_algo_order_id
+    } else {
+        venue_order_id
+    }
+}
+
 fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinanceProductType) -> bool {
     match product_type {
         BinanceProductType::UsdM => {
@@ -3108,6 +3130,49 @@ mod tests {
             code,
             message: format!("test error {code}"),
         })
+    }
+
+    #[rstest]
+    #[case::regular(false, false, false, false)]
+    #[case::untriggered_algo(true, false, false, true)]
+    #[case::triggered_algo(true, true, false, false)]
+    #[case::promoted_algo(true, false, true, false)]
+    fn test_should_use_algo_cancel(
+        #[case] is_algo: bool,
+        #[case] is_triggered: bool,
+        #[case] has_promoted_id: bool,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            should_use_algo_cancel(is_algo, is_triggered, has_promoted_id),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::regular(
+        false,
+        Some(VenueOrderId::from("8886774")),
+        None,
+        Some(VenueOrderId::from("8886774"))
+    )]
+    #[case::unpromoted_algo(true, Some(VenueOrderId::from("2148719")), None, None)]
+    #[case::promoted(
+        true,
+        Some(VenueOrderId::from("2148719")),
+        Some(VenueOrderId::from("22542179")),
+        Some(VenueOrderId::from("22542179"))
+    )]
+    fn test_cancel_venue_order_id(
+        #[case] is_algo: bool,
+        #[case] venue_order_id: Option<VenueOrderId>,
+        #[case] promoted_algo_order_id: Option<VenueOrderId>,
+        #[case] expected: Option<VenueOrderId>,
+    ) {
+        assert_eq!(
+            cancel_venue_order_id(is_algo, venue_order_id, promoted_algo_order_id),
+            expected
+        );
     }
 
     #[rstest]
