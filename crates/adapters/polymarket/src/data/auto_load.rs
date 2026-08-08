@@ -25,7 +25,7 @@ use nautilus_model::{
 use super::{
     PolymarketDataClient,
     instruments::cache_instrument,
-    runtime::{is_instrument_expired, retire_local_instrument_state},
+    runtime::{is_instrument_retirable, retire_local_instrument_state},
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
 use crate::{
@@ -216,7 +216,7 @@ impl PolymarketDataClient {
                             continue;
                         }
 
-                        if is_instrument_expired(&inst, clock.get_time_ns()) {
+                        if is_instrument_retirable(&inst, clock.get_time_ns()) {
                             log::debug!("Skipping expired auto-loaded instrument {}", inst.id());
                             retired_expired_ids.insert(inst.id());
                             retire_local_instrument_state(

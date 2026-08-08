@@ -72,6 +72,12 @@ pub struct PolymarketInstrumentDef {
     pub end_date: Option<String>,
     /// Whether the market is active and accepting orders.
     pub active: bool,
+    /// Whether the venue reports the market closed.
+    ///
+    /// This is the terminal lifecycle signal. `accepting_orders` pauses transiently during
+    /// resolution and sports windows, so it must not be used to decide retirement.
+    #[serde(default)]
+    pub venue_closed: bool,
     /// URL slug for the market.
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
@@ -166,6 +172,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             start_date: market.start_date.clone(),
             end_date: market.end_date.clone(),
             active,
+            venue_closed: market.closed.unwrap_or(false),
             market_slug: market.market_slug.clone(),
             neg_risk,
             fee_schedule: market.fee_schedule.clone(),
@@ -353,6 +360,13 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
     map.insert(
         "neg_risk".to_string(),
         serde_json::Value::Bool(def.neg_risk),
+    );
+
+    // Terminal lifecycle state as reported by Gamma when this definition was fetched, carried
+    // through so the data client can tell a market the venue still trades from one it has closed
+    map.insert(
+        crate::filters::VENUE_CLOSED_KEY.to_string(),
+        serde_json::Value::Bool(def.venue_closed),
     );
 
     if let Some(fee_schedule) = &def.fee_schedule
@@ -634,6 +648,35 @@ mod tests {
         );
         assert_eq!(info.get_u64("game_id"), None);
         assert_eq!(info.get("fee_schedule"), None);
+        assert_eq!(info.get_bool("venue_closed"), Some(false));
+    }
+
+    #[rstest]
+    #[case(Some(false), Some(true), false)]
+    #[case(Some(true), Some(true), true)]
+    #[case(None, Some(true), false)]
+    // `accepting_orders` pauses transiently and must not affect the terminal signal.
+    #[case(Some(false), Some(false), false)]
+    fn test_create_instrument_info_carries_venue_liveness(
+        #[case] closed: Option<bool>,
+        #[case] accepting_orders: Option<bool>,
+        #[case] expected: bool,
+    ) {
+        let mut market = load_gamma_market("gamma_market.json");
+        market.closed = closed;
+        market.accepting_orders = accepting_orders;
+
+        let defs = parse_gamma_market(&market).unwrap();
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+
+        let binary = match &instrument {
+            InstrumentAny::BinaryOption(b) => b,
+            other => panic!("Expected BinaryOption, was {other:?}"),
+        };
+
+        let info = binary.info.as_ref().expect("info should be Some");
+        assert_eq!(info.get_bool("venue_closed"), Some(expected));
     }
 
     #[rstest]

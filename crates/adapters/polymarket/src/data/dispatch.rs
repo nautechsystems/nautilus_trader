@@ -1054,6 +1054,7 @@ mod tests {
         market_id: Option<&'a str>,
         condition_id: Option<&'a str>,
         expiration_ns: Option<UnixNanos>,
+        venue_closed: Option<bool>,
     }
 
     fn seed_instrument_with_context(
@@ -1093,6 +1094,13 @@ mod tests {
                 info.insert(
                     "condition_id".to_string(),
                     serde_json::Value::String(condition_id.to_string()),
+                );
+            }
+
+            if let Some(venue_closed) = seed_ctx.venue_closed {
+                info.insert(
+                    "venue_closed".to_string(),
+                    serde_json::Value::Bool(venue_closed),
                 );
             }
 
@@ -1205,6 +1213,22 @@ mod tests {
     fn gamma_market_expired_fixture_value() -> Value {
         serde_json::from_str(include_str!("../../test_data/gamma_market.json"))
             .expect("gamma market fixture json")
+    }
+
+    /// Returns the expired fixture with the venue also reporting the market closed.
+    ///
+    /// Gamma keeps trading many markets past `endDate`, so expiration alone no longer retires an
+    /// instrument. Paths that must reject a dead market need the venue to agree it is dead.
+    fn gamma_market_expired_closed_fixture_value() -> Value {
+        let mut value = gamma_market_expired_fixture_value();
+
+        if let Some(root) = value.as_object_mut() {
+            root.insert("active".to_string(), Value::Bool(false));
+            root.insert("closed".to_string(), Value::Bool(true));
+            root.insert("acceptingOrders".to_string(), Value::Bool(false));
+        }
+
+        value
     }
 
     fn gamma_market_recheck_fixture_value() -> Value {
@@ -2182,6 +2206,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                venue_closed: None,
             },
         );
         let no = seed_instrument_with_context(
@@ -2194,6 +2219,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                venue_closed: None,
             },
         );
 
@@ -2294,6 +2320,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                venue_closed: None,
             },
         );
         let no = seed_instrument_with_context(
@@ -2306,6 +2333,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                venue_closed: None,
             },
         );
 
@@ -3171,7 +3199,7 @@ mod tests {
     async fn auto_load_expired_instrument_retires_without_retrying() {
         let state = ExpiredAutoLoadServerState {
             requests: Arc::new(AtomicUsize::new(0)),
-            response: serde_json::json!([gamma_market_expired_fixture_value()]),
+            response: serde_json::json!([gamma_market_expired_closed_fixture_value()]),
         };
         let addr = start_expired_auto_load_test_server(state.clone()).await;
         let (mut client, _data_rx) = create_test_client(addr);
@@ -3224,6 +3252,92 @@ mod tests {
                 .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
         );
         assert!(!client.instruments.load().contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn auto_load_past_end_date_market_open_at_venue_is_carried() {
+        // Regression: Gamma `endDate` is a scheduled end, not the tradeable end. While the venue
+        // still reports the market open the adapter must keep carrying it.
+        let state = ExpiredAutoLoadServerState {
+            requests: Arc::new(AtomicUsize::new(0)),
+            response: serde_json::json!([gamma_market_expired_fixture_value()]),
+        };
+        let addr = start_expired_auto_load_test_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 3;
+        client.config.auto_load_retry_delay_initial_secs = 0.0;
+        client.config.auto_load_retry_delay_max_secs = 0.0;
+
+        let instrument_id = fixture_yes_instrument_id();
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                Some(*POLYMARKET_VENUE),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("subscribe_quotes should queue auto-load");
+
+        wait_until_async(
+            || {
+                let client = &client;
+                async move { client.instruments.load().contains_key(&instrument_id) }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        assert!(
+            client.instruments.load().contains_key(&instrument_id),
+            "market open at the venue should be carried despite a past endDate",
+        );
+        assert!(
+            client
+                .token_meta
+                .contains_key(&Ustr::from(TEST_TOKEN_ID_YES)),
+            "routing metadata should be retained so market data still reaches the client",
+        );
+        assert!(client.active_quote_subs.contains(&instrument_id));
+    }
+
+    #[rstest]
+    fn cached_past_end_date_instrument_open_at_venue_is_subscribable() {
+        // Complements `cached_expired_instrument_live_paths_are_rejected`: the same cached-and-
+        // expired shape must NOT be refused while the venue still reports the market open.
+        let mut client = make_local_test_client();
+        let instrument = seed_instrument_with_context(
+            &make_client_ws_ctx(&client),
+            "0xTOKEN_PAST_END_OPEN",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-PAST-END-OPEN"),
+                expiration_ns: Some(UnixNanos::from(1)),
+                venue_closed: Some(false),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let result = client.subscribe_quotes(SubscribeQuotes::new(
+            instrument.id(),
+            Some(client.client_id),
+            Some(*POLYMARKET_VENUE),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+
+        assert!(
+            result.is_ok(),
+            "subscribe must be allowed while the venue reports the market open: {result:?}",
+        );
+        assert!(client.active_quote_subs.contains(&instrument.id()));
     }
 
     #[rstest]

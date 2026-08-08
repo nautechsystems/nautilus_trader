@@ -28,7 +28,7 @@ use nautilus_common::{
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     msgbus::{self, TypedHandler},
 };
-use nautilus_core::{MUTEX_POISONED, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{MUTEX_POISONED, UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
     events::{OrderEventAny, OrderFilled, PositionEvent},
     identifiers::InstrumentId,
@@ -575,6 +575,10 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
+        // Deliberately unconditional. Execution lookup state is kept for an expired market so
+        // trailing order and fill updates can still be routed; it is reclaimed on a terminal
+        // order or position event once no exposure remains. See
+        // `on_instrument_update_upserts_expired_execution_lookup_state`.
         self.upsert_execution_lookup(instrument);
     }
 }
@@ -700,23 +704,23 @@ fn sync_execution_lookup_for_instrument(
 
     let instrument = cache.instrument(&instrument_id).cloned();
     let retain = instrument.as_ref().is_some_and(|instrument| {
-        if !crate::filters::is_expired(instrument, now_ns) {
-            return true;
-        }
-
-        cache.has_orders_open(
-            Some(&core.venue),
-            Some(&instrument_id),
-            None,
-            Some(&account_id),
-            None,
-        ) || cache.has_positions_open(
-            Some(&core.venue),
-            Some(&instrument_id),
-            None,
-            Some(&account_id),
-            None,
-        )
+        // Passed lazily: this fires on every terminal order event, and a market the venue still
+        // reports open is retained without needing two cache index scans to prove it.
+        should_retain_execution_lookup(instrument, now_ns, || {
+            cache.has_orders_open(
+                Some(&core.venue),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                None,
+            ) || cache.has_positions_open(
+                Some(&core.venue),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                None,
+            )
+        })
     });
 
     drop(cache);
@@ -731,6 +735,20 @@ fn sync_execution_lookup_for_instrument(
         // Instrument not in cache: token key cannot be derived, so drop only the neg-risk entry
         None => neg_risk_index.remove(&instrument_id),
     }
+}
+
+/// Returns `true` if execution lookup state for `instrument` must be kept.
+///
+/// Mirrors the data client's retirement policy so the two clients cannot disagree: Gamma `endDate`
+/// is a scheduled end, so a market the venue still reports open keeps its lookup state even once
+/// `expiration_ns` has passed. Open orders or positions always pin the entry, and are only looked
+/// up when the instrument is otherwise retirable.
+fn should_retain_execution_lookup(
+    instrument: &InstrumentAny,
+    now_ns: UnixNanos,
+    has_open_orders_or_positions: impl FnOnce() -> bool,
+) -> bool {
+    !crate::filters::is_retirable(instrument, now_ns) || has_open_orders_or_positions()
 }
 
 fn is_terminal_order_event(event: &OrderEventAny) -> bool {
@@ -1451,6 +1469,35 @@ mod tests {
                 .expect(MUTEX_POISONED)
                 .processed_fills
                 .contains(&dedup_key)
+        );
+    }
+
+    /// The execution client must not drop lookup state for a market the venue still trades.
+    /// Without this the token to instrument entry disappears and later order updates for that
+    /// market cannot be routed.
+    #[rstest]
+    #[case::open_at_venue_no_exposure(Some(false), false, true)]
+    #[case::closed_at_venue_no_exposure(Some(true), false, false)]
+    #[case::no_venue_state_no_exposure(None, false, false)]
+    #[case::closed_at_venue_with_exposure(Some(true), true, true)]
+    fn execution_lookup_retention_matches_the_data_client_policy(
+        #[case] venue_closed: Option<bool>,
+        #[case] has_open: bool,
+        #[case] expect_retained: bool,
+    ) {
+        let clock = nautilus_core::time::get_atomic_clock_realtime();
+        let mut binary = binary_option();
+        binary.expiration_ns =
+            UnixNanos::from(clock.get_time_ns().as_u64().saturating_sub(1_000_000_000));
+
+        if let Some(closed) = venue_closed {
+            crate::filters::set_venue_closed(&mut binary, closed);
+        }
+        let instrument = InstrumentAny::BinaryOption(binary);
+
+        assert_eq!(
+            should_retain_execution_lookup(&instrument, clock.get_time_ns(), || has_open),
+            expect_retained,
         );
     }
 }

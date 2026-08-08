@@ -790,6 +790,41 @@ can expire before the venue finishes hydrating, so budget for that or raise the 
 retry budget is exhausted, a condition still missing on Gamma is logged as a terminal miss and the
 caller must resubscribe after the market becomes available.
 
+### Instrument retirement and venue liveness
+
+Gamma `endDate` is a scheduled end rather than an observed one, and the venue routinely keeps
+trading a market past it. Long-dated markets can run months beyond `endDate` while still accepting
+orders, so `endDate` alone cannot decide whether a market is still tradeable.
+
+The data client therefore retires an instrument only once it is past `expiration_ns` *and* the
+venue reports it closed. The terminal signal is the Gamma `closed` field, captured on every fetch.
+`acceptingOrders` is deliberately not used, because the venue pauses it transiently during
+resolution and sports windows while the market is still live. Instruments cached before this field
+existed carry no venue state and retire on expiration as before.
+
+The execution client gates its lookup retention on the same predicate, so the two clients cannot
+disagree about whether a market is still live.
+
+Because the scope refresh only covers the configured bootstrap universe, instruments brought in by
+auto-load or new-market discovery would otherwise never have their liveness re-checked. The expiry
+sweep therefore refetches any instrument it is carrying past `expiration_ns` by `condition_id`,
+which keeps the `closed` flag current and lets closed markets be reclaimed regardless of how they
+entered the cache. Only markets already past `endDate` and last reported open are refetched, so the
+added request volume is bounded by that set. Only the venue state is taken from the refetch, so a
+definition rebuilt by a `tick_size_change` keeps its precision.
+
+This probe runs on the instrument refresh cadence (`update_instruments_interval_mins`, default 60
+minutes) rather than on every sweep tick, since venue liveness moves on the order of minutes. Gamma
+omits closed markets from a plain `condition_ids` lookup, so a condition missing from it is checked
+again with `closed=true`: a market confirmed closed is retired on that pass, while one absent from
+both lookups is a weaker signal and must repeat across three passes. Worst-case reclaim is therefore
+hours rather than seconds, and a probe that fails to reach Gamma retries on the next tick instead of
+deferring for a full interval.
+
+Setting `update_instruments_interval_mins` to `0` disables the scope refresh but not this liveness
+probe, which stays on the default hourly cadence. Disabling it as well would mean no instrument is
+ever retired.
+
 ### Market resolution events
 
 The Rust data client tracks Polymarket exposure at `condition_id` level so both YES and NO legs

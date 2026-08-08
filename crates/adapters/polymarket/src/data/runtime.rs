@@ -34,8 +34,12 @@ use super::{
 };
 use crate::resolve::ResolveWatchEntry;
 
-pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
-    crate::filters::is_expired(instrument, now_ns)
+/// Returns `true` if `instrument` may be retired from local runtime state.
+///
+/// Delegates to [`crate::filters::is_retirable`] so the data and execution clients share one
+/// definition of retirement.
+pub(crate) fn is_instrument_retirable(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
+    crate::filters::is_retirable(instrument, now_ns)
 }
 
 pub(crate) fn seed_token_meta_from_live_instruments(
@@ -46,7 +50,7 @@ pub(crate) fn seed_token_meta_from_live_instruments(
     let loaded = instruments.load();
 
     for instrument in loaded.values() {
-        if is_instrument_expired(instrument, now_ns) {
+        if is_instrument_retirable(instrument, now_ns) {
             continue;
         }
 
@@ -202,7 +206,7 @@ pub(crate) async fn retire_expired_local_instruments(
         loaded
             .iter()
             .filter_map(|(instrument_id, instrument)| {
-                is_instrument_expired(instrument, now_ns)
+                is_instrument_retirable(instrument, now_ns)
                     .then_some((*instrument_id, instrument.raw_symbol().as_str().to_string()))
             })
             .collect()
@@ -231,6 +235,20 @@ pub(crate) async fn retire_expired_local_instruments(
         }
 
         expired_ids.push(instrument_id);
+    }
+
+    if !expired_ids.is_empty() {
+        // Dropping a live subscription must be visible: this path was previously silent at every
+        // level, which is what made the endDate defect so hard to diagnose.
+        log::info!(
+            "Retiring {} Polymarket instrument(s) closed at the venue: {}",
+            expired_ids.len(),
+            expired_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
     }
 
     for instrument_id in expired_ids {
@@ -466,5 +484,312 @@ mod tests {
                 .is_empty()
         );
         assert!(!ws_open_tokens.contains(&token_id));
+    }
+
+    #[rstest]
+    fn instrument_before_expiration_is_never_retirable() {
+        let clock = get_atomic_clock_realtime();
+        let mut binary = binary_option();
+        binary.expiration_ns =
+            UnixNanos::from(clock.get_time_ns().as_u64().saturating_add(60_000_000_000));
+        let instrument = InstrumentAny::BinaryOption(binary);
+
+        assert!(!is_instrument_retirable(&instrument, clock.get_time_ns()));
+    }
+
+    #[rstest]
+    fn expired_instrument_open_at_venue_is_retained() {
+        // The defect: the venue keeps trading past `endDate`, so the market must stay carried.
+        let clock = get_atomic_clock_realtime();
+        let instrument =
+            expired_instrument_with_state("0xTOKEN_VENUE", "0xCOND-VENUE", Some(false));
+
+        assert!(!is_instrument_retirable(&instrument, clock.get_time_ns()));
+    }
+
+    #[rstest]
+    fn expired_instrument_closed_at_venue_is_retired() {
+        let clock = get_atomic_clock_realtime();
+        let instrument = expired_instrument_with_state("0xTOKEN_VENUE", "0xCOND-VENUE", Some(true));
+
+        assert!(is_instrument_retirable(&instrument, clock.get_time_ns()));
+    }
+
+    #[rstest]
+    fn expired_instrument_without_venue_state_is_retired() {
+        // Instruments cached before this field existed keep the previous behaviour.
+        let clock = get_atomic_clock_realtime();
+        let instrument = expired_instrument_with_state("0xTOKEN_VENUE", "0xCOND-VENUE", None);
+
+        assert!(is_instrument_retirable(&instrument, clock.get_time_ns()));
+    }
+
+    #[rstest]
+    fn live_venue_payload_past_end_date_is_retained() {
+        // Captured from Gamma on 2026-08-08: `endDate` two months in the past while the venue
+        // still reports the market open and accepting orders.
+        let market: crate::http::models::GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/gamma_market_past_end_date_open.json"
+        ))
+        .expect("gamma market fixture json");
+
+        assert_eq!(market.end_date.as_deref(), Some("2026-06-01T00:00:00Z"));
+        assert_eq!(market.closed, Some(false));
+        assert_eq!(market.accepting_orders, Some(true));
+
+        let clock = get_atomic_clock_realtime();
+        let defs = crate::http::parse::parse_gamma_market(&market).expect("parse gamma market");
+        let instrument =
+            crate::http::parse::create_instrument_from_def(&defs[0], clock.get_time_ns())
+                .expect("create instrument");
+
+        assert!(
+            crate::filters::is_expired(&instrument, clock.get_time_ns()),
+            "fixture must be past its endDate for this test to mean anything",
+        );
+        assert_eq!(
+            crate::filters::venue_reports_closed(&instrument),
+            Some(false)
+        );
+        assert!(
+            !is_instrument_retirable(&instrument, clock.get_time_ns()),
+            "a market the venue still trades must not be retired on endDate alone",
+        );
+    }
+
+    /// Builds an expired instrument with an explicit venue state and a chosen token/condition.
+    fn expired_instrument_with_state(
+        raw_symbol: &str,
+        condition_id: &str,
+        venue_closed: Option<bool>,
+    ) -> InstrumentAny {
+        let inst = seed_expired_instrument(raw_symbol, condition_id);
+        let InstrumentAny::BinaryOption(mut binary) = inst else {
+            panic!("expected BinaryOption");
+        };
+
+        let mut info = binary
+            .info
+            .clone()
+            .unwrap_or_else(nautilus_core::Params::new);
+
+        if let Some(closed) = venue_closed {
+            info.insert("venue_closed".to_string(), serde_json::Value::Bool(closed));
+        }
+        binary.info = Some(info);
+
+        InstrumentAny::BinaryOption(binary)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn sweep_emits_ws_unsubscribe_only_when_venue_reports_closed() {
+        // Evidences the WebSocket teardown directly: the retirement path emits no log at any
+        // level, so the command channel is the observable.
+        for (venue_closed, expect_unsubscribe) in [(Some(false), false), (Some(true), true)] {
+            let instruments = Arc::new(AtomicMap::new());
+            let token_meta = Arc::new(DashMap::new());
+            let order_books = Arc::new(DashMap::new());
+            let last_quotes = Arc::new(DashMap::new());
+            let active_quote_subs = Arc::new(AtomicSet::new());
+            let active_delta_subs = Arc::new(AtomicSet::new());
+            let active_trade_subs = Arc::new(AtomicSet::new());
+            let resolve_poll_watchlist = Arc::new(AtomicMap::new());
+            let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+            let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+            let ws_open_tokens = Arc::new(AtomicSet::new());
+            let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+            let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &["0xTOKEN_AB"]);
+
+            let inst = expired_instrument_with_state("0xTOKEN_AB", "0xCOND-AB", venue_closed);
+            let instrument_id = inst.id();
+            seed_cached_instrument(&instruments, &token_meta, &inst);
+            seed_runtime_state(
+                &inst,
+                &order_books,
+                &last_quotes,
+                &active_quote_subs,
+                &active_delta_subs,
+                &active_trade_subs,
+                &pending_snapshot_after_tick_change,
+                &pending_auto_loads,
+                &ws_open_tokens,
+            );
+
+            retire_expired_local_instruments(
+                get_atomic_clock_realtime().get_time_ns(),
+                &instruments,
+                &token_meta,
+                &order_books,
+                &last_quotes,
+                &active_quote_subs,
+                &active_delta_subs,
+                &active_trade_subs,
+                &resolve_poll_watchlist,
+                &pending_snapshot_after_tick_change,
+                &pending_auto_loads,
+                &ws_open_tokens,
+                &ws_sub_mutex,
+                &ws,
+            )
+            .await;
+
+            if expect_unsubscribe {
+                match rx
+                    .try_recv()
+                    .expect("venue-closed market should unsubscribe")
+                {
+                    HandlerCommand::UnsubscribeMarket(ids) => {
+                        assert_eq!(ids, vec!["0xTOKEN_AB".to_string()]);
+                    }
+                    other => panic!("unexpected WS command: {other:?}"),
+                }
+                assert!(!instruments.load().contains_key(&instrument_id));
+            } else {
+                assert!(
+                    rx.try_recv().is_err(),
+                    "market open at the venue must not be unsubscribed",
+                );
+                assert!(instruments.load().contains_key(&instrument_id));
+                assert!(token_meta.contains_key(&Ustr::from("0xTOKEN_AB")));
+            }
+        }
+    }
+
+    /// A watchlisted instrument keeps its cache entry through retirement so settlement can still
+    /// read it. A later publish of the same venue-closed definition must correct that entry without
+    /// restoring runtime state, or every refresh would re-arm the sweep for a market the venue has
+    /// already closed and message routing would come back with it.
+    #[rstest]
+    #[tokio::test]
+    async fn superseding_a_watchlisted_instrument_does_not_restore_runtime_state() {
+        let instruments = Arc::new(AtomicMap::new());
+        let token_meta = Arc::new(DashMap::new());
+        let order_books = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let active_quote_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_trade_subs = Arc::new(AtomicSet::new());
+        let resolve_poll_watchlist = Arc::new(AtomicMap::new());
+        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+        let ws_open_tokens = Arc::new(AtomicSet::new());
+        let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &["0xTOKEN_HELD"]);
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let inst = expired_instrument_with_state("0xTOKEN_HELD", "0xCOND-HELD", Some(true));
+        let instrument_id = inst.id();
+        let token = Ustr::from("0xTOKEN_HELD");
+        seed_cached_instrument(&instruments, &token_meta, &inst);
+        seed_runtime_state(
+            &inst,
+            &order_books,
+            &last_quotes,
+            &active_quote_subs,
+            &active_delta_subs,
+            &active_trade_subs,
+            &pending_snapshot_after_tick_change,
+            &pending_auto_loads,
+            &ws_open_tokens,
+        );
+
+        // An open position pins the instrument, so retirement keeps the cache entry.
+        resolve_poll_watchlist.insert(
+            "0xCOND-HELD".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND-HELD".to_string(),
+                expiration_ns: inst.expiration_ns().unwrap_or_default(),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xTOKEN_HELD".to_string(),
+                    crate::resolve::TrackedInstrument {
+                        instrument_id,
+                        token_id: "0xTOKEN_HELD".to_string(),
+                        price_precision: inst.price_precision(),
+                        open_position_ids: AHashSet::new(),
+                    },
+                )]),
+                paused: false,
+            },
+        );
+
+        let sweep = async || {
+            retire_expired_local_instruments(
+                get_atomic_clock_realtime().get_time_ns(),
+                &instruments,
+                &token_meta,
+                &order_books,
+                &last_quotes,
+                &active_quote_subs,
+                &active_delta_subs,
+                &active_trade_subs,
+                &resolve_poll_watchlist,
+                &pending_snapshot_after_tick_change,
+                &pending_auto_loads,
+                &ws_open_tokens,
+                &ws_sub_mutex,
+                &ws,
+            )
+            .await;
+        };
+
+        sweep().await;
+
+        assert!(
+            matches!(rx.try_recv(), Ok(HandlerCommand::UnsubscribeMarket(_))),
+            "the first sweep retires the closed market",
+        );
+        assert!(
+            instruments.load().contains_key(&instrument_id),
+            "a watchlisted instrument keeps its cache entry for settlement",
+        );
+        assert!(!token_meta.contains_key(&token));
+
+        // The same venue-closed definition arrives again from a refresh.
+        crate::data::instruments::cache_and_publish_instruments(
+            &instruments,
+            &token_meta,
+            &data_tx,
+            get_atomic_clock_realtime().get_time_ns(),
+            vec![inst.clone()],
+        );
+
+        assert!(
+            !token_meta.contains_key(&token),
+            "superseding must not restore routing for a market the venue has closed",
+        );
+
+        sweep().await;
+
+        assert!(
+            rx.try_recv().is_err(),
+            "an already retired instrument must not be torn down again",
+        );
+    }
+
+    #[rstest]
+    fn reconnect_reseeds_token_meta_only_for_markets_open_at_the_venue() {
+        // Evidences the reconnect path: seeding is what restores WS message routing.
+        let instruments = Arc::new(AtomicMap::new());
+        let token_meta: Arc<DashMap<Ustr, TokenMeta>> = Arc::new(DashMap::new());
+
+        let open = expired_instrument_with_state("0xTOKEN_OPEN", "0xCOND-OPEN", Some(false));
+        let closed = expired_instrument_with_state("0xTOKEN_CLOSED", "0xCOND-CLOSED", Some(true));
+        let unknown = expired_instrument_with_state("0xTOKEN_UNKNOWN", "0xCOND-UNKNOWN", None);
+        for inst in [&open, &closed, &unknown] {
+            instruments.insert(inst.id(), inst.clone());
+        }
+
+        seed_token_meta_from_live_instruments(
+            get_atomic_clock_realtime().get_time_ns(),
+            &instruments,
+            &token_meta,
+        );
+
+        assert!(token_meta.contains_key(&Ustr::from("0xTOKEN_OPEN")));
+        assert!(!token_meta.contains_key(&Ustr::from("0xTOKEN_CLOSED")));
+        assert!(!token_meta.contains_key(&Ustr::from("0xTOKEN_UNKNOWN")));
     }
 }

@@ -300,8 +300,12 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         if let Some(inst) = instrument {
-            if cache_instrument_if_active(clock.get_time_ns(), &instruments_cache, &token_meta, &inst)
-            {
+            if cache_instrument_if_active(
+                clock.get_time_ns(),
+                &instruments_cache,
+                &token_meta,
+                &inst,
+            ) {
                 // Publish onto the data bus so other clients (e.g. the exec
                 // client's token map) can update from the same fetch.
                 if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {

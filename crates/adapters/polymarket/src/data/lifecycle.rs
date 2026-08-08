@@ -27,6 +27,7 @@ use nautilus_model::events::PositionEvent;
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
+    instruments::refresh_expired_instrument_liveness,
     runtime::{retire_expired_local_instruments, seed_token_meta_from_live_instruments},
 };
 use crate::{
@@ -175,6 +176,19 @@ impl PolymarketDataClient {
         };
 
         let watchlist = self.resolve_poll_watchlist.clone();
+        let liveness_http_client = gamma_client.clone();
+        let liveness_data_sender = self.data_sender.clone();
+
+        // Venue liveness moves on the order of minutes, so it is refreshed on the instrument
+        // refresh cadence rather than the much faster resolve-poll tick. Without this the sweep
+        // interval (default 30s) would drive Gamma requests far harder than the venue warrants.
+        let liveness_interval = Duration::from_secs(
+            self.config
+                .update_instruments_interval_mins
+                .filter(|mins| *mins > 0)
+                .unwrap_or(60)
+                .saturating_mul(60),
+        );
 
         if resolve_poll_enabled {
             log::debug!("Polymarket resolve poll task started");
@@ -187,12 +201,44 @@ impl PolymarketDataClient {
         let handle = get_runtime().spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut last_liveness_refresh: Option<tokio::time::Instant> = None;
+            let mut liveness_misses: ahash::AHashMap<String, u32> = ahash::AHashMap::new();
 
             loop {
                 tokio::select! {
                     () = cancellation.cancelled() => break,
                     _ = interval.tick() => {
                         let now_ns = clock.get_time_ns();
+
+                        // Re-observe liveness before sweeping, so a market the venue has closed
+                        // is reclaimed even when it sits outside the configured refresh scope.
+                        if last_liveness_refresh
+                            .is_none_or(|last: tokio::time::Instant| last.elapsed() >= liveness_interval)
+                        {
+                            let refreshed = refresh_expired_instrument_liveness(
+                                &liveness_http_client,
+                                &instruments,
+                                &liveness_data_sender,
+                                &mut liveness_misses,
+                                now_ns,
+                            )
+                            .await;
+
+                            // Only a pass that reached Gamma defers the next probe, so a failed
+                            // one retries on the next tick rather than holding a closed market's
+                            // subscription for another full interval.
+                            if refreshed.probed {
+                                last_liveness_refresh = Some(tokio::time::Instant::now());
+                            }
+
+                            if refreshed.updated > 0 {
+                                log::debug!(
+                                    "Re-observed venue liveness for {} expired Polymarket instrument(s)",
+                                    refreshed.updated,
+                                );
+                            }
+                        }
+
                         retire_expired_local_instruments(
                             now_ns,
                             &instruments,

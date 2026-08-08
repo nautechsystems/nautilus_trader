@@ -18,7 +18,7 @@
 use std::fmt::Debug;
 
 use nautilus_core::UnixNanos;
-use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_model::instruments::{BinaryOption, Instrument, InstrumentAny};
 
 use crate::{
     http::query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
@@ -261,6 +261,52 @@ impl PredicateFilter {
 pub(crate) fn is_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
     Instrument::expiration_ns(instrument)
         .is_some_and(|expiration_ns| expiration_ns.as_u64() != 0 && expiration_ns <= now_ns)
+}
+
+/// Returns `true` if `instrument` may be retired from local runtime state.
+///
+/// Gamma `endDate` is a scheduled end, not an observed one: the venue routinely keeps trading a
+/// market past it, so expiration alone cannot decide liveness. An expired instrument is retained
+/// only while the venue positively reports it open. Instruments carrying no venue state, such as
+/// those cached before this field existed, retire on expiration as before.
+///
+/// Retirement keys on the terminal `closed` flag rather than `accepting_orders`, which pauses
+/// transiently during resolution and sports windows.
+///
+/// Both the data client and the execution client gate on this so their views cannot diverge.
+pub(crate) fn is_retirable(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
+    if !is_expired(instrument, now_ns) {
+        return false;
+    }
+
+    venue_reports_closed(instrument) != Some(false)
+}
+
+/// Info key carrying the venue's terminal lifecycle state, written at parse time.
+pub(crate) const VENUE_CLOSED_KEY: &str = "venue_closed";
+
+/// Records the venue's terminal lifecycle state on `binary`.
+pub(crate) fn set_venue_closed(binary: &mut BinaryOption, closed: bool) {
+    let mut info = binary.info.clone().unwrap_or_default();
+    info.insert(
+        VENUE_CLOSED_KEY.to_string(),
+        serde_json::Value::Bool(closed),
+    );
+    binary.info = Some(info);
+}
+
+/// Returns whether the venue reported `instrument` closed when it was last fetched.
+///
+/// Returns `None` for instruments built before this field was carried, and for non-binary
+/// variants, so callers can fall back to expiration alone.
+pub(crate) fn venue_reports_closed(instrument: &InstrumentAny) -> Option<bool> {
+    match instrument {
+        InstrumentAny::BinaryOption(binary) => binary
+            .info
+            .as_ref()
+            .and_then(|info| info.get_bool(VENUE_CLOSED_KEY)),
+        _ => None,
+    }
 }
 
 impl Debug for PredicateFilter {

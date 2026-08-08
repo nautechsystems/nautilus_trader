@@ -729,4 +729,70 @@ mod tests {
         );
         assert_eq!(selection.condition_ids, vec!["0xCOND-ACTIVE".to_string()]);
     }
+
+    fn watch_entry_with_expiration(
+        condition_id: &str,
+        token_id: &str,
+        expiration_ns: UnixNanos,
+    ) -> ResolveWatchEntry {
+        let mut tracked = ahash::AHashMap::new();
+        tracked.insert(
+            token_id.to_string(),
+            TrackedInstrument {
+                instrument_id: InstrumentId::from(format!("{token_id}.POLYMARKET").as_str()),
+                token_id: token_id.to_string(),
+                price_precision: 3,
+                open_position_ids: AHashSet::new(),
+            },
+        );
+
+        ResolveWatchEntry {
+            condition_id: condition_id.to_string(),
+            expiration_ns,
+            tracked,
+            paused: false,
+        }
+    }
+
+    #[rstest]
+    fn resolve_watch_eligibility_is_keyed_on_expiration_ns() {
+        // Evidences that resolve polling arms off `expiration_ns`, which is Gamma `endDate`.
+        // For a market the venue keeps trading past `endDate`, polling therefore starts and times
+        // out while the market is still live.
+        let now_ns = UnixNanos::from(10_000_000_000_000u64);
+        let grace_secs: u64 = 10;
+        let max_wait_secs: u64 = 1_800;
+
+        let expired_ns =
+            UnixNanos::from(now_ns.as_u64() - (max_wait_secs + 60).saturating_mul(1_000_000_000));
+        let future_ns = UnixNanos::from(now_ns.as_u64() + 60_000_000_000);
+
+        let mut watchlist = ahash::AHashMap::new();
+        watchlist.insert(
+            "0xCOND-PAST".to_string(),
+            watch_entry_with_expiration("0xCOND-PAST", "0xTOKEN-PAST", expired_ns),
+        );
+        watchlist.insert(
+            "0xCOND-FUTURE".to_string(),
+            watch_entry_with_expiration("0xCOND-FUTURE", "0xTOKEN-FUTURE", future_ns),
+        );
+
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            now_ns,
+            grace_secs,
+            max_wait_secs,
+            ResolveWatchSelectionMode::AutoPoll,
+        );
+
+        assert_eq!(
+            selection.skipped_not_expired, 1,
+            "an entry before its expiration is not yet eligible",
+        );
+        assert_eq!(
+            selection.timed_out_watchlist, 1,
+            "an entry past expiration + max_wait has already timed out, even though the venue may \
+             still be trading that market",
+        );
+    }
 }
