@@ -157,10 +157,9 @@ impl BinanceFuturesOpenInterestHistPoint {
 
 /// Binance Futures historical open interest batch.
 ///
-/// For COIN-M requests, the current Binance adapter support is limited to
-/// perpetual instruments. Although Binance also exposes quarter-delivery
-/// contract types on the historical OI endpoint, the futures instrument
-/// parsing/symbology path in this adapter is still perpetual-only.
+/// COIN-M requests are keyed by pair and contract type rather than by symbol.
+/// Perpetuals derive both from the `_PERP` symbol suffix, while delivery
+/// contracts resolve them from the cached instrument definition.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
