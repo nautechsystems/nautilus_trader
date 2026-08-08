@@ -28,7 +28,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-22.04
+            runner: [self-hosted, Linux, X64, self-hosted-linux-x86]
           - platform: linux/arm64
             runner: depot-ubuntu-22.04-arm-8
     env:
@@ -63,6 +63,8 @@ jobs:
           fetch-depth: 1
 
       - name: Free disk space (Ubuntu)
+        if: >-
+          !startsWith(runner.name, 'nautilus-ci-runner-')
         run: >-
           bash scripts/ci/free-disk-space.sh
           --large-packages --docker-images --tool-cache
@@ -133,16 +135,16 @@ jobs:
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests/nautilus_trader
+          mkdir -p "$RUNNER_TEMP/digests/nautilus_trader"
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/nautilus_trader/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/nautilus_trader/${digest#sha256:}"
 
       - name: Upload digest
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
-          path: /tmp/digests/nautilus_trader/*
+          path: ${{ runner.temp }}/digests/nautilus_trader/*
           if-no-files-found: error
           retention-days: 1
 
@@ -276,7 +278,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-22.04
+            runner: [self-hosted, Linux, X64, self-hosted-linux-x86]
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
     env:
@@ -310,6 +312,8 @@ jobs:
           fetch-depth: 1
 
       - name: Free disk space (Ubuntu)
+        if: >-
+          !startsWith(runner.name, 'nautilus-ci-runner-')
         run: >-
           bash scripts/ci/free-disk-space.sh
           --large-packages --docker-images --tool-cache
@@ -395,16 +399,16 @@ jobs:
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests/jupyterlab
+          mkdir -p "$RUNNER_TEMP/digests/jupyterlab"
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/jupyterlab/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/jupyterlab/${digest#sha256:}"
 
       - name: Upload digest
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
-          path: /tmp/digests/jupyterlab/*
+          path: ${{ runner.temp }}/digests/jupyterlab/*
           if-no-files-found: error
           retention-days: 1
 
