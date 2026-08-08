@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Removed `Cache.actor_ids()`, which always returned an empty set because no data flowing through the cache carries an actor ID; the Rust `Trader::actor_ids()` still lists registered actors
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
 - Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
+- Changed Rust `QueryResult` and `DataQueryResult` to iterate `Result` items carrying a new `QueryError`; collect with `collect::<Result<Vec<_>, _>>()` to surface query failures
 - Changed adapter callbacks to receive typed model objects instead of `PyCapsule` objects
 - Changed the cache actor APIs to use `ActorId` instead of `ComponentId`, covering the Rust `CacheDatabaseAdapter` actor state methods
 - Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
@@ -62,6 +63,7 @@ Released on TBD (UTC).
 - Fixed portfolio PnL and net exposure currency when `convert_to_account_base_currency` is disabled
 - Fixed portfolio realized PnL converting snapshot and position amounts at different exchange rates when `use_mark_xrates` is enabled
 - Fixed account state log throttling for events carrying an earlier `ts_init`
+- Fixed catalog and session queries reporting a DataFusion stream or record‑batch decode failure as a successfully exhausted query, which truncated data without warning and aborted the process in release builds; Python `DataQueryResult` iteration and `to_list` now raise `RuntimeError`
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation

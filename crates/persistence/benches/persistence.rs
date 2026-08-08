@@ -37,7 +37,7 @@ fn single_stream_bench(c: &mut Criterion) {
                 catalog.get_query_result()
             },
             |query_result: &mut QueryResult| {
-                let count: usize = query_result.count();
+                let count = query_result.filter(|item| item.is_ok()).count();
                 assert_eq!(count, 9_689_614);
             },
             BatchSize::SmallInput,
@@ -89,7 +89,7 @@ fn multi_stream_bench(c: &mut Criterion) {
                 catalog.get_query_result()
             },
             |query_result: &mut QueryResult| {
-                let count: usize = query_result.count();
+                let count = query_result.filter(|item| item.is_ok()).count();
                 assert_eq!(count, 72_536_038);
             },
             BatchSize::SmallInput,

@@ -26,7 +26,7 @@ use nautilus_model::{
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::backend::session::{DataBackendSession, DataQueryResult};
+use crate::backend::session::{DataBackendSession, DataQueryResult, QueryError};
 
 /// Wrapper to pass a raw pointer across the GIL release boundary.
 struct SendPtr<T>(*mut T);
@@ -208,6 +208,10 @@ impl DataBackendSession {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataQueryResult {
     /// Collects the remaining query records as native Python objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a query stream fails or a record batch cannot be decoded.
     #[pyo3(name = "to_list")]
     fn py_to_list(mut slf: PyRefMut<'_, Self>) -> PyResult<Vec<Py<PyAny>>> {
         let py = slf.py();
@@ -217,21 +221,24 @@ impl DataQueryResult {
         // duration of this method call. As with `__next__`, release the GIL while waiting for
         // decoder workers that may need to acquire it for custom data.
         let data = unsafe {
-            py.detach(move || {
+            py.detach(move || -> Result<Vec<_>, QueryError> {
                 let p = ptr;
                 let result = &mut *p.0;
                 let mut data = Vec::new();
 
                 for chunk in result.by_ref() {
+                    let chunk = chunk?;
+
                     if chunk.is_empty() {
                         break;
                     }
                     data.extend(chunk);
                 }
 
-                data
+                Ok(data)
             })
-        };
+        }
+        .map_err(to_pyruntime_err)?;
 
         data.into_iter()
             .map(|item| data_to_pyobject(py, item))
@@ -244,6 +251,10 @@ impl DataQueryResult {
     }
 
     /// Each iteration returns a chunk of values read from the parquet file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a query stream fails or a record batch cannot be decoded.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
         let py = slf.py();
         let ptr = SendPtr(&raw mut *slf);
@@ -265,13 +276,14 @@ impl DataQueryResult {
         };
 
         match acc {
-            Some(acc) if !acc.is_empty() => {
+            Some(Ok(acc)) if !acc.is_empty() => {
                 let objects: Vec<Py<PyAny>> = acc
                     .into_iter()
                     .map(|item| data_to_pyobject(py, item))
                     .collect::<PyResult<_>>()?;
                 Ok(Some(objects.into_py_any(py)?))
             }
+            Some(Err(e)) => Err(to_pyruntime_err(e)),
             _ => Ok(None),
         }
     }

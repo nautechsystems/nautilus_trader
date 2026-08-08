@@ -430,11 +430,17 @@ fn run_streaming(
         let data_config = &data_configs[0];
         let mut catalog = create_catalog(data_config)?;
         let result = dispatch_query(&mut catalog, data_config, config.start(), config.end())?;
-        stream_chunks(engine, config, result.peekable(), chunk_size)?;
+        let data = result.map(|item| item.map_err(anyhow::Error::from));
+        stream_chunks(engine, config, data.peekable(), chunk_size)?;
     } else {
         // Multiple configs require loading all data to merge-sort across types
         let all_data = load_and_merge_data(config)?;
-        stream_chunks(engine, config, all_data.into_iter().peekable(), chunk_size)?;
+        stream_chunks(
+            engine,
+            config,
+            all_data.into_iter().map(Ok).peekable(),
+            chunk_size,
+        )?;
     }
 
     Ok(())
@@ -443,7 +449,7 @@ fn run_streaming(
 // Feeds data from an iterator to the engine in timestamp-aligned chunks.
 // Each chunk contains up to `chunk_size` events, extended to include all
 // events sharing the boundary timestamp so timers flush correctly.
-fn stream_chunks<I: Iterator<Item = Data>>(
+fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
     engine: &mut BacktestEngine,
     config: &BacktestRunConfig,
     mut iter: Peekable<I>,
@@ -456,7 +462,7 @@ fn stream_chunks<I: Iterator<Item = Data>>(
     let mut next_start = config.start();
 
     loop {
-        let chunk = take_aligned_chunk(&mut iter, chunk_size);
+        let chunk = take_aligned_chunk(&mut iter, chunk_size)?;
         if chunk.is_empty() {
             break;
         }
@@ -488,26 +494,30 @@ fn stream_chunks<I: Iterator<Item = Data>>(
 
 // Takes up to `chunk_size` items, then extends to include all remaining
 // items sharing the boundary timestamp to avoid splitting same-ts events.
-fn take_aligned_chunk<I: Iterator<Item = Data>>(
+fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
     iter: &mut Peekable<I>,
     chunk_size: usize,
-) -> Vec<Data> {
+) -> anyhow::Result<Vec<Data>> {
     let mut chunk = Vec::with_capacity(chunk_size);
 
     for _ in 0..chunk_size {
         match iter.next() {
-            Some(item) => chunk.push(item),
-            None => return chunk,
+            Some(item) => chunk.push(item?),
+            None => return Ok(chunk),
         }
     }
 
     if let Some(boundary_ts) = chunk.last().map(HasTsInit::ts_init) {
-        while iter.peek().is_some_and(|d| d.ts_init() == boundary_ts) {
-            chunk.push(iter.next().unwrap());
+        // A failing item ends the extension and surfaces on the next chunk
+        while let Some(item) = iter.next_if(|item| {
+            item.as_ref()
+                .is_ok_and(|data| data.ts_init() == boundary_ts)
+        }) {
+            chunk.push(item?);
         }
     }
 
-    chunk
+    Ok(chunk)
 }
 
 fn load_and_merge_data(config: &BacktestRunConfig) -> anyhow::Result<Vec<Data>> {
@@ -544,7 +554,7 @@ fn load_data(
 ) -> anyhow::Result<Vec<Data>> {
     let mut catalog = create_catalog(config)?;
     let result = dispatch_query(&mut catalog, config, run_start, run_end)?;
-    Ok(result.collect())
+    Ok(result.collect::<Result<Vec<_>, _>>()?)
 }
 
 fn dispatch_query(
@@ -613,5 +623,80 @@ fn min_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    fn quote(ts_init: u64) -> Data {
+        Data::Quote(QuoteTick::new(
+            InstrumentId::from("EUR/USD.SIM"),
+            Price::from("1.0001"),
+            Price::from("1.0002"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        ))
+    }
+
+    fn stream_failure() -> anyhow::Error {
+        anyhow::anyhow!("injected stream failure")
+    }
+
+    #[rstest]
+    fn take_aligned_chunk_reports_a_stream_failure() {
+        let mut iter = vec![Ok(quote(1)), Err(stream_failure())]
+            .into_iter()
+            .peekable();
+
+        let chunk = take_aligned_chunk(&mut iter, 4);
+
+        assert_eq!(
+            chunk
+                .expect_err("a failed stream must not read as a short chunk")
+                .to_string(),
+            "injected stream failure"
+        );
+    }
+
+    #[rstest]
+    fn take_aligned_chunk_reports_a_failure_found_at_the_boundary() {
+        let mut iter = vec![Ok(quote(1)), Err(stream_failure()), Ok(quote(1))]
+            .into_iter()
+            .peekable();
+
+        let first = take_aligned_chunk(&mut iter, 1).expect("the first chunk must be complete");
+        let second = take_aligned_chunk(&mut iter, 1);
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].ts_init(), UnixNanos::from(1));
+        assert_eq!(
+            second
+                .expect_err("the failure must survive the boundary extension")
+                .to_string(),
+            "injected stream failure"
+        );
+    }
+
+    #[rstest]
+    fn take_aligned_chunk_extends_past_the_boundary_for_equal_timestamps() {
+        let mut iter = vec![Ok(quote(1)), Ok(quote(1)), Ok(quote(2))]
+            .into_iter()
+            .peekable();
+
+        let chunk = take_aligned_chunk(&mut iter, 1).expect("the chunk must be complete");
+
+        assert_eq!(chunk.len(), 2);
+        assert_eq!(chunk[0].ts_init(), UnixNanos::from(1));
+        assert_eq!(chunk[1].ts_init(), UnixNanos::from(1));
     }
 }
