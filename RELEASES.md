@@ -83,10 +83,13 @@ Released on TBD (UTC).
 - Upgraded Python and workflow tools: `uv` v0.12.1, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
-- Upgraded `time` crate to v0.3.55
+- Upgraded `clap` crate to v4.6.6
+- Upgraded `http` crate to v1.5.0
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
 - Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
 - Upgraded `redis` crate to v1.5.0
+- Upgraded `time` crate to v0.3.55
+- Upgraded `toml` crate to v1.1.4
 
 ### Documentation Updates
 

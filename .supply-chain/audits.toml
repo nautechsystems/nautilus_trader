@@ -717,6 +717,12 @@ criteria = "safe-to-deploy"
 delta = "0.9.18 -> 0.9.20"
 notes = "Reviewed 0.9.18 to 0.9.20 diff: fixes fmt::Pointer invalid pointer dereference, adds tests and a build script that only emits cfg based on CARGO_CFG_SANITIZE; no new dependencies, network behavior, binary assets, or external filesystem access."
 
+[[audits.crypto-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.6 -> 0.1.7"
+notes = "Manifest-only delta: pins the generic-array dependency to an exact =0.14.7 and picks up Cargo's normalized manifest fields. No source, build script, feature behavior, or dependency addition changes."
+
 [[audits.curve25519-dalek]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

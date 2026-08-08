@@ -1,314 +1,6 @@
 
 # cargo-vet imports lock
 
-[[unpublished.nautilus-analysis]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-analysis]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-architect-ax]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-architect-ax]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-backtest]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-backtest]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-binance]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-binance]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-bitmex]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-bitmex]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-blockchain]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-blockchain]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-bybit]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-bybit]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-cli]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-cli]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-coinbase]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-coinbase]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-common]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-common]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-common]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-core]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-core]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-core]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-cryptography]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-cryptography]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-cryptography]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-data]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-data]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-databento]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-databento]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-deribit]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-deribit]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-dydx]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-dydx]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-execution]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-execution]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-execution]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-hyperliquid]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-hyperliquid]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-indicators]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-indicators]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-infrastructure]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-infrastructure]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-kraken]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-kraken]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-live]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-live]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-live]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-model]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-model]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-model]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-network]]
-version = "0.60.0"
-audited_as = "0.59.0"
-
-[[unpublished.nautilus-network]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-network]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-okx]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-okx]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-persistence]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-persistence]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-persistence-macros]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-persistence-macros]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-portfolio]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-portfolio]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-risk]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-risk]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-sandbox]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-sandbox]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-serialization]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-serialization]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-system]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-system]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-tardis]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-tardis]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-testkit]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-testkit]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
-[[unpublished.nautilus-trading]]
-version = "0.61.0"
-audited_as = "0.60.0"
-
-[[unpublished.nautilus-trading]]
-version = "0.62.0"
-audited_as = "0.61.0"
-
 [[publisher.anstream]]
 version = "1.0.0"
 when = "2026-02-11"
@@ -884,6 +576,12 @@ who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 delta = "0.3.0 -> 0.4.0"
 notes = "Minor updates for a new `rand` crate version, nothing awry."
+
+[[audits.bytecode-alliance.audits.semver]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "1.0.17"
+notes = "plenty of unsafe pointer and vec tricks, but in well-structured and commented code that appears to be correct"
 
 [[audits.bytecode-alliance.audits.sharded-slab]]
 who = "Pat Hickey <phickey@fastly.com>"
@@ -2297,6 +1995,33 @@ grabbing u64s out of the buffer for XORs. Logic looks sound,
 careful not to read over the end of the buffer, and the unsafety
 is well contained.
 """
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.semver]]
+who = "Ben Dean-Kawamura <bdk@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.16 -> 1.0.28"
+notes = "Very few changes, mostly removes support for older Rust versions.  Some unsafe code refactored, but it seemed to be functionally equivalent to me."
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.semver]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.17 -> 1.0.16"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.serde_spanned]]
+who = "Ben Dean-Kawamura <bdk@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "1.0.3"
+notes = "Relatively simple Serde trait implementations.  No IO or unsafe code."
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.serde_spanned]]
+who = "Ben Dean-Kawamura <bdk@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.3 -> 1.1.1"
+notes = "No code changes, just dependency updates."
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.sha2]]

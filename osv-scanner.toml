@@ -64,9 +64,5 @@ id = "RUSTSEC-2026-0235"
 reason = "rkyv validation bug in unused optional rust_decimal dependency; no 0.7 fix"
 
 [[IgnoredVulns]]
-id = "GHSA-6w46-j5rx-g56g"
-reason = "pytest tmpdir local tampering (fixed in 9.0.3); dev/test-only dependency intentionally pinned to 7.x, not a runtime risk"
-
-[[IgnoredVulns]]
 id = "GHSA-2f9f-gq7v-9h6m"
 reason = "thrift 0.17.0 memory-allocation DoS; the affected TCompactInputProtocol is used only by Parquet's feature-gated CLI, which Nautilus does not enable or ship"
