@@ -1530,23 +1530,65 @@ GreeksTestData(
 
 #### Python-only custom data with the PyO3 catalog
 
-For custom data with the Rust-backed `ParquetDataCatalog`, use
-`@customdataclass_pyo3()` instead of `@customdataclass`. It adds JSON and Arrow IPC methods. Register
-the class once after defining it:
+For custom data with the Rust-backed `ParquetDataCatalog`, define the JSON and Arrow methods used by
+the Python v2 registry. Register the class once after defining it:
 
 ```python
-from nautilus_trader.persistence import ParquetDataCatalog
+import json
+from dataclasses import asdict
+from dataclasses import dataclass
+from typing import ClassVar
+
+import pyarrow as pa
+
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import register_custom_data_class
-from nautilus_trader.model.custom import customdataclass_pyo3
+from nautilus_trader.persistence import ParquetDataCatalog
 
 
-@customdataclass_pyo3()
+@dataclass
 class MarketTickPython:
+    _schema: ClassVar[pa.Schema] = pa.schema(
+        {
+            "symbol": pa.string(),
+            "price": pa.float64(),
+            "volume": pa.int64(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        }
+    )
+
     symbol: str = ""
     price: float = 0.0
     volume: int = 0
+    ts_event: int = 0
+    ts_init: int = 0
+
+    @classmethod
+    def type_name_static(cls) -> str:
+        return cls.__name__
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self))
+
+    @classmethod
+    def from_json(cls, data: dict) -> "MarketTickPython":
+        return cls(**data)
+
+    def encode_record_batch_py(self, items: list) -> pa.RecordBatch:
+        return pa.RecordBatch.from_pylist(
+            [asdict(item) for item in items],
+            schema=self._schema,
+        )
+
+    @classmethod
+    def decode_record_batch_py(
+        cls,
+        metadata: dict,
+        batch: pa.RecordBatch,
+    ) -> list["MarketTickPython"]:
+        return [cls(**row) for row in batch.to_pylist()]
 
 
 # Register once at startup
@@ -1561,11 +1603,15 @@ wrapped = [
     ),
 ]
 catalog.write_custom_data(wrapped)
-result = catalog.query("MarketTickPython")
+result = catalog.query_custom_data("MarketTickPython")
 ticks = [item.data for item in result]
 ```
 
-See `nautilus_trader.model.custom.customdataclass_pyo3` for details.
+The registry reads `_schema` when registering the Arrow schema used by catalog queries. It must
+contain `ts_init` so the catalog can apply its time filter.
+
+See [Pure Python registration](../custom_data.md#pure-python-registration) for the registry path and
+supported authoring modes.
 
 #### Custom data type stub
 

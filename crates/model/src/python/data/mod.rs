@@ -499,7 +499,8 @@ fn py_decode_record_batch_to_custom_data(
 /// Use this when you prefer to pass the class instead of a sample instance.
 /// The class must have:
 /// - `type_name_static()` class method or `__name__` (used as type name in storage)
-/// - `decode_record_batch_py(metadata, ipc_bytes)` class method
+/// - `from_json(data)` class method
+/// - `decode_record_batch_py(metadata, batch)` class method
 /// - Instances must have `ts_event`, `ts_init`, and `encode_record_batch_py(items)`.
 ///
 /// # Arguments
@@ -513,17 +514,35 @@ fn py_decode_record_batch_to_custom_data(
 /// # Example
 ///
 /// ```python
-/// from nautilus_trader.model.custom import customdataclass_pyo3
+/// import json
+///
 /// from nautilus_trader.model import register_custom_data_class
 ///
-/// @customdataclass_pyo3()
 /// class MarketTickPython:
-///     symbol: str = ""
-///     price: float = 0.0
-///     volume: int = 0
+///     ts_event = 0
+///     ts_init = 0
+///
+///     def to_json(self):
+///         return json.dumps(self.__dict__)
+///
+///     @classmethod
+///     def from_json(cls, data):
+///         instance = cls()
+///         instance.__dict__.update(data)
+///         return instance
+///
+///     def encode_record_batch_py(self, items):
+///         raise NotImplementedError("Arrow encoding is not configured")
+///
+///     @classmethod
+///     def decode_record_batch_py(cls, metadata, batch):
+///         raise NotImplementedError("Arrow decoding is not configured")
 ///
 /// register_custom_data_class(MarketTickPython)
 /// ```
+///
+/// The Arrow methods may raise for a message-bus-only class, but must be implemented before catalog
+/// persistence is used.
 #[cfg(feature = "python")]
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]

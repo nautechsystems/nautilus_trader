@@ -288,6 +288,34 @@ Ingress yields the same `BusMessage { topic, payload_type, encoding, payload }` 
 without forwarding the message back out. The inbound payload type must first be registered for
 streaming on the receiving message bus; unregistered types are skipped without decoding.
 
+For custom data, egress writes and ingress expects an envelope in the Redis `payload` field, not the
+bare custom object. The canonical JSON envelope is:
+
+```json
+{
+  "type": "MyData",
+  "data_type": {
+    "type_name": "MyData",
+    "metadata": {
+      "source": "external"
+    },
+    "identifier": "optional-storage-key"
+  },
+  "payload": {
+    "value": 42,
+    "ts_event": 0,
+    "ts_init": 0
+  }
+}
+```
+
+The envelope requires `type` and `payload`; `data_type` is optional on ingress and defaults to the
+message type with no metadata or identifier. In the canonical emitted form, `data_type.type_name`
+uses the same custom type name, `metadata` is an object that may be empty, and `identifier` is
+present only when assigned. The envelope `type` must match the Redis stream `type`. The envelope
+`payload` is the bare object passed to the registered class's `from_json(...)` method. MessagePack
+uses the same map fields encoded as MessagePack bytes.
+
 For Python custom data, register the class before starting the node:
 
 ```python

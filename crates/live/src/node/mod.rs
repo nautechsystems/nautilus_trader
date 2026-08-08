@@ -1643,7 +1643,10 @@ impl LiveNode {
 
     fn republish_external_msgbus_message(message: &BusMessage) {
         if let Err(e) = msgbus::republish_external_message(message) {
-            log::error!("Failed to republish external message bus message: {e}");
+            log::error!(
+                "Failed to republish external message bus topic '{}': {e:#}",
+                message.topic
+            );
         }
     }
 
@@ -3189,6 +3192,7 @@ mod tests {
 
     use bytes::Bytes;
     use indexmap::IndexMap;
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     #[cfg(feature = "python")]
     use nautilus_common::runner::{
         SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
@@ -3243,8 +3247,34 @@ mod tests {
     };
     use rstest::*;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
+
+    struct ExternalIngressLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static EXTERNAL_INGRESS_LOG_CAPTURE: ExternalIngressLogCapture = ExternalIngressLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    impl Log for ExternalIngressLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Error && metadata.target() == "nautilus_live::node"
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
 
     #[rstest]
     fn test_render_client_statuses() {
@@ -3270,6 +3300,35 @@ mod tests {
 ╰─────────┴───────────┴───────────╯";
 
         assert_eq!(output, expected);
+    }
+
+    #[rstest]
+    fn test_republish_external_msgbus_message_logs_topic_and_error_chain() {
+        log::set_logger(&EXTERNAL_INGRESS_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Error);
+        EXTERNAL_INGRESS_LOG_CAPTURE
+            .messages
+            .lock()
+            .unwrap()
+            .clear();
+        let message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM*",
+            BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
+            Bytes::new(),
+            SerializationEncoding::Json,
+        );
+
+        LiveNode::republish_external_msgbus_message(&message);
+
+        assert_eq!(
+            *EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock().unwrap(),
+            vec![
+                "Failed to republish external message bus topic 'data.quotes.AUDUSD.SIM*': invalid \
+                 external message topic: Topic `value` contained invalid characters, was \
+                 data.quotes.AUDUSD.SIM*"
+                    .to_string()
+            ],
+        );
     }
 
     #[rstest]

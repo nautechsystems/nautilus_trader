@@ -136,8 +136,12 @@ def test_deserialize_custom_from_json():
 
     payload = json.dumps(
         {
-            "type": "CustomData",
-            "data_type": {"type": "SurfaceCustomDataJson"},
+            "type": "SurfaceCustomDataJson",
+            "data_type": {
+                "type_name": "SurfaceCustomDataJson",
+                "metadata": {"source": "external"},
+                "identifier": "feed-a",
+            },
             "payload": {"value": 7, "ts_event": 11, "ts_init": 12},
         },
     ).encode()
@@ -150,6 +154,8 @@ def test_deserialize_custom_from_json():
     assert custom.ts_event == 11
     assert custom.ts_init == 12
     assert custom.data_type.type_name == "SurfaceCustomDataJson"
+    assert custom.data_type.metadata == {"source": "external"}
+    assert custom.data_type.identifier == "feed-a"
 
 
 def test_register_custom_data_class_requires_decoder():

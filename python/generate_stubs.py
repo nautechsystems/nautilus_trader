@@ -2349,10 +2349,10 @@ def strip_docstrings(content: str) -> str:
     return "\n".join(result)
 
 
-# Imports that pyo3-stub-gen extracts from doc comment code examples.
-# These reference modules outside the v2 package and should not appear in stubs.
+# Imports that pyo3-stub-gen extracts from doc comment code examples
+# These should not appear in generated stubs.
 _DOCSTRING_IMPORTS: set[str] = {
-    "from nautilus_trader.model.custom import customdataclass_pyo3",
+    "import json",
     "from nautilus_trader.model import register_custom_data_class",
 }
 
