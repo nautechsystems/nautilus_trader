@@ -24,10 +24,8 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 
-use crate::{
-    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelHandle, fill::FillModelHandle},
-};
+use super::{OrderMatchingEngine, config::OrderMatchingEngineConfig};
+use crate::models::{fee::FeeModelHandle, fill::FillModelHandle};
 
 #[derive(Debug)]
 pub struct OrderEngineAdapter {

@@ -33,7 +33,7 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
-    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
+    matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
     models::{
         fee::{CappedOptionFeeModel, FeeModelAny, FixedFeeModel},
         fill::{BestPriceFillModel, DefaultFillModel, FillModelAny, FillModelHandle},

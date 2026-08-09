@@ -155,7 +155,7 @@ to the nine crates on the madsim build path. The hook fails the commit when a ru
   `#[cfg(not(all(feature = "simulation", madsim)))]` attribute.
 - **Rule 5**: `AHashMap` or `AHashSet` in iteration-order-sensitive files on the DST path.
   Enforcement covers the two audited files, `crates/live/src/execution/manager.rs` and
-  `crates/execution/src/matching_engine/engine.rs`; the full file set remains under audit.
+  `crates/execution/src/matching_engine/mod.rs`; the full file set remains under audit.
 - **Rule 6**: direct `tokio::net::TcpStream::connect` / `tokio::net::TcpListener::bind` reaches
   that bypass `nautilus_network::net`. The seam re-exports `tokio::net` types under normal builds
   and swaps to `turmoil::net` under the `turmoil` feature, so all TCP entry points share a
@@ -233,7 +233,7 @@ DST path and how it routes.
 Production sites that hold `IndexMap` / `IndexSet` rather than `AHashMap` / `AHashSet` because
 the iteration order is observable on the DST path:
 
-- **Matching engine** (`crates/execution/src/matching_engine/engine.rs`): ten fields
+- **Matching engine** (`crates/execution/src/matching_engine/mod.rs`): ten fields
   (`execution_bar_types`, `execution_bar_deltas`, `account_ids`, `cached_filled_qty`,
   `bid_consumption`, `ask_consumption`, `queue_ahead_orders`, `queue_ahead_total`,
   `queue_excess`, `queue_pending`). Iterated removes use `.shift_remove()`. Closes

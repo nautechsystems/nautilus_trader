@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A common order matching core for the `OrderMatchingEngine` and other components.
+//! Order matching core shared by the `OrderMatchingEngine` and other components.
 //!
 //! # Book layout
 //!

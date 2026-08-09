@@ -37,7 +37,7 @@ use nautilus_core::{
 };
 use nautilus_execution::{
     matching_core::RestingOrder,
-    matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
+    matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
     models::{fee::FeeModelHandle, fill::FillModelHandle, latency::LatencyModel},
 };
 use nautilus_model::{

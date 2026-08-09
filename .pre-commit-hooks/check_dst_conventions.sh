@@ -10,7 +10,7 @@
 #   4. No raw thread spawning (std::thread::spawn, std::thread::Builder::spawn,
 #      tokio::task::spawn_blocking) without cfg gating
 #   5. No AHashMap / AHashSet in crates/live/src/execution/manager.rs or
-#      crates/execution/src/matching_engine/engine.rs
+#      crates/execution/src/matching_engine/mod.rs
 #   6. No direct tokio::net::TcpStream::connect / tokio::net::TcpListener::bind
 #      reaches that bypass the nautilus_network::net seam (the seam swaps to
 #      turmoil::net under the `turmoil` feature)
@@ -352,7 +352,7 @@ done < <(rg -n --no-heading \
 
 RULE5_FILES=(
   "crates/live/src/execution/manager.rs"
-  "crates/execution/src/matching_engine/engine.rs"
+  "crates/execution/src/matching_engine/mod.rs"
 )
 
 for rule5_file in "${RULE5_FILES[@]}"; do
