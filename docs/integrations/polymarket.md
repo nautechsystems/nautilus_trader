@@ -589,6 +589,17 @@ create an inferred fill. Runtime order checks fetch confirmed trade history when
 more matched quantity than the local order and WebSocket fill tracker contain. Unpaired fill reports
 retain the normal fill-only path.
 
+The REST mass status is emitted only when its evidence is authoritative. `MATCHED`, `MINED`, and
+`RETRYING` trades make the complete snapshot unavailable until settlement finishes; the user
+WebSocket remains the sole source of provisional fills and their `FAILED` corrections. A report row
+that cannot be mapped or represented also rejects the snapshot instead of producing partial state.
+Startup reconciliation propagates that error and stops.
+
+Data API rows with zero size are not position-close evidence and do not produce `Flat` reports.
+Position reductions and closes come from venue `CONFIRMED` fills, while positive Data API positions
+require a representable size and an average price strictly between zero and one. Collection report
+routes emit one summary containing the reports produced and each reason an input row was omitted.
+
 ### Single-order recovery from trades
 
 `/data/order/{id}` can return live or terminal orders. When it returns no order for a known ID,

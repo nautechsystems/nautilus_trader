@@ -197,7 +197,8 @@ fn bench_order_event(c: &mut Criterion) {
                 px_prec,
                 sz_prec,
                 ts_init,
-            );
+            )
+            .expect("benchmark fixture order should be valid");
             black_box(report);
         });
     });
@@ -232,7 +233,8 @@ fn bench_order_fill(c: &mut Criterion) {
                 taker_fee,
                 fee_exponent,
                 ts_init,
-            );
+            )
+            .expect("benchmark fixture fill should be valid");
             black_box(report);
         });
     });
@@ -271,6 +273,7 @@ fn bench_order_fill_maker(c: &mut Criterion) {
                         ts_init,
                         ts_init,
                     )
+                    .expect("benchmark fixture maker fill should be valid")
                 })
                 .collect();
             black_box(reports);

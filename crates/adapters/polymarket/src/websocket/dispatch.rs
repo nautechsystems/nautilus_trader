@@ -385,7 +385,9 @@ fn dispatch_trade_update(
     }
 
     let is_confirmed = trade.status == PolymarketTradeStatus::Confirmed;
-    dispatch_trade_fills(trade, &dedup_key, is_confirmed, ctx, state);
+    if !dispatch_trade_fills(trade, &dedup_key, is_confirmed, ctx, state) {
+        return None;
+    }
 
     if !is_confirmed {
         return None;
@@ -442,22 +444,26 @@ fn dispatch_trade_fills(
     is_confirmed: bool,
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
-) {
+) -> bool {
     if state.processed_fills.contains(dedup_key) {
         log::debug!("Duplicate fill skipped: {dedup_key}");
-        return;
+        return true;
     }
 
-    state.processed_fills.add(dedup_key.clone());
     let fills = if trade.trader_side == PolymarketLiquiditySide::Maker {
-        dispatch_maker_fills(trade, dedup_key, is_confirmed, ctx, state)
+        let Some(fills) = dispatch_maker_fills(trade, dedup_key, is_confirmed, ctx, state) else {
+            return false;
+        };
+        fills
     } else {
         dispatch_taker_fill(trade, dedup_key, is_confirmed, ctx, state)
     };
+    state.processed_fills.add(dedup_key.clone());
 
     if !fills.is_empty() {
         state.matched_fills.insert(dedup_key.clone(), fills);
     }
+    true
 }
 
 fn confirm_trade(
@@ -497,7 +503,7 @@ fn dispatch_maker_fills(
     is_confirmed: bool,
     ctx: &WsDispatchContext<'_>,
     state: &WsDispatchState,
-) -> Vec<OrderFilled> {
+) -> Option<Vec<OrderFilled>> {
     let user_orders: Vec<_> = trade
         .maker_orders
         .iter()
@@ -506,7 +512,7 @@ fn dispatch_maker_fills(
 
     if user_orders.is_empty() {
         log::warn!("No matching maker orders for user in trade: {}", trade.id);
-        return Vec::new();
+        return None;
     }
 
     let instruments = ctx.token_instruments.load();
@@ -514,7 +520,7 @@ fn dispatch_maker_fills(
     let liquidity_side = parse_liquidity_side(trade.trader_side);
     let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
     let ts_init = ctx.clock.get_time_ns();
-    let mut fills = Vec::new();
+    let mut reports = Vec::with_capacity(user_orders.len());
 
     for mo in user_orders {
         let asset_id = Ustr::from(mo.asset_id.as_str());
@@ -522,10 +528,10 @@ fn dispatch_maker_fills(
             Some(i) => i,
             None => {
                 log::warn!("Unknown asset_id in maker order: {asset_id}");
-                continue;
+                return None;
             }
         };
-        let mut report = build_maker_fill_report(
+        let report = match build_maker_fill_report(
             mo,
             &trade.id,
             trade.trader_side,
@@ -539,7 +545,22 @@ fn dispatch_maker_fills(
             liquidity_side,
             ts_event,
             ts_init,
-        );
+        ) {
+            Ok(report) => report,
+            Err(e) => {
+                log::warn!(
+                    "Skipping invalid live maker fill for trade {}: {e}",
+                    trade.id
+                );
+                return None;
+            }
+        };
+        reports.push(report);
+    }
+
+    let mut fills = Vec::new();
+
+    for mut report in reports {
         let maker_venue_order_id = report.venue_order_id;
         report.client_order_id = ctx.pending_submits.client_order_id(&maker_venue_order_id);
         report.last_qty = ctx
@@ -569,7 +590,7 @@ fn dispatch_maker_fills(
             reemit_terminal_cancel(maker_venue_order_id, state, ctx);
         }
     }
-    fills
+    Some(fills)
 }
 
 fn is_user_maker_order(order: &PolymarketMakerOrder, ctx: &WsDispatchContext<'_>) -> bool {
@@ -1593,6 +1614,52 @@ mod tests {
         let fills = fill_tracker.pending_fills_for(&venue_order_id);
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].venue_order_id, venue_order_id);
+    }
+
+    #[rstest]
+    fn test_invalid_maker_trade_remains_retryable_without_partial_application() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.status = PolymarketTradeStatus::Confirmed;
+        let mut invalid_order = trade.maker_orders[0].clone();
+        invalid_order.order_id = "invalid-maker-order".to_string();
+        invalid_order.matched_amount = dec!(0.0000004);
+        trade.maker_orders.push(invalid_order);
+
+        let venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let invalid_venue_order_id = VenueOrderId::from(trade.maker_orders[1].order_id.as_str());
+        let dedup_key = format!("{}-{}", trade.id, trade.taker_order_id);
+        let user_address = trade.maker_orders[0].maker_address.clone();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.maker_orders[0].asset_id, test_instrument());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        let emitter = test_emitter();
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: &user_address,
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        let result = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+        assert!(result.is_none());
+        assert!(fill_tracker.pending_fills_for(&venue_order_id).is_empty());
+        assert!(
+            fill_tracker
+                .pending_fills_for(&invalid_venue_order_id)
+                .is_empty()
+        );
+        assert!(!state.processed_fills.contains(&dedup_key));
+        assert!(!state.confirmed_trades.contains(&trade.id));
     }
 
     #[rstest]
