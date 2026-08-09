@@ -146,7 +146,7 @@ impl OKXWsFeedHandler {
                         }
                     },
                     should_retry_okx_error,
-                    create_okx_timeout_error,
+                    |e| create_okx_timeout_error(e.to_string()),
                 )
                 .await
         } else {

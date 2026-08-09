@@ -72,7 +72,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -894,11 +894,12 @@ impl OKXRawHttpClient {
         // (e.g., "Invalid instrument", "Insufficient balance", "Invalid API Key")
         let should_retry = |error: &OKXHttpError| -> bool { error.is_retryable() };
 
-        let create_error = |msg: String| -> OKXHttpError {
-            if msg == "canceled" {
-                OKXHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                OKXHttpError::ValidationError(msg)
+        let create_error = |error: RetryError| -> OKXHttpError {
+            match error {
+                RetryError::Canceled => {
+                    OKXHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => OKXHttpError::ValidationError(error.to_string()),
             }
         };
 

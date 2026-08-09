@@ -675,7 +675,7 @@ impl PolymarketGammaHttpClient {
                     }
                 },
                 |e| e.is_retryable(),
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))

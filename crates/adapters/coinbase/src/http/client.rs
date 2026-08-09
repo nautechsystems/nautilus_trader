@@ -374,7 +374,7 @@ impl CoinbaseRawHttpClient {
                 &operation_name,
                 operation,
                 should_retry,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
                 &self.cancellation_token,
             )
             .await

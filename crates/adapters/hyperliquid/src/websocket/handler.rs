@@ -248,7 +248,7 @@ impl FeedHandler {
                         }
                     },
                     should_retry_hyperliquid_error,
-                    create_hyperliquid_timeout_error,
+                    |e| create_hyperliquid_timeout_error(e.to_string()),
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))

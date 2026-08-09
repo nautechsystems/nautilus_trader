@@ -83,7 +83,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -336,24 +336,13 @@ impl DydxRawHttpClient {
             }
         };
 
-        let create_error = |msg: String| -> DydxHttpError {
-            if msg == "canceled" {
-                DydxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else if msg.contains("Timed out") {
-                // Timeouts are transient -- map to HttpClientError so they are retried
-                DydxHttpError::HttpClientError(msg)
-            } else {
-                DydxHttpError::ValidationError(msg)
-            }
-        };
-
         let response = self
             .retry_manager
             .execute_with_retry_with_cancel(
                 endpoint,
                 operation,
                 should_retry,
-                create_error,
+                create_retry_error,
                 &self.cancellation_token,
             )
             .await?;
@@ -425,24 +414,13 @@ impl DydxRawHttpClient {
             }
         };
 
-        let create_error = |msg: String| -> DydxHttpError {
-            if msg == "canceled" {
-                DydxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else if msg.contains("Timed out") {
-                // Timeouts are transient -- map to HttpClientError so they are retried
-                DydxHttpError::HttpClientError(msg)
-            } else {
-                DydxHttpError::ValidationError(msg)
-            }
-        };
-
         let response = self
             .retry_manager
             .execute_with_retry_with_cancel(
                 endpoint,
                 operation,
                 should_retry,
-                create_error,
+                create_retry_error,
                 &self.cancellation_token,
             )
             .await?;
@@ -762,6 +740,18 @@ impl Default for DydxHttpClient {
     fn default() -> Self {
         Self::new(None, 60, None, DydxNetwork::Mainnet, None)
             .expect("Failed to create default DydxHttpClient")
+    }
+}
+
+fn create_retry_error(error: RetryError) -> DydxHttpError {
+    match error {
+        RetryError::Canceled => {
+            DydxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+        }
+        error @ RetryError::OperationTimeout { .. } => {
+            DydxHttpError::HttpClientError(error.to_string())
+        }
+        error => DydxHttpError::ValidationError(error.to_string()),
     }
 }
 

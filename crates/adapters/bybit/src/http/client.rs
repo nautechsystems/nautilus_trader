@@ -47,7 +47,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
@@ -550,11 +550,12 @@ impl BybitRawHttpClient {
             }
         };
 
-        let create_error = |msg: String| -> BybitHttpError {
-            if msg == "canceled" {
-                BybitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                BybitHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> BybitHttpError {
+            match error {
+                RetryError::Canceled => {
+                    BybitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => BybitHttpError::NetworkError(error.to_string()),
             }
         };
 

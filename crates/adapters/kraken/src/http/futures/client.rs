@@ -48,7 +48,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
@@ -379,7 +379,7 @@ impl KrakenFuturesRawHttpClient {
         };
 
         let should_retry = kraken_http_should_retry;
-        let create_error = |msg: String| -> KrakenHttpError { KrakenHttpError::NetworkError(msg) };
+        let create_error = |error: RetryError| KrakenHttpError::NetworkError(error.to_string());
 
         self.retry_manager
             .execute_with_retry_with_cancel(

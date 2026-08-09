@@ -45,7 +45,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::HttpClient,
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use reqwest::{Method, header::USER_AGENT};
 use rust_decimal::Decimal;
@@ -416,11 +416,12 @@ impl AxRawHttpClient {
         let is_idempotent = matches!(method, Method::GET | Method::HEAD | Method::OPTIONS);
         let should_retry = |error: &AxHttpError| -> bool { is_idempotent && error.is_retryable() };
 
-        let create_error = |msg: String| -> AxHttpError {
-            if msg == "canceled" {
-                AxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                AxHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> AxHttpError {
+            match error {
+                RetryError::Canceled => {
+                    AxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => AxHttpError::NetworkError(error.to_string()),
             }
         };
 

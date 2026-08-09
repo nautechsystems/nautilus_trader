@@ -791,6 +791,13 @@ collide or its scope is uncertain, keep the outcome ambiguous and reconcile it a
 Respect venue backoff and rate‑limit signals, and stop retries on cancellation. Use the shared
 [`RetryManager`](../../crates/network/src/retry.rs) when its cancellation and backoff model fits.
 
+`RetryManager` passes a typed [`RetryError`](../../crates/network/src/retry.rs) to the caller's error
+callback: `Canceled`, `OperationTimeout`, `ElapsedBudgetExceeded`, or `InvalidConfiguration`. Match
+a variant when the adapter must distinguish its control reason; never branch on display text. The
+error returned for `OperationTimeout` is evaluated by `should_retry`, so map it to the adapter's
+transient timeout variant when timeouts should retry. Other synthesized reasons terminate without
+reclassification.
+
 `RetryManager` control errors do not record whether the operation ran. Track possible transmission
 at the adapter boundary for state‑changing commands, treating entry into the send operation as
 possible transmission unless more precise evidence exists. Classify cancellation, per‑attempt

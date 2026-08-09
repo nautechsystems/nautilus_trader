@@ -355,7 +355,7 @@ impl FeedHandler {
                         }
                     },
                     should_retry_lighter_ws_error,
-                    create_lighter_ws_timeout_error,
+                    |e| create_lighter_ws_timeout_error(e.to_string()),
                 )
                 .await
         } else {

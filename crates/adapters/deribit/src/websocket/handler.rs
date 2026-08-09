@@ -386,7 +386,7 @@ impl DeribitWsFeedHandler {
                         }
                     },
                     |e| matches!(e, DeribitWsError::Send(_)),
-                    DeribitWsError::Timeout,
+                    |e| DeribitWsError::Timeout(e.to_string()),
                 )
                 .await
         } else {

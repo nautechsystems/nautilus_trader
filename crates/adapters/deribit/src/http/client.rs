@@ -43,7 +43,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -569,11 +569,12 @@ impl DeribitRawHttpClient {
         // (e.g., "invalid_credentials", "not_enough_funds", "order_not_found")
         let should_retry = |error: &DeribitHttpError| -> bool { error.is_retryable() };
 
-        let create_error = |msg: String| -> DeribitHttpError {
-            if msg == "canceled" {
-                DeribitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                DeribitHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> DeribitHttpError {
+            match error {
+                RetryError::Canceled => {
+                    DeribitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => DeribitHttpError::NetworkError(error.to_string()),
             }
         };
 

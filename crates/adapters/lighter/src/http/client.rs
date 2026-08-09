@@ -483,7 +483,7 @@ impl LighterRawHttpClient {
                     }
                 },
                 should_retry_lighter_http_error,
-                create_lighter_http_timeout_error,
+                |e| create_lighter_http_timeout_error(e.to_string()),
             )
             .await
     }

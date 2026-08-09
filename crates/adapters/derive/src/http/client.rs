@@ -675,8 +675,8 @@ impl DeriveHttpClient {
 
         if retry {
             self.retry_manager
-                .execute_with_retry(method, attempt, should_retry_http_error, |msg| {
-                    DeriveHttpError::transport(msg)
+                .execute_with_retry(method, attempt, should_retry_http_error, |e| {
+                    DeriveHttpError::transport(e.to_string())
                 })
                 .await
         } else {

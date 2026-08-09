@@ -58,7 +58,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -497,11 +497,12 @@ impl BitmexRawHttpClient {
             }
         };
 
-        let create_error = |msg: String| -> BitmexHttpError {
-            if msg == "canceled" {
-                BitmexHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                BitmexHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> BitmexHttpError {
+            match error {
+                RetryError::Canceled => {
+                    BitmexHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => BitmexHttpError::NetworkError(error.to_string()),
             }
         };
 

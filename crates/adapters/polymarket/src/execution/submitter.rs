@@ -238,7 +238,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
         {
@@ -278,7 +278,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
     }
@@ -330,7 +330,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
     }
@@ -355,7 +355,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
@@ -440,7 +440,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await;
 

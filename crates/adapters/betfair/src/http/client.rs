@@ -28,7 +28,7 @@ use nautilus_core::{MUTEX_POISONED, string::urlencoding};
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -562,11 +562,12 @@ impl BetfairHttpClient {
 
         let should_retry = |error: &BetfairHttpError| -> bool { error.is_retryable() };
 
-        let create_error = |msg: String| -> BetfairHttpError {
-            if msg == "canceled" {
-                BetfairHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                BetfairHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> BetfairHttpError {
+            match error {
+                RetryError::Canceled => {
+                    BetfairHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => BetfairHttpError::NetworkError(error.to_string()),
             }
         };
 

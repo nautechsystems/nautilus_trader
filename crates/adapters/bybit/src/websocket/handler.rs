@@ -96,7 +96,7 @@ impl BybitWsFeedHandler {
                         }
                     },
                     should_retry_bybit_error,
-                    create_bybit_timeout_error,
+                    |e| create_bybit_timeout_error(e.to_string()),
                 )
                 .await
         } else {
