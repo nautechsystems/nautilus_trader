@@ -78,6 +78,34 @@ pub mod bool_or_int {
     }
 }
 
+/// Serde helper that accepts an `i32` field as either a JSON number or a JSON
+/// string.
+///
+/// Bybit inconsistently returns some numeric fields (e.g. `positionIdx`,
+/// `smpGroup`) as strings ("0") rather than integers (0) across different API
+/// versions and endpoints, which causes strict `i32` deserialization to fail.
+pub mod int_or_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &i32, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i32(*value)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<i32, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum IntOrString {
+            Int(i32),
+            Str(String),
+        }
+
+        match IntOrString::deserialize(d)? {
+            IntOrString::Int(n) => Ok(n),
+            IntOrString::Str(s) => s.parse::<i32>().map_err(serde::de::Error::custom),
+        }
+    }
+}
+
 /// Round-trips `Option<bool>` as `0`/`1` integers for Bybit request bodies
 /// that advertise `readOnly` as an integer on the wire.
 pub mod opt_bool_as_int {

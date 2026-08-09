@@ -30,7 +30,7 @@ use crate::{
         },
         parse::{
             deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-            deserialize_optional_decimal_str,
+            deserialize_optional_decimal_str, int_or_string,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -777,6 +777,7 @@ pub struct BybitWsAccountOrder {
     pub cum_exec_value: String,
     pub avg_price: String,
     pub block_trade_id: Ustr,
+    #[serde(with = "int_or_string")]
     pub position_idx: i32,
     pub cum_exec_fee: String,
     pub created_time: String,
@@ -792,6 +793,7 @@ pub struct BybitWsAccountOrder {
     pub close_on_trigger: bool,
     pub place_type: Ustr,
     pub smp_type: BybitSmpType,
+    #[serde(with = "int_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub fee_currency: Ustr,
@@ -971,7 +973,9 @@ pub struct BybitWsAccountPosition {
     pub symbol: Ustr,
     pub side: BybitPositionSide,
     pub size: String,
+    #[serde(with = "int_or_string")]
     pub position_idx: i32,
+    #[serde(with = "int_or_string")]
     pub trade_mode: i32,
     pub position_value: String,
     pub risk_id: i64,
@@ -981,6 +985,7 @@ pub struct BybitWsAccountPosition {
     pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,
+    #[serde(with = "int_or_string")]
     pub auto_add_margin: i32,
     #[serde(rename = "positionIM")]
     pub position_im: String,
