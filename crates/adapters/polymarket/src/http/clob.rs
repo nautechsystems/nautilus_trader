@@ -62,7 +62,7 @@ const PATH_POST_ORDER: &str = "/order";
 const PATH_POST_ORDERS: &str = "/orders";
 const PATH_CANCEL_ALL: &str = "/cancel-all";
 const PATH_CANCEL_MARKET_ORDERS: &str = "/cancel-market-orders";
-const PATH_HEARTBEATS: &str = "/heartbeats";
+const PATH_HEARTBEATS: &str = "/v1/heartbeats";
 
 const CLOB_CANCEL_BATCH_LIMIT: usize = 1_000;
 
@@ -90,14 +90,13 @@ struct HeartbeatRequest<'a> {
 #[derive(Deserialize)]
 struct HeartbeatWireResponse {
     heartbeat_id: Option<String>,
-    status: Option<String>,
 }
 
 /// Outcome from an authenticated CLOB order-safety heartbeat.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HeartbeatResponse {
-    /// The heartbeat was acknowledged, with an optional next ID for chaining.
-    Acknowledged(Option<String>),
+    /// The heartbeat was acknowledged and the venue returned the next ID for chaining.
+    Acknowledged(String),
     /// The supplied ID was stale and the venue returned the current ID.
     Resynchronize(String),
 }
@@ -394,22 +393,32 @@ impl PolymarketClobHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
+        if response.status.as_u16() == 429 {
+            let rate_limit_headers = RateLimitHeaders::parse(&response.headers);
+            return Err(Error::rate_limit(
+                PATH_HEARTBEATS,
+                0,
+                rate_limit_headers.retry_after_ms(),
+            ));
+        }
+
         let wire = serde_json::from_slice::<HeartbeatWireResponse>(&response.body);
+        let next_id = |wire: HeartbeatWireResponse| {
+            wire.heartbeat_id
+                .filter(|heartbeat_id| !heartbeat_id.is_empty())
+        };
+
         if response.status.is_success() {
-            let wire = wire.map_err(Error::Serde)?;
-            if let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty()) {
-                return Ok(HeartbeatResponse::Acknowledged(Some(heartbeat_id)));
+            if let Some(heartbeat_id) = next_id(wire.map_err(Error::Serde)?) {
+                return Ok(HeartbeatResponse::Acknowledged(heartbeat_id));
             }
 
-            if wire.status.as_deref() == Some("ok") {
-                return Ok(HeartbeatResponse::Acknowledged(None));
-            }
             return Err(Error::exchange("Heartbeat acknowledgment was invalid"));
         }
 
         if response.status.as_u16() == 400
             && let Ok(wire) = wire
-            && let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty())
+            && let Some(heartbeat_id) = next_id(wire)
         {
             return Ok(HeartbeatResponse::Resynchronize(heartbeat_id));
         }

@@ -1082,12 +1082,23 @@ Class/struct: `PolymarketExecClientConfig`.
 | `transport_backend`                                 | `Sockudo`             | WebSocket transport implementation.                                                                                   |
 
 :::warning
-Enabling `heartbeat_enabled` opts the account into Polymarket's order-safety heartbeat contract.
+Enabling `heartbeat_enabled` starts Polymarket's order‑safety heartbeat contract for the configured
+CLOB API credentials.
 The adapter sends the first empty heartbeat ID, chains each returned ID, and uses a replacement ID
-from an HTTP 400 response to resynchronize. Polymarket cancels open orders when it does not receive a
-heartbeat within 10 seconds, with an additional 5-second buffer. Authentication or venue rejection,
-or two consecutive retryable request failures, makes the execution client report as disconnected
-until it is explicitly disconnected and reconnected.
+from an HTTP 400 response to resynchronize. Polymarket cancels open orders owned by those credentials
+when it does not receive a heartbeat within 10 seconds, with an additional 5-second buffer. The
+execution client reports as disconnected until the first heartbeat is acknowledged. Authentication
+or venue rejection, two consecutive retryable request failures, or a request or retry delay that
+cannot finish with a one‑second margin before the 10‑second safety deadline also makes it report as
+disconnected until it is explicitly disconnected and reconnected.
+:::
+
+:::tip
+Enable `heartbeat_enabled` for a dedicated automated execution process only when every order owned
+by its CLOB API credentials should be canceled if the process stops responding. Use dedicated
+credentials for each heartbeat‑owning process. Leave this option disabled when those orders must
+survive client shutdown or another process uses the same credentials, because a normal disconnect
+stops heartbeats and causes cancellation after the venue timeout.
 :::
 
 ### Proxy routing

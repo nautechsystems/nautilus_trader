@@ -35,7 +35,7 @@ use axum::{
         Query, State,
         ws::{WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderName, StatusCode, Uri},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
 };
@@ -195,7 +195,9 @@ struct TestServerState {
     heartbeat_response: Arc<tokio::sync::Mutex<Value>>,
     heartbeat_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     heartbeat_response_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
+    heartbeat_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     heartbeat_post_count: Arc<AtomicUsize>,
+    heartbeat_post_times: Arc<tokio::sync::Mutex<Vec<tokio::time::Instant>>>,
     heartbeat_resynchronize_remaining: Arc<AtomicUsize>,
     heartbeat_request_gate: Arc<RequestGate>,
     cancel_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -244,7 +246,9 @@ impl Default for TestServerState {
             }))),
             heartbeat_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             heartbeat_response_statuses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            heartbeat_response_headers: Arc::new(tokio::sync::Mutex::new(HeaderMap::new())),
             heartbeat_post_count: Arc::new(AtomicUsize::new(0)),
+            heartbeat_post_times: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             heartbeat_resynchronize_remaining: Arc::new(AtomicUsize::new(0)),
             heartbeat_request_gate: Arc::new(RequestGate::default()),
             cancel_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -406,16 +410,16 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
     cache.borrow_mut().add_account(account).unwrap();
 }
 
-async fn handle_get_orders(State(state): State<TestServerState>) -> Response {
-    *state.last_path.lock().await = "/data/orders".to_string();
+async fn handle_get_orders(State(state): State<TestServerState>, uri: Uri) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     if let Some(override_value) = state.orders_response_override.lock().await.as_ref() {
         return Json(override_value.clone()).into_response();
     }
     Json(load_json("http_open_orders_page.json")).into_response()
 }
 
-async fn handle_get_order(State(state): State<TestServerState>) -> Response {
-    *state.last_path.lock().await = "/data/order".to_string();
+async fn handle_get_order(State(state): State<TestServerState>, uri: Uri) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     let resp = state.single_order_response.lock().await;
     match resp.as_ref() {
         Some(v) => Json(v.clone()).into_response(),
@@ -425,9 +429,10 @@ async fn handle_get_order(State(state): State<TestServerState>) -> Response {
 
 async fn handle_get_trades(
     State(state): State<TestServerState>,
+    uri: Uri,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
-    *state.last_path.lock().await = "/data/trades".to_string();
+    *state.last_path.lock().await = uri.path().to_string();
     *state.last_query.lock().await = query;
     if let Some(override_value) = state.trades_response_override.lock().await.as_ref() {
         return Json(override_value.clone()).into_response();
@@ -435,8 +440,12 @@ async fn handle_get_trades(
     Json(load_json("http_trades_page.json")).into_response()
 }
 
-async fn handle_get_balance(State(state): State<TestServerState>, headers: HeaderMap) -> Response {
-    *state.last_path.lock().await = "/balance-allowance".to_string();
+async fn handle_get_balance(
+    State(state): State<TestServerState>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     *state.last_headers.lock().await = headers
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
@@ -451,10 +460,11 @@ async fn handle_get_balance(State(state): State<TestServerState>, headers: Heade
 
 async fn handle_post_order(
     State(state): State<TestServerState>,
+    uri: Uri,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    *state.last_path.lock().await = "/order".to_string();
+    *state.last_path.lock().await = uri.path().to_string();
     *state.last_headers.lock().await = headers
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
@@ -489,10 +499,11 @@ async fn handle_post_order(
 
 async fn handle_post_orders(
     State(state): State<TestServerState>,
+    uri: Uri,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    *state.last_path.lock().await = "/orders".to_string();
+    *state.last_path.lock().await = uri.path().to_string();
     *state.last_headers.lock().await = headers
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
@@ -538,8 +549,12 @@ async fn handle_post_orders(
     (status, Json(body)).into_response()
 }
 
-async fn handle_delete_order(State(state): State<TestServerState>, body: Bytes) -> Response {
-    *state.last_path.lock().await = "/order".to_string();
+async fn handle_delete_order(
+    State(state): State<TestServerState>,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     *state.cancel_delete_count.lock().await += 1;
 
     if let Ok(v) = serde_json::from_slice::<Value>(&body) {
@@ -557,8 +572,12 @@ async fn handle_delete_order(State(state): State<TestServerState>, body: Bytes) 
     (status, Json(body)).into_response()
 }
 
-async fn handle_delete_orders(State(state): State<TestServerState>, body: Bytes) -> Response {
-    *state.last_path.lock().await = "/orders".to_string();
+async fn handle_delete_orders(
+    State(state): State<TestServerState>,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     *state.batch_cancel_delete_count.lock().await += 1;
 
     let request = serde_json::from_slice::<Value>(&body).ok();
@@ -645,8 +664,8 @@ async fn handle_user_socket(mut socket: WebSocket) {
     while socket.next().await.is_some() {}
 }
 
-async fn handle_cancel_all(State(state): State<TestServerState>) -> Response {
-    *state.last_path.lock().await = "/cancel-all".to_string();
+async fn handle_cancel_all(State(state): State<TestServerState>, uri: Uri) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     Json(load_json("http_batch_cancel_response.json")).into_response()
 }
 
@@ -658,8 +677,8 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response 
     }
 }
 
-async fn handle_get_book(State(state): State<TestServerState>) -> Response {
-    *state.last_path.lock().await = "/book".to_string();
+async fn handle_get_book(State(state): State<TestServerState>, uri: Uri) -> Response {
+    *state.last_path.lock().await = uri.path().to_string();
     let resp = state.book_response.lock().await;
     match resp.as_ref() {
         Some(v) => Json(v.clone()).into_response(),
@@ -693,10 +712,11 @@ async fn handle_get_fee_rate(
 
 async fn handle_heartbeat(
     State(state): State<TestServerState>,
+    uri: Uri,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    *state.last_path.lock().await = "/heartbeats".to_string();
+    *state.last_path.lock().await = uri.path().to_string();
     *state.last_headers.lock().await = headers
         .iter()
         .map(|(key, value)| {
@@ -710,6 +730,11 @@ async fn handle_heartbeat(
     if let Ok(value) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(value);
     }
+    state
+        .heartbeat_post_times
+        .lock()
+        .await
+        .push(tokio::time::Instant::now());
     state.heartbeat_post_count.fetch_add(1, Ordering::AcqRel);
     state.heartbeat_request_gate.wait().await;
 
@@ -733,7 +758,11 @@ async fn handle_heartbeat(
         *state.heartbeat_response_status.lock().await
     };
     let response = state.heartbeat_response.lock().await.clone();
-    (status, Json(response)).into_response()
+    let mut response = (status, Json(response)).into_response();
+    response
+        .headers_mut()
+        .extend(state.heartbeat_response_headers.lock().await.clone());
+    response
 }
 
 async fn handle_health() -> impl IntoResponse {
@@ -762,7 +791,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/markets", get(handle_gamma_markets))
         .route("/book", get(handle_get_book))
         .route("/fee-rate", get(handle_get_fee_rate))
-        .route("/heartbeats", post(handle_heartbeat))
+        .route("/v1/heartbeats", post(handle_heartbeat))
         .route("/health", get(handle_health))
         .route("/positions", get(handle_get_positions))
         .route("/ws", get(handle_user_upgrade))
@@ -938,6 +967,7 @@ async fn test_heartbeat_starts_after_readiness_and_prevents_duplicate_tasks() {
     add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
     connect.await.unwrap();
     await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
     assert!(client.is_connected());
     assert_eq!(
         state.last_body.lock().await.as_ref(),
@@ -960,6 +990,7 @@ async fn test_heartbeat_starts_after_readiness_and_prevents_duplicate_tasks() {
 
     client.connect().await.unwrap();
     await_heartbeat_posts(&state, 3, Duration::from_secs(1)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
     assert!(client.is_connected());
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 3);
 
@@ -980,6 +1011,7 @@ async fn test_heartbeat_resynchronizes_immediately_with_replacement_id() {
 
     client.connect().await.unwrap();
     await_heartbeat_posts(&state, 2, Duration::from_secs(1)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
 
     assert!(client.is_connected());
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
@@ -1031,6 +1063,8 @@ async fn test_disconnect_cancels_and_awaits_in_flight_heartbeat() {
     )
     .await;
 
+    assert!(!client.is_connected());
+
     let result = tokio::time::timeout(Duration::from_secs(1), client.disconnect()).await;
     state.heartbeat_request_gate.release();
 
@@ -1051,6 +1085,7 @@ async fn test_heartbeat_authentication_failure_marks_execution_unhealthy() {
     client.start().unwrap();
 
     client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
     await_execution_unhealthy(&client, Duration::from_secs(1)).await;
 
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 1);
@@ -1069,6 +1104,7 @@ async fn test_heartbeat_venue_rejection_marks_execution_unhealthy() {
     client.start().unwrap();
 
     client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
     await_execution_unhealthy(&client, Duration::from_secs(1)).await;
 
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 1);
@@ -1087,7 +1123,7 @@ async fn test_repeated_heartbeat_request_failure_marks_execution_unhealthy() {
     client.start().unwrap();
 
     client.connect().await.unwrap();
-    await_heartbeat_posts(&state, 2, Duration::from_secs(6)).await;
+    await_heartbeat_posts(&state, 2, Duration::from_secs(1)).await;
     await_execution_unhealthy(&client, Duration::from_secs(1)).await;
 
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
@@ -1103,6 +1139,7 @@ async fn test_heartbeat_success_resets_consecutive_request_failures() {
         StatusCode::INTERNAL_SERVER_ERROR,
         StatusCode::OK,
         StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::OK,
     ]);
     let addr = start_mock_server(state.clone()).await;
     let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
@@ -1110,11 +1147,75 @@ async fn test_heartbeat_success_resets_consecutive_request_failures() {
     client.start().unwrap();
 
     client.connect().await.unwrap();
-    await_heartbeat_posts(&state, 3, Duration::from_secs(11)).await;
+    await_heartbeat_posts(&state, 4, Duration::from_secs(6)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     assert!(client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 4);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_rate_limit_waits_for_retry_after() {
+    let state = TestServerState::default();
+    state.heartbeat_response_statuses.lock().await.extend([
+        StatusCode::OK,
+        StatusCode::TOO_MANY_REQUESTS,
+        StatusCode::OK,
+    ]);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "2".parse().unwrap());
+    *state.heartbeat_response_headers.lock().await = response_headers;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
+
+    await_heartbeat_posts(&state, 2, Duration::from_secs(6)).await;
+    await_heartbeat_posts(&state, 3, Duration::from_secs(3)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
+    let post_times = state.heartbeat_post_times.lock().await.clone();
+
+    assert_eq!(post_times.len(), 3);
+    assert!(post_times[2].duration_since(post_times[1]) >= Duration::from_secs(2));
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 3);
+    assert!(client.is_connected());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_rate_limit_past_safety_deadline_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    state
+        .heartbeat_response_statuses
+        .lock()
+        .await
+        .extend([StatusCode::OK, StatusCode::TOO_MANY_REQUESTS]);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "6".parse().unwrap());
+    *state.heartbeat_response_headers.lock().await = response_headers;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
+
+    await_heartbeat_posts(&state, 2, Duration::from_secs(6)).await;
+    await_execution_unhealthy(&client, Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(!client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
 
     client.disconnect().await.unwrap();
 }
@@ -1130,7 +1231,8 @@ async fn test_repeated_heartbeat_request_timeout_marks_execution_unhealthy() {
     client.start().unwrap();
 
     client.connect().await.unwrap();
-    await_execution_unhealthy(&client, Duration::from_secs(10)).await;
+    await_heartbeat_posts(&state, 2, Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     let started = state.heartbeat_request_gate.started();
     for _ in 0..started {
@@ -1138,6 +1240,65 @@ async fn test_repeated_heartbeat_request_timeout_marks_execution_unhealthy() {
     }
     assert_eq!(started, 2);
     assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+    assert!(!client.is_connected());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_request_deadline_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
+    await_execution_healthy(&client, Duration::from_secs(1)).await;
+    state.heartbeat_request_gate.enable();
+
+    await_heartbeat_posts(&state, 2, Duration::from_secs(6)).await;
+    await_execution_unhealthy(&client, Duration::from_secs(6)).await;
+
+    let started = state.heartbeat_request_gate.started();
+    for _ in 0..started {
+        state.heartbeat_request_gate.release();
+    }
+    assert_eq!(started, 1);
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+    assert!(!client.is_connected());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against clob.polymarket.com; run with --include-ignored"]
+async fn test_live_heartbeat_runs_through_execution_client() {
+    let signature_type = match std::env::var("POLYMARKET_SIGNATURE_TYPE").as_deref() {
+        Ok("0") => SignatureType::Eoa,
+        Ok("1") => SignatureType::PolyProxy,
+        Ok("2") => SignatureType::PolyGnosisSafe,
+        Ok("3") => SignatureType::Poly1271,
+        _ => {
+            panic!("live execution heartbeat test requires POLYMARKET_SIGNATURE_TYPE=0, 1, 2, or 3")
+        }
+    };
+    let config = PolymarketExecClientConfig {
+        signature_type,
+        heartbeat_enabled: true,
+        ..PolymarketExecClientConfig::default()
+    };
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_execution_healthy(&client, Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(11)).await;
+
+    assert!(client.is_connected());
 
     client.disconnect().await.unwrap();
 }
@@ -1155,6 +1316,10 @@ async fn await_heartbeat_posts(state: &TestServerState, expected: usize, timeout
 
 async fn await_execution_unhealthy(client: &PolymarketExecutionClient, timeout: Duration) {
     wait_until_async(|| async { !client.is_connected() }, timeout).await;
+}
+
+async fn await_execution_healthy(client: &PolymarketExecutionClient, timeout: Duration) {
+    wait_until_async(|| async { client.is_connected() }, timeout).await;
 }
 
 #[rstest]

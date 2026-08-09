@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Changed portfolio statistic `calculate_from_positions` to require `Position` objects instead of arbitrary objects with an `entry` attribute
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer
 - Changed Hyperliquid `subscribe_book_deltas` and `subscribe_book_snapshots` to take a `BookType` instead of an integer
+- Changed Polymarket `HeartbeatResponse::Acknowledged` to carry a required chained ID
 
 ### Security
 
@@ -73,6 +74,7 @@ Released on TBD (UTC).
 - Fixed Polymarket WebSocket buffered fills emitting after a terminal order status, which left canceled orders `PartiallyFilled` and dropped fills on market‑resolution expiry
 - Fixed Polymarket HTTP rejection reasons carrying the raw JSON error body, so an `OrderRejected` now reports the venue message alone
 - Fixed Polymarket WebSocket order message sizes for `FAK` and `FOK` BUY orders, where the venue reports the signed pUSD maker amount rather than a share quantity
+- Fixed Polymarket order‑safety heartbeat routing, ID chaining, rate‑limit retries, and safety deadlines
 
 ### Internal Improvements
 

@@ -40,7 +40,7 @@ use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
-        credential::Credential,
+        credential::{Credential, Secrets},
         enums::{PolymarketOrderType, SignatureType},
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
@@ -387,19 +387,24 @@ async fn handle_cancel_market(
 
 async fn handle_heartbeat(
     State(state): State<TestServerState>,
+    uri: Uri,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     *state.last_headers.lock().await = extract_headers(&headers);
     *state.last_method.lock().await = Some(Method::POST);
-    *state.last_path.lock().await = Some("/heartbeats".to_string());
+    *state.last_path.lock().await = Some(uri.path().to_string());
     if let Ok(value) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(value);
     }
 
     let status = *state.heartbeat_response_status.lock().await;
     let response = state.heartbeat_response.lock().await.clone();
-    (status, Json(response)).into_response()
+    let mut response = (status, Json(response)).into_response();
+    response
+        .headers_mut()
+        .extend(state.rate_limit_response_headers.lock().await.clone());
+    response
 }
 
 async fn handle_gamma_markets(
@@ -655,7 +660,7 @@ fn create_test_router(state: TestServerState) -> Router {
         )
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market))
-        .route("/heartbeats", post(handle_heartbeat))
+        .route("/v1/heartbeats", post(handle_heartbeat))
         .route("/markets", get(handle_gamma_markets))
         .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/events", get(handle_gamma_events))
@@ -893,14 +898,17 @@ async fn test_post_heartbeat_sends_chained_body_and_l2_headers() {
         "heartbeat_id": "heartbeat-current",
     }))
     .unwrap();
-    let expected_signature = test_credential().sign(timestamp, "POST", "/heartbeats", &body);
+    let expected_signature = test_credential().sign(timestamp, "POST", "/v1/heartbeats", &body);
 
     assert_eq!(
         response,
-        HeartbeatResponse::Acknowledged(Some("heartbeat-next".to_string()))
+        HeartbeatResponse::Acknowledged("heartbeat-next".to_string())
     );
     assert_eq!(*state.last_method.lock().await, Some(Method::POST));
-    assert_eq!(state.last_path.lock().await.as_deref(), Some("/heartbeats"));
+    assert_eq!(
+        state.last_path.lock().await.as_deref(),
+        Some("/v1/heartbeats")
+    );
     assert_eq!(
         state.last_body.lock().await.as_ref(),
         Some(&json!({
@@ -913,17 +921,25 @@ async fn test_post_heartbeat_sends_chained_body_and_l2_headers() {
     assert_eq!(headers["poly_signature"], expected_signature);
 }
 
+// The `status_ok` case is the legacy `/heartbeats` shape, which carries no ID to chain,
+// so accepting it would silently mask a wrong route.
 #[rstest]
+#[case::status_ok(json!({"status": "ok"}))]
+#[case::unknown_status(json!({"status": "rejected"}))]
+#[case::empty_id(json!({"heartbeat_id": ""}))]
 #[tokio::test]
-async fn test_post_heartbeat_accepts_status_ok_response() {
+async fn test_post_heartbeat_rejects_success_without_id(#[case] response_body: Value) {
     let state = TestServerState::default();
-    *state.heartbeat_response.lock().await = json!({"status": "ok"});
+    *state.heartbeat_response.lock().await = response_body;
     let addr = start_mock_server(state).await;
     let client = create_clob_client(&addr);
 
-    let response = client.post_heartbeat("").await.unwrap();
+    let error = client.post_heartbeat("").await.unwrap_err();
 
-    assert_eq!(response, HeartbeatResponse::Acknowledged(None));
+    assert_eq!(
+        error.to_string(),
+        "exchange error: Heartbeat acknowledgment was invalid"
+    );
 }
 
 #[rstest]
@@ -931,7 +947,10 @@ async fn test_post_heartbeat_accepts_status_ok_response() {
 async fn test_post_heartbeat_returns_replacement_id_from_bad_request() {
     let state = TestServerState::default();
     *state.heartbeat_response_status.lock().await = StatusCode::BAD_REQUEST;
-    *state.heartbeat_response.lock().await = json!({"heartbeat_id": "heartbeat-current"});
+    *state.heartbeat_response.lock().await = json!({
+        "heartbeat_id": "heartbeat-current",
+        "error_msg": "Invalid Heartbeat ID",
+    });
     let addr = start_mock_server(state).await;
     let client = create_clob_client(&addr);
 
@@ -945,18 +964,64 @@ async fn test_post_heartbeat_returns_replacement_id_from_bad_request() {
 
 #[rstest]
 #[tokio::test]
-async fn test_post_heartbeat_rejects_unknown_success_response() {
+async fn test_post_heartbeat_rate_limit_preserves_retry_after() {
     let state = TestServerState::default();
-    *state.heartbeat_response.lock().await = json!({"status": "rejected"});
+    *state.heartbeat_response_status.lock().await = StatusCode::TOO_MANY_REQUESTS;
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        HeaderName::from_static("retry-after"),
+        "1.2500001".parse().unwrap(),
+    );
+    *state.rate_limit_response_headers.lock().await = response_headers;
     let addr = start_mock_server(state).await;
     let client = create_clob_client(&addr);
 
-    let error = client.post_heartbeat("").await.unwrap_err();
+    let error = client
+        .post_heartbeat("heartbeat-current")
+        .await
+        .unwrap_err();
 
-    assert_eq!(
-        error.to_string(),
-        "exchange error: Heartbeat acknowledgment was invalid"
-    );
+    assert!(matches!(
+        error,
+        Error::RateLimit {
+            endpoint: "/v1/heartbeats",
+            token_cost: 0,
+            retry_after_ms: Some(1_251),
+        }
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against clob.polymarket.com; run with --include-ignored"]
+async fn test_live_post_heartbeat_chains_and_resynchronizes() {
+    // Sending a heartbeat arms the venue's order-safety timer for the account, and going
+    // silent afterwards can cancel resting orders, so only run this while flat.
+    let secrets = Secrets::from_env().expect("live heartbeat test requires Polymarket credentials");
+    let client =
+        PolymarketClobHttpClient::new(secrets.credential, secrets.address, None, 60).unwrap();
+
+    let first = client.post_heartbeat("").await.expect("empty ID accepted");
+    let HeartbeatResponse::Acknowledged(first_id) = first else {
+        panic!("expected acknowledgment for the empty ID, was {first:?}");
+    };
+    assert!(!first_id.is_empty());
+
+    let second = client
+        .post_heartbeat(&first_id)
+        .await
+        .expect("chained ID accepted");
+    let HeartbeatResponse::Acknowledged(second_id) = second else {
+        panic!("expected acknowledgment for the chained ID, was {second:?}");
+    };
+    assert_ne!(second_id, first_id);
+
+    let stale = client
+        .post_heartbeat("00000000-0000-0000-0000-000000000000")
+        .await
+        .expect("stale ID returns the current ID");
+
+    assert_eq!(stale, HeartbeatResponse::Resynchronize(second_id));
 }
 
 #[rstest]

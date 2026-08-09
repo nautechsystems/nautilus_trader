@@ -50,7 +50,9 @@ use crate::{
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const HEARTBEAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
-const HEARTBEAT_TRANSPORT_FAILURE_LIMIT: u32 = 2;
+const HEARTBEAT_SAFETY_TIMEOUT: Duration = Duration::from_secs(10);
+const HEARTBEAT_HEALTH_MARGIN: Duration = Duration::from_secs(1);
+const HEARTBEAT_REQUEST_FAILURE_LIMIT: u32 = 2;
 
 impl PolymarketExecutionClient {
     fn start_heartbeat_task(&mut self) {
@@ -70,7 +72,7 @@ impl PolymarketExecutionClient {
             completed.handle.abort();
         }
 
-        self.heartbeat_healthy.store(true, Ordering::Release);
+        self.heartbeat_healthy.store(false, Ordering::Release);
         let cancellation = CancellationToken::new();
 
         let handle = get_runtime().spawn(run_heartbeats(
@@ -584,10 +586,14 @@ async fn run_heartbeats(
     cancellation: CancellationToken,
     healthy: Arc<AtomicBool>,
 ) {
+    let heartbeat_health_timeout = HEARTBEAT_SAFETY_TIMEOUT
+        .checked_sub(HEARTBEAT_HEALTH_MARGIN)
+        .expect("heartbeat health margin should be shorter than the safety timeout");
     let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut heartbeat_id = String::new();
-    let mut transport_failures = 0;
+    let mut request_failures = 0;
+    let mut last_acknowledged = None;
 
     loop {
         tokio::select! {
@@ -598,20 +604,47 @@ async fn run_heartbeats(
         let mut resynchronized = false;
 
         loop {
+            let now = tokio::time::Instant::now();
+            let request_timeout = now
+                .checked_add(HEARTBEAT_REQUEST_TIMEOUT)
+                .expect("heartbeat request timeout should fit in an instant");
+            let health_deadline = last_acknowledged.map(|acknowledged: tokio::time::Instant| {
+                acknowledged
+                    .checked_add(heartbeat_health_timeout)
+                    .expect("heartbeat health timeout should fit in an instant")
+            });
+
+            if health_deadline.is_some_and(|deadline| deadline <= now) {
+                log::error!("Polymarket heartbeat health deadline elapsed");
+                healthy.store(false, Ordering::Release);
+                return;
+            }
+            let request_deadline =
+                health_deadline.map_or(request_timeout, |deadline| deadline.min(request_timeout));
             let response = tokio::select! {
                 () = cancellation.cancelled() => return,
-                response = tokio::time::timeout(
-                    HEARTBEAT_REQUEST_TIMEOUT,
+                response = tokio::time::timeout_at(
+                    request_deadline,
                     http_client.post_heartbeat(&heartbeat_id),
                 ) => response.unwrap_or(Err(HttpError::Timeout)),
             };
 
             match response {
                 Ok(HeartbeatResponse::Acknowledged(next_id)) => {
-                    if let Some(next_id) = next_id {
-                        heartbeat_id = next_id;
+                    let acknowledged = tokio::time::Instant::now();
+                    if health_deadline.is_some_and(|deadline| acknowledged >= deadline) {
+                        log::error!(
+                            "Polymarket heartbeat was acknowledged after the health deadline"
+                        );
+                        healthy.store(false, Ordering::Release);
+                        return;
                     }
-                    transport_failures = 0;
+
+                    heartbeat_id = next_id;
+                    request_failures = 0;
+                    last_acknowledged = Some(acknowledged);
+                    healthy.store(true, Ordering::Release);
+                    interval.reset_after(HEARTBEAT_INTERVAL);
                     break;
                 }
                 Ok(HeartbeatResponse::Resynchronize(next_id)) if !resynchronized => {
@@ -624,19 +657,49 @@ async fn run_heartbeats(
                     return;
                 }
                 Err(e) if e.is_retryable() => {
-                    transport_failures += 1;
-                    if transport_failures >= HEARTBEAT_TRANSPORT_FAILURE_LIMIT {
+                    request_failures += 1;
+                    if request_failures >= HEARTBEAT_REQUEST_FAILURE_LIMIT {
                         log::error!(
-                            "Polymarket heartbeat failed after {transport_failures} consecutive transport attempts"
+                            "Polymarket heartbeat failed after {request_failures} consecutive request attempts"
+                        );
+                        healthy.store(false, Ordering::Release);
+                        return;
+                    }
+
+                    let Some(retry_after) = e.retry_after() else {
+                        log::warn!(
+                            "Polymarket heartbeat request attempt {request_failures} failed"
+                        );
+                        continue;
+                    };
+                    let now = tokio::time::Instant::now();
+                    let Some(retry_at) = now.checked_add(retry_after) else {
+                        log::error!(
+                            "Polymarket heartbeat retry delay exceeded the safety deadline"
+                        );
+                        healthy.store(false, Ordering::Release);
+                        return;
+                    };
+
+                    if health_deadline.is_some_and(|deadline| retry_at >= deadline) {
+                        log::error!(
+                            "Polymarket heartbeat retry delay exceeded the health deadline"
                         );
                         healthy.store(false, Ordering::Release);
                         return;
                     }
 
                     log::warn!(
-                        "Polymarket heartbeat transport attempt {transport_failures} failed"
+                        "Polymarket heartbeat request attempt {request_failures} was rate limited; retrying after {retry_after:?}"
                     );
-                    break;
+                    tokio::select! {
+                        () = cancellation.cancelled() => return,
+                        () = tokio::time::sleep_until(retry_at) => {}
+                    }
+
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
                 }
                 Err(HttpError::Auth(_)) => {
                     log::error!("Polymarket heartbeat authentication failed");
