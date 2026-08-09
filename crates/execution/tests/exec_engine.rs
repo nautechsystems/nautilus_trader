@@ -2441,7 +2441,26 @@ fn test_process_leg_fill_without_order_updates_position_and_publishes_order_befo
     );
     drop(position);
     drop(cache);
-    assert!(execution_engine.cache().borrow_mut().check_integrity());
+    let mut cache = execution_engine.cache().borrow_mut();
+    assert!(cache.check_integrity());
+
+    cache.clear_index();
+    cache.build_index();
+    let instrument_id = instrument.id();
+    assert!(cache.position(&expected_position_id).is_some());
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.position_id(&client_order_id), None);
+    assert_eq!(
+        cache.positions_open_count(
+            Some(&instrument_id.venue),
+            Some(&instrument_id),
+            Some(&strategy_id),
+            None,
+            None,
+        ),
+        1,
+    );
+    assert!(cache.check_integrity());
 }
 
 #[rstest]
@@ -2483,6 +2502,59 @@ fn test_process_duplicate_leg_fill_without_order_does_not_reapply_position(
         1,
         "duplicate leg fill must not re-apply portfolio economics"
     );
+}
+
+#[rstest]
+fn test_hedging_leg_fill_without_order_reuses_position_for_same_synthetic_leg(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (_instrument, fill, _) = prepare_leg_fill_without_order(&execution_engine);
+    let strategy_id = fill.strategy_id;
+    let client_order_id = fill.client_order_id;
+    execution_engine.register_oms_type(strategy_id, OmsType::Hedging);
+
+    execution_engine.process(&OrderEventAny::Filled(fill.clone()));
+    let position_id = {
+        let cache = execution_engine.cache().borrow();
+        let positions = cache.positions_open(
+            Some(&fill.instrument_id.venue),
+            Some(&fill.instrument_id),
+            Some(&strategy_id),
+            Some(&fill.account_id),
+            None,
+        );
+
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].opening_order_id, client_order_id);
+        assert_eq!(positions[0].quantity, Quantity::from(1));
+        assert!(!cache.order_exists(&client_order_id));
+        assert_eq!(cache.position_id(&client_order_id), None);
+        positions[0].id
+    };
+
+    let mut second_fill = fill.clone();
+    second_fill.trade_id = TradeId::new("T-LEG-002");
+    second_fill.venue_order_id = VenueOrderId::from("V-SPREAD-LEG-2");
+    second_fill.position_id = None;
+    execution_engine.process(&OrderEventAny::Filled(second_fill.clone()));
+
+    let mut cache = execution_engine.cache().borrow_mut();
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 1);
+    {
+        let position = cache
+            .position(&position_id)
+            .expect("second leg fill should update the first HEDGING position");
+        assert_eq!(position.quantity, Quantity::from(2));
+        assert_eq!(position.event_count(), 2);
+        assert!(position.trade_ids.contains(&fill.trade_id));
+        assert!(position.trade_ids.contains(&second_fill.trade_id));
+        assert_eq!(position.opening_order_id, client_order_id);
+    }
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.position_id(&client_order_id), None);
+    assert!(cache.check_integrity());
 }
 
 #[rstest]

@@ -1192,8 +1192,12 @@ pub fn apply_cache_replay_entry(
                 ));
             }
             let event = OrderEventAny::Filled(fill.clone());
-            apply_result(entry, cache.update_order(&event))?;
-            if !apply_fill_to_position(cache, entry, &fill)? {
+            let orderless_leg_fill = is_orderless_leg_fill(cache, &fill);
+            if !orderless_leg_fill {
+                apply_result(entry, cache.update_order(&event))?;
+            }
+
+            if !apply_fill_to_position(cache, entry, &fill, orderless_leg_fill)? {
                 return Ok(false);
             }
         }
@@ -1302,6 +1306,7 @@ fn apply_fill_to_position(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     fill: &OrderFilled,
+    orderless_leg_fill: bool,
 ) -> Result<bool, CacheReplayError> {
     let Some(position_id) = fill.position_id else {
         return Ok(true);
@@ -1330,8 +1335,32 @@ fn apply_fill_to_position(
     };
 
     let position = Position::new(&instrument, fill.clone());
-    apply_result(entry, cache.add_position(&position, OmsType::Unspecified))?;
+
+    if orderless_leg_fill {
+        apply_result(
+            entry,
+            cache.add_position_without_order(&position, OmsType::Unspecified),
+        )?;
+    } else {
+        apply_result(entry, cache.add_position(&position, OmsType::Unspecified))?;
+    }
     Ok(true)
+}
+
+fn is_orderless_leg_fill(cache: &Cache, fill: &OrderFilled) -> bool {
+    if !fill.client_order_id.as_str().contains("-LEG-")
+        && !fill.venue_order_id.as_str().contains("-LEG-")
+    {
+        return false;
+    }
+
+    let is_non_spread_instrument = cache
+        .instrument(&fill.instrument_id)
+        .is_none_or(|instrument| !instrument.is_spread());
+
+    is_non_spread_instrument
+        && !cache.order_exists(&fill.client_order_id)
+        && cache.client_order_id(&fill.venue_order_id).is_none()
 }
 
 fn apply_fill_void_to_order_and_positions(
@@ -2229,6 +2258,11 @@ mod tests {
         ),
         cache_mutation(
             "add_position",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
+            "add_position_without_order",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ORDER_FILLED],
         ),
@@ -3447,6 +3481,44 @@ mod tests {
     }
 
     #[rstest]
+    fn orderless_leg_fill_replay_creates_position_without_order_mapping() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let client_order_id = ClientOrderId::from("SPREAD-LEG-AUDUSD");
+        let position_id = PositionId::from("P-ORDERLESS-LEG");
+        let filled = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-AUDUSD"))
+            .position_id(position_id)
+            .commission(Money::from("1 USD"))
+            .build();
+        let reader = reader_with_entries(
+            "run-orderless-leg-fill-replay",
+            &[append_order_event(
+                1,
+                &OrderEventAny::Filled(filled.clone()),
+            )],
+        );
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).expect("add instrument");
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+        let position = cache
+            .position_owned(&position_id)
+            .expect("orderless leg position replayed");
+
+        assert_eq!(report.applied_entries, 1);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(cache.order_owned(&client_order_id).is_none());
+        assert_eq!(cache.position_id(&client_order_id), None);
+        assert_eq!(position.event_count(), 1);
+        assert_eq!(position.last_event(), Some(filled.clone()));
+        assert_eq!(position.trade_ids(), vec![filled.trade_id]);
+        assert_eq!(position.commissions(), vec![Money::from("1 USD")]);
+        assert!(cache.check_integrity());
+    }
+
+    #[rstest]
     fn order_fill_replay_without_instrument_counts_fill_as_ignored() {
         // The position side cannot open without the instrument; the fill must count
         // as ignored rather than claim a full apply.
@@ -3829,7 +3901,7 @@ mod tests {
             .add_position(&position, OmsType::Unspecified)
             .expect("seed position");
 
-        let applied = apply_fill_to_position(&mut cache, &entry, &fill).expect("apply fill");
+        let applied = apply_fill_to_position(&mut cache, &entry, &fill, false).expect("apply fill");
         let position = cache
             .position_owned(&position_id)
             .expect("position updated");
@@ -3880,7 +3952,7 @@ mod tests {
             .add_position(&position, OmsType::Unspecified)
             .expect("seed position");
 
-        let applied = apply_fill_to_position(&mut cache, &entry, &dup_fill).expect("apply");
+        let applied = apply_fill_to_position(&mut cache, &entry, &dup_fill, false).expect("apply");
         let position = cache
             .position_owned(&position_id)
             .expect("position updated");
@@ -3906,7 +3978,7 @@ mod tests {
         let entry = append_order_event(1, &OrderEventAny::Filled(fill.clone())).entry;
         let mut cache = Cache::default();
 
-        let applied = apply_fill_to_position(&mut cache, &entry, &fill).expect("apply");
+        let applied = apply_fill_to_position(&mut cache, &entry, &fill, false).expect("apply");
 
         assert!(
             !applied,

@@ -2667,6 +2667,7 @@ impl Cache {
                 .entry(strategy_id)
                 .or_default()
                 .insert(*position_id);
+            self.index.strategy_orders.entry(strategy_id).or_default();
 
             // 6: Build index.account_positions -> {AccountId, {PositionId}}
             self.index
@@ -4764,6 +4765,11 @@ impl Cache {
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
         self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
+        self.index.strategies.insert(position.strategy_id);
+        self.index
+            .strategy_orders
+            .entry(position.strategy_id)
+            .or_default();
 
         log::debug!("Adding {position}");
 

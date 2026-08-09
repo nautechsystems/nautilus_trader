@@ -2782,11 +2782,51 @@ impl ExecutionEngine {
         }
 
         match oms_type {
-            OmsType::Hedging => fill
-                .position_id
+            OmsType::Hedging => self
+                .orderless_hedging_leg_position_id(fill)
+                .or(fill.position_id)
                 .unwrap_or_else(|| self.pos_id_generator.generate(fill.strategy_id, false)),
             OmsType::Netting => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill),
+        }
+    }
+
+    fn orderless_hedging_leg_position_id(&self, fill: &OrderFilled) -> Option<PositionId> {
+        if !self.is_leg_fill(fill) {
+            return None;
+        }
+
+        let cache = self.cache.borrow();
+        if cache.order_exists(&fill.client_order_id()) {
+            return None;
+        }
+
+        let matching_positions: Vec<PositionId> = cache
+            .positions(
+                Some(&fill.instrument_id.venue),
+                Some(&fill.instrument_id),
+                Some(&fill.strategy_id),
+                Some(&fill.account_id),
+                None,
+            )
+            .iter()
+            .filter(|position| position.opening_order_id == fill.client_order_id)
+            .map(|position| position.id)
+            .collect();
+
+        match matching_positions.as_slice() {
+            [position_id] => Some(*position_id),
+            [] => None,
+            _ => {
+                log::warn!(
+                    "Cannot uniquely correlate HEDGING leg fill {} to an orderless position: \
+                     found {} positions with opening_order_id={}",
+                    fill.trade_id,
+                    matching_positions.len(),
+                    fill.client_order_id,
+                );
+                None
+            }
         }
     }
 

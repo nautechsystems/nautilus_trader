@@ -477,6 +477,63 @@ fn test_build_index_restores_bidirectional_venue_order_id_lookup(
 }
 
 #[rstest]
+fn test_build_index_preserves_orderless_position_strategy_bucket(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    let strategy_id = order.strategy_id();
+    let position_id = PositionId::new("P-ORDERLESS-BUILD-INDEX");
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-ORDERLESS-BUILD-INDEX")),
+        Some(position_id),
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+
+    cache
+        .add_position_without_order(&position, OmsType::Netting)
+        .unwrap();
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.position_id(&client_order_id), None);
+    assert!(
+        cache
+            .index
+            .strategy_orders
+            .get(&strategy_id)
+            .is_some_and(|orders| orders.is_empty())
+    );
+    assert!(cache.check_integrity());
+
+    cache.clear_index();
+    cache.build_index();
+
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.position_id(&client_order_id), None);
+    assert!(
+        cache
+            .index
+            .strategy_orders
+            .get(&strategy_id)
+            .is_some_and(|orders| orders.is_empty())
+    );
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_oms_type_returns_actual_position_oms(mut cache: Cache) {
     let position = snapshot_test_position();
     let position_id = position.id;
