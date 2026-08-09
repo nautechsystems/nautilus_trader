@@ -6305,6 +6305,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bon",
+ "bytes",
  "criterion",
  "futures",
  "indexmap 2.14.0",

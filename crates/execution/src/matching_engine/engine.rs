@@ -133,6 +133,9 @@ pub struct OrderMatchingEngine {
     pending_resolution: bool,
     settlement_price: Option<Price>,
     expiration_processed: bool,
+    option_settlement_failed: bool,
+    option_settlement_warning: Option<&'static str>,
+    option_expiration_orders_canceled: bool,
 }
 
 impl Debug for OrderMatchingEngine {
@@ -142,6 +145,17 @@ impl Debug for OrderMatchingEngine {
             .field("instrument", &self.instrument.id())
             .finish()
     }
+}
+
+struct OptionSettlementLeg {
+    order: OrderAny,
+    venue_order_id: VenueOrderId,
+    position_id: Option<PositionId>,
+    fill: OrderFilled,
+}
+
+struct OptionSettlementPlan {
+    legs: Vec<OptionSettlementLeg>,
 }
 
 impl OrderMatchingEngine {
@@ -219,6 +233,9 @@ impl OrderMatchingEngine {
             pending_resolution: false,
             settlement_price: None,
             expiration_processed: false,
+            option_settlement_failed: false,
+            option_settlement_warning: None,
+            option_expiration_orders_canceled: false,
         }
     }
 
@@ -276,9 +293,13 @@ impl OrderMatchingEngine {
         self.last_bar_ask = None;
         self.precision_mismatch_streak = 0;
         self.instrument_close = None;
+        self.market_status = MarketStatus::Open;
         self.pending_resolution = false;
         self.settlement_price = None;
         self.expiration_processed = false;
+        self.option_settlement_failed = false;
+        self.option_settlement_warning = None;
+        self.option_expiration_orders_canceled = false;
         self.fill_at_market = true;
         self.ids_generator.reset();
 
@@ -2341,7 +2362,7 @@ impl OrderMatchingEngine {
     }
 
     fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
-        if self.expiration_processed {
+        if self.expiration_processed || self.option_settlement_failed {
             return;
         }
 
@@ -2362,19 +2383,43 @@ impl OrderMatchingEngine {
             return;
         }
 
+        if matches!(
+            self.instrument,
+            InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
+        ) {
+            // `iterate` matches resting orders ahead of this check, so enter
+            // pending resolution at the first trigger. Latched because a queueing
+            // handler leaves the cached status behind the cancellation dispatch.
+            if !self.option_expiration_orders_canceled {
+                self.option_expiration_orders_canceled = true;
+                self.enter_pending_resolution();
+            }
+
+            match self.process_option_expiry(timestamp_ns) {
+                Ok(true) => {
+                    self.expiration_processed = true;
+                    self.pending_resolution = false;
+                    self.instrument_close.take();
+                    self.option_settlement_warning = None;
+                    log::info!("{} reached expiration", self.instrument.id());
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    self.option_settlement_failed = true;
+                    log::error!(
+                        "Option settlement failed terminally for {}: {e}",
+                        self.instrument.id()
+                    );
+                }
+            }
+            return;
+        }
+
         self.expiration_processed = true;
         self.pending_resolution = false;
         let close = self.instrument_close.take();
         log::info!("{} reached expiration", self.instrument.id());
         self.cancel_open_orders_for_expiration();
-
-        if matches!(
-            self.instrument,
-            InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
-        ) {
-            self.process_option_expiry(timestamp_ns);
-            return;
-        }
 
         let instrument_id = self.instrument.id();
         let positions: Vec<(TraderId, StrategyId, PositionId, OrderSide, Quantity)> = {
@@ -2462,7 +2507,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_option_expiry(&mut self, ts_now: UnixNanos) {
+    fn process_option_expiry(&mut self, ts_now: UnixNanos) -> anyhow::Result<bool> {
         let instrument_id = self.instrument.id();
 
         let positions: Vec<Position> = {
@@ -2475,14 +2520,16 @@ impl OrderMatchingEngine {
         };
 
         if positions.is_empty() {
-            return;
+            return Ok(true);
         }
 
         let underlying = match self.instrument.underlying() {
             Some(u) => u,
             None => {
-                log::error!("No underlying for option {instrument_id}");
-                return;
+                return Ok(self.option_settlement_retry(
+                    "missing-underlying",
+                    &format!("No underlying for option {instrument_id}"),
+                ));
             }
         };
         let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
@@ -2495,8 +2542,10 @@ impl OrderMatchingEngine {
         let underlying_instrument = match underlying_instrument {
             Some(u) => u,
             None => {
-                log::error!("No underlying instrument for option {instrument_id}");
-                return;
+                return Ok(self.option_settlement_retry(
+                    "missing-underlying-instrument",
+                    &format!("No underlying instrument for option {instrument_id}"),
+                ));
             }
         };
 
@@ -2516,30 +2565,106 @@ impl OrderMatchingEngine {
         let underlying_price = match underlying_price {
             Some(p) => p,
             None => {
-                log::error!("No underlying price for option {instrument_id}");
-                return;
+                return Ok(self.option_settlement_retry(
+                    "missing-underlying-price",
+                    &format!("No underlying price for option {instrument_id}"),
+                ));
             }
         };
 
         let custom_option_price = self.settlement_price;
         let should_exercise = self.option_should_exercise(underlying_price);
 
-        for position in positions {
-            self.account_ids
-                .insert(position.trader_id, position.account_id);
+        let plan = self.option_create_settlement_plan(
+            &positions,
+            &underlying_instrument,
+            underlying_price,
+            should_exercise,
+            ts_now,
+            custom_option_price,
+        );
+        self.option_apply_settlement_plan(plan)?;
+        Ok(true)
+    }
 
+    fn option_settlement_retry(&mut self, reason: &'static str, message: &str) -> bool {
+        if self.option_settlement_warning != Some(reason) {
+            log::warn!("{message}; settlement will retry");
+            self.option_settlement_warning = Some(reason);
+        }
+        false
+    }
+
+    fn option_create_settlement_plan(
+        &self,
+        positions: &[Position],
+        underlying_instrument: &InstrumentAny,
+        underlying_price: Price,
+        should_exercise: bool,
+        ts_now: UnixNanos,
+        custom_option_price: Option<Price>,
+    ) -> OptionSettlementPlan {
+        let mut legs = Vec::new();
+
+        for position in positions {
             if should_exercise {
-                self.option_exercise_position(
-                    &position,
-                    &underlying_instrument,
+                self.option_plan_exercise_position(
+                    &mut legs,
+                    position,
+                    underlying_instrument,
                     underlying_price,
                     ts_now,
                     custom_option_price,
                 );
             } else {
-                self.option_otm_expiry(&position, ts_now, custom_option_price);
+                legs.push(self.option_plan_otm_expiry(position, ts_now, custom_option_price));
             }
         }
+        OptionSettlementPlan { legs }
+    }
+
+    fn option_register_settlement_plan(&self, plan: &OptionSettlementPlan) -> anyhow::Result<()> {
+        for leg in &plan.legs {
+            let client_order_id = leg.order.client_order_id();
+            let mut cache = self.cache.borrow_mut();
+            cache
+                .add_order(leg.order.clone(), leg.position_id, None, false)
+                .map_err(|e| {
+                    anyhow::anyhow!("cannot add settlement order {client_order_id}: {e}")
+                })?;
+            cache
+                .add_venue_order_id(&client_order_id, &leg.venue_order_id, false)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "cannot claim venue order ID {} for settlement order {client_order_id}: {e}",
+                        leg.venue_order_id
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    fn option_apply_settlement_plan(&mut self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
+        self.option_register_settlement_plan(&plan)?;
+
+        for leg in &plan.legs {
+            self.account_ids
+                .insert(leg.fill.trader_id, leg.fill.account_id);
+        }
+
+        for leg in &plan.legs {
+            self.publish_order_initialized(&leg.order);
+        }
+
+        for leg in &plan.legs {
+            self.generate_order_accepted(&leg.order, leg.venue_order_id);
+        }
+
+        for leg in plan.legs {
+            self.dispatch_order_event(OrderEventAny::Filled(leg.fill));
+        }
+
+        Ok(())
     }
 
     fn option_should_exercise(&self, underlying_price: Price) -> bool {
@@ -2573,8 +2698,9 @@ impl OrderMatchingEngine {
         Price::from_decimal_dp(value, strike.precision).expect("Invalid option settlement price")
     }
 
-    fn option_exercise_position(
+    fn option_plan_exercise_position(
         &self,
+        legs: &mut Vec<OptionSettlementLeg>,
         position: &Position,
         underlying_instrument: &InstrumentAny,
         underlying_price: Price,
@@ -2582,53 +2708,70 @@ impl OrderMatchingEngine {
         custom_option_price: Option<Price>,
     ) {
         if matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)) {
-            self.option_cash_settlement(position, underlying_price, ts_now, custom_option_price);
+            legs.push(self.option_plan_cash_settlement(
+                position,
+                underlying_price,
+                ts_now,
+                custom_option_price,
+            ));
         } else {
-            self.option_physical_settlement(
+            legs.extend(self.option_plan_physical_settlement(
                 position,
                 underlying_instrument,
                 underlying_price,
                 ts_now,
                 custom_option_price,
-            );
+            ));
         }
     }
 
-    fn option_cash_settlement(
+    fn option_plan_cash_settlement(
         &self,
         position: &Position,
         underlying_price: Price,
         ts_now: UnixNanos,
         custom_option_price: Option<Price>,
-    ) {
+    ) -> OptionSettlementLeg {
         let venue = self.venue;
-        let trade_id = format!("{venue}-LEG-CASH-{}", &UUID4::new().to_string()[..8]);
+        let client_order_id = ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let venue_order_id = VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let trade_id = TradeId::from(UUID4::new().to_string());
         let close_px = custom_option_price
             .unwrap_or_else(|| self.option_settlement_price(underlying_price, true));
         let close_side = OrderCore::closing_side(position.side);
-        self.option_register_settlement_order(
+        let order = self.option_create_settlement_order(
             position,
             self.instrument.id(),
             close_side,
             position.quantity,
-            ClientOrderId::from(trade_id.as_str()),
-            VenueOrderId::from(trade_id.as_str()),
-            Some(position.id),
+            client_order_id,
             true,
             &format!("EXPIRATION_{venue}_CASH"),
         );
-        let fill = self.option_create_close_fill(position, close_px, &trade_id, ts_now);
-        self.dispatch_order_event(OrderEventAny::Filled(fill));
+        let fill = self.option_create_close_fill(
+            position,
+            close_px,
+            client_order_id,
+            venue_order_id,
+            trade_id,
+            ts_now,
+        );
+        OptionSettlementLeg {
+            order,
+            venue_order_id,
+            position_id: Some(position.id),
+            fill,
+        }
     }
 
-    fn option_physical_settlement(
+    fn option_plan_physical_settlement(
         &self,
         position: &Position,
         underlying_instrument: &InstrumentAny,
         underlying_price: Price,
         ts_now: UnixNanos,
         custom_option_price: Option<Price>,
-    ) {
+    ) -> [OptionSettlementLeg; 2] {
         let multiplier = self.instrument.multiplier();
         let underlying_qty = Quantity::from_decimal_dp(
             position.quantity.as_decimal() * multiplier.as_decimal(),
@@ -2647,9 +2790,16 @@ impl OrderMatchingEngine {
         };
 
         let venue = self.venue;
-        let trade_base = format!("{venue}-LEG-EX-{}", &UUID4::new().to_string()[..8]);
-        let close_trade_id = format!("{trade_base}-CLOSE");
-        let open_trade_id = format!("{trade_base}-OPEN");
+        let close_client_order_id =
+            ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let close_venue_order_id =
+            VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let close_trade_id = TradeId::from(UUID4::new().to_string());
+        let open_client_order_id =
+            ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let open_venue_order_id =
+            VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let open_trade_id = TradeId::from(UUID4::new().to_string());
         let settlement_px = self.option_settlement_price(underlying_price, false);
         let option_close_px =
             custom_option_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
@@ -2659,85 +2809,111 @@ impl OrderMatchingEngine {
             _ => OrderSide::Sell,
         };
 
-        self.option_register_settlement_order(
+        let close_order = self.option_create_settlement_order(
             position,
             self.instrument.id(),
             close_side,
             position.quantity,
-            ClientOrderId::from(close_trade_id.as_str()),
-            VenueOrderId::from(close_trade_id.as_str()),
-            Some(position.id),
+            close_client_order_id,
             true,
             &format!("EXPIRATION_{venue}_PHYSICAL_CLOSE"),
         );
-        self.option_register_settlement_order(
+        let open_order = self.option_create_settlement_order(
             position,
             underlying_instrument.id(),
             underlying_order_side,
             underlying_qty,
-            ClientOrderId::from(open_trade_id.as_str()),
-            VenueOrderId::from(open_trade_id.as_str()),
-            None,
+            open_client_order_id,
             false,
             &format!("EXPIRATION_{venue}_PHYSICAL_OPEN"),
         );
 
-        let option_fill =
-            self.option_create_close_fill(position, option_close_px, &close_trade_id, ts_now);
+        let option_fill = self.option_create_close_fill(
+            position,
+            option_close_px,
+            close_client_order_id,
+            close_venue_order_id,
+            close_trade_id,
+            ts_now,
+        );
         let underlying_fill = self.option_create_underlying_fill(
             position,
             underlying_instrument,
             underlying_qty,
             underlying_side,
             settlement_px,
-            &open_trade_id,
+            open_client_order_id,
+            open_venue_order_id,
+            open_trade_id,
             ts_now,
         );
-        self.dispatch_order_event(OrderEventAny::Filled(option_fill));
-        self.dispatch_order_event(OrderEventAny::Filled(underlying_fill));
+        [
+            OptionSettlementLeg {
+                order: close_order,
+                venue_order_id: close_venue_order_id,
+                position_id: Some(position.id),
+                fill: option_fill,
+            },
+            OptionSettlementLeg {
+                order: open_order,
+                venue_order_id: open_venue_order_id,
+                position_id: None,
+                fill: underlying_fill,
+            },
+        ]
     }
 
-    fn option_otm_expiry(
+    fn option_plan_otm_expiry(
         &self,
         position: &Position,
         ts_now: UnixNanos,
         custom_option_price: Option<Price>,
-    ) {
+    ) -> OptionSettlementLeg {
         let venue = self.venue;
-        let trade_id = format!("{venue}-LEG-OTM-{}", &UUID4::new().to_string()[..8]);
+        let client_order_id = ClientOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let venue_order_id = VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
+        let trade_id = TradeId::from(UUID4::new().to_string());
         let close_px =
             custom_option_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
         let close_side = OrderCore::closing_side(position.side);
-        self.option_register_settlement_order(
+        let order = self.option_create_settlement_order(
             position,
             self.instrument.id(),
             close_side,
             position.quantity,
-            ClientOrderId::from(trade_id.as_str()),
-            VenueOrderId::from(trade_id.as_str()),
-            Some(position.id),
+            client_order_id,
             true,
             &format!("EXPIRATION_{venue}_OTM"),
         );
-        let fill = self.option_create_close_fill(position, close_px, &trade_id, ts_now);
-        self.dispatch_order_event(OrderEventAny::Filled(fill));
+        let fill = self.option_create_close_fill(
+            position,
+            close_px,
+            client_order_id,
+            venue_order_id,
+            trade_id,
+            ts_now,
+        );
+        OptionSettlementLeg {
+            order,
+            venue_order_id,
+            position_id: Some(position.id),
+            fill,
+        }
     }
 
     #[expect(clippy::too_many_arguments)]
-    fn option_register_settlement_order(
+    fn option_create_settlement_order(
         &self,
         position: &Position,
         instrument_id: InstrumentId,
         order_side: OrderSide,
         quantity: Quantity,
         client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
-        position_id: Option<PositionId>,
         reduce_only: bool,
         tag: &str,
-    ) {
+    ) -> OrderAny {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let order = OrderAny::Market(MarketOrder::new(
+        OrderAny::Market(MarketOrder::new(
             position.trader_id,
             position.strategy_id,
             instrument_id,
@@ -2757,30 +2933,16 @@ impl OrderMatchingEngine {
             None,
             None,
             Some(vec![Ustr::from(tag)]),
-        ));
-
-        {
-            let mut cache = self.cache.borrow_mut();
-            if let Err(e) = cache.add_order(order.clone(), position_id, None, false) {
-                log::debug!("Settlement order already in cache: {e}");
-            } else {
-                drop(cache);
-                self.publish_order_initialized(&order);
-                self.cache
-                    .borrow_mut()
-                    .add_venue_order_id(&client_order_id, &venue_order_id, false)
-                    .ok();
-            }
-        }
-
-        self.generate_order_accepted(&order, venue_order_id);
+        ))
     }
 
     fn option_create_close_fill(
         &self,
         position: &Position,
         price: Price,
-        trade_id_str: &str,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        trade_id: TradeId,
         ts_now: UnixNanos,
     ) -> OrderFilled {
         let close_side = OrderCore::closing_side(position.side);
@@ -2788,10 +2950,10 @@ impl OrderMatchingEngine {
             position.trader_id,
             position.strategy_id,
             self.instrument.id(),
-            ClientOrderId::from(trade_id_str),
-            VenueOrderId::from(trade_id_str),
+            client_order_id,
+            venue_order_id,
             position.account_id,
-            TradeId::from(trade_id_str),
+            trade_id,
             close_side,
             OrderType::Market,
             position.quantity,
@@ -2816,7 +2978,9 @@ impl OrderMatchingEngine {
         quantity: Quantity,
         side: PositionSide,
         price: Price,
-        trade_id_str: &str,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        trade_id: TradeId,
         ts_now: UnixNanos,
     ) -> OrderFilled {
         let order_side = match side {
@@ -2827,10 +2991,10 @@ impl OrderMatchingEngine {
             position.trader_id,
             position.strategy_id,
             underlying_instrument.id(),
-            ClientOrderId::from(trade_id_str),
-            VenueOrderId::from(trade_id_str),
+            client_order_id,
+            venue_order_id,
             position.account_id,
-            TradeId::from(trade_id_str),
+            trade_id,
             order_side,
             OrderType::Market,
             quantity,
