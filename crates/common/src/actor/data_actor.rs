@@ -900,7 +900,6 @@ pub trait DataActor: Component {
 
         if let Err(e) = self.core().handle_indicators_for_quote(quote) {
             log_error(&e);
-            return;
         }
 
         if self.not_running() {
@@ -922,7 +921,6 @@ pub trait DataActor: Component {
 
         if let Err(e) = self.core().handle_indicators_for_trade(trade) {
             log_error(&e);
-            return;
         }
 
         if self.not_running() {
@@ -944,7 +942,6 @@ pub trait DataActor: Component {
 
         if let Err(e) = self.core().handle_indicators_for_bar(bar) {
             log_error(&e);
-            return;
         }
 
         if self.not_running() {
@@ -1228,7 +1225,6 @@ pub trait DataActor: Component {
 
         if let Err(e) = self.core().handle_indicators_for_quotes(&resp.data) {
             log_error(&e);
-            return;
         }
 
         if let Err(e) = self.on_historical_quotes(&resp.data) {
@@ -1246,7 +1242,6 @@ pub trait DataActor: Component {
 
         if let Err(e) = self.core().handle_indicators_for_trades(&resp.data) {
             log_error(&e);
-            return;
         }
 
         if let Err(e) = self.on_historical_trades(&resp.data) {
@@ -1264,7 +1259,6 @@ pub trait DataActor: Component {
 
         if let Err(e) = self.core().handle_indicators_for_bars(&resp.data) {
             log_error(&e);
-            return;
         }
 
         if let Err(e) = self.on_historical_bars(&resp.data) {

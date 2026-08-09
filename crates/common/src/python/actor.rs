@@ -4386,7 +4386,7 @@ class IndicatorEventActor:
     }
 
     #[rstest]
-    fn test_indicator_error_prevents_actor_callback(
+    fn test_indicator_error_does_not_prevent_actor_callback(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
@@ -4410,7 +4410,9 @@ class IndicatorEventActor:
             DataActor::handle_quote(rust_actor.inner_mut(), &quote);
             let events = events.extract::<Vec<String>>().unwrap();
 
-            assert!(events.is_empty());
+            // A failing indicator no longer suppresses delivery of the quote the
+            // actor subscribed to; the error is logged and `on_quote` still runs.
+            assert_eq!(events, vec!["actor:quote".to_string()]);
         });
     }
 

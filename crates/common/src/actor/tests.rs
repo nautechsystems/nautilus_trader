@@ -19,7 +19,10 @@ use std::{
     num::NonZeroUsize,
     rc::Rc,
     str::FromStr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -68,7 +71,10 @@ use {
     },
 };
 
-use super::{Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig};
+use super::{
+    Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig,
+    indicators::ActorIndicator,
+};
 #[cfg(feature = "defi")]
 use crate::defi::switchboard::{
     get_defi_blocks_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
@@ -180,6 +186,47 @@ struct TestDataActor {
     pub received_pool_swaps: Vec<PoolSwap>,
     #[cfg(feature = "defi")]
     pub received_pool_liquidity_updates: Vec<PoolLiquidityUpdate>,
+}
+
+#[derive(Debug)]
+struct FailingIndicator {
+    key: usize,
+}
+
+impl FailingIndicator {
+    fn new() -> Self {
+        static NEXT_KEY: AtomicUsize = AtomicUsize::new(1);
+
+        Self {
+            key: NEXT_KEY.fetch_add(1, Ordering::Relaxed),
+        }
+    }
+}
+
+impl ActorIndicator for FailingIndicator {
+    fn key(&self) -> usize {
+        self.key
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn initialized(&self) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+
+    fn handle_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        anyhow::bail!("indicator failed");
+    }
+
+    fn handle_trade(&self, _trade: &TradeTick) -> anyhow::Result<()> {
+        anyhow::bail!("indicator failed");
+    }
+
+    fn handle_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        anyhow::bail!("indicator failed");
+    }
 }
 
 #[derive(Debug)]
@@ -505,6 +552,134 @@ fn register_data_actor(
 
     register_actor(actor);
     actor_id.inner()
+}
+
+#[rstest]
+fn test_quote_handler_runs_after_indicator_error(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let quote = QuoteTick::default();
+    actor.register(trader_id, clock, cache).unwrap();
+    actor.start().unwrap();
+    actor
+        .core_mut()
+        .register_indicator_for_quote_ticks(quote.instrument_id, Rc::new(FailingIndicator::new()));
+
+    DataActor::handle_quote(&mut actor, &quote);
+
+    assert_eq!(actor.received_quotes, vec![quote]);
+}
+
+#[rstest]
+fn test_trade_handler_runs_after_indicator_error(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let trade = TradeTick::default();
+    actor.register(trader_id, clock, cache).unwrap();
+    actor.start().unwrap();
+    actor
+        .core_mut()
+        .register_indicator_for_trade_ticks(trade.instrument_id, Rc::new(FailingIndicator::new()));
+
+    DataActor::handle_trade(&mut actor, &trade);
+
+    assert_eq!(actor.received_trades, vec![trade]);
+}
+
+#[rstest]
+fn test_bar_handler_runs_after_indicator_error(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let bar = Bar::default();
+    actor.register(trader_id, clock, cache).unwrap();
+    actor.start().unwrap();
+    actor
+        .core_mut()
+        .register_indicator_for_bars(bar.bar_type, Rc::new(FailingIndicator::new()));
+
+    DataActor::handle_bar(&mut actor, &bar);
+
+    assert_eq!(actor.received_bars, vec![bar]);
+}
+
+#[rstest]
+fn test_historical_quotes_handler_receives_complete_response_after_indicator_error() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let quotes = vec![QuoteTick::default(), QuoteTick::default()];
+    actor.core_mut().register_indicator_for_quote_ticks(
+        quotes[0].instrument_id,
+        Rc::new(FailingIndicator::new()),
+    );
+    let response = QuotesResponse::new(
+        UUID4::new(),
+        ClientId::from("TEST-CLIENT"),
+        quotes[0].instrument_id,
+        quotes.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    DataActor::handle_quotes_response(&mut actor, &response);
+
+    assert_eq!(actor.received_quotes, quotes);
+}
+
+#[rstest]
+fn test_historical_trades_handler_receives_complete_response_after_indicator_error() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let trades = vec![TradeTick::default(), TradeTick::default()];
+    actor.core_mut().register_indicator_for_trade_ticks(
+        trades[0].instrument_id,
+        Rc::new(FailingIndicator::new()),
+    );
+    let response = TradesResponse::new(
+        UUID4::new(),
+        ClientId::from("TEST-CLIENT"),
+        trades[0].instrument_id,
+        trades.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    DataActor::handle_trades_response(&mut actor, &response);
+
+    assert_eq!(actor.received_trades, trades);
+}
+
+#[rstest]
+fn test_historical_bars_handler_receives_complete_response_after_indicator_error() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let bars = vec![Bar::default(), Bar::default()];
+    actor
+        .core_mut()
+        .register_indicator_for_bars(bars[0].bar_type, Rc::new(FailingIndicator::new()));
+    let response = BarsResponse::new(
+        UUID4::new(),
+        ClientId::from("TEST-CLIENT"),
+        bars[0].bar_type,
+        bars.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    DataActor::handle_bars_response(&mut actor, &response);
+
+    assert_eq!(actor.received_bars, bars);
 }
 
 #[rstest]
