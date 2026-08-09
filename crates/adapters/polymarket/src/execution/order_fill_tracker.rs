@@ -17,22 +17,26 @@
 
 use std::sync::Mutex;
 
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::MUTEX_POISONED;
-#[cfg(test)]
-use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
-    enums::OrderSide,
+    enums::{LiquiditySide, OrderSide, OrderType},
     events::OrderFilled,
-    identifiers::{ClientOrderId, VenueOrderId},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
-    types::Quantity,
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::common::consts::DUST_SNAP_THRESHOLD_DEC;
+use crate::common::{
+    consts::DUST_SNAP_THRESHOLD_DEC,
+    fifo_ext::{add_to_fifo_map_with_eviction_warn, add_to_fifo_with_eviction_warn},
+};
+
+const MAX_DEFERRED_NO_EVIDENCE_TRADES: usize = 10_000;
 
 /// Cumulative fill state for a single order.
 #[derive(Debug, Clone, Copy)]
@@ -45,14 +49,56 @@ struct OrderFillState {
 #[derive(Clone, Debug)]
 pub(crate) struct FillCorrectionMetadata {
     pub correction_key: String,
+    pub trade_id: TradeId,
     pub info: Option<IndexMap<Ustr, Ustr>>,
     pub is_confirmed: bool,
+    pub track_fill: bool,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct BufferedFill {
     pub report: FillReport,
     pub correction: Option<FillCorrectionMetadata>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AppliedPendingFill {
+    pub venue_order_id: VenueOrderId,
+    pub instrument_id: InstrumentId,
+    /// The applied fill's own ID, including the composite ID used for maker fills.
+    pub trade_id: TradeId,
+    /// Captured before identity-registry eviction can make the void unaddressable.
+    pub client_order_id: Option<ClientOrderId>,
+    pub strategy_id: Option<StrategyId>,
+    pub order_type: Option<OrderType>,
+    pub order_side: OrderSide,
+    pub last_qty: Quantity,
+    pub last_px: Price,
+    pub commission: Money,
+    pub liquidity_side: LiquiditySide,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ResolveView {
+    pub cumulative_filled: Quantity,
+}
+
+impl From<&FillReport> for AppliedPendingFill {
+    fn from(report: &FillReport) -> Self {
+        Self {
+            venue_order_id: report.venue_order_id,
+            instrument_id: report.instrument_id,
+            trade_id: report.trade_id,
+            client_order_id: report.client_order_id,
+            strategy_id: None,
+            order_type: None,
+            order_side: report.order_side,
+            last_qty: report.last_qty,
+            last_px: report.last_px,
+            commission: report.commission,
+            liquidity_side: report.liquidity_side,
+        }
+    }
 }
 
 /// Registration map plus the fill and order-report buffers, all under one mutex.
@@ -69,6 +115,13 @@ struct TrackerInner {
     voided_trades: FifoCache<String, 10_000>,
     confirmed_trades: FifoCache<String, 10_000>,
     applied_buffered_fills: FifoCacheMap<String, Vec<OrderFilled>, 10_000>,
+    applied_buffered_fill_evictions: u64,
+    failed_trades: FifoCache<TradeId, 10_000>,
+    rest_applied_pending_fills: FifoCacheMap<TradeId, Vec<AppliedPendingFill>, 10_000>,
+    rest_applied_pending_staging: FifoCacheMap<TradeId, Vec<AppliedPendingFill>, 10_000>,
+    rest_applied_pending_fill_evictions: u64,
+    rest_applied_trade_orders: FifoCacheMap<String, Vec<VenueOrderId>, 10_000>,
+    deferred_no_evidence_trades: IndexMap<TradeId, ()>,
 }
 
 /// Tracks per-order fill accumulation, detects dust residuals, and buffers WS messages that arrive
@@ -98,11 +151,12 @@ impl OrderFillTrackerMap {
     ) {
         let mut state = new_order_state(submitted_qty, order_side);
         state.cumulative_filled = filled_qty;
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .insert(venue_order_id, state);
+        add_to_fifo_map_with_eviction_warn(
+            &mut self.inner.lock().expect(MUTEX_POISONED).orders,
+            venue_order_id,
+            state,
+            "order fill-state",
+        );
     }
 
     /// Returns true if the order has been registered (accepted).
@@ -127,6 +181,26 @@ impl OrderFillTrackerMap {
             Some(s) => !s.cumulative_filled.is_zero(),
             None => true, // Removed = already settled
         }
+    }
+
+    /// Runs a terminal resolver only while the tracked order remains unfilled.
+    pub(crate) fn resolve_if_unfilled<F>(&self, venue_order_id: &VenueOrderId, resolve: F) -> bool
+    where
+        F: FnOnce(ResolveView),
+    {
+        let guard = self.inner.lock().expect(MUTEX_POISONED);
+        let Some(state) = guard.orders.get(venue_order_id) else {
+            return false;
+        };
+
+        if !state.cumulative_filled.is_zero() {
+            return false;
+        }
+
+        resolve(ResolveView {
+            cumulative_filled: state.cumulative_filled,
+        });
+        true
     }
 
     /// Returns the cumulative filled quantity for an order, if tracked.
@@ -162,7 +236,9 @@ impl OrderFillTrackerMap {
     ) -> Option<FillReport> {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         if guard.orders.get(&venue_order_id).is_some() {
-            record_fill_in(&mut guard.orders, &venue_order_id, report.last_qty);
+            if correction.track_fill {
+                record_fill_in(&mut guard.orders, &venue_order_id, report.last_qty);
+            }
             Some(report)
         } else {
             push_buffered(
@@ -209,9 +285,12 @@ impl OrderFillTrackerMap {
         order_side: OrderSide,
     ) -> Vec<BufferedFill> {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        guard
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        add_to_fifo_map_with_eviction_warn(
+            &mut guard.orders,
+            venue_order_id,
+            new_order_state(submitted_qty, order_side),
+            "order fill-state",
+        );
         take_and_prepare_fills(&mut guard, venue_order_id, client_order_id)
     }
 
@@ -230,9 +309,12 @@ impl OrderFillTrackerMap {
         if !guard.pending_fills.contains_key(&venue_order_id) {
             return None;
         }
-        guard
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        add_to_fifo_map_with_eviction_warn(
+            &mut guard.orders,
+            venue_order_id,
+            new_order_state(submitted_qty, order_side),
+            "order fill-state",
+        );
         Some(take_and_prepare_fills(
             &mut guard,
             venue_order_id,
@@ -284,12 +366,31 @@ impl OrderFillTrackerMap {
         };
 
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        if guard.voided_trades.contains(&correction.correction_key) {
-            reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
+        let was_rest_applied = guard
+            .rest_applied_pending_fills
+            .get(&correction.trade_id)
+            .is_some_and(|fills| {
+                fills
+                    .iter()
+                    .any(|applied| applied.venue_order_id == fill.venue_order_id)
+            })
+            || guard
+                .rest_applied_trade_orders
+                .get(&correction.correction_key)
+                .is_some_and(|venue_order_ids| venue_order_ids.contains(&fill.venue_order_id));
+
+        if guard.voided_trades.contains(&correction.correction_key) || was_rest_applied {
+            if correction.track_fill {
+                reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
+            }
             return false;
         }
 
-        let new_qty = buy_overfill_bump_in(&mut guard.orders, &fill.venue_order_id);
+        let new_qty = if correction.track_fill {
+            buy_overfill_bump_in(&mut guard.orders, &fill.venue_order_id)
+        } else {
+            None
+        };
         emit(fill.clone(), new_qty);
 
         if let Some(fills) = guard
@@ -298,9 +399,22 @@ impl OrderFillTrackerMap {
         {
             fills.push(fill);
         } else {
-            guard
-                .applied_buffered_fills
-                .insert(correction.correction_key.clone(), vec![fill]);
+            let TrackerInner {
+                applied_buffered_fills,
+                applied_buffered_fill_evictions,
+                ..
+            } = &mut *guard;
+            let evicted = add_to_fifo_map_with_eviction_warn(
+                applied_buffered_fills,
+                correction.correction_key.clone(),
+                vec![fill],
+                "applied buffered-fill evidence",
+            );
+
+            if evicted {
+                *applied_buffered_fill_evictions =
+                    applied_buffered_fill_evictions.saturating_add(1);
+            }
         }
         true
     }
@@ -310,7 +424,7 @@ impl OrderFillTrackerMap {
         let key = correction_key.to_string();
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         guard.confirmed_trades.remove(&key);
-        guard.voided_trades.add(key.clone());
+        add_to_fifo_with_eviction_warn(&mut guard.voided_trades, key.clone(), "voided-trade");
         let fills = guard
             .applied_buffered_fills
             .remove(&key)
@@ -322,12 +436,39 @@ impl OrderFillTrackerMap {
         fills
     }
 
-    pub(crate) fn mark_trade_confirmed(&self, correction_key: &str) {
+    pub(crate) fn keep_buffered_trade_retryable(&self, correction_key: &str) {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
-            .confirmed_trades
-            .add(correction_key.to_string());
+            .voided_trades
+            .remove(&correction_key.to_string());
+    }
+
+    pub(crate) fn mark_trade_confirmed(&self, correction_key: &str) {
+        add_to_fifo_with_eviction_warn(
+            &mut self.inner.lock().expect(MUTEX_POISONED).confirmed_trades,
+            correction_key.to_string(),
+            "confirmed-trade",
+        );
+    }
+
+    pub(crate) fn mark_trade_rest_applied(
+        &self,
+        correction_key: &str,
+        fills: &[AppliedPendingFill],
+    ) {
+        let venue_order_ids = fills.iter().map(|fill| fill.venue_order_id).collect();
+
+        add_to_fifo_map_with_eviction_warn(
+            &mut self
+                .inner
+                .lock()
+                .expect(MUTEX_POISONED)
+                .rest_applied_trade_orders,
+            correction_key.to_string(),
+            venue_order_ids,
+            "REST-applied trade-order",
+        );
     }
 
     #[must_use]
@@ -337,6 +478,33 @@ impl OrderFillTrackerMap {
             .expect(MUTEX_POISONED)
             .confirmed_trades
             .contains(&correction_key.to_string())
+    }
+
+    #[must_use]
+    pub(crate) fn has_correction_evidence_evictions(&self) -> bool {
+        let guard = self.inner.lock().expect(MUTEX_POISONED);
+        guard.applied_buffered_fill_evictions > 0 || guard.rest_applied_pending_fill_evictions > 0
+    }
+
+    pub(crate) fn defer_trade_without_evidence(&self, trade_id: TradeId) {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+
+        if guard.deferred_no_evidence_trades.contains_key(&trade_id) {
+            return;
+        }
+
+        if guard.deferred_no_evidence_trades.len() == MAX_DEFERRED_NO_EVIDENCE_TRADES
+            && let Some((evicted, ())) = guard.deferred_no_evidence_trades.shift_remove_index(0)
+        {
+            log::error!("Evicted deferred no-evidence trade mark for {evicted}");
+        }
+
+        guard.deferred_no_evidence_trades.insert(trade_id, ());
+    }
+
+    pub(crate) fn clear_no_evidence_deferral(&self, trade_id: &TradeId) {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let _ = guard.deferred_no_evidence_trades.shift_remove(trade_id);
     }
 
     pub(crate) fn reverse_fill(&self, venue_order_id: &VenueOrderId, quantity: Quantity) {
@@ -360,6 +528,118 @@ impl OrderFillTrackerMap {
             report.last_qty =
                 snap_fill_qty_in(&guard.orders, &report.venue_order_id, report.last_qty);
         }
+    }
+
+    pub(crate) fn begin_rest_applied_pending_pass(&self) {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .rest_applied_pending_staging
+            .clear();
+    }
+
+    pub(crate) fn note_failed_trade(&self, trade_id: &TradeId) {
+        add_to_fifo_with_eviction_warn(
+            &mut self.inner.lock().expect(MUTEX_POISONED).failed_trades,
+            *trade_id,
+            "failed-trade",
+        );
+    }
+
+    pub(crate) fn record_rest_applied_pending_fills(
+        &self,
+        fills: &[(TradeId, AppliedPendingFill)],
+    ) -> AHashSet<TradeId> {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let withheld = fills
+            .iter()
+            .filter(|(trade_id, _)| guard.failed_trades.contains(trade_id))
+            .map(|(trade_id, _)| *trade_id)
+            .collect::<AHashSet<_>>();
+        let TrackerInner {
+            rest_applied_pending_staging,
+            rest_applied_pending_fill_evictions,
+            ..
+        } = &mut *guard;
+
+        for (trade_id, fill) in fills
+            .iter()
+            .filter(|(trade_id, _)| !withheld.contains(trade_id))
+        {
+            let mut staged = rest_applied_pending_staging
+                .remove(trade_id)
+                .unwrap_or_default();
+            staged.push(fill.clone());
+            let evicted = add_to_fifo_map_with_eviction_warn(
+                rest_applied_pending_staging,
+                *trade_id,
+                staged,
+                "REST pending-fill evidence",
+            );
+
+            if evicted {
+                *rest_applied_pending_fill_evictions =
+                    rest_applied_pending_fill_evictions.saturating_add(1);
+            }
+        }
+
+        let mut merged = std::mem::take(&mut guard.rest_applied_pending_fills);
+
+        // Fresh entries must displace carried evidence before bounded insertion can evict them.
+        for (trade_id, _) in fills.iter().filter(|(trade_id, _)| {
+            !withheld.contains(trade_id)
+                && guard.rest_applied_pending_staging.contains_key(trade_id)
+        }) {
+            merged.remove(trade_id);
+        }
+
+        let TrackerInner {
+            rest_applied_pending_staging,
+            rest_applied_pending_fill_evictions,
+            ..
+        } = &mut *guard;
+
+        for (trade_id, _) in fills
+            .iter()
+            .filter(|(trade_id, _)| !withheld.contains(trade_id))
+        {
+            if let Some(staged) = rest_applied_pending_staging.remove(trade_id) {
+                let evicted = add_to_fifo_map_with_eviction_warn(
+                    &mut merged,
+                    *trade_id,
+                    staged,
+                    "REST pending-fill evidence",
+                );
+
+                if evicted {
+                    *rest_applied_pending_fill_evictions =
+                        rest_applied_pending_fill_evictions.saturating_add(1);
+                }
+            }
+        }
+
+        guard.rest_applied_pending_fills = merged;
+        guard.rest_applied_pending_staging.clear();
+
+        withheld
+    }
+
+    pub(crate) fn rest_applied_pending_fills(&self, trade_id: &TradeId) -> Vec<AppliedPendingFill> {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .rest_applied_pending_fills
+            .get(trade_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn clear_rest_applied_pending_trade(&self, trade_id: &TradeId) {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .rest_applied_pending_fills
+            .remove(trade_id);
     }
 
     /// Snap a single fill qty DOWN to `submitted_qty` when the venue reports
@@ -507,7 +787,13 @@ fn take_and_prepare_fills(
             buffered.report.client_order_id = client_order_id;
             buffered.report.last_qty =
                 snap_fill_qty_in(&inner.orders, &venue_order_id, buffered.report.last_qty);
-            record_fill_in(&mut inner.orders, &venue_order_id, buffered.report.last_qty);
+            if buffered
+                .correction
+                .as_ref()
+                .is_none_or(|correction| correction.track_fill)
+            {
+                record_fill_in(&mut inner.orders, &venue_order_id, buffered.report.last_qty);
+            }
             buffered
         })
         .collect()
@@ -521,7 +807,7 @@ fn push_buffered<V>(
     if let Some(values) = buffer.get_mut(&venue_order_id) {
         values.push(value);
     } else {
-        buffer.insert(venue_order_id, vec![value]);
+        add_to_fifo_map_with_eviction_warn(buffer, venue_order_id, vec![value], "pending buffer");
     }
 }
 
@@ -537,11 +823,12 @@ impl OrderFillTrackerMap {
         _size_precision: u8,
         _price_precision: u8,
     ) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        add_to_fifo_map_with_eviction_warn(
+            &mut self.inner.lock().expect(MUTEX_POISONED).orders,
+            venue_order_id,
+            new_order_state(submitted_qty, order_side),
+            "order fill-state",
+        );
     }
 
     /// Returns the registered submitted quantity for an order, if tracked.
@@ -675,9 +962,29 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::test_logger::{capture_start, records_since};
 
     fn pusd() -> Currency {
         Currency::pUSD()
+    }
+
+    fn applied_pending_fill(
+        venue_order_id: VenueOrderId,
+        last_qty: Quantity,
+    ) -> AppliedPendingFill {
+        AppliedPendingFill {
+            venue_order_id,
+            instrument_id: InstrumentId::from("TEST-1.POLYMARKET"),
+            trade_id: TradeId::from("T-EVIDENCE"),
+            client_order_id: None,
+            strategy_id: None,
+            order_type: None,
+            order_side: OrderSide::Buy,
+            last_qty,
+            last_px: Price::from("0.55"),
+            commission: Money::new(1.25, pusd()),
+            liquidity_side: LiquiditySide::Taker,
+        }
     }
 
     #[rstest]
@@ -733,8 +1040,10 @@ mod tests {
             report.clone(),
             FillCorrectionMetadata {
                 correction_key: correction_key.to_string(),
+                trade_id: report.trade_id,
                 info: None,
                 is_confirmed: false,
+                track_fill: true,
             },
         );
         let prior_fills = tracker.void_buffered_trade(correction_key);
@@ -924,6 +1233,259 @@ mod tests {
     }
 
     #[rstest]
+    fn test_rest_applied_pending_fill_evidence_retains_untouched_trades() {
+        let tracker = OrderFillTrackerMap::new();
+        let first_trade = TradeId::from("trade-first");
+        let second_trade = TradeId::from("trade-second");
+        let first_order = VenueOrderId::from("order-first");
+        let second_order = VenueOrderId::from("order-second");
+        let first_qty = Quantity::from("714.285710");
+        let second_qty = Quantity::from("25.000000");
+        let first_fill = applied_pending_fill(first_order, first_qty);
+        let second_fill = applied_pending_fill(second_order, second_qty);
+
+        tracker.begin_rest_applied_pending_pass();
+        let withheld = tracker.record_rest_applied_pending_fills(&[
+            (first_trade, first_fill.clone()),
+            (first_trade, second_fill.clone()),
+        ]);
+
+        assert!(withheld.is_empty());
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&first_trade),
+            vec![first_fill.clone(), second_fill.clone()],
+        );
+
+        tracker.begin_rest_applied_pending_pass();
+
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&first_trade),
+            vec![first_fill.clone(), second_fill.clone()],
+        );
+
+        let withheld =
+            tracker.record_rest_applied_pending_fills(&[(second_trade, second_fill.clone())]);
+
+        assert!(withheld.is_empty());
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&first_trade),
+            vec![first_fill, second_fill.clone()],
+        );
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&second_trade),
+            vec![second_fill],
+        );
+
+        tracker.clear_rest_applied_pending_trade(&second_trade);
+
+        assert!(tracker.rest_applied_pending_fills(&second_trade).is_empty());
+    }
+
+    #[rstest]
+    fn test_failed_trade_withheld_in_later_pass_keeps_prior_evidence() {
+        let tracker = OrderFillTrackerMap::new();
+        let trade_id = TradeId::from("trade-failed-later");
+        let prior_fill = applied_pending_fill(
+            VenueOrderId::from("order-prior"),
+            Quantity::from("10.000000"),
+        );
+        let withheld_fill = applied_pending_fill(
+            VenueOrderId::from("order-withheld"),
+            Quantity::from("20.000000"),
+        );
+
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(trade_id, prior_fill.clone())]);
+        tracker.note_failed_trade(&trade_id);
+        tracker.begin_rest_applied_pending_pass();
+        let withheld = tracker.record_rest_applied_pending_fills(&[(trade_id, withheld_fill)]);
+
+        assert_eq!(withheld, AHashSet::from_iter([trade_id]));
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&trade_id),
+            vec![prior_fill],
+        );
+    }
+
+    #[rstest]
+    fn test_later_pass_without_trade_keeps_prior_evidence() {
+        let tracker = OrderFillTrackerMap::new();
+        let prior_trade = TradeId::from("trade-prior");
+        let fresh_trade = TradeId::from("trade-fresh");
+        let prior_fill = applied_pending_fill(
+            VenueOrderId::from("order-prior"),
+            Quantity::from("10.000000"),
+        );
+        let fresh_fill = applied_pending_fill(
+            VenueOrderId::from("order-fresh"),
+            Quantity::from("20.000000"),
+        );
+
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(prior_trade, prior_fill.clone())]);
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(fresh_trade, fresh_fill.clone())]);
+
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&prior_trade),
+            vec![prior_fill],
+        );
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&fresh_trade),
+            vec![fresh_fill],
+        );
+    }
+
+    #[rstest]
+    fn test_later_pass_fills_fully_replace_same_trade_evidence() {
+        let tracker = OrderFillTrackerMap::new();
+        let trade_id = TradeId::from("trade-replaced");
+        let prior_fill = applied_pending_fill(
+            VenueOrderId::from("order-prior"),
+            Quantity::from("10.000000"),
+        );
+        let replacement_fill = applied_pending_fill(
+            VenueOrderId::from("order-replacement"),
+            Quantity::from("20.000000"),
+        );
+
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(trade_id, prior_fill)]);
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(trade_id, replacement_fill.clone())]);
+
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&trade_id),
+            vec![replacement_fill],
+        );
+    }
+
+    #[rstest]
+    fn test_cleared_trade_does_not_return_in_later_pass() {
+        let tracker = OrderFillTrackerMap::new();
+        let cleared_trade = TradeId::from("trade-cleared");
+        let fresh_trade = TradeId::from("trade-fresh");
+        let cleared_fill = applied_pending_fill(
+            VenueOrderId::from("order-cleared"),
+            Quantity::from("10.000000"),
+        );
+        let fresh_fill = applied_pending_fill(
+            VenueOrderId::from("order-fresh"),
+            Quantity::from("20.000000"),
+        );
+
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(cleared_trade, cleared_fill)]);
+        tracker.clear_rest_applied_pending_trade(&cleared_trade);
+        tracker.begin_rest_applied_pending_pass();
+        tracker.record_rest_applied_pending_fills(&[(fresh_trade, fresh_fill)]);
+
+        assert!(
+            tracker
+                .rest_applied_pending_fills(&cleared_trade)
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn test_failed_trade_note_withholds_atomic_rest_evidence() {
+        let tracker = OrderFillTrackerMap::new();
+        let failed_trade = TradeId::from("trade-failed");
+        let retained_trade = TradeId::from("trade-retained");
+        let failed_fill = applied_pending_fill(
+            VenueOrderId::from("order-failed"),
+            Quantity::from("10.000000"),
+        );
+        let retained_fill = applied_pending_fill(
+            VenueOrderId::from("order-retained"),
+            Quantity::from("20.000000"),
+        );
+
+        tracker.note_failed_trade(&failed_trade);
+        tracker.begin_rest_applied_pending_pass();
+        let withheld = tracker.record_rest_applied_pending_fills(&[
+            (failed_trade, failed_fill),
+            (retained_trade, retained_fill.clone()),
+        ]);
+
+        assert_eq!(withheld.len(), 1);
+        assert!(withheld.contains(&failed_trade));
+        assert!(tracker.rest_applied_pending_fills(&failed_trade).is_empty());
+        assert_eq!(
+            tracker.rest_applied_pending_fills(&retained_trade),
+            vec![retained_fill],
+        );
+    }
+
+    #[rstest]
+    fn test_single_pass_over_capacity_evicts_earliest_evidence() {
+        let tracker = OrderFillTrackerMap::new();
+        let fills: Vec<(TradeId, AppliedPendingFill)> = (0..10_001)
+            .map(|i| {
+                (
+                    TradeId::from(format!("trade-{i}").as_str()),
+                    applied_pending_fill(
+                        VenueOrderId::from(format!("order-{i}").as_str()),
+                        Quantity::from("1.000000"),
+                    ),
+                )
+            })
+            .collect();
+
+        tracker.begin_rest_applied_pending_pass();
+        let withheld = tracker.record_rest_applied_pending_fills(&fills);
+
+        assert!(withheld.is_empty());
+        assert!(
+            tracker
+                .rest_applied_pending_fills(&TradeId::from("trade-0"))
+                .is_empty()
+        );
+        assert!(
+            !tracker
+                .rest_applied_pending_fills(&TradeId::from("trade-1"))
+                .is_empty()
+        );
+        assert!(
+            !tracker
+                .rest_applied_pending_fills(&TradeId::from("trade-10000"))
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn test_deferred_no_evidence_trade_eviction_is_bounded_and_errors() {
+        let tracker = OrderFillTrackerMap::new();
+        let log_start = capture_start();
+
+        for index in 0..=MAX_DEFERRED_NO_EVIDENCE_TRADES {
+            tracker.defer_trade_without_evidence(TradeId::from(
+                format!("deferred-trade-{index}").as_str(),
+            ));
+        }
+
+        let guard = tracker.inner.lock().expect(MUTEX_POISONED);
+        assert_eq!(
+            guard.deferred_no_evidence_trades.len(),
+            MAX_DEFERRED_NO_EVIDENCE_TRADES
+        );
+        assert!(
+            !guard
+                .deferred_no_evidence_trades
+                .contains_key(&TradeId::from("deferred-trade-0"))
+        );
+        drop(guard);
+
+        let matching_logs = records_since(log_start)
+            .into_iter()
+            .filter(|(_, message)| message.contains("deferred no-evidence trade mark"))
+            .collect::<Vec<_>>();
+        assert_eq!(matching_logs.len(), 1);
+        assert_eq!(matching_logs[0].0, log::Level::Error);
+        assert!(matching_logs[0].1.contains("deferred-trade-0"));
+    }
+
+    #[rstest]
     fn test_record_fill_accumulates() {
         let tracker = OrderFillTrackerMap::new();
         let vid = VenueOrderId::from("order-1");
@@ -1108,6 +1670,32 @@ mod tests {
 
         let filled = tracker.get_cumulative_filled(&vid);
         assert_eq!(filled, Some(Quantity::new(50.0, 6)));
+    }
+
+    #[rstest]
+    fn test_resolve_if_unfilled_holds_tracker_lock_through_closure() {
+        use std::cell::Cell;
+
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("order-atomic-resolve");
+        tracker.register(
+            venue_order_id,
+            Quantity::from("100.000000"),
+            OrderSide::Buy,
+            InstrumentId::from("TEST.POLYMARKET"),
+            6,
+            2,
+        );
+        let ran = Cell::new(false);
+
+        let resolved = tracker.resolve_if_unfilled(&venue_order_id, |view| {
+            assert_eq!(view.cumulative_filled, Quantity::zero(6));
+            assert!(tracker.inner.try_lock().is_err());
+            ran.set(true);
+        });
+
+        assert!(resolved);
+        assert!(ran.get());
     }
 
     #[rstest]

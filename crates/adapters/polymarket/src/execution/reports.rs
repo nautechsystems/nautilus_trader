@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashSet;
 use anyhow::Context;
 use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -22,7 +23,7 @@ use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -33,20 +34,22 @@ use ustr::Ustr;
 
 use super::{
     PolymarketExecutionClient,
+    identity::OrderIdentity,
     parse::{
-        parse_balance_allowance, parse_order_status_report, sum_filled_quantity,
-        weighted_average_price,
+        make_composite_trade_id, parse_balance_allowance, parse_order_status_report,
+        sum_filled_quantity, weighted_average_price,
     },
     reconciliation::{
-        FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
-        cap_order_report_filled_qty, confirmed_filled_quantities,
-        normalize_terminal_order_report_quantity,
+        FillContext, PendingFillPolicy, apply_fill_filters, build_fill_reports_from_trades,
+        build_position_reports, cap_order_report_filled_qty,
+        normalize_terminal_order_report_quantity, reported_filled_quantities,
     },
 };
 use crate::{
     common::{consts::DUST_SNAP_THRESHOLD_DEC, enums::SignatureType},
     http::{
         clob::PolymarketClobHttpClient,
+        models::PolymarketTradeReport,
         query::{GetBalanceAllowanceParams, GetTradesParams},
     },
 };
@@ -139,13 +142,15 @@ impl PolymarketExecutionClient {
             return Ok(Some(report));
         }
 
-        let (mut order_fills, _) = build_fill_reports_from_trades(
+        let mut order_fills = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
             Some(instrument_id),
+            PendingFillPolicy::ConfirmedOnly,
             ts_init,
-        );
+        )
+        .fills;
         order_fills.retain(|f| f.venue_order_id == venue_order_id);
         self.fill_tracker.snap_fill_reports(&mut order_fills);
 
@@ -280,6 +285,11 @@ impl PolymarketExecutionClient {
         let cached_filled = cache
             .order(&client_order_id)
             .map_or_else(|| Quantity::zero(size_prec), |order| order.filled_qty());
+        let applied_trade_ids = cache
+            .order(&client_order_id)
+            .map_or_else(AHashSet::new, |order| {
+                order.trade_ids().into_iter().copied().collect()
+            });
 
         self.spawn_task("query_order", async move {
             match http_client.get_order_optional(&venue_order_id).await {
@@ -298,7 +308,7 @@ impl PolymarketExecutionClient {
                         .get_cumulative_filled(&venue_order_id)
                         .unwrap_or_else(|| Quantity::zero(size_prec));
                     let local_filled = cached_filled.max(tracked_filled);
-                    let confirmed_filled = if report.filled_qty > local_filled {
+                    let reported_filled = if report.filled_qty > local_filled {
                         let ctx = FillContext {
                             account_id,
                             user_address: &user_address,
@@ -307,34 +317,56 @@ impl PolymarketExecutionClient {
                             clock,
                         };
 
-                        match fetch_confirmed_fill_reports(
+                        match fetch_fill_reports(
                             &http_client,
                             &ctx,
                             &token_instruments,
                             GetTradesParams::default(),
                             Some(instrument_id),
+                            PendingFillPolicy::ConfirmedOnly,
                             clock.get_time_ns(),
                         )
                         .await
                         {
-                            Ok(fills) => confirmed_filled_quantities(&fills)
-                                .get(&venue_order_id)
-                                .copied(),
+                            Ok(mut fetched) => {
+                                fetched
+                                    .fills
+                                    .retain(|fill| fill.venue_order_id == venue_order_id);
+                                let reported_filled = reported_filled_quantities(&fetched.fills)
+                                    .get(&venue_order_id)
+                                    .copied();
+                                let mut skipped = 0;
+
+                                for fill in fetched.fills {
+                                    if rest_fill_was_applied(
+                                        &applied_trade_ids,
+                                        &fill,
+                                        &fetched.trades,
+                                    ) {
+                                        skipped += 1;
+                                        continue;
+                                    }
+
+                                    emitter.send_fill_report(fill);
+                                }
+
+                                if skipped > 0 {
+                                    log::debug!(
+                                        "Skipped {skipped} REST fill report(s) already applied to order {venue_order_id}",
+                                    );
+                                }
+
+                                reported_filled
+                            }
                             Err(e) => {
-                                log::warn!(
-                                    "Failed to fetch confirmed fills for order {venue_order_id}: {e}"
-                                );
+                                log::warn!("Failed to fetch fills for order {venue_order_id}: {e}");
                                 None
                             }
                         }
                     } else {
                         None
                     };
-                    cap_order_report_filled_qty(
-                        &mut report,
-                        local_filled,
-                        confirmed_filled,
-                    );
+                    cap_order_report_filled_qty(&mut report, local_filled, reported_filled);
                     emitter.send_order_status_report(report);
                 }
                 Ok(None) => {
@@ -405,31 +437,30 @@ impl PolymarketExecutionClient {
                 .get_cumulative_filled(&venue_order_id)
                 .unwrap_or_else(|| Quantity::zero(size_prec));
             let local_filled = cached_filled.max(tracked_filled);
-            let confirmed_filled = if report.filled_qty > local_filled {
-                match fetch_confirmed_fill_reports(
+            let reported_filled = if report.filled_qty > local_filled {
+                match fetch_fill_reports(
                     &self.http_client,
                     &self.fill_context(),
                     &self.shared_token_instruments,
                     GetTradesParams::default(),
                     Some(instrument_id),
+                    PendingFillPolicy::ConfirmedOnly,
                     self.clock.get_time_ns(),
                 )
                 .await
                 {
-                    Ok(fills) => confirmed_filled_quantities(&fills)
+                    Ok(fetched) => reported_filled_quantities(&fetched.fills)
                         .get(&venue_order_id)
                         .copied(),
                     Err(e) => {
-                        log::warn!(
-                            "Failed to fetch confirmed fills for order {venue_order_id}: {e}"
-                        );
+                        log::warn!("Failed to fetch fills for order {venue_order_id}: {e}");
                         None
                     }
                 }
             } else {
                 None
             };
-            cap_order_report_filled_qty(&mut report, local_filled, confirmed_filled);
+            cap_order_report_filled_qty(&mut report, local_filled, reported_filled);
             return Ok(Some(report));
         }
 
@@ -457,31 +488,38 @@ impl PolymarketExecutionClient {
             &orders,
             &self.shared_token_instruments,
             self.core.account_id,
+            |venue_order_id| {
+                self.order_identities
+                    .get(venue_order_id)
+                    .map(|identity| identity.client_order_id)
+                    .or_else(|| self.core.cache().client_order_id(venue_order_id).copied())
+            },
             cmd.instrument_id,
             self.clock.get_time_ns(),
         );
 
-        let needs_confirmed_fills = reports.iter().any(|report| {
+        let needs_reported_fills = reports.iter().any(|report| {
             let cached_filled = report
                 .client_order_id
                 .and_then(|id| self.core.cache().order(&id).map(|order| order.filled_qty()))
                 .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
             report.filled_qty > cached_filled
         });
-        let confirmed_fills = if needs_confirmed_fills {
-            match fetch_confirmed_fill_reports(
+        let reported_fills = if needs_reported_fills {
+            match fetch_fill_reports(
                 &self.http_client,
                 &self.fill_context(),
                 &self.shared_token_instruments,
                 GetTradesParams::default(),
                 cmd.instrument_id,
+                PendingFillPolicy::ConfirmedOnly,
                 self.clock.get_time_ns(),
             )
             .await
             {
-                Ok(fills) => confirmed_filled_quantities(&fills),
+                Ok(fetched) => reported_filled_quantities(&fetched.fills),
                 Err(e) => {
-                    log::warn!("Failed to fetch confirmed fills for open-order check: {e}");
+                    log::warn!("Failed to fetch fills for open-order check: {e}");
                     Default::default()
                 }
             }
@@ -507,7 +545,7 @@ impl PolymarketExecutionClient {
             cap_order_report_filled_qty(
                 report,
                 cached_filled.max(tracked_filled),
-                confirmed_fills.get(&report.venue_order_id).copied(),
+                reported_fills.get(&report.venue_order_id).copied(),
             );
         }
 
@@ -535,13 +573,15 @@ impl PolymarketExecutionClient {
             .context("failed to fetch trades")?;
 
         let ctx = self.fill_context();
-        let (mut reports, _) = build_fill_reports_from_trades(
+        let mut reports = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
             cmd.instrument_id,
+            PendingFillPolicy::ConfirmedOnly,
             self.clock.get_time_ns(),
-        );
+        )
+        .fills;
 
         self.fill_tracker.snap_fill_reports(&mut reports);
 
@@ -586,6 +626,27 @@ impl PolymarketExecutionClient {
             &ctx,
             self.core.client_id,
             self.core.venue,
+            |venue_order_id| {
+                self.order_identities.get(venue_order_id).or_else(|| {
+                    let cache = self.core.cache();
+                    let client_order_id = cache.client_order_id(venue_order_id)?;
+                    cache
+                        .order(client_order_id)
+                        .map(|order| OrderIdentity::from_order(&order))
+                })
+            },
+            |fill, trades| {
+                let cache = self.core.cache();
+                let client_order_id = fill
+                    .client_order_id
+                    .or_else(|| cache.client_order_id(&fill.venue_order_id).copied());
+                let Some(order) = client_order_id.and_then(|id| cache.order(&id)) else {
+                    return false;
+                };
+                let applied_trade_ids = order.trade_ids().into_iter().copied().collect();
+
+                rest_fill_was_applied(&applied_trade_ids, fill, trades)
+            },
             lookback_mins,
         )
         .await
@@ -609,21 +670,72 @@ fn recovered_terminal_order_status(
     }
 }
 
-async fn fetch_confirmed_fill_reports(
+struct FetchedFillReports {
+    fills: Vec<FillReport>,
+    trades: Vec<PolymarketTradeReport>,
+}
+
+async fn fetch_fill_reports(
     http_client: &PolymarketClobHttpClient,
     ctx: &FillContext<'_>,
     token_instruments: &AtomicMap<Ustr, InstrumentAny>,
     params: GetTradesParams,
     instrument_id: Option<InstrumentId>,
+    pending_policy: PendingFillPolicy<'_>,
     ts_init: UnixNanos,
-) -> anyhow::Result<Vec<FillReport>> {
+) -> anyhow::Result<FetchedFillReports> {
     let trades = http_client
         .get_trades(params)
         .await
-        .context("failed to fetch confirmed trades")?;
-    let (reports, _) =
-        build_fill_reports_from_trades(&trades, ctx, token_instruments, instrument_id, ts_init);
-    Ok(reports)
+        .context("failed to fetch trades")?;
+    let output = build_fill_reports_from_trades(
+        &trades,
+        ctx,
+        token_instruments,
+        instrument_id,
+        pending_policy,
+        ts_init,
+    );
+    Ok(FetchedFillReports {
+        fills: output.fills,
+        trades,
+    })
+}
+
+fn rest_fill_was_applied(
+    applied_trade_ids: &AHashSet<TradeId>,
+    fill: &FillReport,
+    trades: &[PolymarketTradeReport],
+) -> bool {
+    if applied_trade_ids.contains(&fill.trade_id) {
+        return true;
+    }
+
+    trades.iter().any(|trade| {
+        trade
+            .maker_orders
+            .iter()
+            .any(|maker| maker.order_id == fill.venue_order_id.as_str())
+            && make_composite_trade_id(&trade.id, fill.venue_order_id.as_str()) == fill.trade_id
+            && applied_trade_ids.contains(&make_legacy_composite_trade_id(
+                &trade.id,
+                fill.venue_order_id.as_str(),
+            ))
+    })
+}
+
+// Remove after persisted pre-hash trade IDs no longer require upgrade compatibility.
+fn make_legacy_composite_trade_id(trade_id: &str, venue_order_id: &str) -> TradeId {
+    let trade_prefix_len = trade_id.len().min(27);
+    let order_suffix_start = venue_order_id.len().saturating_sub(8);
+    TradeId::from(
+        format!(
+            "{}-{}",
+            &trade_id[..trade_prefix_len],
+            &venue_order_id[order_suffix_start..],
+        )
+        .as_str(),
+    )
 }
 
 pub(crate) fn get_pusd_currency() -> Currency {

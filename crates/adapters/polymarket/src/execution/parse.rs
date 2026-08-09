@@ -15,6 +15,7 @@
 
 //! Parsing functions for Polymarket execution reports.
 
+use alloy_primitives::{hex, keccak256};
 use jiff::Timestamp;
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -64,6 +65,24 @@ pub fn resolve_order_status(
     }
 }
 
+/// Applies terminal status rules that depend on the matched quantity.
+pub fn resolve_matched_order_status(
+    status: PolymarketOrderStatus,
+    order_type: PolymarketOrderType,
+    event_type: PolymarketEventType,
+    size_matched: Decimal,
+    original_size: Decimal,
+) -> OrderStatus {
+    if status == PolymarketOrderStatus::Matched
+        && order_type == PolymarketOrderType::FAK
+        && size_matched < original_size
+    {
+        return OrderStatus::Canceled;
+    }
+
+    resolve_order_status(status, event_type)
+}
+
 /// Determines the order side for a fill based on trader role and asset matching.
 ///
 /// Polymarket uses a unified order book where complementary tokens (YES/NO) can match
@@ -101,19 +120,16 @@ pub fn determine_order_side(
 /// trade message with a single ID for all fills. This creates a unique trade ID
 /// per fill by combining the trade ID with part of the venue order ID.
 ///
-/// Format: `{trade_id[..27]}-{venue_order_id[last 8]}` = 36 chars.
+/// Format: `{trade_id[..19]}-{keccak256(trade_id|venue_order_id)[..8]}` = 36 chars.
 pub fn make_composite_trade_id(trade_id: &str, venue_order_id: &str) -> TradeId {
-    let prefix_len = trade_id.len().min(27);
-    let suffix_len = venue_order_id.len().min(8);
-    let suffix_start = venue_order_id.len().saturating_sub(suffix_len);
-    TradeId::from(
-        format!(
-            "{}-{}",
-            &trade_id[..prefix_len],
-            &venue_order_id[suffix_start..]
-        )
-        .as_str(),
-    )
+    let prefix_len = trade_id.len().min(19);
+    let mut preimage = Vec::with_capacity(trade_id.len() + venue_order_id.len() + 1);
+    preimage.extend_from_slice(trade_id.as_bytes());
+    preimage.push(b'|');
+    preimage.extend_from_slice(venue_order_id.as_bytes());
+    let digest = keccak256(preimage);
+    let hex16 = hex::encode(&digest[..8]);
+    TradeId::from(format!("{}-{hex16}", &trade_id[..prefix_len]).as_str())
 }
 
 /// Parses a [`PolymarketOpenOrder`] into an [`OrderStatusReport`].
@@ -129,14 +145,13 @@ pub fn parse_order_status_report(
     let venue_order_id = VenueOrderId::from(order.id.as_str());
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
-    let order_status = if order.status == PolymarketOrderStatus::Matched
-        && order.order_type == PolymarketOrderType::FAK
-        && order.size_matched < order.original_size
-    {
-        OrderStatus::Canceled
-    } else {
-        OrderStatus::from(order.status)
-    };
+    let order_status = resolve_matched_order_status(
+        order.status,
+        order.order_type,
+        PolymarketEventType::Placement,
+        order.size_matched,
+        order.original_size,
+    );
     let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
@@ -200,14 +215,17 @@ pub fn parse_fill_report(
     taker_fee_rate: Decimal,
     fee_exponent: f64,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> Option<FillReport> {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let trade_id = TradeId::from(trade.id.as_str());
     let order_side = OrderSide::from(trade.side);
-    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(trade.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let (last_qty, last_px) = parse_fill_values(
+        &trade.id,
+        trade.size,
+        trade.price,
+        price_precision,
+        size_precision,
+    )?;
     let liquidity_side = parse_liquidity_side(trade.trader_side);
 
     let commission_value = compute_commission(
@@ -221,7 +239,7 @@ pub fn parse_fill_report(
 
     let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
 
-    FillReport {
+    Some(FillReport {
         account_id,
         instrument_id,
         venue_order_id,
@@ -237,7 +255,52 @@ pub fn parse_fill_report(
         ts_init,
         client_order_id,
         venue_position_id: None,
+    })
+}
+
+pub(crate) fn parse_fill_values(
+    trade_id: &str,
+    raw_qty: Decimal,
+    raw_px: Decimal,
+    price_precision: u8,
+    size_precision: u8,
+) -> Option<(Quantity, Price)> {
+    let last_qty = match Quantity::from_decimal_dp(raw_qty, size_precision) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            log::warn!("Skipping trade {trade_id}: last_qty {raw_qty} is unrepresentable: {e}");
+            return None;
+        }
+    };
+
+    if last_qty.is_zero() {
+        log::warn!(
+            "Skipping trade {trade_id}: last_qty raw value {raw_qty} rounds to zero at precision {size_precision}",
+        );
+        return None;
     }
+
+    let last_px = match Price::from_decimal_dp(raw_px, price_precision) {
+        Ok(price) => price,
+        Err(e) => {
+            log::warn!("Skipping trade {trade_id}: last_px {raw_px} is unrepresentable: {e}");
+            return None;
+        }
+    };
+
+    if last_px.as_decimal() <= Decimal::ZERO {
+        log::warn!(
+            "Skipping trade {trade_id}: last_px raw value {raw_px} is not strictly positive",
+        );
+        return None;
+    }
+
+    if last_px.as_decimal() >= Decimal::ONE {
+        log::warn!("Skipping trade {trade_id}: last_px raw value {raw_px} is not strictly below 1");
+        return None;
+    }
+
+    Some((last_qty, last_px))
 }
 
 /// Builds a [`FillReport`] from a [`PolymarketMakerOrder`] and trade-level context.
@@ -1418,6 +1481,37 @@ mod tests {
     }
 
     #[rstest]
+    #[case::zero_quantity(dec!(0), dec!(0.5))]
+    #[case::subprecision_quantity(dec!(0.0000004), dec!(0.5))]
+    #[case::zero_price(dec!(1), dec!(0))]
+    #[case::negative_price(dec!(1), dec!(-0.5))]
+    #[case::unit_price(dec!(1), dec!(1))]
+    #[case::above_unit_price(dec!(1), dec!(1.5))]
+    fn test_parse_fill_values_rejects_degenerate_values(
+        #[case] raw_qty: Decimal,
+        #[case] raw_px: Decimal,
+    ) {
+        assert!(parse_fill_values("trade-degenerate", raw_qty, raw_px, 4, 6).is_none());
+    }
+
+    #[rstest]
+    fn test_parse_fill_values_parses_valid_values() {
+        let (quantity, price) = parse_fill_values("trade-valid", dec!(1.25), dec!(0.5), 4, 6)
+            .expect("valid fill values must parse");
+
+        assert_eq!(quantity, Quantity::from("1.250000"));
+        assert_eq!(price, Price::from("0.5000"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_values_retains_fine_tick_upper_price() {
+        let (_, price) = parse_fill_values("trade-fine-tick", dec!(1), dec!(0.9995), 4, 6)
+            .expect("a price inside the unit bound must parse");
+
+        assert_eq!(price, Price::from("0.9995"));
+    }
+
+    #[rstest]
     fn test_parse_fill_report_from_fixture() {
         let path = "test_data/http_trade_report.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
@@ -1439,7 +1533,8 @@ mod tests {
             Decimal::ZERO,
             1.0,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture fill must be representable");
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
@@ -1471,7 +1566,8 @@ mod tests {
             dec!(0.03),
             2.0,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture fill must be representable");
 
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.commission.as_f64(), 0.04688);
@@ -1544,15 +1640,17 @@ mod tests {
         let trade_id = "trade-abc123";
         let venue_order_id = "order-xyz789";
         let result = make_composite_trade_id(trade_id, venue_order_id);
-        assert_eq!(result.as_str(), "trade-abc123-r-xyz789");
+        assert_eq!(result.as_str(), "trade-abc123-b324813fc79c5a80");
     }
 
     #[rstest]
-    fn test_make_composite_trade_id_truncates_long_ids() {
-        let trade_id = "a]".repeat(30);
-        let venue_order_id = "b".repeat(20);
-        let result = make_composite_trade_id(&trade_id, &venue_order_id);
-        assert!(result.as_str().len() <= 36);
+    fn test_make_composite_trade_id_uses_full_capacity_for_long_ids() {
+        let result = make_composite_trade_id(
+            "abcdefghijklmnopqrstuvwxyz0123456789",
+            "maker-order-00000000",
+        );
+        assert_eq!(result.as_str(), "abcdefghijklmnopqrs-5703f9d675da99ba");
+        assert_eq!(result.as_str().len(), 36);
     }
 
     #[rstest]
@@ -1560,13 +1658,13 @@ mod tests {
         let trade_id = "t123";
         let venue_order_id = "ab";
         let result = make_composite_trade_id(trade_id, venue_order_id);
-        assert_eq!(result.as_str(), "t123-ab");
+        assert_eq!(result.as_str(), "t123-c37ab51b9b75ac63");
     }
 
     #[rstest]
-    fn test_make_composite_trade_id_uniqueness() {
-        let id_a = make_composite_trade_id("same-trade", "order-aaa");
-        let id_b = make_composite_trade_id("same-trade", "order-bbb");
+    fn test_make_composite_trade_id_distinguishes_shared_suffix() {
+        let id_a = make_composite_trade_id("same-trade", "maker-leg-a-deadbeef");
+        let id_b = make_composite_trade_id("same-trade", "maker-leg-b-deadbeef");
         assert_ne!(id_a, id_b);
     }
 

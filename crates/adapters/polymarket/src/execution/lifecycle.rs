@@ -656,8 +656,7 @@ async fn run_heartbeats(
 fn polymarket_trade_key(info: Option<&IndexMap<Ustr, Ustr>>) -> Option<String> {
     let info = info?;
     let trade_id = info.get(&Ustr::from("id"))?;
-    let taker_order_id = info.get(&Ustr::from("taker_order_id"))?;
-    Some(format!("{trade_id}-{taker_order_id}"))
+    Some(trade_id.to_string())
 }
 
 fn upsert_execution_lookup(
@@ -1114,7 +1113,7 @@ mod tests {
 
         client.load_orders_from_cache();
 
-        let key = "trade-restart-V-001";
+        let key = "trade-restart";
         let identity = client
             .order_identities
             .get(&venue_order_id)
@@ -1407,8 +1406,7 @@ mod tests {
             .ws_dispatch_state
             .lock()
             .expect(MUTEX_POISONED)
-            .processed_fills
-            .add("trade-1".to_string());
+            .restore_matched_trade("trade-1".to_string(), Vec::new());
 
         client.reset_client();
 
@@ -1439,8 +1437,7 @@ mod tests {
             .ws_dispatch_state
             .lock()
             .expect(MUTEX_POISONED)
-            .processed_fills
-            .add(dedup_key.clone());
+            .restore_matched_trade(dedup_key.clone(), Vec::new());
 
         client.stop_client();
 

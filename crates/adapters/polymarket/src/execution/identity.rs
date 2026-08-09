@@ -32,6 +32,8 @@ use nautilus_model::{
     orders::{Order, OrderAny},
 };
 
+use crate::common::fifo_ext::{add_to_fifo_map_with_eviction_warn, add_to_fifo_with_eviction_warn};
+
 /// Identity fields captured at submit so the cache-free WS dispatch can build order events.
 ///
 /// `trader_id` and `account_id` are client-wide constants threaded from the dispatch context,
@@ -85,6 +87,7 @@ struct RegistryInner {
     identities: FifoCacheMap<VenueOrderId, OrderIdentity, 10_000>,
     client_to_venue: FifoCacheMap<ClientOrderId, VenueOrderId, 10_000>,
     accepted: FifoCache<VenueOrderId, 10_000>,
+    evictions: u64,
 }
 
 impl OrderIdentityRegistry {
@@ -95,10 +98,22 @@ impl OrderIdentityRegistry {
         identity: OrderIdentity,
     ) {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        guard.identities.insert(venue_order_id, identity);
-        guard
-            .client_to_venue
-            .insert(identity.client_order_id, venue_order_id);
+
+        let identity_evicted = add_to_fifo_map_with_eviction_warn(
+            &mut guard.identities,
+            venue_order_id,
+            identity,
+            "order-identity",
+        );
+        let client_mapping_evicted = add_to_fifo_map_with_eviction_warn(
+            &mut guard.client_to_venue,
+            identity.client_order_id,
+            venue_order_id,
+            "client-to-venue identity",
+        );
+        guard.evictions = guard
+            .evictions
+            .saturating_add(u64::from(identity_evicted) + u64::from(client_mapping_evicted));
     }
 
     /// Returns the identity for a tracked order, if known.
@@ -121,16 +136,27 @@ impl OrderIdentityRegistry {
             .copied()
     }
 
+    #[must_use]
+    pub(crate) fn has_evictions(&self) -> bool {
+        self.inner.lock().expect(MUTEX_POISONED).evictions > 0
+    }
+
     /// Marks acceptance as emitted, returning `true` only when this call newly marks it.
     ///
     /// Callers emit `OrderAccepted` only on a `true` result, so acceptance is emitted once
     /// across the submit confirmation and the WS stream.
     pub(crate) fn mark_accepted(&self, venue_order_id: VenueOrderId) -> bool {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+
         if guard.accepted.contains(&venue_order_id) {
             false
         } else {
-            guard.accepted.add(venue_order_id);
+            let evicted = add_to_fifo_with_eviction_warn(
+                &mut guard.accepted,
+                venue_order_id,
+                "accepted order-identity",
+            );
+            guard.evictions = guard.evictions.saturating_add(u64::from(evicted));
             true
         }
     }

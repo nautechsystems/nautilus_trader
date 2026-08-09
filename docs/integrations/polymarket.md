@@ -495,11 +495,25 @@ Trades on Polymarket can have the following statuses:
 Once a trade is initially matched, subsequent status updates arrive through the user WebSocket.
 The execution adapter emits one `OrderFilled` at `MATCHED`. It treats `MINED` and `RETRYING` as
 settlement updates without emitting another fill. `CONFIRMED` records finality and refreshes the
-account. If the trade reaches `FAILED`, the adapter emits one `OrderFillVoided` for each locally
-applied fill and refreshes the account. The correction does not relist the failed quantity, but it
-preserves any maker-order remainder that was already working. An execution-complete order becomes
-`VOIDED`. Matched WebSocket fills retain the raw trade fields in the `info` field of the
-`OrderFilled` event.
+account. If the trade reaches `FAILED`, the adapter emits one `OrderFillVoided` for each applied
+venue order in the union of WebSocket-local state and the most recent REST mass-status
+pending-fill pass. REST evidence retains the applied quantity, price, commission, and liquidity
+side so the correction exactly matches the applied fill. While a mass-status pass is in progress,
+live evidence from the preceding pass remains available. A concurrent failure notes the trade so
+the atomic record step withholds that trade's pending fill reports before order quantities are
+capped and the mass status is emitted.
+
+This evidence is in memory. After a process restart, a `FAILED` update cannot void a pending fill
+that a previous process applied. A failure observed while the user WebSocket is disconnected can
+also remain unseen because reconnection does not replay the failed trade and mass status skips
+failed trades. Position reconciliation covers the resulting drift. The correction does not relist
+the failed quantity, but it preserves any maker-order remainder that was already working. An
+execution-complete order becomes `VOIDED`. Matched WebSocket fills retain the raw trade fields in
+the `info` field of the `OrderFilled` event. When the order identity or recorded evidence for a
+correction is unavailable, for example after a bounded-cache eviction, the adapter defers the
+correction loudly instead of emitting one built on defaults. Deferrals remain retry-eligible
+across mass-status passes. If no fill evidence or eviction signal is present, the adapter warns
+that evidence may have been lost to a restart or eviction before ignoring the failed update.
 
 ### Trade ID derivation
 
@@ -508,8 +522,12 @@ The adapter derives a deterministic `TradeId` from the asset ID, side, price,
 size, and timestamp via the Rust `determine_trade_id` function using FNV-1a.
 For execution fills, taker reports use the venue's trade `id` in both REST reconciliation and the
 user WebSocket, so the same fill deduplicates across sources. A maker trade can fill more than one
-of the user's resting orders, so maker reports combine the venue trade ID with the maker venue
-order ID. The same venue event yields the same trade ID across replays.
+of the user's resting orders, so maker reports combine a readable prefix of the venue trade ID
+with 16 hexadecimal characters of a keccak256 hash over the full trade and venue order IDs,
+staying within the 36-character `TradeId` limit; two maker legs cannot collide when their venue
+order IDs happen to share a suffix. The same venue event yields the same trade ID across replays.
+REST reconciliation does not re-emit a fill the cached order already holds under either the
+current derivation or the pre-upgrade truncation format, so an upgrade does not re-apply fills.
 For historical Data API trades, the loader uses
 `{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}` to distinguish fills in one transaction.
 
@@ -581,13 +599,14 @@ the adapter recovers a cached individual order from trade history if its termina
 was missed. Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement
 states do not.
 
-Mass-status reconciliation pairs each order report with its venue fill reports. It applies the
-real fills first to preserve trade IDs and commissions, then infers only any residual quantity
-needed to reach the venue-reported status. REST order reports cap matched quantity to the greater
-of locally applied fills and authenticated `CONFIRMED` trade history, so pending settlement cannot
-create an inferred fill. Runtime order checks fetch confirmed trade history when the venue reports
-more matched quantity than the local order and WebSocket fill tracker contain. Unpaired fill reports
-retain the normal fill-only path.
+Mass-status reconciliation includes settlement-pending (`MATCHED`, `MINED`, or `RETRYING`) fills
+only when their venue order IDs have paired order reports in the same pass. It applies these real
+fills, with their venue trade IDs and commissions, before inferring only any residual quantity
+needed to reach the venue-reported status. Unpaired pending fills are omitted until they confirm.
+Singular and runtime order checks remain confirmed-only when capping matched quantity, so pending
+settlement cannot create an inferred fill. Runtime order checks fetch confirmed trade history when
+the venue reports more matched quantity than the local order and WebSocket fill tracker contain.
+Confirmed unpaired fill reports retain the normal fill-only path.
 
 ### Single-order recovery from trades
 
