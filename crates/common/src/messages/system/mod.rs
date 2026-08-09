@@ -14,10 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod component;
+pub mod queue;
 pub mod shutdown;
 pub mod trading;
 
 // Re-exports
 pub use component::ComponentStateChanged;
+pub use queue::{QueueCondition, QueueState, QueueStateChanged};
 pub use shutdown::ShutdownSystem;
 pub use trading::TradingStateChanged;
