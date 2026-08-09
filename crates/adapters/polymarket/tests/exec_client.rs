@@ -2974,10 +2974,10 @@ async fn test_fok_deferred_check_emits_terminal_event(
     assert_order_event(event, expected_event);
 }
 
-// A MATCHED FOK report excludes provisional quantity until the trade confirms
+// A MATCHED FOK cannot emit a Filled report until the trade confirms.
 #[rstest]
 #[tokio::test]
-async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
+async fn test_fok_deferred_check_withholds_filled_without_confirmed_quantity() {
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(json!({
         "associate_trades": [],
@@ -3026,19 +3026,21 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
         assert_order_event(event, expected);
     }
 
-    // Venue Filled with no confirmed local fills surfaces no fill quantity
-    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.last_path.lock().await.starts_with("/data/order/") }
+        },
+        Duration::from_secs(7),
+    )
+    .await;
 
-    match event {
-        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
-            assert_eq!(report.order_status, OrderStatus::Filled);
-            assert_eq!(report.filled_qty, Quantity::zero(0));
-        }
-        other => panic!("Expected Order report, was {other:?}"),
-    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), rx.recv())
+            .await
+            .is_err(),
+        "unconfirmed venue quantity must not produce a Filled report"
+    );
 }
 
 fn make_stop_market_order(
@@ -6748,7 +6750,7 @@ async fn test_query_order_does_not_block_within_runtime() {
 
 #[rstest]
 #[tokio::test]
-async fn test_query_order_excludes_unconfirmed_matched_quantity() {
+async fn test_query_order_withholds_filled_without_confirmed_quantity() {
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(json!({
         "associate_trades": ["pending-trade"],
@@ -6767,7 +6769,7 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
         "order_type": "GTC",
         "created_at": 1_703_875_200_i64
     }));
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
@@ -6790,18 +6792,21 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
 
     client.query_order(cmd).unwrap();
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.last_path.lock().await.as_str() == "/data/trades" }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
 
-    match event {
-        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
-            assert_eq!(report.order_status, OrderStatus::Filled);
-            assert_eq!(report.filled_qty, Quantity::zero(4));
-        }
-        other => panic!("Expected Order report, was {other:?}"),
-    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), rx.recv())
+            .await
+            .is_err(),
+        "unconfirmed venue quantity must not produce a Filled report"
+    );
 }
 
 #[rstest]

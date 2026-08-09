@@ -469,13 +469,29 @@ mod tests {
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let output = build_position_reports(&positions, account_id, ts_now);
 
         // 4 positions: 150.5, 0.0, 42.0, 0.005 (dust)
         // Only 150.5 and 42.0 pass the DUST_POSITION_THRESHOLD (0.01)
-        assert_eq!(reports.len(), 2);
-        assert!(reports[0].is_long());
-        assert!(reports[1].is_long());
+        assert_eq!(output.reports.len(), 2);
+        assert!(output.reports[0].is_long());
+        assert!(output.reports[1].is_long());
+        assert_eq!(
+            output.omissions.count(
+                crate::execution::reconciliation::ReconciliationOmission::Position(
+                    crate::execution::reconciliation::PositionOmission::Zero,
+                ),
+            ),
+            1,
+        );
+        assert_eq!(
+            output.omissions.count(
+                crate::execution::reconciliation::ReconciliationOmission::Position(
+                    crate::execution::reconciliation::PositionOmission::Dust,
+                ),
+            ),
+            1,
+        );
     }
 
     #[rstest]
@@ -484,7 +500,7 @@ mod tests {
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_position_reports(&positions, account_id, ts_now).reports;
 
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].avg_px_open, Some(dec!(0.55)));
@@ -497,7 +513,7 @@ mod tests {
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_position_reports(&positions, account_id, ts_now).reports;
 
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].quantity.precision, USDC_DECIMALS as u8);
@@ -515,10 +531,17 @@ mod tests {
         let account_id = AccountId::from("POLYMARKET-001");
         let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
 
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let output = build_position_reports(&positions, account_id, ts_now);
 
-        assert_eq!(reports.len(), 1);
-        assert_eq!(reports[0].avg_px_open, None);
+        assert!(output.reports.is_empty());
+        assert_eq!(
+            output.omissions.count(
+                crate::execution::reconciliation::ReconciliationOmission::Position(
+                    crate::execution::reconciliation::PositionOmission::InvalidAveragePrice,
+                ),
+            ),
+            1,
+        );
     }
 
     #[rstest]

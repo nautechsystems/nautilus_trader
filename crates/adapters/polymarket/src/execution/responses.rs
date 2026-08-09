@@ -19,12 +19,12 @@ use nautilus_common::live::{get_runtime, task::TaskHandles};
 use nautilus_core::{UUID4, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, TimeInForce},
     events::{OrderEventAny, OrderFilled, OrderUpdated},
     identifiers::{AccountId, VenueOrderId},
     orders::{Order, OrderAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Price, Quantity},
+    types::Quantity,
 };
 use rust_decimal::Decimal;
 
@@ -32,6 +32,7 @@ use super::{
     cancellations::execute_deferred_cancel,
     identity::{OrderIdentity, OrderIdentityRegistry},
     order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
+    parse::parse_order_status_report,
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::cap_order_report_filled_qty,
     reports::get_pusd_currency,
@@ -782,34 +783,29 @@ pub(super) async fn check_fok_status(
             emitter.emit_order_expired(order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
-            let quantity = Quantity::from_decimal_dp(venue_order.original_size, size_precision)
-                .unwrap_or_else(|_| Quantity::zero(size_precision));
-            let filled_qty = Quantity::from_decimal_dp(venue_order.size_matched, size_precision)
-                .unwrap_or_else(|_| Quantity::zero(size_precision));
             let confirmed_filled = fill_tracker
                 .get_cumulative_filled(&venue_order_id)
                 .unwrap_or_else(|| Quantity::zero(size_precision));
-            let price = Price::from_decimal_dp(venue_order.price, price_precision)
-                .unwrap_or_else(|_| Price::zero(price_precision));
-
-            let mut report = OrderStatusReport::new(
-                account_id,
+            let mut report = match parse_order_status_report(
+                &venue_order,
                 order.instrument_id(),
+                account_id,
                 Some(order.client_order_id()),
-                venue_order_id,
-                order.order_side(),
-                OrderType::Limit,
-                TimeInForce::Fok,
-                order_status,
-                quantity,
-                filled_qty,
+                price_precision,
+                size_precision,
                 ts_now,
-                ts_now,
-                ts_now,
-                None,
-            );
-            report.price = Some(price);
-            cap_order_report_filled_qty(&mut report, confirmed_filled, None);
+            ) {
+                Ok(report) => report,
+                Err(e) => {
+                    log::warn!("Skipping invalid FOK order report {order_id}: {e}");
+                    return;
+                }
+            };
+
+            if let Err(e) = cap_order_report_filled_qty(&mut report, confirmed_filled, None) {
+                log::warn!("Skipping invalid FOK order report {order_id}: {e}");
+                return;
+            }
 
             log::debug!(
                 "FOK order {order_id} resolved via REST as Filled; deferring fill quantity until confirmation"
@@ -825,11 +821,11 @@ mod tests {
     use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
-        enums::{AccountType, LiquiditySide},
+        enums::{AccountType, LiquiditySide, OrderType},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
-        types::{Currency, Money},
+        types::{Currency, Money, Price},
     };
     use rstest::rstest;
     use ustr::Ustr;
@@ -1061,7 +1057,7 @@ mod tests {
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
-        let (reports, _) = crate::execution::reconciliation::build_fill_reports_from_trades(
+        let output = crate::execution::reconciliation::build_fill_reports_from_trades(
             &[trade],
             &ctx,
             &instruments,
@@ -1069,7 +1065,13 @@ mod tests {
             UnixNanos::from(1_000_000_000u64),
         );
 
-        assert!(reports.is_empty());
+        assert!(output.reports.is_empty());
+        let expected = if status.is_pending_settlement() {
+            crate::execution::reconciliation::ReconciliationOmission::PendingTrade
+        } else {
+            crate::execution::reconciliation::ReconciliationOmission::FailedTrade
+        };
+        assert_eq!(output.omissions.count(expected), 1);
     }
 
     #[rstest]
@@ -1104,7 +1106,7 @@ mod tests {
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
-        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+        let output = crate::execution::reconciliation::build_fill_reports_from_trades(
             &[trade],
             &ctx,
             &instruments,
@@ -1113,16 +1115,24 @@ mod tests {
         );
 
         assert_eq!(
-            reports.len(),
+            output.reports.len(),
             1,
             "the account's own confirmed maker fill must be reported",
         );
-        assert_eq!(reports[0].venue_order_id, expected_venue_order_id);
+        assert_eq!(output.reports[0].venue_order_id, expected_venue_order_id);
         assert_eq!(
-            discards.unowned_maker_trades, 0,
+            output
+                .omissions
+                .count(crate::execution::reconciliation::ReconciliationOmission::UnownedMakerTrade),
+            0,
             "entry-level skips of foreign entries in an owned trade are not trade drops",
         );
-        assert_eq!(discards.unmapped_instruments, 0);
+        assert_eq!(
+            output
+                .omissions
+                .count(crate::execution::reconciliation::ReconciliationOmission::UnmappedFill),
+            0,
+        );
     }
 
     #[rstest]
@@ -1142,7 +1152,7 @@ mod tests {
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
-        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+        let output = crate::execution::reconciliation::build_fill_reports_from_trades(
             &[trade],
             &ctx,
             &instruments,
@@ -1150,13 +1160,12 @@ mod tests {
             UnixNanos::from(1_000_000_000u64),
         );
 
-        assert_eq!(reports.len(), 0);
+        assert_eq!(output.reports.len(), 0,);
         assert_eq!(
-            discards,
-            crate::execution::reconciliation::FillBuildDiscards {
-                unmapped_instruments: 1,
-                unowned_maker_trades: 0,
-            },
+            output
+                .omissions
+                .count(crate::execution::reconciliation::ReconciliationOmission::UnmappedFill),
+            1,
         );
     }
 
@@ -1178,7 +1187,7 @@ mod tests {
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
-        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+        let output = crate::execution::reconciliation::build_fill_reports_from_trades(
             &[trade],
             &ctx,
             &instruments,
@@ -1186,12 +1195,20 @@ mod tests {
             UnixNanos::from(1_000_000_000u64),
         );
 
-        assert!(reports.is_empty());
+        assert!(output.reports.is_empty());
         assert_eq!(
-            discards.unowned_maker_trades, 1,
+            output
+                .omissions
+                .count(crate::execution::reconciliation::ReconciliationOmission::UnownedMakerTrade),
+            1,
             "a confirmed maker trade dropped whole must be counted, not silent",
         );
-        assert_eq!(discards.unmapped_instruments, 0);
+        assert_eq!(
+            output
+                .omissions
+                .count(crate::execution::reconciliation::ReconciliationOmission::UnmappedFill),
+            0,
+        );
     }
 
     #[rstest]
