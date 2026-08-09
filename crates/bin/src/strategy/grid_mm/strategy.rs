@@ -223,6 +223,7 @@ impl DataActor for GridMarketMaker {
     }
 
     fn on_time_event(&mut self, _event: &nautilus_common::timer::TimeEvent) -> anyhow::Result<()> {
+        log::info!("timer callback");
         let instrument_id = self.config.instrument_id;
         let strategy_id = self.strategy_id().expect("Strategy must be registered");
         let price_precision = self.price_precision.ok_or_else(|| {
@@ -242,10 +243,11 @@ impl DataActor for GridMarketMaker {
         // Always requote when the grid is empty, even if mid is within threshold
         let has_resting = {
             let cache = self.cache();
+            let venue = Some(&instrument_id.venue);
             let inst = Some(&instrument_id);
             let sid = Some(&strategy_id);
-            cache.orders_open_count(None, inst, sid, None, None) > 0
-                || cache.orders_inflight_count(None, inst, sid, None, None) > 0
+            cache.orders_open_count(venue, inst, sid, None, None) > 0
+                || cache.orders_inflight_count(venue, inst, sid, None, None) > 0
         };
 
         if !self.should_requote(mid) && has_resting {

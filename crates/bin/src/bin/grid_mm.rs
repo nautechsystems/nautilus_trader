@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let start_date = Utc.with_ymd_and_hms(2026, 8, 1, 0, 0, 0).single().unwrap();
-    let end_date = Utc.with_ymd_and_hms(2026, 8, 7, 0, 0, 0).single().unwrap();
+    let end_date = Utc.with_ymd_and_hms(2026, 8, 8, 0, 0, 0).single().unwrap();
 
     match &cfg.execution_environment {
         Environment::Backtest => {
