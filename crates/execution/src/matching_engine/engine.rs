@@ -293,6 +293,7 @@ impl OrderMatchingEngine {
         self.last_bar_ask = None;
         self.precision_mismatch_streak = 0;
         self.instrument_close = None;
+        self.market_status = MarketStatus::Open;
         self.pending_resolution = false;
         self.settlement_price = None;
         self.expiration_processed = false;

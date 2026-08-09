@@ -690,6 +690,25 @@ fn test_process_order_rejects_when_market_not_open_and_accepts_after_reopen(
 }
 
 #[rstest]
+#[case::halted(MarketStatusAction::Halt, MarketStatus::Closed)]
+#[case::paused(MarketStatusAction::Pause, MarketStatus::Paused)]
+#[case::suspended(MarketStatusAction::Suspend, MarketStatus::Suspended)]
+#[case::closed(MarketStatusAction::Close, MarketStatus::Closed)]
+fn test_reset_restores_market_status_after_venue_status(
+    #[case] close_action: MarketStatusAction,
+    #[case] expected_status: MarketStatus,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let mut engine = get_order_matching_engine_l2(instrument_eth_usdt, None, None, None, None);
+    engine.process_status(close_action);
+    assert_eq!(engine.market_status, expected_status);
+
+    engine.reset();
+
+    assert_eq!(engine.market_status, MarketStatus::Open);
+}
+
+#[rstest]
 fn test_market_status_pause_blocks_matching_until_trading_resumes(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
@@ -13193,6 +13212,71 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     assert_eq!(settlement_fill.last_qty, position.quantity);
     assert_eq!(settlement_fill.last_px, Price::from("11.00"));
     assert_eq!(settlement_fill.position_id, Some(position.id));
+}
+
+#[rstest]
+fn test_reset_restores_market_status_after_option_expiry(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let _order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let venue = "OPRA";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        venue,
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let underlying = InstrumentAny::IndexInstrument(underlying_index(venue));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_index_price(IndexPriceUpdate::new(
+            underlying.id(),
+            Price::from("160.00"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    open_long_option_position(
+        &cache,
+        &option,
+        account_id,
+        Quantity::from(1),
+        Price::from("5.00"),
+    );
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock.borrow_mut().set_time(expiration_ns);
+
+    let mut engine = OrderMatchingEngine::new(
+        option,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    assert!(engine.is_expiration_processed());
+    assert_eq!(engine.market_status, MarketStatus::Closed);
+
+    // `SimulatedExchange::reset` reuses its matching engines across runs, so a
+    // status left closed by expiry would reject orders from the next run.
+    engine.reset();
+
+    assert_eq!(engine.market_status, MarketStatus::Open);
 }
 
 #[rstest]
